@@ -45,8 +45,44 @@ model User {
   sections                 WorkoutSection[]
   executionTechniques      ExecutionTechnique[]
   workoutTemplates         WorkoutTemplate[]
+  telegramAccount          String?
+  telegramChatId           String?   // Telegram chat id for sending/receiving via bot
+  conversationsStarted    ChatConversation[] @relation("ConversationStarter")
+  conversationsReceived   ChatConversation[] @relation("ConversationReceiver")
+  chatMessagesSent         ChatMessage[]     @relation("MessageSender")
 
   @@map("users_new")
+}
+
+model ChatConversation {
+  id           String        @id @default(cuid())
+  user1Id      String
+  user2Id      String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  user1        User          @relation("ConversationStarter", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2        User          @relation("ConversationReceiver", fields: [user2Id], references: [id], onDelete: Cascade)
+  messages     ChatMessage[]
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id              String           @id @default(cuid())
+  conversationId  String
+  senderId        String
+  content         String           @db.Text
+  telegramMessageId String?        // id from Telegram when sent/received via bot
+  createdAt       DateTime        @default(now())
+  conversation    ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender          User             @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@map("chat_messages")
 }
 
 model Language {

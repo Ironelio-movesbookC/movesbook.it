@@ -32,10 +32,12 @@ import {
   Mail,
   Filter,
   Palette,
+  ExternalLink,
   Star,
   Trophy,
   Grid,
-  Download
+  Download,
+  MessageSquare
 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
@@ -67,6 +69,10 @@ export default function AthleteDashboard() {
   const [activeRightTab, setActiveRightTab] = useState<'actions-planner' | 'chat-panel'>('actions-planner');
   const [expandedActionsPlanner, setExpandedActionsPlanner] = useState(true);
   const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-page');
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [telegramAccount, setTelegramAccount] = useState('');
+  const [userTelegramAccount, setUserTelegramAccount] = useState<string | null>(null);
+  const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
   
   // Entities athlete belongs to
   const [myCoaches, setMyCoaches] = useState<any[]>([]);
@@ -100,8 +106,80 @@ export default function AthleteDashboard() {
       loadMyClubs();
       loadMyGroups();
       loadCurrentWeekAndPeriod();
+      loadTelegramAccount();
     }
   }, [user]);
+
+  const loadTelegramAccount = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/user/telegram-account', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUserTelegramAccount(data.telegramAccount);
+      }
+    } catch (error) {
+      console.error('Error loading Telegram account:', error);
+    }
+  };
+
+  const handleChatPanelClick = () => {
+    if (userTelegramAccount) {
+      // User already joined, navigate to chat page
+      router.push('/athlete/chat');
+    } else {
+      // User hasn't joined, show join modal
+      setShowJoinModal(true);
+    }
+  };
+
+  const handleJoinChat = async () => {
+    if (!telegramAccount.trim()) {
+      alert('Please enter your Telegram account');
+      return;
+    }
+
+    // Ensure it starts with @
+    const formattedAccount = telegramAccount.startsWith('@') 
+      ? telegramAccount 
+      : `@${telegramAccount}`;
+
+    setIsLoadingTelegram(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/user/telegram-account', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ telegramAccount: formattedAccount })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setUserTelegramAccount(formattedAccount);
+          setShowJoinModal(false);
+          setTelegramAccount('');
+          // Navigate to chat page
+          router.push('/athlete/chat');
+        } else {
+          alert(data.error || 'Failed to save Telegram account');
+        }
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || 'Failed to save Telegram account');
+      }
+    } catch (error) {
+      console.error('Error saving Telegram account:', error);
+      alert('Error saving Telegram account. Please try again.');
+    } finally {
+      setIsLoadingTelegram(false);
+    }
+  };
 
   // Hide right sidebar when workout section or personal settings opens
   useEffect(() => {
@@ -498,6 +576,15 @@ export default function AthleteDashboard() {
                     <Save className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
                     <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_save_session')}</span>
                   </button>
+                  
+                  {/* Chat Panel Button */}
+                  <button 
+                    onClick={handleChatPanelClick}
+                    className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group"
+                  >
+                    <MessageSquare className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">Chat panel</span>
+                  </button>
                 </div>
 
                 {/* Next Event Section - For "My Page" */}
@@ -711,6 +798,77 @@ export default function AthleteDashboard() {
       <div className="print:hidden">
         <SimpleFooter />
       </div>
+
+      {/* Join Chat Modal */}
+      {showJoinModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                Provide 'I've joined' confirmation button
+              </h2>
+              
+              <div className="mb-6">
+                <p className="text-sm text-gray-600 mb-4">
+                  Let them confirm inside Movesbook chat page UI
+                </p>
+                
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Telegram Account
+                  </label>
+                  <input
+                    type="text"
+                    value={telegramAccount}
+                    onChange={(e) => setTelegramAccount(e.target.value)}
+                    placeholder="@username"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Enter your Telegram username (e.g., @username)
+                  </p>
+                </div>
+
+                {!telegramAccount && (
+                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-gray-700 mb-2">
+                      Don't have a Telegram account?
+                    </p>
+                    <a
+                      href="https://telegram.org/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1"
+                    >
+                      Create a Telegram account
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowJoinModal(false);
+                    setTelegramAccount('');
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleJoinChat}
+                  disabled={isLoadingTelegram || !telegramAccount.trim()}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoadingTelegram ? 'Saving...' : "I've joined"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

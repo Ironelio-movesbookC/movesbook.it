@@ -315,38 +315,39 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
   };
 
   const handleDashboardClick = () => {
+    // Close dropdowns
+    setIsUserDropdownOpen(false);
+    setIsMobileMenuOpen(false);
+    
     // Redirect to appropriate dashboard based on user type
     if (user) {
       const userType = user.userType?.toLowerCase();
-      let lastPage = null;
       let defaultPage = '/my-page';
 
       switch (userType) {
         case 'athlete':
-          lastPage = localStorage.getItem('lastAthletePage');
           defaultPage = '/athlete/dashboard';
           break;
         case 'coach':
-          lastPage = localStorage.getItem('lastCoachPage');
           defaultPage = '/coach/dashboard';
           break;
         case 'team':
-          lastPage = localStorage.getItem('lastTeamPage');
           defaultPage = '/team/dashboard';
           break;
         case 'group':
-          lastPage = localStorage.getItem('lastGroupPage');
           defaultPage = '/group/dashboard';
           break;
         case 'club':
-          lastPage = localStorage.getItem('lastClubPage');
           defaultPage = '/club/dashboard';
           break;
       }
 
-      router.push(lastPage || defaultPage);
+      // IMPORTANT: Dashboard should always go to the dashboard route (not last visited page)
+      router.push(defaultPage);
+    } else {
+      // Fallback: redirect to home if user is not available
+      router.push('/');
     }
-    setIsMobileMenuOpen(false);
   };
 
   const handleInlineLogin = async (e?: React.FormEvent) => {
