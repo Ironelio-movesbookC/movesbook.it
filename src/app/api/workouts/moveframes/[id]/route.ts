@@ -91,6 +91,7 @@ export async function PATCH(
       annotationBold,
       manualMode,
       manualPriority,    // Priority flag for manual mode display
+      manualInputType,   // For aerobic sports: 'meters' or 'time'
       favourite,
       manualRepetitions, // For storing on Moveframe model (manual mode only)
       manualDistance,    // For storing on Moveframe model (manual mode only)
@@ -135,10 +136,21 @@ export async function PATCH(
     });
 
     // 🔍 DEBUG: Log what's being updated
+    console.log('📥 [API UPDATE] Received update request with:', {
+      sport,
+      manualMode,
+      manualPriority,
+      manualInputType: `"${manualInputType}"`,
+      manualInputTypeType: typeof manualInputType,
+      manualRepetitions,
+      manualDistance
+    });
+    
     if (manualMode) {
       console.log('🔍 [API PATCH] Manual mode moveframe update:');
       console.log('   manualRepetitions (raw):', manualRepetitions);
       console.log('   manualDistance (raw):', manualDistance);
+      console.log('   manualInputType (raw):', `"${manualInputType}"`);
     }
 
     // Update moveframe
@@ -155,6 +167,7 @@ export async function PATCH(
         alarm: alarm !== undefined ? (alarm ? parseInt(alarm) : null) : undefined,
         manualMode: manualMode !== undefined ? manualMode : undefined,
         manualPriority: manualPriority !== undefined ? manualPriority : undefined,
+        manualInputType: manualInputType !== undefined ? manualInputType : undefined,
         favourite: favourite !== undefined ? favourite : undefined,
         repetitions: manualRepetitions !== undefined && manualRepetitions !== null && manualRepetitions !== '' ? parseInt(manualRepetitions) : (manualRepetitions === null || manualRepetitions === '' ? null : undefined),
         distance: manualDistance !== undefined && manualDistance !== null && manualDistance !== '' ? parseInt(manualDistance) : (manualDistance === null || manualDistance === '' ? null : undefined),

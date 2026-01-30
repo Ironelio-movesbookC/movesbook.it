@@ -7,6 +7,15 @@ import { getSportIcon, isImageIcon } from '@/utils/sportIcons';
 import { useSportIconType } from '@/hooks/useSportIconType';
 import { formatMoveframeType, getRepsLabelCap, getRepsLabel } from '@/constants/moveframe.constants';
 
+// 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
+const stripCircuitTags = (content: string | null | undefined): string => {
+  if (!content) return '';
+  return content
+    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+    .trim();
+};
+
 interface MoveframeInfoPanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -312,9 +321,11 @@ export default function MoveframeInfoPanel({
                 }`}>
                   {(() => {
                     // For manual mode, use notes (full content) instead of description (truncated)
-                    const content = moveframe.manualMode 
+                    // 2026-01-22 14:45 UTC - Strip circuit tags from all content
+                    const rawContent = moveframe.manualMode 
                       ? (moveframe.notes || moveframe.description)
                       : moveframe.description;
+                    const content = stripCircuitTags(rawContent);
                     
                     return content ? (
                       <div 

@@ -108,7 +108,7 @@ export default function WorkoutHierarchyView({
   console.log(`📋 Expanded workouts in view:`, Array.from(expandedWorkoutsSet));
 
   return (
-    <div className="space-y-6 overflow-x-auto">
+    <div className="space-y-6">
       {workouts.map((workout: any, workoutIndex: number) => {
         const isWorkoutExpanded = expandedWorkoutsSet.has(workout.id);
         console.log(`📋 Rendering workout ${workout.id}, isExpanded: ${isWorkoutExpanded}`);

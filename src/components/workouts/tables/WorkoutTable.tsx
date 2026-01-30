@@ -11,6 +11,15 @@ import { isSeriesBasedSport, getDistTimeColumnHeader, isDistanceBasedSport } fro
 import { useDropdownPosition } from '@/hooks/useDropdownPosition';
 import MoveframesSection from './MoveframesSection';
 
+// Helper function to strip circuit metadata tags from content
+const stripCircuitTags = (content: string | null | undefined): string => {
+  if (!content) return '';
+  return content
+    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+    .trim();
+};
+
 interface WorkoutTableProps {
   day: any;
   workout: any;
@@ -789,16 +798,17 @@ export default function WorkoutTable({
                   }
                 }}
               >
-                <div className="line-clamp-1 leading-tight whitespace-pre-wrap">
+                <div className="line-clamp-3 leading-tight whitespace-pre-wrap">
                   {(() => {
                     if (!sports[0].mainWork) return '';
                     // Create a temporary div to decode HTML entities and strip tags
                     const tempDiv = document.createElement('div');
                     tempDiv.innerHTML = sports[0].mainWork;
                     const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
-                    // Get first line only
-                    const firstLine = plainText.split('\n')[0];
-                    return firstLine;
+                    // Get first 3 lines only
+                    const lines = plainText.split('\n');
+                    const firstThreeLines = lines.slice(0, 3).join('\n');
+                    return firstThreeLines;
                   })()}
                 </div>
               </td>
@@ -823,14 +833,15 @@ export default function WorkoutTable({
                   }
                 }}
               >
-                <div className="line-clamp-1 leading-tight whitespace-pre-wrap">
+                <div className="line-clamp-3 leading-tight whitespace-pre-wrap">
                   {(() => {
                     if (!sports[0].secondaryWork) return '';
                     const tempDiv = document.createElement('div');
                     tempDiv.innerHTML = sports[0].secondaryWork;
                     const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
-                    const firstLine = plainText.split('\n')[0];
-                    return firstLine;
+                    const lines = plainText.split('\n');
+                    const firstThreeLines = lines.slice(0, 3).join('\n');
+                    return firstThreeLines;
                   })()}
                 </div>
               </td>
@@ -899,14 +910,15 @@ export default function WorkoutTable({
                   }
                 }}
               >
-                <div className="line-clamp-1 leading-tight whitespace-pre-wrap">
+                <div className="line-clamp-3 leading-tight whitespace-pre-wrap">
                   {(() => {
                     if (!sports[1].mainWork) return '';
                     const tempDiv = document.createElement('div');
                     tempDiv.innerHTML = sports[1].mainWork;
                     const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
-                    const firstLine = plainText.split('\n')[0];
-                    return firstLine;
+                    const lines = plainText.split('\n');
+                    const firstThreeLines = lines.slice(0, 3).join('\n');
+                    return firstThreeLines;
                   })()}
                 </div>
               </td>
@@ -930,14 +942,15 @@ export default function WorkoutTable({
                   }
                 }}
               >
-                <div className="line-clamp-1 leading-tight whitespace-pre-wrap">
+                <div className="line-clamp-3 leading-tight whitespace-pre-wrap">
                   {(() => {
                     if (!sports[1].secondaryWork) return '';
                     const tempDiv = document.createElement('div');
                     tempDiv.innerHTML = sports[1].secondaryWork;
                     const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
-                    const firstLine = plainText.split('\n')[0];
-                    return firstLine;
+                    const lines = plainText.split('\n');
+                    const firstThreeLines = lines.slice(0, 3).join('\n');
+                    return firstThreeLines;
                   })()}
                 </div>
               </td>
@@ -1006,14 +1019,15 @@ export default function WorkoutTable({
                   }
                 }}
               >
-                <div className="line-clamp-1 leading-tight whitespace-pre-wrap">
+                <div className="line-clamp-3 leading-tight whitespace-pre-wrap">
                   {(() => {
                     if (!sports[2].mainWork) return '';
                     const tempDiv = document.createElement('div');
                     tempDiv.innerHTML = sports[2].mainWork;
                     const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
-                    const firstLine = plainText.split('\n')[0];
-                    return firstLine;
+                    const lines = plainText.split('\n');
+                    const firstThreeLines = lines.slice(0, 3).join('\n');
+                    return firstThreeLines;
                   })()}
                 </div>
               </td>
@@ -1037,14 +1051,15 @@ export default function WorkoutTable({
                   }
                 }}
               >
-                <div className="line-clamp-1 leading-tight whitespace-pre-wrap">
+                <div className="line-clamp-3 leading-tight whitespace-pre-wrap">
                   {(() => {
                     if (!sports[2].secondaryWork) return '';
                     const tempDiv = document.createElement('div');
                     tempDiv.innerHTML = sports[2].secondaryWork;
                     const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
-                    const firstLine = plainText.split('\n')[0];
-                    return firstLine;
+                    const lines = plainText.split('\n');
+                    const firstThreeLines = lines.slice(0, 3).join('\n');
+                    return firstThreeLines;
                   })()}
                 </div>
               </td>
@@ -1113,14 +1128,15 @@ export default function WorkoutTable({
                   }
                 }}
               >
-                <div className="line-clamp-1 leading-tight whitespace-pre-wrap">
+                <div className="line-clamp-3 leading-tight whitespace-pre-wrap">
                   {(() => {
                     if (!sports[3].mainWork) return '';
                     const tempDiv = document.createElement('div');
                     tempDiv.innerHTML = sports[3].mainWork;
                     const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
-                    const firstLine = plainText.split('\n')[0];
-                    return firstLine;
+                    const lines = plainText.split('\n');
+                    const firstThreeLines = lines.slice(0, 3).join('\n');
+                    return firstThreeLines;
                   })()}
                 </div>
               </td>
@@ -1144,14 +1160,15 @@ export default function WorkoutTable({
                   }
                 }}
               >
-                <div className="line-clamp-1 leading-tight whitespace-pre-wrap">
+                <div className="line-clamp-3 leading-tight whitespace-pre-wrap">
                   {(() => {
                     if (!sports[3].secondaryWork) return '';
                     const tempDiv = document.createElement('div');
                     tempDiv.innerHTML = sports[3].secondaryWork;
                     const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
-                    const firstLine = plainText.split('\n')[0];
-                    return firstLine;
+                    const lines = plainText.split('\n');
+                    const firstThreeLines = lines.slice(0, 3).join('\n');
+                    return firstThreeLines;
                   })()}
                 </div>
               </td>
@@ -1313,7 +1330,7 @@ export default function WorkoutTable({
               <div className="mt-2 pt-2 border-t border-gray-200">
                 <div className="font-semibold text-gray-700 mb-1 text-[10px]">Notes:</div>
                 <div className="text-gray-900 bg-gray-50 p-2 rounded text-[10px]">
-                  {clickedMoveframe.notes}
+                  {stripCircuitTags(clickedMoveframe.notes)}
                 </div>
               </div>
             )}

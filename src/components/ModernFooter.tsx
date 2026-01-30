@@ -61,7 +61,7 @@ export default function ModernFooter() {
   ];
 
   return (
-    <footer className="bg-gradient-to-br from-gray-900 to-gray-800 text-white">
+    <footer className="bg-gradient-to-br from-gray-900 to-gray-800 text-white relative z-20">
       {/* Main Footer Content */}
       <div className="w-full px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 max-w-full">

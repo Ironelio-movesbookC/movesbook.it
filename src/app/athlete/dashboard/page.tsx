@@ -28,6 +28,7 @@ import {
   CalendarCheck,
   CalendarDays,
   CheckSquare,
+  User,
   Save,
   Mail,
   Filter,
@@ -53,6 +54,13 @@ import ToolsSettings from '@/components/settings/ToolsSettings';
 import FavouritesSettings from '@/components/settings/FavouritesSettings';
 import MyBestSettings from '@/components/settings/MyBestSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
+
+// 2026-01-22 13:30 UTC - Placeholder component for avatar images (replaces Unsplash timeout issues)
+const AvatarPlaceholder = ({ size = 'w-10 h-10' }: { size?: string }) => (
+  <div className={`${size} rounded bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-semibold flex-shrink-0`}>
+    <User size={size.includes('12') ? 24 : 20} />
+  </div>
+);
 
 export default function AthleteDashboard() {
   const router = useRouter();
@@ -617,11 +625,7 @@ export default function AthleteDashboard() {
                   <div className="mt-2 space-y-3 px-3">
                     {[1, 2, 3].map((i) => (
                       <div key={i} className="flex items-start gap-2 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                        <img
-                          src={`https://images.unsplash.com/photo-${1500000000000 + i * 1000000}?w=100&h=100&fit=crop`}
-                          alt={`Friend ${i}`}
-                          className="w-10 h-10 rounded object-cover"
-                        />
+                        <AvatarPlaceholder size="w-10 h-10" />
                         <div className="flex-1">
                           <p className="text-xs font-medium text-gray-800">Friend {i}</p>
                           <p className="text-xs text-gray-600 line-clamp-2">
@@ -653,11 +657,7 @@ export default function AthleteDashboard() {
                       { name: 'Mike Davis', img: 'photo-1507003211169-0a1dd7228f2d' }
                     ].map((member, i) => (
                       <div key={i} className="flex items-start gap-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                        <img
-                          src={`https://images.unsplash.com/${member.img}?w=100&h=100&fit=crop`}
-                          alt={member.name}
-                          className="w-12 h-12 rounded object-cover"
-                        />
+                        <AvatarPlaceholder size="w-12 h-12" />
                         <div className="flex-1">
                           <p className="text-sm font-medium text-gray-800">{member.name}</p>
                           <button className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 mt-1">
@@ -691,11 +691,7 @@ export default function AthleteDashboard() {
                       { name: 'Emma Swift', img: 'photo-1438761681033-6461ffad8d80' }
                     ].map((member, i) => (
                       <div key={i} className="flex items-start gap-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                        <img
-                          src={`https://images.unsplash.com/${member.img}?w=100&h=100&fit=crop`}
-                          alt={member.name}
-                          className="w-12 h-12 rounded object-cover"
-                        />
+                        <AvatarPlaceholder size="w-12 h-12" />
                         <div className="flex-1">
                           <p className="text-sm font-medium text-gray-800">{member.name}</p>
                           <button className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 mt-1">
@@ -1150,40 +1146,6 @@ function PersonalSettingsContent({ t, user }: { t: (key: string) => string; user
     }
   };
 
-  const savePersonalSettings = async () => {
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        alert('Please login to save settings.');
-        setLoading(false);
-        return;
-      }
-
-      // Get current settings and save
-      const response = await fetch('/api/user/settings/save', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({}) // Settings are managed by individual components
-      });
-      
-      if (response.ok) {
-        alert('✅ Personal settings saved successfully!');
-      } else {
-        const data = await response.json();
-        alert(`Failed to save settings: ${data.details || data.error}`);
-      }
-    } catch (error: any) {
-      console.error('Error saving personal settings:', error);
-      alert(`Error saving settings: ${error.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const settingsSections = [
     { id: 'backgrounds' as const, label: 'Backgrounds & Colors', icon: Palette },
     { id: 'tools' as const, label: 'Tools', icon: Settings },
@@ -1262,15 +1224,11 @@ function PersonalSettingsContent({ t, user }: { t: (key: string) => string; user
         </div>
       </div>
 
-      {/* Footer */}
+      {/* Footer - Auto-save enabled, no manual save button needed */}
       <div className="border-t bg-gray-50 px-6 py-4 flex items-center justify-end flex-shrink-0">
-        <button
-          onClick={savePersonalSettings}
-          disabled={loading}
-          className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
-        >
-          {loading ? 'Saving...' : 'Save My Personal Settings'}
-        </button>
+        <p className="text-sm text-gray-600 italic">
+          ✓ All changes are saved automatically
+        </p>
       </div>
     </div>
   );

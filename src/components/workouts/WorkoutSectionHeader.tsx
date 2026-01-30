@@ -18,6 +18,7 @@ interface WorkoutSectionHeaderProps {
   workoutPlan?: any; // Workout plan data for color calculation
   excludeStretchingCheckbox?: React.ReactNode; // Checkbox for excluding stretching
   iconType?: 'emoji' | 'icon'; // Current icon type
+  currentWeekIndex?: number; // Current week index for Section A
   
   // Actions
   onSectionChange: (section: SectionId) => void;
@@ -33,6 +34,8 @@ interface WorkoutSectionHeaderProps {
   onWeeksPerPageChange?: (weeks: number) => void;
   onPrevPage?: () => void;
   onNextPage?: () => void;
+  onWeekIndexChange?: (index: number) => void; // For Section A week navigation
+  onPrintWeek?: () => void; // For Section A/C print button
 }
 
 export default function WorkoutSectionHeader({
@@ -50,6 +53,7 @@ export default function WorkoutSectionHeader({
   workoutPlan,
   excludeStretchingCheckbox,
   iconType = 'emoji',
+  currentWeekIndex = 0,
   onSectionChange,
   onViewModeChange,
   onIconTypeToggle,
@@ -61,7 +65,9 @@ export default function WorkoutSectionHeader({
   onClose,
   onWeeksPerPageChange,
   onPrevPage,
-  onNextPage
+  onNextPage,
+  onWeekIndexChange,
+  onPrintWeek
 }: WorkoutSectionHeaderProps) {
   
   // Local state for plan descriptions
@@ -166,6 +172,7 @@ export default function WorkoutSectionHeader({
       {/* Weekly Plan Subsections (A, B, C) - Only show when Section A is active */}
       {activeSection === 'A' && (
         <div className="bg-gray-100 border-b border-gray-300 px-4 py-2">
+          <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-gray-700 mr-2">Weekly Plans:</span>
             {(['A', 'B', 'C'] as const).map((plan) => (
@@ -181,6 +188,41 @@ export default function WorkoutSectionHeader({
                 Plan {plan}
               </button>
             ))}
+            </div>
+            
+            {/* View Toggle Buttons - Right side */}
+            <div className="flex gap-2 items-center">
+              {/* Icon Type Toggle Button */}
+              {onIconTypeToggle && (
+                <button
+                  onClick={onIconTypeToggle}
+                  className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-green-500 text-white hover:bg-green-600"
+                  title={`Switch to ${iconType === 'emoji' ? 'image' : 'emoji'} icons`}
+                >
+                  {iconType === 'emoji' ? '🎨 Images' : '😀 Emojis'}
+                </button>
+              )}
+              
+              <button
+                onClick={() => onViewModeChange('tree')}
+                className={`px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
+                  viewMode === 'tree' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <List className="w-4 h-4" />
+                Tree
+              </button>
+              
+              <button
+                onClick={() => onViewModeChange('table')}
+                className={`px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
+                  viewMode === 'table' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <Table className="w-4 h-4" />
+                Table
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -262,6 +304,25 @@ export default function WorkoutSectionHeader({
                     </div>
                   )}
                 </div>
+                
+                {/* Week Navigation Buttons - Right of Info Icon */}
+                {workoutPlan?.weeks && workoutPlan.weeks.length > 0 && (
+                  <div className="flex items-center gap-2 ml-4">
+                    {workoutPlan.weeks.map((week: any, index: number) => (
+                      <button
+                        key={week.id}
+                        onClick={() => onWeekIndexChange?.(index)}
+                        className={`px-4 py-1.5 rounded-lg font-semibold text-sm transition-all ${
+                          currentWeekIndex === index
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                      >
+                        Week {index + 1}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             
@@ -309,23 +370,6 @@ export default function WorkoutSectionHeader({
               >
                 <Plus className="w-4 h-4" />
                 {selectedAthlete ? `Viewing: ${selectedAthlete.name}` : 'Select Athlete'}
-              </button>
-            )}
-            
-            {/* Add Day Button - Available for sections A & C */}
-            {activeSection === 'A' && (
-              <button
-                onClick={onAddDay}
-                disabled={!canAddDay}
-                className={`px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 transition-colors ${
-                  canAddDay 
-                    ? 'bg-green-600 text-white hover:bg-green-700 cursor-pointer' 
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-                title={!canAddDay ? 'All weeks are full (7 days each)' : 'Add a new day'}
-              >
-                <Plus className="w-4 h-4" />
-                Add Day
               </button>
             )}
             
@@ -386,39 +430,20 @@ export default function WorkoutSectionHeader({
               </button>
             )}
             
-            {/* View Toggle - Only for non-B sections */}
+            {/* Action Buttons - Only for non-B sections */}
             {activeSection !== 'B' && (
               <>
-                {/* Icon Type Toggle Button */}
-                {onIconTypeToggle && (
+                {/* Print Button */}
+                {onPrintWeek && (
                   <button
-                    onClick={onIconTypeToggle}
-                    className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-green-500 text-white hover:bg-green-600"
-                    title={`Switch to ${iconType === 'emoji' ? 'image' : 'emoji'} icons`}
+                    onClick={onPrintWeek}
+                    className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-gray-700 text-white hover:bg-gray-800"
+                    title="Print week overview"
                   >
-                    {iconType === 'emoji' ? '🎨 Images' : '😀 Emojis'}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                    Print
                   </button>
                 )}
-                
-                <button
-                  onClick={() => onViewModeChange('tree')}
-                  className={`px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
-                    viewMode === 'tree' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  <List className="w-4 h-4" />
-                  Tree
-                </button>
-                
-                <button
-                  onClick={() => onViewModeChange('table')}
-                  className={`px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
-                    viewMode === 'table' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  <Table className="w-4 h-4" />
-                  Table
-                </button>
               </>
             )}
           </div>

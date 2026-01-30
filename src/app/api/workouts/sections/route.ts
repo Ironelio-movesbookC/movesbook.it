@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     // Get all sections for this user
     const sections = await prisma.workoutSection.findMany({
       where: { userId: decoded.userId },
-      orderBy: { name: 'asc' }
+      orderBy: { displayOrder: 'asc' }
     });
 
     // If user has no sections, create default ones

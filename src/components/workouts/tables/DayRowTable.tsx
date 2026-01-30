@@ -12,6 +12,15 @@ import { useDropdownPosition } from '@/hooks/useDropdownPosition';
 import { calculateSportSummaries, type SportSummary } from '@/utils/workoutHelpers';
 import { isDistanceBasedSport } from '@/constants/moveframe.constants';
 
+// Helper function to strip circuit metadata tags from content
+const stripCircuitTags = (content: string | null | undefined): string => {
+  if (!content) return '';
+  return content
+    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+    .trim();
+};
+
 interface DayRowTableProps {
   day: any;
   currentWeek: any;
@@ -213,7 +222,7 @@ export default function DayRowTable({
       }}
     >
       {/* Check Checkbox */}
-      <td className="px-1 py-2 text-center sticky-col-1 w-[50px] min-w-[50px]" style={{ backgroundColor: bgStyle, color: rowTextColor }} onClick={(e) => e.stopPropagation()}>
+      <td className="border border-gray-200 px-1 py-2 text-center sticky-col-1 w-[50px] min-w-[50px]" style={{ backgroundColor: bgStyle, color: rowTextColor }} onClick={(e) => e.stopPropagation()}>
         <input
           type="checkbox"
           checked={isSelected}
@@ -252,10 +261,10 @@ export default function DayRowTable({
         {dayOfWeek === 0 ? 7 : dayOfWeek}
       </td>
 
-      {/* Dayname - Only for non-3-weeks sections */}
-      {activeSection !== 'A' && activeSection !== 'B' && activeSection !== 'C' && (
+      {/* Dayname - Show for sections B, C, and D (not A which is template mode) */}
+      {activeSection !== 'A' && (
         <td 
-          className="border border-gray-200 px-2 py-2 text-xs font-bold cursor-pointer hover:bg-blue-100 sticky-col-6 w-[80px] min-w-[80px]"
+          className="border border-gray-200 px-2 py-2 text-xs font-bold cursor-pointer hover:bg-blue-100 sticky-col-6 w-[120px] min-w-[120px]"
           style={{ backgroundColor: bgStyle }}
           onClick={(e) => {
             e.stopPropagation(); // Prevent row click
@@ -263,9 +272,14 @@ export default function DayRowTable({
           }}
           title="Click to collapse/expand day only"
         >
-          <div className="flex items-center justify-center gap-1">
-            <span>{isExpanded ? '▼' : '▶'}</span>
-            <span>{dayName}</span>
+          <div className="flex flex-col items-center justify-center gap-0.5">
+            <div className="flex items-center gap-1">
+              <span>{isExpanded ? '▼' : '▶'}</span>
+              <span>{dayName}</span>
+            </div>
+            <span className="text-[10px] text-gray-600">
+              {dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
           </div>
         </td>
       )}
@@ -273,19 +287,19 @@ export default function DayRowTable({
       {/* Match Done (Workout Completion Status) - For Section B and C */}
       {(activeSection === 'B' || activeSection === 'C') && (
         <td 
-          className="border border-gray-200 px-1 py-2 text-center sticky-col-6 w-[60px] min-w-[60px]"
+          className="border border-gray-200 px-1 py-2 text-center sticky-col-7 w-[60px] min-w-[60px]"
           style={{ 
             backgroundColor: bgStyle,
             color: rowTextColor
           }}
         >
-          <input
-            type="checkbox"
-            checked={hasWorkouts}
-            readOnly
-            className="w-4 h-4"
-            title={hasWorkouts ? 'Workouts planned' : 'No workouts'}
-          />
+          <div className="flex items-center justify-center">
+            <div
+              className="w-6 h-6 rounded-full border border-gray-400 flex-shrink-0"
+              style={{ backgroundColor: hasWorkouts ? '#10B981' : '#D1D5DB' }}
+              title={hasWorkouts ? 'Workouts planned' : 'No workouts'}
+            />
+          </div>
         </td>
       )}
 
@@ -334,9 +348,9 @@ export default function DayRowTable({
       </td>
 
       {/* S1 - Sport 1 - Blue */}
-      <td className="border border-gray-200 px-1 py-1 text-xs text-center bg-blue-100 text-black">
+      <td className="border border-gray-200 px-1 py-1 text-xs text-left bg-blue-100 text-black">
         {sportSummaries[0] ? (
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-start gap-2">
             {useImageIcons ? (
               <img src={sportSummaries[0].icon} alt={sportSummaries[0].sport} className="w-10 h-10 object-cover rounded flex-shrink-0" />
             ) : (
@@ -358,7 +372,7 @@ export default function DayRowTable({
           </div>
         ) : '—'}
       </td>
-      <td className="main-work-cell border border-gray-200 px-1 py-1 text-xs text-center text-black font-semibold bg-blue-100 cursor-pointer" style={{ position: 'relative' }}
+      <td className="main-work-cell border border-gray-200 px-1 py-1 text-xs text-left text-black font-semibold bg-blue-100 cursor-pointer" style={{ position: 'relative' }}
         onClick={(e) => {
           if (sportSummaries[0]?.mainWorkMoveframe) {
             e.stopPropagation();
@@ -378,20 +392,23 @@ export default function DayRowTable({
           }
         }}
       >
-        {(() => {
-          if (!sportSummaries[0]?.mainWork) return '—';
-          const tempDiv = document.createElement('div');
-          tempDiv.innerHTML = sportSummaries[0].mainWork;
-          const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
-          const firstLine = plainText.split('\n')[0];
-          return firstLine || '—';
-        })()}
+        <div className="line-clamp-3 leading-tight whitespace-pre-wrap">
+          {(() => {
+            if (!sportSummaries[0]?.mainWork) return '—';
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = sportSummaries[0].mainWork;
+            const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
+            const lines = plainText.split('\n');
+            const firstThreeLines = lines.slice(0, 3).join('\n');
+            return firstThreeLines || '—';
+          })()}
+        </div>
       </td>
 
       {/* S2 - Sport 2 - Green */}
-      <td className="border border-gray-200 px-1 py-1 text-xs text-center bg-green-100 text-black">
+      <td className="border border-gray-200 px-1 py-1 text-xs text-left bg-green-100 text-black">
         {sportSummaries[1] ? (
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-start gap-2">
             {useImageIcons ? (
               <img src={sportSummaries[1].icon} alt={sportSummaries[1].sport} className="w-10 h-10 object-cover rounded flex-shrink-0" />
             ) : (
@@ -413,7 +430,7 @@ export default function DayRowTable({
           </div>
         ) : '—'}
       </td>
-      <td className="main-work-cell border border-gray-200 px-1 py-1 text-xs text-center text-black font-semibold bg-green-100 cursor-pointer" style={{ position: 'relative' }}
+      <td className="main-work-cell border border-gray-200 px-1 py-1 text-xs text-left text-black font-semibold bg-green-100 cursor-pointer" style={{ position: 'relative' }}
         onClick={(e) => {
           if (sportSummaries[1]?.mainWorkMoveframe) {
             e.stopPropagation();
@@ -433,20 +450,23 @@ export default function DayRowTable({
           }
         }}
       >
-        {(() => {
-          if (!sportSummaries[1]?.mainWork) return '—';
-          const tempDiv = document.createElement('div');
-          tempDiv.innerHTML = sportSummaries[1].mainWork;
-          const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
-          const firstLine = plainText.split('\n')[0];
-          return firstLine || '—';
-        })()}
+        <div className="line-clamp-3 leading-tight whitespace-pre-wrap">
+          {(() => {
+            if (!sportSummaries[1]?.mainWork) return '—';
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = sportSummaries[1].mainWork;
+            const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
+            const lines = plainText.split('\n');
+            const firstThreeLines = lines.slice(0, 3).join('\n');
+            return firstThreeLines || '—';
+          })()}
+        </div>
       </td>
 
       {/* S3 - Sport 3 - Orange */}
-      <td className="border border-gray-200 px-1 py-1 text-xs text-center bg-orange-100 text-black">
+      <td className="border border-gray-200 px-1 py-1 text-xs text-left bg-orange-100 text-black">
         {sportSummaries[2] ? (
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-start gap-2">
             {useImageIcons ? (
               <img src={sportSummaries[2].icon} alt={sportSummaries[2].sport} className="w-10 h-10 object-cover rounded flex-shrink-0" />
             ) : (
@@ -468,7 +488,7 @@ export default function DayRowTable({
           </div>
         ) : '—'}
       </td>
-      <td className="main-work-cell border border-gray-200 px-1 py-1 text-xs text-center text-black font-semibold bg-orange-100 cursor-pointer" style={{ position: 'relative' }}
+      <td className="main-work-cell border border-gray-200 px-1 py-1 text-xs text-left text-black font-semibold bg-orange-100 cursor-pointer" style={{ position: 'relative' }}
         onClick={(e) => {
           if (sportSummaries[2]?.mainWorkMoveframe) {
             e.stopPropagation();
@@ -488,20 +508,23 @@ export default function DayRowTable({
           }
         }}
       >
-        {(() => {
-          if (!sportSummaries[2]?.mainWork) return '—';
-          const tempDiv = document.createElement('div');
-          tempDiv.innerHTML = sportSummaries[2].mainWork;
-          const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
-          const firstLine = plainText.split('\n')[0];
-          return firstLine || '—';
-        })()}
+        <div className="line-clamp-3 leading-tight whitespace-pre-wrap">
+          {(() => {
+            if (!sportSummaries[2]?.mainWork) return '—';
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = sportSummaries[2].mainWork;
+            const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
+            const lines = plainText.split('\n');
+            const firstThreeLines = lines.slice(0, 3).join('\n');
+            return firstThreeLines || '—';
+          })()}
+        </div>
       </td>
 
       {/* S4 - Sport 4 - Pink */}
-      <td className="border border-gray-200 px-1 py-1 text-xs text-center bg-pink-100 text-black">
+      <td className="border border-gray-200 px-1 py-1 text-xs text-left bg-pink-100 text-black">
         {sportSummaries[3] ? (
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-start gap-2">
             {useImageIcons ? (
               <img src={sportSummaries[3].icon} alt={sportSummaries[3].sport} className="w-10 h-10 object-cover rounded flex-shrink-0" />
             ) : (
@@ -523,7 +546,7 @@ export default function DayRowTable({
           </div>
         ) : '—'}
       </td>
-      <td className="main-work-cell border border-gray-200 px-1 py-1 text-xs text-center text-black font-semibold bg-pink-100 cursor-pointer" style={{ position: 'relative' }}
+      <td className="main-work-cell border border-gray-200 px-1 py-1 text-xs text-left text-black font-semibold bg-pink-100 cursor-pointer" style={{ position: 'relative' }}
         onClick={(e) => {
           if (sportSummaries[3]?.mainWorkMoveframe) {
             e.stopPropagation();
@@ -543,14 +566,17 @@ export default function DayRowTable({
           }
         }}
       >
-        {(() => {
-          if (!sportSummaries[3]?.mainWork) return '—';
-          const tempDiv = document.createElement('div');
-          tempDiv.innerHTML = sportSummaries[3].mainWork;
-          const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
-          const firstLine = plainText.split('\n')[0];
-          return firstLine || '—';
-        })()}
+        <div className="line-clamp-3 leading-tight whitespace-pre-wrap">
+          {(() => {
+            if (!sportSummaries[3]?.mainWork) return '—';
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = sportSummaries[3].mainWork;
+            const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
+            const lines = plainText.split('\n');
+            const firstThreeLines = lines.slice(0, 3).join('\n');
+            return firstThreeLines || '—';
+          })()}
+        </div>
       </td>
 
       {/* Options */}
@@ -578,7 +604,7 @@ export default function DayRowTable({
               e.stopPropagation();
               onShowDayInfo?.(dayWithWeek);
             }}
-            className="px-2 py-1 text-[11px] bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors font-medium"
+            className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors font-medium whitespace-nowrap"
             title="View Day Information"
           >
             Day Info
@@ -840,7 +866,7 @@ export default function DayRowTable({
               <div className="mt-2 pt-2 border-t border-gray-200">
                 <div className="font-semibold text-gray-700 mb-1 text-[10px]">Notes:</div>
                 <div className="text-gray-900 bg-gray-50 p-2 rounded text-[10px]">
-                  {clickedMoveframe.notes}
+                  {stripCircuitTags(clickedMoveframe.notes)}
                 </div>
               </div>
             )}

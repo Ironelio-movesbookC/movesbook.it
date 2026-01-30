@@ -5,7 +5,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { FEELING_STATUS_OPTIONS } from '@/config/workout.constants';
 import { dayApi } from '@/utils/api.utils';
@@ -33,6 +33,15 @@ export default function EditDayModal({
 }: EditDayModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notesContent, setNotesContent] = useState(day.notes || '');
+  const editorRef = useRef<HTMLDivElement>(null);
+
+  // Initialize content when modal opens (like WeeklyInfoModal)
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.innerHTML = day.notes || '';
+      setNotesContent(day.notes || '');
+    }
+  }, [day.id, day.notes]); // Re-initialize when day changes
   
   // Show weather and feeling status only in section C (Workouts Done)
   const showWeatherAndFeeling = activeSection === 'C';
@@ -237,7 +246,9 @@ export default function EditDayModal({
             </label>
             <div className="border border-gray-300 rounded-lg overflow-hidden">
               <div 
+                ref={editorRef}
                 contentEditable={!isSubmitting}
+                suppressContentEditableWarning
                 onInput={(e) => setNotesContent(e.currentTarget.innerHTML)}
                 onPaste={(e) => {
                   // Allow default paste behavior to preserve formatting from HTML
@@ -250,7 +261,7 @@ export default function EditDayModal({
                     }
                   }, 0);
                 }}
-                dangerouslySetInnerHTML={{ __html: notesContent }}
+
                 className="w-full min-h-[150px] max-h-[300px] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 overflow-y-auto bg-white"
                 style={{
                   whiteSpace: 'pre-wrap',
@@ -286,4 +297,6 @@ export default function EditDayModal({
     </div>
   );
 }
+
+
 

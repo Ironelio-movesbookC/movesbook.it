@@ -76,12 +76,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Update or create periods
-    for (const period of periods) {
+    for (let i = 0; i < periods.length; i++) {
+      const period = periods[i];
       const periodData = {
         userId: decoded.userId,
         name: period.title || period.name, // Support both 'title' and 'name'
         description: period.description || '',
-        color: period.color || '#3b82f6'
+        color: period.color || '#3b82f6',
+        displayOrder: period.order !== undefined ? period.order : i // Use order from client or index
       };
 
       // If period has an ID and it exists in database, update it
@@ -90,21 +92,21 @@ export async function POST(request: NextRequest) {
           where: { id: period.id },
           data: periodData
         });
-        console.log(`✏️  Updated period: ${periodData.name}`);
+        console.log(`✏️  Updated period: ${periodData.name} (order: ${periodData.displayOrder})`);
       } 
       // Otherwise, create a new period
       else {
         await prisma.period.create({
           data: periodData
         });
-        console.log(`➕ Created new period: ${periodData.name}`);
+        console.log(`➕ Created new period: ${periodData.name} (order: ${periodData.displayOrder})`);
       }
     }
 
     // Fetch updated list
     const updatedPeriods = await prisma.period.findMany({
       where: { userId: decoded.userId },
-      orderBy: { name: 'asc' }
+      orderBy: { displayOrder: 'asc' }
     });
 
     console.log(`✅ Sync complete. Total periods: ${updatedPeriods.length}`);

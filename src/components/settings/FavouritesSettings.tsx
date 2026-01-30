@@ -1203,7 +1203,7 @@ export default function FavouritesSettings() {
             <p className="text-sm text-gray-600 mb-4">
               Click on a sport to add it to your favorites. Toggle between emoji and icon display above.
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
               {SPORTS_LIST.map((sport) => {
                 const isSelected = selectedSports.includes(sport);
                 // Use the showIconType instead of iconType from context
@@ -1214,7 +1214,7 @@ export default function FavouritesSettings() {
                   <button
                     key={sport}
                     onClick={() => toggleSport(sport)}
-                    className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all ${
+                    className={`flex flex-col items-center justify-center p-2 rounded-lg border-2 transition-all ${
                       isSelected
                         ? 'border-blue-500 bg-blue-50 shadow-md'
                         : 'border-gray-300 bg-white hover:border-yellow-400 hover:bg-yellow-50'
@@ -1223,30 +1223,30 @@ export default function FavouritesSettings() {
                   >
                     {/* Icon */}
                     {isImage ? (
-                      <div className="w-12 h-12 flex items-center justify-center mb-2 flex-shrink-0">
+                      <div className="w-8 h-8 flex items-center justify-center mb-1 flex-shrink-0">
                         <Image 
                           src={icon} 
                           alt={sport}
-                          width={48}
-                          height={48}
+                          width={32}
+                          height={32}
                           className="object-contain"
-                          style={{ width: '48px', height: '48px' }}
+                          style={{ width: '32px', height: '32px' }}
                         />
                       </div>
                     ) : (
-                      <div className="w-12 h-12 flex items-center justify-center text-3xl mb-2 flex-shrink-0">
+                      <div className="w-8 h-8 flex items-center justify-center text-xl mb-1 flex-shrink-0">
                         {icon}
                       </div>
                     )}
                     
                     {/* Name */}
-                    <span className="text-xs font-medium text-gray-700 text-center leading-tight">
+                    <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2">
                       {sport.replace(/_/g, ' ')}
                     </span>
                     
                     {/* Selected Badge */}
                     {isSelected && (
-                      <Star className="w-4 h-4 text-yellow-600 fill-yellow-400 mt-1" />
+                      <Star className="w-3 h-3 text-yellow-600 fill-yellow-400 mt-0.5" />
                     )}
                   </button>
                 );

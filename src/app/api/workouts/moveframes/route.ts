@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
       manualPriority,    // Priority flag for manual mode display
       manualRepetitions, // For storing on Moveframe model (manual mode only)
       manualDistance,    // For storing on Moveframe model (manual mode only)
+      manualInputType,   // For aerobic sports: "meters" or "time"
       appliedTechnique,  // Execution technique for Body Building
       aerobicSeries      // Series/Batteries/Groups for aerobic sports
     } = body;
@@ -65,6 +66,8 @@ export async function POST(request: NextRequest) {
       console.log('   Sport:', sport);
       console.log('   manualMode:', manualMode);
       console.log('   manualPriority:', manualPriority);
+      console.log('   manualInputType (raw):', manualInputType);
+      console.log('   manualInputType (type):', typeof manualInputType);
       console.log('   manualRepetitions (raw):', manualRepetitions);
       console.log('   manualRepetitions (type):', typeof manualRepetitions);
       console.log('   manualRepetitions (parsed):', manualRepetitions !== undefined ? parseInt(manualRepetitions) : null);
@@ -147,6 +150,7 @@ export async function POST(request: NextRequest) {
       manualPriority: manualPriority || false,
       repetitions: manualRepetitions !== undefined && manualRepetitions !== null && manualRepetitions !== '' ? parseInt(manualRepetitions) : null,
       distance: manualDistance !== undefined && manualDistance !== null && manualDistance !== '' ? parseInt(manualDistance) : null,
+      manualInputType: manualInputType || 'meters', // For aerobic sports: "meters" or "time"
       appliedTechnique: appliedTechnique || null, // Execution technique for Body Building
       aerobicSeries: aerobicSeries !== undefined && aerobicSeries !== null && aerobicSeries !== '' ? parseInt(aerobicSeries) : null, // Series/Batteries/Groups for aerobic sports
       annotationText: annotationText || null,
@@ -158,6 +162,7 @@ export async function POST(request: NextRequest) {
     // 🔍 DEBUG: Log what's being saved
     if (manualMode) {
       console.log('📝 [API POST] Moveframe data being saved to database:');
+      console.log('   manualInputType:', moveframeData.manualInputType);
       console.log('   repetitions (from manualRepetitions):', moveframeData.repetitions);
       console.log('   distance (from manualDistance):', moveframeData.distance);
     }
@@ -172,11 +177,34 @@ export async function POST(request: NextRequest) {
           : `Technique: ${appliedTechnique}`;
       }
       
+      // 2026-01-22 10:45 UTC - Preserve circuit-specific metadata in notes
+      if (lap.circuitLetter) {
+        const circuitMeta = {
+          circuitLetter: lap.circuitLetter,
+          circuitIndex: lap.circuitIndex,
+          seriesNumber: lap.seriesNumber,
+          localSeriesNumber: lap.localSeriesNumber,
+          stationNumber: lap.stationNumber,
+          sector: lap.sector
+        };
+        const metaString = `\n[CIRCUIT_META]${JSON.stringify(circuitMeta)}[/CIRCUIT_META]`;
+        movelapNotes = movelapNotes + metaString;
+      }
+      
+      // 2026-01-22 11:10 UTC - Convert pause to string if it's a number (for circuit movelaps)
+      let pauseValue = lap.pause || null;
+      if (typeof pauseValue === 'number') {
+        // Convert seconds to time string format (e.g., 10 -> "0'10"", 90 -> "1'30"")
+        const minutes = Math.floor(pauseValue / 60);
+        const seconds = pauseValue % 60;
+        pauseValue = `${minutes}'${seconds.toString().padStart(2, '0')}"`;
+      }
+      
       return {
-        repetitionNumber: index + 1,
+        repetitionNumber: lap.repetitionNumber || (index + 1),
         distance: lap.distance ? parseInt(lap.distance) : null,
-        speed: lap.speed || null,
-        style: lap.style || null,
+        speed: lap.reps ? String(lap.reps) : (lap.speed || null), // 2026-01-22 14:20 UTC - Use reps for circuits, speed for regular
+        style: lap.sector || lap.style || null, // 2026-01-22 14:20 UTC - Use sector for circuits, style for regular
         pace: lap.pace || null,
         time: lap.time || null,
         reps: lap.reps ? parseInt(lap.reps) : null,
@@ -188,7 +216,7 @@ export async function POST(request: NextRequest) {
         exercise: lap.exercise || null,
         // Convert display value to enum value
         restType: convertRestTypeToEnum(lap.restType),
-        pause: lap.pause || null,
+        pause: pauseValue,
         macroFinal: lap.macroFinal || null,
         alarm: lap.alarm ? parseInt(lap.alarm) : null,
         sound: lap.sound || null,
@@ -223,6 +251,7 @@ export async function POST(request: NextRequest) {
     if (manualMode) {
       console.log('✅ [API POST] Moveframe saved and returned:');
       console.log('   ID:', moveframe.id);
+      console.log('   manualInputType (stored in DB):', moveframe.manualInputType);
       console.log('   repetitions (stored on Moveframe):', moveframe.repetitions);
       console.log('   distance (stored on Moveframe):', moveframe.distance);
       console.log('   manualMode:', moveframe.manualMode);

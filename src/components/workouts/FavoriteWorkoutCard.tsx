@@ -191,10 +191,10 @@ export default function FavoriteWorkoutCard({
           </div>
         </div>
         
-        {tags && (
+        {tags && typeof tags === 'string' && tags.trim() && (
           <div className="mb-4">
             <div className="flex flex-wrap gap-2">
-              {tags.split(',').map((tag: string, idx: number) => (
+              {tags.split(',').filter((tag: string) => tag.trim()).map((tag: string, idx: number) => (
                 <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded">
                   {tag.trim()}
                 </span>

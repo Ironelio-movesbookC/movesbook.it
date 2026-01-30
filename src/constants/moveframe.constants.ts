@@ -23,7 +23,8 @@ export const MUSCULAR_SECTORS = [
   'Front thighs',
   'Hind thighs',
   'Calves',
-  'Tibials'
+  'Tibials',
+  'Glutes' // 2026-01-22 14:30 UTC - Added Glutes muscular sector
 ];
 
 // Rest type options
@@ -647,12 +648,191 @@ export const SPORTS_LIST = [
   'HIKING',
   'WALKING',
   'DANCING',
-  'CALISTENIC',
-  'CROSSFIT',
-  'SPARTAN',
+  'TRIATHLON',
+  'TRACK_FIELD',
+  'AMERICAN_FOOTBALL',
+  'ARCHERY',
+  'ARTISTIC_GYMNASTICS',
+  'ATHLETICS',
+  'BADMINTON',
+  'BASEBALL',
+  'BILLIARDS',
+  'BOATING',
+  'BOWLING',
+  'CANOE',
+  'CLASSIC_DANCE',
+  'CRICKET',
+  'CROSS_COUNTRY_SKIING',
+  'CYCLOCROSS',
+  'DANCE',
+  'DIPS',
+  'DIVING',
+  'DOWNHILL_SKIING',
+  'FENCING',
+  'FIELD_HOCKEY',
+  'FISHING',
+  'FREESTYLE_WRESTLING',
+  'HANDBALL',
+  'HANG_GLIDING',
+  'HORSE_RACING',
+  'ICE_HOCKEY',
+  'ICE_SKATING',
+  'JUMPS',
+  'KAYAK',
+  'KICKBOXING',
+  'LIFTING',
+  'MODERN_DANCE',
+  'MOTORING',
+  'MOUNTAIN_BIKE',
+  'MOUNTAIN_CLIMBING',
+  'PING_PONG',
+  'POLO',
+  'POWERLIFTING',
+  'RACQUETBALL',
+  'RHYTHMIC_GYMNASTICS',
+  'RUGBY',
+  'SAILING',
+  'SHOT_PUT',
+  'SKATEBOARD',
+  'SKI_JUMP',
+  'SKI_SLALOM',
+  'SNORKELING',
+  'SURFING',
+  'TANGO',
+  'TECHNICAL',
+  'THROWS',
+  'TREKKING',
+  'WATER_POLO',
+  'WATER_SKI',
+  'WINDSURF',
+  'CYCLING_TOURISM'
+] as const;
+
+// ============================================
+// SPORT CATEGORIZATION BY TYPE
+// ============================================
+
+/**
+ * SPORT SECTION A: AEROBIC SPORTS
+ * These sports need a moveframe input form dedicated to aerobic activities
+ * Form examples: SWIM, BIKE, RUNNING, MTB, spinning, hiking, walking, rowing, canoeing, skate, ski, snowboard
+ */
+export const SPORT_SECTION_A_AEROBIC = [
+  'SWIM',
+  'BIKE',
+  'MTB',
+  'SPINNING',
+  'RUN',
+  'ROWING',
+  'CANOEING',
+  'CANOE',
+  'KAYAK',
+  'SKATE',
+  'ICE_SKATING',
+  'SKI',
+  'SNOWBOARD',
+  'CROSS_COUNTRY_SKIING',
+  'DOWNHILL_SKIING',
+  'SKI_SLALOM',
+  'SKI_JUMP',
+  'HIKING',
+  'WALKING',
+  'TREKKING',
+  'CYCLING_TOURISM',
+  'CYCLOCROSS',
+  'MOUNTAIN_BIKE',
   'TRIATHLON',
   'TRACK_FIELD'
 ] as const;
+
+/**
+ * SPORT SECTION B: NOT AEROBIC SPORTS (with exercise catalogs)
+ * These sports need a moveframe input form dedicated to non-aerobic activities
+ * Each sport has a dedicated catalog of exercises
+ * Mixed test\Circuits button is ONLY available for these sports
+ */
+export const SPORT_SECTION_B_NON_AEROBIC_CATALOG = [
+  'BODY_BUILDING',
+  'STRETCHING',
+  'PILATES',
+  'YOGA',
+  'CALISTENIC',
+  'CROSSFIT',
+  'SPARTAN',
+  'GYMNASTIC',
+  'ARTISTIC_GYMNASTICS',
+  'RHYTHMIC_GYMNASTICS',
+  'POWERLIFTING',
+  'LIFTING',
+  'DIPS',
+  'JUMPS',
+  'THROWS',
+  'SHOT_PUT'
+] as const;
+
+/**
+ * SPORT SECTION C: TECHNICAL NOT AEROBIC SPORTS (manual entry, no catalogs)
+ * These sports need a moveframe input form dedicated to technical activities
+ * Exercises must be typed manually (no dedicated catalogs)
+ */
+export const SPORT_SECTION_C_TECHNICAL = [
+  'SOCCER',
+  'BASKETBALL',
+  'VOLLEYBALL',
+  'TENNIS',
+  'GOLF',
+  'BOXING',
+  'MARTIAL_ARTS',
+  'CLIMBING',
+  'MOUNTAIN_CLIMBING',
+  'DANCING',
+  'DANCE',
+  'CLASSIC_DANCE',
+  'MODERN_DANCE',
+  'TANGO',
+  'AMERICAN_FOOTBALL',
+  'ARCHERY',
+  'ATHLETICS',
+  'BADMINTON',
+  'BASEBALL',
+  'BILLIARDS',
+  'BOATING',
+  'BOWLING',
+  'CRICKET',
+  'FENCING',
+  'FIELD_HOCKEY',
+  'FISHING',
+  'FREESTYLE_WRESTLING',
+  'HANDBALL',
+  'HANG_GLIDING',
+  'HORSE_RACING',
+  'ICE_HOCKEY',
+  'KICKBOXING',
+  'PING_PONG',
+  'POLO',
+  'RACQUETBALL',
+  'RUGBY',
+  'SAILING',
+  'SKATEBOARD',
+  'SNORKELING',
+  'SURFING',
+  'WATER_POLO',
+  'WATER_SKI',
+  'WINDSURF',
+  'DIVING',
+  'MOTORING',
+  'TECHNICAL_MOVES',
+  'FREE_MOVES',
+  'TECHNICAL'
+] as const;
+
+/**
+ * Helper function to check if a sport belongs to Section B (non-aerobic with catalog)
+ * Only Section B sports can use the Mixed test\Circuits feature
+ */
+export const isSportSectionB = (sport: string): boolean => {
+  return SPORT_SECTION_B_NON_AEROBIC_CATALOG.includes(sport as any);
+};
 
 // Sports that use distance/duration tracking (all others use series/repetitions)
 export const DISTANCE_BASED_SPORTS = [
@@ -785,10 +965,95 @@ export const shouldShowPaceField = (sport: string): boolean => {
 // Helper function to get display name for sports
 export const getSportDisplayName = (sport: string): string => {
   const displayNames: Record<string, string> = {
-    'MTB': 'Mountain Bike',
+    'MTB': 'MTB',
     'BODY_BUILDING': 'BODY BUILDING',
     'TECHNICAL_MOVES': 'TECHNICAL MOVES',
-    'FREE_MOVES': 'FREE MOVES'
+    'FREE_MOVES': 'FREE MOVES',
+    'AMERICAN_FOOTBALL': 'American Football',
+    'ARCHERY': 'Archery',
+    'ARTISTIC_GYMNASTICS': 'Artistic Gymnastics',
+    'ATHLETICS': 'Athletics',
+    'BADMINTON': 'Badminton',
+    'BASEBALL': 'Baseball',
+    'BILLIARDS': 'Billiards',
+    'BOATING': 'Boating',
+    'BOWLING': 'Bowling',
+    'CALISTENIC': 'Calisthenics',
+    'CANOE': 'Canoe',
+    'CANOEING': 'Canoeing',
+    'CLASSIC_DANCE': 'Classic Dance',
+    'CRICKET': 'Cricket',
+    'CROSS_COUNTRY_SKIING': 'Cross-Country Skiing',
+    'CYCLOCROSS': 'Cyclocross',
+    'DANCE': 'Dance',
+    'DIPS': 'Dips',
+    'DIVING': 'Diving',
+    'DOWNHILL_SKIING': 'Downhill Skiing',
+    'FENCING': 'Fencing',
+    'FIELD_HOCKEY': 'Field Hockey',
+    'FISHING': 'Fishing',
+    'FREESTYLE_WRESTLING': 'Freestyle Wrestling',
+    'HANDBALL': 'Handball',
+    'HANG_GLIDING': 'Hang Gliding',
+    'HORSE_RACING': 'Horse Racing',
+    'ICE_HOCKEY': 'Ice Hockey',
+    'ICE_SKATING': 'Ice Skating',
+    'JUMPS': 'Jumps',
+    'KAYAK': 'Kayak',
+    'KICKBOXING': 'Kickboxing',
+    'LIFTING': 'Lifting',
+    'MARTIAL_ARTS': 'Martial Arts',
+    'MODERN_DANCE': 'Modern Dance',
+    'MOTORING': 'Motoring',
+    'MOUNTAIN_BIKE': 'Mountain Bike',
+    'MOUNTAIN_CLIMBING': 'Mountain Climbing',
+    'PING_PONG': 'Ping Pong',
+    'POLO': 'Polo',
+    'POWERLIFTING': 'Powerlifting',
+    'RACQUETBALL': 'Racquetball',
+    'RHYTHMIC_GYMNASTICS': 'Rhythmic Gymnastics',
+    'RUGBY': 'Rugby',
+    'SAILING': 'Sailing',
+    'SHOT_PUT': 'Shot Put',
+    'SKATEBOARD': 'Skateboard',
+    'SKI_JUMP': 'Ski Jump',
+    'SKI_SLALOM': 'Ski Slalom',
+    'SNORKELING': 'Snorkeling',
+    'SPARTAN': 'Spartan Race',
+    'SPINNING': 'Spinning',
+    'SURFING': 'Surfing',
+    'TANGO': 'Tango',
+    'TECHNICAL': 'Technical Training',
+    'THROWS': 'Throws',
+    'TRACK_FIELD': 'Track & Field',
+    'TREKKING': 'Trekking',
+    'WATER_POLO': 'Water Polo',
+    'WATER_SKI': 'Water Ski',
+    'WINDSURF': 'Windsurf',
+    'CYCLING_TOURISM': 'Cycling Tourism',
+    'BIKE': 'Bike',
+    'BOXING': 'Boxing',
+    'CLIMBING': 'Climbing',
+    'CROSSFIT': 'CrossFit',
+    'DANCING': 'Dancing',
+    'GOLF': 'Golf',
+    'GYMNASTIC': 'Gymnastic',
+    'HIKING': 'Hiking',
+    'PILATES': 'Pilates',
+    'ROWING': 'Rowing',
+    'RUN': 'Run',
+    'SKATE': 'Skate',
+    'SKI': 'Ski',
+    'SNOWBOARD': 'Snowboard',
+    'SOCCER': 'Soccer',
+    'STRETCHING': 'Stretching',
+    'SWIM': 'Swim',
+    'TENNIS': 'Tennis',
+    'TRIATHLON': 'Triathlon',
+    'VOLLEYBALL': 'Volleyball',
+    'WALKING': 'Walking',
+    'YOGA': 'Yoga',
+    'BASKETBALL': 'Basketball'
   };
   
   return displayNames[sport] || sport.replace(/_/g, ' ');

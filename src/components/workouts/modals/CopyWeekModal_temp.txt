@@ -1,0 +1,34 @@
+import React, { useState } from 'react';
+import { X, CheckSquare, Square, Hash } from 'lucide-react';
+
+interface CopyWeekModalProps {
+  isOpen: boolean;
+  sourceWeek: any;
+  allWeeks: any[];
+  onClose: () => void;
+  onCopy: (targetWeekId: string) => Promise<void>;
+}
+
+export default function CopyWeekModal({ 
+  isOpen, 
+  sourceWeek, 
+  allWeeks, 
+  onClose, 
+  onCopy 
+}: CopyWeekModalProps) {
+  const [copyMode, setCopyMode] = useState<'select' | 'consecutive'>('select');
+  const [selectedWeekIds, setSelectedWeekIds] = useState<Set<string>>(new Set());
+  const [consecutiveCount, setConsecutiveCount] = useState<number>(1);
+  const [isLoading, setIsLoading] = useState(false);
+
+  if (!isOpen || !sourceWeek) return null;
+
+  // Find the source week index
+  const sourceWeekIndex = allWeeks.findIndex(w => w.id === sourceWeek.id);
+  
+  // Get consecutive weeks starting from the source week
+  const getConsecutiveWeeks = (count: number) => {
+    if (sourceWeekIndex === -1) return [];
+    const startIndex = sourceWeekIndex + 1; // Start from next week
+    return allWeeks.slice(startIndex, startIndex + count);
+  };

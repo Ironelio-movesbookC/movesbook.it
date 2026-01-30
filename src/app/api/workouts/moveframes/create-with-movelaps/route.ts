@@ -20,6 +20,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    
+    console.log('🚨🚨🚨 [API CREATE] FULL REQUEST BODY:');
+    console.log(JSON.stringify(body, null, 2));
+    
     const {
       workoutSessionId,
       sectionId,
@@ -35,9 +39,24 @@ export async function POST(request: NextRequest) {
       annotationBold,
       manualMode,
       manualPriority,
+      manualInputType,
+      manualRepetitions,
+      manualDistance,
       macroFinal,
       appliedTechnique
     } = body;
+    
+    console.log('📥 [API CREATE] Extracted values:');
+    console.log('  manualInputType:', `"${manualInputType}"`);
+    console.log('  Type:', typeof manualInputType);
+    console.log('  Is undefined?:', manualInputType === undefined);
+    console.log('  Is null?:', manualInputType === null);
+    console.log('  Is empty string?:', manualInputType === '');
+    console.log('  Truthy?:', !!manualInputType);
+    console.log('  manualMode:', manualMode);
+    console.log('  manualPriority:', manualPriority);
+    console.log('  manualRepetitions:', manualRepetitions);
+    console.log('  manualDistance:', manualDistance);
 
     // Validation
     if (!workoutSessionId || !sectionId || !letter || !sport || !description) {
@@ -84,25 +103,38 @@ export async function POST(request: NextRequest) {
         type: moveframeType
       });
 
+      const moveframeDataToSave = {
+        workoutSessionId,
+        sectionId,
+        letter,
+        sport,
+        type: moveframeType,
+        description,
+        notes: notes || null,
+        manualMode: manualMode || false,
+        manualPriority: manualPriority || false,
+        manualInputType: manualInputType || 'meters',
+        repetitions: manualRepetitions ? parseInt(manualRepetitions) : null,
+        distance: manualDistance ? parseInt(manualDistance) : null,
+        macroFinal: macroFinal || null,
+        appliedTechnique: appliedTechnique || null,
+        // Annotation fields: only save if type is ANNOTATION
+        annotationText: moveframeType === 'ANNOTATION' ? (annotationText || null) : null,
+        annotationBgColor: moveframeType === 'ANNOTATION' ? (annotationBgColor || null) : null,
+        annotationTextColor: moveframeType === 'ANNOTATION' ? (annotationTextColor || null) : null,
+        annotationBold: moveframeType === 'ANNOTATION' ? (annotationBold !== undefined ? annotationBold : false) : false
+      };
+      
+      console.log('💾 [API CREATE] Saving moveframe with:', {
+        manualMode: moveframeDataToSave.manualMode,
+        manualPriority: moveframeDataToSave.manualPriority,
+        manualInputType: `"${moveframeDataToSave.manualInputType}"`,
+        repetitions: moveframeDataToSave.repetitions,
+        distance: moveframeDataToSave.distance
+      });
+      
       const moveframe = await tx.moveframe.create({
-        data: {
-          workoutSessionId,
-          sectionId,
-          letter,
-          sport,
-          type: moveframeType,
-          description,
-          notes: notes || null,
-          manualMode: manualMode || false,
-          manualPriority: manualPriority || false,
-          macroFinal: macroFinal || null,
-          appliedTechnique: appliedTechnique || null,
-          // Annotation fields: only save if type is ANNOTATION
-          annotationText: moveframeType === 'ANNOTATION' ? (annotationText || null) : null,
-          annotationBgColor: moveframeType === 'ANNOTATION' ? (annotationBgColor || null) : null,
-          annotationTextColor: moveframeType === 'ANNOTATION' ? (annotationTextColor || null) : null,
-          annotationBold: moveframeType === 'ANNOTATION' ? (annotationBold !== undefined ? annotationBold : false) : false
-        }
+        data: moveframeDataToSave
       });
 
       console.log('✅ Moveframe created:', {
@@ -110,6 +142,15 @@ export async function POST(request: NextRequest) {
         manualMode: moveframe.manualMode,
         hasNotes: !!moveframe.notes
       });
+      
+      console.log('🚨🚨🚨 [API CREATE] CRITICAL - What Prisma actually saved:');
+      console.log('  moveframe.id:', moveframe.id);
+      console.log('  moveframe.manualMode:', moveframe.manualMode);
+      console.log('  moveframe.manualPriority:', moveframe.manualPriority);
+      console.log('  moveframe.manualInputType:', `"${moveframe.manualInputType}"`);
+      console.log('  moveframe.repetitions:', moveframe.repetitions);
+      console.log('  moveframe.distance:', moveframe.distance);
+      console.log('  Type of manualInputType from DB:', typeof moveframe.manualInputType);
 
       // Create all movelaps (skip if empty array for ANNOTATION type)
       const createdMovelaps = movelaps && movelaps.length > 0 

@@ -29,12 +29,12 @@ thead th:not(.sticky-header-1):not(.sticky-header-2):not(.sticky-header-3):not(.
   z-index: 500 !important;
 }
 
-/* Prevent blue background from bleeding into borders */
+/* Ensure headers cover their full area including borders */
 th {
-  background-clip: padding-box !important;
+  background-clip: border-box !important;
 }
 
-/* Sticky columns need solid backgrounds */
+/* Sticky columns need solid backgrounds that extend to borders */
 td.sticky-col-1,
 td.sticky-col-2,
 td.sticky-col-3,
@@ -44,17 +44,52 @@ td.sticky-col-6,
 td.sticky-col-7,
 td.sticky-col-8,
 td.sticky-options-col {
-  background-clip: padding-box !important;
-  opacity: 1 !important; /* Ensure full opacity */
+  background-clip: border-box !important; /* Cover borders to prevent gaps */
+  opacity: 1 !important;
 }
 
-/* Hide default scrollbar on table container */
+/* Ensure sticky columns have opaque backgrounds when not explicitly set */
+td.sticky-col-1:not([style*="background"]),
+td.sticky-col-2:not([style*="background"]),
+td.sticky-col-3:not([style*="background"]),
+td.sticky-col-4:not([style*="background"]),
+td.sticky-col-5:not([style*="background"]),
+td.sticky-col-6:not([style*="background"]),
+td.sticky-col-7:not([style*="background"]),
+td.sticky-col-8:not([style*="background"]) {
+  background-color: white !important;
+}
+
+/* Ensure sticky headers have opaque backgrounds covering entire cell */
+th.sticky-header-1,
+th.sticky-header-2,
+th.sticky-header-3,
+th.sticky-header-4,
+th.sticky-header-5,
+th.sticky-header-6,
+th.sticky-header-7,
+th.sticky-header-8 {
+  background-clip: border-box !important; /* Cover borders to prevent gaps */
+}
+
+/* Style scrollbar on table container */
 .table-scrollbar::-webkit-scrollbar {
-  display: none;
+  height: 12px;
+}
+.table-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+.table-scrollbar::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+.table-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #555;
 }
 .table-scrollbar {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  scrollbar-width: thin;  /* Firefox - show thin scrollbar */
+  scrollbar-color: #888 #f1f1f1;  /* Firefox */
 }
 
 /* Sticky bottom scrollbar styling */
@@ -89,7 +124,36 @@ td.sticky-col-8 {
   position: -webkit-sticky !important;
   position: sticky !important;
   z-index: 999 !important; /* Very high z-index to ensure it's always on top */
-  box-shadow: 2px 0 5px -2px rgba(0, 0, 0, 0.15) !important; /* Slightly stronger shadow for better visual separation */
+}
+
+/* Apply subtle shadow only to the rightmost sticky column group */
+td.sticky-col-1,
+td.sticky-col-2,
+td.sticky-col-3,
+td.sticky-col-4,
+td.sticky-col-5,
+td.sticky-col-6,
+td.sticky-col-7 {
+  box-shadow: none !important;
+}
+
+/* Only apply shadow to the last sticky column (Workouts column) */
+/* This creates a visual separation between sticky and scrollable content */
+td.sticky-col-8 {
+  box-shadow: 2px 0 5px -2px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Ensure sticky column backgrounds are always solid and opaque */
+tbody td.sticky-col-1[style*="background"],
+tbody td.sticky-col-2[style*="background"],
+tbody td.sticky-col-3[style*="background"],
+tbody td.sticky-col-4[style*="background"],
+tbody td.sticky-col-5[style*="background"],
+tbody td.sticky-col-6[style*="background"],
+tbody td.sticky-col-7[style*="background"],
+tbody td.sticky-col-8[style*="background"] {
+  /* Background is set via inline styles */
+  background-clip: border-box !important; /* Cover borders to prevent gaps */
 }
 
 th.sticky-header-1,
@@ -134,27 +198,27 @@ th.sticky-header-5 {
   left: 250px !important;
 }
 
-/* Column 6 - Dayname OR Match done (300px = 50 + 50 + 90 + 60 + 50, width: 80px for Dayname, 60px for Match done) */
-/* For 3 weeks plans (A,B,C): Column 6 = Match done at 300px */
-/* For other sections: Column 6 = Dayname at 300px */
+/* Column 6 - Dayname OR Workouts (300px = 50 + 50 + 90 + 60 + 50, width: 120px for Dayname, 80px for Workouts) */
+/* For Section A: Column 6 = Workouts at 300px */
+/* For Sections B, C, D: Column 6 = Dayname at 300px */
 td.sticky-col-6,
 th.sticky-header-6 { 
   left: 300px !important;
 }
 
-/* Column 7 - Match done OR Workouts */
-/* For 3 weeks plans (A,B,C): Column 7 = Workouts at 360px (300 + 60) */
-/* For other sections: Column 7 = Match done at 380px (300 + 80) */
+/* Column 7 - Match done OR Workouts (420px = 300 + 120) */
+/* For Sections B, C: Column 7 = Match done at 420px */
+/* For Section D: Column 7 = Workouts at 420px */
 td.sticky-col-7,
 th.sticky-header-7 { 
-  left: 360px !important; /* For 3 weeks plans */
+  left: 420px !important;
 }
 
-/* Column 8 - Workouts (440px = 50 + 50 + 90 + 60 + 50 + 80 + 60, width: 80px) */
-/* Only used for non-3-weeks sections */
+/* Column 8 - Workouts (480px = 300 + 120 + 60, width: 80px) */
+/* Only used for Sections B and C (Dayname + Match done + Workouts) */
 td.sticky-col-8,
 th.sticky-header-8 { 
-  left: 440px !important;
+  left: 480px !important;
 }
 
 /* Headers - Higher z-index to stay on top */
@@ -167,9 +231,28 @@ th.sticky-header-6,
 th.sticky-header-7,
 th.sticky-header-8 {
   z-index: 1000 !important; /* Higher than sticky data cells */
-  box-shadow: 2px 0 5px -2px rgba(0, 0, 0, 0.15) !important; /* Slightly stronger shadow */
   opacity: 1 !important; /* Ensure full opacity */
 }
+
+/* Remove shadows from all individual sticky header columns except the last one */
+th.sticky-header-1,
+th.sticky-header-2,
+th.sticky-header-3,
+th.sticky-header-4,
+th.sticky-header-5,
+th.sticky-header-6,
+th.sticky-header-7 {
+  box-shadow: none !important;
+}
+
+/* Only apply shadow to the last sticky header column */
+th.sticky-header-8 {
+  box-shadow: 2px 0 5px -2px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Section A: sticky-col-6 is the last sticky column (Workouts) */
+/* Add shadow to sticky-col-6 when sticky-col-7 and sticky-col-8 are not present */
+/* This is handled contextually in the component */
 
 /* Data cells - Background color is set via inline styles in component */
 /* Removed inherit rule to allow inline styles to take precedence */
@@ -181,6 +264,8 @@ td.sticky-options-col {
   right: 0 !important;
   z-index: 999 !important; /* Match left sticky columns z-index */
   box-shadow: -2px 0 5px -2px rgba(0, 0, 0, 0.15) !important; /* Shadow on left edge */
+  background-clip: border-box !important;
+  opacity: 1 !important; /* Ensure full opacity */
 }
 
 th.sticky-options-header {
@@ -189,6 +274,7 @@ th.sticky-options-header {
   right: 0 !important;
   z-index: 1000 !important; /* Match left sticky headers z-index */
   box-shadow: -2px 0 5px -2px rgba(0, 0, 0, 0.15) !important; /* Shadow on left edge */
+  background-clip: border-box !important;
   opacity: 1 !important;
 }
 

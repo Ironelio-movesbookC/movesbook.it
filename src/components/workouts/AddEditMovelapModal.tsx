@@ -3,6 +3,15 @@
 import React, { useState, useEffect } from 'react';
 import { X, Copy } from 'lucide-react';
 
+// 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
+const stripCircuitTags = (content: string | null | undefined): string => {
+  if (!content) return '';
+  return content
+    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+    .trim();
+};
+
 interface AddEditMovelapModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -83,6 +92,26 @@ export default function AddEditMovelapModal({
 }: AddEditMovelapModalProps) {
   const sport = moveframe.sport || 'SWIM';
   const config = SPORT_CONFIGS[sport as keyof typeof SPORT_CONFIGS] || SPORT_CONFIGS.SWIM;
+  
+  // Check if this is a manual moveframe
+  const isManualMoveframe = moveframe.manualMode === true;
+  
+  // Extract circuit metadata if this is a circuit movelap
+  const extractCircuitMetadata = () => {
+    if (!existingMovelap?.notes || typeof existingMovelap.notes !== 'string') return null;
+    const metaMatch = existingMovelap.notes.match(/\[CIRCUIT_META\](.*?)\[\/CIRCUIT_META\]/);
+    if (metaMatch && metaMatch[1]) {
+      try {
+        return JSON.parse(metaMatch[1]);
+      } catch (e) {
+        console.error('Failed to parse circuit metadata:', e);
+        return null;
+      }
+    }
+    return null;
+  };
+  
+  const circuitMetadata = extractCircuitMetadata();
 
   // Form state - inherit from moveframe
   const [sequence, setSequence] = useState(1);
@@ -350,12 +379,38 @@ export default function AddEditMovelapModal({
   };
 
   const handleSave = async () => {
-    if (!validateForm()) return;
+    // For manual movelaps, skip validation
+    if (!isManualMoveframe || mode !== 'edit') {
+      if (!validateForm()) return;
+    }
 
     setIsSaving(true);
 
     try {
-      const movelapData = {
+      // For manual movelaps in edit mode, preserve all existing data and only update notes
+      const movelapData = (isManualMoveframe && mode === 'edit' && existingMovelap) ? {
+        repetitionNumber: existingMovelap.repetitionNumber,
+        distance: existingMovelap.distance,
+        speed: existingMovelap.speed,
+        style: existingMovelap.style,
+        pace: existingMovelap.pace,
+        time: existingMovelap.time,
+        pause: existingMovelap.pause,
+        macroFinal: existingMovelap.macroFinal,
+        alarm: existingMovelap.alarm,
+        sound: existingMovelap.sound,
+        notes, // Updated notes value
+        reps: existingMovelap.reps,
+        weight: existingMovelap.weight,
+        muscularSector: existingMovelap.muscularSector,
+        exercise: existingMovelap.exercise,
+        restType: existingMovelap.restType,
+        tools: existingMovelap.tools,
+        r1: existingMovelap.r1,
+        r2: existingMovelap.r2,
+        status: existingMovelap.status,
+        moveframeId: moveframe.id
+      } : {
         repetitionNumber: sequence,
         distance: distance ? parseInt(distance) : null,
         speed,
@@ -385,6 +440,66 @@ export default function AddEditMovelapModal({
       };
 
       console.log('📤 Saving movelap:', movelapData);
+      console.log('📝 Manual movelap notes being saved:', notes);
+      console.log('🔍 Is manual moveframe:', isManualMoveframe, 'Mode:', mode);
+      console.log('🔍 Existing movelap ID:', existingMovelap?.id);
+      
+      // Check if this is a temporary ID (for old manual moveframes without real movelaps)
+      const isTempId = existingMovelap?.id && (
+        typeof existingMovelap.id === 'string' && (
+          existingMovelap.id.startsWith('temp-') || 
+          existingMovelap.id === 'temp-manual-movelap'
+        )
+      );
+      
+      if (isTempId && isManualMoveframe && mode === 'edit') {
+        console.log('⚠️ Detected temporary movelap ID. Creating new movelap for this manual moveframe.');
+        
+        // Create a new movelap instead of updating the non-existent one
+        const token = localStorage.getItem('token');
+        if (!token) {
+          alert('Authentication required');
+          setIsSaving(false);
+          return;
+        }
+        
+        try {
+          // Create new movelap with notes
+          const response = await fetch('/api/workouts/movelaps', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              moveframeId: moveframe.id,
+              repetitionNumber: 1,
+              distance: moveframe.distance || 0,
+              notes: notes,
+              status: 'PENDING',
+              isSkipped: false,
+              isDisabled: false
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to create movelap');
+          }
+          
+          console.log('✅ Created new movelap for manual moveframe');
+          onClose();
+          
+          // Refresh the page to show the new movelap
+          window.location.reload();
+        } catch (error) {
+          console.error('Error creating movelap:', error);
+          alert('Failed to save summary. Please try again.');
+        } finally {
+          setIsSaving(false);
+        }
+        return;
+      }
+      
       await onSave(movelapData);
       onClose();
     } catch (error) {
@@ -405,10 +520,25 @@ export default function AddEditMovelapModal({
           <div>
             <h2 className="text-xl font-bold">
               {mode === 'add' ? 'Add Movelap' : 'Edit Movelap'}
+              {circuitMetadata && (
+                <span className="ml-3 text-sm font-normal bg-white/20 px-3 py-1 rounded">
+                  Circuit {circuitMetadata.circuitLetter} • Series {circuitMetadata.localSeriesNumber || circuitMetadata.seriesNumber} • Station {circuitMetadata.stationNumber}
+                </span>
+              )}
             </h2>
             <p className="text-xs text-blue-100 mt-1">
-              Moveframe: {moveframe.description || 'No description'}
+              Moveframe: {stripCircuitTags(moveframe.description) || 'No description'}
             </p>
+            {circuitMetadata && (
+              <p className="text-xs text-blue-100 mt-1">
+                📍 {circuitMetadata.sector ? `Sector: ${circuitMetadata.sector}` : 'No sector assigned'}
+              </p>
+            )}
+            {isManualMoveframe && mode === 'edit' && (
+              <p className="text-xs text-yellow-200 font-semibold mt-1">
+                ⚠️ Manual Movelap - Only summary can be edited
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -428,6 +558,22 @@ export default function AddEditMovelapModal({
             </div>
           )}
 
+          {/* For manual movelaps in edit mode, show only the summary field */}
+          {isManualMoveframe && mode === 'edit' ? (
+            <div className="h-full flex flex-col">
+              <label className="block text-lg font-bold text-gray-700 mb-3">
+                Summary / Notes
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="w-full flex-1 px-4 py-3 text-base border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                placeholder="Enter summary or notes for this manual movelap..."
+                style={{ minHeight: '400px' }}
+              />
+            </div>
+          ) : (
+            <>
           {/* Sequence */}
           <div className="mb-4">
             <label className="block text-sm font-bold text-gray-700 mb-2">
@@ -884,6 +1030,8 @@ export default function AddEditMovelapModal({
               />
             </div>
           </div>
+          </>
+          )}
         </div>
 
         {/* Footer */}

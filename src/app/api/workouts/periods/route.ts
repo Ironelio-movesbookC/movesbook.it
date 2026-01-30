@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     // Get all periods for this user
     const periods = await prisma.period.findMany({
       where: { userId: decoded.userId },
-      orderBy: { name: 'asc' }
+      orderBy: { displayOrder: 'asc' }
     });
 
     console.log(`📊 Found ${periods.length} periods for user ${decoded.userId}`);

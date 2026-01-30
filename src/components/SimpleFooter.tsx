@@ -4,7 +4,7 @@ import { Mail, Phone, MapPin, Facebook, Twitter, Instagram, Linkedin } from 'luc
 
 export default function SimpleFooter() {
   return (
-    <footer className="bg-gray-800 text-white border-t border-gray-700">
+    <footer className="bg-gray-800 text-white border-t border-gray-700 relative z-20">
       <div className="container mx-auto px-6 py-8">
         {/* Main Footer Content */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-6">

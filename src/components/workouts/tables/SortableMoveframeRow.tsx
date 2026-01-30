@@ -9,6 +9,15 @@ import { getSportIcon, isImageIcon } from '@/utils/sportIcons';
 import { useSportIconType } from '@/hooks/useSportIconType';
 import { getSportDisplayName, DISTANCE_BASED_SPORTS } from '@/constants/moveframe.constants';
 
+// 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
+const stripCircuitTags = (content: string | null | undefined): string => {
+  if (!content) return '';
+  return content
+    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+    .trim();
+};
+
 interface SortableMoveframeRowProps {
   moveframe: any;
   mfIndex: number;
@@ -486,11 +495,27 @@ export default function SortableMoveframeRow({
         // For manual mode with priority, use notes field first (it contains the full rich text content)
         // Description field might be truncated for database constraints
         // If manual mode WITHOUT priority, show blank (user wants to hide content)
-        const manualContent = (isManualMode && hasManualPriority)
+        // 2026-01-22 14:45 UTC - Strip circuit tags from all content
+        // 2026-01-27 - For circuit-based moveframes, always show description
+        const isCircuitBased = moveframe.isCircuitBased === true;
+        const rawContent = (isManualMode && hasManualPriority)
           ? (moveframe.notes || moveframe.description || '') 
           : isManualMode && !hasManualPriority
           ? '' // Blank for manual mode without priority
           : moveframe.description;
+        const manualContent = stripCircuitTags(rawContent);
+        
+        // Debug logging for circuit-based moveframes
+        if (isCircuitBased) {
+          console.log(`🔄 [SortableMoveframeRow] Circuit-based moveframe ${moveframe.letter}:`, {
+            isCircuitBased,
+            hasDescription: !!moveframe.description,
+            description: moveframe.description,
+            descriptionLength: moveframe.description?.length || 0,
+            manualContent,
+            manualContentLength: manualContent?.length || 0
+          });
+        }
         
         // Debug logging for manual mode
         if (isManualMode) {
@@ -562,6 +587,12 @@ export default function SortableMoveframeRow({
                     console.log(`📄 [SortableMoveframeRow] Manual mode without priority for ${moveframe.letter}: showing BLANK`);
                     return ''; // Return empty string for blank cell
                   }
+                  // For circuit-based moveframes, show description or "No description"
+                  if (moveframe.isCircuitBased) {
+                    const displayText = manualContent || 'No circuit description';
+                    console.log(`🔄 [SortableMoveframeRow] Circuit display for ${moveframe.letter}:`, displayText);
+                    return displayText;
+                  }
                   const displayText = manualContent || moveframe.annotationText || 'No description';
                   return displayText;
                 })()}
@@ -584,17 +615,61 @@ export default function SortableMoveframeRow({
         if (moveframe.type === 'ANNOTATION') {
           durationDisplay = '—';
         } else if (isManualModeDuration && isAerobicSportDuration) {
-          // For manual mode with aerobic sports, get distance from movelap
+          // For manual mode with aerobic sports, check input type (meters or time)
+          const manualInputType = moveframe.manualInputType || 'meters';
           const firstMovelap = moveframe.movelaps?.[0];
-          if (firstMovelap && firstMovelap.distance) {
-            durationDisplay = `${firstMovelap.distance}m`;
+          
+          console.log('📊 [TABLE] Manual mode display - Moveframe:', moveframe.letter);
+          console.log('  Sport:', moveframe.sport);
+          console.log('  Manual Input Type:', manualInputType);
+          console.log('  Distance (raw):', moveframe.distance);
+          console.log('  Manual Mode:', moveframe.manualMode);
+          
+          if (manualInputType === 'time') {
+            // Display time format (from distance field which stores deciseconds)
+            const deciseconds = moveframe.distance || 0;
+            console.log('  🕐 Converting deciseconds to time:', deciseconds);
+            console.log('  🔍 manualInputType from database:', moveframe.manualInputType);
+            console.log('  🔍 Full moveframe object:', JSON.stringify({
+              id: moveframe.id,
+              letter: moveframe.letter,
+              distance: moveframe.distance,
+              manualInputType: moveframe.manualInputType,
+              manualMode: moveframe.manualMode
+            }));
+            if (deciseconds > 0) {
+              // Convert deciseconds back to time format
+              const totalSeconds = Math.floor(deciseconds / 10);
+              const ds = deciseconds % 10;
+              const hours = Math.floor(totalSeconds / 3600);
+              const minutes = Math.floor((totalSeconds % 3600) / 60);
+              const seconds = totalSeconds % 60;
+              const timeFormatted = `${hours}h${minutes.toString().padStart(2, '0')}'${seconds.toString().padStart(2, '0')}"${ds}`;
+              durationDisplay = timeFormatted;
+              console.log('  ✅ Time display SET TO:', durationDisplay);
+              console.log('  🔍 Variable durationDisplay type:', typeof durationDisplay);
+              console.log('  🔍 Variable durationDisplay length:', durationDisplay.length);
+            } else {
+              durationDisplay = '0h00\'00"0';
+              console.log('  ⚠️ Zero deciseconds, showing:', durationDisplay);
+            }
           } else {
-            durationDisplay = '—';
+            // Display meters (default)
+            // For manual mode, read from moveframe.distance directly
+            const distanceValue = moveframe.distance || firstMovelap?.distance || 0;
+            console.log('  📏 Displaying meters:', distanceValue);
+            if (distanceValue > 0) {
+              durationDisplay = `${distanceValue}m`;
+              console.log('  ✅ Meters display:', durationDisplay);
+            } else {
+              durationDisplay = '—';
+              console.log('  ⚠️ Zero meters, showing:', durationDisplay);
+            }
           }
         } else if (isManualModeDuration && !isAerobicSportDuration) {
-          // For manual mode with non-aerobic sports, display total series from repetitions field
-          const totalSeries = parseInt(moveframe.repetitions) || 0;
-          durationDisplay = totalSeries > 0 ? `${totalSeries} series` : '—';
+          // For manual mode with non-aerobic sports, Duration column should be empty
+          // Series value only shows in Rip\Sets column
+          durationDisplay = '—';
         } else if (isSeriesBased) {
           // Show total series
           const totalSeries = moveframe.movelaps?.length || 0;
@@ -621,6 +696,8 @@ export default function SortableMoveframeRow({
           // Show total distance in meters
           durationDisplay = totalDistance > 0 ? `${totalDistance}m` : '—';
         }
+        
+        console.log(`🎯 [RENDER] About to render Dur cell for ${moveframe.letter}:`, durationDisplay);
         
         return (
           <td 
@@ -653,9 +730,10 @@ export default function SortableMoveframeRow({
         if (moveframe.type === 'ANNOTATION') {
           ripDisplay = '—';
         } else if (isManualModeRip && !isAerobicSport) {
-          // For non-aerobic sports in manual mode, show repetitions from moveframe.repetitions field
+          // For non-aerobic sports in manual mode, show repetitions from moveframe.repetitions field with "series" unit
           // (not movelaps count, because manual mode has no movelaps)
-          ripDisplay = moveframe.repetitions || 0;
+          const seriesValue = moveframe.repetitions || 0;
+          ripDisplay = seriesValue > 0 ? `${seriesValue} series` : '—';
         } else if (isManualModeRip && isAerobicSport) {
           // For aerobic sports in manual mode, show "—"
           ripDisplay = '—';
@@ -762,15 +840,16 @@ export default function SortableMoveframeRow({
         return (
            <td 
              key="options" 
-             className="border border-gray-200 px-1 py-1 text-center" 
+             className="border border-gray-200 px-1 py-1 text-center sticky-options-col" 
              style={{
                width: '250px',
-               position: 'relative',
-               overflow: 'visible',
+               minWidth: '250px',
                ...(isAnnotation ? {
                  backgroundColor: annotationBgColor || '#5168c2',
                  color: annotationTextColor || '#ffffff'
-               } : {})
+               } : {
+                 backgroundColor: '#ffffff'
+               })
              }}
            >
             <div className="flex items-center justify-center gap-1 flex-wrap" style={{ position: 'relative', zIndex: 1 }}>
@@ -897,8 +976,8 @@ export default function SortableMoveframeRow({
       {/* Movelaps Detail Table - Level 3: Indented from moveframe table */}
       {isMovelapsExpanded && (
         <tr>
-          <td colSpan={visibleColumns.length} className="border border-gray-200 p-0" style={{ backgroundColor: 'rgb(250, 255, 214)' }}>
-            <div className="pl-8" style={{ maxWidth: '1400px' }}>
+          <td colSpan={visibleColumns.length} className="border border-gray-200 p-0" style={{ backgroundColor: 'rgb(250, 255, 214)', overflow: 'visible', maxWidth: 0 }}>
+            <div className="pl-8">
               <MovelapDetailTable 
                 moveframe={moveframe}
                 onEditMovelap={(movelap) => onEditMovelap?.(movelap, moveframe)}
@@ -1056,7 +1135,7 @@ export default function SortableMoveframeRow({
               <div className="mt-2 pt-2 border-t border-gray-200">
                 <div className="font-semibold text-gray-700 mb-1 text-[10px]">Notes:</div>
                 <div className="text-gray-900 bg-yellow-50 p-2 rounded text-[10px]">
-                  {hoveredMoveframe.notes}
+                  {stripCircuitTags(hoveredMoveframe.notes)}
                 </div>
               </div>
             )}

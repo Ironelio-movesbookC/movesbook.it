@@ -41,20 +41,24 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
     }
   }, [isOpen, autoPrint]);
 
-  // Reset week index when modal opens
+  // Reset week index and aggregated view when modal opens
   React.useEffect(() => {
     if (isOpen) {
       setCurrentWeekIndex(0);
+      // Show aggregated view by default when in multi-week mode
+      setShowAggregatedTotals(isMultiWeekView);
       console.log('📊 WeekTotalsModal opened:', {
         activeSection,
         isMultiWeekView,
-        weeksCount: weeks?.length || 0,
+        singleWeek: week?.weekNumber || 'N/A',
+        weeksArray: weeks?.length || 0,
         weekNumbers: weeks?.map((w: any) => w.weekNumber) || [],
         hasWeeks: !!weeks,
-        shouldShowNavigation: weeks && weeks.length > 1
+        shouldShowNavigation: isMultiWeekView && weeks && weeks.length > 1,
+        showAggregatedButton: isMultiWeekView && weeks && weeks.length > 1
       });
     }
-  }, [isOpen, isMultiWeekView, weeks, activeSection]);
+  }, [isOpen, isMultiWeekView, weeks, week, activeSection]);
 
   // Get the current week to display
   const displayWeek = React.useMemo(() => {
@@ -119,17 +123,32 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
           const isDistanceBased = DISTANCE_BASED_SPORTS.includes(sport as any);
           
           if (isDistanceBased) {
+            // Check if this is a manual mode aerobic moveframe
+            if (mf.manualMode) {
+              const manualInputType = mf.manualInputType || 'meters';
+              const manualValue = mf.distance || 0;
+              
+              if (manualInputType === 'time') {
+                // Convert deciseconds to minutes for time tracking
+                sportData.time += manualValue / 600; // deciseconds to minutes
+              } else {
+                // Add meters to distance
+                sportData.distance += manualValue;
+              }
+            } else {
+              // Standard mode: process movelaps
             mf.movelaps?.forEach((lap: any) => {
               sportData.distance += parseInt(lap.distance) || 0;
-              sportData.time += parseFloat(lap.time) || 0;
+                // Convert seconds to minutes for time tracking
+                const timeInSeconds = parseFloat(lap.time) || 0;
+                sportData.time += timeInSeconds / 60;
             });
+            }
           } else {
             // For series-based sports
             if (mf.manualMode) {
               // For manual mode: use the repetitions field directly
               sportData.series += mf.repetitions || 0;
-              // Add time for manual mode if available
-              sportData.time += parseFloat(mf.duration) || 0;
             } else {
               // For standard mode: count total reps/series (Rip\Series)
               // Exclude movelaps where reps=1 AND pause=0 (unless it's a macro)
@@ -146,8 +165,9 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
                   sportData.series += 1;
                 }
                 
-                // Add time for non-distance sports
-                sportData.time += parseFloat(lap.time) || 0;
+                // Add time for non-distance sports - convert seconds to minutes
+                const timeInSeconds = parseFloat(lap.time) || 0;
+                sportData.time += timeInSeconds / 60;
               });
             }
           }
@@ -236,11 +256,14 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
     displayWeek.days.forEach((day: any) => {
       day.workouts.forEach((workout: any) => {
         totalWorkouts++;
-        const workoutId = workout.id;
-        
-        (workout.sports || []).forEach((ws: any) => {
-          if (!sportMap.has(ws.sport)) {
-            sportMap.set(ws.sport, { 
+        const workoutId = workout.id || `workout-${totalWorkouts}`;
+
+        (workout.moveframes || []).forEach((mf: any) => {
+          const sport = mf.sport || 'UNKNOWN';
+          
+          // Initialize sport entry if it doesn't exist
+          if (!sportMap.has(sport)) {
+            sportMap.set(sport, { 
               distance: 0, 
               durationMinutes: 0, 
               moveframeCount: 0,
@@ -248,17 +271,8 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
               totalSeries: 0
             });
           }
-        });
-
-        (workout.moveframes || []).forEach((mf: any) => {
-          const sport = mf.sport || 'UNKNOWN';
-          const currentTotals = sportMap.get(sport) || { 
-            distance: 0, 
-            durationMinutes: 0, 
-            moveframeCount: 0,
-            workoutCount: 0,
-            totalSeries: 0
-          };
+          
+          const currentTotals = sportMap.get(sport)!;
 
           // Track that this sport appears in this workout
           if (!sportWorkouts.has(sport)) {
@@ -271,16 +285,41 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
 
           const isDistanceBased = DISTANCE_BASED_SPORTS.includes(sport as any);
 
+          // Check if this is a manual mode moveframe
+          if (mf.manualMode) {
+            if (isDistanceBased) {
+              // Manual mode aerobic sport
+              const manualInputType = mf.manualInputType || 'meters';
+              const manualValue = mf.distance || 0;
+              
+              if (manualInputType === 'time') {
+                // Convert deciseconds to minutes
+                const durationMinutes = manualValue / 600;
+                currentTotals.durationMinutes += durationMinutes;
+                totalDuration += durationMinutes;
+              } else {
+                // Add meters to distance
+                currentTotals.distance += manualValue;
+                totalDistance += manualValue;
+              }
+            } else {
+              // Manual mode series-based sport
+              const manualSeries = mf.repetitions || 0;
+              currentTotals.totalSeries += manualSeries;
+            }
+          } else {
+            // Standard mode: process movelaps
           const hasMacro = mf.macroRest || mf.macroFinal;
           (mf.movelaps || []).forEach((lap: any) => {
             if (isDistanceBased) {
               const distance = parseInt(lap.distance) || 0;
-              const duration = parseFloat(lap.time) || 0;
+                const timeInSeconds = parseFloat(lap.time) || 0;
+                const durationMinutes = timeInSeconds / 60; // Convert seconds to minutes
               
               currentTotals.distance += distance;
-              currentTotals.durationMinutes += duration;
+                currentTotals.durationMinutes += durationMinutes;
               totalDistance += distance;
-              totalDuration += duration;
+                totalDuration += durationMinutes;
             } else {
               // For series-based sports, count reps/series (Rip\Series)
               // Exclude movelaps where reps=1 AND pause=0 (unless it's a macro)
@@ -292,6 +331,7 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
               }
             }
           });
+          }
 
           sportMap.set(sport, currentTotals);
         });
@@ -347,7 +387,7 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
       workoutIds: Set<string>;
     }>();
 
-    let totalWorkoutsSum = 0;
+    const allWorkoutIds = new Set<string>(); // Track all unique workout IDs across all sports
     let totalMoveframesSum = 0;
     let totalDistanceSum = 0;
     let totalDurationSum = 0;
@@ -359,10 +399,11 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
       week.days.forEach((day: any) => {
         if (!day.workouts) return;
 
-        totalWorkoutsSum += day.workouts.length;
-
         day.workouts.forEach((workout: any) => {
           if (!workout.moveframes) return;
+          
+          // Track all unique workouts
+          allWorkoutIds.add(workout.id);
 
           workout.moveframes.forEach((mf: any) => {
             if (!mf.sport) return;
@@ -386,19 +427,44 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
             currentTotals.workoutIds.add(workout.id);
 
             const isDistanceBased = DISTANCE_BASED_SPORTS.includes(sport as any);
-            const hasMacro = mf.macroRest || mf.macroFinal;
 
+            // Check if this is a manual mode moveframe
+            if (mf.manualMode) {
+              if (isDistanceBased) {
+                // Manual mode aerobic sport
+                const manualInputType = mf.manualInputType || 'meters';
+                const manualValue = mf.distance || 0;
+                
+                if (manualInputType === 'time') {
+                  // Convert deciseconds to minutes
+                  const durationMinutes = manualValue / 600;
+                  currentTotals.durationMinutes += durationMinutes;
+                  totalDurationSum += durationMinutes;
+                } else {
+                  // Add meters to distance
+                  currentTotals.distance += manualValue;
+                  totalDistanceSum += manualValue;
+                }
+              } else {
+                // Manual mode series-based sport
+                const manualSeries = mf.repetitions || 0;
+                currentTotals.totalSeries += manualSeries;
+              }
+            } else {
+              // Standard mode: process movelaps
             if (!mf.movelaps) return;
 
+              const hasMacro = mf.macroRest || mf.macroFinal;
             mf.movelaps.forEach((lap: any) => {
               if (isDistanceBased) {
                 const distance = parseFloat(lap.distance) || 0;
-                const duration = parseFloat(lap.time) || 0;
+                  const timeInSeconds = parseFloat(lap.time) || 0;
+                  const durationMinutes = timeInSeconds / 60; // Convert seconds to minutes
 
                 currentTotals.distance += distance;
-                currentTotals.durationMinutes += duration;
+                  currentTotals.durationMinutes += durationMinutes;
                 totalDistanceSum += distance;
-                totalDurationSum += duration;
+                  totalDurationSum += durationMinutes;
               } else {
                 const reps = parseInt(lap.reps) || 1;
                 const pause = parseFloat(lap.pause) || 0;
@@ -408,6 +474,7 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
                 }
               }
             });
+            }
           });
         });
       });
@@ -431,7 +498,7 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
 
     return {
       sportTotals: sportTotalsArray,
-      totalWorkouts: totalWorkoutsSum,
+      totalWorkouts: allWorkoutIds.size, // Use unique workout count
       totalMoveframes: totalMoveframesSum,
       totalDistance: totalDistanceSum,
       totalDuration: totalDurationSum,
@@ -639,16 +706,41 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
           const isDistanceBased = DISTANCE_BASED_SPORTS.includes(sport as any);
           
           if (isDistanceBased) {
+            // Check if this is a manual mode aerobic moveframe
+            if (mf.manualMode) {
+              const manualInputType = mf.manualInputType || 'meters';
+              const manualValue = mf.distance || 0;
+              
+              if (manualInputType === 'time') {
+                // Convert deciseconds to minutes
+                sportData.time += manualValue / 600;
+              } else {
+                // Add meters to distance
+                sportData.distance += manualValue;
+              }
+            } else {
+              // Standard mode: process movelaps
             mf.movelaps?.forEach((lap: any) => {
               sportData.distance += parseInt(lap.distance) || 0;
-              sportData.time += parseFloat(lap.time) || 0;
+                // Convert seconds to minutes for time tracking
+                const timeInSeconds = parseFloat(lap.time) || 0;
+                sportData.time += timeInSeconds / 60;
             });
+            }
           } else {
-            // For series-based sports, count total reps/series
+            // For series-based sports
+            if (mf.manualMode) {
+              // Manual mode: use repetitions field
+              sportData.series += mf.repetitions || 0;
+            } else {
+              // Standard mode: count total reps/series
             sportData.series += mf.movelaps?.length || 0;
             mf.movelaps?.forEach((lap: any) => {
-              sportData.time += parseFloat(lap.time) || 0;
+                // Convert seconds to minutes for time tracking
+                const timeInSeconds = parseFloat(lap.time) || 0;
+                sportData.time += timeInSeconds / 60;
             });
+            }
           }
         });
       });
@@ -745,11 +837,17 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
               `;
 
               moveframe.movelaps.forEach((movelap: any) => {
-                // Strip HTML from notes
+                // Strip HTML and circuit tags from notes
                 let notes = '—';
                 if (movelap.notes) {
+                  // First strip circuit metadata tags
+                  let cleanNotes = movelap.notes
+                    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+                    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+                    .trim();
+                  // Then strip HTML
                   const tempDiv = document.createElement('div');
-                  tempDiv.innerHTML = movelap.notes;
+                  tempDiv.innerHTML = cleanNotes;
                   const strippedNotes = tempDiv.textContent || tempDiv.innerText || '';
                   notes = strippedNotes.length > 30 ? strippedNotes.substring(0, 30) + '...' : strippedNotes;
                 }
@@ -898,40 +996,6 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
             </h2>
           </div>
           <div className="flex items-center gap-2">
-            {/* Toggle Week Notes Button */}
-            <button
-              onClick={() => setShowWeekNotes(!showWeekNotes)}
-              className={`px-4 py-2 rounded-lg transition-colors font-medium text-sm flex items-center gap-2 ${
-                showWeekNotes 
-                  ? 'bg-purple-500 text-white hover:bg-purple-600' 
-                  : 'bg-white text-gray-700 hover:bg-gray-100'
-              }`}
-              title={showWeekNotes ? 'Hide week planning notes' : 'Show week planning notes'}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-                <polyline points="10 9 9 9 8 9"></polyline>
-              </svg>
-              {showWeekNotes ? 'Hide Week Notes' : 'Show Week Notes'}
-            </button>
-            {/* Toggle Movelaps Details Button */}
-            <button
-              onClick={() => setShowMovelaps(!showMovelaps)}
-              className={`px-4 py-2 rounded-lg transition-colors font-medium text-sm flex items-center gap-2 ${
-                showMovelaps 
-                  ? 'bg-green-500 text-white hover:bg-green-600' 
-                  : 'bg-white text-gray-700 hover:bg-gray-100'
-              }`}
-              title={showMovelaps ? 'Hide movelap details' : 'Show movelap details'}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="6 9 12 15 18 9"></polyline>
-              </svg>
-              {showMovelaps ? 'Hide Movelaps' : 'Show Movelaps'}
-            </button>
             {/* Totals of Weeks Displayed Button - Only show in multi-week view */}
             {isMultiWeekView && weeks && weeks.length > 1 && (
               <button
@@ -1045,7 +1109,7 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
                     {/* Grand Total row */}
                     <tr className="bg-gray-100 font-bold">
                       <td className="border border-gray-300 px-2 py-2 text-xs text-center">TOTAL</td>
-                      <td className="border border-gray-300 px-1 py-2 text-center text-xs">{aggregatedData.totalWorkouts}</td>
+                      <td className="border border-gray-300 px-1 py-2 text-center text-xs">{aggregatedData.sportTotals.reduce((sum: number, sport: any) => sum + sport.workoutCount, 0)}</td>
                       <td className="border border-gray-300 px-1 py-2 text-center text-xs">{aggregatedData.totalMoveframes}</td>
                       <td className="border border-gray-300 px-1 py-2 text-center text-xs">{aggregatedData.totalDistance.toLocaleString()}</td>
                       <td className="border border-gray-300 px-1 py-2 text-center text-xs">—</td>
@@ -1225,7 +1289,7 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
                       {/* Grand Total Row */}
                       <tr className="bg-gray-100 font-bold">
                         <td className="border border-gray-300 px-2 py-2 text-xs text-center">TOTAL</td>
-                        <td className="border border-gray-300 px-1 py-2 text-center text-xs">{totalWorkouts}</td>
+                        <td className="border border-gray-300 px-1 py-2 text-center text-xs">{sportTotals.reduce((sum, sport) => sum + sport.workoutCount, 0)}</td>
                         <td className="border border-gray-300 px-1 py-2 text-center text-xs">{totalMoveframes}</td>
                         <td className="border border-gray-300 px-1 py-2 text-center text-xs">{totalDistance.toLocaleString()}</td>
                         <td className="border border-gray-300 px-1 py-2 text-center text-xs">—</td>

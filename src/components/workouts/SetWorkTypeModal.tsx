@@ -3,6 +3,15 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
+// 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
+const stripCircuitTags = (content: string | null | undefined): string => {
+  if (!content) return '';
+  return content
+    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+    .trim();
+};
+
 interface SetWorkTypeModalProps {
   moveframe: any;
   onClose: () => void;
@@ -60,11 +69,14 @@ export default function SetWorkTypeModal({ moveframe, onClose, onSave }: SetWork
             Sport: <span className="font-semibold">{moveframe.sport}</span>
           </p>
           <div className="text-sm text-gray-600 mb-4">
-            Description: {moveframe.description && moveframe.description.includes('<') ? (
-              <div className="font-semibold inline-block" dangerouslySetInnerHTML={{ __html: moveframe.description }} />
-            ) : (
-              <span className="font-semibold">{moveframe.description || 'No description'}</span>
-            )}
+            Description: {(() => {
+              const cleanDescription = stripCircuitTags(moveframe.description);
+              return cleanDescription && cleanDescription.includes('<') ? (
+                <div className="font-semibold inline-block" dangerouslySetInnerHTML={{ __html: cleanDescription }} />
+              ) : (
+                <span className="font-semibold">{cleanDescription || 'No description'}</span>
+              );
+            })()}
           </div>
         </div>
 

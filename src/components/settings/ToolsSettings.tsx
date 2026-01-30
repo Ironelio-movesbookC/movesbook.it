@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Edit2, Trash2, GripVertical, ArrowUpAZ, ArrowDownZA, Save, X, Download, Globe, Image as ImageIcon, Smile, Grid3x3, List, ArrowUpDown } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToolsData } from '@/hooks/useToolsData';
@@ -92,6 +92,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
   
   // Get current user ID for ownership checking
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   
   useEffect(() => {
     // Get user ID from localStorage
@@ -104,6 +105,13 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
         console.error('Error parsing user from localStorage:', e);
       }
     }
+    
+    // Mark initial load as complete after first render
+    const timer = setTimeout(() => {
+      setIsInitialLoad(false);
+    }, 500); // Wait 500ms for all data to load
+    
+    return () => clearTimeout(timer);
   }, []);
   
   // Auto-update selected language when user's language changes
@@ -165,10 +173,48 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
     alert('✅ All tools settings saved to database successfully!');
   };
 
+  // Use refs to track previous values and prevent unnecessary re-renders
+  const prevPeriodsRef = useRef<Period[]>([]);
+  const prevSectionsRef = useRef<WorkoutSection[]>([]);
+  const prevBodyBuildingTechniquesRef = useRef<BodyBuildingTechnique[]>([]);
+  const prevSportsRef = useRef<Sport[]>([]);
+  const prevEquipmentRef = useRef<Equipment[]>([]);
+  const prevExercisesRef = useRef<Exercise[]>([]);
+  const prevDevicesRef = useRef<Device[]>([]);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Debounced auto-save (uses hook)
   useEffect(() => {
+    // Don't auto-save during initial load
+    if (isInitialLoad) {
+      console.log('⏭️ Skipping auto-save: initial load in progress');
+      // Update refs on initial load
+      prevPeriodsRef.current = periods;
+      prevSectionsRef.current = sections;
+      prevBodyBuildingTechniquesRef.current = bodyBuildingTechniques;
+      prevSportsRef.current = sports;
+      prevEquipmentRef.current = equipment;
+      prevExercisesRef.current = exercises;
+      prevDevicesRef.current = devices;
+      return;
+    }
+    
     // Don't auto-save if data is being loaded initially
     if (periods.length === 0 && sections.length === 0 && sports.length === 0) {
+      return;
+    }
+    
+    // Check if data actually changed (deep comparison by length and IDs)
+    const periodsChanged = JSON.stringify(periods) !== JSON.stringify(prevPeriodsRef.current);
+    const sectionsChanged = JSON.stringify(sections) !== JSON.stringify(prevSectionsRef.current);
+    const techniquesChanged = JSON.stringify(bodyBuildingTechniques) !== JSON.stringify(prevBodyBuildingTechniquesRef.current);
+    const sportsChanged = JSON.stringify(sports) !== JSON.stringify(prevSportsRef.current);
+    const equipmentChanged = JSON.stringify(equipment) !== JSON.stringify(prevEquipmentRef.current);
+    const exercisesChanged = JSON.stringify(exercises) !== JSON.stringify(prevExercisesRef.current);
+    const devicesChanged = JSON.stringify(devices) !== JSON.stringify(prevDevicesRef.current);
+    
+    if (!periodsChanged && !sectionsChanged && !techniquesChanged && !sportsChanged && !equipmentChanged && !exercisesChanged && !devicesChanged) {
+      console.log('⏭️ Skipping auto-save: no changes detected');
       return;
     }
     
@@ -178,16 +224,51 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
       return;
     }
     
+    console.log('💾 Auto-save triggered: changes detected');
+    if (periodsChanged) console.log('  - Periods changed');
+    if (sectionsChanged) console.log('  - Sections changed');
+    if (techniquesChanged) console.log('  - Techniques changed');
+    
     // Save to localStorage immediately (backup)
     saveToLocalStorage(periods, sections, bodyBuildingTechniques, sports, equipment, exercises, devices);
     
+    // Clear any pending save timeout
+    if (saveTimeoutRef.current) {
+      console.log('⏱️  Cancelling previous save timeout (debouncing)');
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
     // Debounce database save (wait 1 second after last change)
-    const timeoutId = setTimeout(() => {
-      saveToDatabase();
+    saveTimeoutRef.current = setTimeout(() => {
+      console.log('💾 Saving to database...');
+      saveToDatabase().then(() => {
+        console.log('✅ Database save complete');
+        saveTimeoutRef.current = null;
+      }).catch((error) => {
+        console.error('❌ Database save failed:', error);
+        saveTimeoutRef.current = null;
+      });
     }, 1000);
     
-    return () => clearTimeout(timeoutId);
-  }, [periods, sections, bodyBuildingTechniques, sports, equipment, exercises, devices]);
+    // Update refs immediately so next change is detected
+    prevPeriodsRef.current = periods;
+    prevSectionsRef.current = sections;
+    prevBodyBuildingTechniquesRef.current = bodyBuildingTechniques;
+    prevSportsRef.current = sports;
+    prevEquipmentRef.current = equipment;
+    prevExercisesRef.current = exercises;
+    prevDevicesRef.current = devices;
+    
+    // Cleanup function - only clear timeout, don't return it
+    return () => {
+      // Don't cancel if save is in progress, just cancel pending timeout
+      if (saveTimeoutRef.current) {
+        console.log('🧹 Cleanup: clearing pending save timeout');
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periods, sections, bodyBuildingTechniques, sports, equipment, exercises, devices, isInitialLoad, isSavingToDatabase]);
 
   const getActiveItems = () => {
     if (activeTab === 'periods') return periods;
@@ -808,24 +889,87 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
         console.log('📥 Loading data for language:', selectedLanguage);
         console.log('📦 Loaded periods:', data.toolsData.periods);
         
-        // Replace current data with loaded language data
-        // Force React to re-render by creating new arrays
+        // SMART MERGE: Preserve existing periods, update translations only
+        // This prevents losing workouts when loading new language settings
         if (data.toolsData.periods) {
           const loadedPeriods = [...data.toolsData.periods];
-          console.log('✅ Setting periods:', loadedPeriods);
-          setPeriods(loadedPeriods);
+          const existingPeriods = [...periods];
+          
+          // Create a merged array: keep existing IDs, update translations
+          const mergedPeriods = existingPeriods.map(existing => {
+            // Try to find a matching period by title/name from loaded data
+            const matchingLoaded = loadedPeriods.find(loaded => 
+              loaded.title?.toLowerCase() === existing.title?.toLowerCase()
+            );
+            
+            if (matchingLoaded) {
+              // Update translations but keep the same ID
+              console.log(`🔄 Updating period: ${existing.title} (ID preserved)`);
+              return {
+                ...matchingLoaded,
+                id: existing.id // CRITICAL: Keep the original ID to preserve workout links
+              };
+            }
+            
+            // Keep existing period unchanged if no match found
+            return existing;
+          });
+          
+          // Add any new periods from loaded data that don't exist yet
+          loadedPeriods.forEach(loaded => {
+            const alreadyExists = mergedPeriods.some(merged => 
+              merged.title?.toLowerCase() === loaded.title?.toLowerCase()
+            );
+            if (!alreadyExists) {
+              console.log(`➕ Adding new period: ${loaded.title}`);
+              mergedPeriods.push(loaded);
+            }
+          });
+          
+          console.log('✅ Setting merged periods (IDs preserved):', mergedPeriods);
+          setPeriods(mergedPeriods);
           
           // Also save to localStorage for this language to ensure persistence
           const storageKey = `tools_periods_${selectedLanguage}`;
-          localStorage.setItem(storageKey, JSON.stringify(loadedPeriods));
+          localStorage.setItem(storageKey, JSON.stringify(mergedPeriods));
         }
         if (data.toolsData.sections) {
           const loadedSections = [...data.toolsData.sections];
-          console.log('✅ Setting sections:', loadedSections);
-          setSections(loadedSections);
+          const existingSections = [...sections];
+          
+          // Same smart merge for sections
+          const mergedSections = existingSections.map(existing => {
+            const matchingLoaded = loadedSections.find(loaded => 
+              loaded.title?.toLowerCase() === existing.title?.toLowerCase()
+            );
+            
+            if (matchingLoaded) {
+              console.log(`🔄 Updating section: ${existing.title} (ID preserved)`);
+              return {
+                ...matchingLoaded,
+                id: existing.id // CRITICAL: Keep the original ID
+              };
+            }
+            
+            return existing;
+          });
+          
+          // Add new sections
+          loadedSections.forEach(loaded => {
+            const alreadyExists = mergedSections.some(merged => 
+              merged.title?.toLowerCase() === loaded.title?.toLowerCase()
+            );
+            if (!alreadyExists) {
+              console.log(`➕ Adding new section: ${loaded.title}`);
+              mergedSections.push(loaded);
+            }
+          });
+          
+          console.log('✅ Setting merged sections (IDs preserved):', mergedSections);
+          setSections(mergedSections);
           
           const storageKey = `tools_sections_${selectedLanguage}`;
-          localStorage.setItem(storageKey, JSON.stringify(loadedSections));
+          localStorage.setItem(storageKey, JSON.stringify(mergedSections));
         }
         if (data.toolsData.sports) {
           const loadedSports = [...data.toolsData.sports];
@@ -1121,8 +1265,8 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
       {/* Language Defaults - Admin Only */}
       <div className="grid grid-cols-1 gap-3">
         
-        {/* Instructions Banner */}
-        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
+        {/* Instructions Banner - HIDDEN (code preserved for future use) */}
+        <div className="hidden bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
           <h4 className="font-semibold text-indigo-900 mb-2 flex items-center gap-2">
             <Globe className="w-5 h-5" />
             {isAdmin ? 'Multi-Language Settings Workflow (Admin)' : 'Personal Settings Workflow'}

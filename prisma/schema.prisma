@@ -194,6 +194,7 @@ model Period {
   name        String
   description String
   color       String
+  displayOrder Int          @default(0) // Order for display in lists
   createdAt   DateTime      @default(now())
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   days        WorkoutDay[]
@@ -264,7 +265,8 @@ model Moveframe {
   manualPriority      Boolean?       @default(false) // Priority flag for manual mode display
   favourite           Boolean?       @default(false)
   repetitions         Int?           // Number of series/repetitions for manual mode
-  distance            Int?           // Distance value for manual mode
+  distance            Int?           // Distance value for manual mode (meters) or time value storage
+  manualInputType     String?        @default("meters") // For aerobic sports: "meters" or "time" (123456 format)
   appliedTechnique    String?        // Body Building technique applied (for BODY_BUILDING sport only)
   aerobicSeries       Int?           @default(1) // Series/Batteries/Groups for aerobic sports (range 1-9, default 1)
   section             WorkoutSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
@@ -283,6 +285,7 @@ model WorkoutSection {
   code        String? // Short code (max 5 characters) for compact display
   description String
   color       String
+  displayOrder Int        @default(0) // Order for display in lists
   createdAt   DateTime    @default(now())
   moveframes  Moveframe[]
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -298,6 +301,7 @@ model ExecutionTechnique {
   description String
   color       String
   sports      String   @default("") // Comma-separated list of sports that can use this technique
+  displayOrder Int     @default(0) // Order for display in lists
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 

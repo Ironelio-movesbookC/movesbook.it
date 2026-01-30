@@ -6,6 +6,15 @@ import { useColorSettings } from '@/hooks/useColorSettings';
 import { useSportIconType } from '@/hooks/useSportIconType';
 import { getSportIcon, isImageIcon } from '@/utils/sportIcons';
 
+// 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
+const stripCircuitTags = (content: string | null | undefined): string => {
+  if (!content) return '';
+  return content
+    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+    .trim();
+};
+
 interface WorkoutTreeViewProps {
   workoutPlan: any;
   activeSection?: 'A' | 'B' | 'C' | 'D';
@@ -265,7 +274,7 @@ export default function WorkoutTreeView({
                           }}
                         >
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 flex-1">
                               {/* Expand/Collapse icon */}
                               <button
                                 onClick={(e) => toggleDay(day.id, e)}
@@ -287,10 +296,81 @@ export default function WorkoutTreeView({
                                 <div className="font-semibold">{dayName}</div>
                                 {dayDateStr && <div className="text-xs opacity-70">{dayDateStr}</div>}
                               </div>
+                              
+                              {/* Workout count and summaries with visual style */}
+                              <div className="flex items-center gap-2 ml-4 flex-wrap">
+                                <span className="text-sm font-medium">
+                                  {workoutCount} workout{workoutCount !== 1 ? 's' : ''}
+                                </span>
+                                {workoutCount > 0 && (
+                                  <>
+                                    {day.workouts.map((workout: any, workoutIndex: number) => {
+                                      // Calculate sport summaries for this workout
+                                      const sportData = new Map<string, { value: number; isSeriesBased: boolean }>();
+                                      
+                                      if (workout.moveframes) {
+                                        workout.moveframes.forEach((mf: any) => {
+                                          if (mf.sport) {
+                                            const isSeriesBased = !['SWIM', 'BIKE', 'SPINNING', 'RUN', 'ROWING', 'SKATE', 'SKI', 'HIKING', 'WALKING'].includes(mf.sport);
+                                            
+                                            if (!sportData.has(mf.sport)) {
+                                              sportData.set(mf.sport, { value: 0, isSeriesBased });
+                                            }
+                                            
+                                            const data = sportData.get(mf.sport)!;
+                                            
+                                            if (isSeriesBased) {
+                                              data.value += mf.movelaps?.length || 0;
+                                            } else {
+                                              if (mf.movelaps) {
+                                                mf.movelaps.forEach((lap: any) => {
+                                                  data.value += lap.distance || 0;
+                                                });
+                                              }
+                                            }
+                                          }
+                                        });
+                                      }
+                                      
+                                      return (
+                                        <React.Fragment key={workout.id}>
+                                          {workoutIndex > 0 && (
+                                            <span className="text-sm font-bold mx-1">+</span>
+                                          )}
+                                          {Array.from(sportData.entries()).map(([sport, data]) => {
+                                            const sportIcon = getSportIcon(sport, iconType);
+                                            const displayValue = data.value > 0 
+                                              ? (data.isSeriesBased ? `${data.value} series` : `${data.value}m`)
+                                              : '—';
+                                            return (
+                                              <div
+                                                key={`${workout.id}-${sport}`}
+                                                className="flex items-center gap-2 px-3 py-1 rounded text-sm font-semibold"
+                                                style={{ 
+                                                  backgroundColor: 'rgba(255,255,255,0.25)',
+                                                  border: '1px solid rgba(0,0,0,0.1)'
+                                                }}
+                                              >
+                                                {useImageIcons ? (
+                                                  <img src={sportIcon} alt={sport} className="w-12 h-12 object-cover rounded" />
+                                                ) : (
+                                                  <span className="text-5xl">{sportIcon}</span>
+                                                )}
+                                                <span className="text-xs">{sport.replace(/_/g, ' ')}</span>
+                                                {data.value > 0 && (
+                                                  <span className="text-sm font-bold ml-1" style={{ color: getValueTextColor() }}>
+                                                    {displayValue}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </React.Fragment>
+                                      );
+                                    })}
+                                  </>
+                                )}
                             </div>
-                            <div className="flex items-center gap-4">
-                              <div className="text-sm font-medium">
-                                {workoutCount} workout{workoutCount !== 1 ? 's' : ''}
                               </div>
                               <button
                                 onClick={(e) => {
@@ -312,7 +392,6 @@ export default function WorkoutTreeView({
                               >
                                 Open →
                               </button>
-                            </div>
                           </div>
                         </div>
 
@@ -411,39 +490,7 @@ export default function WorkoutTreeView({
                                             ({totalMoveframes} moveframe{totalMoveframes !== 1 ? 's' : ''})
                                           </span>
                                         </div>
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                          {Array.from(sportData.entries()).slice(0, 3).map(([sport, data]) => {
-                                            const sportIcon = getSportIcon(sport, iconType);
-                                            const displayValue = data.value > 0 
-                                              ? (data.isSeriesBased ? `${data.value} series` : `${data.value}m`)
-                                              : '—';
-                                            return (
-                                              <div
-                                                key={sport}
-                                                className="flex items-center gap-2 px-3 py-1 rounded text-sm font-semibold"
-                                                style={{ 
-                                                  backgroundColor: 'rgba(255,255,255,0.25)',
-                                                  border: '1px solid rgba(0,0,0,0.1)'
-                                                }}
-                                              >
-                                                {useImageIcons ? (
-                                                  <img src={sportIcon} alt={sport} className="w-12 h-12 object-cover rounded" />
-                                                ) : (
-                                                  <span className="text-5xl">{sportIcon}</span>
-                                                )}
-                                                <span className="text-xs">{sport}</span>
-                                                {data.value > 0 && (
-                                                  <span className="text-sm font-bold ml-1" style={{ color: getValueTextColor() }}>
-                                                    {displayValue}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            );
-                                          })}
-                                          {sportData.size > 3 && (
-                                            <span className="text-xs opacity-60 font-medium">+{sportData.size - 3}</span>
-                                          )}
-                                        </div>
+                                        {/* Sport summaries now shown on day row - removed from here to avoid duplication */}
                                       </div>
                                       
                                       {/* Second Row - Main and Secondary Work Descriptions */}
@@ -545,7 +592,7 @@ export default function WorkoutTreeView({
                                                 </span>
                                               </div>
                                               <div className="text-xs opacity-70 max-w-md truncate">
-                                                {moveframe.description || 'No description'}
+                                                {stripCircuitTags(moveframe.description) || 'No description'}
                                               </div>
                                             </button>
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
 
 // GET /api/workouts/export - Export workouts as JSON, CSV, or PDF
 export async function GET(request: NextRequest) {

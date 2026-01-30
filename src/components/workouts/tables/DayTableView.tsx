@@ -25,6 +25,8 @@ interface DayTableViewProps {
   weeksPerPage?: number; // Weeks per page for Section B navigation
   excludeStretchingCheckbox?: React.ReactNode; // Checkbox for excluding stretching
   totalYearWeeks?: number; // Total weeks in year (default 52)
+  currentWeekIndex?: number; // Current week index for Section A
+  onWeekIndexChange?: (index: number) => void; // Setter for current week index in Section A
   expandedDays?: Set<string>;
   expandedWorkouts?: Set<string>;
   fullyExpandedWorkouts?: Set<string>; // Workouts with moveframes visible
@@ -96,6 +98,8 @@ export default function DayTableView({
   weeksPerPage = 3,
   excludeStretchingCheckbox,
   totalYearWeeks = 52,
+  currentWeekIndex: externalCurrentWeekIndex,
+  onWeekIndexChange,
   expandedDays,
   expandedWorkouts,
   fullyExpandedWorkouts,
@@ -144,7 +148,9 @@ export default function DayTableView({
   const defaultIconType = useSportIconType();
   const [localIconType, setLocalIconType] = useState<'emoji' | 'icon'>(defaultIconType);
   const iconType = iconTypeProp || localIconType;
-  const [currentWeekIndex, setCurrentWeekIndex] = useState(0);
+  const [localCurrentWeekIndex, setLocalCurrentWeekIndex] = useState(0);
+  const currentWeekIndex = externalCurrentWeekIndex !== undefined ? externalCurrentWeekIndex : localCurrentWeekIndex;
+  const setCurrentWeekIndex = onWeekIndexChange || setLocalCurrentWeekIndex;
   const [isWeeklyInfoModalOpen, setIsWeeklyInfoModalOpen] = useState(false);
   const [weeklyNotes, setWeeklyNotes] = useState<Record<string, { periodId: string; notes: string }>>({});
   const [dayInfoModalOpen, setDayInfoModalOpen] = useState(false);
@@ -281,18 +287,18 @@ export default function DayTableView({
     weekNumber: 60,     // Week
     dayNumber: 50,      // Day
     matchDone: 60,      // Match done checkbox (for sections B and C)
-    dayname: 80,
-    workouts: 80,
+    dayname: 120,       // Dayname & Date (wider to accommodate both)
+    workouts: 120,
     icoSport: 100,      // "Ico Sport" column
     distTime: 100,      // "Dist & Time" column
     mainWork: 200,      // "Main work" column
     secondaryWork: 200, // "Secondary work" column
-    options: 250
+    options: 320
   };
   
   // Calculate minimum table width dynamically based on column widths
   // Section A: 6 sticky columns (no Dayname, no Match done)
-  // Section B, C: 7 sticky columns (no Dayname, has Match done)
+  // Section B, C: 8 sticky columns (has Dayname AND Match done)
   // Section D: 7 sticky columns (has Dayname, no Match done)
   const TABLE_MIN_WIDTH = 
     COL_WIDTHS.noWorkouts + 
@@ -301,7 +307,7 @@ export default function DayTableView({
     COL_WIDTHS.weekNumber + 
     COL_WIDTHS.dayNumber + 
     ((activeSection === 'B' || activeSection === 'C') ? COL_WIDTHS.matchDone : 0) + // Match done for sections B and C
-    (activeSection === 'D' ? COL_WIDTHS.dayname : 0) + // Dayname only for Section D
+    (activeSection !== 'A' ? COL_WIDTHS.dayname : 0) + // Dayname for sections B, C, and D (not A)
     COL_WIDTHS.workouts + 
     (COL_WIDTHS.icoSport + COL_WIDTHS.distTime + COL_WIDTHS.mainWork) * 4 + // 4 sport sections (3 cols each)
     COL_WIDTHS.options;
@@ -349,6 +355,19 @@ export default function DayTableView({
         // Position scrollbar to match table wrapper
         scrollbar.style.left = `${rect.left}px`;
         scrollbar.style.width = `${rect.width}px`;
+        
+        // Hide scrollbar when table is not in viewport (scrolled past to footer)
+        const viewportHeight = window.innerHeight;
+        const tableBottom = rect.bottom;
+        const tableTop = rect.top;
+        
+        // Show scrollbar only when table is visible in viewport
+        // Hide if table bottom is above viewport or table top is below viewport
+        if (tableBottom < 0 || tableTop > viewportHeight) {
+          scrollbar.style.display = 'none';
+        } else {
+          scrollbar.style.display = 'block';
+        }
       }
     };
     
@@ -390,35 +409,6 @@ export default function DayTableView({
   // For Section B, show ALL weeks (already filtered by parent)
   // For Section A/C, use pagination (show one week at a time)
   const weeksToDisplay = activeSection === 'B' ? sortedWeeks : [sortedWeeks[currentWeekIndex]].filter(Boolean);
-  
-  // Debug logging for Section B
-  React.useEffect(() => {
-    if (activeSection === 'B') {
-      console.log('📊 [DayTableView] Section B RENDERING:', {
-        totalWeeks: workoutPlan?.weeks?.length || 0,
-        weeksToDisplay: weeksToDisplay.length,
-        weekNumbers: weeksToDisplay.map((w: any) => w.weekNumber),
-        weeksData: weeksToDisplay.map((w: any) => ({
-          weekNumber: w.weekNumber,
-          daysCount: w.days?.length || 0
-        })),
-        currentPageStart,
-        weeksPerPage
-      });
-      
-      // Log each week's days
-      weeksToDisplay.forEach((week: any) => {
-        console.log(`📊 [DayTableView] Week ${week.weekNumber}:`, {
-          daysCount: week.days?.length || 0,
-          days: week.days?.map((d: any) => ({
-            id: d.id,
-            date: d.date,
-            workoutsCount: d.workouts?.length || 0
-          })) || []
-        });
-      });
-    }
-  }, [activeSection, weeksToDisplay, currentPageStart, weeksPerPage]);
   
   // Legacy variables for backward compatibility
   const currentWeek = sortedWeeks[currentWeekIndex];
@@ -782,7 +772,8 @@ export default function DayTableView({
         .workout-details-wrapper {
           position: relative;
           left: 0;
-          width: 100vw;
+          width: 100%;
+          max-width: 100%;
           transform: translateX(0);
           transition: transform 0s;
           z-index: 25;
@@ -803,46 +794,29 @@ export default function DayTableView({
         {/* Week Navigation - Redesigned Sticky Header */}
         <div className="sticky top-0 z-50 bg-gradient-to-r from-gray-50 to-white shadow-xl border-b-2 border-gray-200">
           <div className="flex items-stretch">
-            {/* LEFT: Week Number Button - Only for Section A */}
+            {/* Week buttons moved to WorkoutSectionHeader for Section A */}
             {activeSection === 'A' && (
-              <div className="flex items-center gap-2 px-4 py-3 bg-white border-r-2 border-gray-200">
-                {workoutPlan?.weeks && (
-            <div className="flex items-center gap-2">
-                    {workoutPlan.weeks.map((week: any, index: number) => (
+              <div className="flex flex-col gap-2 px-4 py-3 bg-white border-r-2 border-gray-200">
+                {/* Set Periods Button */}
                 <button
-                        key={week.id}
-                        onClick={() => setCurrentWeekIndex(index)}
-                        className="px-5 py-3 rounded-xl transition-all duration-200 font-bold text-sm shadow-md"
-                        style={
-                          currentWeekIndex === index
-                            ? { 
-                                backgroundColor: colors.weekHeader,
-                                color: colors.weekHeaderText,
-                                transform: 'scale(1.05)'
-                              }
-                            : { 
-                                backgroundColor: colors.dayAlternateRow,
-                                color: colors.dayAlternateRowText
-                              }
-                        }
-                        onMouseEnter={(e) => {
-                          if (currentWeekIndex !== index) {
-                            e.currentTarget.style.backgroundColor = colors.dayHeader;
-                            e.currentTarget.style.transform = 'scale(1.02)';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (currentWeekIndex !== index) {
-                            e.currentTarget.style.backgroundColor = colors.dayAlternateRow;
-                            e.currentTarget.style.transform = 'scale(1)';
-                          }
-                        }}
-                      >
-                        Week {index + 1}
+                  onClick={() => {
+                    // Initialize week range to all displayed weeks in Section A
+                    const allWeekNumbers = sortedWeeks.map((w: any) => w.weekNumber);
+                    const minWeek = Math.min(...allWeekNumbers);
+                    const maxWeek = Math.max(...allWeekNumbers);
+                    setWeekRangeStart(minWeek);
+                    setWeekRangeEnd(maxWeek);
+                    setSelectedPeriodForRange(null);
+                    setShowPeriodSelector(true);
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 text-xs font-semibold bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-all shadow-md"
+                  title="Set periods for multiple weeks"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Set periods of more weeks
                 </button>
-                    ))}
-                  </div>
-                )}
             </div>
               )}
 
@@ -876,27 +850,29 @@ export default function DayTableView({
                   <span className="text-gray-400 italic text-base">Click Edit to add description...</span>
                 )}
               </div>
-              
-              {/* Edit Button Inside */}
-              <button
-                onClick={() => setIsWeeklyInfoModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg flex-shrink-0"
-                style={{ 
-                  backgroundColor: colors.buttonEdit,
-                  color: colors.buttonEditText
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.buttonEditHover}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.buttonEdit}
-                title="Edit Weekly Information"
-              >
-                <FileText size={14} />
-                Edit
-              </button>
             </div>
             )}
 
             {/* RIGHT: Action Buttons and Navigation */}
-            <div className="flex items-center justify-between gap-4 px-4 py-3 bg-white flex-1">
+            <div className="flex items-center justify-end gap-4 px-4 py-3 bg-white flex-1">
+              {/* Edit Button */}
+              {activeSection !== 'B' && (
+                <button
+                  onClick={() => setIsWeeklyInfoModalOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all shadow-md hover:shadow-lg"
+                  style={{ 
+                    backgroundColor: colors.buttonEdit,
+                    color: colors.buttonEditText
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.buttonEditHover}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.buttonEdit}
+                  title="Edit Weekly Information"
+                >
+                  <FileText size={16} />
+                  Edit
+                </button>
+              )}
+              
               {/* Copy Week Button - Only show in Section A (3 Weeks Plan) */}
               {activeSection === 'A' && (
               <button
@@ -1009,35 +985,6 @@ export default function DayTableView({
                 Save in Favourites
               </button>
               )}
-              
-              {/* Print Button - Only for Section A/C */}
-              {activeSection !== 'B' && (
-              <button
-                onClick={() => {
-                  console.log('🖨️ Print button clicked');
-                  console.log('📅 Current week:', currentWeek);
-                  setAutoPrintWeek(true);
-                  setShowWeekTotalsModal(true);
-                  console.log('✅ Modal should open AND print dialog should appear');
-                }}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-all shadow-md hover:shadow-lg"
-                title="Print week overview"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-                Print
-              </button>
-              )}
-
-              {/* Expand All Button - For Section A/C */}
-            {activeSection !== 'B' && (
-              <button
-                  onClick={toggleWeekWorkouts}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all shadow-md hover:shadow-lg"
-                  title={expandState === 0 ? "Show workout headers" : expandState === 1 ? "Show moveframes" : "Collapse all"}
-                >
-                  {expandState === 0 ? 'Expand All' : expandState === 1 ? 'Expand (with moveframes)' : 'Collapse All'}
-              </button>
-            )}
           </div>
         </div>
 
@@ -1094,7 +1041,7 @@ export default function DayTableView({
                      setShowWeekTotalsModal(true);
                    }}
                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all shadow-md"
-                   title="View overview of all weeks in yearly plan"
+                   title="View overview of all displayed weeks in yearly plan"
                  >
                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                    Overview of the weeks displayed
@@ -1102,7 +1049,14 @@ export default function DayTableView({
 
                  {/* Print Button */}
                  <button
-                   onClick={() => window.print()}
+                   onClick={() => {
+                     console.log('ðŸ–¨ï¸ Print current view clicked');
+                     console.log('ðŸ–¨ï¸ Total weeks in sortedWeeks:', sortedWeeks.length);
+                     setAutoPrintWeek(true);
+                     setShowAllWeeksInModal(true);
+                     setCurrentWeekForModal(null);
+                     setShowWeekTotalsModal(true);
+                   }}
                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all shadow-md"
                    title="Print current view"
                  >
@@ -1459,13 +1413,16 @@ export default function DayTableView({
                       ref={weekIdx === 0 ? tableContainerRef : null}
                       className="overflow-x-auto overflow-y-visible table-scrollbar" 
                     >
-                        <table className="text-sm" style={{ minWidth: `${TABLE_MIN_WIDTH}px`, width: '100%' }}>
+                        <table className="text-sm" style={{ tableLayout: 'fixed', minWidth: `${TABLE_MIN_WIDTH}px`, width: '100%' }}>
                         <thead className="sticky-table-header">
                           <tr style={{ backgroundColor: colors.weekHeader, color: colors.weekHeaderText }}>
                             <th className="border border-gray-400 px-1 py-2 text-xs font-bold sticky-header-1" style={{ width: COL_WIDTHS.noWorkouts, minWidth: COL_WIDTHS.noWorkouts, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} rowSpan={2}>
                               Check
                             </th>
-                          <th className="border border-gray-400 px-2 py-2 text-xs font-bold sticky-header-2" style={{ width: COL_WIDTHS.colorCycle + COL_WIDTHS.nameCycle, minWidth: COL_WIDTHS.colorCycle + COL_WIDTHS.nameCycle, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} colSpan={2} rowSpan={2}>
+                          <th className="border border-gray-400 px-1 py-2 text-xs font-bold sticky-header-2" style={{ width: COL_WIDTHS.colorCycle, minWidth: COL_WIDTHS.colorCycle, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} rowSpan={2}>
+                            
+                          </th>
+                          <th className="border border-gray-400 px-2 py-2 text-xs font-bold sticky-header-3" style={{ width: COL_WIDTHS.nameCycle, minWidth: COL_WIDTHS.nameCycle, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} rowSpan={2}>
                             Period
                           </th>
                           <th className="border border-gray-400 px-2 py-2 text-xs font-bold sticky-header-4" style={{ width: COL_WIDTHS.weekNumber, minWidth: COL_WIDTHS.weekNumber, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} rowSpan={2}>
@@ -1474,23 +1431,25 @@ export default function DayTableView({
                           <th className="border border-gray-400 px-2 py-2 text-xs font-bold sticky-header-5" style={{ width: COL_WIDTHS.dayNumber, minWidth: COL_WIDTHS.dayNumber, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} rowSpan={2}>
                             Day
                           </th>
-                          {/* Match done column - For Section B and C */}
-                          {(activeSection === 'B' || activeSection === 'C') && (
-                            <th 
-                              className="border border-gray-400 px-1 py-2 text-xs font-bold sticky-header-6"
-                              style={{ 
-                                width: COL_WIDTHS.matchDone, 
-                                minWidth: COL_WIDTHS.matchDone,
-                                backgroundColor: colors.weekHeader,
-                                color: colors.weekHeaderText
-                              }} 
-                              rowSpan={2}
-                            >
-                              Match<br/>done
-                            </th>
-                          )}
+                          {/* Dayname column - Always shown in Section B */}
+                          <th className="border border-gray-400 px-2 py-2 text-xs font-bold sticky-header-6" style={{ width: COL_WIDTHS.dayname, minWidth: COL_WIDTHS.dayname, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} rowSpan={2}>
+                            Dayname & Date
+                          </th>
+                          {/* Match done column - Always shown in Section B */}
                           <th 
-                            className={`border border-gray-400 px-2 py-2 text-xs font-bold ${(activeSection === 'B' || activeSection === 'C') ? 'sticky-header-7' : 'sticky-header-6'}`}
+                            className="border border-gray-400 px-1 py-2 text-xs font-bold sticky-header-7"
+                            style={{ 
+                              width: COL_WIDTHS.matchDone, 
+                              minWidth: COL_WIDTHS.matchDone,
+                              backgroundColor: colors.weekHeader,
+                              color: colors.weekHeaderText
+                            }} 
+                            rowSpan={2}
+                          >
+                              Match<br/>done
+                          </th>
+                          <th 
+                            className="border border-gray-400 px-2 py-2 text-xs font-bold sticky-header-8"
                             style={{ width: COL_WIDTHS.workouts, minWidth: COL_WIDTHS.workouts, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} 
                             rowSpan={2}
                           >
@@ -1645,6 +1604,21 @@ export default function DayTableView({
                                         reloadWorkouts={reloadWorkouts}
                                         columnSettings={columnSettings}
                                       />
+                                      
+                                      {/* Add Workout Button - Only show if less than 3 workouts */}
+                                      {(!day.workouts || day.workouts.length < 3) && (
+                                        <div className="mt-4 py-4" style={{ backgroundColor: '#f9fafb', borderTop: '1px solid #e5e7eb', paddingLeft: '60px' }}>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              onAddWorkout?.(day);
+                                            }}
+                                            className="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-md shadow-md hover:shadow-lg transition-all duration-150"
+                                          >
+                                            Add a workout
+                                          </button>
+                                        </div>
+                                      )}
                                         </div>
                                       </div>
                                     </td>
@@ -1740,6 +1714,61 @@ export default function DayTableView({
                     </span>
                   )}
                 </div>
+                
+                {/* Right side: Action buttons */}
+                <div className="flex items-center gap-2">
+                  {/* Expand All Button */}
+                  <button
+                    onClick={toggleWeekWorkouts}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all shadow-md"
+                    title={expandState === 0 ? "Show workout headers" : expandState === 1 ? "Show moveframes" : "Collapse all"}
+                  >
+                    {expandState === 0 ? 'Expand All' : expandState === 1 ? 'Expand (with moveframes)' : 'Collapse All'}
+                  </button>
+                  
+                  {/* Save Grid Settings Button */}
+                  <button
+                    onClick={async () => {
+                      try {
+                        const gridSettings = {
+                          savedAt: new Date().toISOString(),
+                          message: 'Grid settings saved successfully!'
+                        };
+                        localStorage.setItem('workoutGridSettings', JSON.stringify(gridSettings));
+                        alert('✅ Grid settings saved successfully!');
+                      } catch (error) {
+                        console.error('Error saving grid settings:', error);
+                        alert('❌ Failed to save grid settings');
+                      }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-md"
+                    title="Save current grid settings"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    Save Grid Settings
+                  </button>
+                  
+                  {/* Reset to Default Button */}
+                  <button
+                    onClick={() => {
+                      if (confirm('Are you sure you want to reset grid settings to default?')) {
+                        try {
+                          localStorage.removeItem('workoutGridSettings');
+                          alert('✅ Grid settings reset to default!');
+                          window.location.reload();
+                        } catch (error) {
+                          console.error('Error resetting grid settings:', error);
+                          alert('❌ Failed to reset grid settings');
+                        }
+                      }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all shadow-md"
+                    title="Reset grid settings to default"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    Reset to Default
+                  </button>
+                </div>
 
           </div>
 
@@ -1750,31 +1779,34 @@ export default function DayTableView({
             ref={tableContainerRef}
             className="overflow-x-auto overflow-y-visible table-scrollbar" 
           >
-            <table className="text-sm" style={{ minWidth: `${TABLE_MIN_WIDTH}px`, width: '100%' }}>
+            <table className="text-sm" style={{ tableLayout: 'fixed', minWidth: `${TABLE_MIN_WIDTH}px`, width: '100%' }}>
                   <thead className="sticky-table-header">
                     <tr style={{ backgroundColor: colors.weekHeader, color: colors.weekHeaderText }}>
                       <th className="border border-gray-400 px-1 py-2 text-xs font-bold sticky-header-1" style={{ width: COL_WIDTHS.noWorkouts, minWidth: COL_WIDTHS.noWorkouts, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} rowSpan={2}>
                  Check
                </th>
-                      <th className="border border-gray-400 px-2 py-2 text-xs font-bold sticky-header-2" style={{ width: COL_WIDTHS.colorCycle + COL_WIDTHS.nameCycle, minWidth: COL_WIDTHS.colorCycle + COL_WIDTHS.nameCycle, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} colSpan={2} rowSpan={2}>
+                      <th className="border border-gray-400 px-1 py-2 text-xs font-bold sticky-header-2" style={{ width: COL_WIDTHS.colorCycle, minWidth: COL_WIDTHS.colorCycle, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} rowSpan={2}>
+                        
+                      </th>
+                      <th className="border border-gray-400 px-2 py-2 text-xs font-bold sticky-header-3" style={{ width: COL_WIDTHS.nameCycle, minWidth: COL_WIDTHS.nameCycle, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} rowSpan={2}>
                         Period
-               </th>
+                      </th>
                       <th className="border border-gray-400 px-2 py-2 text-xs font-bold sticky-header-4" style={{ width: COL_WIDTHS.weekNumber, minWidth: COL_WIDTHS.weekNumber, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} rowSpan={2}>
                         Week
                </th>
                       <th className="border border-gray-400 px-2 py-2 text-xs font-bold sticky-header-5" style={{ width: COL_WIDTHS.dayNumber, minWidth: COL_WIDTHS.dayNumber, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} rowSpan={2}>
                         Day
                </th>
-              {/* Dayname column - Only for Section D */}
-              {activeSection === 'D' && (
+              {/* Dayname column - For Sections C and D (not A which is template mode, B has its own table) */}
+              {activeSection !== 'A' && (
                 <th className="border border-gray-400 px-2 py-2 text-xs font-bold sticky-header-6" style={{ width: COL_WIDTHS.dayname, minWidth: COL_WIDTHS.dayname, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} rowSpan={2}>
-                 Dayname
+                 Dayname & Date
               </th>
               )}
-              {/* Match done column - For Section C */}
+              {/* Match done column - For Section C only (B has its own table) */}
               {activeSection === 'C' && (
                 <th 
-                  className="border border-gray-400 px-1 py-2 text-xs font-bold sticky-header-6"
+                  className="border border-gray-400 px-1 py-2 text-xs font-bold sticky-header-7"
                   style={{ 
                     width: COL_WIDTHS.matchDone, 
                     minWidth: COL_WIDTHS.matchDone,
@@ -1787,7 +1819,7 @@ export default function DayTableView({
                 </th>
               )}
               <th 
-                className={`border border-gray-400 px-2 py-2 text-xs font-bold ${activeSection === 'A' ? 'sticky-header-6' : 'sticky-header-7'}`}
+                className={`border border-gray-400 px-2 py-2 text-xs font-bold ${activeSection === 'C' ? 'sticky-header-8' : activeSection === 'D' ? 'sticky-header-7' : 'sticky-header-6'}`}
                  style={{ width: COL_WIDTHS.workouts, minWidth: COL_WIDTHS.workouts, backgroundColor: colors.weekHeader, color: colors.weekHeaderText }} 
                  rowSpan={2}
                >
@@ -1992,7 +2024,7 @@ export default function DayTableView({
         </>
       )}
 
-      {/* Horizontal Scrollbar - Fixed at bottom of viewport */}
+      {/* Horizontal Scrollbar - Fixed at bottom of viewport, below footer */}
       <div 
         ref={scrollbarRef}
         className="overflow-x-auto custom-scrollbar bg-gradient-to-b from-gray-300 to-gray-200 border-t-2 border-blue-400 shadow-lg"
@@ -2002,7 +2034,7 @@ export default function DayTableView({
           left: 0,
           right: 0,
           height: `${SCROLLBAR_HEIGHT}px`,
-          zIndex: 50,
+          zIndex: 10, // Lower z-index so footer appears above it
         }}
         title="Horizontal scroll - Drag to navigate table"
       >
@@ -2422,4 +2454,3 @@ export default function DayTableView({
     </div>
   );
 }
-

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getSportConfig, sportNeedsExerciseName, DISTANCE_BASED_SPORTS, AEROBIC_SPORTS, isSeriesBasedSport, isAerobicSport, getRepsLabel } from '@/constants/moveframe.constants';
 
 export interface IndividualRepetitionPlan {
@@ -25,6 +25,7 @@ export interface MoveframeFormData {
   type: 'STANDARD' | 'BATTERY' | 'ANNOTATION';
   manualMode: boolean;
   manualPriority: boolean;
+  manualInputType: 'meters' | 'time'; // For aerobic sports in manual mode
   
   // Planning mode
   planningMode: 'all' | 'individual'; // 'all' = Plan for all, 'individual' = Plan one by one
@@ -102,6 +103,9 @@ export function useMoveframeForm({
   day
 }: UseMoveframeFormProps) {
   // ==================== FORM STATE ====================
+  // Track which moveframe has been loaded to prevent unnecessary reloads
+  const loadedMoveframeId = useRef<string | null>(null);
+  
   // Default sport: use first sport from workout.sports if available, otherwise 'SWIM'
   const getDefaultSport = () => {
     if (workout?.sports && workout.sports.length > 0) {
@@ -114,14 +118,24 @@ export function useMoveframeForm({
   const [type, setType] = useState<'STANDARD' | 'BATTERY' | 'ANNOTATION'>('STANDARD');
   const [manualMode, setManualMode] = useState(false);
   const [manualPriority, setManualPriority] = useState(false);
+  const [manualInputType, setManualInputTypeInternal] = useState<'meters' | 'time'>('meters');
   const [sectionId, setSectionId] = useState<string>(''); // Workout section for ALL sports
+  
+  // Wrapper for setManualInputType with logging
+  const setManualInputType = (value: 'meters' | 'time') => {
+    console.log('🎯 [SETTER] setManualInputType called with:', value);
+    console.log('🎯 [SETTER] Current value before change:', manualInputType);
+    console.log('🎯 [SETTER] Stack trace:', new Error().stack);
+    setManualInputTypeInternal(value);
+    console.log('🎯 [SETTER] setManualInputType completed');
+  };
 
   // Planning mode
   const [planningMode, setPlanningMode] = useState<'all' | 'individual'>('all');
   const [individualPlans, setIndividualPlans] = useState<IndividualRepetitionPlan[]>([]);
 
   // Standard fields
-  const [distance, setDistance] = useState('100');
+  const [distance, setDistance] = useState('');
   const [customDistance, setCustomDistance] = useState('');
   const [repetitions, setRepetitions] = useState('1');
   const [speed, setSpeed] = useState('A2');
@@ -181,6 +195,33 @@ export function useMoveframeForm({
   // ==================== COMPUTED VALUES ====================
   const sportConfig = getSportConfig(sport);
 
+  // ==================== EFFECTS ====================
+  
+  /**
+   * Set default distance when sport changes to a distance-based sport
+   */
+  useEffect(() => {
+    // Only set default distance if:
+    // 1. Modal is open
+    // 2. Sport is distance-based
+    // 3. Current distance is empty
+    // 4. Not in Time mode
+    // 5. Not in manual mode
+    if (isOpen && !manualMode && repsType !== 'Time') {
+      const distanceBasedSports = ['SWIM', 'BIKE', 'RUN', 'ROWING', 'SKATE', 'SKI', 'SNOWBOARD', 'HIKING', 'WALKING'];
+      const isDistanceBased = distanceBasedSports.includes(sport);
+      
+      if (isDistanceBased && !distance && sportConfig && 'meters' in sportConfig) {
+        const meters = (sportConfig as any).meters;
+        if (meters && Array.isArray(meters) && meters.length > 0) {
+          // Set first available distance as default (usually 100m)
+          console.log('🏊 Setting default distance for', sport, ':', meters[0]);
+          setDistance(meters[0]);
+        }
+      }
+    }
+  }, [sport, isOpen, manualMode, repsType, distance, sportConfig]);
+
   // ==================== HELPER FUNCTIONS ====================
   
   /**
@@ -191,10 +232,11 @@ export function useMoveframeForm({
     setType('STANDARD');
     setManualMode(false);
     setManualPriority(false);
+    setManualInputType('meters'); // Reset to default meters
     setSectionId(''); // Reset workout section
     setPlanningMode('all'); // Reset planning mode
     setIndividualPlans([]); // Clear individual plans
-    setDistance('100');
+    setDistance('');
     setCustomDistance('');
     setRepetitions('1');
     setSpeed('A2');
@@ -232,6 +274,7 @@ export function useMoveframeForm({
     setBatterySequence([]);
     setManualContent('');
     setErrors({});
+    loadedMoveframeId.current = null; // Reset loaded moveframe tracking
   };
 
   /**
@@ -588,8 +631,103 @@ export function useMoveframeForm({
     const effectiveSectionId = sectionId || null;
 
     // Calculate distance value - convert to string for storage
-    const distanceValue = (distance === 'custom' || distance === 'input') ? customDistance : distance;
-    const distanceNum = parseInt(distanceValue) || 0;
+    let distanceValue = (distance === 'custom' || distance === 'input') ? customDistance : distance;
+    let distanceNum = parseInt(distanceValue) || 0;
+    
+    // For manual mode with time input, store deciseconds separately
+    let manualDistanceDeciseconds = null;
+    
+    console.log('🔍 [BUILD] Processing distance:', {
+      manualMode,
+      manualInputType,
+      distanceValue,
+      isSeriesBased: isSeriesBasedSport(effectiveSport)
+    });
+    
+    if (manualMode && manualInputType === 'time' && !isSeriesBasedSport(effectiveSport)) {
+      // First, ensure the time is formatted (in case user didn't blur the field)
+      console.log('🕐 [BUILD] Processing TIME input');
+      console.log('  Raw distanceValue from state:', distanceValue);
+      console.log('  manualInputType:', manualInputType);
+      
+      const digits = distanceValue.replace(/\D/g, '');
+      console.log('  Extracted digits:', digits);
+      console.log('  Digits length:', digits.length);
+      
+      // If empty or zero, skip conversion
+      if (!digits || digits === '0') {
+        console.log('⚠️ Empty or zero time value, skipping');
+        distanceNum = 0;
+      } else if (digits && !distanceValue.includes('h')) {
+        console.log('  ➡️ Formatting raw digits to time format...');
+        // Format the raw digits to time format first
+        const len = digits.length;
+        let hour = '0', min = '00', sec = '00', ds = '0';
+        
+        if (len === 1) {
+          // 1 digit: 5 → 0h00'00"5
+          ds = digits;
+        } else if (len === 2) {
+          // 2 digits: 12 → 0h00'12"0
+          sec = digits;
+        } else if (len === 3) {
+          // 3 digits: 125 → 0h01'25"0
+          min = digits[0];
+          sec = digits.slice(1, 3);
+        } else if (len === 4) {
+          // 4 digits: 1234 → 0h12'34"0
+          min = digits.slice(0, 2);
+          sec = digits.slice(2, 4);
+        } else if (len === 5) {
+          // 5 digits: 12345 → 1h23'45"0
+          hour = digits[0];
+          min = digits.slice(1, 3);
+          sec = digits.slice(3, 5);
+        } else if (len === 6) {
+          // 6 digits: 123456 → 1h23'45"6
+          hour = digits[0];
+          min = digits.slice(1, 3);
+          sec = digits.slice(3, 5);
+          ds = digits[5];
+        } else {
+          // 7+ digits: 1234567 → 12h34'56"7
+          hour = digits.slice(0, -5);
+          min = digits.slice(-5, -3);
+          sec = digits.slice(-3, -1);
+          ds = digits.slice(-1);
+        }
+        
+        distanceValue = `${hour}h${min}'${sec}"${ds}`;
+        console.log('  ✅ Formatted to:', distanceValue);
+      } else {
+        console.log('  ℹ️ Already formatted (contains "h"):', distanceValue);
+      }
+      
+      // Now convert time format "1h23'45"6" to deciseconds
+      console.log('  🔄 Converting to deciseconds...');
+      const timeMatch = distanceValue.match(/(\d+)h(\d+)'(\d+)"(\d)?/);
+      console.log('  Regex match result:', timeMatch);
+      if (timeMatch) {
+        const hours = parseInt(timeMatch[1]) || 0;
+        const minutes = parseInt(timeMatch[2]) || 0;
+        const seconds = parseInt(timeMatch[3]) || 0;
+        const deciseconds = parseInt(timeMatch[4]) || 0;
+        // Convert to total deciseconds - store separately for manual mode
+        manualDistanceDeciseconds = (hours * 36000) + (minutes * 600) + (seconds * 10) + deciseconds;
+        console.log('🕐 [BUILD] Converted time to deciseconds:');
+        console.log('  Input:', distanceValue);
+        console.log('  Hours:', hours, '×', 36000, '=', hours * 36000);
+        console.log('  Minutes:', minutes, '×', 600, '=', minutes * 600);
+        console.log('  Seconds:', seconds, '×', 10, '=', seconds * 10);
+        console.log('  Deciseconds:', deciseconds, '×', 1, '=', deciseconds);
+        console.log('  ✅ Total Deciseconds:', manualDistanceDeciseconds);
+        // For movelap generation, use 0 (manual mode doesn't need movelaps with real distance)
+        distanceNum = 0;
+      } else {
+        console.log('  ❌ ERROR: Regex did not match! Unable to parse time format.');
+        console.log('  Raw distanceValue:', distanceValue);
+      }
+    }
 
     const data = {
       sport: effectiveSport,
@@ -638,30 +776,40 @@ export function useMoveframeForm({
       // Manual mode
       manualMode,
       manualPriority,
+      manualInputType, // For aerobic sports: 'meters' or 'time'
       manualContent: manualMode ? manualContent : null,
       // Manual mode specific fields for Moveframe model (different from movelap generation fields above)
       manualRepetitions: manualMode && isSeriesBasedSport(effectiveSport) ? parseInt(repetitions) : null,
-      manualDistance: manualMode && !isSeriesBasedSport(effectiveSport) ? distanceNum : null,
+      manualDistance: manualMode && !isSeriesBasedSport(effectiveSport) 
+        ? (manualInputType === 'time' ? manualDistanceDeciseconds : distanceNum) 
+        : null,
       
       // Metadata
       workoutSessionId: workout.id,
       dayId: day.id
     };
     
-    console.log('🔸 [FORM] buildMoveframeData returning:', {
-      planningMode: data.planningMode,
-      individualPlansLength: data.individualPlans?.length,
-      repetitions: data.repetitions, // For movelap generation
-      manualRepetitions: data.manualRepetitions, // For Moveframe model (manual mode)
-      distance: data.distance, // For movelap generation
-      manualDistance: data.manualDistance, // For Moveframe model (manual mode)
-      sport: data.sport,
-      manualMode: data.manualMode,
-      manualPriority: data.manualPriority,
-      descriptionLength: data.description?.length || 0,
-      descriptionPreview: data.description?.substring(0, 80) || '(empty)',
-      notesLength: data.notes?.length || 0
-    });
+    console.log('🔸 [FORM] buildMoveframeData returning:');
+    console.log('  Manual Mode:', data.manualMode);
+    console.log('  Manual Priority:', data.manualPriority);
+    console.log('  ⭐ Manual Input Type (STATE):', manualInputType);
+    console.log('  ⭐ Manual Input Type (DATA):', data.manualInputType);
+    console.log('  Sport:', data.sport);
+    console.log('  Manual Repetitions:', data.manualRepetitions);
+    console.log('  📊 Manual Distance (what will be saved):', data.manualDistance);
+    console.log('  📝 Distance Value (formatted string):', distanceValue);
+    console.log('  🕐 Distance Deciseconds (calculated):', manualDistanceDeciseconds);
+    console.log('  🔍 Is manualInputType time?', manualInputType === 'time');
+    console.log('  🔍 Should save deciseconds?', manualInputType === 'time' ? 'YES' : 'NO');
+    
+    // Verify manualInputType is actually being set
+    if (data.manualMode && DISTANCE_BASED_SPORTS.includes(data.sport as any)) {
+      console.log('🚨 [DEBUG] This is an aerobic sport in manual mode!');
+      console.log('🚨 [DEBUG] Expected manualInputType to be saved:', manualInputType);
+      console.log('🚨 [DEBUG] Actual manualInputType in data object:', data.manualInputType);
+      console.log('🚨 [DEBUG] Are they equal?', manualInputType === data.manualInputType);
+    }
+    console.log('  Distance (for movelap gen):', data.distance);
     
     return data;
   };
@@ -670,9 +818,37 @@ export function useMoveframeForm({
   
   /**
    * Initialize form with existing data in edit mode
+   * Only run when modal first opens to prevent resetting user changes
    */
+  const hasResetForAddMode = useRef(false);
+  
   useEffect(() => {
-    if (mode === 'edit' && existingMoveframe) {
+    // Reset form when modal closes
+    if (!isOpen) {
+      console.log('🔄 [FORM] Modal closed, resetting form');
+      resetForm();
+      loadedMoveframeId.current = null;
+      hasResetForAddMode.current = false;
+      return;
+    }
+    
+    // Reset form once when entering 'add' mode (only on first open, not on every re-render)
+    if (mode === 'add') {
+      if (!hasResetForAddMode.current) {
+        console.log('🔄 [FORM] First time in add mode, resetting form');
+        resetForm();
+        loadedMoveframeId.current = null;
+        hasResetForAddMode.current = true;
+      } else {
+        console.log('✋ [FORM] Already reset for add mode, preserving user changes');
+      }
+      return;
+    }
+    
+    // Load moveframe data only if we haven't loaded this specific moveframe yet
+    if (mode === 'edit' && existingMoveframe && loadedMoveframeId.current !== existingMoveframe.id) {
+      loadedMoveframeId.current = existingMoveframe.id;
+      hasResetForAddMode.current = false; // Clear the add mode flag
       console.log('📝 Loading moveframe for editing:', existingMoveframe);
       
       // Set sport, type, and section
@@ -824,32 +1000,90 @@ export function useMoveframeForm({
         
         // Manual content - check both description and notes fields
         // For manual mode, content might be in notes field
-        const manualModeContent = existingMoveframe.manualMode 
-          ? (existingMoveframe.notes || existingMoveframe.description || '')
-          : (existingMoveframe.description || '');
+        // 2026-01-28 - For manual moveframes, load content from movelap.notes if available
+        let manualModeContent = '';
+        if (existingMoveframe.manualMode) {
+          // Check if there are movelaps and load from the first movelap's notes
+          if (existingMoveframe.movelaps && existingMoveframe.movelaps.length > 0) {
+            manualModeContent = existingMoveframe.movelaps[0].notes || existingMoveframe.notes || existingMoveframe.description || '';
+            console.log('📥 [LOAD] Loading manual content from movelap notes:', manualModeContent.substring(0, 50) + '...');
+          } else {
+            manualModeContent = existingMoveframe.notes || existingMoveframe.description || '';
+            console.log('📥 [LOAD] Loading manual content from moveframe notes/description');
+          }
+        } else {
+          manualModeContent = existingMoveframe.description || '';
+        }
         setManualContent(manualModeContent);
         
         // Check if manual mode was used
         const loadedManualMode = existingMoveframe.manualMode || false;
         const loadedManualPriority = existingMoveframe.manualPriority || false;
-        console.log('📥 [LOAD] Loading existing moveframe:', {
-          id: existingMoveframe.id,
-          letter: existingMoveframe.letter,
-          manualMode: loadedManualMode,
-          manualModeRaw: existingMoveframe.manualMode,
-          manualPriority: loadedManualPriority,
-          manualPriorityRaw: existingMoveframe.manualPriority,
-          manualPriorityType: typeof existingMoveframe.manualPriority,
-          manualPriorityIsNull: existingMoveframe.manualPriority === null,
-          manualPriorityIsUndefined: existingMoveframe.manualPriority === undefined
-        });
+        const loadedManualInputType = existingMoveframe.manualInputType || 'meters';
+        console.log('📥 [LOAD] Loading existing moveframe:');
+        console.log('  ID:', existingMoveframe.id);
+        console.log('  Letter:', existingMoveframe.letter);
+        console.log('  Sport:', existingMoveframe.sport);
+        console.log('  Manual Mode (raw):', existingMoveframe.manualMode);
+        console.log('  Manual Priority (raw):', existingMoveframe.manualPriority);
+        console.log('  Manual Input Type (raw):', existingMoveframe.manualInputType);
+        console.log('  Distance (raw):', existingMoveframe.distance);
+        console.log('  Repetitions (raw):', existingMoveframe.repetitions);
         setManualMode(loadedManualMode);
         setManualPriority(loadedManualPriority);
+        setManualInputType(loadedManualInputType as 'meters' | 'time');
+        
+        // Load manual mode specific values
+        if (loadedManualMode) {
+          // Load distance or repetitions based on sport type
+          const isSeriesSport = ['BODY_BUILDING', 'GYMNASTIC', 'CALISTHENICS', 'CROSSFIT', 'FUNCTIONAL'].includes(existingMoveframe.sport);
+          
+          console.log('📥 [LOAD] Loading manual mode values:', {
+            isSeriesSport,
+            distance: existingMoveframe.distance,
+            repetitions: existingMoveframe.repetitions,
+            manualInputType: loadedManualInputType
+          });
+          
+          if (isSeriesSport) {
+            // Load repetitions for series-based sports
+            if (existingMoveframe.repetitions) {
+              setRepetitions(existingMoveframe.repetitions.toString());
+            }
+          } else {
+            // Load distance for aerobic sports
+            if (existingMoveframe.distance) {
+              if (loadedManualInputType === 'time') {
+                // Convert deciseconds back to time format
+                const deciseconds = existingMoveframe.distance;
+                const totalSeconds = Math.floor(deciseconds / 10);
+                const ds = deciseconds % 10;
+                const hours = Math.floor(totalSeconds / 3600);
+                const minutes = Math.floor((totalSeconds % 3600) / 60);
+                const seconds = totalSeconds % 60;
+                const timeFormatted = `${hours}h${minutes.toString().padStart(2, '0')}'${seconds.toString().padStart(2, '0')}"${ds}`;
+                console.log('🕐 [LOAD] Converting deciseconds to time:');
+                console.log('  Deciseconds:', deciseconds);
+                console.log('  Total Seconds:', totalSeconds);
+                console.log('  Hours:', hours);
+                console.log('  Minutes:', minutes);
+                console.log('  Seconds:', seconds);
+                console.log('  DS:', ds);
+                console.log('  Time Formatted:', timeFormatted);
+                setDistance(timeFormatted);
+              } else {
+                // Load meters as-is
+                console.log('📏 [LOAD] Loading meters:', existingMoveframe.distance);
+                setDistance(existingMoveframe.distance.toString());
+              }
+            }
+          }
+        }
+        
         console.log('✅ [LOAD] Set manualPriority state to:', loadedManualPriority);
       }
-    } else {
-      resetForm();
     }
+    // If we've already loaded this moveframe, do nothing to preserve user changes
   }, [mode, existingMoveframe, isOpen, workout?.id]); // Reset when workout changes!
 
   /**
@@ -868,6 +1102,19 @@ export function useMoveframeForm({
       }
     }
   }, [planningMode, repetitions, aerobicSeries, sport]);
+
+  /**
+   * Reset distance field when manual input type changes
+   */
+  useEffect(() => {
+    // Skip initial load and when editing existing moveframe
+    if (!isOpen || mode === 'edit') return;
+    
+    // Clear distance when switching input types to avoid confusion
+    if (manualMode) {
+      setDistance('');
+    }
+  }, [manualInputType]);
 
   /**
    * Clear pause field when rest type changes to avoid carrying over invalid formats
@@ -890,6 +1137,7 @@ export function useMoveframeForm({
       type,
       manualMode,
       manualPriority,
+      manualInputType, // For aerobic sports: 'meters' or 'time'
       sectionId, // Workout section for ALL sports
       planningMode, // Planning mode: 'all' or 'individual'
       individualPlans, // Individual repetition plans
@@ -939,6 +1187,7 @@ export function useMoveframeForm({
       setType,
       setManualMode,
       setManualPriority,
+      setManualInputType, // Manual input type setter
       setSectionId, // Workout section setter for ALL sports
       setPlanningMode, // Planning mode setter
       setIndividualPlans, // Individual plans setter

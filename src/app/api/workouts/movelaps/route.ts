@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
         pause: pause || null,
         alarm: alarm ? parseInt(alarm) : null,
         sound: sound || null,
-        notes: notes || null,
+        notes: notes !== undefined ? notes : null,
         reps: reps ? parseInt(reps) : null,
         weight: weight || null,
         tools: tools || null,
@@ -137,6 +137,7 @@ export async function PATCH(request: NextRequest) {
 
     const body = await request.json();
     console.log('📝 Updating movelap:', movelapId, body);
+    console.log('📋 Notes field being updated:', body.notes);
 
     // Update movelap
     const movelap = await prisma.movelap.update({
@@ -152,7 +153,7 @@ export async function PATCH(request: NextRequest) {
         pause: body.pause || null,
         alarm: body.alarm ? parseInt(body.alarm) : null,
         sound: body.sound || null,
-        notes: body.notes || null,
+        notes: body.notes !== undefined ? body.notes : null,
         reps: body.reps ? parseInt(body.reps) : null,
         weight: body.weight || null,
         tools: body.tools || null,
@@ -168,6 +169,7 @@ export async function PATCH(request: NextRequest) {
     });
 
     console.log('✅ Movelap updated:', movelap.id);
+    console.log('✅ Updated notes value:', movelap.notes);
 
     return NextResponse.json(movelap);
   } catch (error: any) {

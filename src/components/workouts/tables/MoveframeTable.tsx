@@ -8,6 +8,15 @@ import { useColorSettings } from '@/hooks/useColorSettings';
 import TableColumnConfig from '../TableColumnConfig';
 import { formatMoveframeType } from '@/constants/moveframe.constants';
 
+// 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
+const stripCircuitTags = (content: string | null | undefined): string => {
+  if (!content) return '';
+  return content
+    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+    .trim();
+};
+
 interface MoveframeTableProps {
   day: any;
   workout: any;
@@ -113,11 +122,13 @@ export default function MoveframeTable({
         // For manual mode with priority, show full content from notes
         // For manual mode WITHOUT priority, show blank (user wants to hide content)
         // Otherwise show description
-        const content = (moveframe.manualMode && moveframe.manualPriority)
+        // 2026-01-22 14:45 UTC - Strip circuit tags from all content
+        const rawContent = (moveframe.manualMode && moveframe.manualPriority)
           ? (moveframe.notes || moveframe.description || '100s * 10 A2 R20*')
           : (moveframe.manualMode && !moveframe.manualPriority)
           ? '' // Blank for manual mode without priority
           : (moveframe.description || '100s * 10 A2 R20*');
+        const content = stripCircuitTags(rawContent);
         console.log('📝 Description column:', {
           moveframeId: moveframe.id,
           manualMode: moveframe.manualMode,
@@ -151,7 +162,8 @@ export default function MoveframeTable({
       case 'alarm':
         return moveframe.alarm?.toString() || '—';
       case 'notes':
-        return moveframe.notes || '';
+        // 2026-01-22 14:45 UTC - Strip circuit tags from notes
+        return stripCircuitTags(moveframe.notes);
       default:
         return '—';
     }

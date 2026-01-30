@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { X } from 'lucide-react';
 import { SPORT_OPTIONS } from '@/constants/workout.constants';
 import { isSeriesBasedSport, shouldShowDistance, getDistanceUnit } from '@/constants/moveframe.constants';
@@ -20,35 +19,7 @@ export default function DayInfoModal({
 }: DayInfoModalProps) {
   if (!isOpen || !day) return null;
 
-  const [dayNotes, setDayNotes] = useState(day.notes || '');
-  const [isSavingNotes, setIsSavingNotes] = useState(false);
-
-  const handleNotesChange = async (newNotes: string) => {
-    setDayNotes(newNotes);
-    setIsSavingNotes(true);
-    
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
-
-      const response = await fetch(`/api/workouts/days/${day.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ notes: newNotes || null })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update day notes');
-      }
-    } catch (error) {
-      console.error('Error updating day notes:', error);
-    } finally {
-      setIsSavingNotes(false);
-    }
-  };
+  const dayNotes = day.notes || '';
   
   // Calculate sports from all workouts in the day
   const calculateDaySports = () => {
@@ -323,23 +294,24 @@ export default function DayInfoModal({
               <span>Day Notes</span>
             </h3>
             <div className="relative">
-              <textarea
-                value={dayNotes}
-                onChange={(e) => setDayNotes(e.target.value)}
-                onBlur={() => handleNotesChange(dayNotes)}
-                disabled={isSavingNotes}
-                placeholder="Add notes or annotations for this day..."
-                rows={4}
-                className="w-full px-3 py-2.5 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm transition-all bg-white resize-none"
-              />
-              {isSavingNotes && (
-                <span className="absolute right-3 bottom-3 text-xs text-gray-500 bg-white px-2 py-1 rounded shadow-sm">
-                  Saving...
-                </span>
+              {dayNotes ? (
+                <div 
+                  className="w-full px-3 py-2.5 border border-amber-300 rounded-lg text-sm bg-white min-h-[100px] max-h-[300px] overflow-y-auto"
+                  style={{ 
+                    whiteSpace: 'pre-wrap',
+                    wordWrap: 'break-word',
+                    lineHeight: '1.6'
+                  }}
+                  dangerouslySetInnerHTML={{ __html: dayNotes }}
+                />
+              ) : (
+                <div className="w-full px-3 py-2.5 border border-amber-300 rounded-lg text-sm bg-white min-h-[100px] text-gray-400 italic">
+                  No notes for this day
+                </div>
               )}
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              These notes apply to the entire day across all workouts.
+              These notes apply to the entire day across all workouts. Use "Edit Day" to modify notes.
             </p>
           </div>
 

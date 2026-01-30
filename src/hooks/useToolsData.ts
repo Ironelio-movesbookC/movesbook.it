@@ -146,7 +146,7 @@ export function useToolsData(): UseToolsDataReturn {
             title: p.name,
             description: p.description || '',
             color: p.color,
-            order: 0, // Order is not stored in Prisma Period
+            order: p.displayOrder !== undefined ? p.displayOrder : 0, // Use displayOrder from database
             userId: p.userId // Track ownership
           }));
           setPeriods(formattedPeriods);
@@ -172,11 +172,13 @@ export function useToolsData(): UseToolsDataReturn {
             code: s.code || '',
             description: s.description || '',
             color: s.color,
-            order: 0,
+            order: s.displayOrder !== undefined ? s.displayOrder : 0, // Use displayOrder from database
             userId: s.userId // Track ownership
           }));
           setSections(formattedSections);
           console.log('✅ Loaded workout sections from database:', formattedSections);
+          console.log('📊 Sections with order:', formattedSections.map((s: any) => ({ title: s.title, order: s.order, displayOrder: sectionsData.sections.find((orig: any) => orig.id === s.id)?.displayOrder })));
+          console.log('🔢 SECTION ORDERS:', formattedSections.map((s: any) => `${s.title}: order=${s.order}`).join(', '));
         } else {
           loadSectionsFromLocalStorage();
         }
@@ -192,24 +194,45 @@ export function useToolsData(): UseToolsDataReturn {
       if (techniquesResponse.ok) {
         const techniquesData = await techniquesResponse.json();
         if (techniquesData.techniques && techniquesData.techniques.length > 0) {
+          // Get current user ID from token
+          const userStr = localStorage.getItem('user');
+          let currentUserId = null;
+          if (userStr) {
+            try {
+              const user = JSON.parse(userStr);
+              currentUserId = user.id;
+            } catch (e) {
+              console.error('Failed to parse user from localStorage');
+            }
+          }
+          
+          // Filter to only show user's own techniques (exclude admin techniques)
+          const userTechniques = techniquesData.techniques.filter((t: any) => 
+            t.userId === currentUserId
+          );
+          
+          console.log(`🔍 Filtered ${userTechniques.length} user techniques from ${techniquesData.techniques.length} total (excluding ${techniquesData.techniques.length - userTechniques.length} admin techniques)`);
+          
           // Convert Prisma BodyBuildingTechnique format to local format
-          const formattedTechniques = techniquesData.techniques.map((t: any) => ({
+          const formattedTechniques = userTechniques.map((t: any) => ({
             id: t.id,
             title: t.name,
             description: t.description || '',
             color: t.color,
             sports: t.sports || [], // API already returns array, no need to check
-            order: 0,
+            order: t.displayOrder !== undefined ? t.displayOrder : 0, // Use displayOrder from database
             userId: t.userId // Track ownership
           }));
           setBodyBuildingTechniques(formattedTechniques);
           console.log('✅ Loaded body building techniques from database:', formattedTechniques);
           console.log('🔍 Techniques details:', formattedTechniques.map((t: BodyBuildingTechnique) => ({ 
             title: t.title, 
+            order: t.order,
             sports: t.sports, 
             userId: t.userId,
-            description: t.description 
+            displayOrder: userTechniques.find((orig: any) => orig.id === t.id)?.displayOrder
           })));
+          console.log('🔢 TECHNIQUE ORDERS:', formattedTechniques.map((t: any) => `${t.title}: order=${t.order}`).join(', '));
         } else {
           loadBodyBuildingTechniquesFromLocalStorage();
         }
@@ -457,20 +480,7 @@ export function useToolsData(): UseToolsDataReturn {
       if (periodsResponse.ok) {
         const periodsData = await periodsResponse.json();
         console.log('✅ Periods synced successfully:', periodsData);
-        
-        // Reload periods from database to get updated IDs
-        if (periodsData.periods && periodsData.periods.length > 0) {
-          const formattedPeriods = periodsData.periods.map((p: any) => ({
-            id: p.id,
-            title: p.name,
-            description: p.description || '',
-            color: p.color,
-            order: 0,
-            userId: p.userId
-          }));
-          setPeriods(formattedPeriods);
-          console.log('🔄 Periods reloaded:', formattedPeriods);
-        }
+        // Don't reload to avoid triggering auto-save loop
       } else {
         console.error('❌ Failed to sync periods');
       }
@@ -488,59 +498,26 @@ export function useToolsData(): UseToolsDataReturn {
       if (sectionsResponse.ok) {
         const sectionsData = await sectionsResponse.json();
         console.log('✅ Workout sections synced successfully:', sectionsData);
-        
-        // Reload sections from database to get updated IDs
-        if (sectionsData.sections && sectionsData.sections.length > 0) {
-          const formattedSections = sectionsData.sections.map((s: any) => ({
-            id: s.id,
-            title: s.name,
-            code: s.code || '',
-            description: s.description || '',
-            color: s.color,
-            order: 0,
-            userId: s.userId
-          }));
-          setSections(formattedSections);
-          console.log('🔄 Workout sections reloaded:', formattedSections);
-        }
+        // Don't reload to avoid triggering auto-save loop
       } else {
         console.error('❌ Failed to sync workout sections');
       }
 
       // Sync body building techniques to Prisma BodyBuildingTechnique table (bulk sync)
-      // Automatically set sports to ['BODY_BUILDING'] for all techniques
-      const techniquesWithSport = bodyBuildingTechniques.map(t => ({
-        ...t,
-        sports: ['BODY_BUILDING']
-      }));
-      
+      // Use actual sports array from each technique (no override)
       const techniquesResponse = await fetch('/api/bodybuilding/techniques/sync', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ techniques: techniquesWithSport })
+        body: JSON.stringify({ techniques: bodyBuildingTechniques })
       });
 
       if (techniquesResponse.ok) {
         const techniquesData = await techniquesResponse.json();
         console.log('✅ Body building techniques synced successfully:', techniquesData);
-        
-        // Reload techniques from database to get updated IDs
-        if (techniquesData.techniques && techniquesData.techniques.length > 0) {
-          const formattedTechniques = techniquesData.techniques.map((t: any) => ({
-            id: t.id,
-            title: t.name,
-            description: t.description || '',
-            color: t.color,
-            sports: Array.isArray(t.sports) ? t.sports : [],
-            order: 0,
-            userId: t.userId
-          }));
-          setBodyBuildingTechniques(formattedTechniques);
-          console.log('🔄 Body building techniques reloaded:', formattedTechniques);
-        }
+        // Don't update state to avoid triggering auto-save loop
       } else {
         console.error('❌ Failed to sync body building techniques');
       }

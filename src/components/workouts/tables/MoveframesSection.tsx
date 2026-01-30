@@ -184,7 +184,7 @@ export default function MoveframesSection({
       macro: <th key="macro" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold" style={{ width: '32px' }}>Macro</th>,
       alarm: <th key="alarm" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold" style={{ width: '42px' }}>Alarm</th>,
       annotation: <th key="annotation" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold" style={{ width: '50px' }}>Note</th>,
-      options: <th key="options" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold" style={{ width: '250px' }}>Options</th>,
+      options: <th key="options" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold sticky-options-header bg-purple-300" style={{ width: '250px', minWidth: '250px' }}>Options</th>,
     };
     return columnHeaders[columnId];
   };
@@ -375,12 +375,13 @@ export default function MoveframesSection({
             strategy={verticalListSortingStrategy}
           >
             <div className="p-2">
-              <table className="border-collapse text-xs bg-white" style={{ tableLayout: 'fixed', width: 'auto' }}>
-                <thead className="bg-purple-300 text-purple-900">
-                  <tr>
-                    {orderedVisibleColumns.map(columnId => renderColumnHeader(columnId))}
-                  </tr>
-                </thead>
+              <div className="overflow-x-auto overflow-y-visible table-scrollbar">
+                <table className="text-xs bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: '1400px', width: '100%' }}>
+                  <thead className="bg-purple-300 text-purple-900">
+                    <tr>
+                      {orderedVisibleColumns.map(columnId => renderColumnHeader(columnId))}
+                    </tr>
+                  </thead>
                 <tbody>
                   {orderedMoveframes.map((moveframe: any, mfIndex: number) => {
                     // Expand movelaps if: explicitly expanded OR autoExpandAll is true
@@ -427,7 +428,8 @@ export default function MoveframesSection({
                     );
                   })}
                 </tbody>
-              </table>
+                </table>
+              </div>
             </div>
           </SortableContext>
         )}

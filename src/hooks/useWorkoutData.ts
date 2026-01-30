@@ -166,6 +166,44 @@ export function useWorkoutData({
           });
         }
         
+        // 2026-01-27 - Parse circuit data from notes field and set isCircuitBased flag
+        if (plan?.weeks) {
+          console.log('🔄 [useWorkoutData] Parsing circuit data from moveframe notes...');
+          plan.weeks.forEach((week: any) => {
+            week.days?.forEach((day: any) => {
+              day.workouts?.forEach((workout: any) => {
+                workout.moveframes?.forEach((moveframe: any) => {
+                  // Check if notes contain circuit data
+                  if (moveframe.notes) {
+                    const circuitDataMatch = moveframe.notes.match(/\[CIRCUIT_DATA\]([\s\S]*?)\[\/CIRCUIT_DATA\]/);
+                    const circuitMetaMatch = moveframe.notes.match(/\[CIRCUIT_META\]([\s\S]*?)\[\/CIRCUIT_META\]/);
+                    
+                    if (circuitDataMatch || circuitMetaMatch) {
+                      try {
+                        const jsonStr = circuitDataMatch?.[1] || circuitMetaMatch?.[1];
+                        const circuitData = JSON.parse(jsonStr);
+                        
+                        // Set isCircuitBased flag on the moveframe object
+                        moveframe.isCircuitBased = true;
+                        moveframe.circuitConfig = circuitData.config;
+                        moveframe.circuits = circuitData.circuits;
+                        
+                        console.log(`🔄 [useWorkoutData] Parsed circuit data for moveframe ${moveframe.letter}:`, {
+                          hasDescription: !!moveframe.description,
+                          descriptionLength: moveframe.description?.length || 0,
+                          isCircuitBased: moveframe.isCircuitBased
+                        });
+                      } catch (error) {
+                        console.error(`❌ [useWorkoutData] Failed to parse circuit data for moveframe ${moveframe.letter}:`, error);
+                      }
+                    }
+                  }
+                });
+              });
+            });
+          });
+        }
+        
         setWorkoutPlan(plan);
         console.log('✅ workoutPlan state set to:', plan);
       } else {

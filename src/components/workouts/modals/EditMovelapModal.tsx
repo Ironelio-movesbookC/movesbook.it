@@ -117,19 +117,28 @@ export default function EditMovelapModal({
     setIsSubmitting(true);
 
     const formData = new FormData(e.currentTarget);
+    const isManualMovelap = moveframe.manualMode === true;
 
     try {
-      const response = await movelapApi.update(movelap.id, {
-        distance: parseInt(formData.get('distance') as string) || 0,
-        speedCode: formData.get('speedCode') as string || '',
-        style: formData.get('style') as string || '',
-        pace: paceFormatted || '',
-        time: timeFormatted || '',
-        pause: formData.get('pause') as string || '',
-        restType: formData.get('restType') as string || 'SET_TIME',
-        alarm: parseInt(formData.get('alarm') as string) || 0,
-        notes: formData.get('notes') as string || ''
-      });
+      // For manual movelaps, only update notes
+      // For normal movelaps, update all fields
+      const updateData = isManualMovelap 
+        ? {
+            notes: formData.get('notes') as string || ''
+          }
+        : {
+            distance: parseInt(formData.get('distance') as string) || 0,
+            speedCode: formData.get('speedCode') as string || '',
+            style: formData.get('style') as string || '',
+            pace: paceFormatted || '',
+            time: timeFormatted || '',
+            pause: formData.get('pause') as string || '',
+            restType: formData.get('restType') as string || 'SET_TIME',
+            alarm: parseInt(formData.get('alarm') as string) || 0,
+            notes: formData.get('notes') as string || ''
+          };
+
+      const response = await movelapApi.update(movelap.id, updateData);
 
       if (response.success) {
         onSuccess('Movelap updated successfully!');
@@ -146,6 +155,9 @@ export default function EditMovelapModal({
     }
   };
 
+  // Check if this movelap belongs to a manual moveframe
+  const isManualMovelap = moveframe.manualMode === true;
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[999999]">
       <div className="bg-white rounded-lg shadow-xl p-6 max-w-3xl w-full mx-4 max-h-[85vh] overflow-y-auto">
@@ -158,6 +170,11 @@ export default function EditMovelapModal({
             <p className="text-sm text-gray-500">
               Moveframe {moveframe.code} • {moveframe.sport} • Workout #{workout.sessionNumber}
             </p>
+            {isManualMovelap && (
+              <p className="text-xs text-amber-600 font-semibold mt-1">
+                ⚠️ Manual Movelap - Only summary/notes can be edited
+              </p>
+            )}
           </div>
           <button 
             onClick={onClose}
@@ -170,7 +187,9 @@ export default function EditMovelapModal({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          {/* Show all fields for normal movelaps, only notes for manual movelaps */}
+          {!isManualMovelap && (
+            <div className="grid grid-cols-2 gap-4">
             {/* Distance */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -319,17 +338,18 @@ export default function EditMovelapModal({
               />
             </div>
           </div>
+          )}
 
-          {/* Notes */}
+          {/* Notes - Always show for both manual and normal movelaps */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Notes
+              {isManualMovelap ? 'Summary / Notes' : 'Notes'}
             </label>
             <textarea
               name="notes"
               defaultValue={movelap.notes || ''}
-              placeholder="Optional notes..."
-              rows={3}
+              placeholder={isManualMovelap ? "Enter summary or notes for this manual movelap..." : "Optional notes..."}
+              rows={isManualMovelap ? 6 : 3}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
               disabled={isSubmitting}
             />

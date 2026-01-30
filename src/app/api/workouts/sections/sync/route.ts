@@ -59,6 +59,10 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`🔄 Syncing ${sections.length} workout sections for user ${decoded.userId}`);
+    console.log('📋 Sections with order:', sections.map((s: any) => ({ 
+      name: s.title || s.name, 
+      order: s.order 
+    })));
 
     // Get existing sections from database
     const existingSections = await prisma.workoutSection.findMany({
@@ -81,7 +85,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Update or create sections
-    for (const section of sections) {
+    for (let i = 0; i < sections.length; i++) {
+      const section = sections[i];
       const sectionName = section.title || section.name;
       if (!sectionName || typeof sectionName !== 'string' || sectionName.trim() === '') {
         console.warn('⚠️ Skipping section with missing or invalid name:', section);
@@ -93,7 +98,8 @@ export async function POST(request: NextRequest) {
         name: sectionName.trim(),
         code: section.code && typeof section.code === 'string' && section.code.length <= 5 ? section.code.trim() : null,
         description: section.description && typeof section.description === 'string' ? section.description : '',
-        color: section.color && typeof section.color === 'string' ? section.color : '#3b82f6'
+        color: section.color && typeof section.color === 'string' ? section.color : '#3b82f6',
+        displayOrder: section.order !== undefined ? section.order : i // Use order from client or index
       };
 
       // If section has an ID and it exists in database, update it
@@ -102,21 +108,21 @@ export async function POST(request: NextRequest) {
           where: { id: section.id },
           data: sectionData
         });
-        console.log(`✏️  Updated workout section: ${sectionData.name} (Code: ${sectionData.code || 'N/A'})`);
+        console.log(`✏️  Updated workout section: ${sectionData.name} (Code: ${sectionData.code || 'N/A'}, order: ${sectionData.displayOrder})`);
       } 
       // Otherwise, create a new section
       else {
         await prisma.workoutSection.create({
           data: sectionData
         });
-        console.log(`➕ Created new workout section: ${sectionData.name} (Code: ${sectionData.code || 'N/A'})`);
+        console.log(`➕ Created new workout section: ${sectionData.name} (Code: ${sectionData.code || 'N/A'}, order: ${sectionData.displayOrder})`);
       }
     }
 
     // Fetch updated list
     const updatedSections = await prisma.workoutSection.findMany({
       where: { userId: decoded.userId },
-      orderBy: { name: 'asc' }
+      orderBy: { displayOrder: 'asc' }
     });
 
     console.log(`✅ Sync complete. Total workout sections: ${updatedSections.length}`);

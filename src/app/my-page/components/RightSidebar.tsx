@@ -14,11 +14,19 @@ import {
   CalendarRange,
   Mail,
   Filter,
-  Settings
+  Settings,
+  User
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useState } from 'react';
 import PersonalSettingsModal from '@/components/workouts/PersonalSettingsModal';
+
+// 2026-01-22 13:30 UTC - Placeholder component for avatar images (replaces Unsplash timeout issues)
+const AvatarPlaceholder = ({ size = 'w-10 h-10', name = 'U' }: { size?: string, name?: string }) => (
+  <div className={`${size} rounded bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-semibold flex-shrink-0`}>
+    <User size={size.includes('12') ? 24 : 20} />
+  </div>
+);
 
 interface RightSidebarProps {
   user: any;
@@ -195,11 +203,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               {/* Post 1 */}
               <div className="px-3 py-2 border-b">
                 <div className="flex items-start gap-3 mb-2">
-                  <img
-                    src="https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=100&h=100&fit=crop"
-                    alt="User"
-                    className="w-10 h-10 rounded object-cover"
-                  />
+                  <AvatarPlaceholder size="w-10 h-10" />
                   <div className="flex-1">
                     <h6 className="text-sm font-semibold text-red-700">Trail Running</h6>
                     <p className="text-xs text-gray-500">27.4.2010</p>
@@ -212,11 +216,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               {/* Post 2 */}
               <div className="px-3 py-2 border-b">
                 <div className="flex items-start gap-3 mb-2">
-                  <img
-                    src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop"
-                    alt="User"
-                    className="w-10 h-10 rounded object-cover"
-                  />
+                  <AvatarPlaceholder size="w-10 h-10" />
                   <div className="flex-1">
                     <h6 className="text-sm font-semibold text-red-700">Where is the limit</h6>
                     <p className="text-xs text-gray-500">18.5.2010</p>
@@ -229,11 +229,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               {/* Post 3 */}
               <div className="px-3 py-2">
                 <div className="flex items-start gap-3 mb-2">
-                  <img
-                    src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop"
-                    alt="User"
-                    className="w-10 h-10 rounded object-cover"
-                  />
+                  <AvatarPlaceholder size="w-10 h-10" />
                   <div className="flex-1">
                     <h6 className="text-sm font-semibold text-red-700">Run for Japan</h6>
                     <p className="text-xs text-gray-500">18.3.2011</p>
@@ -262,11 +258,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
             {/* Members List - 3 members */}
             <div className="space-y-3 mt-3">
               <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                <img
-                  src="https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=100&h=100&fit=crop"
-                  alt="Freiwildplayer"
-                  className="w-12 h-12 rounded object-cover"
-                />
+                <AvatarPlaceholder size="w-12 h-12" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-800">Freiwildplayer</p>
                   <button className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 mt-1">
@@ -278,9 +270,8 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
 
               <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
                 <img
-                  src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop"
                   alt="Freewildplayer"
-                  className="w-12 h-12 rounded object-cover"
+                  className="w-12 h-12 rounded object-cover hidden"
                 />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-800">Freewildplayer</p>
@@ -292,11 +283,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               </div>
 
               <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                <img
-                  src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop"
-                  alt="lemonWonderland"
-                  className="w-12 h-12 rounded object-cover"
-                />
+                <AvatarPlaceholder size="w-12 h-12" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-800">lemonWonderland</p>
                   <button className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 mt-1">
@@ -326,11 +313,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
             {/* Members List - 3 members */}
             <div className="space-y-3 mt-3">
               <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                <img
-                  src="https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=100&h=100&fit=crop"
-                  alt="Freiwildplayer"
-                  className="w-12 h-12 rounded object-cover"
-                />
+                <AvatarPlaceholder size="w-12 h-12" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-800">Freiwildplayer</p>
                   <button className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 mt-1">
@@ -342,9 +325,8 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
 
               <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
                 <img
-                  src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop"
                   alt="Freewildplayer"
-                  className="w-12 h-12 rounded object-cover"
+                  className="w-12 h-12 rounded object-cover hidden"
                 />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-800">Freewildplayer</p>
@@ -356,11 +338,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               </div>
 
               <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                <img
-                  src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop"
-                  alt="lemonWonderland"
-                  className="w-12 h-12 rounded object-cover"
-                />
+                <AvatarPlaceholder size="w-12 h-12" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-800">lemonWonderland</p>
                   <button className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 mt-1">
@@ -469,11 +447,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
             {/* Members List - 3 members */}
             <div className="space-y-3 mt-3">
               <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                <img
-                  src="https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=100&h=100&fit=crop"
-                  alt="Freiwildplayer"
-                  className="w-12 h-12 rounded object-cover"
-                />
+                <AvatarPlaceholder size="w-12 h-12" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-800">Freiwildplayer</p>
                   <button className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 mt-1">
@@ -485,9 +459,8 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
 
               <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
                 <img
-                  src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop"
                   alt="Freewildplayer"
-                  className="w-12 h-12 rounded object-cover"
+                  className="w-12 h-12 rounded object-cover hidden"
                 />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-800">Freewildplayer</p>
@@ -499,11 +472,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               </div>
 
               <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                <img
-                  src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop"
-                  alt="lemonWonderland"
-                  className="w-12 h-12 rounded object-cover"
-                />
+                <AvatarPlaceholder size="w-12 h-12" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-800">lemonWonderland</p>
                   <button className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 mt-1">
@@ -528,11 +497,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               {/* Post 1 */}
               <div className="px-3 py-2 border-b">
                 <div className="flex items-start gap-3 mb-2">
-                  <img
-                    src="https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=100&h=100&fit=crop"
-                    alt="User"
-                    className="w-10 h-10 rounded object-cover"
-                  />
+                  <AvatarPlaceholder size="w-10 h-10" />
                   <div className="flex-1">
                     <h6 className="text-sm font-semibold text-red-700">Trail Running</h6>
                     <p className="text-xs text-gray-500">27.4.2010</p>
@@ -545,11 +510,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               {/* Post 2 */}
               <div className="px-3 py-2 border-b">
                 <div className="flex items-start gap-3 mb-2">
-                  <img
-                    src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop"
-                    alt="User"
-                    className="w-10 h-10 rounded object-cover"
-                  />
+                  <AvatarPlaceholder size="w-10 h-10" />
                   <div className="flex-1">
                     <h6 className="text-sm font-semibold text-red-700">Where is the limit</h6>
                     <p className="text-xs text-gray-500">18.5.2010</p>
@@ -562,11 +523,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               {/* Post 3 */}
               <div className="px-3 py-2">
                 <div className="flex items-start gap-3 mb-2">
-                  <img
-                    src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop"
-                    alt="User"
-                    className="w-10 h-10 rounded object-cover"
-                  />
+                  <AvatarPlaceholder size="w-10 h-10" />
                   <div className="flex-1">
                     <h6 className="text-sm font-semibold text-red-700">Run for Japan</h6>
                     <p className="text-xs text-gray-500">18.3.2011</p>
@@ -599,11 +556,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
             <div className="space-y-3 mt-3">
               <div className="px-3 py-2 border-b">
                 <div className="flex items-start gap-3 mb-2">
-                  <img
-                    src="https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=100&h=100&fit=crop"
-                    alt="Page"
-                    className="w-10 h-10 rounded object-cover"
-                  />
+                  <AvatarPlaceholder size="w-10 h-10" />
                   <div className="flex-1">
                     <h6 className="text-sm font-semibold text-gray-800">Correre</h6>
                     <p className="text-xs text-gray-600 mb-1">Place a Giusi Cricri e ad altri 36 amici.</p>
@@ -617,9 +570,8 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               <div className="px-3 py-2 border-b">
                 <div className="flex items-start gap-3 mb-2">
                   <img
-                    src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop"
                     alt="Page"
-                    className="w-10 h-10 rounded object-cover"
+                    className="w-10 h-10 rounded object-cover hidden"
                   />
                   <div className="flex-1">
                     <h6 className="text-sm font-semibold text-gray-800">Papa Benedetto XVI</h6>
@@ -650,11 +602,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
 
               <div className="px-3 py-2">
                 <div className="flex items-start gap-3 mb-2">
-                  <img
-                    src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop"
-                    alt="Page"
-                    className="w-10 h-10 rounded object-cover"
-                  />
+                  <AvatarPlaceholder size="w-10 h-10" />
                   <div className="flex-1">
                     <h6 className="text-sm font-semibold text-gray-800">L'uomo senza sonno</h6>
                     <p className="text-xs text-gray-600 mb-1">Place a Luca Borsacchi.</p>
@@ -678,11 +626,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
             <div className="mt-3 px-3">
               {/* Sponsored Content */}
               <div className="flex items-start gap-3 py-2">
-                <img
-                  src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop"
-                  alt="Sponsor"
-                  className="w-12 h-12 rounded object-cover"
-                />
+                <AvatarPlaceholder size="w-12 h-12" />
                 <div className="flex-1">
                   <p className="text-xs text-gray-700 leading-relaxed">
                     Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text
