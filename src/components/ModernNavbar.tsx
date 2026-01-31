@@ -109,7 +109,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
 
   // Track last visited page for each user type
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && pathname) {
       // Save last visited page for each user type
       if (pathname.startsWith('/admin/')) {
         localStorage.setItem('lastAdminPage', pathname);

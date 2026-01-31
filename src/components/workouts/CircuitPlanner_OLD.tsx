@@ -697,7 +697,12 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             speed: '',
             restType: 'SET_TIME', // Use enum format
             restTime: null,
-            notes: '',
+            notes: `[CIRCUIT_META]${JSON.stringify({
+              circuitIndex: circuitIndex,
+              seriesNumber: globalSeriesNumber,
+              localSeriesNumber: seriesNum,
+              stationNumber: station.stationNumber
+            })}[/CIRCUIT_META]`,
             alarm: false,
             sound: false,
             status: 'PENDING',
@@ -1103,10 +1108,21 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       ? Math.round(circuitsToUse.reduce((sum, c) => sum + c.series, 0) / circuitsToUse.length)
       : seriesCount;
     
+    // Calculate average stations per series
+    const avgStations = circuitsToUse.length > 0
+      ? Math.round(circuitsToUse.reduce((sum, c) => {
+          const numSeries = c.stationsBySeries.length;
+          const circuitAvgStations = numSeries > 0 
+            ? c.stationsBySeries.reduce((sSum, s) => sSum + s.length, 0) / numSeries
+            : 0;
+          return sum + circuitAvgStations;
+        }, 0) / circuitsToUse.length)
+      : stationsPerCircuit;
+    
     if (seriesMode === 'time') {
-      parts.push(`Circuit ${circuitsToUse.length || numCircuits} of ${stationsPerCircuit} stations to do for ${seriesTime}' x ${avgSeries} series`);
+      parts.push(`Circuit ${circuitsToUse.length || numCircuits} of ${avgStations} stations to do for ${seriesTime}' x ${avgSeries} series`);
     } else {
-    parts.push(`Circuit: ${circuitsToUse.length || numCircuits} circuits x ${avgSeries} series`);
+      parts.push(`Circuit: ${circuitsToUse.length || numCircuits} circuits of ${avgStations} stations x ${avgSeries} series`);
     }
     
     // Pause info
@@ -1600,9 +1616,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
   // Second View - Table/Grid Phase
   return (
     <>
-    {/* 2026-01-31 - Hide main UI in invisible mode */}
-    {!initialConfig?.hideUI && (
-    <div className="space-y-2">
+      <div className={`space-y-2 ${initialConfig?.hideUI ? 'hidden' : ''}`}>
       {/* Configuration Section - 2026-01-21 19:30 UTC */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <h3 className="text-lg font-bold text-blue-900 mb-4">Circuit Configuration</h3>
@@ -1847,7 +1861,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           Back
         </button>
         <button
-          onClick={handleSave}
+          onClick={() => handleSave()}
           className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
         >
           {initialConfig?.editingFromMovelap || (initialConfig?.existingCircuits && initialConfig.existingCircuits.length > 0) ? 'Save' : 'Add Moveframe'}
@@ -2335,7 +2349,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           </div>
         </div>
       </div>
-    )}
       
       {/* Sector Selector Modal with Drag & Drop - 2026-01-22 12:40 UTC */}
       {/* 2026-01-22 13:10 UTC - Updated to support single station selection */}
@@ -2519,6 +2532,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           </div>
         </div>
       )}
+    </div>
       
       {/* Add Circuit Modal - 2026-01-21 22:10 UTC */}
       {showAddCircuitModal && (
@@ -2680,7 +2694,10 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         const currentExerciseName = currentStation?.exercise;
         
         // If editing existing exercise, show only that sector
-        const sectorsToShow = hasExistingExercise && currentSector 
+        // UNLESS we are in "editingFromMovelap" mode, where we want to allow changing exercise completely
+        const forceSelectMode = initialConfig?.editingFromMovelap;
+        
+        const sectorsToShow = (hasExistingExercise && currentSector && !forceSelectMode)
           ? [currentSector] 
           : getAllSectors();
         
@@ -2689,7 +2706,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           <div className="bg-white rounded-lg p-6 max-w-3xl max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-bold">
-                  {hasExistingExercise ? 'Edit Exercise' : 'Select Exercise'}
+                  {hasExistingExercise && !forceSelectMode ? 'Edit Exercise' : 'Select Exercise'}
                 </h3>
               <button
                 onClick={() => {
@@ -2901,6 +2918,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         </div>
       )}
       
+      <div className={`space-y-2 ${initialConfig?.hideUI ? 'hidden' : ''}`}>
       {/* Circuit Action Buttons - 2026-01-21 22:10 UTC */}
       <div className="flex items-center justify-center gap-3 mt-6 border-t pt-6">
         <button
@@ -2989,7 +3007,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
              Back
            </button>
            <button
-             onClick={handleSave}
+             onClick={() => handleSave()}
              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
            >
              {initialConfig?.editingFromMovelap || (initialConfig?.existingCircuits && initialConfig.existingCircuits.length > 0) ? 'Save' : 'Add Moveframe'}

@@ -31,7 +31,7 @@ function MyGroupContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const groupId = searchParams.get('groupId');
+  const groupId = searchParams?.get('groupId');
 
   // Redirect to home if not authenticated
   useEffect(() => {

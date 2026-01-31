@@ -472,7 +472,7 @@ export default function MoveframesSection({
           }}
           onEditMovelap={(movelap) => {
             setShowInfoPanel(false);
-            if (onEditMovelap) onEditMovelap(movelap, selectedMoveframe);
+            if (onEditMovelap) onEditMovelap(movelap, selectedMoveframe, workout, day);
           }}
           onDeleteMovelap={(movelap) => {
             if (onDeleteMovelap) onDeleteMovelap(movelap, selectedMoveframe);

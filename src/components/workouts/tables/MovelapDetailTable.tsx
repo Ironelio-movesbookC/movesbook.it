@@ -145,7 +145,8 @@ function SortableMovelapRow({
   onPasteMovelap,
   onAddMovelapAfter,
   pauseAmongCircuits,
-  onRefresh
+  onRefresh,
+  isCircuitBased
 }: {
   movelap: any;
   index: number;
@@ -161,6 +162,7 @@ function SortableMovelapRow({
   onAddMovelapAfter?: (movelap: any, index: number) => void;
   pauseAmongCircuits?: string;
   onRefresh?: () => void;
+  isCircuitBased?: boolean;
 }) {
   // Options dropdown state
   const [showOptionsDropdown, setShowOptionsDropdown] = useState(false);
@@ -354,23 +356,23 @@ function SortableMovelapRow({
              {movelap.exercise || '—'}
            </td>
            {/* Reps */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
-             {movelap.reps || '—'}
-           </td>
-           {!moveframe.isCircuitBased && (
-             <>
-           {/* Weight */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-xs font-semibold ${movelap.isNewlyAdded ? 'text-red-600' : 'text-blue-700'}`}>
-             {movelap.weight || '—'}
-           </td>
-           {/* Tempo/Speed */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
-             {movelap.speed || '—'}
-           </td>
-             </>
-           )}
-         </>
-       )}
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
+            {movelap.reps || '—'}
+          </td>
+          {!isCircuitBased && (
+            <>
+          {/* Weight */}
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs font-semibold ${movelap.isNewlyAdded ? 'text-red-600' : 'text-blue-700'}`}>
+            {movelap.weight || '—'}
+          </td>
+          {/* Tempo/Speed */}
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
+            {movelap.speed || '—'}
+          </td>
+            </>
+          )}
+        </>
+      )}
       
        {/* OTHER SPORTS WITH TOOLS (Gymnastic, Stretching, Pilates, Yoga, etc.) */}
        {hasTools && (
@@ -487,14 +489,14 @@ function SortableMovelapRow({
        </td>
        
        {/* Alarm & Sound - Hide for circuit-based moveframes */}
-       {!moveframe.isCircuitBased && (
-       <td className={`border border-gray-300 px-1 py-1 text-center ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
-         <div className="flex items-center justify-center gap-1">
-           {getSoundIcon(movelap)}
-           {movelap.alarm && movelap.alarm !== -1 && <span className="text-[8px]">{Math.abs(movelap.alarm)}</span>}
-         </div>
-       </td>
-       )}
+      {!isCircuitBased && (
+      <td className={`border border-gray-300 px-1 py-1 text-center ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
+        <div className="flex items-center justify-center gap-1">
+          {getSoundIcon(movelap)}
+          {movelap.alarm && movelap.alarm !== -1 && <span className="text-[8px]">{Math.abs(movelap.alarm)}</span>}
+        </div>
+      </td>
+      )}
       
       {/* Notes - Display with increased width for better readability */}
       {/* 2026-01-24 - Increased width 4x to 1200px for circuit movelap table */}
@@ -694,6 +696,20 @@ export default function MovelapDetailTable({
       } catch (e) {
         console.error('Failed to parse circuit data:', e);
       }
+    }
+  }
+
+  // Fallback: Check if any movelaps indicate this is a circuit (via CIRCUIT_META tag)
+  // This handles cases where moveframe.notes might not have the [CIRCUIT_DATA] tag yet
+  if (!circuitBasedMoveframe && movelaps && movelaps.length > 0) {
+    const hasCircuitMovelaps = movelaps.some((ml: any) => 
+      (ml.notes && typeof ml.notes === 'string' && ml.notes.includes('[CIRCUIT_META]')) ||
+      (ml.circuitLetter) // If already parsed/populated
+    );
+    
+    if (hasCircuitMovelaps) {
+      circuitBasedMoveframe = true;
+      moveframe.isCircuitBased = true;
     }
   }
   
@@ -1304,16 +1320,16 @@ export default function MovelapDetailTable({
                     <col style={{ width: '30px' }} />
                     <col style={{ width: '30px' }} />
                     {/* 2026-01-27 - Reduced widths for circuit movelap table */}
-                    <col style={{ width: moveframe.isCircuitBased ? '60px' : '30px' }} />
+                    <col style={{ width: circuitBasedMoveframe ? '60px' : '30px' }} />
                     <col style={{ width: '120px' }} />
                     <col style={{ width: '80px' }} />
                     {isBodyBuilding && (
                       <>
                         {/* 2026-01-27 - Reduced Musc.Sector and Exercise widths for circuits */}
-                        <col style={{ width: moveframe.isCircuitBased ? '140px' : '100px' }} />
-                        <col style={{ width: moveframe.isCircuitBased ? '180px' : '120px' }} />
-                        <col style={{ width: moveframe.isCircuitBased ? '40px' : '50px' }} />
-                        {!moveframe.isCircuitBased && (
+                        <col style={{ width: circuitBasedMoveframe ? '140px' : '100px' }} />
+                        <col style={{ width: circuitBasedMoveframe ? '180px' : '120px' }} />
+                        <col style={{ width: circuitBasedMoveframe ? '40px' : '50px' }} />
+                        {!circuitBasedMoveframe && (
                           <>
                         <col style={{ width: '60px' }} />
                         <col style={{ width: '50px' }} />
@@ -1347,7 +1363,7 @@ export default function MovelapDetailTable({
                     <col style={{ width: '40px' }} />
                     {!moveframe.isCircuitBased && <col style={{ width: '60px' }} />}
                     {/* 2026-01-27 - Reduced Notes width for circuits */}
-                    <col style={{ width: moveframe.isCircuitBased ? '200px' : '300px' }} />
+                    <col style={{ width: circuitBasedMoveframe ? '200px' : '300px' }} />
                     <col style={{ width: '110px', minWidth: '110px' }} />
                   </colgroup>
                   <thead className="bg-gray-200">
@@ -1363,7 +1379,7 @@ export default function MovelapDetailTable({
                           <th className="border border-gray-300 px-1 py-1 text-left text-[10px]">Musc.Sector</th>
                           <th className="border border-gray-300 px-1 py-1 text-left text-[10px]">Exercise</th>
                           <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Reps</th>
-                          {!moveframe.isCircuitBased && (
+                          {!circuitBasedMoveframe && (
                             <>
                           <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Weight</th>
                           <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Tempo</th>
@@ -1382,7 +1398,7 @@ export default function MovelapDetailTable({
                       {isDistanceBased && (
                         <>
                           <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">
-                            {moveframe.isCircuitBased ? 'Musc.Sector' : 'Dist/Dur'}
+                            {circuitBasedMoveframe ? 'Musc.Sector' : 'Dist/Dur'}
                           </th>
                           {(isSwim || isRun) && (
                             <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Exercise</th>
@@ -1394,7 +1410,7 @@ export default function MovelapDetailTable({
                             </>
                           )}
                           <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">
-                            {moveframe.isCircuitBased ? 'Reps' : 'Speed'}
+                            {circuitBasedMoveframe ? 'Reps' : 'Speed'}
                           </th>
                           {isRowing && (
                             <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Row/min</th>
@@ -1407,7 +1423,7 @@ export default function MovelapDetailTable({
                       {/* Common headers */}
                       <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Pause</th>
                       <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Macro</th>
-                      {!moveframe.isCircuitBased && (
+                      {!circuitBasedMoveframe && (
                       <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Alarm&Snd</th>
                       )}
                       <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" style={{ width: '300px' }}>Notes</th>
@@ -1462,7 +1478,7 @@ export default function MovelapDetailTable({
                 if (isBodyBuilding) {
                   totalColumns += 5; // Musc.Sector + Exercise + Reps + Weight + Tempo (Rest Type removed 2026-01-24)
                   // For circuit-based bodybuilding, remove Weight and Tempo columns
-                  if (moveframe.isCircuitBased) {
+                  if (circuitBasedMoveframe) {
                     totalColumns -= 2; // Remove Weight + Tempo
                   }
                 } else if (hasTools) {
@@ -1478,10 +1494,10 @@ export default function MovelapDetailTable({
                 
                 // Trailing columns: Pause(1) + Macro(1) + Alarm&Snd(1) + Notes(1) + Options(1) = 5
                 // For circuit-based moveframes, remove Alarm&Snd column
-                totalColumns += moveframe.isCircuitBased ? 4 : 5;
+                totalColumns += circuitBasedMoveframe ? 4 : 5;
                 
                 // 2026-01-22 10:30 UTC - Circuit header logic
-                const isCircuitBased = moveframe.isCircuitBased || movelap.circuitLetter;
+                const isCircuitBased = circuitBasedMoveframe || movelap.circuitLetter;
                 const isFirstInCircuit = isCircuitBased && (index === 0 || movelaps[index - 1]?.circuitLetter !== movelap.circuitLetter);
                 const circuitLetter = movelap.circuitLetter || '';
                 const circuitIndex = movelap.circuitIndex || 1;
@@ -1521,6 +1537,7 @@ export default function MovelapDetailTable({
                       onAddMovelapAfter={onAddMovelapAfter}
                       pauseAmongCircuits={pauseAmongCircuits}
                       onRefresh={onRefresh}
+                      isCircuitBased={circuitBasedMoveframe}
                     />
                   </React.Fragment>
                 );

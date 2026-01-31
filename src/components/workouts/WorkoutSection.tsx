@@ -2134,40 +2134,38 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                    modalActions.setShowAddMoveframeModal(true);
                  }}
                  onEditMovelap={(movelap, moveframe, workout, day) => {
-                  // Check if this movelap is part of a circuit
-                  const isCircuitMovelap = movelap.notes && typeof movelap.notes === 'string' && 
-                                          movelap.notes.includes('[CIRCUIT_META]');
+                  console.log('🏗️ WorkoutSection onEditMovelap received', { 
+                    movelapId: movelap.id, 
+                    notes: movelap.notes,
+                    moveframeId: moveframe?.id,
+                    hasWorkout: !!workout,
+                    hasDay: !!day
+                  });
+                  // Check if this is a circuit movelap (indicated by CIRCUIT_META in notes)
+                  // If so, open the circuit planner in "select exercise" mode
+                  const isCircuitMovelap = movelap.notes && typeof movelap.notes === 'string' && movelap.notes.includes('[CIRCUIT_META]');
                   
-                  if (isCircuitMovelap && moveframe) {
-                    // For circuit movelaps, open the circuit planner's second view
-                    setEditingMoveframe(moveframe);
+                  if (isCircuitMovelap) {
+                    console.log('🔄 Opening circuit planner for movelap edit:', movelap);
+                    setEditingMovelap(movelap);
+                    setEditingMoveframe(moveframe); // Set the moveframe being edited
                     setActiveDay(day);
                     setActiveWorkout(workout);
                     setActiveMoveframe(moveframe);
+                    setActiveMovelap(movelap);
+                    setEditingFromMovelap(true); // Flag to indicate editing from movelap
                     setMoveframeModalMode('edit');
-                    setEditingFromMovelap(true); // Set flag to indicate editing from movelap
-                    
-                    // Extract target station info if available
-                    // We'll pass this via a new state or just attach it to the moveframe object temporarily?
-                    // Better to use a dedicated state in the modal actions or similar, but let's see what we have.
-                    // For now, let's just trigger the modal. We might need to enhance the modal props.
-                    // We'll add a 'targetStation' property to the modal state/store or context if possible.
-                    // Or we can pass it as a separate prop if we control the modal rendering.
-                    
-                    // Actually, 'editingMovelap' state might be useful.
-                    setEditingMovelap(movelap); 
-                    
                     modalActions.setShowAddMoveframeModal(true);
                   } else {
-                    // For regular movelaps, open the movelap edit modal
-                  setEditingMovelap(movelap);
-                  setActiveDay(day);
-                  setActiveWorkout(workout);
-                  setActiveMoveframe(moveframe);
-                  setActiveMovelap(movelap);
-                  setMovelapInsertIndex(null); // Clear insert index for edit mode
-                  modalActions.setMovelapModalMode('edit');
-                  modalActions.setShowAddEditMovelapModal(true);
+                    // Standard movelap edit
+                    setEditingMovelap(movelap);
+                    setActiveDay(day);
+                    setActiveWorkout(workout);
+                    setActiveMoveframe(moveframe);
+                    setActiveMovelap(movelap);
+                    setMovelapInsertIndex(null); // Clear insert index for edit mode
+                    modalActions.setMovelapModalMode('edit');
+                    modalActions.setShowAddEditMovelapModal(true);
                   }
                 }}
                 onAddMovelap={(moveframe, workout, day) => {
@@ -2662,8 +2660,11 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                    console.log('✅ Updated manual movelap notes');
                  }
                  
+                 // Keep edited moveframe expanded so circuit movelap table stays visible
+                 setAutoExpandMoveframeId(editingMoveframe.id);
                  // Reload data to show changes (updates Rip\Sets column)
                  await loadWorkoutData(activeSection);
+                 setTimeout(() => setAutoExpandMoveframeId(null), 500);
                 } else {
                   // CREATE new moveframe
                   console.log('🔍 [DEBUG] moveframeData before generateMovelaps:', {
