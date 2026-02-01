@@ -2695,7 +2695,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         
         // If editing existing exercise, show only that sector
         // UNLESS we are in "editingFromMovelap" mode, where we want to allow changing exercise completely
-        const forceSelectMode = initialConfig?.editingFromMovelap;
+        // 2026-02-01 - Force select mode if targetMovelap is present (implies specific movelap edit)
+        const forceSelectMode = initialConfig?.editingFromMovelap || !!initialConfig?.targetMovelap;
         
         const sectorsToShow = (hasExistingExercise && currentSector && !forceSelectMode)
           ? [currentSector] 

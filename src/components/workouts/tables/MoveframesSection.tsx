@@ -28,10 +28,10 @@ interface MoveframesSectionProps {
   columnSettings?: any;
 }
 
-export default function MoveframesSection({ 
-  moveframes, 
-  workout, 
-  workoutIndex, 
+export default function MoveframesSection({
+  moveframes,
+  workout,
+  workoutIndex,
   day,
   iconType,
   expandedMoveframeId,
@@ -56,19 +56,25 @@ export default function MoveframesSection({
   const [selectedMoveframe, setSelectedMoveframe] = useState<any>(null);
   const [showWorkTypeModal, setShowWorkTypeModal] = useState(false);
   const [workTypeMoveframe, setWorkTypeMoveframe] = useState<any>(null);
-  
+
   // Local state for moveframe order (sorted alphabetically)
   const [orderedMoveframes, setOrderedMoveframes] = useState(moveframes);
-  
+
   // Update local order when moveframes prop changes
   React.useEffect(() => {
     setOrderedMoveframes(moveframes);
   }, [moveframes]);
-  
+
   // Auto-expand moveframe when expandedMoveframeId is set
   React.useEffect(() => {
     if (expandedMoveframeId) {
-      setExpandedMoveframes(prev => new Set([...Array.from(prev), expandedMoveframeId]));
+      console.log('🔄 [MoveframesSection] Auto-expanding moveframe:', expandedMoveframeId);
+      setExpandedMoveframes(prev => {
+        const newSet = new Set(prev);
+        newSet.add(expandedMoveframeId);
+        console.log('✅ [MoveframesSection] Expanded moveframes:', Array.from(newSet));
+        return newSet;
+      });
     }
   }, [expandedMoveframeId]);
 
@@ -100,7 +106,7 @@ export default function MoveframesSection({
 
     try {
       const token = localStorage.getItem('token');
-      
+
       const response = await fetch(`/api/workouts/moveframes/${workTypeMoveframe.id}/set-work-type`, {
         method: 'PATCH',
         headers: {
@@ -111,7 +117,7 @@ export default function MoveframesSection({
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         // Reload workout data to refresh all tables with updated work types and descriptions
         if (onRefreshWorkouts) {
@@ -201,7 +207,7 @@ export default function MoveframesSection({
       orderedVisibleColumns
     });
   }, [columnOrder, orderedVisibleColumns]);
-  
+
   // Setup drag sensors with reliable activation
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -210,38 +216,38 @@ export default function MoveframesSection({
       },
     })
   );
-  
+
   // Handle drag end - reorder and reassign letters alphabetically
   const handleDragEnd = async (event: DragEndEvent) => {
     console.log('🎯 Drag ended:', event);
     const { active, over } = event;
-    
+
     console.log('🎯 Active ID:', active?.id, 'Over ID:', over?.id);
-    
+
     if (!over || active.id === over.id) {
       console.log('🎯 Drag cancelled or same position');
       return;
     }
-    
+
     const oldIndex = orderedMoveframes.findIndex((mf: any) => mf.id === active.id);
     const newIndex = orderedMoveframes.findIndex((mf: any) => mf.id === over.id);
-    
+
     if (oldIndex === -1 || newIndex === -1) return;
-    
+
     // Reorder array
     const newOrder = [...orderedMoveframes];
     const [movedItem] = newOrder.splice(oldIndex, 1);
     newOrder.splice(newIndex, 0, movedItem);
-    
+
     // Reassign letters alphabetically
     const updatedOrder = newOrder.map((mf, index) => ({
       ...mf,
       letter: String.fromCharCode(65 + index) // A, B, C, D...
     }));
-    
+
     // Update local state immediately for smooth UX
     setOrderedMoveframes(updatedOrder);
-    
+
     // Persist the new order to database
     try {
       const token = localStorage.getItem('token');
@@ -301,7 +307,7 @@ export default function MoveframesSection({
           <span className="text-xs text-purple-700 bg-purple-300 px-2 py-0.5 rounded">
             {moveframes.length} total
           </span>
-          <button 
+          <button
             onClick={(e) => {
               e.stopPropagation();
               if (onAddMoveframe) {
@@ -314,7 +320,7 @@ export default function MoveframesSection({
             Add a Moveframe
           </button>
           {/* Action Buttons - Now beside Add button */}
-          <button 
+          <button
             onClick={(e) => {
               e.stopPropagation();
               if (moveframes.length > 0 && onCopyMoveframe) {
@@ -328,7 +334,7 @@ export default function MoveframesSection({
           >
             Copy
           </button>
-          <button 
+          <button
             onClick={(e) => {
               e.stopPropagation();
               if (moveframes.length > 0 && onMoveMoveframe) {
@@ -342,7 +348,7 @@ export default function MoveframesSection({
           >
             Move
           </button>
-          <button 
+          <button
             onClick={(e) => {
               e.stopPropagation();
               if (confirm('Delete all moveframes in this workout?')) {
@@ -354,7 +360,7 @@ export default function MoveframesSection({
           >
             Del
           </button>
-          <button 
+          <button
             onClick={(e) => {
               e.stopPropagation();
               if (onOpenColumnSettings) {
@@ -382,52 +388,52 @@ export default function MoveframesSection({
                       {orderedVisibleColumns.map(columnId => renderColumnHeader(columnId))}
                     </tr>
                   </thead>
-                <tbody>
-                  {orderedMoveframes.map((moveframe: any, mfIndex: number) => {
-                    // Expand movelaps if: explicitly expanded OR autoExpandAll is true
-                    const isMovelapsExpanded = autoExpandAll || expandedMoveframes.has(moveframe.id);
-                    
-                    return (
-                      <SortableMoveframeRow
-                        key={moveframe.id}
-                        moveframe={moveframe}
-                        mfIndex={mfIndex}
-                        iconType={iconType}
-                        isMovelapsExpanded={isMovelapsExpanded}
-                        isChecked={checkedMoveframes.has(moveframe.id)}
-                        onToggleCheck={() => toggleMoveframeCheck(moveframe.id)}
-                        onToggleExpand={() => {
-                          setExpandedMoveframes(prev => {
-                            const newSet = new Set(prev);
-                            if (newSet.has(moveframe.id)) {
-                              newSet.delete(moveframe.id);
-                            } else {
-                              newSet.add(moveframe.id);
-                            }
-                            return newSet;
-                          });
-                        }}
-                        onNavigateToMoveframe={(moveframeId) => setExpandedMoveframes(prev => new Set([...Array.from(prev), moveframeId]))}
-                        onEditMoveframe={onEditMoveframe}
-                        onDeleteMoveframe={onDeleteMoveframe}
-                        onEditMovelap={onEditMovelap}
-                        onDeleteMovelap={onDeleteMovelap}
-                        onAddMovelap={onAddMovelap}
-                        onAddMovelapAfter={onAddMovelapAfter}
-                        onAddMoveframeAfter={onAddMoveframeAfter}
-                        onCopyMoveframe={onCopyMoveframe}
-                        onMoveMoveframe={onMoveMoveframe}
-                        onSetWorkType={handleOpenWorkTypeModal}
-                        onRefresh={onRefreshWorkouts}
-                        workout={workout}
-                        day={day}
-                        setShowInfoPanel={setShowInfoPanel}
-                        setSelectedMoveframe={setSelectedMoveframe}
-                        orderedVisibleColumns={orderedVisibleColumns}
-                      />
-                    );
-                  })}
-                </tbody>
+                  <tbody>
+                    {orderedMoveframes.map((moveframe: any, mfIndex: number) => {
+                      // Expand movelaps if: explicitly expanded OR autoExpandAll is true
+                      const isMovelapsExpanded = autoExpandAll || expandedMoveframes.has(moveframe.id);
+
+                      return (
+                        <SortableMoveframeRow
+                          key={moveframe.id}
+                          moveframe={moveframe}
+                          mfIndex={mfIndex}
+                          iconType={iconType}
+                          isMovelapsExpanded={isMovelapsExpanded}
+                          isChecked={checkedMoveframes.has(moveframe.id)}
+                          onToggleCheck={() => toggleMoveframeCheck(moveframe.id)}
+                          onToggleExpand={() => {
+                            setExpandedMoveframes(prev => {
+                              const newSet = new Set(prev);
+                              if (newSet.has(moveframe.id)) {
+                                newSet.delete(moveframe.id);
+                              } else {
+                                newSet.add(moveframe.id);
+                              }
+                              return newSet;
+                            });
+                          }}
+                          onNavigateToMoveframe={(moveframeId) => setExpandedMoveframes(prev => new Set([...Array.from(prev), moveframeId]))}
+                          onEditMoveframe={onEditMoveframe}
+                          onDeleteMoveframe={onDeleteMoveframe}
+                          onEditMovelap={onEditMovelap}
+                          onDeleteMovelap={onDeleteMovelap}
+                          onAddMovelap={onAddMovelap}
+                          onAddMovelapAfter={onAddMovelapAfter}
+                          onAddMoveframeAfter={onAddMoveframeAfter}
+                          onCopyMoveframe={onCopyMoveframe}
+                          onMoveMoveframe={onMoveMoveframe}
+                          onSetWorkType={handleOpenWorkTypeModal}
+                          onRefresh={onRefreshWorkouts}
+                          workout={workout}
+                          day={day}
+                          setShowInfoPanel={setShowInfoPanel}
+                          setSelectedMoveframe={setSelectedMoveframe}
+                          orderedVisibleColumns={orderedVisibleColumns}
+                        />
+                      );
+                    })}
+                  </tbody>
                 </table>
               </div>
             </div>

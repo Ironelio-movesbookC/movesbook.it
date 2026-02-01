@@ -42,7 +42,13 @@ export async function createMoveframe(
   }
   
   const data = await response.json();
-  showMessage('success', 'Moveframe added successfully');
+  showMessage('success', 'Moveframe updated successfully');
+  
+  // 2026-02-01 - Reload workout data to refresh the UI (fix table visibility issue)
+  if (loadWorkoutData) {
+    await loadWorkoutData(activeSection);
+  }
+  
   return data;
 }
 
@@ -78,6 +84,9 @@ export async function updateMoveframe(
   
   const data = await response.json();
   showMessage('success', 'Moveframe updated successfully');
+  if (loadWorkoutData) {
+    await loadWorkoutData(activeSection);
+  }
   return data;
 }
 
