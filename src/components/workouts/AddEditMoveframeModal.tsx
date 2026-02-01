@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Star, ChevronsDown } from 'lucide-react';
-import { SPORTS_LIST, MACRO_FINAL_OPTIONS, MUSCULAR_SECTORS, getPaceLabel, shouldShowPaceField, getSportConfig, getPauseOptions, REST_TYPES, REPS_TYPES, hasRepsTypeSelection, getSportDisplayName, DISTANCE_BASED_SPORTS, sportNeedsExerciseName, AEROBIC_SPORTS, isSportSectionB } from '@/constants/moveframe.constants';
+import { SPORTS_LIST, MACRO_FINAL_OPTIONS, MUSCULAR_SECTORS, getPaceLabel, shouldShowPaceField, getSportConfig, getPauseOptions, REST_TYPES, REPS_TYPES, hasRepsTypeSelection, getSportDisplayName, DISTANCE_BASED_SPORTS, sportNeedsExerciseName, AEROBIC_SPORTS, isCircuitFeatureSport } from '@/constants/moveframe.constants';
 import { useMoveframeForm } from '@/hooks/useMoveframeForm';
 import { getSportIcon } from '@/utils/sportIcons';
 import { useFavoriteSports } from '@/hooks/useFavoriteSports';
@@ -276,7 +276,7 @@ export default function AddEditMoveframeModal({
 
   // Auto-switch to 'fast' when BATTERY mode is selected for non-section B sports
   useEffect(() => {
-    if (type === 'BATTERY' && batterySubmenu === 'circuits' && !isSportSectionB(sport)) {
+    if (type === 'BATTERY' && batterySubmenu === 'circuits' && !isCircuitFeatureSport(sport)) {
       setBatterySubmenu('fast');
     }
   }, [type, sport, batterySubmenu]);
@@ -1403,58 +1403,58 @@ export default function AddEditMoveframeModal({
                 <button
                   type="button"
                   onClick={() => {
-                    if (!isSportSectionB(sport)) {
+                    if (!isCircuitFeatureSport(sport)) {
                       return;
                     }
                     setBatterySubmenu('circuits');
                   }}
-                  disabled={!isSportSectionB(sport)}
+                  disabled={!isCircuitFeatureSport(sport)}
                   className={`px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
                     batterySubmenu === 'circuits'
                       ? 'bg-blue-50 border-blue-500 text-blue-700'
                       : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                  } ${!isSportSectionB(sport) ? 'cursor-not-allowed opacity-50' : ''}`}
+                  } ${!isCircuitFeatureSport(sport) ? 'cursor-not-allowed opacity-50' : ''}`}
                 >
                   Circuits planner
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    if (!isSportSectionB(sport)) {
+                    if (!isCircuitFeatureSport(sport)) {
                       return;
                     }
                     setBatterySubmenu('fast');
                   }}
-                  disabled={!isSportSectionB(sport)}
+                  disabled={!isCircuitFeatureSport(sport)}
                   className={`px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
                     batterySubmenu === 'fast'
                       ? 'bg-blue-50 border-blue-500 text-blue-700'
                       : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                  } ${!isSportSectionB(sport) ? 'cursor-not-allowed opacity-50' : ''}`}
+                  } ${!isCircuitFeatureSport(sport) ? 'cursor-not-allowed opacity-50' : ''}`}
                 >
                   Fast planner of Moveframes
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    if (!isSportSectionB(sport)) {
+                    if (!isCircuitFeatureSport(sport)) {
                       return;
                     }
                     setBatterySubmenu('ai');
                   }}
-                  disabled={!isSportSectionB(sport)}
+                  disabled={!isCircuitFeatureSport(sport)}
                   className={`px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
                     batterySubmenu === 'ai'
                       ? 'bg-blue-50 border-blue-500 text-blue-700'
                       : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                  } ${!isSportSectionB(sport) ? 'cursor-not-allowed opacity-50' : ''}`}
+                  } ${!isCircuitFeatureSport(sport) ? 'cursor-not-allowed opacity-50' : ''}`}
                 >
                   Plan of Moveframes with AI
                 </button>
               </div>
-              {!isSportSectionB(sport) && (
+              {!isCircuitFeatureSport(sport) && (
                 <p className="mt-2 text-xs text-orange-600">
-                  ℹ️ <strong>Note:</strong> Fast plannings mode (all features) is only available for non-aerobic sports with exercise catalogs (e.g., Body Building, Calisthenics, CrossFit, Gymnastic, etc.)
+                  ℹ️ <strong>Note:</strong> Fast plannings mode is only available for BODY BUILDING, STRETCHING, CALISTENIC, CROSSFIT, GYMNASTIC
                 </p>
               )}
             </div>
@@ -4201,7 +4201,7 @@ export default function AddEditMoveframeModal({
           {/* 2026-01-22 14:30 UTC - Show based on batterySubmenu selection */}
           {/* 2026-01-23 - Using redesigned BatteryCircuitPlanner_REDESIGNED */}
           {/* 2026-01-24 - Pass existingMoveframe for edit mode */}
-          {type === 'BATTERY' && batterySubmenu === 'circuits' && (
+          {type === 'BATTERY' && isCircuitFeatureSport(sport) && batterySubmenu === 'circuits' && (
             <BatteryCircuitPlanner
               sectionId={workout?.id || ''}
               sport={sport}
@@ -4242,7 +4242,7 @@ export default function AddEditMoveframeModal({
 
           {/* Battery Mode - Fast Planner */}
           {/* 2026-01-29 - Fast planner of Moveframes - Custom keyboard for quick value selection */}
-          {type === 'BATTERY' && batterySubmenu === 'fast' && (
+          {type === 'BATTERY' && isCircuitFeatureSport(sport) && batterySubmenu === 'fast' && (
             <FastPlannerOfMoveframes
               sport={sport}
               sectionId={sectionId}
@@ -4260,7 +4260,7 @@ export default function AddEditMoveframeModal({
 
           {/* Battery Mode - AI Planner */}
           {/* 2026-01-22 14:30 UTC - Placeholder for AI planner */}
-          {type === 'BATTERY' && batterySubmenu === 'ai' && (
+          {type === 'BATTERY' && isCircuitFeatureSport(sport) && batterySubmenu === 'ai' && (
             <div className="p-8 text-center bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg">
               <h3 className="text-lg font-bold text-gray-700 mb-2">Plan of Moveframes with AI</h3>
               <p className="text-gray-600">Coming soon...</p>

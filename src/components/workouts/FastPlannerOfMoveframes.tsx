@@ -82,6 +82,7 @@ export default function FastPlannerOfMoveframes({
 
   // Selected muscle group for filtering exercises
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<string>('all');
+  const ZOOM = 0.55;
 
   // State for which exercise toolbar button is active (speed, series, etc.)
   const [activeExerciseButton, setActiveExerciseButton] = useState<'speed' | 'series' | 'riptime' | 'weight' | 'break' | 'mode' | null>(null);
@@ -268,6 +269,7 @@ export default function FastPlannerOfMoveframes({
 
   return (
     <div className="space-y-4">
+      {/* Removed zoom control; fixed scale at 55% */}
       {/* Top Row: Execution, Intensity of work, Break between series */}
       <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 2fr 1fr' }}>
         {/* Execution Box */}
@@ -281,117 +283,170 @@ export default function FastPlannerOfMoveframes({
         </div>
 
         {/* Intensity of Work Box */}
-        <div className="bg-white border border-gray-300 rounded-lg p-3 text-center">
+        <div className="bg-blue-50 border border-blue-300 rounded-lg p-3 text-center">
           <label className="block text-sm font-bold text-gray-700 mb-2">Intensity of work</label>
         </div>
 
         {/* Break between series Box */}
-        <div className="bg-white border border-gray-300 rounded-lg p-3 text-center">
+        <div className="bg-green-50 border border-green-300 rounded-lg p-3 text-center">
           <label className="block text-sm font-bold text-gray-700 mb-2">Break between series</label>
         </div>
       </div>
 
-      {/* Second Row: Sector button and selections, Speed/Series/Rip/Weight buttons, Break/Mode buttons */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 2fr 1fr' }}>
-        {/* Sector button with radio selections - Under Execution */}
-        <div className="flex items-center gap-2">
-          <button
-            className="px-3 py-2 text-sm font-bold border rounded bg-gray-100 text-gray-700 border-gray-300 whitespace-nowrap"
-          >
-            Sector
-          </button>
-          <div className="flex gap-2 bg-white border border-gray-300 rounded px-2 py-1.5">
-            <label className="flex items-center cursor-pointer whitespace-nowrap">
-              <input
-                type="radio"
-                name="sectorMode"
-                value="exercises"
-                checked={sectorMode === 'exercises'}
-                onChange={() => setSectorMode('exercises')}
-                className="mr-1.5"
-              />
-              <span className="text-xs text-gray-700">Select exercises</span>
-            </label>
-            <label className="flex items-center cursor-pointer whitespace-nowrap">
-              <input
-                type="radio"
-                name="sectorMode"
-                value="series"
-                checked={sectorMode === 'series'}
-                onChange={() => setSectorMode('series')}
-                className="mr-1.5"
-              />
-              <span className="text-xs text-gray-700">Plan series\exercise</span>
-            </label>
+      {/* Controls Row: Sector + Search + grouped buttons by column width; radios below */}
+      <div className="space-y-2">
+        <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 2fr 1fr' }}>
+          {/* Left column: Sector + Search */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveExerciseButton(null)}
+              className="px-3 py-2 text-sm font-bold border rounded text-black border-gray-300 whitespace-nowrap"
+            >
+              Sector
+            </button>
+            <input
+              type="text"
+              value={exerciseSearch}
+              onChange={(e) => setExerciseSearch(e.target.value)}
+              placeholder="Name exercise"
+              className="w-64 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Middle column: 4 buttons fill Intensity width */}
+          <div className="grid grid-cols-4 gap-2">
+            <button
+              onClick={() => setActiveExerciseButton(activeExerciseButton === 'speed' ? null : 'speed')}
+              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'speed'
+                ? 'text-black border-blue-600'
+                : 'text-black border-gray-300 hover:border-blue-500'
+                }`}
+            >
+              Speed
+            </button>
+            <button
+              onClick={() => setActiveExerciseButton(activeExerciseButton === 'series' ? null : 'series')}
+              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'series'
+                ? 'text-black border-blue-600'
+                : 'text-black border-gray-300 hover:border-blue-500'
+                }`}
+            >
+              Series
+            </button>
+            <button
+              onClick={() => setActiveExerciseButton(activeExerciseButton === 'riptime' ? null : 'riptime')}
+              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'riptime'
+                ? 'text-black border-blue-600'
+                : 'text-black border-gray-300 hover:border-blue-500'
+                }`}
+            >
+              Rip\Time
+            </button>
+            <button
+              onClick={() => setActiveExerciseButton(activeExerciseButton === 'weight' ? null : 'weight')}
+              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'weight'
+                ? 'text-black border-blue-600'
+                : 'text-black border-gray-300 hover:border-blue-500'
+                }`}
+            >
+              Weight
+            </button>
+          </div>
+
+          {/* Right column: 2 buttons fill Break width */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setActiveExerciseButton(activeExerciseButton === 'break' ? null : 'break')}
+              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'break'
+                ? 'text-black border-blue-600'
+                : 'text-black border-gray-300 hover:border-blue-500'
+                }`}
+            >
+              Break
+            </button>
+            <button
+              onClick={() => setActiveExerciseButton(activeExerciseButton === 'mode' ? null : 'mode')}
+              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'mode'
+                ? 'text-black border-blue-600'
+                : 'text-black border-gray-300 hover:border-blue-500'
+                }`}
+            >
+              Mode
+            </button>
           </div>
         </div>
-
-        {/* Speed, Series, Rip\Time, Weight buttons - Under Intensity of work (Labels only) */}
-        <div className="flex gap-2">
-          <div className="flex-1 px-3 py-2 text-sm font-medium border rounded bg-gray-100 text-gray-700 border-gray-300 text-center">
-            Speed
-          </div>
-          <div className="flex-1 px-3 py-2 text-sm font-medium border rounded bg-gray-100 text-gray-700 border-gray-300 text-center">
-            Series
-          </div>
-          <div className="flex-1 px-3 py-2 text-sm font-medium border rounded bg-gray-100 text-gray-700 border-gray-300 text-center">
-            Rip\Time
-          </div>
-          <div className="flex-1 px-3 py-2 text-sm font-medium border rounded bg-gray-100 text-gray-700 border-gray-300 text-center">
-            Weight
-          </div>
-        </div>
-
-        {/* Break and Mode buttons - Under Break between series (Labels only) */}
-        <div className="flex gap-2">
-          <div className="flex-1 px-3 py-2 text-sm font-medium border rounded bg-gray-100 text-gray-700 border-gray-300 text-center">
-            Break
-          </div>
-          <div className="flex-1 px-3 py-2 text-sm font-medium border rounded bg-gray-100 text-gray-700 border-gray-300 text-center">
-            Mode
-          </div>
+        <div className="flex gap-2 px-1 py-1">
+          <label className="flex items-center cursor-pointer whitespace-nowrap">
+            <input
+              type="radio"
+              name="sectorMode"
+              value="exercises"
+              checked={sectorMode === 'exercises'}
+              onChange={() => setSectorMode('exercises')}
+              className="mr-1.5"
+            />
+            <span className="text-xs text-gray-700">Select exercises</span>
+          </label>
+          <label className="flex items-center cursor-pointer whitespace-nowrap">
+            <input
+              type="radio"
+              name="sectorMode"
+              value="series"
+              checked={sectorMode === 'series'}
+              onChange={() => setSectorMode('series')}
+              className="mr-1.5"
+            />
+            <span className="text-xs text-gray-700">Plan series\exercise</span>
+          </label>
         </div>
       </div>
 
       {/* Muscle Groups - Always visible */}
-      <div className="bg-gray-50 border border-gray-300 rounded-lg p-4">
-        <div className="flex items-center gap-4 overflow-x-auto pb-2">
+      <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
+        <div className="flex items-center pb-2 gap-2" style={{ overflowX: 'hidden', flexWrap: 'nowrap' }}>
           {/* All button - Fixed on the left */}
-          <div className="flex-shrink-0 bg-gray-900 rounded-lg p-3">
+          <div className="flex-shrink-0">
             <button
               onClick={() => setSelectedMuscleGroup('all')}
-              className={`flex flex-col items-center justify-center px-6 py-4 rounded-lg transition-colors ${selectedMuscleGroup === 'all'
-                ? 'bg-red-500 text-white'
-                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
+              className="flex flex-col items-center justify-center"
             >
-              <span className="text-5xl mb-2">👤</span>
-              <span className="text-base font-medium">All</span>
+              <div className="mb-2 flex items-center justify-center" style={{ width: `${64 * ZOOM}px`, height: `${64 * ZOOM}px` }}>
+                <Image
+                  src="/all.png"
+                  alt="All"
+                  width={Math.round(64 * ZOOM)}
+                  height={Math.round(64 * ZOOM)}
+                  className="object-contain"
+                  unoptimized
+                />
+              </div>
+              <span className="sr-only">All</span>
             </button>
           </div>
 
           {/* Muscle group buttons - Scrollable horizontally with larger images */}
-          <div className="bg-gray-900 rounded-lg p-3 flex-1">
-            <div className="flex gap-4">
+          <div className="bg-slate-800 rounded-lg p-3 flex-1">
+            <div className="flex" style={{ gap: `${Math.max(4, 14 * ZOOM)}px` }}>
               {MUSCLE_GROUPS.map((group) => (
                 <button
                   key={group.id}
                   onClick={() => setSelectedMuscleGroup(group.id)}
                   className={`flex flex-col items-center justify-center px-4 py-4 rounded-lg transition-colors flex-shrink-0 ${selectedMuscleGroup === group.id
-                    ? 'bg-red-500 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    ? 'bg-slate-700 text-white'
+                    : 'bg-slate-600 text-gray-200 hover:bg-slate-700'
                     }`}
                 >
-                  <div className="w-32 h-32 mb-2 flex items-center justify-center relative">
+                  <div className="mb-2 flex items-center justify-center relative" style={{ width: `${112 * ZOOM}px`, height: `${112 * ZOOM}px` }}>
                     <Image
                       src={group.image}
                       alt={group.label}
-                      width={128}
-                      height={128}
+                      width={Math.round(112 * ZOOM)}
+                      height={Math.round(112 * ZOOM)}
                       className="object-contain"
+                      unoptimized
                     />
                   </div>
-                  <span className="text-base font-medium">{group.label}</span>
+                  <span className="font-medium" style={{ fontSize: `${Math.max(10, 16 * ZOOM)}px` }}>{group.label}</span>
                 </button>
               ))}
             </div>
@@ -400,110 +455,9 @@ export default function FastPlannerOfMoveframes({
       </div>
 
 
-      {/* Exercise Display Section - Shows when sector is selected */}
+      {/* Exercise Display Section - content driven by upper controls */}
       {selectedMuscleGroup && (
         <div className="space-y-3">
-          {/* Radio buttons and button row */}
-          <div className="bg-white border border-gray-300 rounded-lg p-3">
-            <div className="flex items-center gap-2 mb-3">
-              <label className="flex items-center cursor-pointer">
-                <input
-                  type="radio"
-                  name="exerciseDisplayMode"
-                  value="exercises"
-                  checked={sectorMode === 'exercises'}
-                  onChange={() => setSectorMode('exercises')}
-                  className="mr-1.5"
-                />
-                <span className="text-xs text-gray-700">Select exercises</span>
-              </label>
-              <label className="flex items-center cursor-pointer">
-                <input
-                  type="radio"
-                  name="exerciseDisplayMode"
-                  value="series"
-                  checked={sectorMode === 'series'}
-                  onChange={() => setSectorMode('series')}
-                  className="mr-1.5"
-                />
-                <span className="text-xs text-gray-700">Plan series\exercise</span>
-              </label>
-            </div>
-
-            {/* Buttons row with search box */}
-            <div className="flex gap-2 items-center">
-              <button
-                onClick={() => setActiveExerciseButton(null)}
-                className="flex-1 px-3 py-2 text-sm font-bold border rounded bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200 whitespace-nowrap"
-              >
-                Sector
-              </button>
-
-              {/* Search box between Sector and Speed */}
-              <input
-                type="text"
-                value={exerciseSearch}
-                onChange={(e) => setExerciseSearch(e.target.value)}
-                placeholder="Name exercise"
-                className="w-80 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-
-              <button
-                onClick={() => setActiveExerciseButton(activeExerciseButton === 'speed' ? null : 'speed')}
-                className={`flex-1 px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'speed'
-                  ? 'bg-blue-500 text-white border-blue-600'
-                  : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                  }`}
-              >
-                Speed
-              </button>
-              <button
-                onClick={() => setActiveExerciseButton(activeExerciseButton === 'series' ? null : 'series')}
-                className={`flex-1 px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'series'
-                  ? 'bg-blue-500 text-white border-blue-600'
-                  : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                  }`}
-              >
-                Series
-              </button>
-              <button
-                onClick={() => setActiveExerciseButton(activeExerciseButton === 'riptime' ? null : 'riptime')}
-                className={`flex-1 px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'riptime'
-                  ? 'bg-blue-500 text-white border-blue-600'
-                  : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                  }`}
-              >
-                Rip\Time
-              </button>
-              <button
-                onClick={() => setActiveExerciseButton(activeExerciseButton === 'weight' ? null : 'weight')}
-                className={`flex-1 px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'weight'
-                  ? 'bg-blue-500 text-white border-blue-600'
-                  : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                  }`}
-              >
-                Weight
-              </button>
-              <button
-                onClick={() => setActiveExerciseButton(activeExerciseButton === 'break' ? null : 'break')}
-                className={`flex-1 px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'break'
-                  ? 'bg-blue-500 text-white border-blue-600'
-                  : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                  }`}
-              >
-                Break
-              </button>
-              <button
-                onClick={() => setActiveExerciseButton(activeExerciseButton === 'mode' ? null : 'mode')}
-                className={`flex-1 px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'mode'
-                  ? 'bg-blue-500 text-white border-blue-600'
-                  : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                  }`}
-              >
-                Mode
-              </button>
-            </div>
-          </div>
 
           {/* Exercise images / Speed / Series Options Display */}
           <div className="bg-gray-50 border border-gray-300 rounded-lg p-3">
@@ -564,34 +518,20 @@ export default function FastPlannerOfMoveframes({
             {/* Rip\Time Options */}
             {activeExerciseButton === 'riptime' && (
               <div className="flex gap-8 justify-center items-start">
-                {/* Radio buttons - Vertical */}
-                <div className="flex flex-col gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="ripTimeMode"
-                      checked={ripTimeMode === 'reps'}
-                      onChange={() => {
-                        setRipTimeMode('reps');
-                        setRipTimeValue('');
-                      }}
-                      className="w-5 h-5"
-                    />
-                    <span className="text-base font-medium">Repetitions</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="ripTimeMode"
-                      checked={ripTimeMode === 'time'}
-                      onChange={() => {
-                        setRipTimeMode('time');
-                        setRipTimeValue('');
-                      }}
-                      className="w-5 h-5"
-                    />
-                    <span className="text-base font-medium">Time</span>
-                  </label>
+                {/* Mode selector - Dropdown */}
+                <div>
+                  <select
+                    value={ripTimeMode}
+                    onChange={(e) => {
+                      const v = e.target.value as 'reps' | 'time';
+                      setRipTimeMode(v);
+                      setRipTimeValue('');
+                    }}
+                    className="px-2 py-1 text-sm border rounded text-black border-gray-300 bg-white"
+                  >
+                    <option value="reps">Repetitions</option>
+                    <option value="time">Time</option>
+                  </select>
                 </div>
 
                 {/* Input Area */}
@@ -708,28 +648,16 @@ export default function FastPlannerOfMoveframes({
             {/* Weight Options */}
             {activeExerciseButton === 'weight' && (
               <div className="flex gap-8 justify-center items-start">
-                {/* Radio buttons - Vertical */}
-                <div className="flex flex-col gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="weightUnit"
-                      checked={weightUnit === 'kg'}
-                      onChange={() => setWeightUnit('kg')}
-                      className="w-5 h-5"
-                    />
-                    <span className="text-base font-medium">Kg</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="weightUnit"
-                      checked={weightUnit === 'lbs'}
-                      onChange={() => setWeightUnit('lbs')}
-                      className="w-5 h-5"
-                    />
-                    <span className="text-base font-medium">Lbs</span>
-                  </label>
+                {/* Unit selector - Dropdown */}
+                <div>
+                  <select
+                    value={weightUnit}
+                    onChange={(e) => setWeightUnit(e.target.value as 'kg' | 'lbs')}
+                    className="px-2 py-1 text-sm border rounded text-black border-gray-300 bg-white"
+                  >
+                    <option value="kg">Kg</option>
+                    <option value="lbs">Lbs</option>
+                  </select>
                 </div>
 
                 {/* Input Area */}
@@ -810,36 +738,23 @@ export default function FastPlannerOfMoveframes({
             {/* Break Options */}
             {activeExerciseButton === 'break' && (
               <div className="flex gap-8 justify-center items-start">
-                {/* Radio buttons - Vertical */}
-                <div className="flex flex-col gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="breakMode"
-                      checked={breakMode === 'rest'}
-                      onChange={() => {
-                        setBreakMode('rest');
-                        setActiveExerciseButton('break'); // 👈 keep panel open
-                      }}
-                      className="w-5 h-5"
-                    />
-                    <span className="text-base font-medium">Rest time</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="breakMode"
-                      checked={breakMode === 'cardio'}
-                      onChange={() => {
-                        setBreakMode('cardio');
-                        setCardioValue('120');             // 👈 default
-                        setActiveExerciseButton('break');  // 👈 keep panel open
-                      }}
-                      className="w-5 h-5"
-                    />
-                    <span className="text-base font-medium">Cardio</span>
-                  </label>
+                {/* Break mode selector - Dropdown */}
+                <div>
+                  <select
+                    value={breakMode}
+                    onChange={(e) => {
+                      const v = e.target.value as 'rest' | 'cardio';
+                      setBreakMode(v);
+                      if (v === 'cardio') {
+                        setCardioValue('120');
+                      }
+                      setActiveExerciseButton('break');
+                    }}
+                    className="px-2 py-1 text-sm border rounded text-black border-gray-300 bg-white"
+                  >
+                    <option value="rest">Rest time</option>
+                    <option value="cardio">Cardio</option>
+                  </select>
                 </div>
 
 
@@ -1071,23 +986,24 @@ export default function FastPlannerOfMoveframes({
                     >
                       {row.exercise ? (
                         <div className="flex items-center gap-3 p-2">
-                          <div className="w-20 h-20 bg-gray-100 rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
+                          <div className="bg-slate-900 rounded flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ width: `${92 * ZOOM}px`, height: `${92 * ZOOM}px` }}>
                             {(() => {
                               const exercise = mockExercises.find(ex => ex.name === row.exercise);
                               return exercise?.image ? (
                                 <Image
                                   src={exercise.image}
                                   alt={row.exercise}
-                                  width={80}
-                                  height={80}
+                                  width={Math.round(92 * ZOOM)}
+                                  height={Math.round(92 * ZOOM)}
                                   className="object-contain"
+                                  unoptimized
                                 />
                               ) : (
                                 <span className="text-sm text-gray-400">Ex</span>
                               );
                             })()}
                           </div>
-                          <span className="text-sm text-gray-700 flex-1">{row.exercise}</span>
+                          <span className="text-gray-700 flex-1" style={{ fontSize: `${Math.max(10, 14 * ZOOM)}px` }}>{row.exercise}</span>
                         </div>
                       ) : (
                         <div className="w-full h-20 bg-gray-50 flex items-center justify-center">
@@ -1176,6 +1092,7 @@ export default function FastPlannerOfMoveframes({
                                   width={24}
                                   height={24}
                                   className="object-contain"
+                                  unoptimized
                                 />
                                 <span className="text-xs">{row.mode}</span>
                               </>
@@ -1345,10 +1262,15 @@ export default function FastPlannerOfMoveframes({
                             }`} />
                         )}
 
-                        <div className="aspect-square bg-gray-100 rounded mb-3 flex items-center justify-center">
-                          <div className="text-center">
-                            <p className="text-sm font-bold text-gray-600">{exercise.sector}</p>
-                          </div>
+                        <div className="aspect-square bg-gray-100 rounded mb-3 relative overflow-hidden">
+                          <Image
+                            src={exercise.image}
+                            alt={exercise.name}
+                            fill
+                            className="object-contain"
+                            sizes="(max-width: 768px) 33vw, 33vw"
+                            unoptimized
+                          />
                         </div>
                         <p className="text-sm text-center text-gray-700 font-medium" title={exercise.name}>
                           {exercise.name}
