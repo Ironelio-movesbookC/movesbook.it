@@ -45,24 +45,29 @@ export default function WorkoutInfoModal({
   onEdit,
   onUpdate
 }: WorkoutInfoModalProps) {
-  if (!isOpen || !workout) return null;
-
-  const [mainSport, setMainSport] = useState(workout.mainSport || '');
+  const [mainSport, setMainSport] = useState(workout?.mainSport || '');
   const [isSavingMainSport, setIsSavingMainSport] = useState(false);
-  const [mainGoal, setMainGoal] = useState(workout.mainGoal || '');
+  const [mainGoal, setMainGoal] = useState(workout?.mainGoal || '');
   const [isSavingMainGoal, setIsSavingMainGoal] = useState(false);
-  const [workoutNotes, setWorkoutNotes] = useState(workout.notes || '');
+  const [workoutNotes, setWorkoutNotes] = useState(workout?.notes || '');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
-  const [intensity, setIntensity] = useState(workout.intensity || 'Medium');
+  const [intensity, setIntensity] = useState(workout?.intensity || 'Medium');
   const [isSavingIntensity, setIsSavingIntensity] = useState(false);
-  const [tags, setTags] = useState(workout.tags || '');
+  const [tags, setTags] = useState(workout?.tags || '');
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [isSavedInFavorites, setIsSavedInFavorites] = useState<boolean | null>(null);
   const [isCheckingFavorites, setIsCheckingFavorites] = useState(true);
   const [isSavingFavorite, setIsSavingFavorite] = useState(false);
-
-  const workoutSymbol = WORKOUT_SYMBOLS[workout.sessionNumber as 1 | 2 | 3] || { symbol: '○', label: 'Circle' };
   
+  useEffect(() => {
+    if (!isOpen || !workout) return;
+    setMainSport(workout.mainSport || '');
+    setMainGoal(workout.mainGoal || '');
+    setWorkoutNotes(workout.notes || '');
+    setIntensity(workout.intensity || 'Medium');
+    setTags(workout.tags || '');
+  }, [isOpen, workout]);
+
   // Check if workout is saved in favorites
   useEffect(() => {
     const checkFavoriteStatus = async () => {
@@ -108,6 +113,10 @@ export default function WorkoutInfoModal({
       checkFavoriteStatus();
     }
   }, [isOpen, workout?.id]);
+
+  if (!isOpen || !workout) return null;
+
+  const workoutSymbol = WORKOUT_SYMBOLS[workout.sessionNumber as 1 | 2 | 3] || { symbol: '○', label: 'Circle' };
   
   const handleMainSportChange = async (newMainSport: string) => {
     setMainSport(newMainSport);

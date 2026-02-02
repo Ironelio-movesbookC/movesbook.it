@@ -562,27 +562,21 @@ export default function CircuitPlanner({ sport, onSave, onCancel }: CircuitPlann
   // ACTION HANDLERS - 2026-01-21 22:10 UTC
   // ============================================================================
   
-  const handleAddCircuits = (count: number) => {
+  const handleAddCircuits = (count: number, afterLetter?: string) => {
     // 2026-01-21 22:10 UTC - Add 1-3 circuits at the end
     // 2026-01-22 10:15 UTC - Include pause value in new circuits
     // 2026-01-22 12:15 UTC - Updated to create series-specific stations
     // 2026-01-22 15:10 UTC - Fixed: Use existing circuit structure instead of initial state values
     const newCircuits = [...circuits];
-    
-    // Get structure from the last existing circuit if available
     const lastCircuit = circuits.length > 0 ? circuits[circuits.length - 1] : null;
     const seriesNum = lastCircuit ? lastCircuit.series : (seriesMode === 'count' ? seriesCount : 1);
     const stationsCount = lastCircuit && lastCircuit.stationsBySeries[0] 
       ? lastCircuit.stationsBySeries[0].length 
       : stationsPerCircuit;
-    
+    const insertionIndex = afterLetter === 'START' ? 0 : afterLetter === 'END' || !afterLetter ? newCircuits.length : Math.max(0, Math.min(newCircuits.length, newCircuits.findIndex(c => c.letter === afterLetter) + 1));
+    const toInsert: { letter: string; stationsBySeries: Station[][]; series: number }[] = [];
     for (let i = 0; i < count; i++) {
-      const circuitIndex = circuits.length + i;
-      if (circuitIndex >= CIRCUIT_LETTERS.length) break;
-      
       const stationsBySeries: Station[][] = [];
-      
-      // Create independent stations for each series
       for (let s = 0; s < seriesNum; s++) {
         const stationsForThisSeries: Station[] = [];
         for (let j = 0; j < stationsCount; j++) {
@@ -591,21 +585,24 @@ export default function CircuitPlanner({ sport, onSave, onCancel }: CircuitPlann
             sector: '',
             exercise: '',
             reps: '',
-            pause: pauseStations // Use configured pause value
+            pause: pauseStations
           });
         }
         stationsBySeries.push(stationsForThisSeries);
       }
-      
-      newCircuits.push({
-        letter: CIRCUIT_LETTERS[circuitIndex],
+      toInsert.push({
+        letter: '',
         stationsBySeries,
         series: seriesNum
       });
     }
-    
-    setCircuits(newCircuits);
-    setNumCircuits(newCircuits.length);
+    newCircuits.splice(insertionIndex, 0, ...toInsert);
+    const relabeled = newCircuits.slice(0, Math.min(newCircuits.length, CIRCUIT_LETTERS.length)).map((c, i) => ({
+      ...c,
+      letter: CIRCUIT_LETTERS[i]
+    }));
+    setCircuits(relabeled);
+    setNumCircuits(relabeled.length);
     setActionLog(prev => [...prev, `${count} circuit${count > 1 ? 's' : ''} added`]);
     setShowAddCircuitModal(false);
   };
@@ -2089,6 +2086,20 @@ export default function CircuitPlanner({ sport, onSave, onCancel }: CircuitPlann
               id="add-circuit-count"
               className="w-full px-3 py-2 border border-gray-300 rounded-md mb-4"
             />
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Insert after which circuit:
+            </label>
+            <select
+              id="add-circuit-after"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md mb-4"
+              defaultValue="END"
+            >
+              <option value="START">Before Circuit A</option>
+              {circuits.map(c => (
+                <option key={c.letter} value={c.letter}>After Circuit {c.letter}</option>
+              ))}
+              <option value="END">At End</option>
+            </select>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowAddCircuitModal(false)}
@@ -2099,7 +2110,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel }: CircuitPlann
               <button
                 onClick={() => {
                   const count = parseInt((document.getElementById('add-circuit-count') as HTMLInputElement)?.value || '1');
-                  handleAddCircuits(Math.min(3, Math.max(1, count)));
+                  const after = (document.getElementById('add-circuit-after') as HTMLSelectElement)?.value || 'END';
+                  handleAddCircuits(Math.min(3, Math.max(1, count)), after);
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
               >

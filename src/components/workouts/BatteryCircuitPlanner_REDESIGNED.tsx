@@ -31,6 +31,7 @@ interface BatteryCircuitPlannerProps {
   onCancel: () => void;
   existingMoveframe?: any; // For edit mode
   startInSecondView?: boolean; // Start directly in circuit grid view
+  editingMovelapTarget?: { circuitLetter?: string; circuitIndex?: number; localSeriesNumber?: number; stationNumber?: number } | null;
 }
 
 // Helper function to extract circuit data from moveframe notes
@@ -58,7 +59,8 @@ export default function BatteryCircuitPlanner({
   onCreateCircuit,
   onCancel,
   existingMoveframe,
-  startInSecondView
+  startInSecondView,
+  editingMovelapTarget
 }: BatteryCircuitPlannerProps) {
   // Extract existing circuit data if in edit mode
   const existingCircuitData = existingMoveframe ? extractCircuitData(existingMoveframe.notes) : null;
@@ -223,7 +225,8 @@ export default function BatteryCircuitPlanner({
           executionMode: executionOrder,
           startInTablePhase: true,
           existingCircuits: existingCircuits, // Pass existing circuit data for edit mode
-          editingFromMovelap: startInSecondView // Pass flag for renaming button
+          editingFromMovelap: startInSecondView, // Pass flag for renaming button
+          editingMovelapTarget: editingMovelapTarget
         }}
         onSave={(data: any) => {
           // Pass the circuit data to the parent component
@@ -245,7 +248,13 @@ export default function BatteryCircuitPlanner({
           });
           setShowOldCircuitPlanner(false);
         }}
-        onCancel={() => setShowOldCircuitPlanner(false)}
+        onCancel={() => {
+          if (startInSecondView) {
+            onCancel(); // Close the parent modal completely if we started in second view (e.g. from movelap edit)
+          } else {
+            setShowOldCircuitPlanner(false);
+          }
+        }}
       />
     );
   }
@@ -463,8 +472,8 @@ export default function BatteryCircuitPlanner({
               </div>
               
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer bg-white border border-gray-300 rounded px-3 py-2">
+                <div className="flex items-center gap-2 bg-white border border-gray-300 rounded px-2 py-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
                     <input 
                       type="radio" 
                       checked={seriesMode === 'series'} 
@@ -473,7 +482,19 @@ export default function BatteryCircuitPlanner({
                     />
                     <span className="text-sm font-medium text-gray-700">Set series\circuit</span>
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer bg-white border border-gray-300 rounded px-3 py-2">
+                  <select 
+                    value={seriesPerCircuit} 
+                    onChange={(e) => setSeriesPerCircuit(parseInt(e.target.value))}
+                    disabled={seriesMode !== 'series'}
+                    className="w-16 px-2 py-1 border border-gray-400 rounded text-center focus:ring-2 focus:ring-blue-500 text-base font-bold disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-300"
+                  >
+                    {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 bg-white border border-gray-300 rounded px-2 py-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
                     <input 
                       type="radio" 
                       checked={seriesMode === 'time'} 
@@ -482,32 +503,18 @@ export default function BatteryCircuitPlanner({
                     />
                     <span className="text-sm font-medium text-gray-700">Set time\circuit</span>
                   </label>
+                  <select 
+                    value={timePerCircuit} 
+                    onChange={(e) => setTimePerCircuit(parseInt(e.target.value))}
+                    disabled={seriesMode !== 'time'}
+                    className="w-16 px-2 py-1 border border-blue-500 rounded text-center focus:ring-2 focus:ring-blue-500 text-base font-bold bg-blue-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-300"
+                  >
+                    {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                      <option key={n} value={n}>{n}'</option>
+                    ))}
+                  </select>
                 </div>
-                
-                <div className="flex items-center gap-2 bg-white border border-gray-300 rounded px-2 py-1">
-                  {seriesMode === 'series' ? (
-                    <select 
-                      value={seriesPerCircuit} 
-                      onChange={(e) => setSeriesPerCircuit(parseInt(e.target.value))}
-                      className="w-16 px-2 py-1 border border-gray-400 rounded text-center focus:ring-2 focus:ring-blue-500 text-base font-bold"
-                    >
-                      {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                        <option key={n} value={n}>{n}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <select 
-                      value={timePerCircuit} 
-                      onChange={(e) => setTimePerCircuit(parseInt(e.target.value))}
-                      className="w-16 px-2 py-1 border border-blue-500 rounded text-center focus:ring-2 focus:ring-blue-500 text-base font-bold bg-blue-50"
-                    >
-                      {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                        <option key={n} value={n}>{n}'</option>
-                      ))}
-                    </select>
-                  )}
-                  <button type="button" className="w-7 h-7 rounded-full bg-gray-300 hover:bg-gray-400 flex items-center justify-center text-gray-700 text-lg font-bold">×</button>
-                </div>
+                <button type="button" className="w-7 h-7 rounded-full bg-gray-300 hover:bg-gray-400 flex items-center justify-center text-gray-700 text-lg font-bold">×</button>
               </div>
             </div>
             
@@ -676,7 +683,7 @@ export default function BatteryCircuitPlanner({
               {/* Circuit A with stations */}
               <div className="mb-3">
                 <div className="flex-1 space-y-3">
-                  {[...Array(3)].map((_, i) => (
+                  {[...Array(seriesPerCircuit)].map((_, i) => (
                     <div key={i} className="flex items-center gap-2">
                       {/* Circuit A box - only on first row */}
                       {i === 0 && (
@@ -732,7 +739,7 @@ export default function BatteryCircuitPlanner({
                   </span>
                 </label>
                 <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">Pause\stations</label>
+                <label className="text-sm font-medium text-gray-700">Pause\series</label>
                 <select 
                   value={executionPauseStations || ''} 
                   onChange={(e) => setExecutionPauseStations(e.target.value)}

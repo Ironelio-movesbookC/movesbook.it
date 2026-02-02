@@ -29,6 +29,7 @@ interface AddEditMoveframeModalProps {
   existingMoveframe?: any;
   onSetInsertIndex?: (index: number | null) => void;
   editingFromMovelap?: boolean; // Flag to indicate editing was triggered from movelap edit
+  editingMovelapTarget?: { circuitLetter?: string; circuitIndex?: number; localSeriesNumber?: number; stationNumber?: number } | null;
 }
 
 export default function AddEditMoveframeModal({
@@ -40,7 +41,8 @@ export default function AddEditMoveframeModal({
   day,
   existingMoveframe,
   onSetInsertIndex,
-  editingFromMovelap
+  editingFromMovelap,
+  editingMovelapTarget
 }: AddEditMoveframeModalProps): JSX.Element | null {
   // Debug: Log mode only when it changes (moved to useEffect below)
   
@@ -931,6 +933,47 @@ export default function AddEditMoveframeModal({
   }, [activeTab]);
 
   if (!isOpen) return null;
+
+  // 2026-02-02 - If editing from movelap (just for the inner modal), render a transparent container
+  // This allows the inner "Edit Exercise" modal to be visible without the "Edit Moveframe" modal frame
+  if (editingFromMovelap) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+        {/* Render content directly without the modal frame styles */}
+        <div className="w-full h-full pointer-events-auto">
+          <div className="h-full flex flex-col">
+            {/* Body Content - BatteryCircuitPlanner will handle showing only the relevant modal */}
+            <div className="flex-1 overflow-hidden relative">
+              {type === 'BATTERY' ? (
+                <BatteryCircuitPlanner 
+                  sectionId={sectionId}
+                  sport={sport}
+                  workout={workout}
+                  day={day}
+                  onCreateCircuit={(data) => {
+                    // Handle circuit creation
+                    console.log('Circuit created:', data);
+                    // Convert to moveframe data and save
+                    // ... implementation details ...
+                  }}
+                  onCancel={onClose}
+                  existingMoveframe={existingMoveframe}
+                  startInSecondView={true}
+                  editingMovelapTarget={editingMovelapTarget}
+                />
+              ) : (
+                // Fallback for non-battery types (shouldn't happen for circuit editing)
+                <div className="p-4 bg-white rounded-lg shadow-xl m-auto max-w-md">
+                  <p>Editing mode not supported for this type.</p>
+                  <button onClick={onClose} className="mt-4 px-4 py-2 bg-gray-200 rounded">Close</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4 animate-fadeIn">
@@ -4208,7 +4251,8 @@ export default function AddEditMoveframeModal({
               workout={workout}
               day={day}
               existingMoveframe={existingMoveframe}
-              startInSecondView={editingFromMovelap === true}
+              startInSecondView={!!editingFromMovelap}
+              editingMovelapTarget={editingMovelapTarget}
               onCreateCircuit={(circuitData) => {
                 // 2026-01-21 20:00 UTC - Handle circuit creation
                 // 2026-01-22 10:20 UTC - Include description in moveframe data

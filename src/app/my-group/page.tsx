@@ -33,18 +33,6 @@ function MyGroupContent() {
   const { user, loading: authLoading } = useAuth();
   const groupId = searchParams.get('groupId');
 
-  // Redirect to home if not authenticated
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/');
-    }
-  }, [user, authLoading, router]);
-
-  // Don't render if not authenticated
-  if (authLoading || !user) {
-    return null;
-  }
-  
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,7 +42,15 @@ function MyGroupContent() {
   const [addingMember, setAddingMember] = useState(false);
   const [addMemberError, setAddMemberError] = useState('');
 
+  // Redirect to home if not authenticated
   useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/');
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
     if (!groupId) {
       // If no groupId selected, redirect to My Page to select a group
       if (user?.userType === 'GROUP_ADMIN') {
@@ -66,6 +62,11 @@ function MyGroupContent() {
       loadGroupData();
     }
   }, [groupId, user, router]);
+
+  // Don't render if not authenticated
+  if (authLoading || !user) {
+    return null;
+  }
 
   const loadGroupData = async () => {
     if (!groupId) return;

@@ -145,6 +145,11 @@ function SortableMovelapRow({
   onPasteMovelap,
   onAddMovelapAfter,
   pauseAmongCircuits,
+  circuitInfoByLetter,
+  defaultSeriesPerCircuit,
+  defaultStationsPerCircuit,
+  pauseCircuitsSeconds,
+  pauseSeriesSeconds,
   onRefresh
 }: {
   movelap: any;
@@ -160,6 +165,11 @@ function SortableMovelapRow({
   onPasteMovelap: (index: number) => void;
   onAddMovelapAfter?: (movelap: any, index: number) => void;
   pauseAmongCircuits?: string;
+  circuitInfoByLetter?: Map<string, { seriesCount: number; stationsPerSeries: number }>;
+  defaultSeriesPerCircuit?: number | null;
+  defaultStationsPerCircuit?: number | null;
+  pauseCircuitsSeconds?: number | null;
+  pauseSeriesSeconds?: number | null;
   onRefresh?: () => void;
 }) {
   // Options dropdown state
@@ -236,6 +246,27 @@ function SortableMovelapRow({
     position: 'relative' as const,
     cursor: isDragging ? 'grabbing' : 'auto',
   };
+
+  const circuitInfo = movelap.circuitLetter ? circuitInfoByLetter?.get(movelap.circuitLetter) : null;
+  const seriesCount = circuitInfo?.seriesCount ?? defaultSeriesPerCircuit ?? 0;
+  const stationsPerSeries = circuitInfo?.stationsPerSeries ?? defaultStationsPerCircuit ?? 0;
+  const isEndOfSeries = !!(movelap.circuitLetter && stationsPerSeries && movelap.stationNumber === stationsPerSeries);
+  const isEndOfCircuit = !!(movelap.circuitLetter && isEndOfSeries && seriesCount && movelap.localSeriesNumber === seriesCount);
+  const formatPause = (pauseSeconds: number) => {
+    const minutes = Math.floor(pauseSeconds / 60);
+    const seconds = pauseSeconds % 60;
+    return `${minutes}'${seconds.toString().padStart(2, '0')}"`;
+  };
+  const macroValue = movelap.macroFinal
+    ? movelap.macroFinal
+    : movelap.circuitLetter
+      ? isEndOfCircuit && pauseCircuitsSeconds != null
+        ? formatPause(pauseCircuitsSeconds)
+        : isEndOfSeries && pauseSeriesSeconds != null
+          ? formatPause(pauseSeriesSeconds)
+          : null
+      : null;
+  const pauseValue = macroValue ? null : movelap.pause;
 
   // Get sound icon
   const getSoundIcon = (movelap: any) => {
@@ -447,43 +478,13 @@ function SortableMovelapRow({
        
        {/* Pause/Recovery */}
        <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
-         {movelap.pause || '—'}
+        {pauseValue === 0 ? '0' : pauseValue || '—'}
        </td>
        
        {/* Macro Final - 2026-01-22 11:30 UTC - Show pause among circuits for circuit movelaps */}
        {/* 2026-01-22 15:35 UTC - Calculate pause for each movelap individually */}
        <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
-         {movelap.circuitLetter ? (() => {
-           // Extract pause value from moveframe notes for this specific movelap
-           if (moveframe.notes && typeof moveframe.notes === 'string') {
-             const circuitDataMatch = moveframe.notes.match(/\[CIRCUIT_DATA\](.*?)\[\/CIRCUIT_DATA\]/);
-             if (circuitDataMatch) {
-               try {
-                 const circuitData = JSON.parse(circuitDataMatch[1]);
-                 if (circuitData.config) {
-                   // Support both old nested structure (pauses.circuits) and new flat structure (pauseCircuits)
-                   let pauseSeconds = null;
-                   if (circuitData.config.pauseCircuits !== undefined) {
-                     // New structure: pauseCircuits in minutes
-                     pauseSeconds = circuitData.config.pauseCircuits * 60; // Convert to seconds
-                   } else if (circuitData.config.pauses && circuitData.config.pauses.circuits) {
-                     // Old structure: pauses.circuits in seconds
-                     pauseSeconds = circuitData.config.pauses.circuits;
-                   }
-                   
-                   if (pauseSeconds !== null) {
-                   const minutes = Math.floor(pauseSeconds / 60);
-                   const seconds = pauseSeconds % 60;
-                   return `${minutes}'${seconds.toString().padStart(2, '0')}"`;
-                   }
-                 }
-               } catch (e) {
-                 console.error('Failed to parse circuit data:', e);
-               }
-             }
-           }
-           return '—';
-         })() : (movelap.macroFinal || '—')}
+        {macroValue === 0 ? '0' : macroValue || '—'}
        </td>
        
        {/* Alarm & Sound - Hide for circuit-based moveframes */}
@@ -665,6 +666,12 @@ export default function MovelapDetailTable({
   // 2026-01-22 11:30 UTC - Also extract pause among circuits value
   let circuitBasedMoveframe = false;
   let pauseAmongCircuits = '—';
+  let circuitConfig: any = null;
+  let circuitRows: any[] | null = null;
+  let pauseCircuitsSeconds: number | null = null;
+  let pauseSeriesSeconds: number | null = null;
+  let defaultSeriesPerCircuit: number | null = null;
+  let defaultStationsPerCircuit: number | null = null;
   if (moveframe.notes && typeof moveframe.notes === 'string') {
     const circuitDataMatch = moveframe.notes.match(/\[CIRCUIT_DATA\](.*?)\[\/CIRCUIT_DATA\]/);
     if (circuitDataMatch) {
@@ -672,17 +679,19 @@ export default function MovelapDetailTable({
         const circuitData = JSON.parse(circuitDataMatch[1]);
         circuitBasedMoveframe = circuitData.isCircuitBased || false;
         moveframe.isCircuitBased = circuitBasedMoveframe;
+        circuitConfig = circuitData.config || null;
+        circuitRows = circuitData.circuits || null;
         
         // Extract pause among circuits (pauseCircuits in minutes or seconds)
         // Support both old nested structure (pauses.circuits) and new flat structure (pauseCircuits)
         let pauseValue = null;
-        if (circuitData.config) {
-          if (circuitData.config.pauseCircuits !== undefined) {
+        if (circuitConfig) {
+          if (circuitConfig.pauseCircuits !== undefined) {
             // New structure: pauseCircuits in minutes
-            pauseValue = circuitData.config.pauseCircuits * 60; // Convert to seconds
-          } else if (circuitData.config.pauses && circuitData.config.pauses.circuits) {
+            pauseValue = circuitConfig.pauseCircuits * 60; // Convert to seconds
+          } else if (circuitConfig.pauses && circuitConfig.pauses.circuits) {
             // Old structure: pauses.circuits in seconds
-            pauseValue = circuitData.config.pauses.circuits;
+            pauseValue = circuitConfig.pauses.circuits;
           }
           
           if (pauseValue !== null) {
@@ -690,12 +699,44 @@ export default function MovelapDetailTable({
             const seconds = pauseValue % 60;
           pauseAmongCircuits = `${minutes}'${seconds.toString().padStart(2, '0')}"`;
           }
+
+          if (circuitConfig.pauseCircuits !== undefined) {
+            pauseCircuitsSeconds = circuitConfig.pauseCircuits * 60;
+          } else if (circuitConfig.pauses && circuitConfig.pauses.circuits !== undefined) {
+            pauseCircuitsSeconds = circuitConfig.pauses.circuits;
+          }
+
+          if (circuitConfig.pauseSeries !== undefined) {
+            pauseSeriesSeconds = circuitConfig.pauseSeries * 60;
+          } else if (circuitConfig.pauses && circuitConfig.pauses.series !== undefined) {
+            pauseSeriesSeconds = circuitConfig.pauses.series;
+          }
+
+          defaultSeriesPerCircuit = circuitConfig.seriesPerCircuit ?? circuitConfig.seriesCount ?? circuitConfig.series ?? null;
+          defaultStationsPerCircuit = circuitConfig.stationsPerCircuit ?? circuitConfig.stations ?? null;
         }
       } catch (e) {
         console.error('Failed to parse circuit data:', e);
       }
     }
   }
+
+  const circuitInfoByLetter = new Map<string, { seriesCount: number; stationsPerSeries: number }>();
+  if (Array.isArray(circuitRows)) {
+    circuitRows.forEach((circuit: any) => {
+      const seriesCount = circuit.series ?? circuit.stationsBySeries?.length ?? defaultSeriesPerCircuit ?? 0;
+      const stationsPerSeries = circuit.stationsBySeries?.[0]?.length ?? defaultStationsPerCircuit ?? 0;
+      if (circuit.letter) {
+        circuitInfoByLetter.set(circuit.letter, { seriesCount, stationsPerSeries });
+      }
+    });
+  }
+
+  const formatPause = (pauseSeconds: number) => {
+    const minutes = Math.floor(pauseSeconds / 60);
+    const seconds = pauseSeconds % 60;
+    return `${minutes}'${seconds.toString().padStart(2, '0')}"`;
+  };
   
   // Navigation for movelaps within the same moveframe
   const hasPreviousMovelap = currentMovelapIndex > 0;
@@ -1520,6 +1561,11 @@ export default function MovelapDetailTable({
                       onPasteMovelap={handlePasteMovelap}
                       onAddMovelapAfter={onAddMovelapAfter}
                       pauseAmongCircuits={pauseAmongCircuits}
+                      circuitInfoByLetter={circuitInfoByLetter}
+                      defaultSeriesPerCircuit={defaultSeriesPerCircuit}
+                      defaultStationsPerCircuit={defaultStationsPerCircuit}
+                      pauseCircuitsSeconds={pauseCircuitsSeconds}
+                      pauseSeriesSeconds={pauseSeriesSeconds}
                       onRefresh={onRefresh}
                     />
                   </React.Fragment>

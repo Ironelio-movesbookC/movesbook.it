@@ -34,18 +34,6 @@ function MyTeamContent() {
   const { user, loading: authLoading } = useAuth();
   const teamId = searchParams.get('teamId');
 
-  // Redirect to home if not authenticated
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/');
-    }
-  }, [user, authLoading, router]);
-
-  // Don't render if not authenticated
-  if (authLoading || !user) {
-    return null;
-  }
-  
   const [team, setTeam] = useState<Team | null>(null);
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,7 +43,15 @@ function MyTeamContent() {
   const [addingMember, setAddingMember] = useState(false);
   const [addMemberError, setAddMemberError] = useState('');
 
+  // Redirect to home if not authenticated
   useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/');
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
     if (!teamId) {
       // If no teamId selected, redirect to My Page to select a team
       if (user?.userType === 'TEAM_MANAGER') {
@@ -67,6 +63,11 @@ function MyTeamContent() {
       loadTeamData();
     }
   }, [teamId, user, router]);
+
+  // Don't render if not authenticated
+  if (authLoading || !user) {
+    return null;
+  }
 
   const loadTeamData = async () => {
     if (!teamId) return;

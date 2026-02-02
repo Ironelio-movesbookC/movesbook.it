@@ -235,13 +235,13 @@ export default function AddMoveframeModalNew({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto scrollbar-hide">
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl my-8 flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b bg-white">
-          <h2 className="text-xl font-bold text-gray-900">Add Moveframe</h2>
+        <div className="flex items-center justify-between p-4 border-b border-purple-600 bg-gradient-to-r from-slate-900 via-purple-900 to-slate-900">
+          <h2 className="text-xl font-bold text-white">Add Moveframe</h2>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-1 hover:bg-white/10 rounded-full transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5 text-white" />
           </button>
         </div>
 

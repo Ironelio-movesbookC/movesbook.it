@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     if (!apiKey) {
       // Fallback: Use free LibreTranslate API or return mock translations
       console.warn('Google Translate API key not found, using fallback translation');
-      return useFallbackTranslation(text, targetLanguages);
+      return fallbackTranslation(text, targetLanguages);
     }
 
     // Use Google Translate API
@@ -95,7 +95,7 @@ function chunkText(text: string, maxLength: number = 400): string[] {
 }
 
 // Fallback translation using multiple free services
-async function useFallbackTranslation(text: string, targetLanguages: string[]) {
+async function fallbackTranslation(text: string, targetLanguages: string[]) {
   console.log('Using fallback translation for:', text);
   console.log('Text length:', text.length);
   console.log('Target languages:', targetLanguages);

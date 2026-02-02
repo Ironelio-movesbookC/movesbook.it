@@ -266,6 +266,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [editingMoveframe, setEditingMoveframe] = useState<Moveframe | null>(null);
   const [editingMovelap, setEditingMovelap] = useState<any>(null);
   const [editingFromMovelap, setEditingFromMovelap] = useState(false); // Track if editing moveframe was triggered from movelap edit
+  const [editingCircuitStation, setEditingCircuitStation] = useState<{ circuitLetter?: string; circuitIndex?: number; localSeriesNumber?: number; stationNumber?: number } | null>(null);
   
   // ==================== UI STATE ====================
   const [excludeStretchingFromTotals, setExcludeStretchingFromTotals] = useState(false);
@@ -2134,30 +2135,48 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                    modalActions.setShowAddMoveframeModal(true);
                  }}
                  onEditMovelap={(movelap, moveframe, workout, day) => {
-                  // Check if this movelap is part of a circuit
-                  const isCircuitMovelap = movelap.notes && typeof movelap.notes === 'string' && 
-                                          movelap.notes.includes('[CIRCUIT_META]');
-                  
+                  let circuitMeta = null;
+                  if (movelap?.notes && typeof movelap.notes === 'string') {
+                    const match = movelap.notes.match(/\[CIRCUIT_META\](.*?)\[\/CIRCUIT_META\]/);
+                    if (match && match[1]) {
+                      try {
+                        circuitMeta = JSON.parse(match[1]);
+                      } catch (e) {
+                        circuitMeta = null;
+                      }
+                    }
+                  }
+
+                  const circuitTarget = {
+                    circuitLetter: circuitMeta?.circuitLetter ?? movelap?.circuitLetter,
+                    circuitIndex: circuitMeta?.circuitIndex ?? movelap?.circuitIndex,
+                    localSeriesNumber: circuitMeta?.localSeriesNumber ?? movelap?.localSeriesNumber,
+                    stationNumber: circuitMeta?.stationNumber ?? movelap?.stationNumber
+                  };
+
+                  const isCircuitMovelap = !!(circuitTarget.circuitLetter || circuitTarget.circuitIndex);
+
                   if (isCircuitMovelap && moveframe) {
-                    // For circuit movelaps, open the circuit planner's second view
                     setEditingMoveframe(moveframe);
                     setActiveDay(day);
                     setActiveWorkout(workout);
                     setActiveMoveframe(moveframe);
                     setMoveframeModalMode('edit');
-                    setEditingFromMovelap(true); // Set flag to indicate editing from movelap
+                    setEditingFromMovelap(true);
+                    setEditingCircuitStation(circuitTarget);
                     modalActions.setShowAddMoveframeModal(true);
-                  } else {
-                    // For regular movelaps, open the movelap edit modal
+                    return;
+                  }
+
                   setEditingMovelap(movelap);
                   setActiveDay(day);
                   setActiveWorkout(workout);
                   setActiveMoveframe(moveframe);
                   setActiveMovelap(movelap);
-                  setMovelapInsertIndex(null); // Clear insert index for edit mode
+                  setMovelapInsertIndex(null);
+                  setEditingCircuitStation(null);
                   modalActions.setMovelapModalMode('edit');
                   modalActions.setShowAddEditMovelapModal(true);
-                  }
                 }}
                 onAddMovelap={(moveframe, workout, day) => {
                   setActiveMoveframe(moveframe);
@@ -2496,6 +2515,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
            isOpen={modals.showAddMoveframeModal}
             onSetInsertIndex={(index) => setMoveframeInsertIndex(index)}
             editingFromMovelap={editingFromMovelap}
+            editingMovelapTarget={editingCircuitStation}
             onClose={() => {
               modalActions.setShowAddMoveframeModal(false);
             setActiveWorkout(null);
@@ -2506,6 +2526,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setMoveframeModalMode('add');
             setMoveframeInsertIndex(null); // Reset insert index
             setEditingFromMovelap(false); // Reset the flag
+            setEditingCircuitStation(null);
             }}
              onSave={async (moveframeData) => {
              console.log(`📤 ${moveframeModalMode === 'edit' ? 'Updating' : 'Creating'} moveframe with data:`, moveframeData);
