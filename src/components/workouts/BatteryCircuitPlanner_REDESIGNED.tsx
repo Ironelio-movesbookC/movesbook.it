@@ -232,8 +232,8 @@ export default function BatteryCircuitPlanner({
           // Pass the circuit data to the parent component
           onCreateCircuit({
             ...data,
-            // Use data.description from CircuitPlanner_OLD (the preview), not the local description state
-            settings: {
+            // Prefer settings coming from the old planner (it may have been edited there)
+            settings: data?.config ?? data?.settings ?? {
               numCircuits,
               pauseCircuits,
               stationsPerCircuit,

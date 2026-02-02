@@ -2540,13 +2540,16 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 // 2026-01-22 10:45 UTC - Prepare notes field with circuit config if applicable
                 let updateNotes = moveframeData.notes || '';
                 if (moveframeData.isCircuitBased && moveframeData.circuitConfig) {
+                  const baseNotes = (updateNotes || '')
+                    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+                    .trim();
                   const circuitMeta = {
                     isCircuitBased: true,
                     config: moveframeData.circuitConfig,
                     circuits: moveframeData.circuits
                   };
-                  const metaString = `\n\n[CIRCUIT_DATA]${JSON.stringify(circuitMeta)}[/CIRCUIT_DATA]`;
-                  updateNotes = updateNotes + metaString;
+                  const metaString = `[CIRCUIT_DATA]${JSON.stringify(circuitMeta)}[/CIRCUIT_DATA]`;
+                  updateNotes = baseNotes ? `${baseNotes}\n\n${metaString}` : metaString;
                 }
                 
                 await moveframeHandlers.updateMoveframe(editingMoveframe.id, {
@@ -2573,9 +2576,83 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 
                 // ALWAYS regenerate movelaps for non-ANNOTATION types when editing
                 // This ensures Rip\Sets column and all movelap data stays in sync
-                // 2026-01-22 10:35 UTC - Skip regeneration for circuit-based moveframes (BATTERY type)
                 // 2026-01-28 - Skip regeneration for manual mode moveframes (preserve user's custom summary)
-                if (moveframeData.type !== 'ANNOTATION' && moveframeData.type !== 'BATTERY' && !moveframeData.manualMode) {
+                if (moveframeData.type === 'BATTERY' && Array.isArray(moveframeData.movelaps) && moveframeData.movelaps.length > 0) {
+                  const token = localStorage.getItem('token');
+                  
+                  const deletePromises = (editingMoveframe.movelaps || []).map((movelap: any) =>
+                    fetch(`/api/workouts/movelaps/${movelap.id}`, {
+                      method: 'DELETE',
+                      headers: { 'Authorization': `Bearer ${token}` }
+                    })
+                  );
+                  await Promise.all(deletePromises);
+                  console.log(`✅ Deleted ${deletePromises.length} existing movelaps`);
+                  
+                  const newMovelaps = [...moveframeData.movelaps].sort((a: any, b: any) =>
+                    (a.repetitionNumber || 0) - (b.repetitionNumber || 0)
+                  );
+                  
+                  for (let index = 0; index < newMovelaps.length; index++) {
+                    const lap = newMovelaps[index];
+                    
+                    let movelapNotes = lap.notes || '';
+                    if (lap.circuitLetter) {
+                      const circuitMeta = {
+                        circuitLetter: lap.circuitLetter,
+                        circuitIndex: lap.circuitIndex,
+                        seriesNumber: lap.seriesNumber,
+                        localSeriesNumber: lap.localSeriesNumber,
+                        stationNumber: lap.stationNumber,
+                        sector: lap.sector
+                      };
+                      const metaString = `\n[CIRCUIT_META]${JSON.stringify(circuitMeta)}[/CIRCUIT_META]`;
+                      movelapNotes = movelapNotes + metaString;
+                    }
+                    
+                    let pauseValue = lap.pause || null;
+                    if (typeof pauseValue === 'number') {
+                      const minutes = Math.floor(pauseValue / 60);
+                      const seconds = pauseValue % 60;
+                      pauseValue = `${minutes}'${seconds.toString().padStart(2, '0')}"`;
+                    }
+                    
+                    await fetch('/api/workouts/movelaps', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                      },
+                      body: JSON.stringify({
+                        moveframeId: editingMoveframe.id,
+                        repetitionNumber: lap.repetitionNumber || (index + 1),
+                        distance: lap.distance || null,
+                        speed: lap.reps ? String(lap.reps) : (lap.speed || null),
+                        style: lap.sector || lap.style || null,
+                        pace: lap.pace || null,
+                        time: lap.time || null,
+                        rowPerMin: lap.rowPerMin || null,
+                        pause: pauseValue,
+                        alarm: lap.alarm || null,
+                        sound: lap.sound || null,
+                        notes: movelapNotes || null,
+                        reps: lap.reps || null,
+                        weight: lap.weight || null,
+                        tools: lap.tools || null,
+                        muscularSector: lap.muscularSector || null,
+                        exercise: lap.exercise || null,
+                        restType: lap.restType || null,
+                        r1: lap.r1 || null,
+                        r2: lap.r2 || null,
+                        macroFinal: lap.macroFinal || null,
+                        status: lap.status || 'PENDING'
+                      })
+                    });
+                  }
+                  
+                  console.log(`✅ Created ${newMovelaps.length} new movelaps with updated circuit data`);
+                  console.log(`📊 Rip\\Sets column will now show: ${newMovelaps.length}`);
+                } else if (moveframeData.type !== 'ANNOTATION' && !moveframeData.manualMode) {
                    const baseReps = parseInt(moveframeData.repetitions) || 1;
                    const AEROBIC_SPORTS = ['SWIM', 'BIKE', 'MTB', 'SPINNING', 'RUN', 'ROWING', 'CANOEING', 'KAYAKING', 'SKATE', 'SKI', 'SNOWBOARD', 'WALKING', 'HIKING'];
                    const seriesMultiplier = AEROBIC_SPORTS.includes(moveframeData.sport) ? (parseInt(moveframeData.aerobicSeries) || 1) : 1;
@@ -2636,6 +2713,12 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                  }
                  
                  // Reload data to show changes (updates Rip\Sets column)
+                if (editingMoveframe?.id) {
+                  setAutoExpandMoveframeId(editingMoveframe.id);
+                  setTimeout(() => {
+                    setAutoExpandMoveframeId(null);
+                  }, UI_CONFIG.AUTO_EXPAND_DELAY);
+                }
                  await loadWorkoutData(activeSection);
                 } else {
                   // CREATE new moveframe
@@ -2681,13 +2764,16 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 // 2026-01-22 11:00 UTC - Fixed: Embed circuit config in notes field properly
                 let finalNotes = moveframeData.notes || '';
                 if (moveframeData.isCircuitBased && moveframeData.circuitConfig) {
+                  const baseNotes = (finalNotes || '')
+                    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+                    .trim();
                   const circuitMeta = {
                     isCircuitBased: true,
                     config: moveframeData.circuitConfig,
                     circuits: moveframeData.circuits
                   };
-                  const metaString = `\n\n[CIRCUIT_DATA]${JSON.stringify(circuitMeta)}[/CIRCUIT_DATA]`;
-                  finalNotes = finalNotes + metaString;
+                  const metaString = `[CIRCUIT_DATA]${JSON.stringify(circuitMeta)}[/CIRCUIT_DATA]`;
+                  finalNotes = baseNotes ? `${baseNotes}\n\n${metaString}` : metaString;
                   
                   console.log('✅ Circuit config embedded in notes:', {
                     hasCircuitData: true,
@@ -3356,7 +3442,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                       const reorderData = allMovelaps.map((ml: any, idx: number) => ({
                         id: ml.id,
                         repetitionNumber: idx + 1,
-                        isNewlyAdded: ml.id === newMovelap.id // Mark newly added movelap
+                        ...(ml.id === newMovelap.id ? { isNewlyAdded: true } : {})
                       }));
                       
                       // Call reorder API

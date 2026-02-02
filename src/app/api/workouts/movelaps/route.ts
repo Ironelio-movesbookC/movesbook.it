@@ -2,6 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 
+const extractCircuitMetaFromNotes = (notes: unknown) => {
+  if (typeof notes !== 'string') return null;
+  const match = notes.match(/\[CIRCUIT_META\](.*?)\[\/CIRCUIT_META\]/);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+};
+
+const upsertCircuitMetaInNotes = (notes: unknown, circuitMeta: any) => {
+  const base = typeof notes === 'string' ? notes : '';
+  const cleaned = base.replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '').trim();
+  const metaString = `[CIRCUIT_META]${JSON.stringify(circuitMeta)}[/CIRCUIT_META]`;
+  return cleaned ? `${cleaned}\n${metaString}` : metaString;
+};
+
 // Helper function to convert display rest type to enum value
 function convertRestTypeToEnum(restType: string | null | undefined) {
   if (!restType || restType.trim() === '') return null;
@@ -70,38 +88,117 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'repetitionNumber is required' }, { status: 400 });
     }
 
-    // Create movelap
-    const movelap = await prisma.movelap.create({
-      data: {
-        moveframeId,
-        repetitionNumber,
-        distance: distance ? parseInt(distance) : null,
-        speed: speed || null,
-        style: style || null,
-        pace: pace || null,
-        time: time || null,
-        rowPerMin: rowPerMin ? parseInt(rowPerMin) : null,
-        pause: pause || null,
-        alarm: alarm ? parseInt(alarm) : null,
-        sound: sound || null,
-        notes: notes !== undefined ? notes : null,
-        reps: reps ? parseInt(reps) : null,
-        weight: weight || null,
-        tools: tools || null,
-        muscularSector: muscularSector || null,
-        exercise: exercise || null,
-        // Convert display value to enum value
-        restType: convertRestTypeToEnum(restType),
-        r1: r1 || null,
-        r2: r2 || null,
-        macroFinal: macroFinal || null,
-        status: status as any,
-        isSkipped: false,
-        isDisabled: false
+    let baseStationNumber: number | null = null;
+    const movelap = await prisma.$transaction(async (tx) => {
+      await tx.movelap.updateMany({
+        where: {
+          moveframeId,
+          repetitionNumber: { gte: repetitionNumber }
+        },
+        data: {
+          repetitionNumber: { increment: 1 }
+        }
+      });
+
+      let inferredCircuitMeta: any = extractCircuitMetaFromNotes(notes);
+      if (!inferredCircuitMeta) {
+        const prev = repetitionNumber > 1
+          ? await tx.movelap.findFirst({
+              where: { moveframeId, repetitionNumber: repetitionNumber - 1 },
+              select: { notes: true }
+            })
+          : null;
+        const prevMeta = extractCircuitMetaFromNotes(prev?.notes);
+        if (prevMeta?.circuitLetter && (prevMeta.localSeriesNumber ?? prevMeta.seriesNumber) && typeof prevMeta.stationNumber === 'number') {
+          baseStationNumber = prevMeta.stationNumber;
+          inferredCircuitMeta = {
+            ...prevMeta,
+            localSeriesNumber: prevMeta.localSeriesNumber ?? prevMeta.seriesNumber,
+            seriesNumber: prevMeta.seriesNumber ?? prevMeta.localSeriesNumber,
+            stationNumber: prevMeta.stationNumber + 1
+          };
+        } else {
+          const next = await tx.movelap.findFirst({
+            where: { moveframeId, repetitionNumber: repetitionNumber + 1 },
+            select: { notes: true }
+          });
+          const nextMeta = extractCircuitMetaFromNotes(next?.notes);
+          if (nextMeta?.circuitLetter && (nextMeta.localSeriesNumber ?? nextMeta.seriesNumber) && typeof nextMeta.stationNumber === 'number') {
+            baseStationNumber = (nextMeta.stationNumber || 1) - 1;
+            inferredCircuitMeta = {
+              ...nextMeta,
+              localSeriesNumber: nextMeta.localSeriesNumber ?? nextMeta.seriesNumber,
+              seriesNumber: nextMeta.seriesNumber ?? nextMeta.localSeriesNumber,
+              stationNumber: nextMeta.stationNumber
+            };
+          }
+        }
       }
+
+      const notesToCreate =
+        inferredCircuitMeta
+          ? upsertCircuitMetaInNotes(typeof notes === 'string' ? notes : '', inferredCircuitMeta)
+          : (notes !== undefined ? notes : null);
+
+      return tx.movelap.create({
+        data: {
+          moveframeId,
+          repetitionNumber,
+          distance: distance ? parseInt(distance) : null,
+          speed: speed || null,
+          style: style || null,
+          pace: pace || null,
+          time: time || null,
+          rowPerMin: rowPerMin ? parseInt(rowPerMin) : null,
+          pause: pause || null,
+          alarm: alarm ? parseInt(alarm) : null,
+          sound: sound || null,
+          notes: notesToCreate as any,
+          reps: reps ? parseInt(reps) : null,
+          weight: weight || null,
+          tools: tools || null,
+          muscularSector: muscularSector || null,
+          exercise: exercise || null,
+          restType: convertRestTypeToEnum(restType),
+          r1: r1 || null,
+          r2: r2 || null,
+          macroFinal: macroFinal || null,
+          status: status as any,
+          isSkipped: false,
+          isDisabled: false
+        }
+      });
     });
 
     console.log('✅ Movelap created:', movelap.id);
+
+    const createdCircuitMeta = extractCircuitMetaFromNotes(movelap.notes);
+    const createdLocalSeriesNumber = createdCircuitMeta?.localSeriesNumber ?? createdCircuitMeta?.seriesNumber;
+    if (baseStationNumber !== null && createdCircuitMeta?.circuitLetter && createdLocalSeriesNumber && typeof createdCircuitMeta.stationNumber === 'number') {
+      const baseStation = baseStationNumber;
+      const tokenNotes = await prisma.movelap.findMany({
+        where: { moveframeId, repetitionNumber: { gt: repetitionNumber } },
+        select: { id: true, notes: true }
+      });
+
+      await Promise.all(
+        tokenNotes.map(async (ml) => {
+          const meta = extractCircuitMetaFromNotes(ml.notes);
+          const localSeriesNumber = meta?.localSeriesNumber ?? meta?.seriesNumber;
+          if (!meta?.circuitLetter || !localSeriesNumber || typeof meta.stationNumber !== 'number') return;
+          if (meta.circuitLetter !== createdCircuitMeta.circuitLetter) return;
+          if (localSeriesNumber !== createdLocalSeriesNumber) return;
+          if (meta.stationNumber <= baseStation) return;
+
+          const updatedMeta = { ...meta, stationNumber: meta.stationNumber + 1 };
+          const updatedNotes = upsertCircuitMetaInNotes(ml.notes ?? '', updatedMeta);
+          await prisma.movelap.update({
+            where: { id: ml.id },
+            data: { notes: updatedNotes }
+          });
+        })
+      );
+    }
 
     return NextResponse.json(movelap, { status: 201 });
   } catch (error: any) {

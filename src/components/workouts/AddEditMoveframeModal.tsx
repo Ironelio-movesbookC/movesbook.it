@@ -951,10 +951,25 @@ export default function AddEditMoveframeModal({
                   workout={workout}
                   day={day}
                   onCreateCircuit={(data) => {
-                    // Handle circuit creation
-                    console.log('Circuit created:', data);
-                    // Convert to moveframe data and save
-                    // ... implementation details ...
+                    console.log('✅ [AddEditMoveframeModal] Circuit data received:', data);
+                    console.log('✅ [AddEditMoveframeModal] Circuit description:', data.description);
+                    console.log('✅ [AddEditMoveframeModal] Description length:', data.description?.length || 0);
+                    
+                    const moveframeData = buildMoveframeData();
+                    const finalData = {
+                      ...moveframeData,
+                      description: data.description || '',
+                      circuitConfig: data.settings,
+                      circuits: data.circuits,
+                      rows: data.rows,
+                      movelaps: data.movelaps || [],
+                      isCircuitBased: true
+                    };
+                    
+                    console.log('✅ [AddEditMoveframeModal] Final moveframe data:', finalData);
+                    console.log('✅ [AddEditMoveframeModal] Final description:', finalData.description);
+                    onSave(finalData);
+                    onClose();
                   }}
                   onCancel={onClose}
                   existingMoveframe={existingMoveframe}

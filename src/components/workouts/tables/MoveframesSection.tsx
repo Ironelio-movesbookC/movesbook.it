@@ -51,7 +51,19 @@ export default function MoveframesSection({
   columnSettings
 }: MoveframesSectionProps) {
   const [isExpanded, setIsExpanded] = React.useState(true);
-  const [expandedMoveframes, setExpandedMoveframes] = React.useState<Set<string>>(new Set());
+  const [expandedMoveframes, setExpandedMoveframes] = React.useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const raw = window.localStorage.getItem('workoutSettings');
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw);
+      const stored = parsed?.expandedMoveframes;
+      if (!Array.isArray(stored)) return new Set();
+      return new Set(stored.filter((id: any) => typeof id === 'string'));
+    } catch {
+      return new Set();
+    }
+  });
   const [showInfoPanel, setShowInfoPanel] = useState(false);
   const [selectedMoveframe, setSelectedMoveframe] = useState<any>(null);
   const [showWorkTypeModal, setShowWorkTypeModal] = useState(false);
@@ -71,6 +83,21 @@ export default function MoveframesSection({
       setExpandedMoveframes(prev => new Set([...Array.from(prev), expandedMoveframeId]));
     }
   }, [expandedMoveframeId]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem('workoutSettings');
+      const parsed = raw ? JSON.parse(raw) : {};
+      const updated = {
+        ...parsed,
+        expandedMoveframes: Array.from(expandedMoveframes)
+      };
+      window.localStorage.setItem('workoutSettings', JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+  }, [expandedMoveframes]);
 
   // State to track checked moveframes
   const [checkedMoveframes, setCheckedMoveframes] = React.useState<Set<string>>(new Set());

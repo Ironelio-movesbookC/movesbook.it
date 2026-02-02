@@ -28,11 +28,16 @@ export async function PATCH(request: NextRequest) {
     await prisma.$transaction(
       movelaps.map((ml: { id: string; repetitionNumber: number; isNewlyAdded?: boolean }) => {
         console.log(`  - Updating movelap ${ml.id}: repetitionNumber=${ml.repetitionNumber}, isNewlyAdded=${ml.isNewlyAdded}`);
+        const data: { repetitionNumber: number; isNewlyAdded?: boolean } = {
+          repetitionNumber: ml.repetitionNumber
+        };
+        if (typeof ml.isNewlyAdded === 'boolean') {
+          data.isNewlyAdded = ml.isNewlyAdded;
+        }
         return prisma.movelap.update({
           where: { id: ml.id },
           data: { 
-            repetitionNumber: ml.repetitionNumber,
-            isNewlyAdded: ml.isNewlyAdded || false
+            ...data
           }
         });
       })

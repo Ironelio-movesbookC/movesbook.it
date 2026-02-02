@@ -128,10 +128,10 @@ export default function ModernFooter() {
               <video
                 className="w-full h-full object-cover"
                 controls
-                autoPlay
                 loop
                 muted
                 playsInline
+                preload="none"
                 poster="/images/sponsor-poster.jpg.png"
               >
                 <source src="/videos/sponsors.mp4" type="video/mp4" />
