@@ -60,6 +60,8 @@ interface CircuitPlannerProps {
     startInTablePhase?: boolean;
     existingCircuits?: any[]; // Pre-existing circuit data with exercises
     editingFromMovelap?: boolean; // Flag to indicate editing from movelap click
+    targetMovelap?: any; // The specific movelap being edited (to open exercise modal)
+    hideUI?: boolean; // Hide UI elements (for single movelap editing)
   };
 }
 
@@ -288,6 +290,60 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     setCircuits(newCircuits);
   }, [currentPhase, numCircuits, stationsPerCircuit, seriesCount, seriesMode, initialConfig?.existingCircuits]); // Removed pauseStations to prevent reset
   
+  // 2026-01-31 - Auto-open exercise modal if targetMovelap is provided
+  const hasHandledTargetMovelap = React.useRef(false);
+
+  useEffect(() => {
+    if (initialConfig?.targetMovelap && circuits.length > 0 && !hasHandledTargetMovelap.current) {
+      console.log('🎯 [CircuitPlanner] Processing target movelap:', initialConfig.targetMovelap);
+      
+      try {
+        const notes = initialConfig.targetMovelap.notes;
+        if (notes && typeof notes === 'string') {
+          const metaMatch = notes.match(/\[CIRCUIT_META\](.*?)\[\/CIRCUIT_META\]/);
+          
+          if (metaMatch && metaMatch[1]) {
+            const metadata = JSON.parse(metaMatch[1]);
+            console.log('🎯 [CircuitPlanner] Parsed metadata:', metadata);
+            
+            // Extract indices
+            // Note: Metadata uses 1-based indexing for series/stations usually, but circuitIndex is 0-based
+            const circuitIdx = metadata.circuitIndex;
+            const seriesIdx = (metadata.localSeriesNumber || metadata.seriesNumber) - 1;
+            const stationNumber = metadata.stationNumber;
+            
+            // Validate existence
+            if (circuits[circuitIdx] && 
+                circuits[circuitIdx].stationsBySeries[seriesIdx]) {
+                  
+              // Find station index by station number
+              const stationIdx = circuits[circuitIdx].stationsBySeries[seriesIdx].findIndex(
+                s => s.stationNumber === stationNumber
+              );
+              
+              if (stationIdx !== -1) {
+                console.log(`🎯 [CircuitPlanner] Found station: Circuit ${circuitIdx}, Series ${seriesIdx}, Station ${stationIdx}`);
+                setSelectedStationForManualExercise({
+                  circuitIdx,
+                  seriesIdx,
+                  stationIdx
+                });
+                setShowManualExerciseModal(true);
+                hasHandledTargetMovelap.current = true;
+              } else {
+                console.warn('🎯 [CircuitPlanner] Station not found with number:', stationNumber);
+              }
+            } else {
+              console.warn('🎯 [CircuitPlanner] Circuit or Series not found:', { circuitIdx, seriesIdx });
+            }
+          }
+        }
+      } catch (e) {
+        console.error('🎯 [CircuitPlanner] Error processing target movelap:', e);
+      }
+    }
+  }, [initialConfig?.targetMovelap, circuits]);
+
   // ============================================================================
   // HANDLERS - 2026-01-21 19:40 UTC
   // ============================================================================
@@ -591,14 +647,16 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     setCurrentPhase('table');
   };
   
-  const generateMovelaps = () => {
+  const generateMovelaps = (circuitsOverride?: Circuit[]) => {
     // 2026-01-22 10:30 UTC - Generate movelaps from circuit configuration
     // 2026-01-22 12:15 UTC - Fixed to use series-specific stations
     const movelaps: any[] = [];
     let globalSeriesNumber = 1; // Continuous series numbering across all circuits
     let sequenceNumber = 1; // Sequential numbering for all movelaps
     
-    circuits.forEach((circuit, circuitIndex) => {
+    const circuitsToUse = circuitsOverride || circuits;
+
+    circuitsToUse.forEach((circuit, circuitIndex) => {
       for (let seriesNum = 1; seriesNum <= circuit.series; seriesNum++) {
         const seriesStations = circuit.stationsBySeries[seriesNum - 1];
         seriesStations.forEach((station, stationIndex) => {
@@ -607,7 +665,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           
           const isLastStationOfSeries = stationIndex === seriesStations.length - 1;
           const isLastSeriesOfCircuit = seriesNum === circuit.series;
-          const isLastCircuit = circuitIndex === circuits.length - 1;
+          const isLastCircuit = circuitIndex === circuitsToUse.length - 1;
           
           if (isLastStationOfSeries) {
             if (!isLastSeriesOfCircuit || seriesMode === 'time') {
@@ -639,7 +697,12 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             speed: '',
             restType: 'SET_TIME', // Use enum format
             restTime: null,
-            notes: '',
+            notes: `[CIRCUIT_META]${JSON.stringify({
+              circuitIndex: circuitIndex,
+              seriesNumber: globalSeriesNumber,
+              localSeriesNumber: seriesNum,
+              stationNumber: station.stationNumber
+            })}[/CIRCUIT_META]`,
             alarm: false,
             sound: false,
             status: 'PENDING',
@@ -657,18 +720,19 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     return movelaps;
   };
 
-  const handleSave = () => {
+  const handleSave = (circuitsOverride?: Circuit[]) => {
     // 2026-01-21 19:55 UTC - Validate and save circuit configuration
     // 2026-01-22 10:20 UTC - Include preview description for moveframe
     // 2026-01-22 10:30 UTC - Generate movelaps from circuit configuration
-    const description = generatePreview();
-    const movelaps = generateMovelaps();
+    const circuitsToUse = circuitsOverride || circuits;
+    const description = generatePreview(circuitsToUse);
+    const movelaps = generateMovelaps(circuitsToUse);
     
     console.log('💾 [handleSave] Generated movelaps:', movelaps);
     console.log('💾 [handleSave] Description to save:', description);
     
     const circuitData = {
-      circuits,
+      circuits: circuitsToUse,
       description, // Preview to be used as moveframe description
       movelaps, // Generated movelaps for the moveframe
       config: {
@@ -1032,21 +1096,33 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     setActionLog(prev => [...prev, `Exercises reloaded: ${circuits.reduce((sum, c) => sum + c.stationsBySeries.reduce((s, ss) => s + ss.length, 0), 0)} stations processed`]);
   };
   
-  const generatePreview = (): string => {
+  const generatePreview = (circuitsOverride?: Circuit[]): string => {
     // 2026-01-21 22:10 UTC - Generate preview text
     // 2026-01-22 10:20 UTC - Format like: "Circuit: X circuits x Y series Pause Z" M0'"
     // 2026-01-27 - Modified for time mode: "Circuit X of Y stations to do for Z' x N series"
+    const circuitsToUse = circuitsOverride || circuits;
     const parts: string[] = [];
     
     // Circuit info
-    const avgSeries = circuits.length > 0 
-      ? Math.round(circuits.reduce((sum, c) => sum + c.series, 0) / circuits.length)
+    const avgSeries = circuitsToUse.length > 0 
+      ? Math.round(circuitsToUse.reduce((sum, c) => sum + c.series, 0) / circuitsToUse.length)
       : seriesCount;
     
+    // Calculate average stations per series
+    const avgStations = circuitsToUse.length > 0
+      ? Math.round(circuitsToUse.reduce((sum, c) => {
+          const numSeries = c.stationsBySeries.length;
+          const circuitAvgStations = numSeries > 0 
+            ? c.stationsBySeries.reduce((sSum, s) => sSum + s.length, 0) / numSeries
+            : 0;
+          return sum + circuitAvgStations;
+        }, 0) / circuitsToUse.length)
+      : stationsPerCircuit;
+    
     if (seriesMode === 'time') {
-      parts.push(`Circuit ${circuits.length || numCircuits} of ${stationsPerCircuit} stations to do for ${seriesTime}' x ${avgSeries} series`);
+      parts.push(`Circuit ${circuitsToUse.length || numCircuits} of ${avgStations} stations to do for ${seriesTime}' x ${avgSeries} series`);
     } else {
-    parts.push(`Circuit: ${circuits.length || numCircuits} circuits x ${avgSeries} series`);
+      parts.push(`Circuit: ${circuitsToUse.length || numCircuits} circuits of ${avgStations} stations x ${avgSeries} series`);
     }
     
     // Pause info
@@ -1302,6 +1378,9 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
   
   // First View - Configuration Phase
   if (currentPhase === 'config') {
+    // 2026-01-31 - Hide configuration UI if in invisible mode
+    if (initialConfig?.hideUI) return null;
+
     return (
       <>
         <div className="space-y-4 max-w-7xl mx-auto p-6">
@@ -1537,7 +1616,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
   // Second View - Table/Grid Phase
   return (
     <>
-    <div className="space-y-2">
+      <div className={`space-y-2 ${initialConfig?.hideUI ? 'hidden' : ''}`}>
       {/* Configuration Section - 2026-01-21 19:30 UTC */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <h3 className="text-lg font-bold text-blue-900 mb-4">Circuit Configuration</h3>
@@ -1782,7 +1861,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           Back
         </button>
         <button
-          onClick={handleSave}
+          onClick={() => handleSave()}
           className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
         >
           {initialConfig?.editingFromMovelap || (initialConfig?.existingCircuits && initialConfig.existingCircuits.length > 0) ? 'Save' : 'Add Moveframe'}
@@ -2274,7 +2353,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       {/* Sector Selector Modal with Drag & Drop - 2026-01-22 12:40 UTC */}
       {/* 2026-01-22 13:10 UTC - Updated to support single station selection */}
       {showSectorSelector && (selectedCircuitForSector || selectedStationForSector) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 pointer-events-auto">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-4xl w-full max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">
@@ -2285,10 +2364,14 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
               </h3>
               <button
                 onClick={() => {
-                  setShowSectorSelector(false);
-                  setSelectedCircuitForSector(null);
-                  setSelectedStationForSector(null);
-                  setPreviousStationSector(null); // 2026-01-26 - Clear previous sector highlight
+                  if (initialConfig?.hideUI) {
+                    onCancel();
+                  } else {
+                    setShowSectorSelector(false);
+                    setSelectedCircuitForSector(null);
+                    setSelectedStationForSector(null);
+                    setPreviousStationSector(null); // 2026-01-26 - Clear previous sector highlight
+                  }
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -2449,6 +2532,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           </div>
         </div>
       )}
+    </div>
       
       {/* Add Circuit Modal - 2026-01-21 22:10 UTC */}
       {showAddCircuitModal && (
@@ -2610,21 +2694,29 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         const currentExerciseName = currentStation?.exercise;
         
         // If editing existing exercise, show only that sector
-        const sectorsToShow = hasExistingExercise && currentSector 
+        // UNLESS we are in "editingFromMovelap" mode, where we want to allow changing exercise completely
+        // 2026-02-01 - Force select mode if targetMovelap is present (implies specific movelap edit)
+        const forceSelectMode = initialConfig?.editingFromMovelap || !!initialConfig?.targetMovelap;
+        
+        const sectorsToShow = (hasExistingExercise && currentSector && !forceSelectMode)
           ? [currentSector] 
           : getAllSectors();
         
         return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 pointer-events-auto">
           <div className="bg-white rounded-lg p-6 max-w-3xl max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-bold">
-                  {hasExistingExercise ? 'Edit Exercise' : 'Select Exercise'}
+                  {hasExistingExercise && !forceSelectMode ? 'Edit Exercise' : 'Select Exercise'}
                 </h3>
               <button
                 onClick={() => {
-                  setShowManualExerciseModal(false);
-                  setSelectedStationForManualExercise(null);
+                  if (initialConfig?.hideUI) {
+                    onCancel();
+                  } else {
+                    setShowManualExerciseModal(false);
+                    setSelectedStationForManualExercise(null);
+                  }
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -2739,7 +2831,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       
       {/* Reps Editor Modal - 2026-01-22 13:20 UTC */}
       {showManualExerciseModal && selectedStationForManualExercise && pendingExercise && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 pointer-events-auto">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">Set Repetitions</h3>
@@ -2796,20 +2888,27 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 </button>
                 <button
                   onClick={() => {
-                    // Apply the exercise, reps and pause
-                    setCircuits(prevCircuits => {
-                      const newCircuits = JSON.parse(JSON.stringify(prevCircuits));
-                      const { circuitIdx, seriesIdx, stationIdx } = selectedStationForManualExercise;
-                      newCircuits[circuitIdx].stationsBySeries[seriesIdx][stationIdx].exercise = pendingExercise.name;
-                      newCircuits[circuitIdx].stationsBySeries[seriesIdx][stationIdx].sector = pendingExercise.sector;
-                      newCircuits[circuitIdx].stationsBySeries[seriesIdx][stationIdx].reps = pendingExercise.reps;
-                      newCircuits[circuitIdx].stationsBySeries[seriesIdx][stationIdx].pause = pendingExercise.pause;
-                      return newCircuits;
-                    });
+                  // Apply the exercise, reps and pause
+                  const newCircuits = JSON.parse(JSON.stringify(circuits));
+                  const { circuitIdx, seriesIdx, stationIdx } = selectedStationForManualExercise;
+                  
+                  if (newCircuits[circuitIdx] && newCircuits[circuitIdx].stationsBySeries[seriesIdx] && newCircuits[circuitIdx].stationsBySeries[seriesIdx][stationIdx]) {
+                    newCircuits[circuitIdx].stationsBySeries[seriesIdx][stationIdx].exercise = pendingExercise.name;
+                    newCircuits[circuitIdx].stationsBySeries[seriesIdx][stationIdx].sector = pendingExercise.sector;
+                    newCircuits[circuitIdx].stationsBySeries[seriesIdx][stationIdx].reps = pendingExercise.reps;
+                    newCircuits[circuitIdx].stationsBySeries[seriesIdx][stationIdx].pause = pendingExercise.pause;
+                    
+                    setCircuits(newCircuits);
                     setShowManualExerciseModal(false);
                     setSelectedStationForManualExercise(null);
                     setPendingExercise(null);
-                  }}
+                    
+                    // If hideUI is active, auto-save to propagate changes immediately
+                    if (initialConfig?.hideUI) {
+                       handleSave(newCircuits);
+                    }
+                  }
+                }}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
                   Confirm
@@ -2820,6 +2919,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         </div>
       )}
       
+      <div className={`space-y-2 ${initialConfig?.hideUI ? 'hidden' : ''}`}>
       {/* Circuit Action Buttons - 2026-01-21 22:10 UTC */}
       <div className="flex items-center justify-center gap-3 mt-6 border-t pt-6">
         <button
@@ -2908,7 +3008,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
              Back
            </button>
            <button
-             onClick={handleSave}
+             onClick={() => handleSave()}
              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
            >
              {initialConfig?.editingFromMovelap || (initialConfig?.existingCircuits && initialConfig.existingCircuits.length > 0) ? 'Save' : 'Add Moveframe'}

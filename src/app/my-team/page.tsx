@@ -32,7 +32,7 @@ function MyTeamContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const teamId = searchParams.get('teamId');
+  const teamId = searchParams?.get('teamId');
 
   // Redirect to home if not authenticated
   useEffect(() => {

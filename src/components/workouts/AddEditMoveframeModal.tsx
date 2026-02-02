@@ -29,6 +29,8 @@ interface AddEditMoveframeModalProps {
   existingMoveframe?: any;
   onSetInsertIndex?: (index: number | null) => void;
   editingFromMovelap?: boolean; // Flag to indicate editing was triggered from movelap edit
+  targetMovelap?: any; // The specific movelap being edited (for circuit mode)
+  hideUI?: boolean; // Explicitly hide UI elements
 }
 
 export default function AddEditMoveframeModal({
@@ -40,7 +42,9 @@ export default function AddEditMoveframeModal({
   day,
   existingMoveframe,
   onSetInsertIndex,
-  editingFromMovelap
+  editingFromMovelap,
+  targetMovelap,
+  hideUI: propHideUI
 }: AddEditMoveframeModalProps): JSX.Element | null {
   // Debug: Log mode only when it changes (moved to useEffect below)
   
@@ -276,10 +280,22 @@ export default function AddEditMoveframeModal({
 
   // Auto-switch to 'fast' when BATTERY mode is selected for non-section B sports
   useEffect(() => {
-    if (type === 'BATTERY' && batterySubmenu === 'circuits' && !isSportSectionB(sport)) {
+    if (type === 'BATTERY' && batterySubmenu === 'circuits' && !isSportSectionB(sport) && !editingFromMovelap) {
       setBatterySubmenu('fast');
     }
-  }, [type, sport, batterySubmenu]);
+  }, [type, sport, batterySubmenu, editingFromMovelap]);
+
+  // 2026-01-31 - Force BATTERY/circuits mode when editing from a circuit movelap
+  useEffect(() => {
+    if (editingFromMovelap && targetMovelap) {
+      console.log('🔄 [AddEditMoveframeModal] Editing from movelap, forcing BATTERY/circuits mode');
+      setType('BATTERY');
+      setBatterySubmenu('circuits');
+      
+      // Also ensure we're not in manual mode as it might interfere
+      setManualMode(false);
+    }
+  }, [editingFromMovelap, targetMovelap]);
 
   // Filter techniques - ONLY for BODY_BUILDING sport
   const availableTechniques = React.useMemo(() => {
@@ -930,27 +946,37 @@ export default function AddEditMoveframeModal({
     }
   }, [activeTab]);
 
+  // 2026-01-31 - Determine if we should hide the main UI (invisible mode)
+  // This happens when editing a specific circuit movelap - we only want to show the exercise selection modal
+  const hideUI = propHideUI || (editingFromMovelap && targetMovelap);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4 animate-fadeIn">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-[75vw] h-[85vh] overflow-hidden flex flex-col animate-slideUp">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-cyan-500 to-cyan-600 text-white px-4 py-2.5 flex items-center justify-between flex-shrink-0">
-          <h2 className="text-lg font-bold">
-            {mode === 'add' ? 'Add Moveframe' : 'Edit Moveframe'}
-          </h2>
-          <button
-            onClick={handleClose}
-            className="p-1 hover:bg-white/20 rounded transition-colors"
-            title="Close"
-          >
-            <X size={20} />
-          </button>
-        </div>
+    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${
+      hideUI ? 'bg-transparent pointer-events-none' : 'bg-black bg-opacity-50 animate-fadeIn'
+    }`}>
+      <div className={`rounded-lg w-full max-w-[75vw] h-[85vh] flex flex-col ${
+        hideUI ? 'bg-transparent shadow-none pointer-events-none' : 'bg-white shadow-2xl pointer-events-auto overflow-hidden animate-slideUp'
+      }`}>
+        {/* Header - Hide in invisible mode */}
+        {!hideUI && (
+          <div className="bg-gradient-to-r from-cyan-500 to-cyan-600 text-white px-4 py-2.5 flex items-center justify-between flex-shrink-0">
+            <h2 className="text-lg font-bold">
+              {mode === 'add' ? 'Add Moveframe' : 'Edit Moveframe'}
+            </h2>
+            <button
+              onClick={handleClose}
+              className="p-1 hover:bg-white/20 rounded transition-colors"
+              title="Close"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        )}
 
-        {/* Tabs */}
-        {type === 'STANDARD' && (
+        {/* Tabs - Hide in invisible mode */}
+        {type === 'STANDARD' && !hideUI && (
           <div className="flex border-b border-gray-300 bg-gray-50 flex-shrink-0">
             {!isEditingManualMoveframe && (
               <button
@@ -990,9 +1016,9 @@ export default function AddEditMoveframeModal({
         )}
 
         {/* Body - 2026-01-22 14:40 UTC - Reduced padding for Battery mode */}
-        <div ref={bodyRef} className={`overflow-y-auto ${type === 'BATTERY' ? 'p-2 pb-2' : 'p-4 pb-64'}`} style={{ height: type === 'STANDARD' ? 'calc(80vh - 140px)' : 'calc(80vh - 100px)' }}>
-          {/* Edit Moveframe Tab */}
-          {(type !== 'STANDARD' || activeTab === 'edit') && (
+        <div ref={bodyRef} className={`overflow-y-auto ${hideUI ? 'bg-transparent p-0 overflow-visible' : (type === 'BATTERY' ? 'p-2 pb-2' : 'p-4 pb-64')}`} style={{ height: type === 'STANDARD' ? 'calc(80vh - 140px)' : 'calc(80vh - 100px)' }}>
+          {/* Edit Moveframe Tab - Hide in invisible mode */}
+          {(type !== 'STANDARD' || activeTab === 'edit') && !hideUI && (
             <div key="edit-tab">
           {/* Error Message */}
           {errors.general && (
@@ -4209,6 +4235,8 @@ export default function AddEditMoveframeModal({
               day={day}
               existingMoveframe={existingMoveframe}
               startInSecondView={editingFromMovelap === true}
+              targetMovelap={targetMovelap}
+              hideUI={hideUI}
               onCreateCircuit={(circuitData) => {
                 // 2026-01-21 20:00 UTC - Handle circuit creation
                 // 2026-01-22 10:20 UTC - Include description in moveframe data

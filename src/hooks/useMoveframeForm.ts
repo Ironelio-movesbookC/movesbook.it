@@ -853,7 +853,13 @@ export function useMoveframeForm({
       
       // Set sport, type, and section
       setSport(existingMoveframe.sport || 'SWIM');
-      setType(existingMoveframe.type || 'STANDARD');
+      // Detect circuit-based moveframe so we show BATTERY/circuits view when editing
+      // (API may not return type, or type may be missing; circuit data is in notes)
+      const isCircuitBased =
+        existingMoveframe.isCircuitBased === true ||
+        (typeof existingMoveframe.notes === 'string' && existingMoveframe.notes.includes('[CIRCUIT_DATA]'));
+      const resolvedType = isCircuitBased ? 'BATTERY' : (existingMoveframe.type || 'STANDARD');
+      setType(resolvedType);
       setSectionId(existingMoveframe.sectionId || ''); // Load workout section
       
       // Load aerobic series (for aerobic sports)
@@ -865,8 +871,8 @@ export function useMoveframeForm({
       setAnnotationTextColor(existingMoveframe.annotationTextColor || '#ffffff');
       setAnnotationBold(existingMoveframe.annotationBold || false);
       
-      // Handle BATTERY type
-      if (existingMoveframe.type === 'BATTERY') {
+      // Handle BATTERY type (including circuit-based from notes)
+      if (resolvedType === 'BATTERY') {
         setBatteryCount(existingMoveframe.movelaps?.length || 3);
         console.log('📝 Loaded BATTERY type');
       }

@@ -980,7 +980,15 @@ export default function SortableMoveframeRow({
             <div className="pl-8">
               <MovelapDetailTable 
                 moveframe={moveframe}
-                onEditMovelap={(movelap) => onEditMovelap?.(movelap, moveframe)}
+                onEditMovelap={(movelap) => {
+                  console.log('🔘 SortableMoveframeRow onEditMovelap triggered', { 
+                    movelapId: movelap.id, 
+                    hasWorkout: !!workout, 
+                    hasDay: !!day,
+                    onEditMovelapDefined: !!onEditMovelap 
+                  });
+                  onEditMovelap?.(movelap, moveframe, workout, day);
+                }}
                 onDeleteMovelap={(movelap) => onDeleteMovelap?.(movelap, moveframe)}
                 onAddMovelap={() => onAddMovelap?.(moveframe)}
                 onAddMovelapAfter={(movelap, index) => onAddMovelapAfter?.(movelap, index, moveframe, workout, day)}
