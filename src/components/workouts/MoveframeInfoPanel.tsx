@@ -5,7 +5,7 @@ import ReactDOM from 'react-dom';
 import { X, Edit, Copy, Move, Trash2, Plus, CheckCircle, Circle, Clock, MapPin, Zap, PlusCircle } from 'lucide-react';
 import { getSportIcon, isImageIcon } from '@/utils/sportIcons';
 import { useSportIconType } from '@/hooks/useSportIconType';
-import { formatMoveframeType, getRepsLabelCap, getRepsLabel } from '@/constants/moveframe.constants';
+import { formatMoveframeType, getRepsLabelCap, getRepsLabel, isDistanceBasedSport } from '@/constants/moveframe.constants';
 
 // 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
 const stripCircuitTags = (content: string | null | undefined): string => {
@@ -14,6 +14,47 @@ const stripCircuitTags = (content: string | null | undefined): string => {
     .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
     .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
     .trim();
+};
+
+const extractCircuitDataFromNotes = (notes: unknown) => {
+  if (typeof notes !== 'string') return null;
+  const match = notes.match(/\[CIRCUIT_DATA\]([\s\S]*?)\[\/CIRCUIT_DATA\]/);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+};
+
+const extractCircuitMetaFromNotes = (notes: unknown) => {
+  if (typeof notes !== 'string') return null;
+  const match = notes.match(/\[CIRCUIT_META\]([\s\S]*?)\[\/CIRCUIT_META\]/);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+};
+
+const parsePauseToSeconds = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value));
+  if (typeof value !== 'string') return 0;
+  const s = value.trim();
+  if (!s) return 0;
+  if (/^\d+$/.test(s)) return Math.max(0, parseInt(s, 10));
+  if (s.includes("'")) {
+    const parts = s.split("'");
+    const mStr = (parts[0] ?? '').replace(/\D/g, '');
+    const secStr = parts.slice(1).join("'").replace(/\D/g, '');
+    const m = mStr ? parseInt(mStr, 10) : 0;
+    const sec = secStr ? parseInt(secStr.slice(0, 2), 10) : 0;
+    return Math.max(0, m * 60 + sec);
+  }
+  const secOnly = s.match(/^(\d+)\s*"?$/);
+  if (secOnly) return Math.max(0, parseInt(secOnly[1], 10));
+  return 0;
 };
 
 interface MoveframeInfoPanelProps {
@@ -88,41 +129,101 @@ export default function MoveframeInfoPanel({
   const totalMovelaps = movelaps.length;
   const completedMovelaps = movelaps.filter((ml: any) => ml.status === 'COMPLETED').length;
   const totalDistance = movelaps.reduce((sum: number, ml: any) => sum + (parseInt(ml.distance) || 0), 0);
+  const isCircuitBased = moveframe.isCircuitBased === true;
+  const circuitData = isCircuitBased ? extractCircuitDataFromNotes(moveframe.notes) : null;
+  const circuitConfig = circuitData?.config || null;
+  const circuitRows: any[] = Array.isArray(circuitData?.circuits) ? circuitData.circuits : [];
+  const pauseCircuitsSeconds: number | null =
+    circuitConfig && circuitConfig.pauseCircuits !== undefined
+      ? circuitConfig.pauseCircuits * 60
+      : circuitConfig?.pauses?.circuits !== undefined
+        ? circuitConfig.pauses.circuits
+        : null;
+  const pauseSeriesSeconds: number | null =
+    circuitConfig && circuitConfig.pauseSeries !== undefined
+      ? circuitConfig.pauseSeries * 60
+      : circuitConfig?.pauses?.series !== undefined
+        ? circuitConfig.pauses.series
+        : null;
+  const defaultSeriesPerCircuit: number | null =
+    circuitConfig?.seriesPerCircuit ?? circuitConfig?.seriesCount ?? circuitConfig?.series ?? null;
+  const defaultStationsPerCircuit: number | null = circuitConfig?.stationsPerCircuit ?? circuitConfig?.stations ?? null;
+  const circuitInfoByLetter = new Map<string, { seriesCount: number; stationsPerSeries: number }>();
+  if (isCircuitBased) {
+    circuitRows.forEach((circuit: any) => {
+      const letter = typeof circuit?.letter === 'string' ? circuit.letter : '';
+      if (!letter) return;
+      const seriesCount = circuit.series ?? circuit.stationsBySeries?.length ?? defaultSeriesPerCircuit ?? 0;
+      const stationsPerSeries = circuit.stationsBySeries?.[0]?.length ?? defaultStationsPerCircuit ?? 0;
+      circuitInfoByLetter.set(letter, { seriesCount, stationsPerSeries });
+    });
+  }
+  const totalCircuitSeries = isCircuitBased ? totalMovelaps : 0;
+  const completedCircuitSeries = isCircuitBased ? completedMovelaps : 0;
+  const totalCircuitRepetitions = isCircuitBased
+    ? movelaps.reduce((sum: number, ml: any) => {
+        const valueSource = isDistanceBasedSport(moveframe.sport) ? ml.speed : ml.reps;
+        return sum + (parseInt(valueSource) || 0);
+      }, 0)
+    : 0;
   
   // Parse time in format: HhMM'SS" (e.g., "1h23'45"")
   const totalTime = movelaps.reduce((sum: number, ml: any) => {
-    if (ml.time) {
-      const timeStr = ml.time.toString();
-      let totalSeconds = 0;
-      
-      // Check for our custom format: 1h23'45"
+    const timeStr = ml.time != null ? ml.time.toString() : '';
+    let timeSeconds = 0;
+    if (timeStr) {
       if (timeStr.includes('h') || timeStr.includes("'")) {
         const match = timeStr.match(/(\d+)h(\d+)'(\d+)"/);
         if (match) {
           const hours = parseInt(match[1]) || 0;
           const minutes = parseInt(match[2]) || 0;
           const seconds = parseInt(match[3]) || 0;
-          totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+          timeSeconds = (hours * 3600) + (minutes * 60) + seconds;
         }
-      }
-      // Check for HH:MM:SS format
-      else if (timeStr.includes(':')) {
+      } else if (timeStr.includes(':')) {
         const parts = timeStr.split(':');
         const hours = parseInt(parts[0]) || 0;
         const minutes = parseInt(parts[1]) || 0;
         const seconds = parseInt(parts[2]) || 0;
-        totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
-      }
-      // Plain number (assume minutes)
-      else {
+        timeSeconds = (hours * 3600) + (minutes * 60) + seconds;
+      } else {
         const mins = parseFloat(timeStr) || 0;
-        totalSeconds = mins * 60;
+        timeSeconds = mins * 60;
       }
-      
-      // Return total in minutes for formatTime function
-      return sum + (totalSeconds / 60);
     }
-    return sum;
+
+    if (!isCircuitBased) return sum + (timeSeconds / 60);
+
+    const meta = extractCircuitMetaFromNotes(ml?.notes);
+    const circuitLetter =
+      (typeof meta?.circuitLetter === 'string' && meta.circuitLetter.trim() !== ''
+        ? meta.circuitLetter.trim()
+        : (typeof ml?.circuitLetter === 'string' ? ml.circuitLetter.trim() : '')) || '';
+    const localSeriesNumber =
+      meta?.localSeriesNumber ?? meta?.seriesNumber ?? ml?.localSeriesNumber ?? ml?.seriesNumber ?? null;
+    const stationNumber = meta?.stationNumber ?? ml?.stationNumber ?? null;
+
+    const circuitInfo = circuitLetter ? circuitInfoByLetter.get(circuitLetter) : null;
+    const seriesCount = circuitInfo?.seriesCount ?? defaultSeriesPerCircuit ?? 0;
+    const stationsPerSeries = circuitInfo?.stationsPerSeries ?? defaultStationsPerCircuit ?? 0;
+    const isEndOfSeries = !!(stationsPerSeries && stationNumber && stationNumber === stationsPerSeries);
+    const isEndOfCircuit = !!(isEndOfSeries && seriesCount && localSeriesNumber && localSeriesNumber === seriesCount);
+
+    const hasExplicitMacro = ml?.macroFinal != null && String(ml.macroFinal).trim() !== '';
+    const shouldShowDerivedMacro =
+      (!hasExplicitMacro && ((isEndOfCircuit && pauseCircuitsSeconds != null) || (isEndOfSeries && pauseSeriesSeconds != null)));
+    const hasMacroDisplay = hasExplicitMacro || shouldShowDerivedMacro;
+
+    const macroSeconds = hasExplicitMacro
+      ? parsePauseToSeconds(ml.macroFinal)
+      : isEndOfCircuit && pauseCircuitsSeconds != null
+        ? pauseCircuitsSeconds
+        : isEndOfSeries && pauseSeriesSeconds != null
+          ? pauseSeriesSeconds
+          : 0;
+    const pauseSeconds = hasMacroDisplay ? 0 : parsePauseToSeconds(ml.pause);
+
+    return sum + ((timeSeconds + pauseSeconds + macroSeconds) / 60);
   }, 0);
   
   const totalReps = movelaps.reduce((sum: number, ml: any) => sum + (parseInt(ml.reps) || 0), 0);
@@ -365,15 +466,17 @@ export default function MoveframeInfoPanel({
                     </div>
                   </div>
                   <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
-                    <div className="text-purple-600 text-sm font-medium mb-1">Total sets</div>
+                    <div className="text-purple-600 text-sm font-medium mb-1">{isCircuitBased ? 'Total series' : 'Total sets'}</div>
                     <div className="text-2xl font-bold text-purple-900">
-                      {completedMovelaps}/{totalMovelaps}
+                      {isCircuitBased ? `${completedCircuitSeries}/${totalCircuitSeries}` : `${completedMovelaps}/${totalMovelaps}`}
                     </div>
                   </div>
                   <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
-                    <div className="text-orange-600 text-sm font-medium mb-1">Total {getRepsLabelCap(moveframe.sport)}</div>
+                    <div className="text-orange-600 text-sm font-medium mb-1">
+                      {isCircuitBased ? 'Total repetitions' : `Total ${getRepsLabelCap(moveframe.sport)}`}
+                    </div>
                     <div className="text-2xl font-bold text-orange-900">
-                      {totalReps > 0 ? totalReps : 'N/A'}
+                      {isCircuitBased ? (totalCircuitRepetitions > 0 ? totalCircuitRepetitions : 'N/A') : (totalReps > 0 ? totalReps : 'N/A')}
                     </div>
                   </div>
                 </div>
@@ -623,18 +726,22 @@ export default function MoveframeInfoPanel({
               )}
 
               {/* Reps/Series Breakdown (for non-aerobic sports) */}
-              {totalReps > 0 && (
+              {(isCircuitBased ? totalCircuitRepetitions > 0 : totalReps > 0) && (
                 <div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-lg p-6 border border-orange-200">
                   <h4 className="font-semibold text-orange-900 mb-4">Repetitions Analysis</h4>
                   <div className="space-y-3">
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-orange-700">Total {getRepsLabelCap(moveframe.sport)}:</span>
-                      <span className="font-bold text-orange-900">{totalReps}</span>
+                      <span className="text-sm text-orange-700">
+                        {isCircuitBased ? 'Total repetitions:' : `Total ${getRepsLabelCap(moveframe.sport)}:`}
+                      </span>
+                      <span className="font-bold text-orange-900">{isCircuitBased ? totalCircuitRepetitions : totalReps}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-orange-700">Average per Set:</span>
+                      <span className="text-sm text-orange-700">{isCircuitBased ? 'Average per Series:' : 'Average per Set:'}</span>
                       <span className="font-bold text-orange-900">
-                        {totalMovelaps > 0 ? Math.round(totalReps / totalMovelaps) : 'N/A'}
+                        {totalMovelaps > 0
+                          ? Math.round((isCircuitBased ? totalCircuitRepetitions : totalReps) / totalMovelaps)
+                          : 'N/A'}
                       </span>
                     </div>
                   </div>

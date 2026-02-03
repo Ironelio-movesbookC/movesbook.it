@@ -95,6 +95,18 @@ const formatFastPlannerTime = (value: string, finalize = false): string => {
   return `${minutes}'${seconds}"`;
 };
 
+const normalizeFastPlannerExerciseKey = (exercise: unknown): string => {
+  const value =
+    typeof exercise === 'string'
+      ? exercise
+      : exercise && typeof exercise === 'object' && 'name' in exercise && typeof (exercise as any).name === 'string'
+        ? (exercise as any).name
+        : '';
+
+  if (!value) return '';
+  return value.replace(/\u00A0/g, ' ').trim().replace(/\s+/g, ' ').toLowerCase();
+};
+
 // Mapping of muscular sectors to images (from CircuitPlanner_OLD)
 const MUSCULAR_SECTOR_IMAGES: Record<string, string> = {
   'Shoulders': '/muscular/shoulders.png',
@@ -821,6 +833,7 @@ export default function MovelapDetailTable({
   const sectionName = moveframe.section?.name || 'Default';
   const [copiedMovelap, setCopiedMovelap] = useState<any>(null);
   const [newlyAddedStationMovelapIds, setNewlyAddedStationMovelapIds] = useState<Set<string>>(() => new Set());
+  const [newlyAddedFastPlannerExercises, setNewlyAddedFastPlannerExercises] = useState<Set<string>>(() => new Set());
   const [showAddStationModal, setShowAddStationModal] = useState(false);
   const [addStationDraft, setAddStationDraft] = useState(() => ({
     muscularSector: '',
@@ -877,6 +890,7 @@ export default function MovelapDetailTable({
 
   React.useEffect(() => {
     setNewlyAddedStationMovelapIds(new Set());
+    setNewlyAddedFastPlannerExercises(new Set());
   }, [moveframe.id]);
 
   React.useEffect(() => {
@@ -984,7 +998,7 @@ export default function MovelapDetailTable({
     ? Array.from(
         new Set(
           (movelaps || [])
-            .map((ml: any) => (typeof ml?.exercise === 'string' ? ml.exercise.trim() : ''))
+            .map((ml: any) => normalizeFastPlannerExerciseKey(ml?.exercise))
             .filter((ex: string) => ex !== '')
         )
       ).length
@@ -1093,15 +1107,15 @@ export default function MovelapDetailTable({
       const fpRows: any[] = Array.isArray(fastPlannerData?.rows) ? fastPlannerData.rows : [];
       const lapsByExercise = new Map<string, any[]>();
       for (const lap of movelaps) {
-        const ex = typeof lap?.exercise === 'string' ? lap.exercise.trim() : '';
-        if (!ex) continue;
-        const list = lapsByExercise.get(ex) || [];
+        const exKey = normalizeFastPlannerExerciseKey(lap?.exercise);
+        if (!exKey) continue;
+        const list = lapsByExercise.get(exKey) || [];
         list.push(lap);
-        lapsByExercise.set(ex, list);
+        lapsByExercise.set(exKey, list);
       }
 
       const orderedExercises = fpRows
-        .map((r: any) => (typeof r?.exercise === 'string' ? r.exercise.trim() : ''))
+        .map((r: any) => normalizeFastPlannerExerciseKey(r?.exercise))
         .filter((ex: string) => ex !== '');
 
       const exerciseOrder: string[] = [];
@@ -1515,8 +1529,11 @@ export default function MovelapDetailTable({
       return;
     }
 
-    const exercise = typeof movelap?.exercise === 'string' ? movelap.exercise.trim() : '';
-    const row = fpRows.find((r: any) => typeof r?.exercise === 'string' && r.exercise.trim() === exercise);
+    const exercise = typeof movelap?.exercise === 'string'
+      ? movelap.exercise.replace(/\u00A0/g, ' ').trim().replace(/\s+/g, ' ')
+      : '';
+    const exerciseKey = normalizeFastPlannerExerciseKey(exercise);
+    const row = fpRows.find((r: any) => normalizeFastPlannerExerciseKey(r?.exercise) === exerciseKey);
     const extracted = extractFastPlannerModeFromNotes(movelap?.notes);
     const modeFromRow = typeof row?.mode === 'string' ? row.mode.trim() : '';
     const seriesFromRow = typeof row?.series === 'string' && row.series.trim() !== '' ? row.series.trim() : '';
@@ -1537,7 +1554,7 @@ export default function MovelapDetailTable({
     setFastPlannerCardioValue(bpmMatch?.[1] ? bpmMatch[1] : '120');
 
     setFastPlannerMovelapModalMode('edit');
-    setFastPlannerOriginalExercise(exercise || null);
+    setFastPlannerOriginalExercise(exerciseKey || null);
     setFastPlannerDraft({
       muscularSector: typeof movelap?.muscularSector === 'string' ? movelap.muscularSector : '',
       exercise,
@@ -1557,7 +1574,11 @@ export default function MovelapDetailTable({
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const normalizedExercise = typeof fastPlannerDraft.exercise === 'string' ? fastPlannerDraft.exercise.trim() : '';
+    const canonicalExercise = typeof fastPlannerDraft.exercise === 'string'
+      ? fastPlannerDraft.exercise.replace(/\u00A0/g, ' ').trim().replace(/\s+/g, ' ')
+      : '';
+    const normalizedExercise = canonicalExercise;
+    const normalizedExerciseKey = normalizeFastPlannerExerciseKey(normalizedExercise);
     if (!normalizedExercise) return;
 
     setIsSavingFastPlannerMovelap(true);
@@ -1592,9 +1613,10 @@ export default function MovelapDetailTable({
         mode: fastPlannerDraft.mode || ''
       };
 
-      const originalExercise = typeof fastPlannerOriginalExercise === 'string' ? fastPlannerOriginalExercise.trim() : '';
-      const matchExercise = fastPlannerMovelapModalMode === 'edit' ? originalExercise : normalizedExercise;
-      const existingIndex = nextRows.findIndex((r: any) => typeof r?.exercise === 'string' && r.exercise.trim() === matchExercise);
+      const originalExerciseKey = typeof fastPlannerOriginalExercise === 'string' ? fastPlannerOriginalExercise : '';
+      const matchExerciseKey = fastPlannerMovelapModalMode === 'edit' ? originalExerciseKey : normalizedExerciseKey;
+      const existingIndex = nextRows.findIndex((r: any) => normalizeFastPlannerExerciseKey(r?.exercise) === matchExerciseKey);
+      const isNewExerciseRow = fastPlannerMovelapModalMode === 'add' && existingIndex < 0;
 
       if (existingIndex >= 0) {
         nextRows[existingIndex] = { ...nextRows[existingIndex], ...rowPayload, id: nextRows[existingIndex]?.id ?? rowId };
@@ -1618,6 +1640,10 @@ export default function MovelapDetailTable({
         body: JSON.stringify({ notes: updatedMoveframeNotes })
       });
 
+      if (isNewExerciseRow) {
+        setNewlyAddedFastPlannerExercises((prev) => new Set([...Array.from(prev), normalizedExerciseKey]));
+      }
+
       const parseSeriesValue = (value: string) => {
         const parsed = parseInt(value || '1', 10);
         return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
@@ -1631,8 +1657,8 @@ export default function MovelapDetailTable({
       const timeValue =
         ripTimeMode === 'time' && effectiveRipTime.trim() !== '' ? effectiveRipTime.trim() : null;
 
-      const exerciseKeyToMatch = fastPlannerMovelapModalMode === 'edit' ? originalExercise : normalizedExercise;
-      const existingLaps = (movelaps || []).filter((lap: any) => (typeof lap?.exercise === 'string' ? lap.exercise.trim() : '') === exerciseKeyToMatch);
+      const exerciseKeyToMatch = matchExerciseKey;
+      const existingLaps = (movelaps || []).filter((lap: any) => normalizeFastPlannerExerciseKey(lap?.exercise) === exerciseKeyToMatch);
 
       const idsToDelete: string[] = [];
       const lapsToUpdate: any[] = [];
@@ -1728,8 +1754,8 @@ export default function MovelapDetailTable({
       const remainingLaps = (movelaps || [])
         .filter((lap: any) => typeof lap?.id === 'string' && !idsToDelete.includes(lap.id))
         .map((lap: any) => {
-          const currentExercise = typeof lap?.exercise === 'string' ? lap.exercise.trim() : '';
-          if (currentExercise === exerciseKeyToMatch) {
+          const currentExerciseKey = normalizeFastPlannerExerciseKey(lap?.exercise);
+          if (currentExerciseKey === exerciseKeyToMatch) {
             return {
               ...lap,
               muscularSector: fastPlannerDraft.muscularSector || lap.muscularSector,
@@ -1808,22 +1834,22 @@ export default function MovelapDetailTable({
     const fpRows: any[] = Array.isArray(fastPlannerData?.rows) ? fastPlannerData.rows : [];
     const fpByExercise = new Map<string, any>();
     for (const r of fpRows) {
-      const ex = typeof r?.exercise === 'string' ? r.exercise.trim() : '';
-      if (!ex || fpByExercise.has(ex)) continue;
-      fpByExercise.set(ex, r);
+      const exKey = normalizeFastPlannerExerciseKey(r?.exercise);
+      if (!exKey || fpByExercise.has(exKey)) continue;
+      fpByExercise.set(exKey, r);
     }
 
     const lapsByExercise = new Map<string, any[]>();
     for (const lap of movelaps) {
-      const ex = typeof lap?.exercise === 'string' ? lap.exercise.trim() : '';
-      if (!ex) continue;
-      const list = lapsByExercise.get(ex) || [];
+      const exKey = normalizeFastPlannerExerciseKey(lap?.exercise);
+      if (!exKey) continue;
+      const list = lapsByExercise.get(exKey) || [];
       list.push(lap);
-      lapsByExercise.set(ex, list);
+      lapsByExercise.set(exKey, list);
     }
 
     const orderedExercises = fpRows
-      .map((r: any) => (typeof r?.exercise === 'string' ? r.exercise.trim() : ''))
+      .map((r: any) => normalizeFastPlannerExerciseKey(r?.exercise))
       .filter((ex: string) => ex !== '');
 
     const exerciseOrder: string[] = [];
@@ -1852,6 +1878,7 @@ export default function MovelapDetailTable({
         const ripTimeFromRow = typeof row?.ripTime === 'string' && row.ripTime.trim() !== '' ? row.ripTime.trim() : '';
         const breakFromRow = typeof row?.break === 'string' && row.break.trim() !== '' ? row.break.trim() : '';
 
+        const isNewExercise = newlyAddedFastPlannerExercises.has(exercise);
         return {
           ...rep,
           speed: typeof row?.speed === 'string' && row.speed.trim() !== '' ? row.speed.trim() : rep.speed,
@@ -1861,13 +1888,14 @@ export default function MovelapDetailTable({
           _fastPlannerMode: mode,
           _fastPlannerSeries: seriesFromRow,
           _fastPlannerRipTime: ripTimeFromRow || (rep?.reps != null ? String(rep.reps) : (rep?.time ? String(rep.time) : '')),
-          _fastPlannerBreak: breakFromRow || rep?.pause || ''
+          _fastPlannerBreak: breakFromRow || rep?.pause || '',
+          _fastPlannerIsNewRow: isNewExercise
         };
       })
       .filter((v): v is any => !!v);
 
     return { displayMovelaps };
-  }, [isFastPlanner, fastPlannerData, movelaps]);
+  }, [isFastPlanner, fastPlannerData, movelaps, newlyAddedFastPlannerExercises]);
 
   const displayMovelaps = isFastPlanner ? (fastPlannerView?.displayMovelaps ?? []) : movelaps;
   
@@ -2492,7 +2520,7 @@ export default function MovelapDetailTable({
                     )}
                     <SortableMovelapRow
                       movelap={movelap}
-                      isNewlyAdded={newlyAddedStationMovelapIds.has(movelap.id) || !!movelap.isNewlyAdded}
+                      isNewlyAdded={newlyAddedStationMovelapIds.has(movelap.id) || !!movelap.isNewlyAdded || !!movelap._fastPlannerIsNewRow}
                       index={index}
                       sequenceNumber={isFastPlanner ? index + 1 : (movelapSequences.get(movelap.id) || index + 1)}
                       moveframeLetter={moveframeLetter}
