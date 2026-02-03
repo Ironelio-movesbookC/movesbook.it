@@ -15,6 +15,7 @@ const stripCircuitTags = (content: string | null | undefined): string => {
   return content
     .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
     .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+    .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
     .trim();
 };
 
@@ -197,10 +198,49 @@ export default function SortableMoveframeRow({
     };
   }, [showOptionsDropdown]);
   
-  // Calculate macro time (total time for all movelaps)
+  const isSeriesBasedSport = ['BODY_BUILDING', 'GYMNASTIC', 'CALISTHENICS', 'CROSSFIT', 'FUNCTIONAL'].includes(moveframe.sport || '');
+
+  const parseTimeToSeconds = (value: unknown): number | null => {
+    if (value == null) return null;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value !== 'string') return null;
+
+    const raw = value.trim();
+    if (!raw) return null;
+
+    if (raw.includes('h') || raw.includes("'") || raw.includes('"')) {
+      const hMatch = raw.match(/(\d+)\s*h/);
+      const mMatch = raw.match(/(\d+)\s*'/);
+      const sMatch = raw.match(/(\d+)\s*"/);
+      const hours = hMatch ? parseInt(hMatch[1] || '0', 10) : 0;
+      const minutes = mMatch ? parseInt(mMatch[1] || '0', 10) : 0;
+      const seconds = sMatch ? parseInt(sMatch[1] || '0', 10) : 0;
+      const total = hours * 3600 + minutes * 60 + seconds;
+      return Number.isFinite(total) ? total : null;
+    }
+
+    if (raw.includes(':')) {
+      const parts = raw.split(':').map(p => parseInt(p, 10));
+      if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
+        return parts[0] * 60 + parts[1];
+      }
+      if (parts.length === 3 && Number.isFinite(parts[0]) && Number.isFinite(parts[1]) && Number.isFinite(parts[2])) {
+        return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      }
+    }
+
+    const asNumber = Number(raw);
+    return Number.isFinite(asNumber) ? asNumber : null;
+  };
+
   const macroTime = (moveframe.movelaps || []).reduce((sum: number, lap: any) => {
-    const time = lap.estimatedTime || lap.time || 0;
-    return sum + (typeof time === 'string' ? parseFloat(time) : time);
+    const direct = parseTimeToSeconds(lap.estimatedTime ?? lap.time);
+    if (direct != null) return sum + direct;
+    if (isSeriesBasedSport) {
+      const pauseSeconds = parseTimeToSeconds(lap.pause);
+      if (pauseSeconds != null) return sum + pauseSeconds;
+    }
+    return sum;
   }, 0);
   
   const formatMacroTime = (seconds: number) => {

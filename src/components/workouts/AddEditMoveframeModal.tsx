@@ -17,7 +17,7 @@ import Image from 'next/image';
 // 2026-01-23 - Redesigned Circuit Planner matching screenshot
 import BatteryCircuitPlanner from './BatteryCircuitPlanner_REDESIGNED';
 // 2026-01-29 - Fast Planner of Moveframes component
-import FastPlannerOfMoveframes from './FastPlannerOfMoveframes';
+import FastPlannerOfMoveframes, { type FastPlannerHandle } from './FastPlannerOfMoveframes';
 
 interface AddEditMoveframeModalProps {
   isOpen: boolean;
@@ -61,6 +61,25 @@ export default function AddEditMoveframeModal({
       console.log('🔒 AddEditMoveframeModal closed');
     }
   }, [isOpen, mode]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    if (mode !== 'edit') return;
+    if (existingMoveframe?.type !== 'BATTERY') return;
+
+    const notes = existingMoveframe?.notes;
+    if (typeof notes === 'string' && notes.includes('[FAST_PLANNER_DATA]')) {
+      setBatterySubmenu('fast');
+      return;
+    }
+    if (typeof notes === 'string' && notes.includes('[CIRCUIT_DATA]')) {
+      setBatterySubmenu('circuits');
+      return;
+    }
+    if (typeof existingMoveframe?.description === 'string' && existingMoveframe.description.toLowerCase().includes('fast planner')) {
+      setBatterySubmenu('fast');
+    }
+  }, [isOpen, mode, existingMoveframe?.id]);
   
   // State for annotation insert position - default to last moveframe index
   const [annotationInsertAfter, setAnnotationInsertAfter] = React.useState<string>(() => {
@@ -821,6 +840,7 @@ export default function AddEditMoveframeModal({
   const [activeTab, setActiveTab] = React.useState<'edit' | 'manual' | 'favorites'>('edit');
   const editorRef = React.useRef<HTMLDivElement>(null);
   const bodyRef = React.useRef<HTMLDivElement>(null);
+  const fastPlannerRef = React.useRef<FastPlannerHandle>(null);
   
   // For manual mode moveframes, force manual tab and disable other tabs
   // Only restrict tabs if editing an EXISTING manual moveframe (not when creating new one)
@@ -1000,7 +1020,8 @@ export default function AddEditMoveframeModal({
                 </div>
               )}
             </div>
-          </div>
+        </div>
+
         </div>
       </div>
     );
@@ -1008,7 +1029,7 @@ export default function AddEditMoveframeModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4 animate-fadeIn">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-[75vw] h-[85vh] overflow-hidden flex flex-col animate-slideUp">
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-[75vw] h-[92vh] overflow-hidden flex flex-col animate-slideUp">
         {/* Header */}
         <div className="bg-gradient-to-r from-cyan-500 to-cyan-600 text-white px-4 py-2.5 flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-bold">
@@ -1064,9 +1085,13 @@ export default function AddEditMoveframeModal({
         )}
 
         {/* Body - 2026-01-22 14:40 UTC - Reduced padding for Battery mode */}
-        <div ref={bodyRef} className={`overflow-y-auto ${hideUI ? 'bg-transparent p-0 overflow-visible' : (type === 'BATTERY' ? 'p-2 pb-2' : 'p-4 pb-64')}`} style={{ height: type === 'STANDARD' ? 'calc(80vh - 140px)' : 'calc(80vh - 100px)' }}>
-          {/* Edit Moveframe Tab - Hide in invisible mode */}
-          {(type !== 'STANDARD' || activeTab === 'edit') && !hideUI && (
+        <div
+          ref={bodyRef}
+          className={`overflow-y-auto ${type === 'BATTERY' ? 'p-2 pb-2' : 'p-4 pb-64'}`}
+          style={{ height: type === 'STANDARD' ? 'calc(87vh - 140px)' : 'calc(87vh - 100px)' }}
+        >
+          {/* Edit Moveframe Tab */}
+          {(type !== 'STANDARD' || activeTab === 'edit') && (
             <div key="edit-tab">
           {/* Error Message */}
           {errors.general && (
@@ -4328,6 +4353,7 @@ export default function AddEditMoveframeModal({
           {/* 2026-01-29 - Fast planner of Moveframes - Custom keyboard for quick value selection */}
           {type === 'BATTERY' && isCircuitFeatureSport(sport) && batterySubmenu === 'fast' && (
             <FastPlannerOfMoveframes
+              ref={fastPlannerRef}
               sport={sport}
               sectionId={sectionId}
               workout={workout}
@@ -4368,7 +4394,7 @@ export default function AddEditMoveframeModal({
                     <div>• Macro Final: {macroFinal}</div>
                   )}
                     </div>
-              )}
+          )}
                   </div>
           )}
                     </div>
@@ -4764,6 +4790,33 @@ export default function AddEditMoveframeModal({
             </div>
           )}
         </div>
+
+        {type === 'BATTERY' && isCircuitFeatureSport(sport) && batterySubmenu === 'fast' && (
+          <div className="flex-shrink-0 border-t bg-white px-4 py-3 flex items-center justify-between">
+            <button
+              onClick={handleClose}
+              className="px-6 py-2 bg-gray-600 text-white font-medium rounded hover:bg-gray-700"
+            >
+              Cancel
+            </button>
+            <div className="flex items-center">
+              <button
+                onClick={() => fastPlannerRef.current?.saveMoveframeAndMovelaps()}
+                className="px-6 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700"
+              >
+                Save moveframe and its movelaps
+              </button>
+              <button
+                onClick={() => fastPlannerRef.current?.openPreferences()}
+                className="ml-2 px-6 py-2 bg-white text-black border-2 border-gray-300 rounded hover:border-blue-500 flex items-center justify-center w-64"
+                title="Open preferences"
+              >
+                <Image src="/preference.png" alt="Preferences" width={20} height={20} className="mr-2 object-contain" unoptimized />
+                Preferences
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Footer - 2026-01-22 14:30 UTC - Hide for Battery mode */}
         {type !== 'BATTERY' && (
