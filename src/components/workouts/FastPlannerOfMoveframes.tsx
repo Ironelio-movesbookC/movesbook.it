@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { MUSCULAR_SECTORS } from '@/constants/moveframe.constants';
 import CircuitPreferencesModal from './CircuitPreferencesModal';
 
 interface FastPlannerRow {
@@ -27,6 +26,30 @@ interface FastPlannerProps {
   onCancel: () => void;
 }
 
+export type FastPlannerHandle = {
+  saveMoveframe: () => void;
+  saveMoveframeAndMovelaps: () => void;
+  openPreferences: () => void;
+};
+
+const parseFastPlannerDataFromNotes = (notes: unknown): any | null => {
+  if (typeof notes !== 'string') return null;
+  const match = notes.match(/\[FAST_PLANNER_DATA\]([\s\S]*?)\[\/FAST_PLANNER_DATA\]/);
+  if (!match || !match[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+};
+
+const upsertFastPlannerDataInNotes = (notes: unknown, data: any): string => {
+  const base = typeof notes === 'string' ? notes : '';
+  const stripped = base.replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '').trim();
+  const tag = `[FAST_PLANNER_DATA]${JSON.stringify(data)}[/FAST_PLANNER_DATA]`;
+  return stripped ? `${stripped}\n\n${tag}` : tag;
+};
+
 // Muscle groups for the body diagram - all available muscles from /public/muscular/
 const MUSCLE_GROUPS = [
   { id: 'shoulders', label: 'Shoulders', sector: 'Shoulders', image: '/muscular/shoulders.png' },
@@ -43,7 +66,7 @@ const MUSCLE_GROUPS = [
   { id: 'glutes', label: 'Glutes', sector: 'Glutes', image: '/muscular/glutes.png' }
 ];
 
-export default function FastPlannerOfMoveframes({
+const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerProps>(function FastPlannerOfMoveframes({
   sport,
   sectionId,
   workout,
@@ -52,7 +75,7 @@ export default function FastPlannerOfMoveframes({
   existingMoveframe,
   onSave,
   onCancel
-}: FastPlannerProps) {
+}: FastPlannerProps, ref) {
   // State for sector selection mode
   const [sectorMode, setSectorMode] = useState<'exercises' | 'series'>('exercises');
 
@@ -109,6 +132,7 @@ export default function FastPlannerOfMoveframes({
   const [planReps, setPlanReps] = useState<string>('12');
   const [planPause, setPlanPause] = useState<string>("1'30\"");
   const [planCandidate, setPlanCandidate] = useState<any>(null);
+  const loadedMoveframeIdRef = React.useRef<string | null>(null);
 
   // Speed options for body building and similar sports
   const SPEED_OPTIONS = ['Very slow', 'Slow', 'Normal', 'Quick', 'Fast', 'Very fast', 'Explosive', 'Negative'];
@@ -155,6 +179,118 @@ export default function FastPlannerOfMoveframes({
       image: '/muscular/abs.png' // Default image for general exercises
     }))
   ).sort((a, b) => a.name.localeCompare(b.name));
+
+  const getSectorForExercise = (exerciseName: string): string | null => {
+    const ex = mockExercises.find(e => e.name === exerciseName);
+    return ex?.sector || null;
+  };
+
+  const buildMovelapsFromRows = (filledRows: FastPlannerRow[]) => {
+    let repetitionNumber = 1;
+    const movelaps: any[] = [];
+
+    for (const row of filledRows) {
+      const sets = Math.max(1, parseInt(row.series || '1', 10) || 1);
+      const sector = row.exercise ? getSectorForExercise(row.exercise) : null;
+      const repsValue = ripTimeMode === 'reps' ? (parseInt(row.ripTime || '', 10) || null) : null;
+      const timeValue = ripTimeMode === 'time' ? (row.ripTime || null) : null;
+
+      for (let s = 0; s < sets; s++) {
+        movelaps.push({
+          repetitionNumber: repetitionNumber++,
+          distance: null,
+          speed: row.speed || null,
+          style: null,
+          pace: null,
+          time: timeValue,
+          reps: repsValue,
+          weight: row.weight && row.weight.trim() !== '' && row.weight.trim().toLowerCase() !== 'nc' ? row.weight : null,
+          tools: null,
+          r1: null,
+          r2: null,
+          muscularSector: sector,
+          exercise: row.exercise || null,
+          restType: null,
+          pause: row.break || null,
+          macroFinal: null,
+          alarm: null,
+          sound: null,
+          notes: row.mode || null,
+          status: 'PENDING',
+          isSkipped: false,
+          isDisabled: false
+        });
+      }
+    }
+
+    return movelaps;
+  };
+
+  const buildFastPlannerDescription = (filledRows: FastPlannerRow[]) => {
+    const sectors = Array.from(
+      new Set(
+        filledRows
+          .map(r => (r.exercise ? getSectorForExercise(r.exercise) : null))
+          .filter((s): s is string => typeof s === 'string' && s.trim() !== '')
+      )
+    );
+    const base = `Fast planner - ${filledRows.length} exercises`;
+    return sectors.length > 0 ? `${base} - ${sectors.join(' - ')}` : base;
+  };
+
+  useEffect(() => {
+    if (mode !== 'edit') return;
+    if (!existingMoveframe?.id) return;
+    if (loadedMoveframeIdRef.current === existingMoveframe.id) return;
+
+    loadedMoveframeIdRef.current = existingMoveframe.id;
+
+    const parsed = parseFastPlannerDataFromNotes(existingMoveframe.notes);
+    if (parsed) {
+      if (parsed.sectorMode === 'exercises' || parsed.sectorMode === 'series') setSectorMode(parsed.sectorMode);
+      if (typeof parsed.execSpeed === 'string') setExecSpeed(parsed.execSpeed);
+      if (typeof parsed.execSeries === 'string') setExecSeries(parsed.execSeries);
+      if (typeof parsed.execRipTime === 'string') setExecRipTime(parsed.execRipTime);
+      if (typeof parsed.execWeight === 'string') setExecWeight(parsed.execWeight);
+      if (typeof parsed.execBreak === 'string') setExecBreak(parsed.execBreak);
+      if (typeof parsed.execMode === 'string') setExecMode(parsed.execMode);
+      if (parsed.ripTimeMode === 'reps' || parsed.ripTimeMode === 'time') setRipTimeMode(parsed.ripTimeMode);
+      if (Array.isArray(parsed.rows) && parsed.rows.length > 0) setRows(parsed.rows);
+      if (parsed.preferences != null) setPreferences(parsed.preferences);
+      setSelectedCell(null);
+      setShowSubExercises(false);
+      setShowExercisePopup(false);
+      return;
+    }
+
+    if (Array.isArray(existingMoveframe.movelaps) && existingMoveframe.movelaps.length > 0) {
+      const byExercise = new Map<string, any[]>();
+      for (const ml of existingMoveframe.movelaps) {
+        const key = typeof ml.exercise === 'string' && ml.exercise.trim() !== '' ? ml.exercise : 'Exercise';
+        if (!byExercise.has(key)) byExercise.set(key, []);
+        byExercise.get(key)!.push(ml);
+      }
+
+      const rebuilt: FastPlannerRow[] = Array.from(byExercise.entries()).map(([exercise, laps], idx) => {
+        const first = laps[0] || {};
+        return {
+          id: idx + 1,
+          exercise,
+          speed: typeof first.speed === 'string' ? first.speed : '',
+          series: String(laps.length),
+          ripTime: first.reps != null ? String(first.reps) : '',
+          weight: typeof first.weight === 'string' ? first.weight : '',
+          break: typeof first.pause === 'string' ? first.pause : '',
+          mode: typeof first.notes === 'string' ? first.notes : ''
+        };
+      });
+
+      setRows(rebuilt.length > 0 ? rebuilt : [{ id: 1, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '' }]);
+      setSelectedCell(null);
+      setShowSubExercises(false);
+      setShowExercisePopup(false);
+    }
+  }, [mode, existingMoveframe?.id]);
 
   // Mock frequently used exercises (for blue indicator)
   const frequentlyUsedExercises = ['shoulders-0', 'chest-0', 'biceps-1', 'quadriceps-0'];
@@ -251,35 +387,7 @@ export default function FastPlannerOfMoveframes({
 
   // Add new row
   const handleGoNext = () => {
-    setRows(prev => {
-      if (prev.length === 0) {
-        const firstId = 1;
-        const next = [{ id: firstId, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '' }];
-        setSelectedCell({ rowId: firstId, field: 'exercise' });
-        setActiveExerciseButton(null);
-        setSelectedMuscleGroup('all');
-        setShowSubExercises(false);
-        return next;
-      }
-      const idx = prev.length - 1;
-      const last = { ...prev[idx] };
-      const previous = idx > 0 ? prev[idx - 1] : null;
-      if (!last.series || last.series.trim() === '') last.series = previous?.series || '3';
-      if (!last.ripTime || last.ripTime.trim() === '') last.ripTime = previous?.ripTime || '12';
-      if (!last.break || last.break.trim() === '') last.break = previous?.break || "1'30\"";
-      if (!last.speed || last.speed.trim() === '') last.speed = 'Normal';
-      if (!last.weight || last.weight.trim() === '') last.weight = 'nc';
-      if (!last.mode || last.mode.trim() === '') last.mode = 'Stopped';
-      const updated = [...prev];
-      updated[idx] = last;
-      const newId = Math.max(...updated.map(r => r.id)) + 1;
-      const next = [...updated, { id: newId, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '' }];
-      setSelectedCell({ rowId: newId, field: 'exercise' });
-      setActiveExerciseButton(null);
-      setSelectedMuscleGroup('all');
-      setShowSubExercises(false);
-      return next;
-    });
+    appendNextRowFromIndex(pickActiveRowIndex(rows));
   };
 
   // Rescan: choose another exercise of the same sector/type
@@ -313,25 +421,106 @@ export default function FastPlannerOfMoveframes({
       prevRows.map(r => (r.id === rowId ? { ...r, exercise: pick.name } : r))
     );
   };
-  // Duplicate last row
-  const handleDuplicate = () => {
-    if (rows.length === 0) return;
-    const lastRow = rows[rows.length - 1];
-    const newId = Math.max(...rows.map(r => r.id)) + 1;
-    setRows([...rows, { ...lastRow, id: newId }]);
+
+  const applyRowDefaults = (current: FastPlannerRow, previous: FastPlannerRow | null): FastPlannerRow => {
+    const next = { ...current };
+
+    if (!next.series || next.series.trim() === '') {
+      next.series = previous?.series || '3';
+    }
+    if (!next.ripTime || next.ripTime.trim() === '') {
+      next.ripTime = previous?.ripTime || '12';
+    }
+    if (!next.break || next.break.trim() === '') {
+      next.break = previous?.break || "1'30\"";
+    }
+
+    if (!next.speed || next.speed.trim() === '') {
+      next.speed = 'Normal';
+    }
+    if (!next.weight || next.weight.trim() === '') {
+      next.weight = 'nc';
+    }
+    if (!next.mode || next.mode.trim() === '') {
+      next.mode = 'Stopped';
+    }
+
+    return next;
   };
 
-  // Triplicate last row
+  const pickActiveRowIndex = (list: FastPlannerRow[]): number => {
+    const selectedRowId = selectedCell?.rowId;
+    if (selectedRowId != null) {
+      const idx = list.findIndex(r => r.id === selectedRowId);
+      if (idx >= 0) return idx;
+    }
+    return Math.max(0, list.length - 1);
+  };
+
+  const focusNewRowExercise = (newRowId: number) => {
+    setSelectedCell({ rowId: newRowId, field: 'exercise' });
+    setActiveExerciseButton(null);
+    setSelectedMuscleGroup('all');
+    setShowSubExercises(true);
+  };
+
+  const appendNextRowFromIndex = (rowIndex: number) => {
+    const newRowId = Math.max(0, ...rows.map(r => r.id)) + 1;
+
+    setRows(prev => {
+      if (prev.length === 0) {
+        return [{ id: 1, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '' }];
+      }
+
+      const copy = [...prev];
+      const safeIndex = Math.min(Math.max(rowIndex, 0), copy.length - 1);
+      const previous = safeIndex > 0 ? copy[safeIndex - 1] : null;
+      const current = applyRowDefaults({ ...copy[safeIndex] }, previous);
+      copy[safeIndex] = current;
+
+      const maxId = Math.max(...copy.map(r => r.id));
+      const id = Math.max(newRowId, maxId + 1);
+      const nextRow: FastPlannerRow = {
+        id,
+        exercise: '',
+        speed: current.speed,
+        series: current.series,
+        ripTime: current.ripTime,
+        weight: current.weight,
+        break: current.break,
+        mode: current.mode
+      };
+
+      return [...copy, nextRow];
+    });
+
+    focusNewRowExercise(newRowId);
+  };
+
+  // Duplicate selected row
+  const handleDuplicate = () => {
+    setRows(prev => {
+      if (prev.length === 0) return prev;
+      const baseIndex = pickActiveRowIndex(prev);
+      const baseRow = prev[baseIndex];
+      const newId = Math.max(...prev.map(r => r.id)) + 1;
+      return [...prev, { ...baseRow, id: newId }];
+    });
+  };
+
+  // Triplicate selected row (2 copies)
   const handleTriplicate = () => {
-    if (rows.length === 0) return;
-    const lastRow = rows[rows.length - 1];
-    const maxId = Math.max(...rows.map(r => r.id));
-    const newRows = [
-      { ...lastRow, id: maxId + 1 },
-      { ...lastRow, id: maxId + 2 },
-      { ...lastRow, id: maxId + 3 }
-    ];
-    setRows([...rows, ...newRows]);
+    setRows(prev => {
+      if (prev.length === 0) return prev;
+      const baseIndex = pickActiveRowIndex(prev);
+      const baseRow = prev[baseIndex];
+      const maxId = Math.max(...prev.map(r => r.id));
+      const newRows = [
+        { ...baseRow, id: maxId + 1 },
+        { ...baseRow, id: maxId + 2 }
+      ];
+      return [...prev, ...newRows];
+    });
   };
 
   // Remove last row
@@ -364,48 +553,78 @@ export default function FastPlannerOfMoveframes({
 
   // Save moveframe
   const handleSaveMoveframe = () => {
-    // Build moveframe data
+    const filledRows = rows
+      .map(r => ({ ...r, exercise: (r.exercise || '').trim() }))
+      .filter(r => r.exercise !== '');
+    const payload = {
+      sectorMode,
+      execSpeed,
+      execSeries,
+      execRipTime,
+      execWeight,
+      execBreak,
+      execMode,
+      ripTimeMode,
+      rows: filledRows,
+      preferences
+    };
+    const notes = upsertFastPlannerDataInNotes(existingMoveframe?.notes, payload);
+    const movelaps = buildMovelapsFromRows(filledRows);
+    const description = buildFastPlannerDescription(filledRows);
+
     const moveframeData = {
       sport,
-      section_id: sectionId,
-      description: `Fast planner - ${rows.length} exercises`,
+      sectionId,
+      description,
       type: 'BATTERY',
       uploadToWorkout: false,
-      fastPlannerData: {
-        sectorMode,
-        execSpeed,
-        execSeries,
-        execRipTime,
-        execWeight,
-        execBreak,
-        execMode,
-        rows
-      }
+      notes,
+      fastPlannerData: payload,
+      movelaps,
+      isFastPlannerBased: true
     };
 
     onSave(moveframeData);
   };
   const handleSaveMoveframeAndMovelaps = () => {
+    const filledRows = rows
+      .map(r => ({ ...r, exercise: (r.exercise || '').trim() }))
+      .filter(r => r.exercise !== '');
+    const payload = {
+      sectorMode,
+      execSpeed,
+      execSeries,
+      execRipTime,
+      execWeight,
+      execBreak,
+      execMode,
+      ripTimeMode,
+      rows: filledRows,
+      preferences
+    };
+    const notes = upsertFastPlannerDataInNotes(existingMoveframe?.notes, payload);
+    const movelaps = buildMovelapsFromRows(filledRows);
+    const description = buildFastPlannerDescription(filledRows);
+
     const moveframeData = {
       sport,
-      section_id: sectionId,
-      description: `Fast planner - ${rows.length} exercises`,
+      sectionId,
+      description,
       type: 'BATTERY',
       uploadToWorkout: true,
-      fastPlannerData: {
-        sectorMode,
-        execSpeed,
-        execSeries,
-        execRipTime,
-        execWeight,
-        execBreak,
-        execMode,
-        rows,
-        preferences
-      }
+      notes,
+      fastPlannerData: payload,
+      movelaps,
+      isFastPlannerBased: true
     };
     onSave(moveframeData);
   };
+
+  React.useImperativeHandle(ref, () => ({
+    saveMoveframe: handleSaveMoveframe,
+    saveMoveframeAndMovelaps: handleSaveMoveframeAndMovelaps,
+    openPreferences: () => setShowPreferencesModal(true)
+  }));
   const openSeriesPlan = (sectorId: string) => {
     setPlanSectorId(sectorId);
     setPlanExerciseNumber(1);
@@ -477,75 +696,40 @@ export default function FastPlannerOfMoveframes({
 
   // Complete current row with defaults and move to next exercise
   const handleCompleteAndNext = (rowIndex: number) => {
-    setRows(prev => {
-      const copy = [...prev];
-      const current = { ...copy[rowIndex] };
-      const previous = rowIndex > 0 ? copy[rowIndex - 1] : null;
-
-      // Mandatory defaults if empty
-      if (!current.series || current.series.trim() === '') {
-        current.series = previous?.series || '3';
-      }
-      if (!current.ripTime || current.ripTime.trim() === '') {
-        current.ripTime = previous?.ripTime || '12';
-      }
-      if (!current.break || current.break.trim() === '') {
-        current.break = previous?.break || "1'30\"";
-      }
-      // Optional defaults
-      if (!current.speed || current.speed.trim() === '') {
-        current.speed = 'Normal';
-      }
-      if (!current.weight || current.weight.trim() === '') {
-        current.weight = 'nc';
-      }
-      if (!current.mode || current.mode.trim() === '') {
-        current.mode = 'Stopped';
-      }
-
-      copy[rowIndex] = current;
-      return copy;
-    });
-
-    // Focus next row exercise selection
-    const nextIndex = Math.min(rowIndex + 1, rows.length - 1);
-    const nextRowId = rows[nextIndex]?.id;
-    if (nextRowId) {
-      setSelectedCell({ rowId: nextRowId, field: 'exercise' });
-      setActiveExerciseButton(null);
-      setShowSubExercises(true);
-    }
+    appendNextRowFromIndex(rowIndex);
   };
 
   return (
     <div className="space-y-4">
-      {/* Removed zoom control; fixed scale at 55% */}
-      {/* Top Row: Execution, Intensity of work, Break between series */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 2fr 1fr' }}>
-        {/* Execution Box */}
-        <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-center">
-          <label className="block text-sm font-bold text-gray-700 mb-2">Execution</label>
-          {selectedCell && (
-            <p className="text-xs text-blue-600 font-medium mb-2">
-              ✓ Row {rows.findIndex(r => r.id === selectedCell.rowId) + 1}, {selectedCell.field}
-            </p>
-          )}
-        </div>
+      <div className="sticky top-0 z-20 bg-white pb-4">
+        <div className="space-y-4">
+          {/* Removed zoom control; fixed scale at 55% */}
+          {/* Top Row: Execution, Intensity of work, Break between series */}
+          <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 2fr 1fr' }}>
+            {/* Execution Box */}
+            <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-center">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Execution</label>
+              {selectedCell && (
+                <p className="text-xs text-blue-600 font-medium mb-2">
+                  ✓ Row {rows.findIndex(r => r.id === selectedCell.rowId) + 1}, {selectedCell.field}
+                </p>
+              )}
+            </div>
 
-        {/* Intensity of Work Box */}
-        <div className="bg-blue-50 border border-blue-300 rounded-lg p-3 text-center">
-          <label className="block text-sm font-bold text-gray-700 mb-2">Intensity of work</label>
-        </div>
+            {/* Intensity of Work Box */}
+            <div className="bg-blue-50 border border-blue-300 rounded-lg p-3 text-center">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Intensity of work</label>
+            </div>
 
-        {/* Break between series Box */}
-        <div className="bg-green-50 border border-green-300 rounded-lg p-3 text-center">
-          <label className="block text-sm font-bold text-gray-700 mb-2">Break between series</label>
-        </div>
-      </div>
+            {/* Break between series Box */}
+            <div className="bg-green-50 border border-green-300 rounded-lg p-3 text-center">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Break between series</label>
+            </div>
+          </div>
 
-      {/* Controls Row: Sector + Search + grouped buttons by column width; radios below */}
-      <div className="space-y-2">
-        <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 2fr 1fr' }}>
+          {/* Controls Row: Sector + Search + grouped buttons by column width; radios below */}
+          <div className="space-y-2">
+            <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 2fr 1fr' }}>
           {/* Left column: Sector + Search */}
           <div className="flex items-center gap-2">
             <button
@@ -554,7 +738,11 @@ export default function FastPlannerOfMoveframes({
                 setShowSubExercises(false);
                 setSelectedMuscleGroup('all');
               }}
-              className="px-3 py-2 text-sm font-bold border rounded text-black border-gray-300 whitespace-nowrap"
+              className={`px-3 py-2 text-sm font-bold border rounded whitespace-nowrap ${
+                activeExerciseButton === null
+                  ? 'bg-yellow-50 text-black border-yellow-400'
+                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
+              }`}
             >
               Sector
             </button>
@@ -571,37 +759,41 @@ export default function FastPlannerOfMoveframes({
           <div className="grid grid-cols-4 gap-2">
             <button
               onClick={() => setActiveExerciseButton(activeExerciseButton === 'speed' ? null : 'speed')}
-              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'speed'
-                ? 'text-black border-blue-600'
-                : 'text-black border-gray-300 hover:border-blue-500'
-                }`}
+              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${
+                activeExerciseButton === 'speed'
+                  ? 'bg-yellow-50 text-black border-yellow-400'
+                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
+              }`}
             >
               Speed
             </button>
             <button
               onClick={() => setActiveExerciseButton(activeExerciseButton === 'series' ? null : 'series')}
-              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'series'
-                ? 'text-black border-blue-600'
-                : 'text-black border-gray-300 hover:border-blue-500'
-                }`}
+              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${
+                activeExerciseButton === 'series'
+                  ? 'bg-yellow-50 text-black border-yellow-400'
+                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
+              }`}
             >
               Series
             </button>
             <button
               onClick={() => setActiveExerciseButton(activeExerciseButton === 'riptime' ? null : 'riptime')}
-              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'riptime'
-                ? 'text-black border-blue-600'
-                : 'text-black border-gray-300 hover:border-blue-500'
-                }`}
+              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${
+                activeExerciseButton === 'riptime'
+                  ? 'bg-yellow-50 text-black border-yellow-400'
+                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
+              }`}
             >
               Rip\Time
             </button>
             <button
               onClick={() => setActiveExerciseButton(activeExerciseButton === 'weight' ? null : 'weight')}
-              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'weight'
-                ? 'text-black border-blue-600'
-                : 'text-black border-gray-300 hover:border-blue-500'
-                }`}
+              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${
+                activeExerciseButton === 'weight'
+                  ? 'bg-yellow-50 text-black border-yellow-400'
+                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
+              }`}
             >
               Weight
             </button>
@@ -611,19 +803,21 @@ export default function FastPlannerOfMoveframes({
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => setActiveExerciseButton(activeExerciseButton === 'break' ? null : 'break')}
-              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'break'
-                ? 'text-black border-blue-600'
-                : 'text-black border-gray-300 hover:border-blue-500'
-                }`}
+              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${
+                activeExerciseButton === 'break'
+                  ? 'bg-yellow-50 text-black border-yellow-400'
+                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
+              }`}
             >
               Break
             </button>
             <button
               onClick={() => setActiveExerciseButton(activeExerciseButton === 'mode' ? null : 'mode')}
-              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${activeExerciseButton === 'mode'
-                ? 'text-black border-blue-600'
-                : 'text-black border-gray-300 hover:border-blue-500'
-                }`}
+              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${
+                activeExerciseButton === 'mode'
+                  ? 'bg-yellow-50 text-black border-yellow-400'
+                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
+              }`}
             >
               Mode
             </button>
@@ -661,38 +855,39 @@ export default function FastPlannerOfMoveframes({
             <span className="text-xs text-gray-700">Plan series\exercise</span>
           </label>
         </div>
-      </div>
-
-      {/* Muscle Groups - Always visible */}
-      <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
-        <div className="flex items-center pb-2 gap-2" style={{ overflowX: 'hidden', flexWrap: 'nowrap' }}>
-          {/* All button - Fixed on the left */}
-          <div className="flex-shrink-0">
-            <button
-              onClick={() => {
-                setSelectedMuscleGroup('all');
-                setShowSubExercises(true);
-              }}
-              className="flex flex-col items-center justify-center"
-            >
-              <div className="mb-2 flex items-center justify-center" style={{ width: `${96 * ZOOM}px`, height: `${96 * ZOOM}px` }}>
-                <Image
-                  src="/all.png"
-                  alt="All"
-                  width={Math.round(96 * ZOOM)}
-                  height={Math.round(96 * ZOOM)}
-                  className="object-contain"
-                  unoptimized
-                />
-              </div>
-              <span className="sr-only">All</span>
-            </button>
           </div>
+        </div>
 
-          {/* Content area: show options or muscle groups within the same box */}
-          <div className="bg-white border border-gray-300 rounded-lg p-3 flex-1 min-h-[160px] text-black">
-            {activeExerciseButton ? (
-              <div className="space-y-3">
+        {/* Muscle Groups - Always visible */}
+        <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
+          <div className="flex items-center pb-2 gap-2" style={{ overflowX: 'hidden', flexWrap: 'nowrap' }}>
+            {/* All button - Fixed on the left */}
+            <div className="flex-shrink-0">
+              <button
+                onClick={() => {
+                  setSelectedMuscleGroup('all');
+                  setShowSubExercises(true);
+                }}
+                className="flex flex-col items-center justify-center"
+              >
+                <div className="mb-2 flex items-center justify-center" style={{ width: `${96 * ZOOM}px`, height: `${96 * ZOOM}px` }}>
+                  <Image
+                    src="/all.png"
+                    alt="All"
+                    width={Math.round(96 * ZOOM)}
+                    height={Math.round(96 * ZOOM)}
+                    className="object-contain"
+                    unoptimized
+                  />
+                </div>
+                <span className="sr-only">All</span>
+              </button>
+            </div>
+
+            {/* Content area: show options or muscle groups within the same box */}
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex-1 min-h-[160px] max-h-[260px] overflow-y-auto text-black">
+              {activeExerciseButton ? (
+                <div className="space-y-3">
                 {activeExerciseButton === 'speed' && (
                   <div>
                     <p className="text-sm font-bold text-black mb-3">Select Speed of Execution</p>
@@ -746,41 +941,42 @@ export default function FastPlannerOfMoveframes({
                 )}
 
                 {activeExerciseButton === 'riptime' && (
-                  <div className="flex gap-8 justify-center items-start">
-                    <div className="flex flex-col gap-2 items-start">
-                      <label className="flex items-center cursor-pointer whitespace-nowrap">
-                        <input
-                          type="radio"
-                          name="ripTimeMode"
-                          value="reps"
-                          checked={ripTimeMode === 'reps'}
-                          onChange={() => {
-                            setRipTimeMode('reps');
-                            setRipTimeValue('');
-                          }}
-                          className="w-6 h-6 mr-2"
-                        />
-                        <span className="text-sm text-black">Repetitions</span>
-                      </label>
-                      <label className="flex items-center cursor-pointer whitespace-nowrap">
-                        <input
-                          type="radio"
-                          name="ripTimeMode"
-                          value="time"
-                          checked={ripTimeMode === 'time'}
-                          onChange={() => {
-                            setRipTimeMode('time');
-                            setRipTimeValue('');
-                          }}
-                          className="w-6 h-6 mr-2"
-                        />
-                        <span className="text-sm text-black">Time</span>
-                      </label>
-                    </div>
+                  <div className="min-h-[160px] flex items-center justify-center">
+                    <div className="flex gap-10 justify-center items-center">
+                      <div className="w-44 flex flex-col gap-2 items-start pl-2">
+                        <label className="flex items-center cursor-pointer whitespace-nowrap">
+                          <input
+                            type="radio"
+                            name="ripTimeMode"
+                            value="reps"
+                            checked={ripTimeMode === 'reps'}
+                            onChange={() => {
+                              setRipTimeMode('reps');
+                              setRipTimeValue('');
+                            }}
+                            className="w-6 h-6 mr-2"
+                          />
+                          <span className="text-sm text-black">Repetitions</span>
+                        </label>
+                        <label className="flex items-center cursor-pointer whitespace-nowrap">
+                          <input
+                            type="radio"
+                            name="ripTimeMode"
+                            value="time"
+                            checked={ripTimeMode === 'time'}
+                            onChange={() => {
+                              setRipTimeMode('time');
+                              setRipTimeValue('');
+                            }}
+                            className="w-6 h-6 mr-2"
+                          />
+                          <span className="text-sm text-black">Time</span>
+                        </label>
+                      </div>
 
-                    <div>
-                      {ripTimeMode === 'reps' && (
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-center">
+                        {ripTimeMode === 'reps' && (
+                          <div className="flex items-center gap-2">
                           <button
                             onClick={() => {
                               const currentValue = parseInt(ripTimeValue) || 0;
@@ -846,73 +1042,75 @@ export default function FastPlannerOfMoveframes({
                           >
                             +
                           </button>
-                        </div>
-                      )}
+                          </div>
+                        )}
 
-                      {ripTimeMode === 'time' && (
-                        <div className="flex items-center gap-4">
-                          <input
-                            type="text"
-                            value={ripTimeValue}
-                            onChange={(e) => {
-                              const raw = e.target.value.replace(/\D/g, '').slice(0, 4);
-                              setRipTimeValue(raw);
-                            }}
-                            onBlur={() => {
-                              if (ripTimeValue && ripTimeValue.length > 0) {
-                                const formatted = formatRipTime(ripTimeValue, true);
-                                setRipTimeValue(formatted);
-                              } else {
-                                setRipTimeValue('');
-                              }
+                        {ripTimeMode === 'time' && (
+                          <div className="flex items-center gap-4">
+                            <input
+                              type="text"
+                              value={ripTimeValue}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/\D/g, '').slice(0, 4);
+                                setRipTimeValue(raw);
+                              }}
+                              onBlur={() => {
+                                if (ripTimeValue && ripTimeValue.length > 0) {
+                                  const formatted = formatRipTime(ripTimeValue, true);
+                                  setRipTimeValue(formatted);
+                                } else {
+                                  setRipTimeValue('');
+                                }
 
-                              if (selectedCell && selectedCell.field === 'ripTime') {
-                                setRows(prev =>
-                                  prev.map(row =>
-                                    row.id === selectedCell.rowId
-                                      ? { ...row, ripTime: ripTimeValue ? formatRipTime(ripTimeValue, true) : '' }
-                                      : row
-                                  )
-                                );
-                              }
-                            }}
-                            placeholder="MM'SS&quot;"
-                            className="w-48 h-16 text-center text-3xl font-bold border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                      )}
+                                if (selectedCell && selectedCell.field === 'ripTime') {
+                                  setRows(prev =>
+                                    prev.map(row =>
+                                      row.id === selectedCell.rowId
+                                        ? { ...row, ripTime: ripTimeValue ? formatRipTime(ripTimeValue, true) : '' }
+                                        : row
+                                    )
+                                  );
+                                }
+                              }}
+                              placeholder="MM'SS&quot;"
+                              className="w-48 h-16 text-center text-3xl font-bold border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
 
                 {activeExerciseButton === 'weight' && (
-                  <div className="flex gap-8 justify-center items-start">
-                    <div className="flex flex-col gap-2 items-start">
-                      <label className="flex items-center cursor-pointer whitespace-nowrap">
-                        <input
-                          type="radio"
-                          name="weightUnit"
-                          value="kg"
-                          checked={weightUnit === 'kg'}
-                          onChange={() => setWeightUnit('kg')}
-                          className="w-6 h-6 mr-2"
-                        />
-                        <span className="text-sm text-black">Kg</span>
-                      </label>
-                      <label className="flex items-center cursor-pointer whitespace-nowrap">
-                        <input
-                          type="radio"
-                          name="weightUnit"
-                          value="lbs"
-                          checked={weightUnit === 'lbs'}
-                          onChange={() => setWeightUnit('lbs')}
-                          className="w-6 h-6 mr-2"
-                        />
-                        <span className="text-sm text-black">Lbs</span>
-                      </label>
-                    </div>
+                  <div className="min-h-[160px] flex items-center justify-center">
+                    <div className="flex gap-10 justify-center items-center">
+                      <div className="w-44 flex flex-col gap-2 items-start pl-2">
+                        <label className="flex items-center cursor-pointer whitespace-nowrap">
+                          <input
+                            type="radio"
+                            name="weightUnit"
+                            value="kg"
+                            checked={weightUnit === 'kg'}
+                            onChange={() => setWeightUnit('kg')}
+                            className="w-6 h-6 mr-2"
+                          />
+                          <span className="text-sm text-black">Kg</span>
+                        </label>
+                        <label className="flex items-center cursor-pointer whitespace-nowrap">
+                          <input
+                            type="radio"
+                            name="weightUnit"
+                            value="lbs"
+                            checked={weightUnit === 'lbs'}
+                            onChange={() => setWeightUnit('lbs')}
+                            className="w-6 h-6 mr-2"
+                          />
+                          <span className="text-sm text-black">Lbs</span>
+                        </label>
+                      </div>
 
-                    <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-center gap-2">
                       <button
                         onClick={() => {
                           const currentValue = parseFloat(weightValue) || 0;
@@ -981,43 +1179,45 @@ export default function FastPlannerOfMoveframes({
                       </button>
                     </div>
                   </div>
+                </div>
                 )}
 
                 {activeExerciseButton === 'break' && (
-                  <div className="flex gap-8 justify-center items-start">
-                    <div className="flex flex-col gap-2 items-start">
-                      <label className="flex items-center cursor-pointer whitespace-nowrap">
-                        <input
-                          type="radio"
-                          name="breakMode"
-                          value="rest"
-                          checked={breakMode === 'rest'}
-                          onChange={() => {
-                            setBreakMode('rest');
-                            setActiveExerciseButton('break');
-                          }}
-                          className="w-6 h-6 mr-2"
-                        />
-                        <span className="text-sm text-black">Rest time</span>
-                      </label>
-                      <label className="flex items-center cursor-pointer whitespace-nowrap">
-                        <input
-                          type="radio"
-                          name="breakMode"
-                          value="cardio"
-                          checked={breakMode === 'cardio'}
-                          onChange={() => {
-                            setBreakMode('cardio');
-                            setCardioValue('120');
-                            setActiveExerciseButton('break');
-                          }}
-                          className="w-6 h-6 mr-2"
-                        />
-                        <span className="text-sm text-black">Cardio</span>
-                      </label>
-                    </div>
+                  <div className="min-h-[160px] flex items-center justify-center">
+                    <div className="flex gap-10 justify-center items-center">
+                      <div className="w-44 flex flex-col gap-2 items-start pl-2">
+                        <label className="flex items-center cursor-pointer whitespace-nowrap">
+                          <input
+                            type="radio"
+                            name="breakMode"
+                            value="rest"
+                            checked={breakMode === 'rest'}
+                            onChange={() => {
+                              setBreakMode('rest');
+                              setActiveExerciseButton('break');
+                            }}
+                            className="w-6 h-6 mr-2"
+                          />
+                          <span className="text-sm text-black">Rest time</span>
+                        </label>
+                        <label className="flex items-center cursor-pointer whitespace-nowrap">
+                          <input
+                            type="radio"
+                            name="breakMode"
+                            value="cardio"
+                            checked={breakMode === 'cardio'}
+                            onChange={() => {
+                              setBreakMode('cardio');
+                              setCardioValue('120');
+                              setActiveExerciseButton('break');
+                            }}
+                            className="w-6 h-6 mr-2"
+                          />
+                          <span className="text-sm text-black">Cardio</span>
+                        </label>
+                      </div>
 
-                    <div>
+                      <div className="flex items-center justify-center">
                       {breakMode === 'rest' && (
                         <div className="space-y-2">
                           <div className="flex flex-wrap gap-3 justify-center">
@@ -1143,6 +1343,7 @@ export default function FastPlannerOfMoveframes({
                       )}
                     </div>
                   </div>
+                </div>
                 )}
 
                 {activeExerciseButton === 'mode' && (
@@ -1257,14 +1458,11 @@ export default function FastPlannerOfMoveframes({
           </div>
         </div>
       </div>
-
-      {/* Exercises are displayed inside the main content box when a sector is selected */}
- 
- 
+      </div>
 
       {/* Exercise Table */}
       <div className="bg-white border border-gray-300 rounded-lg overflow-hidden relative z-0">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[45vh]">
           <table className="w-full">
             <thead className="bg-gray-100">
               <tr>
@@ -1537,32 +1735,6 @@ export default function FastPlannerOfMoveframes({
         />
       </div>
 
-      {/* Bottom Action Buttons */}
-      <div className="flex justify-between items-center pt-4 border-t">
-        <button
-          onClick={onCancel}
-          className="px-6 py-2 bg-gray-600 text-white font-medium rounded hover:bg-gray-700"
-        >
-          Cancel
-        </button>
-        <div className="flex items-center">
-          <button
-            onClick={handleSaveMoveframeAndMovelaps}
-            className="px-6 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700"
-          >
-            Save moveframe and its movelaps
-          </button>
-          <button
-            onClick={() => setShowPreferencesModal(true)}
-            className="ml-2 px-6 py-2 bg-white text-black border-2 border-gray-300 rounded hover:border-blue-500 flex items-center justify-center w-64"
-            title="Open preferences"
-          >
-            <Image src="/preference.png" alt="Preferences" width={20} height={20} className="mr-2 object-contain" unoptimized />
-            Preferences
-          </button>
-        </div>
-      </div>
-
       {/* Exercise Selection Popup */}
       {showExercisePopup && selectedCell && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1735,4 +1907,6 @@ export default function FastPlannerOfMoveframes({
       />
     </div>
   );
-}
+});
+
+export default FastPlannerOfMoveframes;
