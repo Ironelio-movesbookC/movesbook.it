@@ -2161,6 +2161,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                     setActiveDay(day);
                     setActiveWorkout(workout);
                     setActiveMoveframe(moveframe);
+                    setActiveMovelap(movelap);
+                    setEditingFromMovelap(true); // Flag to indicate editing from movelap
                     setMoveframeModalMode('edit');
                     setEditingFromMovelap(true);
                     setEditingCircuitStation(circuitTarget);
@@ -2691,6 +2693,36 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                    
                    console.log(`✅ Created ${newMovelaps.length} new movelaps with updated data`);
                    console.log(`📊 Rip\\Sets column will now show: ${newMovelaps.length}`);
+                 } else if (moveframeData.type === 'BATTERY' && moveframeData.movelaps) {
+                   // 2026-01-30 - Regenerate movelaps for BATTERY/Circuit type
+                   console.log(`🔄 Editing BATTERY moveframe - regenerating ${moveframeData.movelaps.length} movelaps...`);
+                   
+                   const token = localStorage.getItem('token');
+                   
+                   // Delete ALL existing movelaps
+                   const deletePromises = (editingMoveframe.movelaps || []).map((movelap: any) =>
+                     fetch(`/api/workouts/movelaps/${movelap.id}`, {
+                       method: 'DELETE',
+                       headers: { 'Authorization': `Bearer ${token}` }
+                     })
+                   );
+                   await Promise.all(deletePromises);
+                   
+                   // Create new movelaps from the provided list
+                   for (const movelap of moveframeData.movelaps) {
+                     await fetch('/api/workouts/movelaps', {
+                       method: 'POST',
+                       headers: {
+                         'Content-Type': 'application/json',
+                         'Authorization': `Bearer ${token}`
+                       },
+                       body: JSON.stringify({
+                         ...movelap,
+                         moveframeId: editingMoveframe.id
+                       })
+                     });
+                   }
+                   console.log(`✅ Replaced movelaps for BATTERY moveframe`);
                  } else if (moveframeData.manualMode && editingMoveframe.movelaps && editingMoveframe.movelaps.length > 0) {
                    // For manual mode moveframes, update the existing movelap's notes instead of regenerating
                    const token = localStorage.getItem('token');
@@ -2712,6 +2744,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                    console.log('✅ Updated manual movelap notes');
                  }
                  
+                 // Keep edited moveframe expanded so circuit movelap table stays visible
+                 setAutoExpandMoveframeId(editingMoveframe.id);
                  // Reload data to show changes (updates Rip\Sets column)
                 if (editingMoveframe?.id) {
                   setAutoExpandMoveframeId(editingMoveframe.id);
@@ -2720,6 +2754,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   }, UI_CONFIG.AUTO_EXPAND_DELAY);
                 }
                  await loadWorkoutData(activeSection);
+                 setTimeout(() => setAutoExpandMoveframeId(null), 500);
                 } else {
                   // CREATE new moveframe
                   console.log('🔍 [DEBUG] moveframeData before generateMovelaps:', {
@@ -2926,11 +2961,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                throw error;
                }
            }}
-           mode={moveframeModalMode}
-           workout={activeWorkout}
-           day={activeDay}
-           existingMoveframe={moveframeModalMode === 'edit' ? editingMoveframe : undefined}
-         />
+        />
        )}
        
       {modals.showImportModal && (activeSection === 'A' || activeSection === 'B') && (

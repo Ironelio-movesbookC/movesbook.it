@@ -281,6 +281,7 @@ function SortableMovelapRow({
   pauseCircuitsSeconds?: number | null;
   pauseSeriesSeconds?: number | null;
   onRefresh?: () => void;
+  isCircuitBased?: boolean;
 }) {
   // Options dropdown state
   const [showOptionsDropdown, setShowOptionsDropdown] = useState(false);
@@ -2313,16 +2314,16 @@ export default function MovelapDetailTable({
                     <col style={{ width: '30px' }} />
                     <col style={{ width: '30px' }} />
                     {/* 2026-01-27 - Reduced widths for circuit movelap table */}
-                    <col style={{ width: moveframe.isCircuitBased ? '60px' : '30px' }} />
+                    <col style={{ width: circuitBasedMoveframe ? '60px' : '30px' }} />
                     <col style={{ width: '120px' }} />
                     <col style={{ width: '80px' }} />
                     {isBodyBuilding && (
                       <>
                         {/* 2026-01-27 - Reduced Musc.Sector and Exercise widths for circuits */}
-                        <col style={{ width: moveframe.isCircuitBased ? '140px' : '100px' }} />
-                        <col style={{ width: moveframe.isCircuitBased ? '180px' : '120px' }} />
-                        <col style={{ width: moveframe.isCircuitBased ? '40px' : '50px' }} />
-                        {!moveframe.isCircuitBased && (
+                        <col style={{ width: circuitBasedMoveframe ? '140px' : '100px' }} />
+                        <col style={{ width: circuitBasedMoveframe ? '180px' : '120px' }} />
+                        <col style={{ width: circuitBasedMoveframe ? '40px' : '50px' }} />
+                        {!circuitBasedMoveframe && (
                           <>
                         <col style={{ width: '60px' }} />
                         <col style={{ width: '50px' }} />
@@ -2356,7 +2357,7 @@ export default function MovelapDetailTable({
                     <col style={{ width: '40px' }} />
                     {!moveframe.isCircuitBased && <col style={{ width: '60px' }} />}
                     {/* 2026-01-27 - Reduced Notes width for circuits */}
-                    <col style={{ width: moveframe.isCircuitBased ? '200px' : '300px' }} />
+                    <col style={{ width: circuitBasedMoveframe ? '200px' : '300px' }} />
                     <col style={{ width: '110px', minWidth: '110px' }} />
                   </colgroup>
                   <thead className="bg-gray-200">
@@ -2372,7 +2373,7 @@ export default function MovelapDetailTable({
                           <th className="border border-gray-300 px-1 py-1 text-left text-[10px]">Musc.Sector</th>
                           <th className="border border-gray-300 px-1 py-1 text-left text-[10px]">Exercise</th>
                           <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Reps</th>
-                          {!moveframe.isCircuitBased && (
+                          {!circuitBasedMoveframe && (
                             <>
                           <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Weight</th>
                           <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Tempo</th>
@@ -2391,7 +2392,7 @@ export default function MovelapDetailTable({
                       {isDistanceBased && (
                         <>
                           <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">
-                            {moveframe.isCircuitBased ? 'Musc.Sector' : 'Dist/Dur'}
+                            {circuitBasedMoveframe ? 'Musc.Sector' : 'Dist/Dur'}
                           </th>
                           {(isSwim || isRun) && (
                             <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Exercise</th>
@@ -2403,7 +2404,7 @@ export default function MovelapDetailTable({
                             </>
                           )}
                           <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">
-                            {moveframe.isCircuitBased ? 'Reps' : 'Speed'}
+                            {circuitBasedMoveframe ? 'Reps' : 'Speed'}
                           </th>
                           {isRowing && (
                             <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Row/min</th>
@@ -2416,7 +2417,7 @@ export default function MovelapDetailTable({
                       {/* Common headers */}
                       <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Pause</th>
                       <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Macro</th>
-                      {!moveframe.isCircuitBased && (
+                      {!circuitBasedMoveframe && (
                       <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Alarm&Snd</th>
                       )}
                       <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" style={{ width: '300px' }}>Notes</th>
@@ -2473,7 +2474,7 @@ export default function MovelapDetailTable({
                 } else if (isBodyBuilding) {
                   totalColumns += 5; // Musc.Sector + Exercise + Reps + Weight + Tempo (Rest Type removed 2026-01-24)
                   // For circuit-based bodybuilding, remove Weight and Tempo columns
-                  if (moveframe.isCircuitBased) {
+                  if (circuitBasedMoveframe) {
                     totalColumns -= 2; // Remove Weight + Tempo
                   }
                 } else if (hasTools) {
@@ -2542,6 +2543,7 @@ export default function MovelapDetailTable({
                       pauseCircuitsSeconds={pauseCircuitsSeconds}
                       pauseSeriesSeconds={pauseSeriesSeconds}
                       onRefresh={onRefresh}
+                      isCircuitBased={circuitBasedMoveframe}
                     />
                   </React.Fragment>
                 );

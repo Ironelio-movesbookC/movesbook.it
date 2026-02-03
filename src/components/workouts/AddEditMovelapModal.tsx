@@ -519,7 +519,7 @@ export default function AddEditMovelapModal({
         <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold">
-              {mode === 'add' ? 'Add Movelap' : 'Edit Movelap'}
+              {mode === 'add' ? 'Add Exercise' : 'Edit Exercise'}
               {circuitMetadata && (
                 <span className="ml-3 text-sm font-normal bg-white/20 px-3 py-1 rounded">
                   Circuit {circuitMetadata.circuitLetter} • Series {circuitMetadata.localSeriesNumber || circuitMetadata.seriesNumber} • Station {circuitMetadata.stationNumber}

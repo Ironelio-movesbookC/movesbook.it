@@ -300,7 +300,19 @@ export default function AddEditMoveframeModal({
     if (type === 'BATTERY' && batterySubmenu === 'circuits' && !isCircuitFeatureSport(sport)) {
       setBatterySubmenu('fast');
     }
-  }, [type, sport, batterySubmenu]);
+  }, [type, sport, batterySubmenu, editingFromMovelap]);
+
+  // 2026-01-31 - Force BATTERY/circuits mode when editing from a circuit movelap
+  useEffect(() => {
+    if (editingFromMovelap && targetMovelap) {
+      console.log('🔄 [AddEditMoveframeModal] Editing from movelap, forcing BATTERY/circuits mode');
+      setType('BATTERY');
+      setBatterySubmenu('circuits');
+      
+      // Also ensure we're not in manual mode as it might interfere
+      setManualMode(false);
+    }
+  }, [editingFromMovelap, targetMovelap]);
 
   // Filter techniques - ONLY for BODY_BUILDING sport
   const availableTechniques = React.useMemo(() => {
@@ -952,6 +964,10 @@ export default function AddEditMoveframeModal({
     }
   }, [activeTab]);
 
+  // 2026-01-31 - Determine if we should hide the main UI (invisible mode)
+  // This happens when editing a specific circuit movelap - we only want to show the exercise selection modal
+  const hideUI = propHideUI || (editingFromMovelap && targetMovelap);
+
   if (!isOpen) return null;
 
   // 2026-02-02 - If editing from movelap (just for the inner modal), render a transparent container
@@ -1028,8 +1044,8 @@ export default function AddEditMoveframeModal({
           </button>
         </div>
 
-        {/* Tabs */}
-        {type === 'STANDARD' && (
+        {/* Tabs - Hide in invisible mode */}
+        {type === 'STANDARD' && !hideUI && (
           <div className="flex border-b border-gray-300 bg-gray-50 flex-shrink-0">
             {!isEditingManualMoveframe && (
               <button
@@ -4304,9 +4320,18 @@ export default function AddEditMoveframeModal({
                 
                 // Build complete moveframe data with circuit description and movelaps
                 const moveframeData = buildMoveframeData();
+                
+                // 2026-01-30 - Serialize circuit data into notes for future editing
+                const serializedCircuitData = JSON.stringify({
+                  config: circuitData.settings,
+                  circuits: circuitData.circuits
+                });
+                const notesWithCircuitData = `[CIRCUIT_DATA]${serializedCircuitData}[/CIRCUIT_DATA]`;
+                
                 const finalData = {
                   ...moveframeData,
                   description: circuitData.description || '', // Use circuit description
+                  notes: notesWithCircuitData, // Store circuit data in notes
                   circuitConfig: circuitData.settings, // Circuit settings
                   circuits: circuitData.circuits, // Active circuits
                   rows: circuitData.rows, // Circuit rows/stations

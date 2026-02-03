@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
         name: true,
         userType: true,
         createdAt: true,
+        telegramAccount: true,
         
         // Include related data from migration
         settings: true,

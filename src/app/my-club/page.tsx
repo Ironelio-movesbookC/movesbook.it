@@ -46,7 +46,7 @@ function MyClubContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const clubId = searchParams.get('clubId');
+  const clubId = searchParams?.get('clubId');
 
   // All hooks must be called before any conditional returns
   const [activeSection, setActiveSection] = useState<'overview' | 'members' | 'workouts' | 'analytics'>('overview');

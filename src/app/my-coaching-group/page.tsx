@@ -30,7 +30,7 @@ function MyCoachingGroupContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const groupId = searchParams.get('groupId');
+  const groupId = searchParams?.get('groupId');
 
   const [coachingGroup, setCoachingGroup] = useState<CoachingGroup | null>(null);
   const [members, setMembers] = useState<CoachingGroupMember[]>([]);

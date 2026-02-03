@@ -40,6 +40,14 @@ export default function EditMoveframeModal({
   onSuccess
 }: EditMoveframeModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // 2026-01-30 - Extract and preserve circuit tags
+  const [circuitTags] = useState(() => {
+    const content = moveframe.notes || moveframe.description || '';
+    const match = content.match(/(\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\])/);
+    return match ? match[1] : '';
+  });
+
   // 2026-01-22 14:45 UTC - Strip circuit tags from initial content
   const [editorContent, setEditorContent] = useState(stripCircuitTags(moveframe.notes || moveframe.description || ''));
   const [distance, setDistance] = useState('0');
@@ -58,17 +66,23 @@ export default function EditMoveframeModal({
     const formData = new FormData(e.currentTarget);
 
     try {
+      // 2026-01-30 - Re-append circuit tags if they exist
+      const description = isManualMode ? editorContent : (formData.get('description') as string);
+      const finalDescription = circuitTags && !description.includes('[CIRCUIT_DATA]') 
+        ? `${description}\n\n${circuitTags}` 
+        : description;
+
       const updateData: any = {
         sport: formData.get('sport'),
-        description: isManualMode ? editorContent : formData.get('description'),
+        description: finalDescription,
         sectionName: formData.get('sectionName'),
         macroRest: formData.get('macroRest')
       };
       
       // For manual mode, save content to notes field and description
       if (isManualMode) {
-        updateData.notes = editorContent;
-        updateData.description = editorContent;
+        updateData.notes = finalDescription;
+        updateData.description = finalDescription;
       }
       
       const response = await moveframeApi.update(moveframe.id, updateData);

@@ -641,7 +641,25 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     
     circuitsToUse.forEach((circuit, circuitIndex) => {
       for (let seriesNum = 1; seriesNum <= circuit.series; seriesNum++) {
-        circuit.stationsBySeries[seriesNum - 1].forEach((station, stationIndex) => {
+        const seriesStations = circuit.stationsBySeries[seriesNum - 1];
+        seriesStations.forEach((station, stationIndex) => {
+          // Determine effective pause
+          let effectivePause = station.pause || pauseStations;
+          
+          const isLastStationOfSeries = stationIndex === seriesStations.length - 1;
+          const isLastSeriesOfCircuit = seriesNum === circuit.series;
+          const isLastCircuit = circuitIndex === circuitsToUse.length - 1;
+          
+          if (isLastStationOfSeries) {
+            if (!isLastSeriesOfCircuit || seriesMode === 'time') {
+              // Use series pause
+              effectivePause = circuit.seriesPauses?.[seriesNum - 1] ?? pauseSeries;
+            } else if (isLastSeriesOfCircuit && !isLastCircuit) {
+              // Use circuit pause
+              effectivePause = circuit.restAfterCircuit ?? pauseCircuits;
+            }
+          }
+
           // Create a movelap for each station in each series
           const movelap = {
             repetitionNumber: sequenceNumber, // Sequential number for movelap ordering
@@ -653,7 +671,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             sector: station.sector || '',
             exercise: station.exercise || '', // 2026-01-22 14:45 UTC - Don't show "Exercise to be defined"
             reps: station.reps || '',
-            pause: station.pause || pauseStations,
+            pause: effectivePause,
             // Additional fields that might be needed
             muscularSector: station.sector || '',
             distance: '',
@@ -1298,13 +1316,24 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     // 2026-01-21 22:10 UTC - Generate preview text
     // 2026-01-22 10:20 UTC - Format like: "Circuit: X circuits x Y series Pause Z" M0'"
     // 2026-01-27 - Modified for time mode: "Circuit X of Y stations to do for Z' x N series"
-    const parts: string[] = [];
     const circuitsToUse = overrideCircuits ?? circuits;
+    const parts: string[] = [];
     
     // Circuit info
     const avgSeries = circuitsToUse.length > 0 
       ? Math.round(circuitsToUse.reduce((sum, c) => sum + c.series, 0) / circuitsToUse.length)
       : seriesCount;
+    
+    // Calculate average stations per series
+    const avgStations = circuitsToUse.length > 0
+      ? Math.round(circuitsToUse.reduce((sum, c) => {
+          const numSeries = c.stationsBySeries.length;
+          const circuitAvgStations = numSeries > 0 
+            ? c.stationsBySeries.reduce((sSum, s) => sSum + s.length, 0) / numSeries
+            : 0;
+          return sum + circuitAvgStations;
+        }, 0) / circuitsToUse.length)
+      : stationsPerCircuit;
     
     if (seriesMode === 'time') {
       parts.push(`Circuit ${circuitsToUse.length || numCircuits} of ${stationsPerCircuit} stations to do for ${seriesTime}' x ${avgSeries} series`);
@@ -1533,7 +1562,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         return newCircuits;
       });
       
-      setActionLog(prev => [...prev, `Load of work from station ${circuit}${seriesIdx + 1}${stationNumber} copied to subsequent stations`]);
+      setActionLog(prev => [...prev, `Load of work (reps & pause) from station ${circuit}${seriesIdx + 1}${stationNumber} copied to subsequent stations`]);
     } else {
       setCircuits(prevCircuits => {
         const newCircuits = JSON.parse(JSON.stringify(prevCircuits));
@@ -1578,6 +1607,9 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
   
   // First View - Configuration Phase
   if (currentPhase === 'config') {
+    // 2026-01-31 - Hide configuration UI if in invisible mode
+    if (initialConfig?.hideUI) return null;
+
     return (
       <>
         <div className="space-y-4 max-w-7xl mx-auto p-6">
@@ -1643,38 +1675,39 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 </select>
               </div>
               
-              {/* Series Count or Time */}
-              {seriesMode === 'count' ? (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Series
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="5"
-                    value={seriesCount}
-                    onChange={(e) => setSeriesCount(Math.min(5, Math.max(1, parseInt(e.target.value) || 2)))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">1-5 (default: 2)</p>
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Minutes of work
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="9"
-                    value={seriesTime}
-                    onChange={(e) => setSeriesTime(Math.min(9, Math.max(1, parseInt(e.target.value) || 2)))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">1-9 minutes (default: 2)</p>
-                </div>
-              )}
+              {/* Series Count */}
+              <div className={seriesMode !== 'count' ? 'opacity-50' : ''}>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Series
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="5"
+                  value={seriesCount}
+                  onChange={(e) => setSeriesCount(Math.min(5, Math.max(1, parseInt(e.target.value) || 2)))}
+                  disabled={seriesMode !== 'count'}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">1-5 (default: 2)</p>
+              </div>
+              
+              {/* Time per Circuit */}
+              <div className={seriesMode !== 'time' ? 'opacity-50' : ''}>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Minutes of work
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="9"
+                  value={seriesTime}
+                  onChange={(e) => setSeriesTime(Math.min(9, Math.max(1, parseInt(e.target.value) || 2)))}
+                  disabled={seriesMode !== 'time'}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">1-9 minutes (default: 2)</p>
+              </div>
             </div>
           </div>
           
@@ -1873,38 +1906,39 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             </select>
           </div>
           
-          {/* Series Count or Time */}
-          {seriesMode === 'count' ? (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Series
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="5"
-                value={seriesCount}
-                onChange={(e) => setSeriesCount(Math.min(5, Math.max(1, parseInt(e.target.value) || 2)))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">1-5 (default: 2)</p>
-            </div>
-          ) : (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Minutes of work
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="9"
-                value={seriesTime}
-                onChange={(e) => setSeriesTime(Math.min(9, Math.max(1, parseInt(e.target.value) || 2)))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">1-9 minutes (default: 2)</p>
-            </div>
-          )}
+          {/* Series Count */}
+          <div className={seriesMode !== 'count' ? 'opacity-50' : ''}>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Series
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="5"
+              value={seriesCount}
+              onChange={(e) => setSeriesCount(Math.min(5, Math.max(1, parseInt(e.target.value) || 2)))}
+              disabled={seriesMode !== 'count'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">1-5 (default: 2)</p>
+          </div>
+          
+          {/* Time per Circuit */}
+          <div className={seriesMode !== 'time' ? 'opacity-50' : ''}>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Minutes of work
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="9"
+              value={seriesTime}
+              onChange={(e) => setSeriesTime(Math.min(9, Math.max(1, parseInt(e.target.value) || 2)))}
+              disabled={seriesMode !== 'time'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">1-9 minutes (default: 2)</p>
+          </div>
         </div>
         
         {/* Execution Mode */}
@@ -1950,7 +1984,20 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             </label>
             <select
               value={pauseStations}
-              onChange={(e) => setPauseStations(parseInt(e.target.value))}
+              onChange={(e) => {
+                const newPause = parseInt(e.target.value);
+                setPauseStations(newPause);
+                // 2026-01-30 - Update all existing stations' pause without resetting exercises
+                setCircuits(prev => prev.map(circuit => ({
+                  ...circuit,
+                  stationsBySeries: circuit.stationsBySeries.map(series => 
+                    series.map(station => ({
+                      ...station,
+                      pause: newPause
+                    }))
+                  )
+                })));
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-amber-500"
             >
               {STATION_PAUSE_OPTIONS.map(opt => (
@@ -2045,6 +2092,24 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             </div>
           )}
         </div>
+      </div>
+      
+      {/* Load of work - 2026-01-30 - Moved outside/below Pause Settings box */}
+      <div className="mt-4 w-full md:w-1/4">
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Load of work (Reps) - optional
+        </label>
+        <select
+          value={loadOfWorkReps}
+          onChange={(e) => setLoadOfWorkReps(e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-amber-500"
+        >
+          <option value="">Select...</option>
+          {Array.from({ length: 99 }, (_, i) => i + 1).map(num => (
+            <option key={num} value={num}>{num}</option>
+          ))}
+          <option value="nc">nc</option>
+        </select>
       </div>
       
       {/* Action Buttons - Duplicate under Pause Settings - 2026-01-27 */}
@@ -2568,7 +2633,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       {/* Sector Selector Modal with Drag & Drop - 2026-01-22 12:40 UTC */}
       {/* 2026-01-22 13:10 UTC - Updated to support single station selection */}
       {showSectorSelector && (selectedCircuitForSector || selectedStationForSector) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 pointer-events-auto">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-4xl w-full max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">
@@ -2579,10 +2644,14 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
               </h3>
               <button
                 onClick={() => {
-                  setShowSectorSelector(false);
-                  setSelectedCircuitForSector(null);
-                  setSelectedStationForSector(null);
-                  setPreviousStationSector(null); // 2026-01-26 - Clear previous sector highlight
+                  if (initialConfig?.hideUI) {
+                    onCancel();
+                  } else {
+                    setShowSectorSelector(false);
+                    setSelectedCircuitForSector(null);
+                    setSelectedStationForSector(null);
+                    setPreviousStationSector(null); // 2026-01-26 - Clear previous sector highlight
+                  }
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -2652,7 +2721,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             
             {/* Station Drop Zones by Series - 2026-01-22 12:40 UTC */}
             {/* 2026-01-22 13:10 UTC - Only show in full circuit mode, added scrollbar */}
-            {/* 2026-01-22 14:30 UTC - Moved Reply areas button to Series 1, added validation warning */}
             {!selectedStationForSector && selectedCircuitForSector && (
             <div className="space-y-4 overflow-y-auto flex-1">
               <div>
@@ -2744,6 +2812,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           </div>
         </div>
       )}
+    </div>
       
       {/* Add Circuit Modal - 2026-01-21 22:10 UTC */}
       {showAddCircuitModal && (
@@ -2785,7 +2854,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
               <button
                 onClick={() => {
                   const count = parseInt((document.getElementById('add-circuit-count') as HTMLInputElement)?.value || '1');
-                  handleAddCircuits(Math.min(3, Math.max(1, count)));
+                  const position = parseInt((document.getElementById('add-circuit-position') as HTMLSelectElement)?.value || '-1');
+                  handleAddCircuits(Math.min(3, Math.max(1, count)), position);
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
               >
@@ -2895,6 +2965,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       {renderExerciseSelectionModal()}
       {renderRepsEditorModal()}
       
+      <div className={`space-y-2 ${initialConfig?.hideUI ? 'hidden' : ''}`}>
       {/* Circuit Action Buttons - 2026-01-21 22:10 UTC */}
       <div className="flex items-center justify-center gap-3 mt-6 border-t pt-6">
         <button
@@ -3013,8 +3084,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 newCircuits.forEach((circuit: Circuit) => {
                   circuit.stationsBySeries.forEach((seriesStations: Station[]) => {
                     seriesStations.forEach((station: Station) => {
-                      // Only replace if station has both sector and exercise
-                      if (station.sector && station.exercise) {
+                      // Replace if station has sector (even if exercise is empty)
+                      if (station.sector) {
                          const randomExercise = getRandomExercise(station.sector, station.exercise);
                          if (randomExercise) {
                            station.exercise = randomExercise.name;

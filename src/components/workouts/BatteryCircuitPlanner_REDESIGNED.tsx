@@ -109,9 +109,12 @@ export default function BatteryCircuitPlanner({
   const [circuits, setCircuits] = useState<CircuitExercise[]>(initializeCircuits());
   
   const [numCircuits, setNumCircuits] = useState(config?.numCircuits || 3);
-  const [pauseCircuits, setPauseCircuits] = useState(
-    config?.pauses?.circuits ? Math.round(config.pauses.circuits / 60) : 4
-  ); // in minutes
+  // Support both flat structure (pauseCircuits in minutes) and nested (pauses.circuits in seconds)
+  const [pauseCircuits, setPauseCircuits] = useState(() => {
+    if (config?.pauseCircuits !== undefined) return config.pauseCircuits;
+    if (config?.pauses?.circuits != null) return Math.round(config.pauses.circuits / 60);
+    return 4;
+  }); // in minutes
   
   // Station settings
   const [stationsPerCircuit, setStationsPerCircuit] = useState(config?.stationsPerCircuit || 5);
@@ -123,9 +126,12 @@ export default function BatteryCircuitPlanner({
   );
   const [seriesPerCircuit, setSeriesPerCircuit] = useState(config?.seriesCount || 2);
   const [timePerCircuit, setTimePerCircuit] = useState(config?.seriesTime || 5); // in minutes
-  const [pauseSeries, setPauseSeries] = useState(
-    config?.pauses?.series ? Math.round(config.pauses.series / 60) : 2
-  ); // in minutes
+  // Support both flat structure (pauseSeries) and nested (pauses.series in seconds)
+  const [pauseSeries, setPauseSeries] = useState(() => {
+    if (config?.pauseSeries !== undefined) return config.pauseSeries;
+    if (config?.pauses?.series != null) return Math.round(config.pauses.series / 60);
+    return 2;
+  }); // in minutes
   
   // Execution settings
   const [executionOrder, setExecutionOrder] = useState<'vertical' | 'horizontal'>(
@@ -172,10 +178,10 @@ export default function BatteryCircuitPlanner({
   
   // Auto-navigate to second view if requested (e.g., when editing a movelap)
   useEffect(() => {
-    if (startInSecondView && existingCircuits) {
+    if (startInSecondView) {
       setShowOldCircuitPlanner(true);
     }
-  }, [startInSecondView, existingCircuits]);
+  }, [startInSecondView]);
   
   // Toggle circuit active state
   const toggleCircuit = (index: number) => {
