@@ -266,6 +266,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [editingMoveframe, setEditingMoveframe] = useState<Moveframe | null>(null);
   const [editingMovelap, setEditingMovelap] = useState<any>(null);
   const [editingFromMovelap, setEditingFromMovelap] = useState(false); // Track if editing moveframe was triggered from movelap edit
+  const [editingCircuitStation, setEditingCircuitStation] = useState<{ circuitLetter?: string; circuitIndex?: number; localSeriesNumber?: number; stationNumber?: number } | null>(null);
   
   // ==================== UI STATE ====================
   const [excludeStretchingFromTotals, setExcludeStretchingFromTotals] = useState(false);
@@ -2134,39 +2135,50 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                    modalActions.setShowAddMoveframeModal(true);
                  }}
                  onEditMovelap={(movelap, moveframe, workout, day) => {
-                  console.log('🏗️ WorkoutSection onEditMovelap received', { 
-                    movelapId: movelap.id, 
-                    notes: movelap.notes,
-                    moveframeId: moveframe?.id,
-                    hasWorkout: !!workout,
-                    hasDay: !!day
-                  });
-                  // Check if this is a circuit movelap (indicated by CIRCUIT_META in notes)
-                  // If so, open the circuit planner in "select exercise" mode
-                  const isCircuitMovelap = movelap.notes && typeof movelap.notes === 'string' && movelap.notes.includes('[CIRCUIT_META]');
-                  
-                  if (isCircuitMovelap) {
-                    console.log('🔄 Opening circuit planner for movelap edit:', movelap);
-                    setEditingMovelap(movelap);
-                    setEditingMoveframe(moveframe); // Set the moveframe being edited
+                  let circuitMeta = null;
+                  if (movelap?.notes && typeof movelap.notes === 'string') {
+                    const match = movelap.notes.match(/\[CIRCUIT_META\](.*?)\[\/CIRCUIT_META\]/);
+                    if (match && match[1]) {
+                      try {
+                        circuitMeta = JSON.parse(match[1]);
+                      } catch (e) {
+                        circuitMeta = null;
+                      }
+                    }
+                  }
+
+                  const circuitTarget = {
+                    circuitLetter: circuitMeta?.circuitLetter ?? movelap?.circuitLetter,
+                    circuitIndex: circuitMeta?.circuitIndex ?? movelap?.circuitIndex,
+                    localSeriesNumber: circuitMeta?.localSeriesNumber ?? movelap?.localSeriesNumber,
+                    stationNumber: circuitMeta?.stationNumber ?? movelap?.stationNumber
+                  };
+
+                  const isCircuitMovelap = !!(circuitTarget.circuitLetter || circuitTarget.circuitIndex);
+
+                  if (isCircuitMovelap && moveframe) {
+                    setEditingMoveframe(moveframe);
                     setActiveDay(day);
                     setActiveWorkout(workout);
                     setActiveMoveframe(moveframe);
                     setActiveMovelap(movelap);
                     setEditingFromMovelap(true); // Flag to indicate editing from movelap
                     setMoveframeModalMode('edit');
+                    setEditingFromMovelap(true);
+                    setEditingCircuitStation(circuitTarget);
                     modalActions.setShowAddMoveframeModal(true);
-                  } else {
-                    // Standard movelap edit
-                    setEditingMovelap(movelap);
-                    setActiveDay(day);
-                    setActiveWorkout(workout);
-                    setActiveMoveframe(moveframe);
-                    setActiveMovelap(movelap);
-                    setMovelapInsertIndex(null); // Clear insert index for edit mode
-                    modalActions.setMovelapModalMode('edit');
-                    modalActions.setShowAddEditMovelapModal(true);
+                    return;
                   }
+
+                  setEditingMovelap(movelap);
+                  setActiveDay(day);
+                  setActiveWorkout(workout);
+                  setActiveMoveframe(moveframe);
+                  setActiveMovelap(movelap);
+                  setMovelapInsertIndex(null);
+                  setEditingCircuitStation(null);
+                  modalActions.setMovelapModalMode('edit');
+                  modalActions.setShowAddEditMovelapModal(true);
                 }}
                 onAddMovelap={(moveframe, workout, day) => {
                   setActiveMoveframe(moveframe);
@@ -2501,17 +2513,12 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       )}
       
        {modals.showAddMoveframeModal && activeWorkout && activeDay && (
-        <AddEditMoveframeModal
-          isOpen={modals.showAddMoveframeModal}
-          mode={moveframeModalMode}
-          workout={activeWorkout}
-          day={activeDay}
-          existingMoveframe={editingMoveframe}
-          onSetInsertIndex={(index) => setMoveframeInsertIndex(index)}
-          editingFromMovelap={editingFromMovelap}
-          targetMovelap={editingMovelap}
-          hideUI={editingFromMovelap && !!editingMovelap}
-          onClose={() => {
+         <AddEditMoveframeModal
+           isOpen={modals.showAddMoveframeModal}
+            onSetInsertIndex={(index) => setMoveframeInsertIndex(index)}
+            editingFromMovelap={editingFromMovelap}
+            editingMovelapTarget={editingCircuitStation}
+            onClose={() => {
               modalActions.setShowAddMoveframeModal(false);
             setActiveWorkout(null);
             setActiveDay(null);
@@ -2521,7 +2528,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setMoveframeModalMode('add');
             setMoveframeInsertIndex(null); // Reset insert index
             setEditingFromMovelap(false); // Reset the flag
-            setEditingMovelap(undefined); // Reset the target movelap
+            setEditingCircuitStation(null);
             }}
              onSave={async (moveframeData) => {
              console.log(`📤 ${moveframeModalMode === 'edit' ? 'Updating' : 'Creating'} moveframe with data:`, moveframeData);
@@ -2535,13 +2542,16 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 // 2026-01-22 10:45 UTC - Prepare notes field with circuit config if applicable
                 let updateNotes = moveframeData.notes || '';
                 if (moveframeData.isCircuitBased && moveframeData.circuitConfig) {
+                  const baseNotes = (updateNotes || '')
+                    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+                    .trim();
                   const circuitMeta = {
                     isCircuitBased: true,
                     config: moveframeData.circuitConfig,
                     circuits: moveframeData.circuits
                   };
-                  const metaString = `\n\n[CIRCUIT_DATA]${JSON.stringify(circuitMeta)}[/CIRCUIT_DATA]`;
-                  updateNotes = updateNotes + metaString;
+                  const metaString = `[CIRCUIT_DATA]${JSON.stringify(circuitMeta)}[/CIRCUIT_DATA]`;
+                  updateNotes = baseNotes ? `${baseNotes}\n\n${metaString}` : metaString;
                 }
                 
                 await moveframeHandlers.updateMoveframe(editingMoveframe.id, {
@@ -2568,9 +2578,83 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 
                 // ALWAYS regenerate movelaps for non-ANNOTATION types when editing
                 // This ensures Rip\Sets column and all movelap data stays in sync
-                // 2026-01-22 10:35 UTC - Skip regeneration for circuit-based moveframes (BATTERY type)
                 // 2026-01-28 - Skip regeneration for manual mode moveframes (preserve user's custom summary)
-                if (moveframeData.type !== 'ANNOTATION' && moveframeData.type !== 'BATTERY' && !moveframeData.manualMode) {
+                if (moveframeData.type === 'BATTERY' && Array.isArray(moveframeData.movelaps) && moveframeData.movelaps.length > 0) {
+                  const token = localStorage.getItem('token');
+                  
+                  const deletePromises = (editingMoveframe.movelaps || []).map((movelap: any) =>
+                    fetch(`/api/workouts/movelaps/${movelap.id}`, {
+                      method: 'DELETE',
+                      headers: { 'Authorization': `Bearer ${token}` }
+                    })
+                  );
+                  await Promise.all(deletePromises);
+                  console.log(`✅ Deleted ${deletePromises.length} existing movelaps`);
+                  
+                  const newMovelaps = [...moveframeData.movelaps].sort((a: any, b: any) =>
+                    (a.repetitionNumber || 0) - (b.repetitionNumber || 0)
+                  );
+                  
+                  for (let index = 0; index < newMovelaps.length; index++) {
+                    const lap = newMovelaps[index];
+                    
+                    let movelapNotes = lap.notes || '';
+                    if (lap.circuitLetter) {
+                      const circuitMeta = {
+                        circuitLetter: lap.circuitLetter,
+                        circuitIndex: lap.circuitIndex,
+                        seriesNumber: lap.seriesNumber,
+                        localSeriesNumber: lap.localSeriesNumber,
+                        stationNumber: lap.stationNumber,
+                        sector: lap.sector
+                      };
+                      const metaString = `\n[CIRCUIT_META]${JSON.stringify(circuitMeta)}[/CIRCUIT_META]`;
+                      movelapNotes = movelapNotes + metaString;
+                    }
+                    
+                    let pauseValue = lap.pause || null;
+                    if (typeof pauseValue === 'number') {
+                      const minutes = Math.floor(pauseValue / 60);
+                      const seconds = pauseValue % 60;
+                      pauseValue = `${minutes}'${seconds.toString().padStart(2, '0')}"`;
+                    }
+                    
+                    await fetch('/api/workouts/movelaps', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                      },
+                      body: JSON.stringify({
+                        moveframeId: editingMoveframe.id,
+                        repetitionNumber: lap.repetitionNumber || (index + 1),
+                        distance: lap.distance || null,
+                        speed: lap.reps ? String(lap.reps) : (lap.speed || null),
+                        style: lap.sector || lap.style || null,
+                        pace: lap.pace || null,
+                        time: lap.time || null,
+                        rowPerMin: lap.rowPerMin || null,
+                        pause: pauseValue,
+                        alarm: lap.alarm || null,
+                        sound: lap.sound || null,
+                        notes: movelapNotes || null,
+                        reps: lap.reps || null,
+                        weight: lap.weight || null,
+                        tools: lap.tools || null,
+                        muscularSector: lap.muscularSector || null,
+                        exercise: lap.exercise || null,
+                        restType: lap.restType || null,
+                        r1: lap.r1 || null,
+                        r2: lap.r2 || null,
+                        macroFinal: lap.macroFinal || null,
+                        status: lap.status || 'PENDING'
+                      })
+                    });
+                  }
+                  
+                  console.log(`✅ Created ${newMovelaps.length} new movelaps with updated circuit data`);
+                  console.log(`📊 Rip\\Sets column will now show: ${newMovelaps.length}`);
+                } else if (moveframeData.type !== 'ANNOTATION' && !moveframeData.manualMode) {
                    const baseReps = parseInt(moveframeData.repetitions) || 1;
                    const AEROBIC_SPORTS = ['SWIM', 'BIKE', 'MTB', 'SPINNING', 'RUN', 'ROWING', 'CANOEING', 'KAYAKING', 'SKATE', 'SKI', 'SNOWBOARD', 'WALKING', 'HIKING'];
                    const seriesMultiplier = AEROBIC_SPORTS.includes(moveframeData.sport) ? (parseInt(moveframeData.aerobicSeries) || 1) : 1;
@@ -2663,6 +2747,12 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                  // Keep edited moveframe expanded so circuit movelap table stays visible
                  setAutoExpandMoveframeId(editingMoveframe.id);
                  // Reload data to show changes (updates Rip\Sets column)
+                if (editingMoveframe?.id) {
+                  setAutoExpandMoveframeId(editingMoveframe.id);
+                  setTimeout(() => {
+                    setAutoExpandMoveframeId(null);
+                  }, UI_CONFIG.AUTO_EXPAND_DELAY);
+                }
                  await loadWorkoutData(activeSection);
                  setTimeout(() => setAutoExpandMoveframeId(null), 500);
                 } else {
@@ -2709,13 +2799,16 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 // 2026-01-22 11:00 UTC - Fixed: Embed circuit config in notes field properly
                 let finalNotes = moveframeData.notes || '';
                 if (moveframeData.isCircuitBased && moveframeData.circuitConfig) {
+                  const baseNotes = (finalNotes || '')
+                    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+                    .trim();
                   const circuitMeta = {
                     isCircuitBased: true,
                     config: moveframeData.circuitConfig,
                     circuits: moveframeData.circuits
                   };
-                  const metaString = `\n\n[CIRCUIT_DATA]${JSON.stringify(circuitMeta)}[/CIRCUIT_DATA]`;
-                  finalNotes = finalNotes + metaString;
+                  const metaString = `[CIRCUIT_DATA]${JSON.stringify(circuitMeta)}[/CIRCUIT_DATA]`;
+                  finalNotes = baseNotes ? `${baseNotes}\n\n${metaString}` : metaString;
                   
                   console.log('✅ Circuit config embedded in notes:', {
                     hasCircuitData: true,
@@ -3380,7 +3473,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                       const reorderData = allMovelaps.map((ml: any, idx: number) => ({
                         id: ml.id,
                         repetitionNumber: idx + 1,
-                        isNewlyAdded: ml.id === newMovelap.id // Mark newly added movelap
+                        ...(ml.id === newMovelap.id ? { isNewlyAdded: true } : {})
                       }));
                       
                       // Call reorder API

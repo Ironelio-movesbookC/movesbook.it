@@ -4,6 +4,8 @@ import { GripVertical, Volume2, VolumeX, Bell, BellOff, MoreVertical } from 'luc
 import { DndContext, closestCenter, DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { MACRO_FINAL_OPTIONS } from '@/constants/moveframe.constants';
+import { getExercisesBySector } from '@/data/mockExercises';
 import '../../../styles/sticky-table.css';
 
 // Helper function to strip HTML tags from text (defined at module level for accessibility)
@@ -13,6 +15,24 @@ const stripHtmlTags = (html: string): string => {
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = html;
   return tempDiv.textContent || tempDiv.innerText || '';
+};
+
+const extractCircuitMetaFromNotes = (notes: unknown) => {
+  if (typeof notes !== 'string') return null;
+  const match = notes.match(/\[CIRCUIT_META\](.*?)\[\/CIRCUIT_META\]/);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+};
+
+const upsertCircuitMetaInNotes = (notes: unknown, circuitMeta: any) => {
+  const base = typeof notes === 'string' ? notes : '';
+  const cleaned = base.replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '').trim();
+  const metaString = `[CIRCUIT_META]${JSON.stringify(circuitMeta)}[/CIRCUIT_META]`;
+  return cleaned ? `${cleaned}\n${metaString}` : metaString;
 };
 
 // Mapping of muscular sectors to images (from CircuitPlanner_OLD)
@@ -133,6 +153,7 @@ function EditableNotesField({ movelap, stripHtmlTags, onRefresh, isNewlyAdded }:
 // 2026-01-22 15:35 UTC - Added onRefresh callback
 function SortableMovelapRow({ 
   movelap, 
+  isNewlyAdded,
   index, 
   sequenceNumber,
   moveframeLetter, 
@@ -144,11 +165,17 @@ function SortableMovelapRow({
   onCopyMovelap,
   onPasteMovelap,
   onAddMovelapAfter,
+  onAddStationAfter,
   pauseAmongCircuits,
-  onRefresh,
-  isCircuitBased
+  circuitInfoByLetter,
+  defaultSeriesPerCircuit,
+  defaultStationsPerCircuit,
+  pauseCircuitsSeconds,
+  pauseSeriesSeconds,
+  onRefresh
 }: {
   movelap: any;
+  isNewlyAdded?: boolean;
   index: number;
   sequenceNumber: number;
   moveframeLetter: string;
@@ -160,7 +187,13 @@ function SortableMovelapRow({
   onCopyMovelap: (movelap: any) => void;
   onPasteMovelap: (index: number) => void;
   onAddMovelapAfter?: (movelap: any, index: number) => void;
+  onAddStationAfter?: (movelap: any, index: number) => void;
   pauseAmongCircuits?: string;
+  circuitInfoByLetter?: Map<string, { seriesCount: number; stationsPerSeries: number }>;
+  defaultSeriesPerCircuit?: number | null;
+  defaultStationsPerCircuit?: number | null;
+  pauseCircuitsSeconds?: number | null;
+  pauseSeriesSeconds?: number | null;
   onRefresh?: () => void;
   isCircuitBased?: boolean;
 }) {
@@ -239,6 +272,27 @@ function SortableMovelapRow({
     cursor: isDragging ? 'grabbing' : 'auto',
   };
 
+  const circuitInfo = movelap.circuitLetter ? circuitInfoByLetter?.get(movelap.circuitLetter) : null;
+  const seriesCount = circuitInfo?.seriesCount ?? defaultSeriesPerCircuit ?? 0;
+  const stationsPerSeries = circuitInfo?.stationsPerSeries ?? defaultStationsPerCircuit ?? 0;
+  const isEndOfSeries = !!(movelap.circuitLetter && stationsPerSeries && movelap.stationNumber === stationsPerSeries);
+  const isEndOfCircuit = !!(movelap.circuitLetter && isEndOfSeries && seriesCount && movelap.localSeriesNumber === seriesCount);
+  const formatPause = (pauseSeconds: number) => {
+    const minutes = Math.floor(pauseSeconds / 60);
+    const seconds = pauseSeconds % 60;
+    return `${minutes}'${seconds.toString().padStart(2, '0')}"`;
+  };
+  const macroValue = movelap.macroFinal
+    ? movelap.macroFinal
+    : movelap.circuitLetter
+      ? isEndOfCircuit && pauseCircuitsSeconds != null
+        ? formatPause(pauseCircuitsSeconds)
+        : isEndOfSeries && pauseSeriesSeconds != null
+          ? formatPause(pauseSeriesSeconds)
+          : null
+      : null;
+  const pauseValue = macroValue ? null : movelap.pause;
+
   // Get sound icon
   const getSoundIcon = (movelap: any) => {
     if (movelap.sound) {
@@ -307,7 +361,7 @@ function SortableMovelapRow({
       {/* # (Repetition Number) / Circuit Info Column - 2026-01-22 10:30 UTC */}
       {/* 2026-01-24 - Updated to show format like "B-2-3" (circuit-series-station) */}
       <td className={`border border-gray-300 px-1 py-1 text-center font-bold text-xs ${
-        movelap.isNewlyAdded ? 'text-red-600' : ''
+        isNewlyAdded ? 'text-red-600' : ''
       }`}>
         {movelap.circuitLetter 
           ? `${movelap.circuitLetter}-${movelap.localSeriesNumber || movelap.seriesNumber}-${movelap.stationNumber}` 
@@ -337,7 +391,7 @@ function SortableMovelapRow({
        {isBodyBuilding && (
          <>
            {/* Muscular Sector - 2026-01-24 - Added image display and doubled width, left aligned */}
-           <td className={`border border-gray-300 px-2 py-1 text-left text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td className={`border border-gray-300 px-2 py-1 text-left text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {movelap.muscularSector ? (
                <div className="flex items-center gap-2">
                  {MUSCULAR_SECTOR_IMAGES[movelap.muscularSector] && (
@@ -352,37 +406,37 @@ function SortableMovelapRow({
              ) : '—'}
            </td>
            {/* Exercise - 2026-01-24 - Doubled width, left aligned */}
-           <td className={`border border-gray-300 px-2 py-1 text-left text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td className={`border border-gray-300 px-2 py-1 text-left text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {movelap.exercise || '—'}
            </td>
            {/* Reps */}
-          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
-            {movelap.reps || '—'}
-          </td>
-          {!isCircuitBased && (
-            <>
-          {/* Weight */}
-          <td className={`border border-gray-300 px-1 py-1 text-center text-xs font-semibold ${movelap.isNewlyAdded ? 'text-red-600' : 'text-blue-700'}`}>
-            {movelap.weight || '—'}
-          </td>
-          {/* Tempo/Speed */}
-          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
-            {movelap.speed || '—'}
-          </td>
-            </>
-          )}
-        </>
-      )}
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+             {movelap.reps || '—'}
+           </td>
+           {!moveframe.isCircuitBased && (
+             <>
+           {/* Weight */}
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs font-semibold ${isNewlyAdded ? 'text-red-600' : 'text-blue-700'}`}>
+             {movelap.weight || '—'}
+           </td>
+           {/* Tempo/Speed */}
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+             {movelap.speed || '—'}
+           </td>
+             </>
+           )}
+         </>
+       )}
       
        {/* OTHER SPORTS WITH TOOLS (Gymnastic, Stretching, Pilates, Yoga, etc.) */}
        {hasTools && (
          <>
            {/* Reps */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {movelap.reps || '—'}
            </td>
            {/* Tools */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-xs font-semibold ${movelap.isNewlyAdded ? 'text-red-600' : 'text-green-700'}`}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs font-semibold ${isNewlyAdded ? 'text-red-600' : 'text-green-700'}`}>
              {movelap.tools || '—'}
            </td>
          </>
@@ -393,7 +447,7 @@ function SortableMovelapRow({
          <>
            {/* Distance/Duration - 2026-01-22 11:30 UTC - Show sector for circuits, distance/time for regular */}
            {/* 2026-01-22 14:20 UTC - Use style field for sector (stored in DB) */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {movelap.circuitLetter 
                ? (movelap.style || movelap.sector || '—')
                : (movelap.distance ? movelap.distance : (movelap.time || '—'))}
@@ -401,7 +455,7 @@ function SortableMovelapRow({
            
            {/* Exercise (formerly Style) - 2026-01-22 11:30 UTC - Show exercise for circuits, style for regular */}
            {(isSwim || isRun) && (
-             <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
+             <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
                {movelap.circuitLetter 
                  ? (movelap.exercise || '—')
                  : (movelap.style || '—')}
@@ -411,10 +465,10 @@ function SortableMovelapRow({
            {/* R1, R2 - Only for BIKE */}
            {isBike && (
              <>
-               <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
+               <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
                  {movelap.r1 || '—'}
                </td>
-               <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
+               <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
                  {movelap.r2 || '—'}
                </td>
              </>
@@ -422,24 +476,24 @@ function SortableMovelapRow({
            
           {/* Speed/Reps - For SWIM, BIKE, RUN - 2026-01-22 14:10 UTC - Show reps for circuits, speed for regular */}
           {/* 2026-01-22 14:20 UTC - For circuits, speed field stores reps value */}
-          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {movelap.speed || '—'}
           </td>
            
            {/* Row/min - Only for ROWING and CANOEING */}
            {(moveframe.sport === 'ROWING' || moveframe.sport === 'CANOEING') && (
-             <td className={`border border-gray-300 px-1 py-1 text-center text-xs font-semibold ${movelap.isNewlyAdded ? 'text-red-600' : 'text-purple-700'}`}>
+             <td className={`border border-gray-300 px-1 py-1 text-center text-xs font-semibold ${isNewlyAdded ? 'text-red-600' : 'text-purple-700'}`}>
                {movelap.rowPerMin || '—'}
              </td>
            )}
            
            {/* Time */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '85px', minWidth: '85px' }}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '85px', minWidth: '85px' }}>
              {movelap.time || '—'}
            </td>
            
            {/* Pace */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '85px', minWidth: '85px' }}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '85px', minWidth: '85px' }}>
              {movelap.pace || '—'}
            </td>
          </>
@@ -448,60 +502,30 @@ function SortableMovelapRow({
        {/* COMMON COLUMNS for all sports */}
        
        {/* Pause/Recovery */}
-       <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
-         {movelap.pause || '—'}
+      <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+        {pauseValue === 0 ? '0' : pauseValue || '—'}
        </td>
        
        {/* Macro Final - 2026-01-22 11:30 UTC - Show pause among circuits for circuit movelaps */}
        {/* 2026-01-22 15:35 UTC - Calculate pause for each movelap individually */}
-       <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
-         {movelap.circuitLetter ? (() => {
-           // Extract pause value from moveframe notes for this specific movelap
-           if (moveframe.notes && typeof moveframe.notes === 'string') {
-             const circuitDataMatch = moveframe.notes.match(/\[CIRCUIT_DATA\](.*?)\[\/CIRCUIT_DATA\]/);
-             if (circuitDataMatch) {
-               try {
-                 const circuitData = JSON.parse(circuitDataMatch[1]);
-                 if (circuitData.config) {
-                   // Support both old nested structure (pauses.circuits) and new flat structure (pauseCircuits)
-                   let pauseSeconds = null;
-                   if (circuitData.config.pauseCircuits !== undefined) {
-                     // New structure: pauseCircuits in minutes
-                     pauseSeconds = circuitData.config.pauseCircuits * 60; // Convert to seconds
-                   } else if (circuitData.config.pauses && circuitData.config.pauses.circuits) {
-                     // Old structure: pauses.circuits in seconds
-                     pauseSeconds = circuitData.config.pauses.circuits;
-                   }
-                   
-                   if (pauseSeconds !== null) {
-                   const minutes = Math.floor(pauseSeconds / 60);
-                   const seconds = pauseSeconds % 60;
-                   return `${minutes}'${seconds.toString().padStart(2, '0')}"`;
-                   }
-                 }
-               } catch (e) {
-                 console.error('Failed to parse circuit data:', e);
-               }
-             }
-           }
-           return '—';
-         })() : (movelap.macroFinal || '—')}
+      <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+        {macroValue === 0 ? '0' : macroValue || '—'}
        </td>
        
        {/* Alarm & Sound - Hide for circuit-based moveframes */}
-      {!isCircuitBased && (
-      <td className={`border border-gray-300 px-1 py-1 text-center ${movelap.isNewlyAdded ? 'text-red-600' : ''}`}>
-        <div className="flex items-center justify-center gap-1">
-          {getSoundIcon(movelap)}
-          {movelap.alarm && movelap.alarm !== -1 && <span className="text-[8px]">{Math.abs(movelap.alarm)}</span>}
-        </div>
-      </td>
-      )}
+       {!moveframe.isCircuitBased && (
+      <td className={`border border-gray-300 px-1 py-1 text-center ${isNewlyAdded ? 'text-red-600' : ''}`}>
+         <div className="flex items-center justify-center gap-1">
+           {getSoundIcon(movelap)}
+           {movelap.alarm && movelap.alarm !== -1 && <span className="text-[8px]">{Math.abs(movelap.alarm)}</span>}
+         </div>
+       </td>
+       )}
       
       {/* Notes - Display with increased width for better readability */}
       {/* 2026-01-24 - Increased width 4x to 1200px for circuit movelap table */}
       {/* 2026-01-26 - Added red text styling for newly added movelaps */}
-      <td className={`border border-gray-300 px-2 py-1 text-left text-xs ${movelap.isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '300px' }}>
+      <td className={`border border-gray-300 px-2 py-1 text-left text-xs ${isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '300px' }}>
         {/* 2026-01-22 11:45 UTC - Made notes field editable */}
         {/* 2026-01-22 12:00 UTC - Fixed to use controlled component with local state */}
         {/* 2026-01-22 15:35 UTC - Added onRefresh callback */}
@@ -510,7 +534,7 @@ function SortableMovelapRow({
           movelap={movelap}
           stripHtmlTags={stripHtmlTags}
           onRefresh={onRefresh}
-          isNewlyAdded={movelap.isNewlyAdded}
+          isNewlyAdded={isNewlyAdded}
         />
       </td>
       
@@ -598,18 +622,32 @@ function SortableMovelapRow({
         >
           Paste
         </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onAddMovelapAfter) {
-              onAddMovelapAfter(movelap, index);
-            }
-            setShowOptionsDropdown(false);
-          }}
-          className="block w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100"
-        >
-          Add movelap
-        </button>
+        {!moveframe.isCircuitBased && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onAddMovelapAfter) {
+                onAddMovelapAfter(movelap, index);
+              }
+              setShowOptionsDropdown(false);
+            }}
+            className="block w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100"
+          >
+            Add movelap
+          </button>
+        )}
+        {!!(movelap.circuitLetter || moveframe.isCircuitBased) && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddStationAfter?.(movelap, index);
+              setShowOptionsDropdown(false);
+            }}
+            className="block w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100"
+          >
+            Add station
+          </button>
+        )}
         <div className="border-t border-gray-200 my-1"></div>
         <button
           onClick={(e) => {
@@ -648,6 +686,26 @@ export default function MovelapDetailTable({
   const sectionColor = moveframe.section?.color || '#5b8def';
   const sectionName = moveframe.section?.name || 'Default';
   const [copiedMovelap, setCopiedMovelap] = useState<any>(null);
+  const [newlyAddedStationMovelapIds, setNewlyAddedStationMovelapIds] = useState<Set<string>>(() => new Set());
+  const [showAddStationModal, setShowAddStationModal] = useState(false);
+  const [addStationDraft, setAddStationDraft] = useState(() => ({
+    muscularSector: '',
+    exercise: '',
+    reps: '',
+    pause: '',
+    macroFinal: '',
+    notes: '',
+    seriesNumber: 1
+  }));
+  const [isAddingStation, setIsAddingStation] = useState(false);
+  const [addStationTarget, setAddStationTarget] = useState<{
+    afterMovelapId: string;
+    circuitLetter: string;
+    circuitIndex?: number;
+    seriesNumber?: number;
+    localSeriesNumber: number;
+    stationNumber: number;
+  } | null>(null);
   // 2026-01-22 14:15 UTC - Strip circuit tags from initial notes value
   const [noteValue, setNoteValue] = useState(() => {
     let cleanNotes = moveframe.notes || '';
@@ -662,11 +720,38 @@ export default function MovelapDetailTable({
   const [currentMovelapIndex, setCurrentMovelapIndex] = useState(0); // Current movelap being viewed
   const [showManualContentPopup, setShowManualContentPopup] = useState(false); // Popup for manual content
   const [popupContentType, setPopupContentType] = useState<'summary' | 'detail'>('detail'); // Track which section is being viewed
+
+  React.useEffect(() => {
+    setNewlyAddedStationMovelapIds(new Set());
+  }, [moveframe.id]);
+
+  React.useEffect(() => {
+    setNewlyAddedStationMovelapIds((prev) => {
+      if (!prev.size) return prev;
+      const currentIds = new Set<string>((moveframe.movelaps || []).map((ml: any) => ml.id));
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (currentIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [moveframe.movelaps]);
   
   // 2026-01-22 10:50 UTC - Extract circuit data from moveframe notes if present
   // 2026-01-22 11:30 UTC - Also extract pause among circuits value
   let circuitBasedMoveframe = false;
   let pauseAmongCircuits = '—';
+  let circuitConfig: any = null;
+  let circuitRows: any[] | null = null;
+  let pauseCircuitsSeconds: number | null = null;
+  let pauseSeriesSeconds: number | null = null;
+  let defaultSeriesPerCircuit: number | null = null;
+  let defaultStationsPerCircuit: number | null = null;
   if (moveframe.notes && typeof moveframe.notes === 'string') {
     const circuitDataMatch = moveframe.notes.match(/\[CIRCUIT_DATA\](.*?)\[\/CIRCUIT_DATA\]/);
     if (circuitDataMatch) {
@@ -674,17 +759,19 @@ export default function MovelapDetailTable({
         const circuitData = JSON.parse(circuitDataMatch[1]);
         circuitBasedMoveframe = circuitData.isCircuitBased || false;
         moveframe.isCircuitBased = circuitBasedMoveframe;
+        circuitConfig = circuitData.config || null;
+        circuitRows = circuitData.circuits || null;
         
         // Extract pause among circuits (pauseCircuits in minutes or seconds)
         // Support both old nested structure (pauses.circuits) and new flat structure (pauseCircuits)
         let pauseValue = null;
-        if (circuitData.config) {
-          if (circuitData.config.pauseCircuits !== undefined) {
+        if (circuitConfig) {
+          if (circuitConfig.pauseCircuits !== undefined) {
             // New structure: pauseCircuits in minutes
-            pauseValue = circuitData.config.pauseCircuits * 60; // Convert to seconds
-          } else if (circuitData.config.pauses && circuitData.config.pauses.circuits) {
+            pauseValue = circuitConfig.pauseCircuits * 60; // Convert to seconds
+          } else if (circuitConfig.pauses && circuitConfig.pauses.circuits) {
             // Old structure: pauses.circuits in seconds
-            pauseValue = circuitData.config.pauses.circuits;
+            pauseValue = circuitConfig.pauses.circuits;
           }
           
           if (pauseValue !== null) {
@@ -692,6 +779,21 @@ export default function MovelapDetailTable({
             const seconds = pauseValue % 60;
           pauseAmongCircuits = `${minutes}'${seconds.toString().padStart(2, '0')}"`;
           }
+
+          if (circuitConfig.pauseCircuits !== undefined) {
+            pauseCircuitsSeconds = circuitConfig.pauseCircuits * 60;
+          } else if (circuitConfig.pauses && circuitConfig.pauses.circuits !== undefined) {
+            pauseCircuitsSeconds = circuitConfig.pauses.circuits;
+          }
+
+          if (circuitConfig.pauseSeries !== undefined) {
+            pauseSeriesSeconds = circuitConfig.pauseSeries * 60;
+          } else if (circuitConfig.pauses && circuitConfig.pauses.series !== undefined) {
+            pauseSeriesSeconds = circuitConfig.pauses.series;
+          }
+
+          defaultSeriesPerCircuit = circuitConfig.seriesPerCircuit ?? circuitConfig.seriesCount ?? circuitConfig.series ?? null;
+          defaultStationsPerCircuit = circuitConfig.stationsPerCircuit ?? circuitConfig.stations ?? null;
         }
       } catch (e) {
         console.error('Failed to parse circuit data:', e);
@@ -699,19 +801,22 @@ export default function MovelapDetailTable({
     }
   }
 
-  // Fallback: Check if any movelaps indicate this is a circuit (via CIRCUIT_META tag)
-  // This handles cases where moveframe.notes might not have the [CIRCUIT_DATA] tag yet
-  if (!circuitBasedMoveframe && movelaps && movelaps.length > 0) {
-    const hasCircuitMovelaps = movelaps.some((ml: any) => 
-      (ml.notes && typeof ml.notes === 'string' && ml.notes.includes('[CIRCUIT_META]')) ||
-      (ml.circuitLetter) // If already parsed/populated
-    );
-    
-    if (hasCircuitMovelaps) {
-      circuitBasedMoveframe = true;
-      moveframe.isCircuitBased = true;
-    }
+  const circuitInfoByLetter = new Map<string, { seriesCount: number; stationsPerSeries: number }>();
+  if (Array.isArray(circuitRows)) {
+    circuitRows.forEach((circuit: any) => {
+      const seriesCount = circuit.series ?? circuit.stationsBySeries?.length ?? defaultSeriesPerCircuit ?? 0;
+      const stationsPerSeries = circuit.stationsBySeries?.[0]?.length ?? defaultStationsPerCircuit ?? 0;
+      if (circuit.letter) {
+        circuitInfoByLetter.set(circuit.letter, { seriesCount, stationsPerSeries });
+      }
+    });
   }
+
+  const formatPause = (pauseSeconds: number) => {
+    const minutes = Math.floor(pauseSeconds / 60);
+    const seconds = pauseSeconds % 60;
+    return `${minutes}'${seconds.toString().padStart(2, '0')}"`;
+  };
   
   // Navigation for movelaps within the same moveframe
   const hasPreviousMovelap = currentMovelapIndex > 0;
@@ -923,6 +1028,211 @@ export default function MovelapDetailTable({
       }
     } catch (error) {
       console.error('Error pasting movelap:', error);
+    }
+  };
+
+  const handleOpenAddStationModal = (movelap: any) => {
+    const meta = extractCircuitMetaFromNotes(movelap?.notes);
+    const circuitLetter = meta?.circuitLetter ?? movelap?.circuitLetter;
+    const localSeriesNumber = meta?.localSeriesNumber ?? meta?.seriesNumber ?? movelap?.localSeriesNumber ?? movelap?.seriesNumber;
+    const stationNumber = meta?.stationNumber ?? movelap?.stationNumber;
+    if (!circuitLetter || !localSeriesNumber || !stationNumber) return;
+
+    const baseNotes = typeof movelap?.notes === 'string' ? movelap.notes : '';
+    const cleanedNotes = baseNotes
+      .replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '')
+      .replace(/\[CIRCUIT_DATA\].*?\[\/CIRCUIT_DATA\]/g, '')
+      .trim();
+    setAddStationDraft({
+      muscularSector: movelap?.muscularSector || '',
+      exercise: movelap?.exercise || '',
+      reps: typeof movelap?.reps === 'number' ? String(movelap.reps) : (movelap?.reps ? String(movelap.reps) : ''),
+      pause: movelap?.pause ? formatPauseInput(movelap.pause) : '',
+      macroFinal: movelap?.macroFinal || '',
+      notes: cleanedNotes,
+      seriesNumber: localSeriesNumber
+    });
+    setAddStationTarget({
+      afterMovelapId: movelap.id,
+      circuitLetter,
+      circuitIndex: meta?.circuitIndex ?? movelap?.circuitIndex,
+      seriesNumber: meta?.seriesNumber ?? movelap?.seriesNumber,
+      localSeriesNumber,
+      stationNumber
+    });
+    setShowAddStationModal(true);
+  };
+
+  const extractCircuitDataFromNotes = (notes: unknown) => {
+    if (typeof notes !== 'string') return null;
+    const match = notes.match(/\[CIRCUIT_DATA\]([\s\S]*?)\[\/CIRCUIT_DATA\]/);
+    if (!match?.[1]) return null;
+    try {
+      return JSON.parse(match[1]);
+    } catch {
+      return null;
+    }
+  };
+
+  const upsertCircuitDataInNotes = (notes: unknown, circuitData: any) => {
+    const base = typeof notes === 'string' ? notes : '';
+    const cleaned = base.replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '').trim();
+    const metaString = `[CIRCUIT_DATA]${JSON.stringify(circuitData)}[/CIRCUIT_DATA]`;
+    return cleaned ? `${cleaned}\n\n${metaString}` : metaString;
+  };
+
+  const parsePauseToSeconds = (value: unknown) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value));
+    if (typeof value !== 'string') return 0;
+    const s = value.trim();
+    if (!s) return 0;
+    if (/^\d+$/.test(s)) return Math.max(0, parseInt(s, 10));
+    if (s.includes("'")) {
+      const parts = s.split("'");
+      const mStr = (parts[0] ?? '').replace(/\D/g, '');
+      const secStr = parts.slice(1).join("'").replace(/\D/g, '');
+      const m = mStr ? parseInt(mStr, 10) : 0;
+      const sec = secStr ? parseInt(secStr.slice(0, 2), 10) : 0;
+      return Math.max(0, m * 60 + sec);
+    }
+    const secOnly = s.match(/^(\d+)\s*"?$/);
+    if (secOnly) return Math.max(0, parseInt(secOnly[1], 10));
+    return 0;
+  };
+
+  const formatPauseInput = (raw: unknown) => {
+    const s = typeof raw === 'string' ? raw : String(raw ?? '');
+    const digits = s.replace(/\D/g, '').slice(0, 4);
+    if (!digits) return '';
+    if (digits.length <= 2) return `${digits}'`;
+    const mm = digits.slice(0, 2);
+    const ss = digits.slice(2);
+    return `${mm}'${ss}''`;
+  };
+
+  const handleAddStation = async () => {
+    if (!addStationTarget) return;
+    if (isAddingStation) return;
+
+    setIsAddingStation(true);
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setIsAddingStation(false);
+      return;
+    }
+
+    try {
+      const moveframeResponse = await fetch(`/api/workouts/moveframes/${moveframe.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!moveframeResponse.ok) return;
+
+      const freshMoveframe = await moveframeResponse.json();
+      const allMovelaps = [...(freshMoveframe.movelaps || [])].sort((a: any, b: any) =>
+        (a.repetitionNumber || 0) - (b.repetitionNumber || 0)
+      );
+      const afterIdx = allMovelaps.findIndex((ml: any) => ml.id === addStationTarget.afterMovelapId);
+      if (afterIdx < 0) return;
+      const afterMovelap = allMovelaps[afterIdx];
+      const baseRepetitionNumber = (afterMovelap?.repetitionNumber || (afterIdx + 1)) + 1;
+      const createResponse = await fetch('/api/workouts/movelaps', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          moveframeId: moveframe.id,
+          repetitionNumber: baseRepetitionNumber,
+          muscularSector: addStationDraft.muscularSector,
+          exercise: addStationDraft.exercise,
+          reps: addStationDraft.reps,
+          pause: addStationDraft.pause,
+          macroFinal: addStationDraft.macroFinal,
+          notes: addStationDraft.notes,
+          status: 'PENDING'
+        })
+      });
+      if (!createResponse.ok) return;
+      const created = await createResponse.json();
+      if (created?.id) {
+        setNewlyAddedStationMovelapIds((prev) => {
+          const next = new Set(prev);
+          next.add(created.id);
+          return next;
+        });
+      }
+
+      const updatedMoveframeResponse = await fetch(`/api/workouts/moveframes/${moveframe.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!updatedMoveframeResponse.ok) return;
+
+      const updatedMoveframe = await updatedMoveframeResponse.json();
+      const updatedMovelaps = [...(updatedMoveframe.movelaps || [])].sort((a: any, b: any) =>
+        (a.repetitionNumber || 0) - (b.repetitionNumber || 0)
+      );
+
+      await fetch('/api/workouts/movelaps/reorder', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          movelaps: updatedMovelaps.map((ml: any, idx: number) => ({
+            id: ml.id,
+            repetitionNumber: idx + 1,
+            ...(ml.id === created.id ? { isNewlyAdded: true } : {})
+          }))
+        })
+      });
+
+      try {
+        const circuitData = extractCircuitDataFromNotes(freshMoveframe.notes);
+        if (circuitData?.circuits && Array.isArray(circuitData.circuits)) {
+          const nextCircuitData = JSON.parse(JSON.stringify(circuitData));
+          const circuit = nextCircuitData.circuits.find((c: any) => c?.letter === addStationTarget.circuitLetter);
+          const seriesIdx = Math.max(0, (addStationDraft.seriesNumber || addStationTarget.localSeriesNumber || 1) - 1);
+          if (circuit) {
+            if (!Array.isArray(circuit.stationsBySeries)) circuit.stationsBySeries = [];
+            if (!Array.isArray(circuit.stationsBySeries[seriesIdx])) circuit.stationsBySeries[seriesIdx] = [];
+            const seriesStations = circuit.stationsBySeries[seriesIdx] as any[];
+            const insertIndex = Math.min(Math.max(0, addStationTarget.stationNumber), seriesStations.length);
+            const newStation = {
+              stationNumber: insertIndex + 1,
+              sector: addStationDraft.muscularSector || '',
+              exercise: addStationDraft.exercise || '',
+              reps: addStationDraft.reps ? String(addStationDraft.reps) : '',
+              pause: parsePauseToSeconds(addStationDraft.pause),
+              notes: addStationDraft.notes || ''
+            };
+            seriesStations.splice(insertIndex, 0, newStation);
+            circuit.stationsBySeries[seriesIdx] = seriesStations.map((st: any, idx: number) => ({
+              ...st,
+              stationNumber: idx + 1
+            }));
+
+            const nextNotes = upsertCircuitDataInNotes(freshMoveframe.notes ?? '', nextCircuitData);
+            await fetch(`/api/workouts/moveframes/${moveframe.id}`, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ notes: nextNotes })
+            });
+          }
+        }
+      } catch {}
+
+      setShowAddStationModal(false);
+      setAddStationTarget(null);
+      if (onRefresh) {
+        await onRefresh();
+      }
+    } finally {
+      setIsAddingStation(false);
     }
   };
 
@@ -1524,6 +1834,7 @@ export default function MovelapDetailTable({
                     )}
                     <SortableMovelapRow
                       movelap={movelap}
+                      isNewlyAdded={newlyAddedStationMovelapIds.has(movelap.id) || !!movelap.isNewlyAdded}
                       index={index}
                       sequenceNumber={movelapSequences.get(movelap.id) || index + 1}
                       moveframeLetter={moveframeLetter}
@@ -1535,7 +1846,13 @@ export default function MovelapDetailTable({
                       onCopyMovelap={handleCopyMovelap}
                       onPasteMovelap={handlePasteMovelap}
                       onAddMovelapAfter={onAddMovelapAfter}
+                      onAddStationAfter={(targetMovelap) => handleOpenAddStationModal(targetMovelap)}
                       pauseAmongCircuits={pauseAmongCircuits}
+                      circuitInfoByLetter={circuitInfoByLetter}
+                      defaultSeriesPerCircuit={defaultSeriesPerCircuit}
+                      defaultStationsPerCircuit={defaultStationsPerCircuit}
+                      pauseCircuitsSeconds={pauseCircuitsSeconds}
+                      pauseSeriesSeconds={pauseSeriesSeconds}
                       onRefresh={onRefresh}
                       isCircuitBased={circuitBasedMoveframe}
                     />
@@ -1545,6 +1862,202 @@ export default function MovelapDetailTable({
             </tbody>
           </table>
           </div>
+
+          {showAddStationModal && addStationTarget && typeof document !== 'undefined' && ReactDOM.createPortal(
+            <div
+              className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999999] p-4"
+              onClick={() => {
+                if (isAddingStation) return;
+                setShowAddStationModal(false);
+                setAddStationTarget(null);
+              }}
+              style={{ margin: 0 }}
+            >
+              <div
+                className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="bg-gradient-to-r from-rose-600 to-red-600 text-white p-4 flex items-center justify-between">
+                  <div className="font-bold text-base">Add station</div>
+                  <button
+                    onClick={() => {
+                      if (isAddingStation) return;
+                      setShowAddStationModal(false);
+                      setAddStationTarget(null);
+                    }}
+                    className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="p-4 space-y-4">
+                  <div className="text-xs text-gray-700">
+                    Circuit {addStationTarget.circuitLetter} · Series {addStationDraft.seriesNumber} · After station {addStationTarget.stationNumber}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {(() => {
+                      const targetCircuit = Array.isArray(circuitRows)
+                        ? (circuitRows as any[]).find((c) => c?.letter === addStationTarget.circuitLetter)
+                        : null;
+                      const seriesIdx = Math.max(0, (addStationDraft.seriesNumber || 1) - 1);
+                      const seriesCount =
+                        (targetCircuit?.stationsBySeries?.length as number | undefined) ??
+                        circuitInfoByLetter.get(addStationTarget.circuitLetter)?.seriesCount ??
+                        defaultSeriesPerCircuit ??
+                        10;
+                      const seriesLen =
+                        (targetCircuit?.stationsBySeries?.[seriesIdx]?.length as number | undefined) ??
+                        circuitInfoByLetter.get(addStationTarget.circuitLetter)?.stationsPerSeries ??
+                        defaultStationsPerCircuit ??
+                        0;
+                      const isTargetEndOfSeries = !!(seriesLen && addStationTarget.stationNumber === seriesLen);
+
+                      return (
+                        <>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-800 mb-1">Series</label>
+                            <select
+                              value={addStationDraft.seriesNumber}
+                              onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, seriesNumber: parseInt(e.target.value) || 1 }))}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              disabled={isAddingStation || isTargetEndOfSeries}
+                            >
+                              {Array.from({ length: Math.max(1, Math.min(10, seriesCount)) }, (_, idx) => idx + 1).map((n) => (
+                                <option key={n} value={n}>{n}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-800 mb-1">Macro</label>
+                            <select
+                              value={addStationDraft.macroFinal}
+                              onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, macroFinal: e.target.value }))}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              disabled={isAddingStation || !isTargetEndOfSeries}
+                            >
+                              <option value="">—</option>
+                              {MACRO_FINAL_OPTIONS.map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </>
+                      );
+                    })()}
+
+                    <div className="col-span-2">
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Sector</label>
+                      <select
+                        value={addStationDraft.muscularSector}
+                        onChange={(e) =>
+                          setAddStationDraft((prev: any) => ({
+                            ...prev,
+                            muscularSector: e.target.value,
+                            exercise: ''
+                          }))
+                        }
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isAddingStation}
+                      >
+                        <option value="">—</option>
+                        {Object.keys(MUSCULAR_SECTOR_IMAGES).map((sector) => (
+                          <option key={sector} value={sector}>{sector}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="col-span-2">
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Exercise</label>
+                      <select
+                        value={addStationDraft.exercise}
+                        onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, exercise: e.target.value }))}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isAddingStation || !addStationDraft.muscularSector}
+                      >
+                        <option value="">—</option>
+                        {(() => {
+                          if (!addStationDraft.muscularSector) return null;
+                          const options = getExercisesBySector(addStationDraft.muscularSector);
+                          const hasCurrent =
+                            !!addStationDraft.exercise && options.some((o) => o.name === addStationDraft.exercise);
+                          return (
+                            <>
+                              {!hasCurrent && !!addStationDraft.exercise && (
+                                <option value={addStationDraft.exercise}>{addStationDraft.exercise}</option>
+                              )}
+                              {options.map((o) => (
+                                <option key={o.id} value={o.name}>{o.name}</option>
+                              ))}
+                            </>
+                          );
+                        })()}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Repetitions</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={addStationDraft.reps}
+                        onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, reps: e.target.value }))}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isAddingStation}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Pause</label>
+                      <input
+                        type="text"
+                        value={addStationDraft.pause}
+                        onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, pause: formatPauseInput(e.target.value) }))}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isAddingStation}
+                      />
+                    </div>
+
+                    <div className="col-span-2">
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Notes</label>
+                      <textarea
+                        value={addStationDraft.notes}
+                        onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, notes: e.target.value }))}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm min-h-[90px]"
+                        disabled={isAddingStation}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      onClick={() => {
+                        if (isAddingStation) return;
+                        setShowAddStationModal(false);
+                        setAddStationTarget(null);
+                      }}
+                      className="px-3 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                      disabled={isAddingStation}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleAddStation}
+                      className="px-3 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:bg-gray-400"
+                      disabled={isAddingStation}
+                    >
+                      {isAddingStation ? 'Adding…' : 'Add'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
         </div>
       </SortableContext>
     </DndContext>

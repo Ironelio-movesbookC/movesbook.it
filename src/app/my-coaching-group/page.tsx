@@ -32,18 +32,6 @@ function MyCoachingGroupContent() {
   const { user, loading: authLoading } = useAuth();
   const groupId = searchParams?.get('groupId');
 
-  // Redirect to home if not authenticated
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/');
-    }
-  }, [user, authLoading, router]);
-
-  // Don't render if not authenticated
-  if (authLoading || !user) {
-    return null;
-  }
-  
   const [coachingGroup, setCoachingGroup] = useState<CoachingGroup | null>(null);
   const [members, setMembers] = useState<CoachingGroupMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,7 +41,15 @@ function MyCoachingGroupContent() {
   const [addingMember, setAddingMember] = useState(false);
   const [addMemberError, setAddMemberError] = useState('');
 
+  // Redirect to home if not authenticated
   useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/');
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
     if (!groupId) {
       // If no groupId selected, redirect to My Page to select a coaching group
       if (user?.userType === 'COACH') {
@@ -65,6 +61,11 @@ function MyCoachingGroupContent() {
       loadCoachingGroupData();
     }
   }, [groupId, user, router]);
+
+  // Don't render if not authenticated
+  if (authLoading || !user) {
+    return null;
+  }
 
   const loadCoachingGroupData = async () => {
     if (!groupId) return;

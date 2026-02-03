@@ -834,6 +834,18 @@ export const isSportSectionB = (sport: string): boolean => {
   return SPORT_SECTION_B_NON_AEROBIC_CATALOG.includes(sport as any);
 };
 
+export const ALLOWED_CIRCUIT_SPORTS = [
+  'BODY_BUILDING',
+  'STRETCHING',
+  'CALISTENIC',
+  'CROSSFIT',
+  'GYMNASTIC'
+] as const;
+
+export const isCircuitFeatureSport = (sport: string): boolean => {
+  return (ALLOWED_CIRCUIT_SPORTS as readonly string[]).includes(sport as any);
+};
+
 // Sports that use distance/duration tracking (all others use series/repetitions)
 export const DISTANCE_BASED_SPORTS = [
   'SWIM',

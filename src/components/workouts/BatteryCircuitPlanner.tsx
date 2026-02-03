@@ -456,6 +456,20 @@ ${seriesAddedInfo}`;
                 </div>
               </div>
             </div>
+            <div className="mt-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Insert after which circuit</label>
+              <select
+                value={insertAfterCircuit}
+                onChange={(e) => setInsertAfterCircuit(e.target.value)}
+                className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg"
+              >
+                <option value="START">Before Circuit A</option>
+                {exercises.map(ex => (
+                  <option key={ex.letter} value={ex.letter}>After Circuit {ex.letter}</option>
+                ))}
+                <option value="">At End</option>
+              </select>
+            </div>
           </div>
           
           {/* Modal Footer */}

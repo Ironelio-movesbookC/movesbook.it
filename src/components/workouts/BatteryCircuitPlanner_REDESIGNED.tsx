@@ -31,8 +31,7 @@ interface BatteryCircuitPlannerProps {
   onCancel: () => void;
   existingMoveframe?: any; // For edit mode
   startInSecondView?: boolean; // Start directly in circuit grid view
-  targetMovelap?: any; // The specific movelap being edited
-  hideUI?: boolean; // Hide UI elements (for single movelap editing)
+  editingMovelapTarget?: { circuitLetter?: string; circuitIndex?: number; localSeriesNumber?: number; stationNumber?: number } | null;
 }
 
 // Helper function to extract circuit data from moveframe notes
@@ -61,8 +60,7 @@ export default function BatteryCircuitPlanner({
   onCancel,
   existingMoveframe,
   startInSecondView,
-  targetMovelap,
-  hideUI
+  editingMovelapTarget
 }: BatteryCircuitPlannerProps) {
   // Extract existing circuit data if in edit mode
   const existingCircuitData = existingMoveframe ? extractCircuitData(existingMoveframe.notes) : null;
@@ -234,15 +232,14 @@ export default function BatteryCircuitPlanner({
           startInTablePhase: true,
           existingCircuits: existingCircuits, // Pass existing circuit data for edit mode
           editingFromMovelap: startInSecondView, // Pass flag for renaming button
-          targetMovelap: targetMovelap, // Pass target movelap for auto-opening exercise modal
-          hideUI: hideUI // Pass hideUI flag
+          editingMovelapTarget: editingMovelapTarget
         }}
         onSave={(data: any) => {
           // Pass the circuit data to the parent component
           onCreateCircuit({
             ...data,
-            // Use data.description from CircuitPlanner_OLD (the preview), not the local description state
-            settings: {
+            // Prefer settings coming from the old planner (it may have been edited there)
+            settings: data?.config ?? data?.settings ?? {
               numCircuits,
               pauseCircuits,
               stationsPerCircuit,
@@ -258,8 +255,8 @@ export default function BatteryCircuitPlanner({
           setShowOldCircuitPlanner(false);
         }}
         onCancel={() => {
-          if (hideUI) {
-            onCancel();
+          if (startInSecondView) {
+            onCancel(); // Close the parent modal completely if we started in second view (e.g. from movelap edit)
           } else {
             setShowOldCircuitPlanner(false);
           }
@@ -480,9 +477,9 @@ export default function BatteryCircuitPlanner({
                 </div>
               </div>
               
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer bg-white border border-gray-300 rounded px-3 py-2 flex-1">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 bg-white border border-gray-300 rounded px-2 py-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
                     <input 
                       type="radio" 
                       checked={seriesMode === 'series'} 
@@ -491,24 +488,19 @@ export default function BatteryCircuitPlanner({
                     />
                     <span className="text-sm font-medium text-gray-700">Set series\circuit</span>
                   </label>
-                  
                   <select 
                     value={seriesPerCircuit} 
                     onChange={(e) => setSeriesPerCircuit(parseInt(e.target.value))}
                     disabled={seriesMode !== 'series'}
-                    className={`w-20 px-2 py-2 border rounded text-center focus:ring-2 focus:ring-blue-500 text-base font-bold ${
-                      seriesMode === 'series' ? 'border-gray-400 bg-white' : 'border-gray-200 bg-gray-100 text-gray-400'
-                    }`}
+                    className="w-16 px-2 py-1 border border-gray-400 rounded text-center focus:ring-2 focus:ring-blue-500 text-base font-bold disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-300"
                   >
                     {[1,2,3,4,5,6,7,8,9,10].map(n => (
                       <option key={n} value={n}>{n}</option>
                     ))}
                   </select>
-                  <button type="button" className="w-7 h-7 rounded-full bg-gray-300 hover:bg-gray-400 flex items-center justify-center text-gray-700 text-lg font-bold opacity-0">×</button>
                 </div>
-
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer bg-white border border-gray-300 rounded px-3 py-2 flex-1">
+                <div className="flex items-center gap-2 bg-white border border-gray-300 rounded px-2 py-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
                     <input 
                       type="radio" 
                       checked={seriesMode === 'time'} 
@@ -517,21 +509,18 @@ export default function BatteryCircuitPlanner({
                     />
                     <span className="text-sm font-medium text-gray-700">Set time\circuit</span>
                   </label>
-
                   <select 
                     value={timePerCircuit} 
                     onChange={(e) => setTimePerCircuit(parseInt(e.target.value))}
                     disabled={seriesMode !== 'time'}
-                    className={`w-20 px-2 py-2 border rounded text-center focus:ring-2 focus:ring-blue-500 text-base font-bold ${
-                      seriesMode === 'time' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-gray-100 text-gray-400'
-                    }`}
+                    className="w-16 px-2 py-1 border border-blue-500 rounded text-center focus:ring-2 focus:ring-blue-500 text-base font-bold bg-blue-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-300"
                   >
                     {[1,2,3,4,5,6,7,8,9,10].map(n => (
                       <option key={n} value={n}>{n}'</option>
                     ))}
                   </select>
-                  <button type="button" className="w-7 h-7 rounded-full bg-gray-300 hover:bg-gray-400 flex items-center justify-center text-gray-700 text-lg font-bold">×</button>
                 </div>
+                <button type="button" className="w-7 h-7 rounded-full bg-gray-300 hover:bg-gray-400 flex items-center justify-center text-gray-700 text-lg font-bold">×</button>
               </div>
             </div>
             
@@ -756,7 +745,7 @@ export default function BatteryCircuitPlanner({
                   </span>
                 </label>
                 <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">Pause\stations</label>
+                <label className="text-sm font-medium text-gray-700">Pause\series</label>
                 <select 
                   value={executionPauseStations || ''} 
                   onChange={(e) => setExecutionPauseStations(e.target.value)}

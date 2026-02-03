@@ -249,13 +249,20 @@ export default function EditDayModal({
                 ref={editorRef}
                 contentEditable={!isSubmitting}
                 suppressContentEditableWarning
-                onInput={(e) => setNotesContent(e.currentTarget.innerHTML)}
+                onInput={(e) => {
+                  // console.log('📝 Input event in EditDayModal');
+                  setNotesContent(e.currentTarget.innerHTML);
+                }}
                 onPaste={(e) => {
                   // Allow default paste behavior to preserve formatting from HTML
-                  console.log('📋 Paste event in EditDayModal - allowing formatted paste');
+                  // console.log('📋 Paste event in EditDayModal - allowing formatted paste');
+                  
+                  // Capture the element immediately to avoid event pooling/reference issues
+                  const target = e.currentTarget;
+                  
                   // The contentEditable will handle the paste automatically with formatting
+                  // We just need to sync the state after the DOM updates
                   setTimeout(() => {
-                    const target = e.currentTarget as HTMLDivElement;
                     if (target) {
                       setNotesContent(target.innerHTML);
                     }
@@ -297,6 +304,7 @@ export default function EditDayModal({
     </div>
   );
 }
+
 
 
 
