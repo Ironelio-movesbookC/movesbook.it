@@ -1316,9 +1316,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     // 2026-01-21 22:10 UTC - Generate preview text
     // 2026-01-22 10:20 UTC - Format like: "Circuit: X circuits x Y series Pause Z" M0'"
     // 2026-01-27 - Modified for time mode: "Circuit X of Y stations to do for Z' x N series"
-    const circuitsToUse = circuitsOverride || circuits;
-    const parts: string[] = [];
     const circuitsToUse = overrideCircuits ?? circuits;
+    const parts: string[] = [];
     
     // Circuit info
     const avgSeries = circuitsToUse.length > 0 
