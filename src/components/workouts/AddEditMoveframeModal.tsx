@@ -4863,6 +4863,14 @@ export default function AddEditMoveframeModal({
               >
                 Save moveframe and its movelaps
               </button>
+              <button
+                onClick={() => fastPlannerRef.current?.openPreferences()}
+                className="ml-2 px-6 py-2 bg-white text-black border-2 border-gray-300 rounded hover:border-blue-500 flex items-center justify-center w-64"
+                title="Open preferences"
+              >
+                <Image src="/preference.png" alt="Preferences" width={20} height={20} className="mr-2 object-contain" unoptimized />
+                Preferences
+              </button>
             </div>
           </div>
         )}
