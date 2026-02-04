@@ -5,6 +5,7 @@ import { useSportIconType } from '@/hooks/useSportIconType';
 import { DISTANCE_BASED_SPORTS, shouldShowDistance, getDistanceUnit, formatMoveframeType } from '@/constants/moveframe.constants';
 import PrintOptionsModal, { PrintOptions } from './PrintOptionsModal';
 import { useAuth } from '@/hooks/useAuth';
+import { sanitizeWorkoutHtml } from '@/utils/sanitizeWorkoutHtml';
 
 interface WeekTotalsModalProps {
   isOpen: boolean;
@@ -67,6 +68,7 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
     }
     return week;
   }, [isMultiWeekView, weeks, currentWeekIndex, week]);
+  const displayWeekNotesHtml = sanitizeWorkoutHtml(displayWeek?.notes);
 
   // Navigation handlers
   const goToPreviousWeek = () => {
@@ -1152,7 +1154,7 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
           </div>
 
           {/* Week Planning Notes Section - Toggleable */}
-          {showWeekNotes && displayWeek.notes && (
+          {showWeekNotes && displayWeekNotesHtml && (
             <div className="mb-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-lg">
               <div className="flex items-center gap-2 mb-3">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-700">
@@ -1166,7 +1168,7 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
               </div>
               <div 
                 className="text-sm text-gray-800 bg-white border border-amber-200 rounded-lg p-3 whitespace-pre-wrap"
-                dangerouslySetInnerHTML={{ __html: displayWeek.notes }}
+                dangerouslySetInnerHTML={{ __html: displayWeekNotesHtml }}
               />
             </div>
           )}
@@ -1309,12 +1311,12 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
           </div>
 
           {/* Note of the week */}
-          {displayWeek.notes && displayWeek.notes.trim() && (
+          {displayWeekNotesHtml && (
             <div className="mt-6 mb-4 p-4 bg-yellow-50 border-2 border-yellow-300 rounded-lg">
               <h2 className="text-base font-bold text-gray-900 mb-2">Note of the week</h2>
               <div 
                 className="text-sm text-gray-800"
-                dangerouslySetInnerHTML={{ __html: displayWeek.notes }}
+                dangerouslySetInnerHTML={{ __html: displayWeekNotesHtml }}
               />
             </div>
           )}
@@ -1367,11 +1369,11 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
                           </div>
                           
                           {/* Workout Note */}
-                          {workout.notes && workout.notes.trim() && (
+                          {sanitizeWorkoutHtml(workout.notes) && (
                             <div className="px-3 py-2 bg-blue-50 border-b border-blue-200">
                               <div className="text-xs text-gray-700 italic">
                                 <strong>Note:</strong>{' '}
-                                <span dangerouslySetInnerHTML={{ __html: workout.notes }} />
+                                <span dangerouslySetInnerHTML={{ __html: sanitizeWorkoutHtml(workout.notes) }} />
                               </div>
                             </div>
                           )}
@@ -1417,11 +1419,10 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
                                           {formatMoveframeType(mf.type)}
                                         </td>
                                         <td className="border border-gray-300 px-1 py-2 text-xs">
-                                          {mf.description ? (
-                                            <div dangerouslySetInnerHTML={{ __html: mf.description }} />
-                                          ) : (
-                                            '—'
-                                          )}
+                                          {(() => {
+                                            const html = sanitizeWorkoutHtml(mf.description);
+                                            return html ? <div dangerouslySetInnerHTML={{ __html: html }} /> : '—';
+                                          })()}
                                         </td>
                                         <td className="border border-gray-300 px-1 py-2 text-center font-semibold text-xs">
                                           {mf.movelaps?.length || 0}
@@ -1518,8 +1519,8 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <p className="font-semibold text-gray-700">Notes:</p>
-                {!showAggregatedTotals && displayWeek.notes ? (
-                  <div dangerouslySetInnerHTML={{ __html: displayWeek.notes }} />
+                {!showAggregatedTotals && displayWeekNotesHtml ? (
+                  <div dangerouslySetInnerHTML={{ __html: displayWeekNotesHtml }} />
                 ) : (
                   <p>{showAggregatedTotals ? 'Aggregated summary of all displayed weeks' : 'No notes for this week'}</p>
                 )}

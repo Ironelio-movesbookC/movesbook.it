@@ -9,9 +9,7 @@ import BackgroundsColorsSettings from '@/components/settings/BackgroundsColorsSe
 import ToolsSettings from '@/components/settings/ToolsSettings';
 import FavouritesSettings from '@/components/settings/FavouritesSettings';
 import MyBestSettings from '@/components/settings/MyBestSettings';
-import LanguageSettings from '@/components/settings/LanguageSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
-import AdminManagement from '@/components/settings/AdminManagement';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { 
@@ -19,13 +17,11 @@ import {
   Settings as SettingsIcon,
   Star,
   Trophy,
-  Globe,
   Grid,
-  Save,
-  User
+  Save
 } from 'lucide-react';
 
-type SettingsSection = 'backgrounds' | 'tools' | 'favourites' | 'mybest' | 'languages' | 'grid' | 'admin';
+type SettingsSection = 'backgrounds' | 'tools' | 'favourites' | 'mybest' | 'grid';
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -75,9 +71,7 @@ export default function SettingsPage() {
     { id: 'tools' as SettingsSection, label: t('settings_tools'), icon: SettingsIcon },
     { id: 'favourites' as SettingsSection, label: t('settings_favourites'), icon: Star },
     { id: 'mybest' as SettingsSection, label: t('settings_my_best'), icon: Trophy },
-    { id: 'languages' as SettingsSection, label: t('settings_languages'), icon: Globe },
     { id: 'grid' as SettingsSection, label: t('settings_display_mode'), icon: Grid },
-    { id: 'admin' as SettingsSection, label: 'Admin Management', icon: User },
   ];
 
   const handleSaveAll = () => {
@@ -171,10 +165,6 @@ export default function SettingsPage() {
                     <span className="text-cyan-700 dark:text-cyan-400">Customized</span>
                     <span className="font-semibold text-cyan-600 dark:text-cyan-300">12/24</span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-purple-700 dark:text-purple-400">Languages</span>
-                    <span className="font-semibold text-purple-600 dark:text-purple-300">2</span>
-                  </div>
                 </div>
               </div>
             </div>
@@ -187,9 +177,7 @@ export default function SettingsPage() {
             {activeSection === 'tools' && <ToolsSettings isAdmin={isAdmin} userType={user?.userType} />}
             {activeSection === 'favourites' && <FavouritesSettings />}
               {activeSection === 'mybest' && <MyBestSettings />}
-              {activeSection === 'languages' && <LanguageSettings />}
               {activeSection === 'grid' && <GridDisplaySettings />}
-              {activeSection === 'admin' && <AdminManagement />}
             </div>
           </div>
         </div>

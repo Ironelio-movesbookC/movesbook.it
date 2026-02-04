@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { X } from 'lucide-react';
+import { sanitizeWorkoutHtml } from '@/utils/sanitizeWorkoutHtml';
 
 interface ActivityOverviewPrintModalProps {
   isOpen: boolean;
@@ -155,11 +156,13 @@ export default function ActivityOverviewPrintModal({
                   <p className="text-sm mt-2">Start planning your workouts to see them here!</p>
                 </div>
               ) : (
-                recentWorkouts.map((workout, index) => (
-                  <div 
-                    key={workout.id || index} 
-                    className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50"
-                  >
+                recentWorkouts.map((workout, index) => {
+                  const notesHtml = sanitizeWorkoutHtml(workout.notes);
+                  return (
+                    <div 
+                      key={workout.id || index} 
+                      className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50"
+                    >
                     <div className="flex justify-between items-start mb-2">
                       <h3 className="font-semibold text-gray-900">{workout.name || 'Untitled Workout'}</h3>
                       <span className="text-sm text-gray-500">{workout.date}</span>
@@ -178,13 +181,14 @@ export default function ActivityOverviewPrintModal({
                         <span className="ml-2 font-medium text-gray-900">{workout.sport || 'N/A'}</span>
                       </div>
                     </div>
-                    {workout.notes && (
+                    {notesHtml && (
                       <div className="text-sm text-gray-600 mt-2 italic">
-                        "<span dangerouslySetInnerHTML={{ __html: workout.notes }} />"
+                        <span dangerouslySetInnerHTML={{ __html: notesHtml }} />
                       </div>
                     )}
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

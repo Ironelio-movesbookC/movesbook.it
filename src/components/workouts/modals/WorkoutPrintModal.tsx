@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { X, Printer, FileDown } from 'lucide-react';
 import { getSportIcon } from '@/utils/sportIcons';
 import { formatMoveframeType } from '@/constants/moveframe.constants';
+import { sanitizeWorkoutHtml } from '@/utils/sanitizeWorkoutHtml';
 
 interface WorkoutPrintModalProps {
   isOpen: boolean;
@@ -184,6 +185,7 @@ export default function WorkoutPrintModal({
     month: 'long', 
     day: 'numeric' 
   }) : '';
+  const workoutNotesHtml = sanitizeWorkoutHtml(workout.notes);
 
   // Calculate workout totals
   const calculateTotals = () => {
@@ -306,9 +308,9 @@ export default function WorkoutPrintModal({
               <div className="bg-blue-100 px-4 py-1 text-sm font-semibold text-blue-900">
                 {workout.code || 'N/A'}
               </div>
-              {workout.notes && (
+              {workoutNotesHtml && (
                 <div className="bg-yellow-50 px-4 py-2 text-sm border-l-4 border-yellow-400 mt-2">
-                  <strong>Note:</strong> <span dangerouslySetInnerHTML={{ __html: workout.notes }} />
+                  <strong>Note:</strong> <span dangerouslySetInnerHTML={{ __html: workoutNotesHtml }} />
                 </div>
               )}
             </div>
@@ -326,8 +328,11 @@ export default function WorkoutPrintModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {workout.moveframes.map((mf: any, mfIdx: number) => (
-                    <React.Fragment key={mf.id}>
+                  {workout.moveframes.map((mf: any, mfIdx: number) => {
+                    const mfDescriptionHtml = sanitizeWorkoutHtml(mf.description);
+                    const mfNotesHtml = sanitizeWorkoutHtml(mf.notes);
+                    return (
+                      <React.Fragment key={mf.id}>
                       {/* Moveframe Row */}
                       <tr className={mfIdx % 2 === 0 ? 'bg-blue-50' : 'bg-white'}>
                         <td className="border border-gray-300 px-3 py-2 text-center font-semibold align-top">
@@ -340,15 +345,15 @@ export default function WorkoutPrintModal({
                           {formatMoveframeType(mf.type || 'STANDARD')}
                         </td>
                         <td className="border border-gray-300 px-3 py-2 text-left align-top">
-                          {mf.description ? (
-                            <div dangerouslySetInnerHTML={{ __html: mf.description }} />
+                          {mfDescriptionHtml ? (
+                            <div dangerouslySetInnerHTML={{ __html: mfDescriptionHtml }} />
                           ) : (
                             '-'
                           )}
-                          {mf.notes && (
+                          {mfNotesHtml && (
                             <div className="mt-2 p-2 bg-yellow-100 border-l-2 border-yellow-500 text-xs">
                               <strong>Note:</strong>{' '}
-                              <span dangerouslySetInnerHTML={{ __html: mf.notes }} />
+                              <span dangerouslySetInnerHTML={{ __html: mfNotesHtml }} />
                             </div>
                           )}
                         </td>
@@ -371,8 +376,10 @@ export default function WorkoutPrintModal({
                             <th className="border border-gray-300 px-2 py-1 text-center text-xs" colSpan={3}>Details</th>
                             <th className="border border-gray-300 px-2 py-1 text-center text-xs">Notes</th>
                           </tr>
-                          {mf.movelaps.map((ml: any, mlIdx: number) => (
-                            <tr key={ml.id} className="bg-white">
+                          {mf.movelaps.map((ml: any, mlIdx: number) => {
+                            const mlNotesHtml = sanitizeWorkoutHtml(ml.notes);
+                            return (
+                              <tr key={ml.id} className="bg-white">
                               <td className="border border-gray-300 px-2 py-1 text-center text-xs">
                                 {ml.repetitionNumber || mlIdx + 1}
                               </td>
@@ -408,18 +415,20 @@ export default function WorkoutPrintModal({
                                 </div>
                               </td>
                               <td className="border border-gray-300 px-2 py-1 text-left text-xs">
-                                {ml.notes ? (
-                                  <div dangerouslySetInnerHTML={{ __html: ml.notes }} />
+                                {mlNotesHtml ? (
+                                  <div dangerouslySetInnerHTML={{ __html: mlNotesHtml }} />
                                 ) : (
                                   '-'
                                 )}
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </>
                       )}
                     </React.Fragment>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             ) : (

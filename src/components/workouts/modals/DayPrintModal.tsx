@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import { X, Printer, FileDown } from 'lucide-react';
 import { formatMoveframeType } from '@/constants/moveframe.constants';
+import { sanitizeWorkoutHtml } from '@/utils/sanitizeWorkoutHtml';
 
 interface DayPrintModalProps {
   isOpen: boolean;
@@ -212,6 +213,7 @@ export default function DayPrintModal({
     month: 'long', 
     day: 'numeric' 
   }) : '';
+  const dayNotesHtml = sanitizeWorkoutHtml(day.notes);
 
   // Format time in seconds to readable format
   const formatTime = (seconds: number) => {
@@ -305,17 +307,19 @@ export default function DayPrintModal({
             )}
             
             {/* Day Notes */}
-            {day.notes && (
+            {dayNotesHtml && (
               <div className="day-notes mb-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
                 <strong className="text-gray-700">Day Notes:</strong>{' '}
-                <span className="text-gray-900" dangerouslySetInnerHTML={{ __html: day.notes }} />
+                <span className="text-gray-900" dangerouslySetInnerHTML={{ __html: dayNotesHtml }} />
               </div>
             )}
 
             {/* Workouts */}
             {day.workouts && day.workouts.length > 0 ? (
-              day.workouts.map((workout: any, workoutIdx: number) => (
-                <div key={workout.id} className="workout-separator mb-6">
+              day.workouts.map((workout: any, workoutIdx: number) => {
+                const workoutNotesHtml = sanitizeWorkoutHtml(workout.notes);
+                return (
+                  <div key={workout.id} className="workout-separator mb-6">
                   {/* Workout Header */}
                   <div className="mb-4">
                     <div className="bg-blue-600 text-white px-4 py-2 rounded-t">
@@ -333,9 +337,9 @@ export default function DayPrintModal({
                     <div className="bg-blue-100 px-4 py-1 text-sm font-semibold text-blue-900">
                       {workout.code || 'N/A'}
                     </div>
-                    {workout.notes && (
+                    {workoutNotesHtml && (
                       <div className="bg-yellow-50 px-4 py-2 text-sm border-l-4 border-yellow-400 mt-2">
-                        <strong>Workout Note:</strong> <span dangerouslySetInnerHTML={{ __html: workout.notes }} />
+                        <strong>Workout Note:</strong> <span dangerouslySetInnerHTML={{ __html: workoutNotesHtml }} />
                       </div>
                     )}
                   </div>
@@ -353,8 +357,11 @@ export default function DayPrintModal({
                         </tr>
                       </thead>
                       <tbody>
-                        {workout.moveframes.map((mf: any, mfIdx: number) => (
-                          <React.Fragment key={mf.id}>
+                        {workout.moveframes.map((mf: any, mfIdx: number) => {
+                          const mfDescriptionHtml = sanitizeWorkoutHtml(mf.description);
+                          const mfNotesHtml = sanitizeWorkoutHtml(mf.notes);
+                          return (
+                            <React.Fragment key={mf.id}>
                             {/* Moveframe Row */}
                             <tr className={mfIdx % 2 === 0 ? 'bg-blue-50' : 'bg-white'}>
                               <td className="border border-gray-300 px-3 py-2 text-center font-semibold align-top">
@@ -367,15 +374,15 @@ export default function DayPrintModal({
                                 {formatMoveframeType(mf.type || 'STANDARD')}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-left align-top">
-                                {mf.description ? (
-                                  <div dangerouslySetInnerHTML={{ __html: mf.description }} />
+                                {mfDescriptionHtml ? (
+                                  <div dangerouslySetInnerHTML={{ __html: mfDescriptionHtml }} />
                                 ) : (
                                   '-'
                                 )}
-                                {mf.notes && (
+                                {mfNotesHtml && (
                                   <div className="mt-2 p-2 bg-yellow-100 border-l-2 border-yellow-500 text-xs">
                                     <strong>Note:</strong>{' '}
-                                    <span dangerouslySetInnerHTML={{ __html: mf.notes }} />
+                                    <span dangerouslySetInnerHTML={{ __html: mfNotesHtml }} />
                                   </div>
                                 )}
                               </td>
@@ -398,8 +405,10 @@ export default function DayPrintModal({
                                   <th className="border border-gray-300 px-2 py-1 text-center text-xs" colSpan={3}>Details</th>
                                   <th className="border border-gray-300 px-2 py-1 text-center text-xs">Notes</th>
                                 </tr>
-                                {mf.movelaps.map((ml: any, mlIdx: number) => (
-                                  <tr key={ml.id} className="bg-white">
+                                {mf.movelaps.map((ml: any, mlIdx: number) => {
+                                  const mlNotesHtml = sanitizeWorkoutHtml(ml.notes);
+                                  return (
+                                    <tr key={ml.id} className="bg-white">
                                     <td className="border border-gray-300 px-2 py-1 text-center text-xs">
                                       {ml.repetitionNumber || mlIdx + 1}
                                     </td>
@@ -435,18 +444,20 @@ export default function DayPrintModal({
                                       </div>
                                     </td>
                                     <td className="border border-gray-300 px-2 py-1 text-left text-xs">
-                                      {ml.notes ? (
-                                        <div dangerouslySetInnerHTML={{ __html: ml.notes }} />
+                                      {mlNotesHtml ? (
+                                        <div dangerouslySetInnerHTML={{ __html: mlNotesHtml }} />
                                       ) : (
                                         '-'
                                       )}
                                     </td>
                                   </tr>
-                                ))}
+                                  );
+                                })}
                               </>
                             )}
                           </React.Fragment>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   ) : (
@@ -454,8 +465,9 @@ export default function DayPrintModal({
                       No moveframes in this workout.
                     </p>
                   )}
-                </div>
-              ))
+                  </div>
+                );
+              })
             ) : (
               <p className="text-gray-500 italic py-8 text-center">
                 No workouts planned for this day.

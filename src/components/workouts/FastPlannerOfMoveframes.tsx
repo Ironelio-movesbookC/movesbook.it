@@ -429,23 +429,33 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       next.series = previous?.series || '3';
     }
     if (!next.ripTime || next.ripTime.trim() === '') {
-      next.ripTime = previous?.ripTime || '12';
+      next.ripTime = previous?.ripTime || '15';
     }
     if (!next.break || next.break.trim() === '') {
       next.break = previous?.break || "1'30\"";
     }
 
     if (!next.speed || next.speed.trim() === '') {
-      next.speed = 'Normal';
+      next.speed = previous?.speed || 'Normal';
     }
     if (!next.weight || next.weight.trim() === '') {
-      next.weight = 'nc';
+      next.weight = previous?.weight || '0 kg';
     }
     if (!next.mode || next.mode.trim() === '') {
-      next.mode = 'Stopped';
+      next.mode = previous?.mode || 'Stopped';
     }
 
     return next;
+  };
+
+  const findPreviousFilledRow = (list: FastPlannerRow[], rowId: number): FastPlannerRow | null => {
+    const idx = list.findIndex((r) => r.id === rowId);
+    if (idx <= 0) return null;
+    for (let i = idx - 1; i >= 0; i--) {
+      const r = list[i];
+      if (typeof r?.exercise === 'string' && r.exercise.trim() !== '') return r;
+    }
+    return null;
   };
 
   const pickActiveRowIndex = (list: FastPlannerRow[]): number => {
@@ -474,21 +484,24 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
 
       const copy = [...prev];
       const safeIndex = Math.min(Math.max(rowIndex, 0), copy.length - 1);
-      const previous = safeIndex > 0 ? copy[safeIndex - 1] : null;
-      const current = applyRowDefaults({ ...copy[safeIndex] }, previous);
-      copy[safeIndex] = current;
+      const currentDraft = { ...copy[safeIndex] };
+      const currentHasExercise = typeof currentDraft.exercise === 'string' && currentDraft.exercise.trim() !== '';
+      const previousFilled = findPreviousFilledRow(copy, currentDraft.id);
+      const current = currentHasExercise ? applyRowDefaults(currentDraft, previousFilled) : currentDraft;
+      if (currentHasExercise) copy[safeIndex] = current;
 
       const maxId = Math.max(...copy.map(r => r.id));
       const id = Math.max(newRowId, maxId + 1);
+      const template = currentHasExercise ? current : applyRowDefaults({ ...currentDraft }, previousFilled);
       const nextRow: FastPlannerRow = {
         id,
         exercise: '',
-        speed: current.speed,
-        series: current.series,
-        ripTime: current.ripTime,
-        weight: current.weight,
-        break: current.break,
-        mode: current.mode
+        speed: template.speed,
+        series: template.series,
+        ripTime: template.ripTime,
+        weight: template.weight,
+        break: template.break,
+        mode: template.mode
       };
 
       return [...copy, nextRow];
@@ -1425,12 +1438,9 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                               className="flex-shrink-0 w-28 bg-white border-2 border-gray-300 rounded-lg p-1 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all relative"
                               onClick={() => {
                                 if (selectedCell) {
-                                  setRows(prevRows => prevRows.map(row => {
-                                    if (row.id === selectedCell.rowId) {
-                                      return { ...row, exercise: exercise.name };
-                                    }
-                                    return row;
-                                  }));
+                                  setRows(prevRows =>
+                                    prevRows.map(row => (row.id === selectedCell.rowId ? { ...row, exercise: exercise.name } : row))
+                                  );
                                   setExerciseSearch('');
                                 }
                               }}
@@ -1788,12 +1798,9 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                         className="bg-white border-2 border-gray-300 rounded-lg p-4 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all relative"
                         onClick={() => {
                           if (selectedCell) {
-                            setRows(prevRows => prevRows.map(row => {
-                              if (row.id === selectedCell.rowId) {
-                                return { ...row, exercise: exercise.name };
-                              }
-                              return row;
-                            }));
+                            setRows(prevRows =>
+                              prevRows.map(row => (row.id === selectedCell.rowId ? { ...row, exercise: exercise.name } : row))
+                            );
                             setShowExercisePopup(false);
                             setExerciseSearch('');
                           }
