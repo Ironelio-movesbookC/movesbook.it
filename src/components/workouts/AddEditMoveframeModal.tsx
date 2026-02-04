@@ -305,7 +305,7 @@ export default function AddEditMoveframeModal({
 
   // 2026-01-31 - Force BATTERY/circuits mode when editing from a circuit movelap
   useEffect(() => {
-    if (editingFromMovelap && targetMovelap) {
+    if (editingFromMovelap && editingMovelapTarget) {
       console.log('🔄 [AddEditMoveframeModal] Editing from movelap, forcing BATTERY/circuits mode');
       setType('BATTERY');
       setBatterySubmenu('circuits');
@@ -313,7 +313,7 @@ export default function AddEditMoveframeModal({
       // Also ensure we're not in manual mode as it might interfere
       setManualMode(false);
     }
-  }, [editingFromMovelap, targetMovelap]);
+  }, [editingFromMovelap, editingMovelapTarget]);
 
   // Filter techniques - ONLY for BODY_BUILDING sport
   const availableTechniques = React.useMemo(() => {
@@ -967,7 +967,8 @@ export default function AddEditMoveframeModal({
 
   // 2026-01-31 - Determine if we should hide the main UI (invisible mode)
   // This happens when editing a specific circuit movelap - we only want to show the exercise selection modal
-  const hideUI = propHideUI || (editingFromMovelap && targetMovelap);
+  //const hideUI = propHideUI || (editingFromMovelap && editingMovelapTarget);
+  const hideUI = false || (editingFromMovelap && editingMovelapTarget);
 
   if (!isOpen) return null;
 
