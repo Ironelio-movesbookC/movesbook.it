@@ -18,6 +18,7 @@ import Image from 'next/image';
 import BatteryCircuitPlanner from './BatteryCircuitPlanner_REDESIGNED';
 // 2026-01-29 - Fast Planner of Moveframes component
 import FastPlannerOfMoveframes, { type FastPlannerHandle } from './FastPlannerOfMoveframes';
+import AerobicFastPlannerOfMoveframes from './AerobicFastPlannerOfMoveframes';
 
 interface AddEditMoveframeModalProps {
   isOpen: boolean;
@@ -1493,7 +1494,7 @@ export default function AddEditMoveframeModal({
 
           {/* Fast plannings Submenu Selection - 2026-01-22 14:30 UTC */}
           {/* 2026-01-29 - Moved below Workout Section Selection */}
-          {type === 'BATTERY' && (
+          {type === 'BATTERY' && isCircuitFeatureSport(sport) && (
             <div className="mb-3">
               <label className="block text-xs font-bold text-gray-700 mb-1.5">
                 Fast plannings Mode
@@ -1551,11 +1552,6 @@ export default function AddEditMoveframeModal({
                   Plan of Moveframes with AI
                 </button>
               </div>
-              {!isCircuitFeatureSport(sport) && (
-                <p className="mt-2 text-xs text-orange-600">
-                  ℹ️ <strong>Note:</strong> Fast plannings mode is only available for BODY BUILDING, STRETCHING, CALISTENIC, CROSSFIT, GYMNASTIC
-                </p>
-              )}
             </div>
           )}
           
@@ -4377,6 +4373,40 @@ export default function AddEditMoveframeModal({
             </div>
           )}
 
+          {type === 'BATTERY' && AEROBIC_SPORTS.includes(sport as any) && (
+            <AerobicFastPlannerOfMoveframes
+              ref={fastPlannerRef}
+              sport={sport}
+              sectionId={sectionId}
+              workout={workout}
+              day={day}
+              mode={mode}
+              existingMoveframe={existingMoveframe}
+              onSave={(moveframeData: any) => {
+                onSave(moveframeData);
+                onClose();
+              }}
+              onCancel={onClose}
+            />
+          )}
+
+          {type === 'BATTERY' && !isCircuitFeatureSport(sport) && !AEROBIC_SPORTS.includes(sport as any) && (
+            <FastPlannerOfMoveframes
+              ref={fastPlannerRef}
+              sport={sport}
+              sectionId={sectionId}
+              workout={workout}
+              day={day}
+              mode={mode}
+              existingMoveframe={existingMoveframe}
+              onSave={(moveframeData: any) => {
+                onSave(moveframeData);
+                onClose();
+              }}
+              onCancel={onClose}
+            />
+          )}
+
           {/* Preview */}
           {type === 'STANDARD' && !manualMode && (
             <div className="mt-3 bg-blue-50 border border-blue-300 p-3 rounded">
@@ -4813,6 +4843,25 @@ export default function AddEditMoveframeModal({
               >
                 <Image src="/preference.png" alt="Preferences" width={20} height={20} className="mr-2 object-contain" unoptimized />
                 Preferences
+              </button>
+            </div>
+          </div>
+        )}
+
+        {type === 'BATTERY' && (AEROBIC_SPORTS.includes(sport as any) || !isCircuitFeatureSport(sport)) && (
+          <div className="flex-shrink-0 border-t bg-white px-4 py-3 flex items-center justify-between">
+            <button
+              onClick={handleClose}
+              className="px-6 py-2 bg-gray-600 text-white font-medium rounded hover:bg-gray-700"
+            >
+              Cancel
+            </button>
+            <div className="flex items-center">
+              <button
+                onClick={() => fastPlannerRef.current?.saveMoveframeAndMovelaps()}
+                className="px-6 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700"
+              >
+                Save moveframe and its movelaps
               </button>
             </div>
           </div>
