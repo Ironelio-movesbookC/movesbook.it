@@ -1027,7 +1027,7 @@ export default function SortableMoveframeRow({
                     hasDay: !!day,
                     onEditMovelapDefined: !!onEditMovelap 
                   });
-                  onEditMovelap?.(movelap, moveframe, workout, day);
+                  onEditMovelap?.(movelap, moveframe);
                 }}
                 onDeleteMovelap={(movelap) => onDeleteMovelap?.(movelap, moveframe)}
                 onAddMovelap={() => onAddMovelap?.(moveframe)}

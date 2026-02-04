@@ -102,6 +102,7 @@ export interface Moveframe extends BaseEntity {
   code: string; // A, B, C, ..., Z, AA, AB, ...
   letter: string; // Same as code, used interchangeably
   sport: string; // SportType enum value
+  type?: string | null;
   sectionId?: string | null;
   sectionName?: string | null;
   sectionColor?: string | null;
@@ -116,6 +117,15 @@ export interface Moveframe extends BaseEntity {
   annotationBold?: boolean | null;
   workType?: string | null;
   manualMode?: boolean | null;
+  manualPriority?: boolean | null;
+  manualInputType?: string | null;
+  manualRepetitions?: number | null;
+  manualDistance?: number | null;
+  aerobicSeries?: number | null;
+  circuitConfig?: any | null;
+  circuits?: any[] | null;
+  rows?: any[] | null;
+  isCircuitBased?: boolean | null;
   favourite?: boolean | null;
   totalDistance?: number | null;
   totalReps?: number | null;

@@ -35,6 +35,9 @@ export function useWorkoutModals() {
   // Drag & Drop Modal
   const [showDragModal, setShowDragModal] = useState(false);
   
+  // Circuit Planner Modal
+  const [showCircuitPlannerModal, setShowCircuitPlannerModal] = useState(false);
+  
   // Modal Modes
   const [workoutModalMode, setWorkoutModalMode] = useState<'add' | 'edit'>('add');
   const [moveframeModalMode, setMoveframeModalMode] = useState<'add' | 'edit'>('add');
@@ -345,6 +348,20 @@ export function useWorkoutModals() {
   };
 
   /**
+   * Open Circuit Planner Modal
+   */
+  const openCircuitPlannerModal = () => {
+    setShowCircuitPlannerModal(true);
+  };
+
+  /**
+   * Close Circuit Planner Modal
+   */
+  const closeCircuitPlannerModal = () => {
+    setShowCircuitPlannerModal(false);
+  };
+
+  /**
    * Close All Modals (useful for cleanup or navigation)
    */
   const closeAllModals = () => {
@@ -371,6 +388,7 @@ export function useWorkoutModals() {
     setShowWorkoutSelector(false);
     setShowDaySelector(false);
     setShowDragModal(false);
+    setShowCircuitPlannerModal(false);
     setDragModalConfig(null);
   };
 
@@ -401,6 +419,7 @@ export function useWorkoutModals() {
       showWorkoutSelector,
       showDaySelector,
       showDragModal,
+      showCircuitPlannerModal,
     },
     
     // Modal Modes
@@ -443,6 +462,7 @@ export function useWorkoutModals() {
       setShowWorkoutSelector,
       setShowDaySelector,
       setShowDragModal,
+      setShowCircuitPlannerModal,
       setWorkoutModalMode,
       setMoveframeModalMode,
       setMovelapModalMode,
@@ -494,6 +514,8 @@ export function useWorkoutModals() {
       closeExportModal,
       openDragModal,
       closeDragModal,
+      openCircuitPlannerModal,
+      closeCircuitPlannerModal,
       closeAllModals,
       // Direct setters (for manual control)
       setShowAddWorkoutModal,

@@ -855,9 +855,15 @@ export function useMoveframeForm({
       setSport(existingMoveframe.sport || 'SWIM');
       // Detect circuit-based moveframe so we show BATTERY/circuits view when editing
       // (API may not return type, or type may be missing; circuit data is in notes)
+      const hasCircuitMovelapMeta = (existingMoveframe.movelaps || []).some((movelap: any) => {
+        if (!movelap) return false;
+        if (movelap.circuitIndex != null || movelap.circuitLetter || movelap.stationNumber != null) return true;
+        return typeof movelap.notes === 'string' && movelap.notes.includes('[CIRCUIT_META]');
+      });
       const isCircuitBased =
         existingMoveframe.isCircuitBased === true ||
-        (typeof existingMoveframe.notes === 'string' && existingMoveframe.notes.includes('[CIRCUIT_DATA]'));
+        (typeof existingMoveframe.notes === 'string' && existingMoveframe.notes.includes('[CIRCUIT_DATA]')) ||
+        hasCircuitMovelapMeta;
       const resolvedType = isCircuitBased ? 'BATTERY' : (existingMoveframe.type || 'STANDARD');
       setType(resolvedType);
       setSectionId(existingMoveframe.sectionId || ''); // Load workout section

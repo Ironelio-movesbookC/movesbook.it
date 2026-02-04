@@ -186,44 +186,36 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   };
 
   const buildMovelapsFromRows = (filledRows: FastPlannerRow[]) => {
-    let repetitionNumber = 1;
-    const movelaps: any[] = [];
-
-    for (const row of filledRows) {
-      const sets = Math.max(1, parseInt(row.series || '1', 10) || 1);
+    return filledRows.map((row, index) => {
       const sector = row.exercise ? getSectorForExercise(row.exercise) : null;
       const repsValue = ripTimeMode === 'reps' ? (parseInt(row.ripTime || '', 10) || null) : null;
       const timeValue = ripTimeMode === 'time' ? (row.ripTime || null) : null;
 
-      for (let s = 0; s < sets; s++) {
-        movelaps.push({
-          repetitionNumber: repetitionNumber++,
-          distance: null,
-          speed: row.speed || null,
-          style: null,
-          pace: null,
-          time: timeValue,
-          reps: repsValue,
-          weight: row.weight && row.weight.trim() !== '' && row.weight.trim().toLowerCase() !== 'nc' ? row.weight : null,
-          tools: null,
-          r1: null,
-          r2: null,
-          muscularSector: sector,
-          exercise: row.exercise || null,
-          restType: null,
-          pause: row.break || null,
-          macroFinal: null,
-          alarm: null,
-          sound: null,
-          notes: row.mode || null,
-          status: 'PENDING',
-          isSkipped: false,
-          isDisabled: false
-        });
-      }
-    }
-
-    return movelaps;
+      return {
+        repetitionNumber: index + 1,
+        distance: null,
+        speed: row.speed || null,
+        style: null,
+        pace: null,
+        time: timeValue,
+        reps: repsValue,
+        weight: row.weight && row.weight.trim() !== '' && row.weight.trim().toLowerCase() !== 'nc' ? row.weight : null,
+        tools: null,
+        r1: null,
+        r2: null,
+        muscularSector: sector,
+        exercise: row.exercise || null,
+        restType: null,
+        pause: row.break || null,
+        macroFinal: null,
+        alarm: null,
+        sound: null,
+        notes: row.mode || null,
+        status: 'PENDING',
+        isSkipped: false,
+        isDisabled: false
+      };
+    });
   };
 
   const buildFastPlannerDescription = (filledRows: FastPlannerRow[]) => {
@@ -308,25 +300,25 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return null;
   };
 
-  // Handle quick value selection from execution toolbar (keyboard-like input)
-  const handleQuickFill = (field: string, value: string) => {
-    if (!selectedCell) {
-      // No cell selected - show a hint to user
-      return;
-    }
+  const getTargetRowId = () => {
+    if (selectedCell?.rowId != null) return selectedCell.rowId;
+    return rows.length > 0 ? rows[rows.length - 1].id : null;
+  };
 
-    // Only fill if the selected cell matches the field
-    if (selectedCell.field !== field) {
-      return;
-    }
-
-    // Fill the selected cell with the value
+  const applyValueToRow = (field: string, value: string) => {
+    const targetRowId = getTargetRowId();
+    if (targetRowId == null) return;
     setRows(prevRows => prevRows.map(row => {
-      if (row.id === selectedCell.rowId) {
+      if (row.id === targetRowId) {
         return { ...row, [field]: value };
       }
       return row;
     }));
+  };
+
+  // Handle quick value selection from execution toolbar (keyboard-like input)
+  const handleQuickFill = (field: string, value: string) => {
+    applyValueToRow(field, value);
   };
 
   // Handle cell click (select cell for quick input)
@@ -465,6 +457,17 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       if (idx >= 0) return idx;
     }
     return Math.max(0, list.length - 1);
+  };
+
+  const duplicateRowById = (rowId: number) => {
+    setRows(prev => {
+      if (prev.length === 0) return prev;
+      const baseRow = prev.find(r => r.id === rowId);
+      if (!baseRow) return prev;
+      if (typeof baseRow.exercise !== 'string' || baseRow.exercise.trim() === '') return prev;
+      const newId = Math.max(...prev.map(r => r.id)) + 1;
+      return [...prev, { ...baseRow, id: newId }];
+    });
   };
 
   const focusNewRowExercise = (newRowId: number) => {
@@ -712,31 +715,34 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     appendNextRowFromIndex(rowIndex);
   };
 
+  const showAllButton = selectedMuscleGroup !== 'all';
+
   return (
     <div className="space-y-4">
       <div className="sticky top-0 z-20 bg-white pb-4">
         <div className="space-y-4">
           {/* Removed zoom control; fixed scale at 55% */}
           {/* Top Row: Execution, Intensity of work, Break between series */}
-          <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 2fr 1fr' }}>
+          <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 2fr 1fr' }}>
             {/* Execution Box */}
-            <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-center">
-              <label className="block text-sm font-bold text-gray-700 mb-2">Execution</label>
-              {selectedCell && (
-                <p className="text-xs text-blue-600 font-medium mb-2">
-                  ✓ Row {rows.findIndex(r => r.id === selectedCell.rowId) + 1}, {selectedCell.field}
-                </p>
+            <div className="bg-amber-50 border border-amber-300 rounded-lg px-2 py-1 text-center">
+              {selectedCell ? (
+                <div className="text-xs text-blue-600 font-medium whitespace-nowrap">
+                  <span className="text-gray-700 font-bold">Execution:</span> ✓ Row {rows.findIndex(r => r.id === selectedCell.rowId) + 1}, {selectedCell.field}
+                </div>
+              ) : (
+                <div className="text-xs text-gray-700 font-bold">Execution</div>
               )}
             </div>
 
             {/* Intensity of Work Box */}
-            <div className="bg-blue-50 border border-blue-300 rounded-lg p-3 text-center">
-              <label className="block text-sm font-bold text-gray-700 mb-2">Intensity of work</label>
+            <div className="bg-blue-50 border border-blue-300 rounded-lg px-2 py-1 text-center">
+              <div className="text-xs font-bold text-gray-700 whitespace-nowrap">Intensity of work</div>
             </div>
 
             {/* Break between series Box */}
-            <div className="bg-green-50 border border-green-300 rounded-lg p-3 text-center">
-              <label className="block text-sm font-bold text-gray-700 mb-2">Break between series</label>
+            <div className="bg-green-50 border border-green-300 rounded-lg px-2 py-1 text-center">
+              <div className="text-xs font-bold text-gray-700 whitespace-nowrap">Break between series</div>
             </div>
           </div>
 
@@ -872,33 +878,34 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         </div>
 
         {/* Muscle Groups - Always visible */}
-        <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
+        <div className="bg-slate-900 border border-slate-700 rounded-lg p-2">
           <div className="flex items-center pb-2 gap-2" style={{ overflowX: 'hidden', flexWrap: 'nowrap' }}>
-            {/* All button - Fixed on the left */}
-            <div className="flex-shrink-0">
-              <button
-                onClick={() => {
-                  setSelectedMuscleGroup('all');
-                  setShowSubExercises(true);
-                }}
-                className="flex flex-col items-center justify-center"
-              >
-                <div className="mb-2 flex items-center justify-center" style={{ width: `${96 * ZOOM}px`, height: `${96 * ZOOM}px` }}>
-                  <Image
-                    src="/all.png"
-                    alt="All"
-                    width={Math.round(96 * ZOOM)}
-                    height={Math.round(96 * ZOOM)}
-                    className="object-contain"
-                    unoptimized
-                  />
-                </div>
-                <span className="sr-only">All</span>
-              </button>
-            </div>
+            {showAllButton && (
+              <div className="flex-shrink-0">
+                <button
+                  onClick={() => {
+                    setSelectedMuscleGroup('all');
+                    setShowSubExercises(true);
+                  }}
+                  className="flex flex-col items-center justify-center"
+                >
+                  <div className="mb-2 flex items-center justify-center" style={{ width: `${96 * ZOOM}px`, height: `${96 * ZOOM}px` }}>
+                    <Image
+                      src="/all.png"
+                      alt="All"
+                      width={Math.round(96 * ZOOM)}
+                      height={Math.round(96 * ZOOM)}
+                      className="object-contain"
+                      unoptimized
+                    />
+                  </div>
+                  <span className="sr-only">All</span>
+                </button>
+              </div>
+            )}
 
             {/* Content area: show options or muscle groups within the same box */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex-1 min-h-[160px] max-h-[260px] overflow-y-auto text-black">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex-1 h-[165px] overflow-y-auto text-black">
               {activeExerciseButton ? (
                 <div className="space-y-3">
                 {activeExerciseButton === 'speed' && (
@@ -908,16 +915,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       {SPEED_OPTIONS.map((speed) => (
                         <button
                           key={speed}
-                          onClick={() => {
-                            if (selectedCell) {
-                              setRows(prevRows => prevRows.map(row => {
-                                if (row.id === selectedCell.rowId && selectedCell.field === 'speed') {
-                                  return { ...row, speed };
-                                }
-                                return row;
-                              }));
-                            }
-                          }}
+                          onClick={() => handleQuickFill('speed', speed)}
                           className="flex-shrink-0 px-6 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:shadow-md transition-all font-medium text-base whitespace-nowrap"
                         >
                           {speed}
@@ -934,16 +932,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20].map((num) => (
                         <button
                           key={num}
-                          onClick={() => {
-                            if (selectedCell) {
-                              setRows(prevRows => prevRows.map(row => {
-                                if (row.id === selectedCell.rowId && selectedCell.field === 'series') {
-                                  return { ...row, series: num.toString() };
-                                }
-                                return row;
-                              }));
-                            }
-                          }}
+                          onClick={() => handleQuickFill('series', num.toString())}
                           className="flex-shrink-0 px-6 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:shadow-md transition-all font-medium text-base"
                         >
                           {num}
@@ -954,8 +943,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 )}
 
                 {activeExerciseButton === 'riptime' && (
-                  <div className="min-h-[160px] flex items-center justify-center">
-                    <div className="flex gap-10 justify-center items-center">
+                  <div className="min-h-[120px] flex items-center justify-center">
+                    <div className="flex gap-1 justify-center items-center">
                       <div className="w-44 flex flex-col gap-2 items-start pl-2">
                         <label className="flex items-center cursor-pointer whitespace-nowrap">
                           <input
@@ -996,14 +985,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                               if (currentValue > 1) {
                                 const newValue = (currentValue - 1).toString();
                                 setRipTimeValue(newValue);
-                                if (selectedCell && selectedCell.field === 'ripTime') {
-                                  setRows(prevRows => prevRows.map(row => {
-                                    if (row.id === selectedCell.rowId) {
-                                      return { ...row, ripTime: newValue };
-                                    }
-                                    return row;
-                                  }));
-                                }
+                                applyValueToRow('ripTime', newValue);
                               }
                             }}
                           className="w-10 h-10 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center text-xl font-bold"
@@ -1020,14 +1002,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                             }}
                             onBlur={(e) => {
                               const value = e.target.value;
-                              if (selectedCell && selectedCell.field === 'ripTime') {
-                                setRows(prevRows => prevRows.map(row => {
-                                  if (row.id === selectedCell.rowId) {
-                                    return { ...row, ripTime: value };
-                                  }
-                                  return row;
-                                }));
-                              }
+                            applyValueToRow('ripTime', value);
                             }}
                             placeholder="0"
                             min="1"
@@ -1041,14 +1016,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                               if (currentValue < 99) {
                                 const newValue = (currentValue + 1).toString();
                                 setRipTimeValue(newValue);
-                                if (selectedCell && selectedCell.field === 'ripTime') {
-                                  setRows(prevRows => prevRows.map(row => {
-                                    if (row.id === selectedCell.rowId) {
-                                      return { ...row, ripTime: newValue };
-                                    }
-                                    return row;
-                                  }));
-                                }
+                                applyValueToRow('ripTime', newValue);
                               }
                             }}
                           className="w-10 h-10 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center text-xl font-bold"
@@ -1075,15 +1043,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                                   setRipTimeValue('');
                                 }
 
-                                if (selectedCell && selectedCell.field === 'ripTime') {
-                                  setRows(prev =>
-                                    prev.map(row =>
-                                      row.id === selectedCell.rowId
-                                        ? { ...row, ripTime: ripTimeValue ? formatRipTime(ripTimeValue, true) : '' }
-                                        : row
-                                    )
-                                  );
-                                }
+                                applyValueToRow('ripTime', ripTimeValue ? formatRipTime(ripTimeValue, true) : '');
                               }}
                               placeholder="MM'SS&quot;"
                               className="w-48 h-16 text-center text-3xl font-bold border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1096,7 +1056,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 )}
 
                 {activeExerciseButton === 'weight' && (
-                  <div className="min-h-[160px] flex items-center justify-center">
+                  <div className="min-h-[120px] flex items-center justify-center">
                     <div className="flex gap-10 justify-center items-center">
                       <div className="w-44 flex flex-col gap-2 items-start pl-2">
                         <label className="flex items-center cursor-pointer whitespace-nowrap">
@@ -1130,14 +1090,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                           if (currentValue > 0) {
                             const newValue = Math.max(0, currentValue - 0.5).toString();
                             setWeightValue(newValue);
-                            if (selectedCell && selectedCell.field === 'weight') {
-                              setRows(prevRows => prevRows.map(row => {
-                                if (row.id === selectedCell.rowId) {
-                                  return { ...row, weight: `${newValue} ${weightUnit}` };
-                                }
-                                return row;
-                              }));
-                            }
+                            applyValueToRow('weight', `${newValue} ${weightUnit}`);
                           }
                         }}
                           className="w-10 h-10 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center text-xl font-bold"
@@ -1154,14 +1107,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                         }}
                         onBlur={(e) => {
                           const value = e.target.value;
-                          if (selectedCell && selectedCell.field === 'weight') {
-                            setRows(prevRows => prevRows.map(row => {
-                              if (row.id === selectedCell.rowId) {
-                                return { ...row, weight: `${value} ${weightUnit}` };
-                              }
-                              return row;
-                            }));
-                          }
+                          applyValueToRow('weight', `${value} ${weightUnit}`);
                         }}
                         placeholder="0"
                         min="0"
@@ -1176,14 +1122,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                           if (currentValue < 9999) {
                             const newValue = Math.min(9999, currentValue + 0.5).toString();
                             setWeightValue(newValue);
-                            if (selectedCell && selectedCell.field === 'weight') {
-                              setRows(prevRows => prevRows.map(row => {
-                                if (row.id === selectedCell.rowId) {
-                                  return { ...row, weight: `${newValue} ${weightUnit}` };
-                                }
-                                return row;
-                              }));
-                            }
+                            applyValueToRow('weight', `${newValue} ${weightUnit}`);
                           }
                         }}
                           className="w-10 h-10 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center text-xl font-bold"
@@ -1196,7 +1135,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 )}
 
                 {activeExerciseButton === 'break' && (
-                  <div className="min-h-[160px] flex items-center justify-center">
+                  <div className="min-h-[120px] flex items-center justify-center">
                     <div className="flex gap-10 justify-center items-center">
                       <div className="w-44 flex flex-col gap-2 items-start pl-2">
                         <label className="flex items-center cursor-pointer whitespace-nowrap">
@@ -1237,16 +1176,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                             {BREAK_OPTIONS.slice(0, Math.ceil(BREAK_OPTIONS.length / 2)).map((breakTime) => (
                               <button
                                 key={breakTime}
-                                onClick={() => {
-                                  if (selectedCell && selectedCell.field === 'break') {
-                                    setRows(prevRows => prevRows.map(row => {
-                                      if (row.id === selectedCell.rowId) {
-                                        return { ...row, break: breakTime };
-                                      }
-                                      return row;
-                                    }));
-                                  }
-                                }}
+                                onClick={() => applyValueToRow('break', breakTime)}
                                 className="flex-shrink-0 px-5 py-2 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:shadow-md transition-all font-medium text-sm whitespace-nowrap"
                               >
                                 {breakTime}
@@ -1257,16 +1187,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                             {BREAK_OPTIONS.slice(Math.ceil(BREAK_OPTIONS.length / 2)).map((breakTime) => (
                               <button
                                 key={breakTime}
-                                onClick={() => {
-                                  if (selectedCell && selectedCell.field === 'break') {
-                                    setRows(prevRows => prevRows.map(row => {
-                                      if (row.id === selectedCell.rowId) {
-                                        return { ...row, break: breakTime };
-                                      }
-                                      return row;
-                                    }));
-                                  }
-                                }}
+                                onClick={() => applyValueToRow('break', breakTime)}
                                 className="flex-shrink-0 px-5 py-2 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:shadow-md transition-all font-medium text-sm whitespace-nowrap"
                               >
                                 {breakTime}
@@ -1285,14 +1206,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                                 if (currentValue > 60) {
                                   const newValue = Math.max(60, currentValue - 1).toString();
                                   setCardioValue(newValue);
-                                  if (selectedCell && selectedCell.field === 'break') {
-                                    setRows(prevRows => prevRows.map(row => {
-                                      if (row.id === selectedCell.rowId) {
-                                        return { ...row, break: `${newValue} bpm` };
-                                      }
-                                      return row;
-                                    }));
-                                  }
+                                  applyValueToRow('break', `${newValue} bpm`);
                                 }
                               }}
                               className="w-10 h-10 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center text-xl font-bold"
@@ -1312,14 +1226,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                                 const numValue = parseInt(value);
                                 if (numValue >= 60 && numValue <= 200) {
                                   setCardioValue(value);
-                                  if (selectedCell && selectedCell.field === 'break') {
-                                    setRows(prevRows => prevRows.map(row => {
-                                      if (row.id === selectedCell.rowId) {
-                                        return { ...row, break: `${value} bpm` };
-                                      }
-                                      return row;
-                                    }));
-                                  }
+                                  applyValueToRow('break', `${value} bpm`);
                                 } else {
                                   setCardioValue('120');
                                 }
@@ -1336,14 +1243,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                                 if (currentValue < 200) {
                                   const newValue = Math.min(200, currentValue + 1).toString();
                                   setCardioValue(newValue);
-                                  if (selectedCell && selectedCell.field === 'break') {
-                                    setRows(prevRows => prevRows.map(row => {
-                                      if (row.id === selectedCell.rowId) {
-                                        return { ...row, break: `${newValue} bpm` };
-                                      }
-                                      return row;
-                                    }));
-                                  }
+                                  applyValueToRow('break', `${newValue} bpm`);
                                 }
                               }}
                               className="w-10 h-10 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center text-xl font-bold"
@@ -1366,16 +1266,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       {MODE_OPTIONS.map((mode) => (
                         <button
                           key={mode.id}
-                          onClick={() => {
-                            if (selectedCell && selectedCell.field === 'mode') {
-                              setRows(prevRows => prevRows.map(row => {
-                                if (row.id === selectedCell.rowId) {
-                                  return { ...row, mode: mode.label };
-                                }
-                                return row;
-                              }));
-                            }
-                          }}
+                          onClick={() => applyValueToRow('mode', mode.label)}
                           className="w-56 px-5 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:shadow-md transition-all font-bold text-base"
                         >
                           {mode.label}
@@ -1473,8 +1364,54 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       {/* Exercise Table */}
       <div className="bg-white border border-gray-300 rounded-lg overflow-hidden relative z-0">
         <div className="overflow-x-auto overflow-y-auto max-h-[45vh]">
+          <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
+            <div className="h-12 flex items-center gap-2 px-2 overflow-x-auto whitespace-nowrap">
+              <button
+                onClick={handleGoNext}
+                className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900"
+              >
+                Go next
+              </button>
+              <button
+                onClick={handleDuplicate}
+                className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900"
+              >
+                Duplicate
+              </button>
+              <button
+                onClick={handleTriplicate}
+                className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900"
+              >
+                Triplicate
+              </button>
+              <button
+                onClick={handleRemove}
+                className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900"
+              >
+                Remove
+              </button>
+              <button
+                onClick={handleResetRow}
+                className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900"
+              >
+                Reset row
+              </button>
+              <button
+                onClick={handleResetAll}
+                className="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700"
+              >
+                Reset all
+              </button>
+              <button
+                onClick={handleSaveMoveframe}
+                className="ml-auto px-4 py-1.5 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700"
+              >
+                Save moveframe
+              </button>
+            </div>
+          </div>
           <table className="w-full">
-            <thead className="bg-gray-100">
+            <thead className="bg-gray-100 sticky top-12 z-10">
               <tr>
                 <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 border-r w-12">#</th>
                 <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 border-r" style={{ minWidth: '250px' }}>Exercise</th>
@@ -1516,6 +1453,10 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                   <td className="px-1 py-1 border-r">
                     <div
                       onClick={() => handleCellClick(row.id, 'exercise')}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        duplicateRowById(row.id);
+                      }}
                       className={`relative cursor-pointer border-2 rounded overflow-hidden ${selectedCell?.rowId === row.id && selectedCell?.field === 'exercise'
                         ? 'border-blue-500 ring-2 ring-blue-200'
                         : 'border-gray-200'
@@ -1689,51 +1630,6 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex gap-2 flex-wrap">
-        <button
-          onClick={handleGoNext}
-          className="px-4 py-2 bg-gray-800 text-white text-sm font-medium rounded hover:bg-gray-900"
-        >
-          Go next
-        </button>
-        <button
-          onClick={handleDuplicate}
-          className="px-4 py-2 bg-gray-800 text-white text-sm font-medium rounded hover:bg-gray-900"
-        >
-          Duplicate
-        </button>
-        <button
-          onClick={handleTriplicate}
-          className="px-4 py-2 bg-gray-800 text-white text-sm font-medium rounded hover:bg-gray-900"
-        >
-          Triplicate
-        </button>
-        <button
-          onClick={handleRemove}
-          className="px-4 py-2 bg-gray-800 text-white text-sm font-medium rounded hover:bg-gray-900"
-        >
-          Remove
-        </button>
-        <button
-          onClick={handleResetRow}
-          className="px-4 py-2 bg-gray-800 text-white text-sm font-medium rounded hover:bg-gray-900"
-        >
-          Reset row
-        </button>
-        <button
-          onClick={handleResetAll}
-          className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded hover:bg-red-700"
-        >
-          Reset all
-        </button>
-        <button
-          onClick={handleSaveMoveframe}
-          className="ml-auto px-6 py-2 bg-red-600 text-white text-sm font-bold rounded hover:bg-red-700"
-        >
-          Save moveframe
-        </button>
-      </div>
 
       {/* Descriptions & Instructions */}
       <div className="bg-green-50 border border-green-300 rounded-lg p-3">

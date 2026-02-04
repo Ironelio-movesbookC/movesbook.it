@@ -29,8 +29,10 @@ interface AddEditMoveframeModalProps {
   day: any;
   existingMoveframe?: any;
   onSetInsertIndex?: (index: number | null) => void;
-  editingFromMovelap?: boolean; // Flag to indicate editing was triggered from movelap edit
+  editingFromMovelap?: boolean;
   editingMovelapTarget?: { circuitLetter?: string; circuitIndex?: number; localSeriesNumber?: number; stationNumber?: number } | null;
+  targetMovelap?: any;
+  startInSecondView?: boolean;
 }
 
 export default function AddEditMoveframeModal({
@@ -43,7 +45,9 @@ export default function AddEditMoveframeModal({
   existingMoveframe,
   onSetInsertIndex,
   editingFromMovelap,
-  editingMovelapTarget
+  editingMovelapTarget,
+  targetMovelap,
+  startInSecondView
 }: AddEditMoveframeModalProps): JSX.Element | null {
   // Debug: Log mode only when it changes (moved to useEffect below)
   
@@ -66,10 +70,31 @@ export default function AddEditMoveframeModal({
   React.useEffect(() => {
     if (!isOpen) return;
     if (mode !== 'edit') return;
-    if (existingMoveframe?.type !== 'BATTERY') return;
 
     const notes = existingMoveframe?.notes;
-    if (typeof notes === 'string' && notes.includes('[FAST_PLANNER_DATA]')) {
+    const hasCircuitMovelapMeta = (existingMoveframe?.movelaps || []).some((movelap: any) => {
+      if (!movelap) return false;
+      if (movelap.circuitIndex != null || movelap.circuitLetter || movelap.stationNumber != null) return true;
+      return typeof movelap.notes === 'string' && movelap.notes.includes('[CIRCUIT_META]');
+    });
+    if (
+      existingMoveframe?.isCircuitBased === true ||
+      (typeof notes === 'string' && notes.includes('[CIRCUIT_DATA]')) ||
+      hasCircuitMovelapMeta ||
+      existingMoveframe?.circuitConfig ||
+      Array.isArray(existingMoveframe?.circuits)
+    ) {
+      setType('BATTERY');
+      setBatterySubmenu('circuits');
+      return;
+    }
+    if (existingMoveframe?.type !== 'BATTERY') return;
+    if (
+      typeof notes === 'string' && notes.includes('[FAST_PLANNER_DATA]') ||
+      existingMoveframe?.fastPlannerData ||
+      existingMoveframe?.isFastPlannerBased
+    ) {
+      setType('BATTERY');
       setBatterySubmenu('fast');
       return;
     }
@@ -296,12 +321,40 @@ export default function AddEditMoveframeModal({
     setManualContent
   } = setters;
 
+  const isEditingCircuitFromMovelap = editingFromMovelap && !!editingMovelapTarget;
+  const isEditingCircuitMoveframe =
+    mode === 'edit' &&
+    !!existingMoveframe &&
+    (existingMoveframe.isCircuitBased === true ||
+      (typeof existingMoveframe.notes === 'string' && existingMoveframe.notes.includes('[CIRCUIT_DATA]')) ||
+      (existingMoveframe.movelaps || []).some((movelap: any) => {
+        if (!movelap) return false;
+        if (movelap.circuitIndex != null || movelap.circuitLetter || movelap.stationNumber != null) return true;
+        return typeof movelap.notes === 'string' && movelap.notes.includes('[CIRCUIT_META]');
+      }));
+  const canUseCircuitPlanner =
+    isCircuitFeatureSport(sport) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap;
+
   // Auto-switch to 'fast' when BATTERY mode is selected for non-section B sports
   useEffect(() => {
-    if (type === 'BATTERY' && batterySubmenu === 'circuits' && !isCircuitFeatureSport(sport)) {
+    const hasCircuitMoveframe =
+      existingMoveframe?.isCircuitBased === true ||
+      (typeof existingMoveframe?.notes === 'string' && existingMoveframe.notes.includes('[CIRCUIT_DATA]')) ||
+      (existingMoveframe?.movelaps || []).some((movelap: any) => {
+        if (!movelap) return false;
+        if (movelap.circuitIndex != null || movelap.circuitLetter || movelap.stationNumber != null) return true;
+        return typeof movelap.notes === 'string' && movelap.notes.includes('[CIRCUIT_META]');
+      });
+    if (
+      type === 'BATTERY' &&
+      batterySubmenu === 'circuits' &&
+      !isCircuitFeatureSport(sport) &&
+      !editingFromMovelap &&
+      !hasCircuitMoveframe
+    ) {
       setBatterySubmenu('fast');
     }
-  }, [type, sport, batterySubmenu, editingFromMovelap]);
+  }, [type, sport, batterySubmenu, editingFromMovelap, existingMoveframe?.id]);
 
   // 2026-01-31 - Force BATTERY/circuits mode when editing from a circuit movelap
   useEffect(() => {
@@ -314,6 +367,15 @@ export default function AddEditMoveframeModal({
       setManualMode(false);
     }
   }, [editingFromMovelap, editingMovelapTarget]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (mode !== 'edit') return;
+    if (!startInSecondView && !isEditingCircuitMoveframe) return;
+    setType('BATTERY');
+    setBatterySubmenu('circuits');
+    setManualMode(false);
+  }, [isOpen, mode, startInSecondView, isEditingCircuitMoveframe]);
 
   // Filter techniques - ONLY for BODY_BUILDING sport
   const availableTechniques = React.useMemo(() => {
@@ -967,8 +1029,7 @@ export default function AddEditMoveframeModal({
 
   // 2026-01-31 - Determine if we should hide the main UI (invisible mode)
   // This happens when editing a specific circuit movelap - we only want to show the exercise selection modal
-  //const hideUI = propHideUI || (editingFromMovelap && editingMovelapTarget);
-  const hideUI = false || (editingFromMovelap && editingMovelapTarget);
+  const hideUI = editingFromMovelap && editingMovelapTarget;
 
   if (!isOpen) return null;
 
@@ -1013,6 +1074,7 @@ export default function AddEditMoveframeModal({
                   existingMoveframe={existingMoveframe}
                   startInSecondView={true}
                   editingMovelapTarget={editingMovelapTarget}
+                  targetMovelap={targetMovelap}
                 />
               ) : (
                 // Fallback for non-battery types (shouldn't happen for circuit editing)
@@ -1495,7 +1557,7 @@ export default function AddEditMoveframeModal({
 
           {/* Fast plannings Submenu Selection - 2026-01-22 14:30 UTC */}
           {/* 2026-01-29 - Moved below Workout Section Selection */}
-          {type === 'BATTERY' && isCircuitFeatureSport(sport) && (
+          {type === 'BATTERY' && canUseCircuitPlanner && (
             <div className="mb-3">
               <label className="block text-xs font-bold text-gray-700 mb-1.5">
                 Fast plannings Mode
@@ -1504,17 +1566,17 @@ export default function AddEditMoveframeModal({
                 <button
                   type="button"
                   onClick={() => {
-                    if (!isCircuitFeatureSport(sport)) {
+                    if (!canUseCircuitPlanner) {
                       return;
                     }
                     setBatterySubmenu('circuits');
                   }}
-                  disabled={!isCircuitFeatureSport(sport)}
+                  disabled={!canUseCircuitPlanner}
                   className={`px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
                     batterySubmenu === 'circuits'
                       ? 'bg-blue-50 border-blue-500 text-blue-700'
                       : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                  } ${!isCircuitFeatureSport(sport) ? 'cursor-not-allowed opacity-50' : ''}`}
+                  } ${!canUseCircuitPlanner ? 'cursor-not-allowed opacity-50' : ''}`}
                 >
                   Circuits planner
                 </button>
@@ -1526,12 +1588,12 @@ export default function AddEditMoveframeModal({
                     }
                     setBatterySubmenu('fast');
                   }}
-                  disabled={!isCircuitFeatureSport(sport)}
+                  disabled={!isCircuitFeatureSport(sport) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap}
                   className={`px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
                     batterySubmenu === 'fast'
                       ? 'bg-blue-50 border-blue-500 text-blue-700'
                       : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                  } ${!isCircuitFeatureSport(sport) ? 'cursor-not-allowed opacity-50' : ''}`}
+                  } ${!isCircuitFeatureSport(sport) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap ? 'cursor-not-allowed opacity-50' : ''}`}
                 >
                   Fast planner of Moveframes
                 </button>
@@ -1543,12 +1605,12 @@ export default function AddEditMoveframeModal({
                     }
                     setBatterySubmenu('ai');
                   }}
-                  disabled={!isCircuitFeatureSport(sport)}
+                  disabled={!isCircuitFeatureSport(sport) || isEditingCircuitFromMovelap || isEditingCircuitMoveframe}
                   className={`px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
                     batterySubmenu === 'ai'
                       ? 'bg-blue-50 border-blue-500 text-blue-700'
                       : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                  } ${!isCircuitFeatureSport(sport) ? 'cursor-not-allowed opacity-50' : ''}`}
+                  } ${!isCircuitFeatureSport(sport) || isEditingCircuitFromMovelap || isEditingCircuitMoveframe ? 'cursor-not-allowed opacity-50' : ''}`}
                 >
                   Plan of Moveframes with AI
                 </button>
@@ -4297,14 +4359,14 @@ export default function AddEditMoveframeModal({
           {/* 2026-01-22 14:30 UTC - Show based on batterySubmenu selection */}
           {/* 2026-01-23 - Using redesigned BatteryCircuitPlanner_REDESIGNED */}
           {/* 2026-01-24 - Pass existingMoveframe for edit mode */}
-          {type === 'BATTERY' && isCircuitFeatureSport(sport) && batterySubmenu === 'circuits' && (
+          {type === 'BATTERY' && canUseCircuitPlanner && batterySubmenu === 'circuits' && (
             <BatteryCircuitPlanner
               sectionId={workout?.id || ''}
               sport={sport}
               workout={workout}
               day={day}
               existingMoveframe={existingMoveframe}
-              startInSecondView={!!editingFromMovelap}
+              startInSecondView={!!editingFromMovelap || !!startInSecondView}
               editingMovelapTarget={editingMovelapTarget}
               onCreateCircuit={(circuitData) => {
                 // 2026-01-21 20:00 UTC - Handle circuit creation

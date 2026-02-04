@@ -15,11 +15,12 @@ export async function GET(request: NextRequest) {
     }
     const myId = decoded.userId;
 
-    const conversations = await prisma.chatConversation.findMany({
+    const userSelect = { id: true, name: true, telegramAccount: true, lastSeenAt: true } as any;
+    const conversations = (await prisma.chatConversation.findMany({
       where: { OR: [{ user1Id: myId }, { user2Id: myId }] },
       include: {
-        user1: { select: { id: true, name: true, telegramAccount: true, lastSeenAt: true } },
-        user2: { select: { id: true, name: true, telegramAccount: true, lastSeenAt: true } },
+        user1: { select: userSelect },
+        user2: { select: userSelect },
         messages: {
           orderBy: { createdAt: 'desc' },
           take: 1,
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
         },
       },
       orderBy: { updatedAt: 'desc' },
-    });
+    })) as any[];
 
     const ONLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
 

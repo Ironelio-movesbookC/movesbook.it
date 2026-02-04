@@ -265,7 +265,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [editingWorkout, setEditingWorkout] = useState<Workout | null>(null);
   const [editingMoveframe, setEditingMoveframe] = useState<Moveframe | null>(null);
   const [editingMovelap, setEditingMovelap] = useState<any>(null);
-  const [editingFromMovelap, setEditingFromMovelap] = useState(false); // Track if editing moveframe was triggered from movelap edit
+  const [editingFromMovelap, setEditingFromMovelap] = useState(false);
+  const [startInCircuitGrid, setStartInCircuitGrid] = useState(false);
   const [editingCircuitStation, setEditingCircuitStation] = useState<{ circuitLetter?: string; circuitIndex?: number; localSeriesNumber?: number; stationNumber?: number } | null>(null);
   
   // ==================== UI STATE ====================
@@ -2126,14 +2127,31 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   modalActions.setShowAddMoveframeModal(true);
                 }}
                 onAddMoveframeAfter={handleAddMoveframeAfter}
-                 onEditMoveframe={(moveframe, workout, day) => {
+                onEditMoveframe={(moveframe, workout, day) => {
+                  const notes = typeof moveframe?.notes === 'string' ? moveframe.notes : '';
+                  const hasCircuitMovelapMeta = (moveframe?.movelaps || []).some((movelap: any) => {
+                    if (!movelap) return false;
+                    if (movelap.circuitIndex != null || movelap.circuitLetter || movelap.stationNumber != null) return true;
+                    return typeof movelap.notes === 'string' && movelap.notes.includes('[CIRCUIT_META]');
+                  });
+                  const isCircuitMoveframe =
+                    !!moveframe?.isCircuitBased ||
+                    (typeof notes === 'string' && notes.includes('[CIRCUIT_DATA]')) ||
+                    hasCircuitMovelapMeta ||
+                    !!moveframe?.circuitConfig ||
+                    Array.isArray(moveframe?.circuits) ||
+                    Array.isArray(moveframe?.rows);
+                   setStartInCircuitGrid(isCircuitMoveframe);
+                   setEditingFromMovelap(false);
+                   setEditingCircuitStation(null);
+                   setActiveMovelap(null);
                    setEditingMoveframe(moveframe);
                    setActiveDay(day);
                    setActiveWorkout(workout);
                    setActiveMoveframe(moveframe);
                    setMoveframeModalMode('edit');
                    modalActions.setShowAddMoveframeModal(true);
-                 }}
+                }}
                  onEditMovelap={(movelap, moveframe, workout, day) => {
                   let circuitMeta = null;
                   if (movelap?.notes && typeof movelap.notes === 'string') {
@@ -2154,7 +2172,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                     stationNumber: circuitMeta?.stationNumber ?? movelap?.stationNumber
                   };
 
-                  const isCircuitMovelap = !!(circuitTarget.circuitLetter || circuitTarget.circuitIndex);
+                  const isCircuitMovelap = !!(circuitTarget.circuitLetter || circuitTarget.circuitIndex || moveframe?.isCircuitBased);
 
                   if (isCircuitMovelap && moveframe) {
                     setEditingMoveframe(moveframe);
@@ -2162,10 +2180,10 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                     setActiveWorkout(workout);
                     setActiveMoveframe(moveframe);
                     setActiveMovelap(movelap);
-                    setEditingFromMovelap(true); // Flag to indicate editing from movelap
                     setMoveframeModalMode('edit');
-                    setEditingFromMovelap(true);
-                    setEditingCircuitStation(circuitTarget);
+                    setEditingFromMovelap(false);
+                    setStartInCircuitGrid(true);
+                    setEditingCircuitStation(null);
                     modalActions.setShowAddMoveframeModal(true);
                     return;
                   }
@@ -2518,9 +2536,12 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
            mode={moveframeModalMode}
            workout={activeWorkout}
            day={activeDay}
+           existingMoveframe={editingMoveframe}
             onSetInsertIndex={(index) => setMoveframeInsertIndex(index)}
             editingFromMovelap={editingFromMovelap}
             editingMovelapTarget={editingCircuitStation}
+            targetMovelap={activeMovelap}
+            startInSecondView={startInCircuitGrid}
             onClose={() => {
               modalActions.setShowAddMoveframeModal(false);
             setActiveWorkout(null);
@@ -2530,133 +2551,262 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setEditingMoveframe(null);
             setMoveframeModalMode('add');
             setMoveframeInsertIndex(null); // Reset insert index
-            setEditingFromMovelap(false); // Reset the flag
+            setEditingFromMovelap(false);
+            setStartInCircuitGrid(false);
             setEditingCircuitStation(null);
             }}
-             onSave={async (moveframeData) => {
+            onSave={async (moveframeData) => {
              console.log(`📤 ${moveframeModalMode === 'edit' ? 'Updating' : 'Creating'} moveframe with data:`, moveframeData);
              
              try {
                const deps = getHandlerDeps();
                
                if (moveframeModalMode === 'edit' && editingMoveframe) {
-                // UPDATE existing moveframe
-              console.log('🔄 [UPDATE] Updating moveframe with manualPriority:', moveframeData.manualPriority);
-                // 2026-01-22 10:45 UTC - Prepare notes field with circuit config if applicable
-                let updateNotes = moveframeData.notes || '';
-                if (moveframeData.isCircuitBased && moveframeData.circuitConfig) {
-                  const baseNotes = (updateNotes || '')
-                    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
-                    .trim();
-                  const circuitMeta = {
-                    isCircuitBased: true,
-                    config: moveframeData.circuitConfig,
-                    circuits: moveframeData.circuits
-                  };
-                  const metaString = `[CIRCUIT_DATA]${JSON.stringify(circuitMeta)}[/CIRCUIT_DATA]`;
-                  updateNotes = baseNotes ? `${baseNotes}\n\n${metaString}` : metaString;
+                const resolvedMoveframeData = (editingFromMovelap && editingMoveframe)
+                  ? {
+                      ...moveframeData,
+                      sport: editingMoveframe.sport,
+                      type: editingMoveframe.type,
+                      sectionId: editingMoveframe.sectionId,
+                      manualMode: editingMoveframe.manualMode || false,
+                      manualPriority: editingMoveframe.manualPriority || false,
+                      manualInputType: editingMoveframe.manualInputType || 'meters',
+                      manualRepetitions: editingMoveframe.manualRepetitions,
+                      manualDistance: editingMoveframe.manualDistance,
+                      appliedTechnique: editingMoveframe.appliedTechnique,
+                      aerobicSeries: editingMoveframe.aerobicSeries
+                    }
+                  : moveframeData;
+                const shouldUpdateMoveframe = !(editingFromMovelap && activeMovelap && resolvedMoveframeData.type === 'BATTERY');
+                if (shouldUpdateMoveframe) {
+                  // UPDATE existing moveframe
+                  console.log('🔄 [UPDATE] Updating moveframe with manualPriority:', resolvedMoveframeData.manualPriority);
+                  // 2026-01-22 10:45 UTC - Prepare notes field with circuit config if applicable
+                  const existingNotes = typeof editingMoveframe?.notes === 'string' ? editingMoveframe.notes : '';
+                  let updateNotes = resolvedMoveframeData.notes || (editingFromMovelap ? existingNotes : '');
+                  const circuitDataMatch = existingNotes.match(/\[CIRCUIT_DATA\]([\s\S]*?)\[\/CIRCUIT_DATA\]/);
+                  let circuitDataFromNotes: any = null;
+                  if (circuitDataMatch?.[1]) {
+                    try {
+                      circuitDataFromNotes = JSON.parse(circuitDataMatch[1]);
+                    } catch {
+                      circuitDataFromNotes = null;
+                    }
+                  }
+                  const resolvedCircuitConfig = resolvedMoveframeData.circuitConfig ?? circuitDataFromNotes?.config ?? editingMoveframe?.circuitConfig ?? null;
+                  const resolvedCircuits = resolvedMoveframeData.circuits ?? circuitDataFromNotes?.circuits ?? editingMoveframe?.circuits ?? null;
+                  const resolvedIsCircuitBased = resolvedMoveframeData.isCircuitBased ?? editingMoveframe?.isCircuitBased ?? !!resolvedCircuitConfig;
+                  if (resolvedIsCircuitBased && resolvedCircuitConfig) {
+                    const baseNotes = (updateNotes || '')
+                      .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+                      .trim();
+                    const circuitMeta = {
+                      isCircuitBased: true,
+                      config: resolvedCircuitConfig,
+                      circuits: resolvedCircuits
+                    };
+                    const metaString = `[CIRCUIT_DATA]${JSON.stringify(circuitMeta)}[/CIRCUIT_DATA]`;
+                    updateNotes = baseNotes ? `${baseNotes}\n\n${metaString}` : metaString;
+                  }
+                  
+                  await moveframeHandlers.updateMoveframe(editingMoveframe.id, {
+                     sport: resolvedMoveframeData.sport,
+                     type: resolvedMoveframeData.type,
+                     description: resolvedMoveframeData.description,
+                     notes: updateNotes,
+                     macroFinal: resolvedMoveframeData.macroFinal,
+                    alarm: resolvedMoveframeData.alarm,
+                    sectionId: resolvedMoveframeData.sectionId,
+                    manualMode: resolvedMoveframeData.manualMode || false,
+                   manualPriority: resolvedMoveframeData.manualPriority || false,
+                    manualInputType: resolvedMoveframeData.manualInputType || 'meters',
+                    manualRepetitions: resolvedMoveframeData.manualRepetitions,
+                    manualDistance: resolvedMoveframeData.manualDistance,
+                    appliedTechnique: resolvedMoveframeData.appliedTechnique,
+                    aerobicSeries: resolvedMoveframeData.aerobicSeries,
+                    // Annotation fields
+                    annotationText: resolvedMoveframeData.annotationText,
+                    annotationBgColor: resolvedMoveframeData.annotationBgColor,
+                    annotationTextColor: resolvedMoveframeData.annotationTextColor,
+                    annotationBold: resolvedMoveframeData.annotationBold
+                  }, deps);
                 }
-                
-                await moveframeHandlers.updateMoveframe(editingMoveframe.id, {
-                   sport: moveframeData.sport,
-                   type: moveframeData.type,
-                   description: moveframeData.description,
-                   notes: updateNotes,
-                   macroFinal: moveframeData.macroFinal,
-                  alarm: moveframeData.alarm,
-                  sectionId: moveframeData.sectionId,
-                  manualMode: moveframeData.manualMode || false,
-                 manualPriority: moveframeData.manualPriority || false,
-                  manualInputType: moveframeData.manualInputType || 'meters',
-                  manualRepetitions: moveframeData.manualRepetitions,
-                  manualDistance: moveframeData.manualDistance,
-                  appliedTechnique: moveframeData.appliedTechnique,
-                  aerobicSeries: moveframeData.aerobicSeries,
-                  // Annotation fields
-                  annotationText: moveframeData.annotationText,
-                  annotationBgColor: moveframeData.annotationBgColor,
-                  annotationTextColor: moveframeData.annotationTextColor,
-                  annotationBold: moveframeData.annotationBold
-                }, deps);
                 
                 // ALWAYS regenerate movelaps for non-ANNOTATION types when editing
                 // This ensures Rip\Sets column and all movelap data stays in sync
                 // 2026-01-28 - Skip regeneration for manual mode moveframes (preserve user's custom summary)
-                if (moveframeData.type === 'BATTERY' && Array.isArray(moveframeData.movelaps) && moveframeData.movelaps.length > 0) {
-                  const token = localStorage.getItem('token');
-                  
-                  const deletePromises = (editingMoveframe.movelaps || []).map((movelap: any) =>
-                    fetch(`/api/workouts/movelaps/${movelap.id}`, {
-                      method: 'DELETE',
-                      headers: { 'Authorization': `Bearer ${token}` }
-                    })
-                  );
-                  await Promise.all(deletePromises);
-                  console.log(`✅ Deleted ${deletePromises.length} existing movelaps`);
-                  
-                  const newMovelaps = [...moveframeData.movelaps].sort((a: any, b: any) =>
-                    (a.repetitionNumber || 0) - (b.repetitionNumber || 0)
-                  );
-                  
-                  for (let index = 0; index < newMovelaps.length; index++) {
-                    const lap = newMovelaps[index];
-                    
-                    let movelapNotes = lap.notes || '';
-                    if (lap.circuitLetter) {
+                if (resolvedMoveframeData.type === 'BATTERY' && Array.isArray(resolvedMoveframeData.movelaps) && resolvedMoveframeData.movelaps.length > 0) {
+                  if (editingFromMovelap && activeMovelap) {
+                    const existingMoveframeNotes = typeof editingMoveframe?.notes === 'string' ? editingMoveframe.notes : '';
+                    const existingCircuitMatch = existingMoveframeNotes.match(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/);
+                    const circuitConfigToStore = resolvedMoveframeData.circuitConfig ?? editingMoveframe?.circuitConfig ?? null;
+                    const circuitsToStore = resolvedMoveframeData.circuits ?? editingMoveframe?.circuits ?? null;
+                    if (!existingCircuitMatch && (circuitConfigToStore || circuitsToStore)) {
+                      const baseNotes = (resolvedMoveframeData.notes || existingMoveframeNotes || '')
+                        .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+                        .trim();
                       const circuitMeta = {
-                        circuitLetter: lap.circuitLetter,
-                        circuitIndex: lap.circuitIndex,
-                        seriesNumber: lap.seriesNumber,
-                        localSeriesNumber: lap.localSeriesNumber,
-                        stationNumber: lap.stationNumber,
-                        sector: lap.sector
+                        isCircuitBased: true,
+                        config: circuitConfigToStore,
+                        circuits: circuitsToStore
                       };
-                      const metaString = `\n[CIRCUIT_META]${JSON.stringify(circuitMeta)}[/CIRCUIT_META]`;
-                      movelapNotes = movelapNotes + metaString;
+                      const metaString = `[CIRCUIT_DATA]${JSON.stringify(circuitMeta)}[/CIRCUIT_DATA]`;
+                      const restoredNotes = baseNotes ? `${baseNotes}\n\n${metaString}` : metaString;
+                      await moveframeHandlers.updateMoveframe(editingMoveframe.id, { notes: restoredNotes }, deps);
                     }
-                    
-                    let pauseValue = lap.pause || null;
-                    if (typeof pauseValue === 'number') {
-                      const minutes = Math.floor(pauseValue / 60);
-                      const seconds = pauseValue % 60;
-                      pauseValue = `${minutes}'${seconds.toString().padStart(2, '0')}"`;
-                    }
-                    
-                    await fetch('/api/workouts/movelaps', {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                      },
-                      body: JSON.stringify({
-                        moveframeId: editingMoveframe.id,
-                        repetitionNumber: lap.repetitionNumber || (index + 1),
-                        distance: lap.distance || null,
-                        speed: (lap.circuitLetter && lap.reps) ? String(lap.reps) : (lap.speed || null),
-                        style: lap.circuitLetter ? (lap.sector || lap.style || null) : (lap.style || null),
-                        pace: lap.pace || null,
-                        time: lap.time || null,
-                        rowPerMin: lap.rowPerMin || null,
-                        pause: pauseValue,
-                        alarm: lap.alarm || null,
-                        sound: lap.sound || null,
-                        notes: movelapNotes || null,
-                        reps: lap.reps || null,
-                        weight: lap.weight || null,
-                        tools: lap.tools || null,
-                        muscularSector: lap.muscularSector || null,
-                        exercise: lap.exercise || null,
-                        restType: lap.restType || null,
-                        r1: lap.r1 || null,
-                        r2: lap.r2 || null,
-                        macroFinal: lap.macroFinal || null,
-                        status: lap.status || 'PENDING'
-                      })
+                    const target = editingCircuitStation || {
+                      circuitLetter: activeMovelap.circuitLetter,
+                      circuitIndex: activeMovelap.circuitIndex,
+                      localSeriesNumber: activeMovelap.localSeriesNumber,
+                      stationNumber: activeMovelap.stationNumber
+                    };
+
+                    const matchedLap = resolvedMoveframeData.movelaps.find((lap: any) => {
+                      const letterMatch = target?.circuitLetter ? lap.circuitLetter === target.circuitLetter : true;
+                      const indexMatch = typeof target?.circuitIndex === 'number' ? lap.circuitIndex === target.circuitIndex : true;
+                      const seriesMatch = typeof target?.localSeriesNumber === 'number' ? lap.localSeriesNumber === target.localSeriesNumber : true;
+                      const stationMatch = typeof target?.stationNumber === 'number' ? lap.stationNumber === target.stationNumber : true;
+                      return letterMatch && indexMatch && seriesMatch && stationMatch;
                     });
+
+                    if (matchedLap) {
+                      let pauseValue = matchedLap.pause ?? activeMovelap.pause ?? null;
+                      if (typeof pauseValue === 'number') {
+                        const minutes = Math.floor(pauseValue / 60);
+                        const seconds = pauseValue % 60;
+                        pauseValue = `${minutes}'${seconds.toString().padStart(2, '0')}"`;
+                      }
+                      const hasExplicitMacro = activeMovelap.macroFinal !== null && activeMovelap.macroFinal !== undefined && activeMovelap.macroFinal !== '';
+                      const hasExplicitPause = activeMovelap.pause !== null && activeMovelap.pause !== undefined && activeMovelap.pause !== '';
+                      let updatedPauseValue = pauseValue;
+                      let updatedMacroFinal = activeMovelap.macroFinal ?? null;
+                      if (hasExplicitMacro && !hasExplicitPause) {
+                        updatedPauseValue = null;
+                        updatedMacroFinal = pauseValue;
+                      } else if (hasExplicitPause && !hasExplicitMacro) {
+                        updatedPauseValue = pauseValue;
+                        updatedMacroFinal = null;
+                      } else if (!hasExplicitPause && !hasExplicitMacro) {
+                        updatedPauseValue = pauseValue;
+                        updatedMacroFinal = null;
+                      }
+
+                      const existingNotes = typeof activeMovelap.notes === 'string' ? activeMovelap.notes : '';
+                      let updatedNotes = matchedLap.notes || existingNotes || '';
+                      const metaMatch = existingNotes.match(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/);
+                      if (metaMatch) {
+                        updatedNotes = updatedNotes ? `${updatedNotes}\n${metaMatch[0]}` : metaMatch[0];
+                      }
+
+                      const token = localStorage.getItem('token');
+                      if (!token) {
+                        showMessage('error', 'Authentication required');
+                        return;
+                      }
+
+                      const response = await fetch(`/api/workouts/movelaps?id=${activeMovelap.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                          speed: matchedLap.reps ? String(matchedLap.reps) : activeMovelap.speed,
+                          style: matchedLap.sector || activeMovelap.style,
+                          pause: updatedPauseValue,
+                          macroFinal: updatedMacroFinal,
+                          notes: updatedNotes,
+                          muscularSector: matchedLap.sector || activeMovelap.muscularSector,
+                          exercise: matchedLap.exercise || activeMovelap.exercise,
+                          reps: matchedLap.reps ?? activeMovelap.reps
+                        })
+                      });
+
+                      if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData?.error || 'Failed to update movelap');
+                      }
+
+                      console.log('✅ Updated single circuit movelap without regenerating table');
+                    } else {
+                      showMessage('warning', 'Unable to match the edited station to update');
+                    }
+                  } else {
+                    const token = localStorage.getItem('token');
+                    
+                    const deletePromises = (editingMoveframe.movelaps || []).map((movelap: any) =>
+                      fetch(`/api/workouts/movelaps/${movelap.id}`, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                      })
+                    );
+                    await Promise.all(deletePromises);
+                    console.log(`✅ Deleted ${deletePromises.length} existing movelaps`);
+                    
+                    const newMovelaps = [...resolvedMoveframeData.movelaps].sort((a: any, b: any) =>
+                      (a.repetitionNumber || 0) - (b.repetitionNumber || 0)
+                    );
+                    
+                    for (let index = 0; index < newMovelaps.length; index++) {
+                      const lap = newMovelaps[index];
+                      
+                      let movelapNotes = lap.notes || '';
+                      if (lap.circuitLetter) {
+                        const circuitMeta = {
+                          circuitLetter: lap.circuitLetter,
+                          circuitIndex: lap.circuitIndex,
+                          seriesNumber: lap.seriesNumber,
+                          localSeriesNumber: lap.localSeriesNumber,
+                          stationNumber: lap.stationNumber,
+                          sector: lap.sector
+                        };
+                        const metaString = `\n[CIRCUIT_META]${JSON.stringify(circuitMeta)}[/CIRCUIT_META]`;
+                        movelapNotes = movelapNotes + metaString;
+                      }
+                      
+                      let pauseValue = lap.pause || null;
+                      if (typeof pauseValue === 'number') {
+                        const minutes = Math.floor(pauseValue / 60);
+                        const seconds = pauseValue % 60;
+                        pauseValue = `${minutes}'${seconds.toString().padStart(2, '0')}"`;
+                      }
+                      
+                      await fetch('/api/workouts/movelaps', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                          moveframeId: editingMoveframe.id,
+                          repetitionNumber: lap.repetitionNumber || (index + 1),
+                          distance: lap.distance || null,
+                          speed: (lap.circuitLetter && lap.reps) ? String(lap.reps) : (lap.speed || null),
+                          style: lap.circuitLetter ? (lap.sector || lap.style || null) : (lap.style || null),
+                          pace: lap.pace || null,
+                          time: lap.time || null,
+                          rowPerMin: lap.rowPerMin || null,
+                          pause: pauseValue,
+                          alarm: lap.alarm || null,
+                          sound: lap.sound || null,
+                          notes: movelapNotes || null,
+                          reps: lap.reps || null,
+                          weight: lap.weight || null,
+                          tools: lap.tools || null,
+                          muscularSector: lap.muscularSector || null,
+                          exercise: lap.exercise || null,
+                          restType: lap.restType || null,
+                          r1: lap.r1 || null,
+                          r2: lap.r2 || null,
+                          macroFinal: lap.macroFinal || null,
+                          status: lap.status || 'PENDING'
+                        })
+                      });
+                    }
+                    
+                    console.log(`✅ Created ${newMovelaps.length} new movelaps with updated circuit data`);
+                    console.log(`📊 Rip\\Sets column will now show: ${newMovelaps.length}`);
                   }
-                  
-                  console.log(`✅ Created ${newMovelaps.length} new movelaps with updated circuit data`);
-                  console.log(`📊 Rip\\Sets column will now show: ${newMovelaps.length}`);
                 } else if (moveframeData.type !== 'ANNOTATION' && !moveframeData.manualMode) {
                    const baseReps = parseInt(moveframeData.repetitions) || 1;
                    const AEROBIC_SPORTS = ['SWIM', 'BIKE', 'MTB', 'SPINNING', 'RUN', 'ROWING', 'CANOEING', 'KAYAKING', 'SKATE', 'SKI', 'SNOWBOARD', 'WALKING', 'HIKING'];
