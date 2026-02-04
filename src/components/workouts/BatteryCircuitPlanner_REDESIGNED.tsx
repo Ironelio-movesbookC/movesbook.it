@@ -32,6 +32,8 @@ interface BatteryCircuitPlannerProps {
   existingMoveframe?: any; // For edit mode
   startInSecondView?: boolean; // Start directly in circuit grid view
   editingMovelapTarget?: { circuitLetter?: string; circuitIndex?: number; localSeriesNumber?: number; stationNumber?: number } | null;
+  targetMovelap?: any; // The specific movelap being edited (for circuit mode)
+  hideUI?: boolean;
 }
 
 // Helper function to extract circuit data from moveframe notes
@@ -60,7 +62,9 @@ export default function BatteryCircuitPlanner({
   onCancel,
   existingMoveframe,
   startInSecondView,
-  editingMovelapTarget
+  editingMovelapTarget,
+  targetMovelap: _targetMovelap,
+  hideUI: _hideUI
 }: BatteryCircuitPlannerProps) {
   // Extract existing circuit data if in edit mode
   const existingCircuitData = existingMoveframe ? extractCircuitData(existingMoveframe.notes) : null;
