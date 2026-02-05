@@ -19,7 +19,7 @@ export async function createMoveframe(
   moveframeData: any,
   deps: MoveframeHandlerDeps
 ) {
-  const { token, showMessage } = deps;
+  const { token, showMessage, loadWorkoutData, activeSection } = deps;
   
   console.log('📤 Creating moveframe with data:', moveframeData);
   
@@ -60,7 +60,7 @@ export async function updateMoveframe(
   moveframeData: any,
   deps: MoveframeHandlerDeps
 ) {
-  const { token, showMessage } = deps;
+  const { token, showMessage, loadWorkoutData, activeSection } = deps;
   
   console.log('📤 Updating moveframe with data:', moveframeData);
   

@@ -29,7 +29,7 @@ interface SortableMoveframeRowProps {
   onToggleExpand: () => void;
   onEditMoveframe?: (moveframe: any) => void;
   onDeleteMoveframe?: (moveframe: any) => void;
-  onEditMovelap?: (movelap: any, moveframe: any) => void;
+  onEditMovelap?: (movelap: any, moveframe: any, workout?: any, day?: any) => void;
   onDeleteMovelap?: (movelap: any, moveframe: any) => void;
   onAddMovelap?: (moveframe: any) => void;
   onAddMovelapAfter?: (movelap: any, index: number, moveframe: any, workout: any, day: any) => void;

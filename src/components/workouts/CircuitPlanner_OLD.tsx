@@ -42,6 +42,10 @@ interface Circuit {
   series: number;
   pauseBetweenSeries: number;
   pauseAfterCircuit: number;
+  /** Per-series pause (index = series number - 1). Falls back to pauseSeries if absent. */
+  seriesPauses?: number[];
+  /** Pause after this circuit. Alias / optional override for pauseAfterCircuit. */
+  restAfterCircuit?: number;
 }
 
 interface CircuitPlannerProps {
@@ -60,6 +64,7 @@ interface CircuitPlannerProps {
     loadOfWork?: number;
     executionMode?: 'vertical' | 'horizontal';
     startInTablePhase?: boolean;
+    hideUI?: boolean; // Hide configuration UI (e.g. invisible mode)
     existingCircuits?: any[]; // Pre-existing circuit data with exercises
     editingFromMovelap?: boolean; // Flag to indicate editing from movelap click
     editingMovelapTarget?: { circuitLetter?: string; circuitIndex?: number; localSeriesNumber?: number; stationNumber?: number } | null;
@@ -2100,8 +2105,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           Load of work (Reps) - optional
         </label>
         <select
-          value={loadOfWorkReps}
-          onChange={(e) => setLoadOfWorkReps(e.target.value)}
+          value={loadOfWork}
+          onChange={(e) => setLoadOfWork(e.target.value)}
           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-amber-500"
         >
           <option value="">Select...</option>
@@ -2854,8 +2859,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
               <button
                 onClick={() => {
                   const count = parseInt((document.getElementById('add-circuit-count') as HTMLInputElement)?.value || '1');
-                  const position = parseInt((document.getElementById('add-circuit-position') as HTMLSelectElement)?.value || '-1');
-                  handleAddCircuits(Math.min(3, Math.max(1, count)), position);
+                  handleAddCircuits(Math.min(3, Math.max(1, count)));
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
               >
