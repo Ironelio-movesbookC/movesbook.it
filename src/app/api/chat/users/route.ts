@@ -20,11 +20,22 @@ export async function GET(request: NextRequest) {
         id: { not: myId },
         telegramAccount: { not: null },
       },
-      select: { id: true, name: true, username: true, telegramAccount: true },
+      select: { id: true, name: true, username: true, telegramAccount: true, lastSeenAt: true },
       orderBy: { name: 'asc' },
     });
 
-    return NextResponse.json({ users });
+    const ONLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+    const usersWithPresence = users.map((u) => ({
+      id: u.id,
+      name: u.name,
+      username: u.username,
+      telegramAccount: u.telegramAccount,
+      lastSeenAt: u.lastSeenAt?.toISOString() ?? null,
+      isOnline:
+        u.lastSeenAt != null && Date.now() - u.lastSeenAt.getTime() < ONLINE_THRESHOLD_MS,
+    }));
+
+    return NextResponse.json({ users: usersWithPresence });
   } catch (error) {
     console.error('Chat users GET:', error);
     return NextResponse.json({ error: 'Failed to load users' }, { status: 500 });

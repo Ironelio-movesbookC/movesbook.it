@@ -27,6 +27,15 @@ export async function GET(
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
+    // Mark conversation as read when user opens it
+    await prisma.chatConversation.update({
+      where: { id: conversationId },
+      data:
+        conv.user1Id === myId
+          ? { user1LastReadAt: new Date() }
+          : { user2LastReadAt: new Date() },
+    });
+
     const messages = await prisma.chatMessage.findMany({
       where: { conversationId },
       include: { sender: { select: { id: true, name: true } } },

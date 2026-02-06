@@ -47,6 +47,7 @@ model User {
   workoutTemplates         WorkoutTemplate[]
   telegramAccount          String?
   telegramChatId           String?   // Telegram chat id for sending/receiving via bot
+  lastSeenAt               DateTime? // For chat online/offline status
   conversationsStarted    ChatConversation[] @relation("ConversationStarter")
   conversationsReceived   ChatConversation[] @relation("ConversationReceiver")
   chatMessagesSent         ChatMessage[]     @relation("MessageSender")
@@ -55,14 +56,16 @@ model User {
 }
 
 model ChatConversation {
-  id           String        @id @default(cuid())
-  user1Id      String
-  user2Id      String
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  user1        User          @relation("ConversationStarter", fields: [user1Id], references: [id], onDelete: Cascade)
-  user2        User          @relation("ConversationReceiver", fields: [user2Id], references: [id], onDelete: Cascade)
-  messages     ChatMessage[]
+  id               String        @id @default(cuid())
+  user1Id          String
+  user2Id          String
+  user1LastReadAt  DateTime?     // Last time user1 read this conversation
+  user2LastReadAt  DateTime?     // Last time user2 read this conversation
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  user1            User          @relation("ConversationStarter", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2            User          @relation("ConversationReceiver", fields: [user2Id], references: [id], onDelete: Cascade)
+  messages         ChatMessage[]
 
   @@unique([user1Id, user2Id])
   @@index([user1Id])
