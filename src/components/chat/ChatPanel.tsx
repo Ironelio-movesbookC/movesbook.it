@@ -1,7 +1,43 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, Send, Search, Menu, Users, X } from 'lucide-react';
+import { MessageSquare, Send, Search, Menu, Users, X, Trash2 } from 'lucide-react';
+
+/** Turn URLs in text into clickable links (http/https only). Returns array of React nodes. */
+function linkify(text: string, isOwn: boolean): (string | React.ReactNode)[] {
+  const urlRegex = /(https?:\/\/[^\s<>]+)/g;
+  const parts: (string | React.ReactNode)[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = urlRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    const url = match[0];
+    const href = url.replace(/[.,;:!?)]+$/, ''); // trim trailing punctuation from link
+    parts.push(
+      <a
+        key={key++}
+        href={href.startsWith('http') ? href : `https://${href}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={isOwn ? 'underline text-blue-100' : 'underline text-blue-600'}
+      >
+        {url}
+      </a>
+    );
+    lastIndex = match.index + url.length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts.length > 0 ? parts : [text];
+}
+
+function isImageContent(content: string): boolean {
+  return content.startsWith('data:image/');
+}
 
 export type ConversationItem = {
   id: string;
@@ -63,6 +99,9 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [showUserList, setShowUserList] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
 
   const loadConversations = useCallback(async () => {
     setLoadingConversations(true);
@@ -135,6 +174,7 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
     } else {
       setMessages([]);
     }
+    setSelectedMessageIds(new Set());
   }, [selectedConversationId, loadMessages]);
 
   const handleStartChat = async (otherUser: ChatUser) => {
@@ -156,12 +196,9 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
     }
   };
 
-  const handleSendMessage = async () => {
-    const content = message.trim();
-    if (!content || !selectedConversationId || sending) return;
-
-    setSending(true);
-    try {
+  const sendContent = useCallback(
+    async (content: string) => {
+      if (!selectedConversationId || sending) return false;
       const res = await fetch(`/api/chat/conversations/${selectedConversationId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -170,15 +207,101 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
       if (res.ok) {
         const data = await res.json();
         setMessages((prev) => [...prev, data]);
-        setMessage('');
         loadConversations();
+        return true;
       }
+      return false;
+    },
+    [selectedConversationId, sending, getAuthHeaders, loadConversations]
+  );
+
+  const handleSendMessage = async () => {
+    const textContent = message.trim();
+    if (pendingImage) {
+      setSending(true);
+      try {
+        await sendContent(pendingImage);
+        setPendingImage(null);
+      } catch (e) {
+        console.error('Send image:', e);
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+    if (!textContent || !selectedConversationId || sending) return;
+
+    setSending(true);
+    try {
+      await sendContent(textContent);
+      setMessage('');
     } catch (e) {
       console.error('Send message:', e);
     } finally {
       setSending(false);
     }
   };
+
+  const toggleMessageSelection = (messageId: string, isOwn: boolean) => {
+    if (!isOwn) return;
+    setSelectedMessageIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedMessageIds.size === 0 || !selectedConversationId) return;
+    setDeleting(true);
+    try {
+      await Promise.all(
+        Array.from(selectedMessageIds).map((messageId) =>
+          fetch(
+            `/api/chat/conversations/${selectedConversationId}/messages/${messageId}`,
+            { method: 'DELETE', headers: getAuthHeaders() }
+          )
+        )
+      );
+      setSelectedMessageIds(new Set());
+      loadMessages(selectedConversationId);
+      loadConversations();
+    } catch (e) {
+      console.error('Delete messages:', e);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          e.preventDefault();
+          const file = items[i].getAsFile();
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            if (selectedConversationId && !sending) {
+              setSending(true);
+              sendContent(dataUrl)
+                .finally(() => setSending(false))
+                .catch((err) => console.error('Send pasted image:', err));
+            } else {
+              setPendingImage(dataUrl);
+            }
+          };
+          reader.readAsDataURL(file);
+          return;
+        }
+      }
+    },
+    [selectedConversationId, sending, sendContent]
+  );
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -330,7 +453,7 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
                               c.unreadCount > 0 ? 'text-gray-900 font-medium' : 'text-gray-600'
                             }`}
                           >
-                            {c.lastMessage.content}
+                            {isImageContent(c.lastMessage.content) ? '[Image]' : c.lastMessage.content}
                           </p>
                         )}
                       </div>
@@ -360,44 +483,110 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
               )}
             </div>
 
+            {selectedMessageIds.size > 0 && (
+              <div className="px-4 py-2 border-b border-gray-200 bg-gray-100 flex items-center gap-2 flex-shrink-0">
+                <span className="text-sm text-gray-700">
+                  {selectedMessageIds.size} message{selectedMessageIds.size !== 1 ? 's' : ''} selected
+                </span>
+                <button
+                  type="button"
+                  onClick={handleDeleteSelected}
+                  disabled={deleting}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMessageIds(new Set())}
+                  className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-200 rounded"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
             <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-4">
               {loadingMessages ? (
                 <div className="text-center text-gray-500 text-sm">Loading messages…</div>
               ) : (
-                messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex ${msg.isOwn ? 'justify-end' : 'justify-start'}`}
-                  >
+                messages.map((msg) => {
+                  const isSelected = selectedMessageIds.has(msg.id);
+                  const isImage = isImageContent(msg.content);
+                  return (
                     <div
-                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                        msg.isOwn ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900'
-                      }`}
+                      key={msg.id}
+                      className={`flex ${msg.isOwn ? 'justify-end' : 'justify-start'}`}
                     >
-                      <p className="text-sm">{msg.content}</p>
-                      <p className={`text-xs mt-1 ${msg.isOwn ? 'text-blue-100' : 'text-gray-500'}`}>
-                        {formatTime(msg.createdAt)}
-                      </p>
+                      <div
+                        role={msg.isOwn ? 'button' : undefined}
+                        tabIndex={msg.isOwn ? 0 : undefined}
+                        onClick={() => msg.isOwn && toggleMessageSelection(msg.id, true)}
+                        onKeyDown={(e) =>
+                          msg.isOwn && (e.key === 'Enter' || e.key === ' ') && toggleMessageSelection(msg.id, true)
+                        }
+                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                          msg.isOwn ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900'
+                        } ${msg.isOwn ? 'cursor-pointer select-none' : ''} ${
+                          isSelected ? 'ring-2 ring-offset-2 ring-blue-700' : ''
+                        }`}
+                      >
+                        {isImage ? (
+                          <img
+                            src={msg.content}
+                            alt="Shared"
+                            className="max-w-full max-h-48 rounded object-contain"
+                          />
+                        ) : (
+                          <p className="text-sm whitespace-pre-wrap break-words">
+                            {linkify(msg.content, msg.isOwn).map((part, i) => (
+                              <span key={i}>{part}</span>
+                            ))}
+                          </p>
+                        )}
+                        <p className={`text-xs mt-1 ${msg.isOwn ? 'text-blue-100' : 'text-gray-500'}`}>
+                          {formatTime(msg.createdAt)}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
             <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+              {pendingImage && (
+                <div className="mb-2 flex items-center gap-2">
+                  <img
+                    src={pendingImage}
+                    alt="Paste preview"
+                    className="h-16 w-16 object-cover rounded border border-gray-300"
+                  />
+                  <span className="text-sm text-gray-600">Pasted image — click Send or paste again to replace</span>
+                  <button
+                    type="button"
+                    onClick={() => setPendingImage(null)}
+                    className="text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   onKeyDown={handleKeyPress}
-                  placeholder="Message"
+                  onPaste={handlePaste}
+                  placeholder="Message (paste image to send)"
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
                   type="button"
                   onClick={handleSendMessage}
-                  disabled={sending || !message.trim()}
+                  disabled={sending || (!message.trim() && !pendingImage)}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Send className="w-4 h-4" />

@@ -75,7 +75,8 @@ export async function POST(
     const myId = decoded.userId;
     const { id: conversationId } = await params;
     const body = await request.json();
-    const content = typeof body?.content === 'string' ? body.content.trim() : '';
+    const rawContent = typeof body?.content === 'string' ? body.content : '';
+    const content = rawContent.startsWith('data:image/') ? rawContent : rawContent.trim();
     if (!content) {
       return NextResponse.json({ error: 'Content required' }, { status: 400 });
     }
@@ -98,9 +99,10 @@ export async function POST(
 
     const other = conv.user1Id === myId ? conv.user2 : conv.user1;
     if (other.telegramChatId) {
+      const preview = content.startsWith('data:image/') ? '[Image]' : content;
       const sent = await sendTelegramMessage(
         other.telegramChatId,
-        `${conv.user1Id === myId ? conv.user2.name : conv.user1.name}: ${content}`
+        `${conv.user1Id === myId ? conv.user2.name : conv.user1.name}: ${preview}`
       );
       if (sent?.messageId) {
         await prisma.chatMessage.update({
