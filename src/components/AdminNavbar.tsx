@@ -270,8 +270,8 @@ export default function AdminNavbar() {
 
             {/* Search Bar - Desktop */}
             <div className="hidden xl:block">
-              <form onSubmit={handleSearch} className="flex items-center gap-2">
-                <span className="text-sm text-gray-300 leading-none">Search in</span>
+              <form onSubmit={handleSearch} className="flex items-baseline gap-2">
+                <span className="text-sm text-gray-300 font-bold">Search in</span>
                 <select
                   value={searchCategory}
                   onChange={(e) => setSearchCategory(e.target.value)}
