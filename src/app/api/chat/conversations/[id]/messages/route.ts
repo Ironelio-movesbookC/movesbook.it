@@ -27,15 +27,6 @@ export async function GET(
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
-    // Mark conversation as read when user opens it
-    await prisma.chatConversation.update({
-      where: { id: conversationId },
-      data:
-        conv.user1Id === myId
-          ? { user1LastReadAt: new Date() }
-          : { user2LastReadAt: new Date() },
-    });
-
     const messages = await prisma.chatMessage.findMany({
       where: { conversationId },
       include: { sender: { select: { id: true, name: true } } },
@@ -75,8 +66,7 @@ export async function POST(
     const myId = decoded.userId;
     const { id: conversationId } = await params;
     const body = await request.json();
-    const rawContent = typeof body?.content === 'string' ? body.content : '';
-    const content = rawContent.startsWith('data:image/') ? rawContent : rawContent.trim();
+    const content = typeof body?.content === 'string' ? body.content.trim() : '';
     if (!content) {
       return NextResponse.json({ error: 'Content required' }, { status: 400 });
     }
@@ -99,10 +89,9 @@ export async function POST(
 
     const other = conv.user1Id === myId ? conv.user2 : conv.user1;
     if (other.telegramChatId) {
-      const preview = content.startsWith('data:image/') ? '[Image]' : content;
       const sent = await sendTelegramMessage(
         other.telegramChatId,
-        `${conv.user1Id === myId ? conv.user2.name : conv.user1.name}: ${preview}`
+        `${conv.user1Id === myId ? conv.user2.name : conv.user1.name}: ${content}`
       );
       if (sent?.messageId) {
         await prisma.chatMessage.update({

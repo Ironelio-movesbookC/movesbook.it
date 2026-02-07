@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -46,26 +46,23 @@ model User {
   executionTechniques      ExecutionTechnique[]
   workoutTemplates         WorkoutTemplate[]
   telegramAccount          String?
-  telegramChatId           String?   // Telegram chat id for sending/receiving via bot
-  lastSeenAt               DateTime? // For chat online/offline status
-  conversationsStarted    ChatConversation[] @relation("ConversationStarter")
-  conversationsReceived   ChatConversation[] @relation("ConversationReceiver")
-  chatMessagesSent         ChatMessage[]     @relation("MessageSender")
+  telegramChatId           String? // Telegram chat id for sending/receiving via bot
+  conversationsStarted     ChatConversation[]    @relation("ConversationStarter")
+  conversationsReceived    ChatConversation[]    @relation("ConversationReceiver")
+  chatMessagesSent         ChatMessage[]         @relation("MessageSender")
 
   @@map("users_new")
 }
 
 model ChatConversation {
-  id               String        @id @default(cuid())
-  user1Id          String
-  user2Id          String
-  user1LastReadAt  DateTime?     // Last time user1 read this conversation
-  user2LastReadAt  DateTime?     // Last time user2 read this conversation
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  user1            User          @relation("ConversationStarter", fields: [user1Id], references: [id], onDelete: Cascade)
-  user2            User          @relation("ConversationReceiver", fields: [user2Id], references: [id], onDelete: Cascade)
-  messages         ChatMessage[]
+  id        String        @id @default(cuid())
+  user1Id   String
+  user2Id   String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  user1     User          @relation("ConversationStarter", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2     User          @relation("ConversationReceiver", fields: [user2Id], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
 
   @@unique([user1Id, user2Id])
   @@index([user1Id])
@@ -74,14 +71,14 @@ model ChatConversation {
 }
 
 model ChatMessage {
-  id              String           @id @default(cuid())
-  conversationId  String
-  senderId        String
-  content         String           @db.Text
-  telegramMessageId String?        // id from Telegram when sent/received via bot
-  createdAt       DateTime        @default(now())
-  conversation    ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender          User             @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  id                String           @id @default(cuid())
+  conversationId    String
+  senderId          String
+  content           String           
+  telegramMessageId String? // id from Telegram when sent/received via bot
+  createdAt         DateTime         @default(now())
+  conversation      ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender            User             @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([conversationId])
   @@index([senderId])
@@ -103,9 +100,9 @@ model Language {
 model Translation {
   id        String   @id @default(cuid())
   key       String
-  language  String   
-  value     String   @db.Text
-  category  String   @default("general") 
+  language  String
+  value     String   
+  category  String   @default("general")
   isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
@@ -151,7 +148,7 @@ model WorkoutWeek {
   weekNumber    Int
   createdAt     DateTime     @default(now())
   periodId      String?
-  notes         String?      
+  notes         String?
   days          WorkoutDay[]
   period        Period?      @relation("WeekPeriod", fields: [periodId], references: [id])
   workoutPlan   WorkoutPlan  @relation(fields: [workoutPlanId], references: [id], onDelete: Cascade)
@@ -170,7 +167,7 @@ model WorkoutDay {
   periodId           String
   weather            String?
   feelingStatus      String?
-  notes              String?          
+  notes              String?
   createdAt          DateTime         @default(now())
   userId             String
   assignedToUserId   String?
@@ -192,16 +189,16 @@ model WorkoutDay {
 }
 
 model Period {
-  id          String        @id @default(cuid())
-  userId      String
-  name        String
-  description String
-  color       String
-  displayOrder Int          @default(0) // Order for display in lists
-  createdAt   DateTime      @default(now())
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  days        WorkoutDay[]
-  weeks       WorkoutWeek[] @relation("WeekPeriod")
+  id           String        @id @default(cuid())
+  userId       String
+  name         String
+  description  String
+  color        String
+  displayOrder Int           @default(0) // Order for display in lists
+  createdAt    DateTime      @default(now())
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  days         WorkoutDay[]
+  weeks        WorkoutWeek[] @relation("WeekPeriod")
 
   @@index([userId], map: "periods_userId_fkey")
   @@map("periods")
@@ -254,9 +251,9 @@ model Moveframe {
   sport               SportType
   sectionId           String
   type                MoveframeType
-  description         String         @db.Text
+  description         String         
   createdAt           DateTime       @default(now())
-  notes               String?        @db.Text        
+  notes               String?        
   macroFinal          String?
   alarm               Int?
   annotationBgColor   String?
@@ -267,10 +264,10 @@ model Moveframe {
   manualMode          Boolean?       @default(false)
   manualPriority      Boolean?       @default(false) // Priority flag for manual mode display
   favourite           Boolean?       @default(false)
-  repetitions         Int?           // Number of series/repetitions for manual mode
-  distance            Int?           // Distance value for manual mode (meters) or time value storage
+  repetitions         Int? // Number of series/repetitions for manual mode
+  distance            Int? // Distance value for manual mode (meters) or time value storage
   manualInputType     String?        @default("meters") // For aerobic sports: "meters" or "time" (123456 format)
-  appliedTechnique    String?        // Body Building technique applied (for BODY_BUILDING sport only)
+  appliedTechnique    String? // Body Building technique applied (for BODY_BUILDING sport only)
   aerobicSeries       Int?           @default(1) // Series/Batteries/Groups for aerobic sports (range 1-9, default 1)
   section             WorkoutSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   workoutSession      WorkoutSession @relation(fields: [workoutSessionId], references: [id], onDelete: Cascade)
@@ -282,31 +279,31 @@ model Moveframe {
 }
 
 model WorkoutSection {
-  id          String      @id @default(cuid())
-  userId      String
-  name        String
-  code        String? // Short code (max 5 characters) for compact display
-  description String
-  color       String
-  displayOrder Int        @default(0) // Order for display in lists
-  createdAt   DateTime    @default(now())
-  moveframes  Moveframe[]
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String      @id @default(cuid())
+  userId       String
+  name         String
+  code         String? // Short code (max 5 characters) for compact display
+  description  String
+  color        String
+  displayOrder Int         @default(0) // Order for display in lists
+  createdAt    DateTime    @default(now())
+  moveframes   Moveframe[]
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId], map: "workout_sections_userId_fkey")
   @@map("workout_sections")
 }
 
 model ExecutionTechnique {
-  id          String   @id @default(cuid())
-  userId      String
-  name        String
-  description String
-  color       String
-  sports      String   @default("") // Comma-separated list of sports that can use this technique
-  displayOrder Int     @default(0) // Order for display in lists
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  description  String
+  color        String
+  sports       String   @default("") // Comma-separated list of sports that can use this technique
+  displayOrder Int      @default(0) // Order for display in lists
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId], map: "bodybuilding_techniques_userId_fkey")
   @@map("bodybuilding_techniques")
@@ -327,7 +324,7 @@ model Movelap {
   pause            String?
   alarm            Int?
   sound            String?
-  notes            String?        @db.Text
+  notes            String?       
   status           MovelapStatus
   isSkipped        Boolean       @default(false)
   isDisabled       Boolean       @default(false)
@@ -368,19 +365,19 @@ model UserSettings {
   imageQuality           String    @default("high")
   lazyLoading            Boolean   @default(true)
   dashboardLayout        String    @default("default")
-  widgetArrangement      String    @db.Text
-  colorSettings          String    @db.Text
+  widgetArrangement      String    
+  colorSettings          String    
   language               String    @default("en")
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @default(now()) @updatedAt
-  adminSettings          String    @db.Text
-  favouritesSettings     String    @db.Text
-  myBestSettings         String    @db.Text
-  notificationSettings   String    @db.Text
-  socialSettings         String    @db.Text
+  adminSettings          String    
+  favouritesSettings     String    
+  myBestSettings         String    
+  notificationSettings   String    
+  socialSettings         String    
   sportIconType          String    @default("emoji")
-  toolsSettings          String    @db.Text
-  workoutPreferences     String    @db.Text
+  toolsSettings          String    
+  workoutPreferences     String    
   yearlyPlanStartDate    DateTime? // Start date for Section B (Yearly Plan)
   templateWeeksStartDate DateTime? // Start date for Section A (3 Weeks Plan)
   user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -407,7 +404,7 @@ model WorkoutTemplate {
   category      String?
   tags          String?
   templateType  String   @default("workout")
-  templateData  String   @db.Text
+  templateData  String   
   sports        String?
   totalDistance Int?
   totalDuration Int?
@@ -430,7 +427,7 @@ model FavoriteWorkout {
   userId        String
   name          String
   description   String?
-  workoutData   String   @db.Text
+  workoutData   String   
   sports        String?
   totalDistance Int?
   totalDuration Int?
@@ -461,7 +458,7 @@ model FavoriteWeeklyPlan {
   userId        String
   name          String
   description   String?
-  planData      String   @db.LongText // JSON snapshot of the weekly plan structure
+  planData      String    // JSON snapshot of the weekly plan structure
   weeksCount    Int?
   daysCount     Int?
   workoutsCount Int?
@@ -603,7 +600,7 @@ model GroupMember {
 
 model SuperAdmin {
   id        String    @id @default(cuid())
-  username  String    @unique 
+  username  String    @unique
   email     String    @unique
   password  String
   name      String?
@@ -627,8 +624,8 @@ model SuperAdminSettings {
 
 model ColorDefaults {
   id        String   @id @default(cuid())
-  language  String   @unique 
-  data      String   @db.Text
+  language  String   @unique
+  data      String   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -637,8 +634,8 @@ model ColorDefaults {
 
 model ToolsDefaults {
   id        String   @id @default(cuid())
-  language  String   @unique 
-  data      String   @db.Text
+  language  String   @unique
+  data      String   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -647,8 +644,8 @@ model ToolsDefaults {
 
 model FavouritesDefaults {
   id        String   @id @default(cuid())
-  language  String   @unique 
-  data      String   @db.Text
+  language  String   @unique
+  data      String   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -657,8 +654,8 @@ model FavouritesDefaults {
 
 model MyBestDefaults {
   id        String   @id @default(cuid())
-  language  String   @unique 
-  data      String   @db.Text
+  language  String   @unique
+  data      String   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -667,8 +664,8 @@ model MyBestDefaults {
 
 model GridDefaults {
   id        String   @id @default(cuid())
-  language  String   @unique 
-  data      String   @db.Text
+  language  String   @unique
+  data      String   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

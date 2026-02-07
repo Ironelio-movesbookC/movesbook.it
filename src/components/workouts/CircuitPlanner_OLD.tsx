@@ -658,10 +658,10 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           if (isLastStationOfSeries) {
             if (!isLastSeriesOfCircuit || seriesMode === 'time') {
               // Use series pause
-              effectivePause = circuit.seriesPauses?.[seriesNum - 1] ?? pauseSeries;
+              effectivePause = (circuit.pauseBetweenSeries ?? pauseSeries);
             } else if (isLastSeriesOfCircuit && !isLastCircuit) {
               // Use circuit pause
-              effectivePause = circuit.restAfterCircuit ?? pauseCircuits;
+              effectivePause = (circuit.pauseAfterCircuit ?? pauseCircuits);
             }
           }
 
@@ -1613,7 +1613,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
   // First View - Configuration Phase
   if (currentPhase === 'config') {
     // 2026-01-31 - Hide configuration UI if in invisible mode
-    if (initialConfig?.hideUI) return null;
+    if ((initialConfig as any)?.hideUI) return null;
 
     return (
       <>
@@ -2649,7 +2649,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
               </h3>
               <button
                 onClick={() => {
-                  if (initialConfig?.hideUI) {
+                  if ((initialConfig as any)?.hideUI) {
                     onCancel();
                   } else {
                     setShowSectorSelector(false);
@@ -2969,7 +2969,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       {renderExerciseSelectionModal()}
       {renderRepsEditorModal()}
       
-      <div className={`space-y-2 ${initialConfig?.hideUI ? 'hidden' : ''}`}>
+      <div className={`space-y-2 ${(initialConfig as any)?.hideUI ? 'hidden' : ''}`}>
       {/* Circuit Action Buttons - 2026-01-21 22:10 UTC */}
       <div className="flex items-center justify-center gap-3 mt-6 border-t pt-6">
         <button

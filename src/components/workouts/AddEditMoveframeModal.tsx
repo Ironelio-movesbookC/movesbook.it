@@ -306,7 +306,7 @@ export default function AddEditMoveframeModal({
   // 2026-01-31 - Force BATTERY/circuits mode when editing from a circuit movelap
   useEffect(() => {
     if (editingFromMovelap && editingMovelapTarget) {
-      console.log('🔄 [AddEditMoveframeModal] Editing from movelap, forcing BATTERY/circuits mode');
+      console.log('🔄 [AddEditMoveframeModal] Editing from movelap, forcing BATTERY/circuits mode (movelap)');
       setType('BATTERY');
       setBatterySubmenu('circuits');
       
@@ -967,8 +967,7 @@ export default function AddEditMoveframeModal({
 
   // 2026-01-31 - Determine if we should hide the main UI (invisible mode)
   // This happens when editing a specific circuit movelap - we only want to show the exercise selection modal
-  //const hideUI = propHideUI || (editingFromMovelap && editingMovelapTarget);
-  const hideUI = false || (editingFromMovelap && editingMovelapTarget);
+  const hideUI = editingFromMovelap && editingMovelapTarget;
 
   if (!isOpen) return null;
 

@@ -18,8 +18,8 @@ export async function GET(request: NextRequest) {
     const conversations = await prisma.chatConversation.findMany({
       where: { OR: [{ user1Id: myId }, { user2Id: myId }] },
       include: {
-        user1: { select: { id: true, name: true, telegramAccount: true, lastSeenAt: true } },
-        user2: { select: { id: true, name: true, telegramAccount: true, lastSeenAt: true } },
+        user1: { select: { id: true, name: true, telegramAccount: true } },
+        user2: { select: { id: true, name: true, telegramAccount: true } },
         messages: {
           orderBy: { createdAt: 'desc' },
           take: 1,
@@ -29,42 +29,16 @@ export async function GET(request: NextRequest) {
       orderBy: { updatedAt: 'desc' },
     });
 
-    const ONLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
-
-    const list = await Promise.all(
-      conversations.map(async (c) => {
-        const other = c.user1Id === myId ? c.user2 : c.user1;
-        const last = c.messages[0] ?? null;
-        const myLastReadAt = c.user1Id === myId ? c.user1LastReadAt : c.user2LastReadAt;
-
-        const unreadCount = await prisma.chatMessage.count({
-          where: {
-            conversationId: c.id,
-            senderId: { not: myId },
-            ...(myLastReadAt ? { createdAt: { gt: myLastReadAt } } : {}),
-          },
-        });
-
-        const isOnline =
-          other.lastSeenAt != null && Date.now() - other.lastSeenAt.getTime() < ONLINE_THRESHOLD_MS;
-
-        return {
-          id: c.id,
-          otherUser: {
-            id: other.id,
-            name: other.name,
-            telegramAccount: other.telegramAccount,
-            lastSeenAt: other.lastSeenAt?.toISOString() ?? null,
-            isOnline,
-          },
-          lastMessage: last
-            ? { content: last.content, createdAt: last.createdAt, isOwn: last.senderId === myId }
-            : null,
-          updatedAt: c.updatedAt,
-          unreadCount,
-        };
-      })
-    );
+    const list = conversations.map((c) => {
+      const other = c.user1Id === myId ? c.user2 : c.user1;
+      const last = c.messages[0];
+      return {
+        id: c.id,
+        otherUser: { id: other.id, name: other.name, telegramAccount: other.telegramAccount },
+        lastMessage: last ? { content: last.content, createdAt: last.createdAt, isOwn: last.senderId === myId } : null,
+        updatedAt: c.updatedAt,
+      };
+    });
 
     return NextResponse.json({ conversations: list });
   } catch (error) {

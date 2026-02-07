@@ -2518,6 +2518,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
            mode={moveframeModalMode}
            workout={activeWorkout}
            day={activeDay}
+           existingMoveframe={editingMoveframe || undefined}
             onSetInsertIndex={(index) => setMoveframeInsertIndex(index)}
             editingFromMovelap={editingFromMovelap}
             editingMovelapTarget={editingCircuitStation}
