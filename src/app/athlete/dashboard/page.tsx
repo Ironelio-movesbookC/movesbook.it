@@ -49,7 +49,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import WorkoutSection from '@/components/workouts/WorkoutSection';
-import ChatPanel from '@/components/chat/ChatPanel';
 import BackgroundsColorsSettings from '@/components/settings/BackgroundsColorsSettings';
 import ToolsSettings from '@/components/settings/ToolsSettings';
 import FavouritesSettings from '@/components/settings/FavouritesSettings';
@@ -69,7 +68,7 @@ export default function AthleteDashboard() {
   const { t } = useLanguage();
   
   // All hooks must be called before any conditional returns
-  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'progress' | 'settings' | 'personal-settings' | 'chat'>('overview');
+  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'progress' | 'settings' | 'personal-settings'>('overview');
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -136,8 +135,8 @@ export default function AthleteDashboard() {
 
   const handleChatPanelClick = () => {
     if (userTelegramAccount) {
-      // User already joined, show chat in main content area
-      setActiveSection('chat');
+      // User already joined, navigate to chat page
+      router.push('/athlete/chat');
     } else {
       // User hasn't joined, show join modal
       setShowJoinModal(true);
@@ -173,8 +172,8 @@ export default function AthleteDashboard() {
           setUserTelegramAccount(formattedAccount);
           setShowJoinModal(false);
           setTelegramAccount('');
-          // Show chat in main content
-          setActiveSection('chat');
+          // Navigate to chat page
+          router.push('/athlete/chat');
         } else {
           alert(data.error || 'Failed to save Telegram account');
         }
@@ -490,13 +489,6 @@ export default function AthleteDashboard() {
                 {/* Right side - Action buttons (only for My Page) */}
                 {activeTab === 'my-page' && (
                   <div className="flex items-center gap-3 ml-4">
-                    <button
-                      onClick={handleChatPanelClick}
-                      className="bg-white hover:bg-gray-100 text-gray-800 px-4 py-2 rounded transition-colors whitespace-nowrap text-sm font-medium flex items-center gap-2 border border-gray-300"
-                    >
-                      <MessageSquare className="w-4 h-4" />
-                      Chat panel
-                    </button>
                     <button className="bg-white hover:bg-gray-100 text-gray-800 px-4 py-2 rounded transition-colors whitespace-nowrap text-sm font-medium">
                       Upgrade informations
                     </button>
@@ -533,20 +525,12 @@ export default function AthleteDashboard() {
           {/* Main Content Area */}
           <div className={`flex-1 min-w-0 flex flex-col ${activeTab === 'my-page' && activeSection === 'personal-settings' ? '' : 'px-4'}`}>
             {activeTab === 'my-page' && (
-              <div className="flex-1 flex flex-col min-h-0">
+              <div className="flex-1">
                 {activeSection === 'overview' && <AthleteOverview t={t} />}
                 {activeSection === 'workouts' && <WorkoutSection onClose={() => setActiveSection('overview')} />}
                 {activeSection === 'progress' && <AthleteProgress t={t} />}
                 {activeSection === 'settings' && <AthleteSettings t={t} />}
                 {activeSection === 'personal-settings' && <PersonalSettingsContent t={t} user={user} />}
-                {activeSection === 'chat' && (
-                  <div className="flex-1 flex flex-col min-h-0 max-h-[75vh]">
-                    <ChatPanel
-                      embedded
-                      onClose={() => setActiveSection('overview')}
-                    />
-                  </div>
-                )}
               </div>
             )}
             
@@ -599,6 +583,15 @@ export default function AthleteDashboard() {
                   <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
                     <Save className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
                     <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_save_session')}</span>
+                  </button>
+                  
+                  {/* Chat Panel Button */}
+                  <button 
+                    onClick={handleChatPanelClick}
+                    className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group"
+                  >
+                    <MessageSquare className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">Chat panel</span>
                   </button>
                 </div>
 
@@ -725,10 +718,7 @@ export default function AthleteDashboard() {
                       Actions planner
                     </button>
                     <button
-                      onClick={() => {
-                        setActiveRightTab('chat-panel');
-                        handleChatPanelClick();
-                      }}
+                      onClick={() => setActiveRightTab('chat-panel')}
                       className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
                         activeRightTab === 'chat-panel'
                           ? 'bg-gray-100 text-gray-900 border-b-2 border-blue-600'
@@ -791,11 +781,7 @@ export default function AthleteDashboard() {
                   {/* Chat Panel Content */}
                   {activeRightTab === 'chat-panel' && (
                     <div className="text-sm text-gray-600 py-4">
-                      {activeSection === 'chat' ? (
-                        <p>Chat is open in the main area. Use the close (×) button in the chat header to return.</p>
-                      ) : (
-                        <p>Click &quot;Chat panel&quot; in the header to open the chat.</p>
-                      )}
+                      Chat panel content will be displayed here.
                     </div>
                   )}
                 </div>

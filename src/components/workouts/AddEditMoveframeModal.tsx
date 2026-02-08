@@ -359,7 +359,7 @@ export default function AddEditMoveframeModal({
   // 2026-01-31 - Force BATTERY/circuits mode when editing from a circuit movelap
   useEffect(() => {
     if (editingFromMovelap && editingMovelapTarget) {
-      console.log('🔄 [AddEditMoveframeModal] Editing from movelap, forcing BATTERY/circuits mode');
+      console.log('🔄 [AddEditMoveframeModal] Editing from movelap, forcing BATTERY/circuits mode (movelap)');
       setType('BATTERY');
       setBatterySubmenu('circuits');
       
