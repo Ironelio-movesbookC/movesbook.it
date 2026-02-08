@@ -98,6 +98,32 @@ export default function MoveframeTable({
     }
   }
 
+  const parseMacroToSeconds = (value: unknown) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value));
+    if (typeof value !== 'string') return 0;
+    const s = value.trim();
+    if (!s) return 0;
+    if (/^\d+$/.test(s)) return Math.max(0, parseInt(s, 10));
+    if (s.includes("'")) {
+      const parts = s.split("'");
+      const mStr = (parts[0] ?? '').replace(/\D/g, '');
+      const secStr = parts.slice(1).join("'").replace(/\D/g, '');
+      const m = mStr ? parseInt(mStr, 10) : 0;
+      const sec = secStr ? parseInt(secStr.slice(0, 2), 10) : 0;
+      return Math.max(0, m * 60 + sec);
+    }
+    const secOnly = s.match(/^(\d+)\s*"?$/);
+    if (secOnly) return Math.max(0, parseInt(secOnly[1], 10));
+    return 0;
+  };
+
+  const formatMacroFromSeconds = (seconds: number) => {
+    const totalSeconds = Math.max(0, Math.round(seconds));
+    const minutes = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${minutes}'${secs.toString().padStart(2, '0')}"`;
+  };
+
   // Helper function to get cell value
   const getCellValue = (column: any) => {
     switch (column.id) {
@@ -157,8 +183,21 @@ export default function MoveframeTable({
         }
         // Show total distance for distance-based moveframes
         return (moveframe.movelaps || []).reduce((sum: number, lap: any) => sum + (parseInt(lap.distance) || 0), 0);
-      case 'macro':
-        return moveframe.macroFinal || '—';
+      case 'macro': {
+        const macroValues = (moveframe.movelaps || [])
+          .map((lap: any) => lap?.macroFinal)
+          .filter((value: any) => {
+            if (typeof value === 'string') {
+              const trimmed = value.trim();
+              return trimmed !== '' && trimmed !== '—';
+            }
+            return value != null;
+          });
+        if (macroValues.length === 0) return moveframe.macroFinal || '—';
+        const totalSeconds = macroValues.reduce((sum: number, value: unknown) => sum + parseMacroToSeconds(value), 0);
+        const avgSeconds = totalSeconds / macroValues.length;
+        return formatMacroFromSeconds(avgSeconds);
+      }
       case 'alarm':
         return moveframe.alarm?.toString() || '—';
       case 'notes':

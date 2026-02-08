@@ -901,9 +901,11 @@ export default function AddEditMoveframeModal({
 
   // Handle close
   const [activeTab, setActiveTab] = React.useState<'edit' | 'manual' | 'favorites'>('edit');
+  const [isFastPlannerFullView, setIsFastPlannerFullView] = React.useState(false);
   const editorRef = React.useRef<HTMLDivElement>(null);
   const bodyRef = React.useRef<HTMLDivElement>(null);
   const fastPlannerRef = React.useRef<FastPlannerHandle>(null);
+  const isFastPlannerFullViewActive = isFastPlannerFullView && type === 'BATTERY' && !AEROBIC_SPORTS.includes(sport as any) && (batterySubmenu === 'fast' || !isCircuitFeatureSport(sport));
   
   // For manual mode moveframes, force manual tab and disable other tabs
   // Only restrict tabs if editing an EXISTING manual moveframe (not when creating new one)
@@ -942,6 +944,7 @@ export default function AddEditMoveframeModal({
     onClose();
     resetForm();
     setActiveTab('edit');
+    setIsFastPlannerFullView(false);
   };
 
   // Rich text editor commands
@@ -4207,19 +4210,19 @@ export default function AddEditMoveframeModal({
                                   onBlur={(e) => {
                                     const value = parseInt(e.target.value);
                                     if (e.target.value && value < 60) {
-                                      alert('⚠️ Pulse rate value too low!\n\nMinimum allowed: 60 bpm\nPlease enter a value within the valid range (60-200).');
+                                      alert('⚠️ Pulse rate value too low!\n\nMinimum allowed: 60 bpm\nPlease enter a value within the valid range (60-220).');
                                       setPause('60');
-                                    } else if (value > 200) {
-                                      alert('⚠️ Pulse rate value too high!\n\nMaximum allowed: 200 bpm\nPlease enter a value within the valid range (60-200).');
-                                      setPause('200');
+                                    } else if (value > 220) {
+                                      alert('⚠️ Pulse rate value too high!\n\nMaximum allowed: 220 bpm\nPlease enter a value within the valid range (60-220).');
+                                      setPause('220');
                                     }
                                   }}
                                   min="60"
-                                  max="200"
+                                  max="220"
                                   className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-cyan-500"
-                                  placeholder="60-200"
+                                  placeholder="60-220"
                                 />
-                                <p className="mt-0.5 text-[10px] text-gray-500">Pulse rate range: 60-200 bpm</p>
+                                <p className="mt-0.5 text-[10px] text-gray-500">Pulse rate range: 60-220 bpm</p>
                               </>
                             );
                           }
@@ -4419,6 +4422,7 @@ export default function AddEditMoveframeModal({
               day={day}
               mode={mode}
               existingMoveframe={existingMoveframe}
+              fullView={isFastPlannerFullViewActive}
               onSave={(moveframeData: any) => {
                 onSave(moveframeData);
                 onClose();
@@ -4462,6 +4466,7 @@ export default function AddEditMoveframeModal({
               day={day}
               mode={mode}
               existingMoveframe={existingMoveframe}
+              fullView={isFastPlannerFullViewActive}
               onSave={(moveframeData: any) => {
                 onSave(moveframeData);
                 onClose();
@@ -4894,8 +4899,14 @@ export default function AddEditMoveframeModal({
             </button>
             <div className="flex items-center">
               <button
+                onClick={() => setIsFastPlannerFullView(prev => !prev)}
+                className="px-6 py-2 bg-white text-black border-2 border-gray-300 rounded hover:border-blue-500"
+              >
+                {isFastPlannerFullView ? 'Back to edit' : 'Show full page'}
+              </button>
+              <button
                 onClick={() => fastPlannerRef.current?.saveMoveframeAndMovelaps()}
-                className="px-6 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700"
+                className="px-6 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700 ml-2"
               >
                 Save moveframe and its movelaps
               </button>
@@ -4920,9 +4931,17 @@ export default function AddEditMoveframeModal({
               Cancel
             </button>
             <div className="flex items-center">
+              {!isCircuitFeatureSport(sport) && !AEROBIC_SPORTS.includes(sport as any) && (
+                <button
+                  onClick={() => setIsFastPlannerFullView(prev => !prev)}
+                  className="px-6 py-2 bg-white text-black border-2 border-gray-300 rounded hover:border-blue-500"
+                >
+                  {isFastPlannerFullView ? 'Back to edit' : 'Show full page'}
+                </button>
+              )}
               <button
                 onClick={() => fastPlannerRef.current?.saveMoveframeAndMovelaps()}
-                className="px-6 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700"
+                className={`px-6 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700 ${!isCircuitFeatureSport(sport) && !AEROBIC_SPORTS.includes(sport as any) ? 'ml-2' : ''}`}
               >
                 Save moveframe and its movelaps
               </button>

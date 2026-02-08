@@ -161,7 +161,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
   const [numCircuits, setNumCircuits] = useState(initialConfig?.numCircuits || 1);
   const [stationsPerCircuit, setStationsPerCircuit] = useState(initialConfig?.stationsPerCircuit || 4);
   const [seriesMode, setSeriesMode] = useState<'count' | 'time'>(initialConfig?.seriesMode || 'count');
-  const [seriesCount, setSeriesCount] = useState(initialConfig?.seriesCount || 2);
+  const [seriesCount, setSeriesCount] = useState(initialConfig?.seriesCount || 3);
   const [seriesTime, setSeriesTime] = useState(initialConfig?.seriesTime || 2); // minutes
   const [executionMode, setExecutionMode] = useState<'vertical' | 'horizontal'>(initialConfig?.executionMode || 'vertical');
   
@@ -269,7 +269,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     const newCircuits: Circuit[] = [];
     
     for (let i = 0; i < numCircuits; i++) {
-      const seriesNum = seriesMode === 'count' ? seriesCount : 1;
+      const seriesNum = seriesCount;
       const stationsBySeries: Station[][] = [];
       
       // Create independent stations for each series
@@ -1064,7 +1064,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
 
     const insertIndex = circuits.length;
 
-    const seriesNum = seriesMode === 'count' ? seriesCount : 1;
+    const seriesNum = seriesCount;
     const newCircuits: Circuit[] = [];
 
     for (let i = 0; i < safeCount; i++) {
@@ -1202,6 +1202,33 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       return { ...c, stationsBySeries: newStationsBySeries, series: c.series - 1 };
     }));
     setActionLog(prev => [...prev, 'Last serie removed from each circuit']);
+  };
+
+  const reloadExercisesForSeries = (circuitLetter: string, seriesNumber: number) => {
+    setCircuits(prevCircuits => {
+      const newCircuits = JSON.parse(JSON.stringify(prevCircuits));
+      const circuitIdx = newCircuits.findIndex((c: Circuit) => c.letter === circuitLetter);
+      if (circuitIdx === -1) return newCircuits;
+      const seriesIdx = Math.max(0, seriesNumber - 1);
+      const seriesStations = newCircuits[circuitIdx].stationsBySeries[seriesIdx];
+      if (!Array.isArray(seriesStations)) return newCircuits;
+      const used = new Set<string>();
+      newCircuits[circuitIdx].stationsBySeries[seriesIdx] = seriesStations.map((station: Station) => {
+        if (!station.sector) return station;
+        const available = getExercisesBySector(station.sector) || [];
+        const unused = available.filter(ex => !used.has(ex.name) && ex.name !== station.exercise);
+        const chosen = unused.length > 0
+          ? unused[Math.floor(Math.random() * unused.length)]
+          : getRandomExercise(station.sector, station.exercise);
+        if (chosen) {
+          used.add(chosen.name);
+          return { ...station, exercise: chosen.name };
+        }
+        return station;
+      });
+      return newCircuits;
+    });
+    setActionLog(prev => [...prev, `Series ${seriesNumber} of circuit ${circuitLetter} reloaded`]);
   };
   
   const applyMacroToAllCells = () => {
@@ -2296,7 +2323,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 // 2026-01-22 14:05 UTC - Fixed: Sum all series' station counts
                 // 2026-01-27 - Include "Between series" rows in total count
                 const stationRowsCount = circuit.stationsBySeries.reduce((sum, seriesStations) => sum + seriesStations.length, 0);
-                const betweenSeriesRowsCount = seriesMode === 'time' ? 1 : circuit.series; // One "Between series" row per series
+                const betweenSeriesRowsCount = circuit.series;
                 const totalRows = stationRowsCount + betweenSeriesRowsCount;
                 let rowIndex = 0;
                 
@@ -2358,28 +2385,38 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                             {isFirstRowOfSeries && (
                               <td 
                                 rowSpan={circuit.stationsBySeries[seriesIdx]?.length || 0}
-                                className="border border-gray-300 px-2 py-2 text-center align-middle"
+                                className="relative border border-gray-300 px-2 py-2 text-center align-middle"
                               >
-                                 <div className="flex items-center justify-center gap-2">
-                                     <input
-                                       type="checkbox"
-                                       checked={selectedSeries.has(`${circuit.letter}-${seriesIdx + 1}`)}
-                                       onChange={() => toggleSeriesSelection(circuit.letter, seriesIdx + 1)}
-                                       className="w-4 h-4 cursor-pointer"
-                                       title="Select series for removal"
-                                     />
-                                     <span className="text-sm">{seriesIdx + 1}</span>
-                                   <button
-                                     onClick={(e) => {
-                                       e.stopPropagation();
-                                       removeSeries(circuit.letter, seriesIdx + 1);
-                                     }}
-                                     className="w-5 h-5 rounded-full border-2 border-gray-700 flex items-center justify-center hover:bg-gray-100 transition-colors"
-                                     title={`Delete series ${seriesIdx + 1} of circuit ${circuit.letter}`}
-                                   >
-                                     <X size={12} className="text-gray-700" strokeWidth={2.5} />
-                                   </button>
-                                 </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    reloadExercisesForSeries(circuit.letter, seriesIdx + 1);
+                                  }}
+                                  className="absolute top-1 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full border-2 border-blue-600 flex items-center justify-center hover:bg-blue-50 transition-colors"
+                                  title={`Reload exercises for series ${seriesIdx + 1} of circuit ${circuit.letter}`}
+                                >
+                                  <img src="/rescan.png" alt="rescan" className="w-6 h-6" />
+                                </button>
+                                <div className="absolute inset-0 flex items-center justify-center gap-2 pt-12">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedSeries.has(`${circuit.letter}-${seriesIdx + 1}`)}
+                                    onChange={() => toggleSeriesSelection(circuit.letter, seriesIdx + 1)}
+                                    className="w-4 h-4 cursor-pointer"
+                                    title="Select series for removal"
+                                  />
+                                  <span className="text-sm">{seriesIdx + 1}</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      removeSeries(circuit.letter, seriesIdx + 1);
+                                    }}
+                                    className="w-5 h-5 rounded-full border-2 border-gray-700 flex items-center justify-center hover:bg-gray-100 transition-colors"
+                                    title={`Delete series ${seriesIdx + 1} of circuit ${circuit.letter}`}
+                                  >
+                                    <X size={12} className="text-gray-700" strokeWidth={2.5} />
+                                  </button>
+                                </div>
                                </td>
                              )}
                              
@@ -2594,7 +2631,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                           
                           {/* Pause Between Series Row - 2026-01-27 */}
                           {/* Circuit column is rowSpan from above, so we start from Series */}
-                          {seriesMode !== 'time' && !isLastSeries && (
+                          {!isLastSeries && (
                             <tr className="bg-blue-50" style={{height: '40px'}}>
                               <td colSpan={6} className="border-l border-r border-t border-b border-gray-300 px-4 py-2">
                                 <div className="flex items-center justify-between">
@@ -2639,34 +2676,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                         </React.Fragment>
                       );
                     })}
-                    {seriesMode === 'time' && (
-                      <tr className="bg-blue-50" style={{height: '40px'}}>
-                        <td colSpan={6} className="border-l border-r border-t border-b border-gray-300 px-4 py-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-semibold text-blue-700">
-                              {`Repeat continuously for ${seriesTime}'`}
-                            </span>
-                            <select 
-                              value={circuit.pauseBetweenSeries}
-                              onChange={(e) => {
-                                const value = parseInt(e.target.value);
-                                setCircuits(prevCircuits => {
-                                  const newCircuits = JSON.parse(JSON.stringify(prevCircuits));
-                                  newCircuits[circuitIdx].pauseBetweenSeries = value;
-                                  return newCircuits;
-                                });
-                              }}
-                              className="px-2 py-1 text-sm border border-gray-300 rounded"
-                            >
-                              {SERIES_PAUSE_OPTIONS.map(opt => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </td>
-                        <td className="border-l border-r border-t border-b border-gray-300 px-2 py-1"></td>
-                      </tr>
-                    )}
                     
                     {/* Pause Between Circuits Row - 2026-01-27 */}
                     {/* All rowSpans complete, so we need all columns */}

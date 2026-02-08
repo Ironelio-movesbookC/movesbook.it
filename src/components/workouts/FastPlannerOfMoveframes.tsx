@@ -24,6 +24,7 @@ interface FastPlannerProps {
   existingMoveframe?: any;
   onSave: (moveframeData: any) => void;
   onCancel: () => void;
+  fullView?: boolean;
 }
 
 export type FastPlannerHandle = {
@@ -74,7 +75,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   mode,
   existingMoveframe,
   onSave,
-  onCancel
+  onCancel,
+  fullView
 }: FastPlannerProps, ref) {
   // State for sector selection mode
   const [sectorMode, setSectorMode] = useState<'exercises' | 'series'>('exercises');
@@ -132,7 +134,9 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   const [planReps, setPlanReps] = useState<string>('12');
   const [planPause, setPlanPause] = useState<string>("1'30\"");
   const [planCandidate, setPlanCandidate] = useState<any>(null);
+  const [planExerciseSearch, setPlanExerciseSearch] = useState<string>('');
   const loadedMoveframeIdRef = React.useRef<string | null>(null);
+  const planListRef = React.useRef<HTMLDivElement | null>(null);
 
   // Speed options for body building and similar sports
   const SPEED_OPTIONS = ['Very slow', 'Slow', 'Normal', 'Quick', 'Fast', 'Very fast', 'Explosive', 'Negative'];
@@ -163,20 +167,195 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return `${minutes}'${seconds}"`;
   };
 
-  // Mock exercise data (placeholder until we have real exercise library)
+  const EXERCISE_IMAGES_BY_GROUP: Record<string, string[]> = {
+    shoulders: [
+      '/Exercises/shoulder/shoulder exercise 01.png',
+      '/Exercises/shoulder/shoulder exercise 02.png',
+      '/Exercises/shoulder/shoulder exercise 03.png',
+      '/Exercises/shoulder/shoulder exercise 04.png',
+      '/Exercises/shoulder/shoulder exercise 05.png',
+      '/Exercises/shoulder/shoulder exercise 06.png',
+      '/Exercises/shoulder/shoulder exercise 07.png',
+      '/Exercises/shoulder/shoulder exercise 08.png',
+      '/Exercises/shoulder/shoulder exercise 09.png',
+      '/Exercises/shoulder/shoulder exercise 10.png',
+      '/Exercises/shoulder/shoulder exercise 11.png',
+      '/Exercises/shoulder/shoulder exercise 12.png'
+    ],
+    biceps: [
+      '/Exercises/biceps/biceps exercise 01.png',
+      '/Exercises/biceps/biceps exercise 02.png',
+      '/Exercises/biceps/biceps exercise 03.png',
+      '/Exercises/biceps/biceps exercise 04.png',
+      '/Exercises/biceps/biceps exercise 05.png',
+      '/Exercises/biceps/biceps exercise 06.png',
+      '/Exercises/biceps/biceps exercise 07.png',
+      '/Exercises/biceps/biceps exercise 08.png',
+      '/Exercises/biceps/biceps exercise 09.png',
+      '/Exercises/biceps/biceps exercise 10.png',
+      '/Exercises/biceps/biceps exercise 11.png',
+      '/Exercises/biceps/biceps exercise 12.png'
+    ],
+    triceps: [
+      '/Exercises/triceps/triceps exercise 01.png',
+      '/Exercises/triceps/triceps exercise 02.png',
+      '/Exercises/triceps/triceps exercise 03.png',
+      '/Exercises/triceps/triceps exercise 04.png',
+      '/Exercises/triceps/triceps exercise 05.png',
+      '/Exercises/triceps/triceps exercise 06.png',
+      '/Exercises/triceps/triceps exercise 07.png',
+      '/Exercises/triceps/triceps exercise 08.png',
+      '/Exercises/triceps/triceps exercise 09.png',
+      '/Exercises/triceps/triceps exercise 10.png',
+      '/Exercises/triceps/triceps exercise 11.png',
+      '/Exercises/triceps/triceps exercise 12.png'
+    ],
+    forearms: [
+      '/Exercises/forearms/forearms exercise 01.png',
+      '/Exercises/forearms/forearms exercise 02.png',
+      '/Exercises/forearms/forearms exercise 03.png',
+      '/Exercises/forearms/forearms exercise 04.png',
+      '/Exercises/forearms/forearms exercise 05.png',
+      '/Exercises/forearms/forearms exercise 06.png',
+      '/Exercises/forearms/forearms exercise 07.png',
+      '/Exercises/forearms/forearms exercise 08.png',
+      '/Exercises/forearms/forearms exercise 09.png',
+      '/Exercises/forearms/forearms exercise 10.png',
+      '/Exercises/forearms/forearms exercise 11.png',
+      '/Exercises/forearms/forearms exercise 12.png'
+    ],
+    chest: [
+      '/Exercises/chest/chest exercise 01.png',
+      '/Exercises/chest/chest exercise 02.png',
+      '/Exercises/chest/chest exercise 03.png',
+      '/Exercises/chest/chest exercise 04.png',
+      '/Exercises/chest/chest exercise 05.png',
+      '/Exercises/chest/chest exercise 06.png',
+      '/Exercises/chest/chest exercise 07.png',
+      '/Exercises/chest/chest exercise 08.png',
+      '/Exercises/chest/chest exercise 09.png',
+      '/Exercises/chest/chest exercise 10.png',
+      '/Exercises/chest/chest exercise 11.png',
+      '/Exercises/chest/chest exercise 12.png'
+    ],
+    abs: [
+      '/Exercises/abdominals/abdominals exercise 01.png',
+      '/Exercises/abdominals/abdominals exercise 02.png',
+      '/Exercises/abdominals/abdominals exercise 03.png',
+      '/Exercises/abdominals/abdominals exercise 04.png',
+      '/Exercises/abdominals/abdominals exercise 05.png',
+      '/Exercises/abdominals/abdominals exercise 06.png',
+      '/Exercises/abdominals/abdominals exercise 07.png',
+      '/Exercises/abdominals/abdominals exercise 08.png',
+      '/Exercises/abdominals/abdominals exercise 9.png',
+      '/Exercises/abdominals/abdominals exercise 10.png',
+      '/Exercises/abdominals/abdominals exercise 11.png',
+      '/Exercises/abdominals/abdominals exercise 12.png'
+    ],
+    trapezius: [
+      '/Exercises/trapezius/trapezius exercise 01.png',
+      '/Exercises/trapezius/trapezius exercise 02.png',
+      '/Exercises/trapezius/trapezius exercise 03.png',
+      '/Exercises/trapezius/trapezius exercise 04.png',
+      '/Exercises/trapezius/trapezius exercise 05.png',
+      '/Exercises/trapezius/trapezius exercise 06.png',
+      '/Exercises/trapezius/trapezius exercise 07.png',
+      '/Exercises/trapezius/trapezius exercise 08.png',
+      '/Exercises/trapezius/trapezius exercise 09.png',
+      '/Exercises/trapezius/trapezius exercise 10.png',
+      '/Exercises/trapezius/trapezius exercise 11.png',
+      '/Exercises/trapezius/trapezius exercise 12.png'
+    ],
+    lats: [
+      '/Exercises/lats/lats exercise 01.png',
+      '/Exercises/lats/lats exercise 02.png',
+      '/Exercises/lats/lats exercise 03.png',
+      '/Exercises/lats/lats exercise 04.png',
+      '/Exercises/lats/lats exercise 05.png',
+      '/Exercises/lats/lats exercise 06.png',
+      '/Exercises/lats/lats exercise 07.png',
+      '/Exercises/lats/lats exercise 08.png',
+      '/Exercises/lats/lats exercise 09.png',
+      '/Exercises/lats/lats exercise 10.png',
+      '/Exercises/lats/lats exercise 11.png',
+      '/Exercises/lats/lats exercise 12.png'
+    ],
+    quadriceps: [
+      '/Exercises/quadriceps/quadriceps exercise 01.png',
+      '/Exercises/quadriceps/quadriceps exercise 02.png',
+      '/Exercises/quadriceps/quadriceps exercise 03.png',
+      '/Exercises/quadriceps/quadriceps exercise 04.png',
+      '/Exercises/quadriceps/quadriceps exercise 05.png',
+      '/Exercises/quadriceps/quadriceps exercise 06.png',
+      '/Exercises/quadriceps/quadriceps exercise 07.png',
+      '/Exercises/quadriceps/quadriceps exercise 08.png',
+      '/Exercises/quadriceps/quadriceps exercise 09.png',
+      '/Exercises/quadriceps/quadriceps exercise 10.png',
+      '/Exercises/quadriceps/quadriceps exercise 11.png',
+      '/Exercises/quadriceps/quadriceps exercise 12.png'
+    ],
+    hams: [
+      '/Exercises/hamstrings/hamstrings exercise 01.png',
+      '/Exercises/hamstrings/hamstrings exercise 02.png',
+      '/Exercises/hamstrings/hamstrings exercise 03.png',
+      '/Exercises/hamstrings/hamstrings exercise 04.png',
+      '/Exercises/hamstrings/hamstrings exercise 05.png',
+      '/Exercises/hamstrings/hamstrings exercise 06.png',
+      '/Exercises/hamstrings/hamstrings exercise 07.png',
+      '/Exercises/hamstrings/hamstrings exercise 08.png',
+      '/Exercises/hamstrings/hamstrings exercise 09.png',
+      '/Exercises/hamstrings/hamstrings exercise 10.png',
+      '/Exercises/hamstrings/hamstrings exercise 11.png',
+      '/Exercises/hamstrings/hamstrings exercise 12.png'
+    ],
+    calves: [
+      '/Exercises/calves/calves exercise 01.png',
+      '/Exercises/calves/calves exercise 02.png',
+      '/Exercises/calves/calves exercise 03.png',
+      '/Exercises/calves/calves exercise 04.png',
+      '/Exercises/calves/calves exercise 05.png',
+      '/Exercises/calves/calves exercise 06.png',
+      '/Exercises/calves/calves exercise 07.png',
+      '/Exercises/calves/calves exercise 08.png',
+      '/Exercises/calves/calves exercise 09.png',
+      '/Exercises/calves/calves exercise10.png',
+      '/Exercises/calves/calves exercise 11.png',
+      '/Exercises/calves/calves exercise 12.png'
+    ],
+    glutes: [
+      '/Exercises/glutes/glutes exercise 01.png',
+      '/Exercises/glutes/glutes exercise 02.png',
+      '/Exercises/glutes/glutes exercise 03.png',
+      '/Exercises/glutes/glutes exercise 04.png',
+      '/Exercises/glutes/glutes exercise 05.png',
+      '/Exercises/glutes/glutes exercise 06.png',
+      '/Exercises/glutes/glutes exercise 07.png',
+      '/Exercises/glutes/glutes exercise 08.png',
+      '/Exercises/glutes/glutes exercise 09.png',
+      '/Exercises/glutes/glutes exercise 10.png',
+      '/Exercises/glutes/glutes exercise 11.png',
+      '/Exercises/glutes/glutes exercise 12.png'
+    ]
+  };
+  const getExerciseImage = (groupId: string, index: number): string => {
+    const images = EXERCISE_IMAGES_BY_GROUP[groupId];
+    if (!images || images.length === 0) return '/Exercises/abdominals/abdominals exercise 01.png';
+    return images[index % images.length];
+  };
+  const formatExerciseIndex = (index: number) => `${index + 1}`.padStart(2, '0');
   const mockExercises = MUSCLE_GROUPS.flatMap(group =>
     Array.from({ length: 12 }, (_, i) => ({
       id: `${group.id}-${i}`,
-      name: `${group.label} Exercise ${i + 1}`,
+      name: `${group.label} Exercise ${formatExerciseIndex(i)}`,
       sector: group.sector,
-      image: group.image // Use the muscle group image as placeholder for exercise
+      image: getExerciseImage(group.id, i)
     }))
   ).concat(
     Array.from({ length: 20 }, (_, i) => ({
       id: `general-${i}`,
-      name: `General Exercise ${i + 1}`,
+      name: `General Exercise ${formatExerciseIndex(i)}`,
       sector: 'General',
-      image: '/muscular/abs.png' // Default image for general exercises
+      image: '/Exercises/abdominals/abdominals exercise 01.png'
     }))
   ).sort((a, b) => a.name.localeCompare(b.name));
 
@@ -459,14 +638,18 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return Math.max(0, list.length - 1);
   };
 
-  const duplicateRowById = (rowId: number) => {
+  const appendRowCopiesById = (rowId: number, copies: number) => {
     setRows(prev => {
       if (prev.length === 0) return prev;
       const baseRow = prev.find(r => r.id === rowId);
       if (!baseRow) return prev;
       if (typeof baseRow.exercise !== 'string' || baseRow.exercise.trim() === '') return prev;
-      const newId = Math.max(...prev.map(r => r.id)) + 1;
-      return [...prev, { ...baseRow, id: newId }];
+      const maxId = Math.max(...prev.map(r => r.id));
+      const nextRows = Array.from({ length: copies }, (_, index) => ({
+        ...baseRow,
+        id: maxId + index + 1
+      }));
+      return [...prev, ...nextRows];
     });
   };
 
@@ -478,7 +661,16 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   };
 
   const appendNextRowFromIndex = (rowIndex: number) => {
+    if (rows.length === 0) {
+      setRows([{ id: 1, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '' }]);
+      focusNewRowExercise(1);
+      return;
+    }
+
+    const safeIndex = Math.min(Math.max(rowIndex, 0), rows.length - 1);
+    const nextRowId = rows[safeIndex + 1]?.id;
     const newRowId = Math.max(0, ...rows.map(r => r.id)) + 1;
+    const focusRowId = nextRowId ?? newRowId;
 
     setRows(prev => {
       if (prev.length === 0) {
@@ -486,16 +678,24 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       }
 
       const copy = [...prev];
-      const safeIndex = Math.min(Math.max(rowIndex, 0), copy.length - 1);
-      const currentDraft = { ...copy[safeIndex] };
+      const safeIndexInner = Math.min(Math.max(rowIndex, 0), copy.length - 1);
+      const currentDraft = { ...copy[safeIndexInner] };
       const currentHasExercise = typeof currentDraft.exercise === 'string' && currentDraft.exercise.trim() !== '';
       const previousFilled = findPreviousFilledRow(copy, currentDraft.id);
       const current = currentHasExercise ? applyRowDefaults(currentDraft, previousFilled) : currentDraft;
-      if (currentHasExercise) copy[safeIndex] = current;
+      if (currentHasExercise) copy[safeIndexInner] = current;
+
+      const template = currentHasExercise ? current : applyRowDefaults({ ...currentDraft }, previousFilled);
+      const nextIndex = safeIndexInner + 1;
+      if (nextIndex < copy.length) {
+        const existingNext = copy[nextIndex];
+        const filledNext = applyRowDefaults({ ...existingNext }, template);
+        copy[nextIndex] = filledNext;
+        return copy;
+      }
 
       const maxId = Math.max(...copy.map(r => r.id));
       const id = Math.max(newRowId, maxId + 1);
-      const template = currentHasExercise ? current : applyRowDefaults({ ...currentDraft }, previousFilled);
       const nextRow: FastPlannerRow = {
         id,
         exercise: '',
@@ -510,33 +710,25 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       return [...copy, nextRow];
     });
 
-    focusNewRowExercise(newRowId);
+    focusNewRowExercise(focusRowId);
   };
 
   // Duplicate selected row
   const handleDuplicate = () => {
-    setRows(prev => {
-      if (prev.length === 0) return prev;
-      const baseIndex = pickActiveRowIndex(prev);
-      const baseRow = prev[baseIndex];
-      const newId = Math.max(...prev.map(r => r.id)) + 1;
-      return [...prev, { ...baseRow, id: newId }];
-    });
+    if (rows.length === 0) return;
+    const baseIndex = pickActiveRowIndex(rows);
+    const baseRowId = rows[baseIndex]?.id;
+    if (baseRowId == null) return;
+    appendRowCopiesById(baseRowId, 1);
   };
 
   // Triplicate selected row (2 copies)
   const handleTriplicate = () => {
-    setRows(prev => {
-      if (prev.length === 0) return prev;
-      const baseIndex = pickActiveRowIndex(prev);
-      const baseRow = prev[baseIndex];
-      const maxId = Math.max(...prev.map(r => r.id));
-      const newRows = [
-        { ...baseRow, id: maxId + 1 },
-        { ...baseRow, id: maxId + 2 }
-      ];
-      return [...prev, ...newRows];
-    });
+    if (rows.length === 0) return;
+    const baseIndex = pickActiveRowIndex(rows);
+    const baseRowId = rows[baseIndex]?.id;
+    if (baseRowId == null) return;
+    appendRowCopiesById(baseRowId, 2);
   };
 
   // Remove last row
@@ -648,13 +840,36 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     setPlanReps('12');
     setPlanPause("1'30\"");
     setPlanCandidate(null);
+    setPlanExerciseSearch('');
     setShowSeriesPlanModal(true);
   };
+  const planCandidates = React.useMemo(() => {
+    if (!planSectorId) return [];
+    return mockExercises.filter(ex => {
+      if (!ex.id.startsWith(planSectorId)) return false;
+      if (planExerciseSearch && !ex.name.toLowerCase().includes(planExerciseSearch.toLowerCase())) return false;
+      return true;
+    });
+  }, [mockExercises, planExerciseSearch, planSectorId]);
+  const pickPlanCandidateByOffset = (offset: number) => {
+    if (planCandidates.length === 0) return;
+    const currentIndex = planCandidate ? planCandidates.findIndex(c => c.id === planCandidate.id) : -1;
+    const nextIndex = currentIndex < 0 ? 0 : (currentIndex + offset + planCandidates.length) % planCandidates.length;
+    setPlanCandidate(planCandidates[nextIndex]);
+  };
   const proceedScanExercise = () => {
-    if (!planSectorId) return;
-    const candidates = mockExercises.filter(ex => ex.id.startsWith(planSectorId));
-    if (candidates.length === 0) return;
-    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    if (planCandidates.length === 0) return;
+    if (planCandidates.length === 1) {
+      setPlanCandidate(planCandidates[0]);
+      return;
+    }
+    const currentId = planCandidate?.id;
+    let pick = planCandidates[Math.floor(Math.random() * planCandidates.length)];
+    if (currentId && planCandidates.length > 1) {
+      while (pick.id === currentId) {
+        pick = planCandidates[Math.floor(Math.random() * planCandidates.length)];
+      }
+    }
     setPlanCandidate(pick);
   };
   const addPlannedExercise = () => {
@@ -684,6 +899,27 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   const endSeriesPlan = () => {
     setShowSeriesPlanModal(false);
   };
+  React.useEffect(() => {
+    if (!showSeriesPlanModal) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        pickPlanCandidateByOffset(-1);
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        pickPlanCandidateByOffset(1);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [pickPlanCandidateByOffset, showSeriesPlanModal]);
+  React.useEffect(() => {
+    if (!planCandidate || !planListRef.current) return;
+    const card = planListRef.current.querySelector(`[data-exercise-id="${planCandidate.id}"]`) as HTMLElement | null;
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [planCandidate]);
 
   // Drag & reorder rows
   const [draggingRowId, setDraggingRowId] = useState<number | null>(null);
@@ -719,6 +955,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
 
   return (
     <div className="space-y-4">
+      {!fullView && (
       <div className="sticky top-0 z-20 bg-white pb-4">
         <div className="space-y-4">
           {/* Removed zoom control; fixed scale at 55% */}
@@ -862,12 +1099,9 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
               checked={sectorMode === 'series'}
               onChange={() => {
                 setSectorMode('series');
-                if (selectedMuscleGroup === 'all') {
-                  setActiveExerciseButton(null);
-                  setShowSubExercises(false);
-                } else {
-                  openSeriesPlan(selectedMuscleGroup);
-                }
+                setActiveExerciseButton(null);
+                setShowSubExercises(false);
+                setSelectedMuscleGroup('all');
               }}
               className="mr-1.5"
             />
@@ -905,7 +1139,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
             )}
 
             {/* Content area: show options or muscle groups within the same box */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex-1 h-[165px] overflow-y-auto text-black">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex-1 h-[165px] overflow-y-hidden text-black">
               {activeExerciseButton ? (
                 <div className="space-y-3">
                 {activeExerciseButton === 'speed' && (
@@ -1340,10 +1574,15 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                                 <div className={`absolute top-1 left-1 w-3 h-3 rounded-full border-2 border-white ${indicatorColor === 'green' ? 'bg-green-500' : 'bg-blue-500'
                                   }`} />
                               )}
-                              <div className="aspect-square bg-gray-100 rounded mb-1 flex items-center justify-center">
-                                <div className="text-center">
-                                  <p className="text-[10px] font-bold text-black">{exercise.sector}</p>
-                                </div>
+                              <div className="aspect-square bg-gray-100 rounded mb-1 relative overflow-hidden">
+                                <Image
+                                  src={exercise.image}
+                                  alt={exercise.name}
+                                  fill
+                                  className="object-contain"
+                                  sizes="112px"
+                                  unoptimized
+                                />
                               </div>
                               <p className="text-[10px] text-center text-black font-medium" title={exercise.name}>
                                 {exercise.name}
@@ -1360,10 +1599,11 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         </div>
       </div>
       </div>
+      )}
 
       {/* Exercise Table */}
       <div className="bg-white border border-gray-300 rounded-lg overflow-hidden relative z-0">
-        <div className="overflow-x-auto overflow-y-auto max-h-[45vh]">
+        <div className={fullView ? 'overflow-x-auto overflow-y-visible' : 'overflow-x-auto overflow-y-auto max-h-[45vh]'}>
           <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
             <div className="h-12 flex items-center gap-2 px-2 overflow-x-auto whitespace-nowrap">
               <button
@@ -1455,7 +1695,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       onClick={() => handleCellClick(row.id, 'exercise')}
                       onDoubleClick={(e) => {
                         e.stopPropagation();
-                        duplicateRowById(row.id);
+                        appendRowCopiesById(row.id, 1);
                       }}
                       className={`relative cursor-pointer border-2 rounded overflow-hidden ${selectedCell?.rowId === row.id && selectedCell?.field === 'exercise'
                         ? 'border-blue-500 ring-2 ring-blue-200'
@@ -1623,15 +1863,16 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         </div>
 
         {/* Scroll to view all repetitions note */}
-        <div className="px-4 py-2 bg-blue-50 border-t border-blue-200">
-          <p className="text-xs text-blue-700">
-            ℹ️ Scroll to view all repetitions. Each can have unique speed, time, and pause values.
-          </p>
-        </div>
+        {!fullView && (
+          <div className="px-4 py-2 bg-blue-50 border-t border-blue-200">
+            <p className="text-xs text-blue-700">
+              ℹ️ Scroll to view all repetitions. Each can have unique speed, time, and pause values.
+            </p>
+          </div>
+        )}
       </div>
 
-
-      {/* Descriptions & Instructions */}
+      {!fullView && (
       <div className="bg-green-50 border border-green-300 rounded-lg p-3">
         <label className="block text-sm font-bold text-gray-700 mb-2">Descriptions & istructions</label>
         <textarea
@@ -1640,6 +1881,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
           placeholder="Add descriptions or instructions here..."
         />
       </div>
+      )}
 
       {/* Exercise Selection Popup */}
       {showExercisePopup && selectedCell && (
@@ -1746,14 +1988,30 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-yellow-100 rounded-lg shadow-xl w-[90%] max-w-md p-4">
             <div className="mb-3">
-              <table className="w-full border-collapse text-sm">
+              <div className="text-base font-bold text-gray-900">Plan series\exercise</div>
+            </div>
+            <div className="mb-3 flex items-center gap-3">
+              {(() => {
+                const sector = MUSCLE_GROUPS.find(g => g.id === planSectorId);
+                return sector ? (
+                  <>
+                    <div className="w-16 h-16 bg-white border rounded flex items-center justify-center">
+                      <Image src={sector.image} alt={sector.label} width={56} height={56} className="object-contain" unoptimized />
+                    </div>
+                    <div className="text-base font-semibold text-gray-800">{sector.label}</div>
+                  </>
+                ) : null;
+              })()}
+            </div>
+            <div className="mb-3">
+              <table className="w-full border-collapse text-sm bg-white">
                 <thead>
                   <tr>
                     <th className="border px-2 py-1 w-10 text-center">#</th>
                     <th className="border px-2 py-1 text-center" colSpan={2}>WORK</th>
                     <th className="border px-2 py-1 text-center">PAUSE</th>
                   </tr>
-                  <tr>
+                  <tr className="bg-green-50">
                     <th className="border px-2 py-1 text-center"></th>
                     <th className="border px-2 py-1 text-center">Series</th>
                     <th className="border px-2 py-1 text-center">Reps</th>
@@ -1785,15 +2043,57 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
             <div className="mb-3">
               <button onClick={proceedScanExercise} className="w-full px-4 py-2 bg-red-600 text-white rounded font-bold">Proceed scan exercises</button>
             </div>
-            <div className="h-24 bg-white border rounded flex items-center justify-center mb-3">
-              {planCandidate ? (
-                <div className="text-center">
-                  <div className="text-xs font-bold">{planCandidate.sector}</div>
-                  <div className="text-sm">{planCandidate.name}</div>
-                </div>
-              ) : (
-                <span className="text-xs text-gray-500">No exercise selected</span>
-              )}
+            <div className="mb-3">
+              <div className="text-xs font-semibold text-gray-700 mb-1">Search exercise</div>
+              <input
+                type="text"
+                value={planExerciseSearch}
+                onChange={(e) => setPlanExerciseSearch(e.target.value)}
+                placeholder="Name exercise"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded"
+              />
+            </div>
+            <div className="h-40 bg-white border rounded flex items-center justify-center mb-2 relative">
+              <button
+                onClick={() => pickPlanCandidateByOffset(-1)}
+                className="absolute left-2 w-7 h-7 flex items-center justify-center border rounded bg-white hover:border-orange-400"
+                aria-label="Previous exercise"
+              >
+                ‹
+              </button>
+              <div ref={planListRef} className="flex gap-3 px-10 overflow-x-auto w-full h-full items-center">
+                {planCandidates.length > 0 ? (
+                  planCandidates.map((candidate) => (
+                    <button
+                      key={candidate.id}
+                      data-exercise-id={candidate.id}
+                      onClick={() => {
+                        setPlanCandidate(candidate);
+                        setSectorMode('exercises');
+                      }}
+                      className={`flex-shrink-0 w-28 h-28 border rounded bg-white flex items-center justify-center ${
+                        planCandidate?.id === candidate.id ? 'border-orange-400' : 'border-gray-200'
+                      }`}
+                      aria-label={candidate.name}
+                    >
+                      <Image src={candidate.image} alt={candidate.name} width={100} height={100} className="object-contain" unoptimized />
+                    </button>
+                  ))
+                ) : (
+                  <span className="text-xs text-gray-500">No exercise selected</span>
+                )}
+              </div>
+              <button
+                onClick={() => pickPlanCandidateByOffset(1)}
+                className="absolute right-2 w-7 h-7 flex items-center justify-center border rounded bg-white hover:border-orange-400"
+                aria-label="Next exercise"
+              >
+                ›
+              </button>
+            </div>
+            <div className="bg-white border rounded px-3 py-2 mb-3 text-center">
+              <div className="text-xs font-semibold text-gray-600">Name exercise</div>
+              <div className="text-lg font-semibold text-gray-900">{planCandidate?.name || 'No exercise selected'}</div>
             </div>
             <div className="flex items-center justify-between">
               <button onClick={addPlannedExercise} className="px-4 py-2 bg-gray-300 text-black rounded">Add exercise</button>

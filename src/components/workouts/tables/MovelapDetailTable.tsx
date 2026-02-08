@@ -1,12 +1,15 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { GripVertical, Volume2, VolumeX, Bell, BellOff, MoreVertical } from 'lucide-react';
 import { DndContext, closestCenter, DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { MACRO_FINAL_OPTIONS } from '@/constants/moveframe.constants';
+import { MACRO_FINAL_OPTIONS, getSportConfig, REST_TYPES } from '@/constants/moveframe.constants';
 import { getExercisesBySector } from '@/data/mockExercises';
 import '../../../styles/sticky-table.css';
+
+type AerobicRestChoice = 'rest_time' | 'restart_to' | 'reset_pulse';
+type AerobicBreakChoice = 'stopped' | 'speed' | 'watts';
 
 // Helper function to strip HTML tags from text (defined at module level for accessibility)
 const stripHtmlTags = (html: string): string => {
@@ -242,9 +245,13 @@ function SortableMovelapRow({
   sectionColor, 
   sectionName, 
   moveframe, 
+  mapToolsToBreakChoice,
+  mapRestTypeToChoice,
   onEditMovelap, 
   onEditFastPlannerMovelap,
+  onEditAerobicFastPlannerMovelap,
   onAddFastPlannerMovelap,
+  onAddAerobicFastPlannerMovelap,
   onDeleteMovelap,
   onCopyMovelap,
   onPasteMovelap,
@@ -267,9 +274,13 @@ function SortableMovelapRow({
   sectionColor: string;
   sectionName: string;
   moveframe: any;
+  mapToolsToBreakChoice: (tools: unknown) => string;
+  mapRestTypeToChoice: (restType: unknown) => string;
   onEditMovelap?: (movelap: any) => void;
   onEditFastPlannerMovelap?: (movelap: any) => void;
+  onEditAerobicFastPlannerMovelap?: (movelap: any, index: number) => void;
   onAddFastPlannerMovelap?: (position?: number) => void;
+  onAddAerobicFastPlannerMovelap?: (position?: number) => void;
   onDeleteMovelap?: (movelap: any) => void;
   onCopyMovelap: (movelap: any) => void;
   onPasteMovelap: (index: number) => void;
@@ -393,6 +404,11 @@ function SortableMovelapRow({
           : null
       : null;
   const pauseValue = macroValue ? null : movelap.pause;
+  const recValue = movelap?.restType === REST_TYPES.SET_TIME ? movelap.pause : null;
+  const restToValue =
+    movelap?.restType === REST_TYPES.RESTART_TIME || movelap?.restType === REST_TYPES.RESTART_PULSE
+      ? movelap.pause
+      : null;
 
   // Get sound icon
   const getSoundIcon = (movelap: any) => {
@@ -420,14 +436,18 @@ function SortableMovelapRow({
   const isRun = sport === 'RUN' || sport === 'HIKING' || sport === 'WALKING';
   const isRowing = sport === 'ROWING' || sport === 'CANOEING';
   const isBodyBuilding = sport === 'BODY_BUILDING';
-  const hasFastPlannerNotes = !!extractFastPlannerDataFromNotes(moveframe?.notes);
+  const fastPlannerPayloadFromNotes = extractFastPlannerDataFromNotes(moveframe?.notes);
+  const fastPlannerPayload = moveframe?.fastPlannerData ?? fastPlannerPayloadFromNotes ?? null;
+  const hasFastPlannerNotes = !!fastPlannerPayloadFromNotes;
   const hasFastPlannerData = !!moveframe?.fastPlannerData;
   const hasFastPlannerDescription =
     typeof moveframe?.description === 'string' && moveframe.description.toLowerCase().startsWith('fast planner');
   const isFastPlanner =
-    (hasFastPlannerNotes || hasFastPlannerData || hasFastPlannerDescription) &&
+    (!!fastPlannerPayload || hasFastPlannerDescription) &&
     moveframe?.type === 'BATTERY' &&
     !moveframe?.isCircuitBased;
+  const isAerobicFastPlanner = isFastPlanner && fastPlannerPayload?.plannerType === 'aerobic';
+  const isAnaerobicFastPlanner = isFastPlanner && !isAerobicFastPlanner;
   
   // Distance-based sports (no tools)
   const distanceBasedSports = ['SWIM', 'BIKE', 'MTB', 'RUN', 'ROWING', 'CANOEING', 'SKATE', 'SKI', 'SNOWBOARD', 'HIKING', 'WALKING'];
@@ -470,9 +490,7 @@ function SortableMovelapRow({
       
       {/* # (Repetition Number) / Circuit Info Column - 2026-01-22 10:30 UTC */}
       {/* 2026-01-24 - Updated to show format like "B-2-3" (circuit-series-station) */}
-      <td className={`border border-gray-300 px-1 py-1 text-center font-bold text-xs ${
-        isNewlyAdded ? 'text-red-600' : ''
-      }`}>
+      <td className="border border-gray-300 px-1 py-1 text-center font-bold text-xs">
         {movelap.circuitLetter 
           ? `${movelap.circuitLetter}-${movelap.localSeriesNumber || movelap.seriesNumber}-${movelap.stationNumber}` 
           : sequenceNumber}
@@ -491,13 +509,13 @@ function SortableMovelapRow({
       </td>
       
       {/* Action Column - Shows sport name */}
-      <td className="border border-gray-300 px-1 py-1 text-center text-[10px]">
+      <td className={`border border-gray-300 px-1 py-1 text-center text-[10px] ${isNewlyAdded ? 'text-red-600' : ''}`}>
         {sport.replace(/_/g, ' ')}
       </td>
       
       {/* SPORT-SPECIFIC COLUMNS */}
       
-       {isFastPlanner && (
+       {isAnaerobicFastPlanner && (
          <>
            <td className={`border border-gray-300 px-2 py-1 text-left text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {movelap.muscularSector ? (
@@ -537,8 +555,68 @@ function SortableMovelapRow({
          </>
        )}
 
+      {isAerobicFastPlanner && (
+        <>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+            {(() => {
+              const distRaw = movelap.distance != null ? String(movelap.distance).trim() : '';
+              return distRaw ? (/^[0-9]+$/.test(distRaw) ? `${distRaw}m` : distRaw) : '—';
+            })()}
+          </td>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+            {movelap.style ? String(movelap.style).trim() : '—'}
+          </td>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+            {movelap.speed ? String(movelap.speed).trim() : '—'}
+          </td>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+            {movelap.rowPerMin != null ? String(movelap.rowPerMin) : '—'}
+          </td>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+            {movelap.pace != null ? String(movelap.pace) : '—'}
+          </td>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+            {movelap.time ? String(movelap.time).trim() : '—'}
+          </td>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+            {(() => {
+              const restChoice = mapRestTypeToChoice(movelap?.restType);
+              if (restChoice === 'restart_to') return 'Restart to';
+              if (restChoice === 'reset_pulse') return 'Rest pulse';
+              return 'Rest Time';
+            })()}
+          </td>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+            {(() => {
+              const restValue = movelap.pause != null ? String(movelap.pause).trim() : '';
+              return restValue || '—';
+            })()}
+          </td>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+            {(() => {
+              const rawTools = typeof movelap.tools === 'string' ? movelap.tools.trim() : '';
+              const choice = mapToolsToBreakChoice(rawTools);
+              if (choice === 'stopped') return 'Stopped';
+              if (choice === 'speed') return 'Speed';
+              return 'Watts';
+            })()}
+          </td>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+            {(() => {
+              const rawTools = typeof movelap.tools === 'string' ? movelap.tools.trim() : '';
+              const choice = mapToolsToBreakChoice(rawTools);
+              if (rawTools) return rawTools;
+              return choice === 'stopped' ? 'Stopped' : '—';
+            })()}
+          </td>
+          <td className={`border border-gray-300 px-1 py-1 text-left text-[10px] ${isNewlyAdded ? 'text-red-600' : ''}`}>
+            {typeof movelap.notes === 'string' && movelap.notes.trim() !== '' ? movelap.notes : '—'}
+          </td>
+        </>
+      )}
+
        {/* BODY BUILDING - Different fields */}
-       {isBodyBuilding && !isFastPlanner && (
+       {isBodyBuilding && !isAnaerobicFastPlanner && !isAerobicFastPlanner && (
          <>
            {/* Muscular Sector - 2026-01-24 - Added image display and doubled width, left aligned */}
            <td className={`border border-gray-300 px-2 py-1 text-left text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
@@ -579,7 +657,7 @@ function SortableMovelapRow({
        )}
       
        {/* OTHER SPORTS WITH TOOLS (Gymnastic, Stretching, Pilates, Yoga, etc.) */}
-       {hasTools && (
+       {hasTools && !isAerobicFastPlanner && (
          <>
            {/* Reps */}
            <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
@@ -593,7 +671,7 @@ function SortableMovelapRow({
        )}
       
        {/* SWIM, BIKE, RUN, ROWING, SKATE, SKI, SNOWBOARD - Distance-based sports */}
-       {isDistanceBased && (
+       {isDistanceBased && !isAerobicFastPlanner && (
          <>
            {/* Distance/Duration - 2026-01-22 11:30 UTC - Show sector for circuits, distance/time for regular */}
            {/* 2026-01-22 14:20 UTC - Use style field for sector (stored in DB) */}
@@ -649,10 +727,10 @@ function SortableMovelapRow({
          </>
        )}
       
-       {/* COMMON COLUMNS for all sports */}
+      {/* COMMON COLUMNS for all sports */}
        
        {/* Pause/Recovery */}
-      {!isFastPlanner && (
+     {!isAnaerobicFastPlanner && !isAerobicFastPlanner && (
       <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
         {pauseValue === 0 ? '0' : pauseValue || '—'}
        </td>
@@ -660,14 +738,14 @@ function SortableMovelapRow({
        
        {/* Macro Final - 2026-01-22 11:30 UTC - Show pause among circuits for circuit movelaps */}
        {/* 2026-01-22 15:35 UTC - Calculate pause for each movelap individually */}
-      {!isFastPlanner && (
+     {!isAnaerobicFastPlanner && !isAerobicFastPlanner && (
       <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
         {macroValue === 0 ? '0' : macroValue || '—'}
        </td>
       )}
        
        {/* Alarm & Sound - Hide for circuit-based moveframes */}
-       {!moveframe.isCircuitBased && !isFastPlanner && (
+       {!moveframe.isCircuitBased && !isAnaerobicFastPlanner && !isAerobicFastPlanner && (
       <td className={`border border-gray-300 px-1 py-1 text-center ${isNewlyAdded ? 'text-red-600' : ''}`}>
          <div className="flex items-center justify-center gap-1">
            {getSoundIcon(movelap)}
@@ -679,18 +757,20 @@ function SortableMovelapRow({
       {/* Notes - Display with increased width for better readability */}
       {/* 2026-01-24 - Increased width 4x to 1200px for circuit movelap table */}
       {/* 2026-01-26 - Added red text styling for newly added movelaps */}
-      <td className={`border border-gray-300 px-2 py-1 text-left text-xs ${isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '300px' }}>
-        {/* 2026-01-22 11:45 UTC - Made notes field editable */}
-        {/* 2026-01-22 12:00 UTC - Fixed to use controlled component with local state */}
-        {/* 2026-01-22 15:35 UTC - Added onRefresh callback */}
-        {/* 2026-01-26 - Added isNewlyAdded prop for red text styling */}
-        <EditableNotesField
-          movelap={movelap}
-          stripHtmlTags={stripHtmlTags}
-          onRefresh={onRefresh}
-          isNewlyAdded={isNewlyAdded}
-        />
-      </td>
+      {!isAerobicFastPlanner && (
+        <td className={`border border-gray-300 px-2 py-1 text-left text-xs ${isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '300px' }}>
+          {/* 2026-01-22 11:45 UTC - Made notes field editable */}
+          {/* 2026-01-22 12:00 UTC - Fixed to use controlled component with local state */}
+          {/* 2026-01-22 15:35 UTC - Added onRefresh callback */}
+          {/* 2026-01-26 - Added isNewlyAdded prop for red text styling */}
+          <EditableNotesField
+            movelap={movelap}
+            stripHtmlTags={stripHtmlTags}
+            onRefresh={onRefresh}
+            isNewlyAdded={isNewlyAdded}
+          />
+        </td>
+      )}
       
       {/* Options Column - Simplified to Edit + Options dropdown */}
       {/* 2026-01-24 - Sticky options column */}
@@ -699,8 +779,12 @@ function SortableMovelapRow({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (isFastPlanner) {
+              if (isAnaerobicFastPlanner) {
                 if (onEditFastPlannerMovelap) onEditFastPlannerMovelap(movelap);
+                return;
+              }
+              if (isAerobicFastPlanner) {
+                if (onEditAerobicFastPlannerMovelap) onEditAerobicFastPlannerMovelap(movelap, index);
                 return;
               }
               if (onEditMovelap) onEditMovelap(movelap);
@@ -780,10 +864,15 @@ function SortableMovelapRow({
         >
           Paste
         </button>
-        {!moveframe.isCircuitBased && !isFastPlanner && (
+        {!moveframe.isCircuitBased && !isAnaerobicFastPlanner && (
           <button
             onClick={(e) => {
               e.stopPropagation();
+              if (isAerobicFastPlanner) {
+                onAddAerobicFastPlannerMovelap?.(index + 2);
+                setShowOptionsDropdown(false);
+                return;
+              }
               if (onAddMovelapAfter) {
                 onAddMovelapAfter(movelap, index);
               }
@@ -794,7 +883,7 @@ function SortableMovelapRow({
             Add movelap
           </button>
         )}
-        {isFastPlanner && (
+        {isAnaerobicFastPlanner && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -899,6 +988,24 @@ export default function MovelapDetailTable({
   const [fastPlannerWeightValue, setFastPlannerWeightValue] = useState<string>('');
   const [fastPlannerBreakMode, setFastPlannerBreakMode] = useState<'rest' | 'cardio'>('rest');
   const [fastPlannerCardioValue, setFastPlannerCardioValue] = useState<string>('120');
+  const [showAerobicFastPlannerMovelapModal, setShowAerobicFastPlannerMovelapModal] = useState(false);
+  const [aerobicFastPlannerMovelapModalMode, setAerobicFastPlannerMovelapModalMode] = useState<'add' | 'edit'>('add');
+  const [aerobicFastPlannerInsertPosition, setAerobicFastPlannerInsertPosition] = useState<number>(1);
+  const [aerobicFastPlannerTargetIndex, setAerobicFastPlannerTargetIndex] = useState<number | null>(null);
+  const [isSavingAerobicFastPlannerMovelap, setIsSavingAerobicFastPlannerMovelap] = useState(false);
+  const [aerobicFastPlannerDraft, setAerobicFastPlannerDraft] = useState(() => ({
+    distance: '',
+    style: '',
+    speed: '',
+    strokes: '',
+    watts: '',
+    time: '',
+    restChoice: 'rest_time' as AerobicRestChoice,
+    rest: '',
+    breakChoice: 'stopped' as AerobicBreakChoice,
+    break: 'Stopped',
+    note: ''
+  }));
   // 2026-01-22 14:15 UTC - Strip circuit tags from initial notes value
   const [noteValue, setNoteValue] = useState(() => {
     let cleanNotes = moveframe.notes || '';
@@ -1071,9 +1178,82 @@ export default function MovelapDetailTable({
   const hasFastPlannerDescription =
     typeof moveframe?.description === 'string' && moveframe.description.toLowerCase().startsWith('fast planner');
   const isFastPlanner = (!!fastPlannerData || hasFastPlannerDescription) && moveframe.type === 'BATTERY' && !circuitBasedMoveframe;
+  const isAerobicFastPlanner = isFastPlanner && fastPlannerData?.plannerType === 'aerobic';
+  const isAnaerobicFastPlanner = isFastPlanner && !isAerobicFastPlanner;
+  const aerobicSportConfig = useMemo(() => getSportConfig((moveframe.sport || 'SWIM') as any), [moveframe.sport]);
+  const aerobicDistanceChoices = useMemo(() => {
+    const meters = Array.isArray((aerobicSportConfig as any)?.meters) ? (aerobicSportConfig as any).meters : [];
+    return meters.filter((m: string) => m !== 'input').map(String);
+  }, [aerobicSportConfig]);
+  const aerobicStyleChoices = useMemo(() => {
+    const styles = Array.isArray((aerobicSportConfig as any)?.styles) ? (aerobicSportConfig as any).styles : [];
+    return styles.map(String);
+  }, [aerobicSportConfig]);
+  const aerobicSpeedChoices = useMemo(() => {
+    const speeds = Array.isArray((aerobicSportConfig as any)?.speeds) ? (aerobicSportConfig as any).speeds : [];
+    return speeds.map(String);
+  }, [aerobicSportConfig]);
+  const aerobicRestChoices = useMemo(() => {
+    const restTypes = Array.isArray((aerobicSportConfig as any)?.restTypes) ? (aerobicSportConfig as any).restTypes : [];
+    const out: { choice: AerobicRestChoice; label: string; type: string }[] = [];
+    if (restTypes.includes(REST_TYPES.SET_TIME)) out.push({ choice: 'rest_time', label: 'Rest Time', type: REST_TYPES.SET_TIME });
+    if (restTypes.includes(REST_TYPES.RESTART_TIME)) out.push({ choice: 'restart_to', label: 'Restart to', type: REST_TYPES.RESTART_TIME });
+    if (restTypes.includes(REST_TYPES.RESTART_PULSE)) out.push({ choice: 'reset_pulse', label: 'Rest pulse', type: REST_TYPES.RESTART_PULSE });
+    return out;
+  }, [aerobicSportConfig]);
+  const aerobicInsertMax = Math.max(1, (movelaps || []).length + 1);
   const fastPlannerSpeedOptions = ['Very slow', 'Slow', 'Normal', 'Quick', 'Fast', 'Very fast', 'Explosive', 'Negative'];
   const fastPlannerBreakOptions = ['0', '0"', '5"', '10"', '15"', '20"', '30"', '45"', "1'", "1'15\"", "1'30\"", "2'", "2'30\"", "3'", "4'", "5'", "6'", "7'"];
   const fastPlannerModeOptions = ['Stopped', 'Superset', 'Movement Customized'];
+
+  const mapRestTypeToChoice = (restType: unknown): AerobicRestChoice => {
+    if (restType === REST_TYPES.RESTART_TIME) return 'restart_to';
+    if (restType === REST_TYPES.RESTART_PULSE) return 'reset_pulse';
+    return 'rest_time';
+  };
+
+  const mapChoiceToRestType = (choice: AerobicRestChoice): string => {
+    if (choice === 'restart_to') return REST_TYPES.RESTART_TIME;
+    if (choice === 'reset_pulse') return REST_TYPES.RESTART_PULSE;
+    return REST_TYPES.SET_TIME;
+  };
+
+  const formatAerobicTimeFromDigits = (value: string): string => {
+    const digits = value.replace(/\D/g, '');
+    if (!digits) return '';
+    const len = digits.length;
+    if (len === 1) return `0h00'00"${digits}`;
+    if (len === 2) return `0h00'0${digits[0]}"${digits[1]}`;
+    if (len === 3) return `0h00'${digits.slice(0, 2)}"${digits[2]}`;
+    if (len === 4) return `0h0${digits[0]}'${digits.slice(1, 3)}"${digits[3]}`;
+    if (len === 5) return `0h${digits.slice(0, 2)}'${digits.slice(2, 4)}"${digits[4]}`;
+    if (len === 6) return `${digits[0]}h${digits.slice(1, 3)}'${digits.slice(3, 5)}"${digits[5]}`;
+    return `${digits.slice(0, -5)}h${digits.slice(-5, -3)}'${digits.slice(-3, -1)}"${digits.slice(-1)}`;
+  };
+  const formatAerobicPauseFromDigits = (value: string): string => {
+    const digits = value.replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.length === 1) return `0'${digits}`;
+    if (digits.length === 2) return `0'${digits}"`;
+    if (digits.length === 3) return `${digits[0]}'${digits.slice(1, 3)}"`;
+    const mins = digits.slice(0, -2);
+    const secs = digits.slice(-2);
+    return `${mins}'${secs}"`;
+  };
+  const normalizeAerobicNumberInput = (value: string, min: number, max: number): string => {
+    const digits = value.replace(/\D/g, '');
+    if (!digits) return '';
+    const parsed = parseInt(digits, 10);
+    if (!Number.isFinite(parsed)) return '';
+    return String(Math.min(max, Math.max(min, parsed)));
+  };
+
+  const mapToolsToBreakChoice = (tools: unknown): AerobicBreakChoice => {
+    const value = typeof tools === 'string' ? tools.trim() : '';
+    if (!value || value.toLowerCase() === 'stopped') return 'stopped';
+    if (aerobicSpeedChoices.includes(value)) return 'speed';
+    return 'watts';
+  };
 
   const circuitInfoByLetter = new Map<string, { seriesCount: number; stationsPerSeries: number }>();
   if (Array.isArray(circuitRows)) {
@@ -1094,7 +1274,7 @@ export default function MovelapDetailTable({
   
   // Navigation for movelaps within the same moveframe
   const hasPreviousMovelap = currentMovelapIndex > 0;
-  const fastPlannerDisplayCount = isFastPlanner
+  const fastPlannerDisplayCount = isAnaerobicFastPlanner
     ? Array.from(
         new Set(
           (movelaps || [])
@@ -1204,7 +1384,7 @@ export default function MovelapDetailTable({
     
     let newOrder: any[] = [];
 
-    if (isFastPlanner) {
+    if (isAnaerobicFastPlanner) {
       const fpRows: any[] = Array.isArray(fastPlannerData?.rows) ? fastPlannerData.rows : [];
       const lapsByExercise = new Map<string, any[]>();
       for (const lap of movelaps) {
@@ -2095,8 +2275,285 @@ export default function MovelapDetailTable({
     }
   };
 
+  const buildAerobicRowsFromMovelaps = (laps: any[]) =>
+    (laps || []).map((lap: any, idx: number) => {
+      const restChoice = mapRestTypeToChoice(lap?.restType);
+      const breakChoice = mapToolsToBreakChoice(lap?.tools);
+      const breakValue =
+        typeof lap?.tools === 'string' && lap.tools.trim() !== ''
+          ? lap.tools.trim()
+          : breakChoice === 'stopped'
+            ? 'Stopped'
+            : '';
+      return {
+        id: idx + 1,
+        distance: lap?.distance != null ? String(lap.distance) : '',
+        style: typeof lap?.style === 'string' ? lap.style : '',
+        speed: typeof lap?.speed === 'string' ? lap.speed : '',
+        strokes: lap?.rowPerMin != null ? String(lap.rowPerMin) : '',
+        watts: lap?.pace != null ? String(lap.pace) : '',
+        time: typeof lap?.time === 'string' ? lap.time : '',
+        restChoice,
+        rest: typeof lap?.pause === 'string' ? lap.pause : '',
+        breakChoice,
+        break: breakValue,
+        note: typeof lap?.notes === 'string' ? lap.notes : ''
+      };
+    });
+
+  const openAerobicFastPlannerMovelapEditor = (mode: 'add' | 'edit', movelap?: any, position?: number, index?: number) => {
+    const fp = fastPlannerData ?? extractFastPlannerDataFromNotes(moveframe.notes);
+    const baseRows = Array.isArray(fp?.rows) ? fp.rows : [];
+    const fallbackRows = baseRows.length > 0 ? baseRows : buildAerobicRowsFromMovelaps(movelaps || []);
+    const defaultRestChoice = aerobicRestChoices[0]?.choice ?? 'rest_time';
+
+    if (mode === 'add') {
+      const nextPositionRaw = typeof position === 'number' ? position : aerobicInsertMax;
+      const nextPosition = Math.min(Math.max(1, nextPositionRaw), aerobicInsertMax);
+      setAerobicFastPlannerInsertPosition(nextPosition);
+      setAerobicFastPlannerMovelapModalMode('add');
+      setAerobicFastPlannerTargetIndex(null);
+      setAerobicFastPlannerDraft({
+        distance: '',
+        style: '',
+        speed: '',
+        strokes: '',
+        watts: '',
+        time: '',
+        restChoice: defaultRestChoice,
+        rest: '',
+        breakChoice: 'stopped',
+        break: 'Stopped',
+        note: ''
+      });
+      setShowAerobicFastPlannerMovelapModal(true);
+      return;
+    }
+
+    const resolvedIndex = typeof index === 'number' ? index : (movelaps || []).findIndex((ml: any) => ml?.id === movelap?.id);
+    const row = fallbackRows[resolvedIndex] ?? null;
+    const restChoice = row?.restChoice ?? mapRestTypeToChoice(movelap?.restType) ?? defaultRestChoice;
+    const breakChoice = row?.breakChoice ?? mapToolsToBreakChoice(movelap?.tools);
+    const breakValue =
+      row?.break ??
+      (typeof movelap?.tools === 'string' && movelap.tools.trim() !== ''
+        ? movelap.tools.trim()
+        : breakChoice === 'stopped'
+          ? 'Stopped'
+          : '');
+
+    setAerobicFastPlannerMovelapModalMode('edit');
+    setAerobicFastPlannerTargetIndex(resolvedIndex >= 0 ? resolvedIndex : null);
+    setAerobicFastPlannerDraft({
+      distance: row?.distance ?? (movelap?.distance != null ? String(movelap.distance) : ''),
+      style: row?.style ?? (typeof movelap?.style === 'string' ? movelap.style : ''),
+      speed: row?.speed ?? (typeof movelap?.speed === 'string' ? movelap.speed : ''),
+      strokes: row?.strokes ?? (movelap?.rowPerMin != null ? String(movelap.rowPerMin) : ''),
+      watts: row?.watts ?? (movelap?.pace != null ? String(movelap.pace) : ''),
+      time: row?.time ?? (typeof movelap?.time === 'string' ? movelap.time : ''),
+      restChoice,
+      rest: row?.rest ?? (typeof movelap?.pause === 'string' ? movelap.pause : ''),
+      breakChoice,
+      break: breakValue,
+      note: row?.note ?? (typeof movelap?.notes === 'string' ? movelap.notes : '')
+    });
+    setShowAerobicFastPlannerMovelapModal(true);
+  };
+
+  const handleSaveAerobicFastPlannerMovelap = async () => {
+    if (isSavingAerobicFastPlannerMovelap) return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    setIsSavingAerobicFastPlannerMovelap(true);
+    try {
+      const baseFastPlannerData = (fastPlannerData ?? extractFastPlannerDataFromNotes(moveframe.notes)) ?? {};
+      const baseRows: any[] = Array.isArray(baseFastPlannerData.rows) && baseFastPlannerData.rows.length > 0
+        ? [...baseFastPlannerData.rows]
+        : buildAerobicRowsFromMovelaps(movelaps || []);
+      const nextRows = [...baseRows];
+      const defaultRestChoice = aerobicRestChoices[0]?.choice ?? 'rest_time';
+      const rowId = nextRows.reduce((max: number, r: any) => Math.max(max, typeof r?.id === 'number' ? r.id : 0), 0) + 1;
+      const normalizedBreak = aerobicFastPlannerDraft.breakChoice === 'stopped' ? 'Stopped' : (aerobicFastPlannerDraft.break || '');
+      const strokesValueRaw = aerobicFastPlannerDraft.strokes.trim();
+      const wattsValueRaw = aerobicFastPlannerDraft.watts.trim();
+      const strokesNumber = strokesValueRaw ? parseInt(strokesValueRaw, 10) : null;
+      const wattsNumber = wattsValueRaw ? parseInt(wattsValueRaw, 10) : null;
+      const clampedStrokesNumber = Number.isFinite(strokesNumber as number) ? Math.min(999, Math.max(0, strokesNumber as number)) : null;
+      const clampedWattsNumber = Number.isFinite(wattsNumber as number) ? Math.min(999, Math.max(0, wattsNumber as number)) : null;
+      const clampedStrokesText = clampedStrokesNumber != null ? String(clampedStrokesNumber) : '';
+      const clampedWattsText = clampedWattsNumber != null ? String(clampedWattsNumber) : '';
+      const rowPayload = {
+        id: rowId,
+        distance: aerobicFastPlannerDraft.distance || '',
+        style: aerobicFastPlannerDraft.style || '',
+        speed: aerobicFastPlannerDraft.speed || '',
+        strokes: clampedStrokesText,
+        watts: clampedWattsText,
+        time: aerobicFastPlannerDraft.time || '',
+        restChoice: aerobicFastPlannerDraft.restChoice || defaultRestChoice,
+        rest: aerobicFastPlannerDraft.rest || '',
+        breakChoice: aerobicFastPlannerDraft.breakChoice || 'stopped',
+        break: normalizedBreak,
+        note: aerobicFastPlannerDraft.note || ''
+      };
+
+      if (aerobicFastPlannerMovelapModalMode === 'edit' && typeof aerobicFastPlannerTargetIndex === 'number' && aerobicFastPlannerTargetIndex >= 0) {
+        const existing = nextRows[aerobicFastPlannerTargetIndex];
+        nextRows[aerobicFastPlannerTargetIndex] = { ...existing, ...rowPayload, id: existing?.id ?? rowId };
+      } else {
+        const insertIndexRaw = aerobicFastPlannerMovelapModalMode === 'add' ? aerobicFastPlannerInsertPosition - 1 : nextRows.length;
+        const insertIndex = Math.min(Math.max(0, insertIndexRaw), nextRows.length);
+        nextRows.splice(insertIndex, 0, rowPayload);
+      }
+
+      const nextFastPlannerData = {
+        ...baseFastPlannerData,
+        plannerType: 'aerobic',
+        activeField: baseFastPlannerData.activeField || 'distance',
+        restChoice: baseFastPlannerData.restChoice || rowPayload.restChoice,
+        breakChoice: baseFastPlannerData.breakChoice || rowPayload.breakChoice,
+        rows: nextRows
+      };
+
+      const updatedMoveframeNotes = upsertFastPlannerDataInNotes(moveframe.notes, nextFastPlannerData);
+      await fetch(`/api/workouts/moveframes/${moveframe.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ notes: updatedMoveframeNotes })
+      });
+
+      const distanceValue = aerobicFastPlannerDraft.distance.trim();
+      const distanceNumber = distanceValue ? parseInt(distanceValue, 10) : null;
+      const restTypeValue = mapChoiceToRestType(aerobicFastPlannerDraft.restChoice || defaultRestChoice);
+      const toolsValue = normalizedBreak || null;
+      const pauseValue = aerobicFastPlannerDraft.rest || null;
+      const updatedMovelapValues = {
+        distance: Number.isFinite(distanceNumber as number) ? distanceNumber : null,
+        style: aerobicFastPlannerDraft.style || null,
+        speed: aerobicFastPlannerDraft.speed || null,
+        rowPerMin: clampedStrokesNumber,
+        pace: clampedWattsText || null,
+        time: aerobicFastPlannerDraft.time || null,
+        restType: restTypeValue || null,
+        pause: pauseValue,
+        tools: toolsValue,
+        notes: aerobicFastPlannerDraft.note || null
+      };
+
+      if (aerobicFastPlannerMovelapModalMode === 'edit' && typeof aerobicFastPlannerTargetIndex === 'number') {
+        const targetMovelap = (movelaps || [])[aerobicFastPlannerTargetIndex];
+        if (targetMovelap?.id) {
+          await fetch(`/api/workouts/movelaps/${targetMovelap.id}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(updatedMovelapValues)
+          });
+          setMovelaps((prev: any[]) =>
+            prev.map((lap: any) => (lap?.id === targetMovelap.id ? { ...lap, ...updatedMovelapValues } : lap))
+          );
+        }
+      } else {
+        const response = await fetch('/api/workouts/movelaps', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            moveframeId: moveframe.id,
+            repetitionNumber: 9999,
+            distance: Number.isFinite(distanceNumber as number) ? distanceNumber : null,
+            speed: aerobicFastPlannerDraft.speed || null,
+            style: aerobicFastPlannerDraft.style || null,
+            pace: clampedWattsText || null,
+            time: aerobicFastPlannerDraft.time || null,
+            rowPerMin: clampedStrokesNumber,
+            reps: null,
+            weight: null,
+            tools: toolsValue,
+            r1: null,
+            r2: null,
+            muscularSector: null,
+            exercise: null,
+            restType: restTypeValue || null,
+            pause: pauseValue,
+            macroFinal: null,
+            alarm: null,
+            sound: null,
+            notes: aerobicFastPlannerDraft.note || null,
+            status: 'PENDING',
+            isSkipped: false,
+            isDisabled: false
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('Failed to create aerobic fast planner movelap', errorData);
+          return;
+        }
+
+        const createdResponse = await response.json().catch(() => null);
+        const createdMovelap = createdResponse && (createdResponse as any).movelap ? (createdResponse as any).movelap : createdResponse;
+        if (!createdMovelap?.id) {
+          console.error('Created movelap response missing id', createdResponse);
+          return;
+        }
+
+        const baseOrder = [...(movelaps || [])];
+        const insertIndexRaw = aerobicFastPlannerInsertPosition - 1;
+        const insertIndex = Math.min(Math.max(0, insertIndexRaw), baseOrder.length);
+        baseOrder.splice(insertIndex, 0, createdMovelap);
+        setMovelaps(baseOrder);
+        setNewlyAddedStationMovelapIds((prev) => {
+          const createdId = typeof createdMovelap.id === 'number' ? String(createdMovelap.id) : createdMovelap.id;
+          if (!createdId || typeof createdId !== 'string') return prev;
+          const next = new Set([...Array.from(prev), createdId]);
+          try {
+            const stationKey = `mlNewIds:${moveframe.id}`;
+            if (typeof window !== 'undefined') {
+              window.localStorage.setItem(stationKey, JSON.stringify(Array.from(next)));
+            }
+          } catch {
+            // ignore
+          }
+          return next;
+        });
+        const reorderPayload = baseOrder
+          .map((lap: any, idx: number) => {
+            const idValue = typeof lap?.id === 'number' ? String(lap.id) : lap?.id;
+            if (!idValue || typeof idValue !== 'string') return null;
+            return { id: idValue, repetitionNumber: idx + 1 };
+          })
+          .filter((item: any) => item);
+        if (reorderPayload.length > 0) {
+          await fetch('/api/workouts/movelaps/reorder', {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ movelaps: reorderPayload })
+          });
+        }
+      }
+
+      setShowAerobicFastPlannerMovelapModal(false);
+      setAerobicFastPlannerTargetIndex(null);
+      if (onRefresh) await onRefresh();
+    } finally {
+      setIsSavingAerobicFastPlannerMovelap(false);
+    }
+  };
+
   const fastPlannerView = React.useMemo(() => {
-    if (!isFastPlanner) return null;
+    if (!isAnaerobicFastPlanner) return null;
     const fpRows: any[] = Array.isArray(fastPlannerData?.rows) ? fastPlannerData.rows : [];
     const fpByExercise = new Map<string, any>();
     for (const r of fpRows) {
@@ -2161,9 +2618,41 @@ export default function MovelapDetailTable({
       .filter((v): v is any => !!v);
 
     return { displayMovelaps };
-  }, [isFastPlanner, fastPlannerData, movelaps, newlyAddedFastPlannerExercises]);
+  }, [isAnaerobicFastPlanner, fastPlannerData, movelaps, newlyAddedFastPlannerExercises]);
 
-  const displayMovelaps = isFastPlanner ? (fastPlannerView?.displayMovelaps ?? []) : movelaps;
+  const aerobicFastPlannerView = React.useMemo(() => {
+    if (!isAerobicFastPlanner) return null;
+    const fpRows: any[] = Array.isArray(fastPlannerData?.rows) ? fastPlannerData.rows : [];
+    const baseRows: any[] = fpRows.length > 0 ? fpRows : buildAerobicRowsFromMovelaps(movelaps || []);
+    const next = (movelaps || []).map((lap: any, idx: number) => {
+      const row = baseRows[idx] ?? null;
+      if (!row) return lap;
+      const restChoice = row?.restChoice ?? mapRestTypeToChoice(lap?.restType);
+      const breakChoice = row?.breakChoice ?? mapToolsToBreakChoice(lap?.tools);
+      const rowBreak = typeof row?.break === 'string' ? row.break.trim() : '';
+      const toolsValue = rowBreak ? rowBreak : breakChoice === 'stopped' ? 'Stopped' : '';
+      return {
+        ...lap,
+        distance: row?.distance ?? lap?.distance,
+        style: row?.style ?? lap?.style,
+        speed: row?.speed ?? lap?.speed,
+        rowPerMin: row?.strokes ?? lap?.rowPerMin,
+        pace: row?.watts ?? lap?.pace,
+        time: row?.time ?? lap?.time,
+        restType: mapChoiceToRestType(restChoice),
+        pause: row?.rest ?? lap?.pause,
+        tools: toolsValue || lap?.tools,
+        notes: row?.note ?? lap?.notes
+      };
+    });
+    return { displayMovelaps: next };
+  }, [isAerobicFastPlanner, fastPlannerData, movelaps, mapRestTypeToChoice, mapToolsToBreakChoice, mapChoiceToRestType]);
+
+  const displayMovelaps = isAnaerobicFastPlanner
+    ? (fastPlannerView?.displayMovelaps ?? [])
+    : isAerobicFastPlanner
+      ? (aerobicFastPlannerView?.displayMovelaps ?? movelaps)
+      : movelaps;
   
   // Manual Mode Layout - Simplified
   if (isManualMode) {
@@ -2419,6 +2908,267 @@ export default function MovelapDetailTable({
         </div>,
         document.body
       )}
+        {showAerobicFastPlannerMovelapModal && typeof document !== 'undefined' && ReactDOM.createPortal(
+          <div
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999999] p-4"
+            onClick={() => {
+              if (isSavingAerobicFastPlannerMovelap) return;
+              setShowAerobicFastPlannerMovelapModal(false);
+            }}
+            style={{ margin: 0 }}
+          >
+            <div
+              className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-gradient-to-r from-emerald-600 to-cyan-600 text-white p-4 flex items-center justify-between">
+                <div className="font-bold text-base">
+                {aerobicFastPlannerMovelapModalMode === 'edit'
+                  ? 'Edit Fast planner for Aerobic Movelaps'
+                  : 'Add Fast planner for Aerobic Movelaps'}
+                </div>
+                {aerobicFastPlannerMovelapModalMode === 'add' && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-semibold">Insert position</label>
+                    <select
+                      value={aerobicFastPlannerInsertPosition}
+                      onChange={(e) => {
+                        const raw = parseInt(e.target.value || '1', 10);
+                        const next = Number.isFinite(raw) ? Math.min(Math.max(1, raw), aerobicInsertMax) : 1;
+                        setAerobicFastPlannerInsertPosition(next);
+                      }}
+                      className="px-2 py-1 text-xs bg-white text-black rounded"
+                    >
+                      {Array.from({ length: aerobicInsertMax }, (_, i) => i + 1).map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    if (isSavingAerobicFastPlannerMovelap) return;
+                    setShowAerobicFastPlannerMovelapModal(false);
+                  }}
+                  className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Distance</label>
+                    <select
+                      value={aerobicFastPlannerDraft.distance}
+                      onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, distance: e.target.value }))}
+                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      disabled={isSavingAerobicFastPlannerMovelap}
+                    >
+                      <option value="">—</option>
+                      {aerobicDistanceChoices.map((v: string) => (
+                        <option key={v} value={v}>{v}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Style</label>
+                    <select
+                      value={aerobicFastPlannerDraft.style}
+                      onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, style: e.target.value }))}
+                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      disabled={isSavingAerobicFastPlannerMovelap}
+                    >
+                      <option value="">—</option>
+                      {aerobicStyleChoices.map((v: string) => (
+                        <option key={v} value={v}>{v}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Speed</label>
+                    <select
+                      value={aerobicFastPlannerDraft.speed}
+                      onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, speed: e.target.value }))}
+                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      disabled={isSavingAerobicFastPlannerMovelap}
+                    >
+                      <option value="">—</option>
+                      {aerobicSpeedChoices.map((v: string) => (
+                        <option key={v} value={v}>{v}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Strokes</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={999}
+                      value={aerobicFastPlannerDraft.strokes}
+                      onChange={(e) =>
+                        setAerobicFastPlannerDraft((prev) => ({
+                          ...prev,
+                          strokes: normalizeAerobicNumberInput(e.target.value, 0, 999)
+                        }))
+                      }
+                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      disabled={isSavingAerobicFastPlannerMovelap}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Watts</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={999}
+                      value={aerobicFastPlannerDraft.watts}
+                      onChange={(e) =>
+                        setAerobicFastPlannerDraft((prev) => ({
+                          ...prev,
+                          watts: normalizeAerobicNumberInput(e.target.value, 0, 999)
+                        }))
+                      }
+                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      disabled={isSavingAerobicFastPlannerMovelap}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Time</label>
+                    <input
+                      type="text"
+                      value={aerobicFastPlannerDraft.time}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, '').slice(0, 7);
+                        setAerobicFastPlannerDraft((prev) => ({ ...prev, time: raw }));
+                      }}
+                      onBlur={(e) => {
+                        const raw = e.target.value.replace(/\D/g, '').slice(0, 7);
+                        const formatted = formatAerobicTimeFromDigits(raw);
+                        setAerobicFastPlannerDraft((prev) => ({ ...prev, time: formatted }));
+                      }}
+                      placeholder={'Type digits like 123456 → 1h23\'45"6'}
+                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      disabled={isSavingAerobicFastPlannerMovelap}
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Rest</label>
+                    <div className="flex items-center gap-3 mb-2">
+                      <select
+                        value={aerobicFastPlannerDraft.restChoice}
+                        onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, restChoice: e.target.value as AerobicRestChoice }))}
+                        className="px-2 py-1 text-xs bg-white text-black rounded border border-gray-300"
+                        disabled={isSavingAerobicFastPlannerMovelap}
+                      >
+                        {aerobicRestChoices.map((opt) => (
+                          <option key={opt.choice} value={opt.choice}>{opt.label}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={aerobicFastPlannerDraft.rest}
+                        onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, rest: e.target.value }))}
+                        onBlur={(e) => {
+                          if (aerobicFastPlannerDraft.restChoice === 'restart_to') {
+                            const raw = e.target.value.replace(/\D/g, '').slice(0, 7);
+                            const formatted = formatAerobicTimeFromDigits(raw);
+                            setAerobicFastPlannerDraft((prev) => ({ ...prev, rest: formatted }));
+                            return;
+                          }
+                          if (aerobicFastPlannerDraft.restChoice === 'rest_time') {
+                            const raw = e.target.value.replace(/\D/g, '').slice(0, 6);
+                            const formatted = formatAerobicPauseFromDigits(raw);
+                            setAerobicFastPlannerDraft((prev) => ({ ...prev, rest: formatted }));
+                          }
+                        }}
+                        className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isSavingAerobicFastPlannerMovelap}
+                      />
+                    </div>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Break</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <select
+                        value={aerobicFastPlannerDraft.breakChoice}
+                        onChange={(e) => {
+                          const choice = e.target.value as AerobicBreakChoice;
+                          setAerobicFastPlannerDraft((prev) => ({
+                            ...prev,
+                            breakChoice: choice,
+                            break: choice === 'stopped' ? 'Stopped' : ''
+                          }));
+                        }}
+                        className="px-2 py-1 text-xs bg-white text-black rounded border border-gray-300"
+                        disabled={isSavingAerobicFastPlannerMovelap}
+                      >
+                        <option value="stopped">Stopped</option>
+                        <option value="speed">Speed</option>
+                        <option value="watts">Watts</option>
+                      </select>
+                      {aerobicFastPlannerDraft.breakChoice === 'speed' ? (
+                        <select
+                          value={aerobicFastPlannerDraft.break}
+                          onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, break: e.target.value }))}
+                          className="px-2 py-1 text-xs bg-white text-black rounded border border-gray-300"
+                          disabled={isSavingAerobicFastPlannerMovelap}
+                        >
+                          <option value="">—</option>
+                          {aerobicSpeedChoices.map((v: string) => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={aerobicFastPlannerDraft.break}
+                          onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, break: e.target.value }))}
+                          className="px-2 py-1 border border-gray-300 rounded text-sm"
+                          disabled={isSavingAerobicFastPlannerMovelap || aerobicFastPlannerDraft.breakChoice === 'stopped'}
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Note</label>
+                    <input
+                      type="text"
+                      value={aerobicFastPlannerDraft.note}
+                      onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, note: e.target.value }))}
+                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      disabled={isSavingAerobicFastPlannerMovelap}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    onClick={() => {
+                      if (isSavingAerobicFastPlannerMovelap) return;
+                      setShowAerobicFastPlannerMovelapModal(false);
+                    }}
+                    className="px-3 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                    disabled={isSavingAerobicFastPlannerMovelap}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveAerobicFastPlannerMovelap}
+                    className="px-3 py-2 text-sm bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:bg-gray-400"
+                    disabled={isSavingAerobicFastPlannerMovelap}
+                  >
+                    {isSavingAerobicFastPlannerMovelap ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </>
     );
   }
@@ -2465,11 +3215,21 @@ export default function MovelapDetailTable({
             )}
             
             {/* Add Movelap Button */}
-            {isFastPlanner ? (
+            {isAnaerobicFastPlanner ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   openFastPlannerMovelapEditor('add', undefined, fastPlannerInsertMax);
+                }}
+                className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 whitespace-nowrap"
+              >
+                + Add Movelap
+              </button>
+            ) : isAerobicFastPlanner ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openAerobicFastPlannerMovelapEditor('add', undefined, aerobicInsertMax);
                 }}
                 className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 whitespace-nowrap"
               >
@@ -2512,7 +3272,7 @@ export default function MovelapDetailTable({
 
           {/* 2026-01-24 - Scrollable wrapper for sticky Options column */}
           <div className="overflow-x-auto overflow-y-visible table-scrollbar">
-            <table className="text-xs bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: isFastPlanner ? '1500px' : (moveframe.isCircuitBased ? '1340px' : '1600px'), width: '100%' }}>
+            <table className="text-xs bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: isAnaerobicFastPlanner ? '1500px' : (moveframe.isCircuitBased ? '1340px' : '1600px'), width: '100%' }}>
             {/* Render sport-specific column headers */}
             {(() => {
               const sport = moveframe.sport || 'SWIM';
@@ -2521,7 +3281,8 @@ export default function MovelapDetailTable({
               const isRun = sport === 'RUN' || sport === 'HIKING' || sport === 'WALKING';
               const isRowing = sport === 'ROWING' || sport === 'CANOEING';
               const isBodyBuilding = sport === 'BODY_BUILDING';
-              const isFastPlannerTable = isFastPlanner;
+              const isFastPlannerTable = isAnaerobicFastPlanner;
+              const isAerobicFastPlannerTable = isAerobicFastPlanner;
               
               // Distance-based sports (no tools) - MUST match the array at top of component!
               const distanceBasedSports = ['SWIM', 'BIKE', 'MTB', 'RUN', 'ROWING', 'CANOEING', 'SKATE', 'SKI', 'SNOWBOARD', 'HIKING', 'WALKING'];
@@ -2567,6 +3328,53 @@ export default function MovelapDetailTable({
                         <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Mode</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" style={{ width: '300px' }}>Notes</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-[10px] sticky-options-header bg-gray-200" style={{ width: '110px', minWidth: '110px' }}>Options</th>
+                      </tr>
+                    </thead>
+                  </>
+                );
+              }
+
+              if (isAerobicFastPlannerTable) {
+                return (
+                  <>
+                    <colgroup>
+                      <col style={{ width: '20px' }} />
+                      <col style={{ width: '20px' }} />
+                      <col style={{ width: '20px' }} />
+                      <col style={{ width: '80px' }} />
+                      <col style={{ width: '50px' }} />
+                      <col style={{ width: '50px' }} />
+                      <col style={{ width: '60px' }} />
+                      <col style={{ width: '50px' }} />
+                      <col style={{ width: '50px' }} />
+                      <col style={{ width: '50px' }} />
+                      <col style={{ width: '60px' }} />
+                      <col style={{ width: '60px' }} />
+                      <col style={{ width: '60px' }} />
+                      <col style={{ width: '60px' }} />
+                      <col style={{ width: '60px' }} />
+                      <col style={{ width: '170px' }} />
+                      <col style={{ width: '80px', minWidth: '80px' }} />
+                    </colgroup>
+                    <thead className="bg-gray-200">
+                      <tr>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" title="Drag to reorder">Move</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">MF</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">#</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Workout section</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Sport</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Distance</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Style</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Speed</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Strokes</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Watts</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Time</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Rest Type</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Reset</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Break Type</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Break</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" style={{ width: '170px' }}>Notes</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px] sticky-options-header bg-gray-200" style={{ width: '80px', minWidth: '80px' }}>Options</th>
                       </tr>
                     </thead>
                   </>
@@ -2694,7 +3502,7 @@ export default function MovelapDetailTable({
             })()}
             
             <tbody>
-              {displayMovelaps.map((movelap: any, index: number) => {
+                    {displayMovelaps.map((movelap: any, index: number) => {
                 // 2026-01-22 10:50 UTC - Extract circuit metadata from notes if present
                 let circuitMetadata: any = null;
                 if (movelap.notes && typeof movelap.notes === 'string') {
@@ -2734,7 +3542,9 @@ export default function MovelapDetailTable({
                 // Base columns: Move(1) + MF(1) + #(1) + Workout section(1) + Sport(1) = 5
                 let totalColumns = 5;
 
-                if (isFastPlanner) {
+                if (isAerobicFastPlanner) {
+                  totalColumns = 17;
+                } else if (isAnaerobicFastPlanner) {
                   totalColumns = 15;
                 } else if (isBodyBuilding) {
                   totalColumns += 5; // Musc.Sector + Exercise + Reps + Weight + Tempo (Rest Type removed 2026-01-24)
@@ -2753,7 +3563,7 @@ export default function MovelapDetailTable({
                   totalColumns += 2; // Time + Pace
                 }
                 
-                if (!isFastPlanner) {
+                if (!isAnaerobicFastPlanner && !isAerobicFastPlanner) {
                   totalColumns += moveframe.isCircuitBased ? 4 : 5;
                 }
                 
@@ -2788,11 +3598,13 @@ export default function MovelapDetailTable({
                       movelap={movelap}
                       isNewlyAdded={newlyAddedStationMovelapIds.has(movelap.id) || !!movelap.isNewlyAdded || !!movelap._fastPlannerIsNewRow}
                       index={index}
-                      sequenceNumber={isFastPlanner ? index + 1 : (movelapSequences.get(movelap.id) || index + 1)}
+                      sequenceNumber={isAnaerobicFastPlanner ? index + 1 : (movelapSequences.get(movelap.id) || index + 1)}
                       moveframeLetter={moveframeLetter}
                       sectionColor={sectionColor}
                       sectionName={sectionName}
                       moveframe={moveframe}
+                      mapToolsToBreakChoice={mapToolsToBreakChoice}
+                      mapRestTypeToChoice={mapRestTypeToChoice}
                       onEditMovelap={(movelap: any) => {
                         if (movelap?.circuitLetter || moveframe.isCircuitBased) {
                           handleOpenEditStationModal(movelap);
@@ -2800,8 +3612,10 @@ export default function MovelapDetailTable({
                         }
                         onEditMovelap?.(movelap);
                       }}
-                      onEditFastPlannerMovelap={isFastPlanner ? (ml) => openFastPlannerMovelapEditor('edit', ml) : undefined}
-                      onAddFastPlannerMovelap={isFastPlanner ? (position) => openFastPlannerMovelapEditor('add', undefined, position) : undefined}
+                      onEditFastPlannerMovelap={isAnaerobicFastPlanner ? (ml) => openFastPlannerMovelapEditor('edit', ml) : undefined}
+                      onAddFastPlannerMovelap={isAnaerobicFastPlanner ? (position) => openFastPlannerMovelapEditor('add', undefined, position) : undefined}
+                      onEditAerobicFastPlannerMovelap={isAerobicFastPlanner ? (ml, idx) => openAerobicFastPlannerMovelapEditor('edit', ml, undefined, idx) : undefined}
+                      onAddAerobicFastPlannerMovelap={isAerobicFastPlanner ? (position) => openAerobicFastPlannerMovelapEditor('add', undefined, position) : undefined}
                       onDeleteMovelap={onDeleteMovelap}
                       onCopyMovelap={handleCopyMovelap}
                       onPasteMovelap={handlePasteMovelap}
@@ -3042,7 +3856,9 @@ export default function MovelapDetailTable({
               >
                 <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-4 flex items-center justify-between">
                   <div className="font-bold text-base">
-                    {fastPlannerMovelapModalMode === 'edit' ? 'Edit fast planner movelap' : 'Add fast planner movelap'}
+                    {fastPlannerMovelapModalMode === 'edit'
+                      ? 'Edit Fast planner for Anaerobic Movelaps'
+                      : 'Add Fast planner for Anaerobic Movelaps'}
                   </div>
                   {fastPlannerMovelapModalMode === 'add' && (
                     <div className="flex items-center gap-2">
@@ -3376,6 +4192,267 @@ export default function MovelapDetailTable({
                       disabled={isSavingFastPlannerMovelap}
                     >
                       {isSavingFastPlannerMovelap ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
+          {showAerobicFastPlannerMovelapModal && typeof document !== 'undefined' && ReactDOM.createPortal(
+            <div
+              className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999999] p-4"
+              onClick={() => {
+                if (isSavingAerobicFastPlannerMovelap) return;
+                setShowAerobicFastPlannerMovelapModal(false);
+              }}
+              style={{ margin: 0 }}
+            >
+              <div
+                className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="bg-gradient-to-r from-emerald-600 to-cyan-600 text-white p-4 flex items-center justify-between">
+                  <div className="font-bold text-base">
+                    {aerobicFastPlannerMovelapModalMode === 'edit'
+                      ? 'Edit Fast planner for Aerobic Movelaps'
+                      : 'Add Fast planner for Aerobic Movelaps'}
+                  </div>
+                  {aerobicFastPlannerMovelapModalMode === 'add' && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs font-semibold">Insert position</label>
+                      <select
+                        value={aerobicFastPlannerInsertPosition}
+                        onChange={(e) => {
+                          const raw = parseInt(e.target.value || '1', 10);
+                          const next = Number.isFinite(raw) ? Math.min(Math.max(1, raw), aerobicInsertMax) : 1;
+                          setAerobicFastPlannerInsertPosition(next);
+                        }}
+                        className="px-2 py-1 text-xs bg-white text-black rounded"
+                      >
+                        {Array.from({ length: aerobicInsertMax }, (_, i) => i + 1).map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (isSavingAerobicFastPlannerMovelap) return;
+                      setShowAerobicFastPlannerMovelapModal(false);
+                    }}
+                    className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="p-4 space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Distance</label>
+                      <select
+                        value={aerobicFastPlannerDraft.distance}
+                        onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, distance: e.target.value }))}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isSavingAerobicFastPlannerMovelap}
+                      >
+                        <option value="">—</option>
+                        {aerobicDistanceChoices.map((v: string) => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Style</label>
+                      <select
+                        value={aerobicFastPlannerDraft.style}
+                        onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, style: e.target.value }))}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isSavingAerobicFastPlannerMovelap}
+                      >
+                        <option value="">—</option>
+                        {aerobicStyleChoices.map((v: string) => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Speed</label>
+                      <select
+                        value={aerobicFastPlannerDraft.speed}
+                        onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, speed: e.target.value }))}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isSavingAerobicFastPlannerMovelap}
+                      >
+                        <option value="">—</option>
+                        {aerobicSpeedChoices.map((v: string) => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Strokes</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={999}
+                        value={aerobicFastPlannerDraft.strokes}
+                        onChange={(e) =>
+                          setAerobicFastPlannerDraft((prev) => ({
+                            ...prev,
+                            strokes: normalizeAerobicNumberInput(e.target.value, 0, 999)
+                          }))
+                        }
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isSavingAerobicFastPlannerMovelap}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Watts</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={999}
+                        value={aerobicFastPlannerDraft.watts}
+                        onChange={(e) =>
+                          setAerobicFastPlannerDraft((prev) => ({
+                            ...prev,
+                            watts: normalizeAerobicNumberInput(e.target.value, 0, 999)
+                          }))
+                        }
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isSavingAerobicFastPlannerMovelap}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Time</label>
+                      <input
+                        type="text"
+                        value={aerobicFastPlannerDraft.time}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\D/g, '').slice(0, 7);
+                          setAerobicFastPlannerDraft((prev) => ({ ...prev, time: raw }));
+                        }}
+                        onBlur={(e) => {
+                          const raw = e.target.value.replace(/\D/g, '').slice(0, 7);
+                          const formatted = formatAerobicTimeFromDigits(raw);
+                          setAerobicFastPlannerDraft((prev) => ({ ...prev, time: formatted }));
+                        }}
+                        placeholder={'Type digits like 123456 → 1h23\'45"6'}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isSavingAerobicFastPlannerMovelap}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Rest</label>
+                      <div className="flex items-center gap-3 mb-2">
+                        <select
+                          value={aerobicFastPlannerDraft.restChoice}
+                          onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, restChoice: e.target.value as AerobicRestChoice }))}
+                          className="px-2 py-1 text-xs bg-white text-black rounded border border-gray-300"
+                          disabled={isSavingAerobicFastPlannerMovelap}
+                        >
+                          {aerobicRestChoices.map((opt) => (
+                            <option key={opt.choice} value={opt.choice}>{opt.label}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          value={aerobicFastPlannerDraft.rest}
+                          onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, rest: e.target.value }))}
+                          onBlur={(e) => {
+                          if (aerobicFastPlannerDraft.restChoice === 'restart_to') {
+                            const raw = e.target.value.replace(/\D/g, '').slice(0, 7);
+                            const formatted = formatAerobicTimeFromDigits(raw);
+                            setAerobicFastPlannerDraft((prev) => ({ ...prev, rest: formatted }));
+                            return;
+                          }
+                          if (aerobicFastPlannerDraft.restChoice === 'rest_time') {
+                            const raw = e.target.value.replace(/\D/g, '').slice(0, 6);
+                            const formatted = formatAerobicPauseFromDigits(raw);
+                            setAerobicFastPlannerDraft((prev) => ({ ...prev, rest: formatted }));
+                          }
+                          }}
+                          className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
+                          disabled={isSavingAerobicFastPlannerMovelap}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Break</label>
+                      <div className="grid grid-cols-3 gap-3">
+                        <select
+                          value={aerobicFastPlannerDraft.breakChoice}
+                          onChange={(e) => {
+                            const choice = e.target.value as AerobicBreakChoice;
+                            setAerobicFastPlannerDraft((prev) => ({
+                              ...prev,
+                              breakChoice: choice,
+                              break: choice === 'stopped' ? 'Stopped' : ''
+                            }));
+                          }}
+                          className="px-2 py-1 text-xs bg-white text-black rounded border border-gray-300"
+                          disabled={isSavingAerobicFastPlannerMovelap}
+                        >
+                          <option value="stopped">Stopped</option>
+                          <option value="speed">Speed</option>
+                          <option value="watts">Watts</option>
+                        </select>
+                        {aerobicFastPlannerDraft.breakChoice === 'speed' ? (
+                          <select
+                            value={aerobicFastPlannerDraft.break}
+                            onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, break: e.target.value }))}
+                            className="px-2 py-1 text-xs bg-white text-black rounded border border-gray-300"
+                            disabled={isSavingAerobicFastPlannerMovelap}
+                          >
+                            <option value="">—</option>
+                            {aerobicSpeedChoices.map((v: string) => (
+                              <option key={v} value={v}>{v}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={aerobicFastPlannerDraft.break}
+                            onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, break: e.target.value }))}
+                            className="px-2 py-1 border border-gray-300 rounded text-sm"
+                            disabled={isSavingAerobicFastPlannerMovelap || aerobicFastPlannerDraft.breakChoice === 'stopped'}
+                          />
+                        )}
+                      </div>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Note</label>
+                      <input
+                        type="text"
+                        value={aerobicFastPlannerDraft.note}
+                        onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, note: e.target.value }))}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isSavingAerobicFastPlannerMovelap}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      onClick={() => {
+                        if (isSavingAerobicFastPlannerMovelap) return;
+                        setShowAerobicFastPlannerMovelapModal(false);
+                      }}
+                      className="px-3 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                      disabled={isSavingAerobicFastPlannerMovelap}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveAerobicFastPlannerMovelap}
+                      className="px-3 py-2 text-sm bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:bg-gray-400"
+                      disabled={isSavingAerobicFastPlannerMovelap}
+                    >
+                      {isSavingAerobicFastPlannerMovelap ? 'Saving…' : 'Save'}
                     </button>
                   </div>
                 </div>

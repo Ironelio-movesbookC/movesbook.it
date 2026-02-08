@@ -282,7 +282,7 @@ export default function BatteryCircuitPlanner({
   const [seriesMode, setSeriesMode] = useState<'series' | 'time'>(
     config?.seriesMode === 'time' ? 'time' : 'series'
   );
-  const [seriesPerCircuit, setSeriesPerCircuit] = useState(config?.seriesCount || 2);
+  const [seriesPerCircuit, setSeriesPerCircuit] = useState(config?.seriesCount || 3);
   const [timePerCircuit, setTimePerCircuit] = useState(config?.seriesTime || 5); // in minutes
   // Support both flat structure (pauseSeries) and nested (pauses.series in seconds)
   const [pauseSeries, setPauseSeries] = useState(() => {
