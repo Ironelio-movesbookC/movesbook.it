@@ -1,4 +1,23 @@
+'use client';
+
 import React, { useState } from 'react';
+import { 
+  DndContext, 
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { 
   Tag, 
   ChevronDown, 
@@ -34,8 +53,18 @@ import {
   Database,
   Key,
   LogOut,
-  Trash2
+  Trash2,
+  UserCircle,
+  ShoppingBasket,
+  Truck,
+  Badge,
+  Radio,
+  QrCode,
+  CreditCard,
+  Triangle,
+  Gift
 } from 'lucide-react';
+import Link from 'next/link';
 
 // Define types for sidebar items
 interface SidebarItemType {
@@ -54,7 +83,35 @@ interface SidebarSectionType {
   items: SidebarItemType[];
 }
 
-const SystemDashboardSidebar = () => {
+function SortableItem(props: { id: string, children: React.ReactNode }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: props.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="mb-[1px]">
+      {props.children}
+    </div>
+  );
+}
+
+interface SystemDashboardSidebarProps {
+  isOpen?: boolean;
+  onToggle?: () => void;
+}
+
+const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProps) => {
+  const [internalIsOpen, setInternalIsOpen] = useState(true);
+  const isSidebarOpen = isOpen !== undefined ? isOpen : internalIsOpen;
   // State for open sections (main categories)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     staff: true,
@@ -73,7 +130,9 @@ const SystemDashboardSidebar = () => {
     countries: false,
     operative: false,
     passwords: false,
-    other: false
+    other: false,
+    club_options: false,
+    friends: false
   });
 
   // State for open sub-sections (nested menus)
@@ -88,7 +147,7 @@ const SystemDashboardSidebar = () => {
   };
 
   // Define the sidebar data structure based on PHP implementation
-  const sidebarData: SidebarSectionType[] = [
+  const [sidebarData, setSidebarData] = useState<SidebarSectionType[]>([
     {
       id: 'staff',
       label: 'Staff enabled',
@@ -106,6 +165,47 @@ const SystemDashboardSidebar = () => {
         { label: 'Functions enabled', icon: CheckSquare },
         { label: 'Packages infos', icon: Package },
         { label: 'Other Settings', icon: Settings }
+      ]
+    },
+    {
+      id: 'club_options',
+      label: 'Club options',
+      items: [
+        { label: 'Club accounts', icon: UserCircle, href: '/admin/club-accounts' },
+        { 
+          label: 'Accounts', 
+          icon: UserCircle,
+          hasSubmenu: true,
+          id: 'club_accounts',
+          subItems: [
+            { label: 'Price list', href: '/admin/accounts/price-list' },
+            { label: 'Requests of accounts', href: '/admin/accounts/requests' }
+          ]
+        },
+        { label: 'Identification cards', icon: ShoppingBasket, href: '/admin/identification-cards' },
+        { label: 'Products purchased', icon: ShoppingBasket, href: '/admin/products-purchased' },
+        { label: 'Order purchased', icon: Truck, href: '/admin/orders' },
+        {
+          label: 'Hardware',
+          icon: Smartphone,
+          hasSubmenu: true,
+          id: 'club_hardware',
+          subItems: [
+            { label: 'Badges', href: '/admin/cards/badges/list' },
+            { label: 'Rfids', href: '/admin/cards/rfids/list' },
+            { label: 'QR Codes', href: '/admin/cards/qr-codes/list' },
+            { label: 'Smartcards', href: '/admin/cards/smartcards/list' },
+            { label: 'Hardware', href: '/admin/cards/hardware/list' }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'friends',
+      label: 'Friends',
+      items: [
+        { label: 'Online friends', icon: Users, href: '/admin/friends/online' },
+        { label: 'Categories of friends', icon: Users, href: '/admin/friends/categories' }
       ]
     },
     {
@@ -207,7 +307,7 @@ const SystemDashboardSidebar = () => {
             { label: 'Our standards' },
             { label: 'Info & Intro' },
             { label: 'YouTube Link' },
-            { label: 'User manual' }, // This technically has another level deep in PHP, keeping simple for now
+            { label: 'User manual' }, 
             { label: 'Tutorial video' },
             { label: 'FAQs' },
             { label: 'Info copyright' },
@@ -261,6 +361,7 @@ const SystemDashboardSidebar = () => {
       label: 'Promotions',
       items: [
         { label: 'Catalog of products', icon: ShoppingCart },
+        { label: 'Promocode subscriptions', icon: Gift, href: '/admin/promocode/subscription' },
         {
           label: 'Sponsors',
           icon: Star,
@@ -412,50 +513,84 @@ const SystemDashboardSidebar = () => {
         { label: 'Log out & Exit', icon: LogOut }
       ]
     }
-  ];
+  ]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const {active, over} = event;
+    
+    if (active.id !== over?.id) {
+      setSidebarData((items) => {
+        const oldIndex = items.findIndex((item) => item.id === active.id);
+        const newIndex = items.findIndex((item) => item.id === over?.id);
+        
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
 
   const SidebarItem = ({ 
     item, 
+    level = 0,
     onClick 
   }: { 
     item: SidebarItemType, 
+    level?: number,
     onClick?: () => void 
   }) => {
     const Icon = item.icon || ChevronRight;
     const isOpen = item.id ? openSubSections[item.id] : false;
+    const hasSubmenu = item.hasSubmenu && item.subItems && item.subItems.length > 0;
+    const isLevel0 = level === 0;
 
+    // Different styling based on nesting level
+    const paddingLeft = isLevel0 ? '45px' : `${45 + (level * 20)}px`;
+    const iconLeft = isLevel0 ? '8px' : `${8 + (level * 20)}px`;
+    const bgClass = isLevel0 ? 'bg-[#4e4e4e] hover:bg-[#5e5e5e]' : 'bg-[#333] hover:bg-[#444]';
+    
     return (
-      <div className="mb-[5px]">
-        <a 
-          href="#" 
+      <div className="mb-[1px]">
+        <Link 
+          href={item.href || "#"} 
           onClick={(e) => {
-            e.preventDefault();
-            if (item.hasSubmenu && item.id) {
+            if (!item.href || hasSubmenu) e.preventDefault();
+            if (hasSubmenu && item.id) {
               toggleSubSection(item.id);
             }
-            if (onClick) onClick();
+            if (onClick && !hasSubmenu) onClick();
           }}
-          className="relative block py-[10px] pr-0 pl-[45px] bg-[#4e4e4e] border border-[#7f7f7f] text-white hover:bg-[#5e5e5e] transition-colors"
+          className={`relative block py-[10px] pr-0 border border-[#7f7f7f] text-white transition-colors ${bgClass}`}
+          style={{ paddingLeft }}
         >
-          <div className="absolute left-[8px] top-[6px] w-[24px]">
+          <div className="absolute top-[6px] w-[24px]" style={{ left: isLevel0 ? '8px' : '15px' }}>
             <Icon className="w-5 h-5 text-white" />
           </div>
           <span className="text-[13px] font-bold text-white flex items-center gap-1">
             {item.label}
             {item.hasLock && <Lock className="w-3 h-3 text-white ml-1" />}
           </span>
-          {item.hasSubmenu && (
+          {hasSubmenu && (
             <div className="absolute right-[13px] top-[8px]">
-              <ChevronDown className={`w-4 h-4 text-white transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+              <Triangle className={`w-3 h-3 text-white fill-white transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </div>
           )}
-        </a>
+        </Link>
         
         {/* Render submenu if open */}
-        {item.hasSubmenu && isOpen && item.subItems && (
-          <div className="pl-[35px] pt-[5px]">
-            {item.subItems.map((subItem, idx) => (
-              <SubMenuItem key={idx} label={subItem.label} />
+        {hasSubmenu && isOpen && (
+          <div className="">
+            {item.subItems!.map((subItem, idx) => (
+              <SidebarItem key={idx} item={subItem} level={level + 1} />
             ))}
           </div>
         )}
@@ -463,46 +598,50 @@ const SystemDashboardSidebar = () => {
     );
   };
 
-  const SubMenuItem = ({ label }: { label: string }) => (
-    <div className="mb-[5px]">
-      <a href="#" className="relative block py-[10px] pr-0 pl-[45px] bg-[#4e4e4e] border border-[#7f7f7f] text-white hover:bg-[#5e5e5e] transition-colors">
-        <div className="absolute left-[8px] top-[6px] w-[24px]">
-          <ChevronRight className="w-5 h-5 text-white" />
-        </div>
-        <span className="text-[13px] font-bold text-white">{label}</span>
-      </a>
-    </div>
-  );
-
   return (
-    <div className="w-[280px] flex-shrink-0 bg-[#2b2b2b] pb-1 min-h-screen">
-      {sidebarData.map((section) => (
-        <div key={section.id} className="mb-[1px] bg-[#2b2b2b]">
-          <h4 className="m-0 bg-[#004040] relative">
-            <a 
-              href="#" 
-              onClick={(e) => { e.preventDefault(); toggleSection(section.id); }}
-              className="block py-[10px] px-[35px] pl-[45px] text-white font-bold text-[15px]"
-            >
-              <span className="absolute left-[10px] top-[8px] w-[22px]">
-                <Tag className="w-5 h-5 text-white" />
-              </span>
-              <span className="title">{section.label}</span>
-              <span className="absolute right-[13px] top-[8px]">
-                <ChevronDown className={`w-4 h-4 text-white transition-transform ${!openSections[section.id] ? '-rotate-90' : ''}`} />
-              </span>
-            </a>
-          </h4>
-          
-          {openSections[section.id] && (
-            <div className="p-[10px]">
-              {section.items.map((item, idx) => (
-                <SidebarItem key={idx} item={item} />
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+    <div className={`relative h-full flex-shrink-0 transition-all duration-300 ${isSidebarOpen ? 'w-[280px]' : 'w-0'}`}>
+      <div className={`w-[280px] flex-shrink-0 bg-[#2b2b2b] pb-1 min-h-screen overflow-y-auto ${!isSidebarOpen && 'hidden'}`}>
+        <DndContext 
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext 
+            items={sidebarData.map(item => item.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            {sidebarData.map((section) => (
+              <SortableItem key={section.id} id={section.id}>
+                <div className="mb-[1px] bg-[#2b2b2b]">
+                  <h4 className="m-0 bg-[#004040] relative">
+                    <a 
+                      href="#" 
+                      onClick={(e) => { e.preventDefault(); toggleSection(section.id); }}
+                      className="block py-[10px] px-[35px] pl-[45px] text-white font-bold text-[15px] cursor-move"
+                    >
+                      <span className="absolute left-[10px] top-[8px] w-[22px]">
+                        <Tag className="w-5 h-5 text-white" />
+                      </span>
+                      <span className="title">{section.label}</span>
+                      <span className="absolute right-[13px] top-[8px]">
+                        <ChevronDown className={`w-4 h-4 text-white transition-transform ${!openSections[section.id] ? '-rotate-90' : ''}`} />
+                      </span>
+                    </a>
+                  </h4>
+                  
+                  {openSections[section.id] && (
+                    <div className="p-[10px]">
+                      {section.items.map((item, idx) => (
+                        <SidebarItem key={idx} item={item} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </SortableItem>
+            ))}
+          </SortableContext>
+        </DndContext>
+      </div>
     </div>
   );
 };

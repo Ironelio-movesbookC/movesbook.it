@@ -27,7 +27,12 @@ interface AdminUser {
   userType: string;
 }
 
-export default function AdminNavbar() {
+interface AdminNavbarProps {
+  onToggleLeft?: () => void;
+  onToggleRight?: () => void;
+}
+
+export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbarProps) {
   const router = useRouter();
   const { t, currentLanguage, setLanguage, availableLanguages } = useLanguage();
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
@@ -96,7 +101,7 @@ export default function AdminNavbar() {
             <div className="flex items-center gap-2 sm:gap-3">
               <Link href="/settings/admin-management" className="bg-white p-1 sm:p-1.5 rounded overflow-hidden cursor-pointer">
                 <img 
-                  src="/admin.png" 
+                  src="/assets/admin.png" 
                   alt="Admin Logo"
                   className="h-7 sm:h-9 w-auto object-contain"
                 />
@@ -112,7 +117,7 @@ export default function AdminNavbar() {
 
             {/* Admin Title */}
             <div className="hidden lg:block">
-              <h2 className="text-xl xl:text-2xl font-bold text-yellow-400 leading-tight">Admin</h2>
+              <h2 className="text-xl xl:text-2xl font-bold text-yellow-400 leading-tight">Movesbook Admin</h2>
             </div>
 
             {/* User Info Section - Desktop */}
@@ -164,6 +169,15 @@ export default function AdminNavbar() {
           <div className="flex items-center justify-between flex-wrap">
             {/* Navigation Links */}
             <nav className="flex items-center flex-wrap">
+              {/* Left Sidebar Toggle */}
+              <button 
+                onClick={onToggleLeft}
+                className="flex items-center justify-center px-3 lg:px-4 py-2.5 lg:py-3 hover:bg-gray-600 transition border-r border-gray-600"
+                title="Toggle Left Sidebar"
+              >
+                <Menu className="w-4 h-4" />
+              </button>
+
               <Link 
                 href="/admin/dashboard"
                 className="flex items-center gap-2 px-3 lg:px-4 py-2.5 lg:py-3 hover:bg-gray-600 transition border-r border-gray-600 text-sm"
@@ -266,10 +280,11 @@ export default function AdminNavbar() {
                 <FileText className="w-4 h-4" />
                 <span className="font-medium">Language</span>
               </Link>
+
             </nav>
 
             {/* Search Bar - Desktop */}
-            <div className="hidden xl:block">
+            <div className="hidden xl:flex items-center gap-2">
               <form onSubmit={handleSearch} className="flex items-baseline gap-2">
                 <span className="text-sm text-gray-300 font-bold">Search in</span>
                 <select
@@ -300,6 +315,15 @@ export default function AdminNavbar() {
                   </button>
                 </div>
               </form>
+              
+              {/* Right Sidebar Toggle */}
+              <button 
+                onClick={onToggleRight}
+                className="p-2 hover:bg-gray-600 rounded transition ml-2"
+                title="Toggle Right Sidebar"
+              >
+                <Menu className="w-5 h-5 text-white" />
+              </button>
             </div>
 
             {/* Search Toggle - Tablet */}

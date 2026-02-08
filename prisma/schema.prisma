@@ -16,6 +16,7 @@ model User {
   userType                 UserType
   createdAt                DateTime              @default(now())
   updatedAt                DateTime              @updatedAt
+  lastSeenAt               DateTime?
   birthdate                DateTime?
   country                  String?
   firstName                String?

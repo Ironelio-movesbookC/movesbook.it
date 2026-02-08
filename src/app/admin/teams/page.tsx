@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import AdminNavbar from '@/components/AdminNavbar';
 import { Users } from 'lucide-react';
 
 export default function AdminTeamsPage() {
@@ -21,8 +20,7 @@ export default function AdminTeamsPage() {
   if (loading) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <AdminNavbar />
+    <div className="min-h-full bg-gray-50">
       
       <div className="max-w-[1800px] mx-auto px-6 py-8">
         <div className="mb-8 flex items-center gap-4">

@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import AdminNavbar from '@/components/AdminNavbar';
-import SystemDashboardSidebar from '@/components/admin/SystemDashboardSidebar';
 import { ChevronDown } from 'lucide-react';
 
 // Mock data based on the screenshot
@@ -51,8 +49,7 @@ export default function GlobalSettingsPage() {
   if (loading) return null;
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
-      <AdminNavbar />
+    <div className="h-full flex flex-col bg-gray-100">
       
       {/* Red System Dashboard Header */}
       <div className="bg-[#a51d2d] text-white py-2 font-bold text-center text-xl uppercase shadow-md relative z-10 border-b-4 border-[#800000]">
@@ -60,9 +57,6 @@ export default function GlobalSettingsPage() {
       </div>
 
       <div className="flex flex-1 max-w-[1920px] mx-auto w-full">
-        {/* Left Sidebar */}
-        <SystemDashboardSidebar />
-
         {/* Main Content */}
         <div className="flex-1 bg-white p-6">
           {/* Top Controls */}
