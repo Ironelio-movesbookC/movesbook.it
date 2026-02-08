@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { Search, Plus, Save, Download, Upload, RefreshCw, Globe, Filter } from 'lucide-react';
-import ModernNavbar from '@/components/ModernNavbar';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 
@@ -178,8 +177,7 @@ export default function TranslationsAdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <ModernNavbar />
+    <div className="min-h-full bg-gray-50">
       
       <div className="max-w-[1800px] mx-auto px-4 py-8">
         {/* Header */}
