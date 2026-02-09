@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Image from 'next/image';
 
 // Force dynamic rendering for authenticated pages
 export const dynamic = 'force-dynamic';
@@ -75,7 +74,6 @@ export default function AthleteDashboard() {
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
   const [showToolbar, setShowToolbar] = useState(true);
-  const showLegacyButtonBars = false;
   const [activeRightTab, setActiveRightTab] = useState<'actions-planner' | 'chat-panel'>('actions-planner');
   const [expandedActionsPlanner, setExpandedActionsPlanner] = useState(true);
   const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-page');
@@ -103,7 +101,7 @@ export default function AthleteDashboard() {
 
   // Redirect if not athlete
   useEffect(() => {
-    if (user && !['ATHLETE', 'ADMIN'].includes(user.userType)) {
+    if (user && user.userType !== 'ATHLETE') {
       router.push('/my-page');
     }
   }, [user, router]);
@@ -366,28 +364,6 @@ export default function AthleteDashboard() {
                 Right Sidebar
               </span>
             </label>
-            {showLegacyButtonBars && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={() => {
-                    setActiveTab('my-page');
-                    setActiveSection('overview');
-                  }}
-                  className="bg-blue-800/90 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-blue-700/90 transition-colors cursor-pointer text-sm"
-                >
-                  Activity Overview
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('my-page');
-                    setActiveSection('workouts');
-                  }}
-                  className="bg-blue-800/90 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-blue-700/90 transition-colors cursor-pointer text-sm"
-                >
-                  My Workouts
-                </button>
-              </div>
-            )}
             <label className="flex items-center gap-2 text-sm cursor-pointer ml-auto">
               <input type="checkbox" checked={showToolbar} onChange={(e) => setShowToolbar(e.target.checked)} className="w-4 h-4" />
               <span className="flex items-center gap-1 text-gray-600">
@@ -405,45 +381,18 @@ export default function AthleteDashboard() {
             <AdvertisementCarousel />
           </div>
         )}
-        {showLegacyButtonBars && (
-          <div className="flex-shrink-0">
-            <div className="bg-slate-900/90 backdrop-blur-sm border-b border-slate-700 px-4 py-3">
-              <div className="flex items-center gap-3 flex-wrap">
-                <button
-                  onClick={() => {
-                    setActiveTab('my-page');
-                    setActiveSection('overview');
-                  }}
-                  className="bg-blue-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700/90 transition-colors cursor-pointer"
-                >
-                  Activity Overview
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('my-page');
-                    setActiveSection('workouts');
-                  }}
-                  className="bg-blue-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700/90 transition-colors cursor-pointer"
-                >
-                  My Workouts
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Video/Image Banner with Info Cards */}
         {showPersonalBanner && (
           <div className="flex-shrink-0">
             <div className="relative overflow-hidden shadow-lg" style={{ height: '300px' }}>
-              <Image 
-                src="/images/banner.jpg" 
-                alt="Athlete Background"
-                fill
-                sizes="100vw"
-                className="object-cover opacity-60"
-              />
-              <div className="absolute inset-0 bg-gradient-to-br from-gray-900/60 to-gray-800/60" />
+              <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800">
+                <img 
+                  src="/images/banner.jpg" 
+                  alt="Athlete Background"
+                  className="w-full h-full object-cover opacity-60"
+                />
+              </div>
 
               <div className="absolute top-4 right-4 flex gap-3">
                 <div className="bg-gray-800/90 backdrop-blur-sm rounded-lg p-3 text-white min-w-[120px]">
@@ -548,33 +497,6 @@ export default function AthleteDashboard() {
                     </button>
                   </div>
                 )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {!showPersonalBanner && (
-          <div className="flex-shrink-0">
-            <div className="bg-slate-900/90 backdrop-blur-sm border-b border-slate-700 px-4 py-3">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => {
-                    setActiveTab('my-page');
-                    setActiveSection('overview');
-                  }}
-                  className="bg-blue-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700/90 transition-colors cursor-pointer"
-                >
-                  Activity Overview
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('my-page');
-                    setActiveSection('workouts');
-                  }}
-                  className="bg-blue-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700/90 transition-colors cursor-pointer"
-                >
-                  My Workouts
-                </button>
               </div>
             </div>
           </div>
