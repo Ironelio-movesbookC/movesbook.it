@@ -100,9 +100,11 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
             {/* Logo Section */}
             <div className="flex items-center gap-2 sm:gap-3">
               <Link href="/settings/admin-management" className="bg-white p-1 sm:p-1.5 rounded overflow-hidden cursor-pointer">
-                <img 
+                <Image 
                   src="/assets/admin.png" 
                   alt="Admin Logo"
+                  width={36}
+                  height={36}
                   className="h-7 sm:h-9 w-auto object-contain"
                 />
               </Link>

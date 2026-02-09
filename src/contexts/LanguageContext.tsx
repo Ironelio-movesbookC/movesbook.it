@@ -77,9 +77,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   // Memoize the translation function to depend on currentLanguage
   const t = useCallback((key: string) => {
-    // This will re-compute when currentLanguage changes
     return i18n.t(key);
-  }, [currentLanguage]);
+  }, []);
 
   // Memoize available languages - filter by active status AND preserve custom order
   const availableLanguages = useMemo(() => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { X, Download, User, Users, Building2 } from 'lucide-react';
 
 interface ImportWorkoutsModalProps {
@@ -17,17 +17,7 @@ export default function ImportWorkoutsModal({ targetSection, onClose, onImport }
   const [selectedWorkouts, setSelectedWorkouts] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    loadSources();
-  }, [sourceType]);
-
-  useEffect(() => {
-    if (selectedSource) {
-      loadAvailableWorkouts();
-    }
-  }, [selectedSource]);
-
-  const loadSources = async () => {
+  const loadSources = useCallback(async () => {
     setIsLoading(true);
     try {
       const token = localStorage.getItem('token');
@@ -49,9 +39,9 @@ export default function ImportWorkoutsModal({ targetSection, onClose, onImport }
       console.error('Error loading sources:', error);
     }
     setIsLoading(false);
-  };
+  }, [sourceType]);
 
-  const loadAvailableWorkouts = async () => {
+  const loadAvailableWorkouts = useCallback(async () => {
     setIsLoading(true);
     try {
       const token = localStorage.getItem('token');
@@ -68,7 +58,17 @@ export default function ImportWorkoutsModal({ targetSection, onClose, onImport }
       console.error('Error loading workouts:', error);
     }
     setIsLoading(false);
-  };
+  }, [sourceType, selectedSource]);
+
+  useEffect(() => {
+    loadSources();
+  }, [sourceType, loadSources]);
+
+  useEffect(() => {
+    if (selectedSource) {
+      loadAvailableWorkouts();
+    }
+  }, [selectedSource, loadAvailableWorkouts]);
 
   const toggleWorkoutSelection = (workoutId: string) => {
     const newSelected = new Set(selectedWorkouts);

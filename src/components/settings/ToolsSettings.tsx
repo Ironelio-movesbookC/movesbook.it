@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import { Plus, Edit2, Trash2, GripVertical, ArrowUpAZ, ArrowDownZA, Save, X, Download, Globe, Image as ImageIcon, Smile, Grid3x3, List, ArrowUpDown } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToolsData } from '@/hooks/useToolsData';
@@ -1128,9 +1129,11 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
       return <div className="w-8 h-8 flex items-center justify-center text-2xl flex-shrink-0">{sport.icon}</div>;
     } else {
       return (
-        <img 
+        <Image 
           src={`/icons/${getSportIconFilename(sport.name)}`} 
           alt={sport.name}
+          width={32}
+          height={32}
           className="w-8 h-8 object-cover rounded flex-shrink-0"
         />
       );
@@ -1500,9 +1503,9 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
                 <ImageIcon className="w-5 h-5" />
                 <span className="font-medium">Black & White Icons</span>
                 <div className="flex gap-1 ml-1">
-                  <img src="/icons/swimming.jpg" alt="" className="w-6 h-6 rounded" />
-                  <img src="/icons/cycling.jpg" alt="" className="w-6 h-6 rounded" />
-                  <img src="/icons/running.jpg" alt="" className="w-6 h-6 rounded" />
+                  <Image src="/icons/swimming.jpg" alt="" width={24} height={24} className="w-6 h-6 rounded" />
+                  <Image src="/icons/cycling.jpg" alt="" width={24} height={24} className="w-6 h-6 rounded" />
+                  <Image src="/icons/running.jpg" alt="" width={24} height={24} className="w-6 h-6 rounded" />
                 </div>
               </button>
             </div>
@@ -1602,9 +1605,11 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
                       {sport.icon}
                     </div>
                   ) : (
-                    <img 
+                    <Image 
                       src={`/icons/${getSportIconFilename(sport.name)}`} 
                       alt={sport.name}
+                      width={24}
+                      height={24}
                       className="w-6 h-6 object-cover rounded flex-shrink-0"
                     />
                   )}
@@ -1745,7 +1750,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
                 >
                   <div className="flex items-start gap-3 mb-3">
                     {item.picture && (
-                      <img src={item.picture} alt={item.name} className="w-16 h-16 object-cover rounded-lg border-2 border-gray-200 flex-shrink-0" />
+                      <Image src={item.picture} alt={item.name} width={64} height={64} className="w-16 h-16 object-cover rounded-lg border-2 border-gray-200 flex-shrink-0" unoptimized />
                     )}
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-gray-900 mb-1 truncate">{item.name}</h3>
@@ -1892,7 +1897,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             {item.picture && (
-                              <img src={item.picture} alt={item.name} className="w-10 h-10 object-cover rounded border border-gray-200 flex-shrink-0" />
+                              <Image src={item.picture} alt={item.name} width={40} height={40} className="w-10 h-10 object-cover rounded border border-gray-200 flex-shrink-0" unoptimized />
                             )}
                             <div>
                               <div className="font-semibold text-gray-900">{item.name}</div>
@@ -2857,7 +2862,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
                     style={{ position: 'relative', zIndex: 1 }}
                   />
                   {editingEquipment.picture && (
-                    <img src={editingEquipment.picture} alt="Preview" className="w-16 h-16 object-cover rounded-lg border-2 border-gray-300" />
+                    <Image src={editingEquipment.picture} alt="Preview" width={64} height={64} className="w-16 h-16 object-cover rounded-lg border-2 border-gray-300" unoptimized />
                   )}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">Upload an image of the equipment</p>

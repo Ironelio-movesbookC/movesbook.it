@@ -3,7 +3,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { 
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  List, ListOrdered, Link, Image, Code, Quote, Undo, Redo, Type
+  List, ListOrdered, Link, Image as ImageIcon, Code, Quote, Undo, Redo, Type
 } from 'lucide-react';
 
 interface RichTextEditorProps {
@@ -255,7 +255,7 @@ export default function RichTextEditor({
           title="Insert Image"
           type="button"
         >
-          <Image className="w-4 h-4" />
+          <ImageIcon className="w-4 h-4" />
         </button>
 
         <div className="w-px h-6 bg-gray-300 mx-1"></div>

@@ -142,7 +142,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       console.log('⚠️ [WorkoutSection] Section B was in tree view, switching to table view');
       setViewMode('table');
     }
-  }, [activeSection]);
+  }, [activeSection, viewMode]);
   
   // Week grouping for Section B pagination
   const [weeksPerPage, setWeeksPerPage] = useState<number>(3); // 1, 2, 3, 4, 6, 8, 13

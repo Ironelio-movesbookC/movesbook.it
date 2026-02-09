@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 
 interface DropdownPosition {
   top: number;
@@ -48,7 +48,7 @@ export function useDropdownPosition(): UseDropdownPositionReturn {
   /**
    * Update dropdown position based on button position
    */
-  const updateDropdownPosition = () => {
+  const updateDropdownPosition = useCallback(() => {
     if (buttonRef.current && isOpen) {
       const rect = buttonRef.current.getBoundingClientRect();
       setDropdownPosition({
@@ -56,7 +56,7 @@ export function useDropdownPosition(): UseDropdownPositionReturn {
         left: rect.left
       });
     }
-  };
+  }, [isOpen]);
   
   /**
    * Update position when dropdown opens
@@ -65,7 +65,7 @@ export function useDropdownPosition(): UseDropdownPositionReturn {
     if (isOpen) {
       updateDropdownPosition();
     }
-  }, [isOpen]);
+  }, [isOpen, updateDropdownPosition]);
   
   /**
    * Update position on scroll/resize with smooth animation frame
@@ -97,7 +97,7 @@ export function useDropdownPosition(): UseDropdownPositionReturn {
         cancelAnimationFrame(rafId);
       }
     };
-  }, [isOpen]);
+  }, [isOpen, updateDropdownPosition]);
   
   /**
    * Close dropdown when clicking outside

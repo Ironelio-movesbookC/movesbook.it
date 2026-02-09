@@ -56,6 +56,7 @@ import {
   BookUser
 } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useState } from 'react';
 import {
   DndContext, 
@@ -201,7 +202,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
             </div>
             <div className="bg-[#2b2b2b] py-4 flex justify-center">
                <div className="w-48 h-24 relative">
-                  <img src="/assets/map.jpg" alt="Map Overview" className="object-contain w-full h-full" />
+                  <Image src="/assets/map.jpg" alt="Map Overview" fill sizes="192px" className="object-contain" />
                </div>
             </div>
           </>
@@ -797,8 +798,8 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                         {lastViewedToggles.singleUsers && (
                           <div className="p-2 space-y-2">
                             <div className="flex gap-2 items-start">
-                              <div className="w-8 h-8 bg-gray-600 rounded-sm overflow-hidden flex-shrink-0">
-                                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alessia" alt="Alessia" className="w-full h-full object-cover" />
+                              <div className="w-8 h-8 bg-gray-600 rounded-sm overflow-hidden flex-shrink-0 relative">
+                                <Image src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alessia" alt="Alessia" fill sizes="32px" className="object-cover" unoptimized />
                               </div>
                               <div className="text-xs text-white">
                                 <div className="font-bold text-[#e6e6e6]">Alessia Panda</div>
@@ -821,8 +822,8 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                         {lastViewedToggles.coaches && (
                           <div className="p-2 space-y-2">
                             <div className="flex gap-2 items-start">
-                              <div className="w-8 h-8 bg-gray-600 rounded-sm overflow-hidden flex-shrink-0">
-                                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=pitter" alt="pitter" className="w-full h-full object-cover" />
+                              <div className="w-8 h-8 bg-gray-600 rounded-sm overflow-hidden flex-shrink-0 relative">
+                                <Image src="https://api.dicebear.com/7.x/avataaars/svg?seed=pitter" alt="pitter" fill sizes="32px" className="object-cover" unoptimized />
                               </div>
                               <div className="text-xs text-white">
                                 <div className="font-bold text-[#e6e6e6]">pitter</div>
@@ -859,8 +860,8 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                         {lastViewedToggles.clubs && (
                           <div className="p-2 space-y-2">
                             <div className="flex gap-2 items-start">
-                              <div className="w-8 h-8 bg-gray-600 rounded-sm overflow-hidden flex-shrink-0">
-                                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Ironelio" alt="Ironelio" className="w-full h-full object-cover" />
+                              <div className="w-8 h-8 bg-gray-600 rounded-sm overflow-hidden flex-shrink-0 relative">
+                                <Image src="https://api.dicebear.com/7.x/avataaars/svg?seed=Ironelio" alt="Ironelio" fill sizes="32px" className="object-cover" unoptimized />
                               </div>
                               <div className="text-xs text-white">
                                 <div className="font-bold text-[#e6e6e6]">Ironelio Buonocore</div>
@@ -928,8 +929,8 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                        
                        <div className="grid grid-cols-8 gap-0.5">
                           {Array.from({ length: 24 }).map((_, i) => (
-                              <div key={i} className="aspect-square bg-gray-400 overflow-hidden">
-                                  <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${i}`} alt="User" className="w-full h-full object-cover" />
+                              <div key={i} className="aspect-square bg-gray-400 overflow-hidden relative">
+                                  <Image src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${i}`} alt="User" fill sizes="40px" className="object-cover" unoptimized />
                               </div>
                           ))}
                        </div>
@@ -1018,7 +1019,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
             {/* Blue Tabs */}
             <Link href="/admin/profile" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
               <div className="w-9 h-9 relative border border-gray-400 flex-shrink-0">
-                 <img src="/assets/admin.png" alt="Admin" className="w-full h-full object-cover" />
+                 <Image src="/assets/admin.png" alt="Admin" fill sizes="36px" className="object-cover" />
               </div>
               <div className="bg-black border border-white p-0.5 rounded-sm flex-shrink-0">
                   <User className="w-4 h-4 text-white" />

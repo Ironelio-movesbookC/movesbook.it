@@ -461,7 +461,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       setShowSubExercises(false);
       setShowExercisePopup(false);
     }
-  }, [mode, existingMoveframe?.id]);
+  }, [mode, existingMoveframe?.id, existingMoveframe?.movelaps, existingMoveframe?.notes]);
 
   // Mock frequently used exercises (for blue indicator)
   const frequentlyUsedExercises = ['shoulders-0', 'chest-0', 'biceps-1', 'quadriceps-0'];
@@ -851,12 +851,12 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       return true;
     });
   }, [mockExercises, planExerciseSearch, planSectorId]);
-  const pickPlanCandidateByOffset = (offset: number) => {
+  const pickPlanCandidateByOffset = React.useCallback((offset: number) => {
     if (planCandidates.length === 0) return;
     const currentIndex = planCandidate ? planCandidates.findIndex(c => c.id === planCandidate.id) : -1;
     const nextIndex = currentIndex < 0 ? 0 : (currentIndex + offset + planCandidates.length) % planCandidates.length;
     setPlanCandidate(planCandidates[nextIndex]);
-  };
+  }, [planCandidates, planCandidate]);
   const proceedScanExercise = () => {
     if (planCandidates.length === 0) return;
     if (planCandidates.length === 1) {

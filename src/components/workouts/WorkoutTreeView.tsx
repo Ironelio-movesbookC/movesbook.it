@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { ChevronRight, ChevronDown, Dumbbell, Flag } from 'lucide-react';
 import { useColorSettings } from '@/hooks/useColorSettings';
 import { useSportIconType } from '@/hooks/useSportIconType';
@@ -352,7 +353,7 @@ export default function WorkoutTreeView({
                                                 }}
                                               >
                                                 {useImageIcons ? (
-                                                  <img src={sportIcon} alt={sport} className="w-12 h-12 object-cover rounded" />
+                                                  <Image src={sportIcon} alt={sport} width={48} height={48} className="w-12 h-12 object-cover rounded" unoptimized />
                                                 ) : (
                                                   <span className="text-5xl">{sportIcon}</span>
                                                 )}
@@ -557,7 +558,7 @@ export default function WorkoutTreeView({
                                                   <ChevronRight className="w-3 h-3 flex-shrink-0" />
                                                 )}
                                                 {useImageIcons ? (
-                                                  <img src={sportIcon} alt={moveframe.sport} className="w-12 h-12 object-cover rounded" />
+                                                  <Image src={sportIcon} alt={moveframe.sport} width={48} height={48} className="w-12 h-12 object-cover rounded" unoptimized />
                                                 ) : (
                                                   <span className="text-4xl">{sportIcon}</span>
                                                 )}

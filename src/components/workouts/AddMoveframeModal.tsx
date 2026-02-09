@@ -62,7 +62,7 @@ export default function AddEditMoveframeModal({
     } else {
       console.log('🔒 AddEditMoveframeModal closed');
     }
-  }, [isOpen, mode]);
+  }, [isOpen, mode, workout?.id, day?.id, existingMoveframe?.id]);
   
   // State for annotation insert position - default to last moveframe index
   const [annotationInsertAfter, setAnnotationInsertAfter] = React.useState<string>(() => {
@@ -291,7 +291,7 @@ export default function AddEditMoveframeModal({
     if (type === 'BATTERY' && batterySubmenu === 'circuits' && !isCircuitFeatureSport(sport) && !editingFromMovelap && !hasCircuitMoveframe) {
       setBatterySubmenu('fast');
     }
-  }, [type, sport, batterySubmenu, editingFromMovelap, existingMoveframe?.id]);
+  }, [type, sport, batterySubmenu, editingFromMovelap, existingMoveframe?.isCircuitBased, existingMoveframe?.notes, existingMoveframe?.movelaps, setBatterySubmenu]);
 
   // 2026-01-31 - Force BATTERY/circuits mode when editing from a circuit movelap
   useEffect(() => {
@@ -303,7 +303,7 @@ export default function AddEditMoveframeModal({
       // Also ensure we're not in manual mode as it might interfere
       setManualMode(false);
     }
-  }, [editingFromMovelap, editingMovelapTarget]);
+  }, [editingFromMovelap, editingMovelapTarget, setType, setBatterySubmenu, setManualMode]);
 
   const isEditingCircuitFromMovelap = editingFromMovelap && !!editingMovelapTarget;
   const isEditingCircuitMoveframe =
@@ -910,7 +910,7 @@ export default function AddEditMoveframeModal({
         }, 0);
       }
     }
-  }, [activeTab, manualMode]);
+  }, [activeTab, manualMode, manualContent]);
   
   // Clear editor when modal closes
   React.useEffect(() => {

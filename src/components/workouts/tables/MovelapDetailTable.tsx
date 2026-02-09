@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import Image from 'next/image';
 import ReactDOM from 'react-dom';
 import { GripVertical, Volume2, VolumeX, Bell, BellOff, MoreVertical } from 'lucide-react';
 import { DndContext, closestCenter, DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
@@ -521,9 +522,11 @@ function SortableMovelapRow({
              {movelap.muscularSector ? (
                <div className="flex items-center gap-2">
                  {MUSCULAR_SECTOR_IMAGES[movelap.muscularSector] && (
-                   <img
+                   <Image
                      src={MUSCULAR_SECTOR_IMAGES[movelap.muscularSector]}
                      alt={movelap.muscularSector}
+                     width={32}
+                     height={32}
                      className="w-8 h-8 object-contain flex-shrink-0"
                    />
                  )}
@@ -623,9 +626,11 @@ function SortableMovelapRow({
              {movelap.muscularSector ? (
                <div className="flex items-center gap-2">
                  {MUSCULAR_SECTOR_IMAGES[movelap.muscularSector] && (
-                   <img 
+                   <Image 
                      src={MUSCULAR_SECTOR_IMAGES[movelap.muscularSector]} 
                      alt={movelap.muscularSector}
+                     width={32}
+                     height={32}
                      className="w-8 h-8 object-contain flex-shrink-0"
                    />
                  )}
@@ -1206,17 +1211,17 @@ export default function MovelapDetailTable({
   const fastPlannerBreakOptions = ['0', '0"', '5"', '10"', '15"', '20"', '30"', '45"', "1'", "1'15\"", "1'30\"", "2'", "2'30\"", "3'", "4'", "5'", "6'", "7'"];
   const fastPlannerModeOptions = ['Stopped', 'Superset', 'Movement Customized'];
 
-  const mapRestTypeToChoice = (restType: unknown): AerobicRestChoice => {
+  const mapRestTypeToChoice = useCallback((restType: unknown): AerobicRestChoice => {
     if (restType === REST_TYPES.RESTART_TIME) return 'restart_to';
     if (restType === REST_TYPES.RESTART_PULSE) return 'reset_pulse';
     return 'rest_time';
-  };
+  }, []);
 
-  const mapChoiceToRestType = (choice: AerobicRestChoice): string => {
+  const mapChoiceToRestType = useCallback((choice: AerobicRestChoice): string => {
     if (choice === 'restart_to') return REST_TYPES.RESTART_TIME;
     if (choice === 'reset_pulse') return REST_TYPES.RESTART_PULSE;
     return REST_TYPES.SET_TIME;
-  };
+  }, []);
 
   const formatAerobicTimeFromDigits = (value: string): string => {
     const digits = value.replace(/\D/g, '');
@@ -1248,12 +1253,12 @@ export default function MovelapDetailTable({
     return String(Math.min(max, Math.max(min, parsed)));
   };
 
-  const mapToolsToBreakChoice = (tools: unknown): AerobicBreakChoice => {
+  const mapToolsToBreakChoice = useCallback((tools: unknown): AerobicBreakChoice => {
     const value = typeof tools === 'string' ? tools.trim() : '';
     if (!value || value.toLowerCase() === 'stopped') return 'stopped';
     if (aerobicSpeedChoices.includes(value)) return 'speed';
     return 'watts';
-  };
+  }, [aerobicSpeedChoices]);
 
   const circuitInfoByLetter = new Map<string, { seriesCount: number; stationsPerSeries: number }>();
   if (Array.isArray(circuitRows)) {
@@ -2275,7 +2280,7 @@ export default function MovelapDetailTable({
     }
   };
 
-  const buildAerobicRowsFromMovelaps = (laps: any[]) =>
+  const buildAerobicRowsFromMovelaps = useCallback((laps: any[]) =>
     (laps || []).map((lap: any, idx: number) => {
       const restChoice = mapRestTypeToChoice(lap?.restType);
       const breakChoice = mapToolsToBreakChoice(lap?.tools);
@@ -2299,7 +2304,7 @@ export default function MovelapDetailTable({
         break: breakValue,
         note: typeof lap?.notes === 'string' ? lap.notes : ''
       };
-    });
+    }), [mapRestTypeToChoice, mapToolsToBreakChoice]);
 
   const openAerobicFastPlannerMovelapEditor = (mode: 'add' | 'edit', movelap?: any, position?: number, index?: number) => {
     const fp = fastPlannerData ?? extractFastPlannerDataFromNotes(moveframe.notes);
@@ -2646,7 +2651,7 @@ export default function MovelapDetailTable({
       };
     });
     return { displayMovelaps: next };
-  }, [isAerobicFastPlanner, fastPlannerData, movelaps, mapRestTypeToChoice, mapToolsToBreakChoice, mapChoiceToRestType]);
+  }, [isAerobicFastPlanner, fastPlannerData, movelaps, mapRestTypeToChoice, mapToolsToBreakChoice, mapChoiceToRestType, buildAerobicRowsFromMovelaps]);
 
   const displayMovelaps = isAnaerobicFastPlanner
     ? (fastPlannerView?.displayMovelaps ?? [])

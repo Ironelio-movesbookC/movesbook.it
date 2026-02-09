@@ -1,4 +1,5 @@
 import React from 'react';
+import Image from 'next/image';
 import ReactDOM from 'react-dom';
 import { GripVertical } from 'lucide-react';
 import { useSortable } from '@dnd-kit/sortable';
@@ -510,10 +511,13 @@ export default function SortableMoveframeRow({
            <td key="sport" className="border border-gray-200 px-1 py-1 text-left" style={{ width: '48px', ...isAnnotation ? { backgroundColor: annotationBgColor || '#5168c2', color: annotationTextColor || '#ffffff' } : {} }}>
             <div className="flex items-center gap-1">
               {useImageIcons ? (
-                <img 
+                <Image 
                   src={sportIcon} 
                   alt={sportName} 
+                  width={20}
+                  height={20}
                   className="w-5 h-5 object-cover rounded flex-shrink-0" 
+                  unoptimized
                 />
               ) : (
                 <span className="text-base">{sportIcon}</span>

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Mail, AlignJustify, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
 
 // Mock data for users
@@ -74,8 +75,8 @@ const SidebarBlock = ({
 
 const UserListItem = ({ user }: { user: any }) => (
   <div className="flex gap-2 items-start border-b border-[#eee] py-2 last:border-0">
-    <div className="w-10 h-10 bg-white p-0.5 border border-[#ccc] shadow-sm flex-shrink-0">
-      <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+    <div className="w-10 h-10 bg-white p-0.5 border border-[#ccc] shadow-sm flex-shrink-0 relative">
+      <Image src={user.avatar} alt={user.name} fill sizes="40px" className="object-cover" unoptimized />
     </div>
     <div className="flex flex-col text-[11px] leading-tight">
       <Link href="#" className="font-bold text-[#333] hover:underline mb-0.5">{user.name}</Link>

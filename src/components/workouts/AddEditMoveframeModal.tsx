@@ -65,48 +65,8 @@ export default function AddEditMoveframeModal({
     } else {
       console.log('🔒 AddEditMoveframeModal closed');
     }
-  }, [isOpen, mode]);
+  }, [isOpen, mode, workout?.id, day?.id, existingMoveframe?.id]);
 
-  React.useEffect(() => {
-    if (!isOpen) return;
-    if (mode !== 'edit') return;
-
-    const notes = existingMoveframe?.notes;
-    const hasCircuitMovelapMeta = (existingMoveframe?.movelaps || []).some((movelap: any) => {
-      if (!movelap) return false;
-      if (movelap.circuitIndex != null || movelap.circuitLetter || movelap.stationNumber != null) return true;
-      return typeof movelap.notes === 'string' && movelap.notes.includes('[CIRCUIT_META]');
-    });
-    if (
-      existingMoveframe?.isCircuitBased === true ||
-      (typeof notes === 'string' && notes.includes('[CIRCUIT_DATA]')) ||
-      hasCircuitMovelapMeta ||
-      existingMoveframe?.circuitConfig ||
-      Array.isArray(existingMoveframe?.circuits)
-    ) {
-      setType('BATTERY');
-      setBatterySubmenu('circuits');
-      return;
-    }
-    if (existingMoveframe?.type !== 'BATTERY') return;
-    if (
-      typeof notes === 'string' && notes.includes('[FAST_PLANNER_DATA]') ||
-      existingMoveframe?.fastPlannerData ||
-      existingMoveframe?.isFastPlannerBased
-    ) {
-      setType('BATTERY');
-      setBatterySubmenu('fast');
-      return;
-    }
-    if (typeof notes === 'string' && notes.includes('[CIRCUIT_DATA]')) {
-      setBatterySubmenu('circuits');
-      return;
-    }
-    if (typeof existingMoveframe?.description === 'string' && existingMoveframe.description.toLowerCase().includes('fast planner')) {
-      setBatterySubmenu('fast');
-    }
-  }, [isOpen, mode, existingMoveframe?.id]);
-  
   // State for annotation insert position - default to last moveframe index
   const [annotationInsertAfter, setAnnotationInsertAfter] = React.useState<string>(() => {
     const lastIndex = (workout?.moveframes?.length || 0) - 1;
@@ -321,6 +281,46 @@ export default function AddEditMoveframeModal({
     setManualContent
   } = setters;
 
+  React.useEffect(() => {
+    if (!isOpen) return;
+    if (mode !== 'edit') return;
+
+    const notes = existingMoveframe?.notes;
+    const hasCircuitMovelapMeta = (existingMoveframe?.movelaps || []).some((movelap: any) => {
+      if (!movelap) return false;
+      if (movelap.circuitIndex != null || movelap.circuitLetter || movelap.stationNumber != null) return true;
+      return typeof movelap.notes === 'string' && movelap.notes.includes('[CIRCUIT_META]');
+    });
+    if (
+      existingMoveframe?.isCircuitBased === true ||
+      (typeof notes === 'string' && notes.includes('[CIRCUIT_DATA]')) ||
+      hasCircuitMovelapMeta ||
+      existingMoveframe?.circuitConfig ||
+      Array.isArray(existingMoveframe?.circuits)
+    ) {
+      setType('BATTERY');
+      setBatterySubmenu('circuits');
+      return;
+    }
+    if (existingMoveframe?.type !== 'BATTERY') return;
+    if (
+      typeof notes === 'string' && notes.includes('[FAST_PLANNER_DATA]') ||
+      existingMoveframe?.fastPlannerData ||
+      existingMoveframe?.isFastPlannerBased
+    ) {
+      setType('BATTERY');
+      setBatterySubmenu('fast');
+      return;
+    }
+    if (typeof notes === 'string' && notes.includes('[CIRCUIT_DATA]')) {
+      setBatterySubmenu('circuits');
+      return;
+    }
+    if (typeof existingMoveframe?.description === 'string' && existingMoveframe.description.toLowerCase().includes('fast planner')) {
+      setBatterySubmenu('fast');
+    }
+  }, [isOpen, mode, existingMoveframe?.isCircuitBased, existingMoveframe?.notes, existingMoveframe?.movelaps, existingMoveframe?.circuitConfig, existingMoveframe?.circuits, existingMoveframe?.type, existingMoveframe?.fastPlannerData, existingMoveframe?.isFastPlannerBased, existingMoveframe?.description, setType, setBatterySubmenu]);
+
   const isEditingCircuitFromMovelap = editingFromMovelap && !!editingMovelapTarget;
   const isEditingCircuitMoveframe =
     mode === 'edit' &&
@@ -354,7 +354,7 @@ export default function AddEditMoveframeModal({
     ) {
       setBatterySubmenu('fast');
     }
-  }, [type, sport, batterySubmenu, editingFromMovelap, existingMoveframe?.id]);
+  }, [type, sport, batterySubmenu, editingFromMovelap, existingMoveframe?.isCircuitBased, existingMoveframe?.notes, existingMoveframe?.movelaps, setBatterySubmenu]);
 
   // 2026-01-31 - Force BATTERY/circuits mode when editing from a circuit movelap
   useEffect(() => {
@@ -366,7 +366,7 @@ export default function AddEditMoveframeModal({
       // Also ensure we're not in manual mode as it might interfere
       setManualMode(false);
     }
-  }, [editingFromMovelap, editingMovelapTarget]);
+  }, [editingFromMovelap, editingMovelapTarget, setType, setBatterySubmenu, setManualMode]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -375,7 +375,7 @@ export default function AddEditMoveframeModal({
     setType('BATTERY');
     setBatterySubmenu('circuits');
     setManualMode(false);
-  }, [isOpen, mode, startInSecondView, isEditingCircuitMoveframe]);
+  }, [isOpen, mode, startInSecondView, isEditingCircuitMoveframe, setType, setBatterySubmenu, setManualMode]);
 
   // Filter techniques - ONLY for BODY_BUILDING sport
   const availableTechniques = React.useMemo(() => {
@@ -972,7 +972,7 @@ export default function AddEditMoveframeModal({
         }, 0);
       }
     }
-  }, [activeTab, manualMode]);
+  }, [activeTab, manualMode, manualContent]);
   
   // Clear editor when modal closes
   React.useEffect(() => {

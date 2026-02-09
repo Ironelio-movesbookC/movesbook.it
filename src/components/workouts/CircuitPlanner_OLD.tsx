@@ -14,6 +14,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import ReactDOM from 'react-dom';
 import { X, Settings, RotateCw, Plus, Trash2 } from 'lucide-react';
 import { MUSCULAR_SECTORS } from '@/constants/moveframe.constants';
@@ -298,7 +299,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     }
     
     setCircuits(newCircuits);
-  }, [currentPhase, numCircuits, stationsPerCircuit, seriesCount, seriesMode, initialConfig?.existingCircuits]);
+  }, [currentPhase, numCircuits, stationsPerCircuit, seriesCount, seriesMode, pauseCircuits, pauseSeries, pauseStations, initialConfig?.existingCircuits]);
 
   useEffect(() => {
     if (!initialConfig?.editingFromMovelap || !initialConfig?.editingMovelapTarget || hasOpenedFromMovelap) return;
@@ -332,7 +333,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     setShowAllSectorsInManual(false);
     setShowManualExerciseModal(true);
     setHasOpenedFromMovelap(true);
-  }, [circuits, hasOpenedFromMovelap, initialConfig?.editingFromMovelap, initialConfig?.editingMovelapTarget]);
+  }, [circuits, hasOpenedFromMovelap, initialConfig?.editingFromMovelap, initialConfig?.editingMovelapTarget, initialConfig?.editingMovelapData]);
 
   useEffect(() => {
     if (!showManualExerciseModal || !pendingExercise || !notesEditorRef.current) return;
@@ -1157,10 +1158,16 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         // Deep clone the stations from that series
         const newSeriesStations = JSON.parse(JSON.stringify(circuit.stationsBySeries[serieToCopyFromIndex]));
         
+        // Handle seriesPauses
+        const newSeriesPauses = circuit.seriesPauses 
+          ? [...circuit.seriesPauses, circuit.seriesPauses[serieToCopyFromIndex] ?? circuit.pauseBetweenSeries]
+          : undefined;
+        
         return {
           ...circuit,
           stationsBySeries: [...circuit.stationsBySeries, newSeriesStations],
-          series: circuit.series + 1
+          series: circuit.series + 1,
+          seriesPauses: newSeriesPauses
         };
       }
       return circuit;
@@ -1340,7 +1347,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           return {
             ...c,
             stationsBySeries: newStationsBySeries,
-            series: c.series - 1
+            series: c.series - 1,
+            seriesPauses: c.seriesPauses ? c.seriesPauses.filter((_, idx) => idx !== seriesIndex) : undefined
           };
         }
         return c;
@@ -2323,7 +2331,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 // 2026-01-22 14:05 UTC - Fixed: Sum all series' station counts
                 // 2026-01-27 - Include "Between series" rows in total count
                 const stationRowsCount = circuit.stationsBySeries.reduce((sum, seriesStations) => sum + seriesStations.length, 0);
-                const betweenSeriesRowsCount = circuit.series;
+                // 2026-02-09 - Fixed row count calculation for time mode
+                const betweenSeriesRowsCount = Math.max(0, circuit.series - 1 + ((seriesMode !== 'time' && circuitIdx < circuits.length - 1) ? 1 : 0));
                 const totalRows = stationRowsCount + betweenSeriesRowsCount;
                 let rowIndex = 0;
                 
@@ -2395,7 +2404,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                                   className="absolute top-1 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full border-2 border-blue-600 flex items-center justify-center hover:bg-blue-50 transition-colors"
                                   title={`Reload exercises for series ${seriesIdx + 1} of circuit ${circuit.letter}`}
                                 >
-                                  <img src="/rescan.png" alt="rescan" className="w-6 h-6" />
+                                  <Image src="/rescan.png" alt="rescan" width={24} height={24} className="w-6 h-6" />
                                 </button>
                                 <div className="absolute inset-0 flex items-center justify-center gap-2 pt-12">
                                   <input
@@ -2451,9 +2460,11 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                                     onDragStart={(e) => handleDragStartFromStation(e, station.sector, circuit.letter, seriesIdx, station.stationNumber)}
                                     className="flex items-center gap-2 flex-1 cursor-move hover:opacity-70"
                                   >
-                                    <img 
+                                    <Image 
                                       src={MUSCULAR_SECTOR_IMAGES[station.sector]} 
                                       alt={station.sector}
+                                      width={56}
+                                      height={56}
                                       className="w-14 h-14 object-contain flex-shrink-0 pointer-events-none"
                                     />
                                     <span className="text-sm font-medium text-gray-700 flex-1">
@@ -2815,9 +2826,11 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                     }`}
                     title={isPreviousSector ? `${sector} (Previous station)` : sector}
                   >
-                    <img 
+                    <Image 
                       src={MUSCULAR_SECTOR_IMAGES[sector]} 
                       alt={sector}
+                      width={96}
+                      height={96}
                       className="w-24 h-24 object-contain pointer-events-none"
                     />
                     <span className={`text-sm text-center font-medium leading-tight ${
@@ -2888,9 +2901,11 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                                 onDragStart={(e) => selectedCircuitForSector && handleDragStartFromStation(e, station.sector, selectedCircuitForSector, seriesIdx, station.stationNumber)}
                                 className="flex flex-col items-center gap-2 cursor-move hover:opacity-70"
                               >
-                                <img 
+                                <Image 
                                   src={MUSCULAR_SECTOR_IMAGES[station.sector]} 
                                   alt={station.sector}
+                                  width={80}
+                                  height={80}
                                   className="w-20 h-20 object-contain pointer-events-none"
                                 />
                                 <span className="text-xs text-center font-medium text-gray-700 pointer-events-none">
@@ -3422,4 +3437,3 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     </>
   );
 }
-

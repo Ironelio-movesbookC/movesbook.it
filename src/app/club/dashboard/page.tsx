@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { 
   Users, 
   Dumbbell,
@@ -184,11 +185,13 @@ export default function ClubDashboard() {
         {showPersonalBanner && (
           <div className="flex-shrink-0">
             <div className="relative overflow-hidden shadow-lg" style={{ height: '300px' }}>
-              <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800">
-                <img 
+              <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800 relative">
+                <Image 
                   src="/images/banner.jpg" 
                   alt="Club Background"
-                  className="w-full h-full object-cover opacity-60"
+                  fill
+                  sizes="100vw"
+                  className="object-cover opacity-60"
                 />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="w-20 h-14 bg-red-600 rounded-lg flex items-center justify-center cursor-pointer hover:bg-red-700 transition">

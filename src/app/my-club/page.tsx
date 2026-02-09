@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   Users, 
@@ -60,7 +60,7 @@ function MyClubContent() {
   const [addMemberError, setAddMemberError] = useState('');
 
   // Helper function for loading club data
-  const loadClubData = async () => {
+  const loadClubData = useCallback(async () => {
     if (!clubId) return;
     
     setLoading(true);
@@ -84,7 +84,7 @@ function MyClubContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [clubId]);
 
   const handleAddMember = async () => {
     if (!clubId || !addMemberUsername || !addMemberPassword) {
@@ -149,7 +149,7 @@ function MyClubContent() {
     } else {
       loadClubData();
     }
-  }, [clubId, user, router]);
+  }, [clubId, user, router, loadClubData]);
 
   // Don't render if not authenticated
   if (authLoading || !user) {
