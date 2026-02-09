@@ -436,15 +436,14 @@ export default function AthleteDashboard() {
         {showPersonalBanner && (
           <div className="flex-shrink-0">
             <div className="relative overflow-hidden shadow-lg" style={{ height: '300px' }}>
-              <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800 relative">
-                <Image 
-                  src="/images/banner.jpg" 
-                  alt="Athlete Background"
-                  fill
-                  sizes="100vw"
-                  className="object-cover opacity-60"
-                />
-              </div>
+              <Image 
+                src="/images/banner.jpg" 
+                alt="Athlete Background"
+                fill
+                sizes="100vw"
+                className="object-cover opacity-60"
+              />
+              <div className="absolute inset-0 bg-gradient-to-br from-gray-900/60 to-gray-800/60" />
 
               <div className="absolute top-4 right-4 flex gap-3">
                 <div className="bg-gray-800/90 backdrop-blur-sm rounded-lg p-3 text-white min-w-[120px]">

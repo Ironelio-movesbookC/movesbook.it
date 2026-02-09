@@ -183,7 +183,15 @@ export default function GroupDashboard() {
         {showPersonalBanner && (
           <div className="flex-shrink-0">
             <div className="relative overflow-hidden shadow-lg" style={{ height: '300px' }}>
-              <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800 relative">
+              <div
+                className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800 relative"
+                style={{
+                  backgroundImage: 'linear-gradient(135deg, #111827, #1f2937), url(/images/banner.jpg)',
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat'
+                }}
+              >
                 <Image 
                   src="/images/banner.jpg" 
                   alt="Group Background"
