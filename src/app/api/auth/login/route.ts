@@ -29,6 +29,22 @@ const getLegacyDbConfig = (): LegacyDbConfig | null => {
     }
   }
 
+  const prodLegacyUrl = process.env.PROD_DATABASE_URL || process.env.PROD_DB_URL;
+  if (prodLegacyUrl) {
+    try {
+      const parsed = new URL(prodLegacyUrl);
+      return {
+        host: parsed.hostname,
+        port: Number(parsed.port) || 3306,
+        user: decodeURIComponent(parsed.username || ''),
+        password: decodeURIComponent(parsed.password || ''),
+        database: parsed.pathname.replace(/^\//, '')
+      };
+    } catch {
+      return null;
+    }
+  }
+
   const host = process.env.LEGACY_DB_HOST;
   const user = process.env.LEGACY_DB_USER;
   const database = process.env.LEGACY_DB_NAME;
@@ -43,6 +59,55 @@ const getLegacyDbConfig = (): LegacyDbConfig | null => {
     password: process.env.LEGACY_DB_PASSWORD || undefined,
     database
   };
+};
+
+const isMysql = () => (process.env.DATABASE_URL || '').startsWith('mysql');
+
+const ensureLegacyMappingTable = async () => {
+  if (isMysql()) {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS legacy_id_mappings (
+        id VARCHAR(255) PRIMARY KEY,
+        legacy_table VARCHAR(255),
+        legacy_id INTEGER,
+        new_id VARCHAR(255)
+      )
+    `);
+    return;
+  }
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS legacy_id_mappings (
+      id TEXT PRIMARY KEY,
+      legacy_table TEXT,
+      legacy_id INTEGER,
+      new_id TEXT
+    )
+  `);
+};
+
+const upsertLegacyMapping = async (mappingId: string, legacyId: number, newId: string) => {
+  if (isMysql()) {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO legacy_id_mappings (id, legacy_table, legacy_id, new_id)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE legacy_table=VALUES(legacy_table), legacy_id=VALUES(legacy_id), new_id=VALUES(new_id)`,
+      mappingId,
+      'users',
+      legacyId,
+      newId
+    );
+    return;
+  }
+
+  await prisma.$executeRawUnsafe(
+    `INSERT OR REPLACE INTO legacy_id_mappings (id, legacy_table, legacy_id, new_id)
+     VALUES (?, ?, ?, ?)`,
+    mappingId,
+    'users',
+    legacyId,
+    newId
+  );
 };
 
 const fetchLegacyUsersFromExternalDb = async (
@@ -138,18 +203,21 @@ const fetchLegacyUsersFromExternalDb = async (
 };
 
 const hasLegacyUsersTable = async (): Promise<boolean> => {
-  try {
-    const rows = await prisma.$queryRawUnsafe<any[]>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1"
-    );
-    if (Array.isArray(rows) && rows.length > 0) return true;
-  } catch (error) {
+  if (isMysql()) {
+    try {
+      const rows = await prisma.$queryRawUnsafe<any[]>(
+        'SELECT 1 FROM information_schema.COLUMNS WHERE table_name = ? AND table_schema = DATABASE() LIMIT 1',
+        'users'
+      );
+      if (Array.isArray(rows) && rows.length > 0) return true;
+    } catch (error) {
+    }
+    return false;
   }
 
   try {
     const rows = await prisma.$queryRawUnsafe<any[]>(
-      'SELECT 1 FROM information_schema.COLUMNS WHERE table_name = ? AND table_schema = DATABASE() LIMIT 1',
-      'users'
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1"
     );
     if (Array.isArray(rows) && rows.length > 0) return true;
   } catch (error) {
@@ -449,21 +517,8 @@ export async function POST(request: NextRequest) {
 
           console.log(`✅ Migrated user ${legacy.username} to new table on login`);
 
-          // Save legacy ID mapping
-          // Ensure table exists (SQLite specific)
-          await prisma.$executeRawUnsafe(`
-            CREATE TABLE IF NOT EXISTS legacy_id_mappings (
-              id TEXT PRIMARY KEY,
-              legacy_table TEXT,
-              legacy_id INTEGER,
-              new_id TEXT
-            )
-          `);
-
-          await prisma.$executeRawUnsafe(`
-            INSERT OR REPLACE INTO legacy_id_mappings (id, legacy_table, legacy_id, new_id)
-            VALUES ('${newId + '_map'}', 'users', ${legacy.id}, '${newId}')
-          `);
+          await ensureLegacyMappingTable();
+          await upsertLegacyMapping(`${newId}_map`, legacy.id, newId);
 
         } catch (error) {
           console.error(`Failed to migrate user on login:`, error);

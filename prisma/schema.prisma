@@ -4,6 +4,8 @@ generator client {
 
 datasource db {
   provider = "mysql"
+  // 2026-02-10 DISABLED sqlite provider DATABASE_URL
+  // provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
