@@ -1624,6 +1624,11 @@ export default function DayTableView({
                                     </td>
                                   </tr>
                                 )}
+                                {dayIdx < sortedWeekDays.length - 1 && (
+                                  <tr className="day-row-gap">
+                                    <td colSpan={20}>&nbsp;</td>
+                                  </tr>
+                                )}
                               </React.Fragment>
                             );
                           })}
@@ -2008,6 +2013,11 @@ export default function DayTableView({
                           </div>
                         </div>
                       </td>
+                    </tr>
+                  )}
+                  {dayIdx < sortedWeekDays.length - 1 && (
+                    <tr className="day-row-gap">
+                      <td colSpan={activeSection === 'D' ? 21 : 20}>&nbsp;</td>
                     </tr>
                   )}
                 </React.Fragment>

@@ -321,29 +321,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
     
     // Redirect to appropriate dashboard based on user type
     if (user) {
-      const userType = user.userType?.toLowerCase();
-      let defaultPage = '/my-page';
-
-      switch (userType) {
-        case 'athlete':
-          defaultPage = '/athlete/dashboard';
-          break;
-        case 'coach':
-          defaultPage = '/coach/dashboard';
-          break;
-        case 'team':
-          defaultPage = '/team/dashboard';
-          break;
-        case 'group':
-          defaultPage = '/group/dashboard';
-          break;
-        case 'club':
-          defaultPage = '/club/dashboard';
-          break;
-      }
-
-      // IMPORTANT: Dashboard should always go to the dashboard route (not last visited page)
-      router.push(defaultPage);
+      router.push('/athlete/dashboard');
     } else {
       // Fallback: redirect to home if user is not available
       router.push('/');
@@ -529,11 +507,13 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                   onClick={() => setIsLanguageDropdownOpen(!isLanguageDropdownOpen)}
                   className="flex items-center space-x-2 text-cyan-100 hover:text-white transition-all duration-200 px-3 py-1 rounded-lg hover:bg-white hover:bg-opacity-10"
                 >
-                  <div className="w-5 h-5 rounded overflow-hidden flex-shrink-0">
-                    <img 
+                  <div className="w-5 h-5 rounded overflow-hidden flex-shrink-0 relative">
+                    <Image 
                       src={`/flags/${getFlagFileName(currentLanguage)}`}
                       alt={`${currentLangDisplay} flag`}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="20px"
+                      className="object-cover"
                     />
                   </div>
                   <span className="font-medium">{currentLangDisplay}</span>
@@ -562,11 +542,13 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                             currentLanguage === lang.code ? 'bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300' : 'text-gray-700 dark:text-gray-200'
                           }`}
                         >
-                          <div className="w-7 h-7 rounded overflow-hidden flex-shrink-0">
-                            <img 
+                          <div className="w-7 h-7 rounded overflow-hidden flex-shrink-0 relative">
+                            <Image 
                               src={`/flags/${getFlagFileName(lang.code)}`}
                               alt={`${lang.name} flag`}
-                              className="w-full h-full object-cover"
+                              fill
+                              sizes="28px"
+                              className="object-cover"
                             />
                           </div>
                           <span className="flex-1">{lang.name}</span>

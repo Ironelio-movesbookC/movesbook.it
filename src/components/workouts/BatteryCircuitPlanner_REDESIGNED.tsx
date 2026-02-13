@@ -53,6 +53,140 @@ const extractCircuitData = (notes: string | null) => {
   return null;
 };
 
+const CIRCUIT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+
+const parsePauseValue = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return 0;
+  const s = value.trim();
+  if (!s) return 0;
+  if (/^\d+$/.test(s)) return parseInt(s, 10);
+  if (s.includes("'")) {
+    const [mStr, rest] = s.split("'");
+    const m = parseInt((mStr || '0').replace(/\D/g, ''), 10) || 0;
+    const sec = parseInt((rest || '').replace(/\D/g, '').slice(0, 2), 10) || 0;
+    return m * 60 + sec;
+  }
+  const secOnly = s.match(/^(\d+)\s*"?$/);
+  if (secOnly) return parseInt(secOnly[1], 10);
+  return 0;
+};
+
+const extractCircuitMeta = (notes: unknown) => {
+  if (typeof notes !== 'string') return null;
+  const match = notes.match(/\[CIRCUIT_META\]([\s\S]*?)\[\/CIRCUIT_META\]/);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+};
+
+const buildCircuitsFromMovelaps = (movelaps: any[], fallbackConfig: any) => {
+  if (!Array.isArray(movelaps) || movelaps.length === 0) return null;
+  const perCircuit = new Map<string, Map<number, Map<number, any>>>();
+  const seriesCountByCircuit = new Map<string, number>();
+  const stationsPerSeriesByCircuit = new Map<string, number>();
+  let maxCircuitIndex = 0;
+
+  movelaps.forEach((ml) => {
+    if (!ml) return;
+    const meta = extractCircuitMeta(ml.notes) || null;
+    const rawLetter =
+      typeof ml.circuitLetter === 'string' && ml.circuitLetter.trim()
+        ? ml.circuitLetter.trim()
+        : typeof meta?.circuitLetter === 'string' && meta.circuitLetter.trim()
+          ? meta.circuitLetter.trim()
+          : typeof ml.circuitIndex === 'number'
+            ? CIRCUIT_LETTERS[ml.circuitIndex - 1]
+            : typeof meta?.circuitIndex === 'number'
+              ? CIRCUIT_LETTERS[meta.circuitIndex - 1]
+              : '';
+    const letter = rawLetter && CIRCUIT_LETTERS.includes(rawLetter) ? rawLetter : '';
+    if (!letter) return;
+    const localSeries = Number(ml.localSeriesNumber ?? ml.seriesNumber ?? meta?.localSeriesNumber ?? meta?.seriesNumber ?? 1) || 1;
+    const stationNumber = Number(ml.stationNumber ?? meta?.stationNumber ?? 1) || 1;
+    maxCircuitIndex = Math.max(maxCircuitIndex, CIRCUIT_LETTERS.indexOf(letter) + 1);
+    const seriesMap = perCircuit.get(letter) ?? new Map<number, Map<number, any>>();
+    const stationMap = seriesMap.get(localSeries) ?? new Map<number, any>();
+    stationMap.set(stationNumber, {
+      stationNumber,
+      sector: ml.sector || ml.muscularSector || meta?.sector || '',
+      exercise: ml.exercise || '',
+      reps: ml.reps || '',
+      pause: parsePauseValue(ml.pause),
+      notes: ml.notes || ''
+    });
+    seriesMap.set(localSeries, stationMap);
+    perCircuit.set(letter, seriesMap);
+    seriesCountByCircuit.set(letter, Math.max(seriesCountByCircuit.get(letter) ?? 0, localSeries));
+    stationsPerSeriesByCircuit.set(letter, Math.max(stationsPerSeriesByCircuit.get(letter) ?? 0, stationNumber));
+  });
+
+  if (perCircuit.size === 0) return null;
+  const circuitLetters = Array.from(perCircuit.keys()).sort((a, b) => CIRCUIT_LETTERS.indexOf(a) - CIRCUIT_LETTERS.indexOf(b));
+  const pauseSeries = fallbackConfig?.pauseSeries ?? fallbackConfig?.pauses?.series ?? 0;
+  const pauseCircuits = fallbackConfig?.pauseCircuits ?? fallbackConfig?.pauses?.circuits ?? 0;
+
+  const circuits = circuitLetters.map((letter) => {
+    const seriesCount = seriesCountByCircuit.get(letter) ?? 1;
+    const stationsPerSeries = stationsPerSeriesByCircuit.get(letter) ?? 1;
+    const seriesMap = perCircuit.get(letter) ?? new Map();
+    const stationsBySeries: any[] = [];
+    for (let s = 1; s <= seriesCount; s++) {
+      const stationMap = seriesMap.get(s) ?? new Map();
+      const stations: any[] = [];
+      for (let st = 1; st <= stationsPerSeries; st++) {
+        const existing = stationMap.get(st);
+        stations.push(
+          existing || {
+            stationNumber: st,
+            sector: '',
+            exercise: '',
+            reps: '',
+            pause: parsePauseValue(fallbackConfig?.pauseStations ?? fallbackConfig?.pauses?.stations ?? 0),
+            notes: ''
+          }
+        );
+      }
+      stationsBySeries.push(stations);
+    }
+    return {
+      letter,
+      stationsBySeries,
+      series: seriesCount,
+      pauseBetweenSeries: pauseSeries,
+      pauseAfterCircuit: pauseCircuits
+    };
+  });
+
+  const numCircuits = fallbackConfig?.numCircuits ?? (maxCircuitIndex || circuits.length);
+  const stationsPerCircuit =
+    fallbackConfig?.stationsPerCircuit ?? Math.max(...Array.from(stationsPerSeriesByCircuit.values()));
+  const seriesCount =
+    fallbackConfig?.seriesCount ??
+    fallbackConfig?.seriesPerCircuit ??
+    Math.max(...Array.from(seriesCountByCircuit.values()));
+  const seriesMode = fallbackConfig?.seriesMode ?? 'count';
+  const config = {
+    numCircuits,
+    stationsPerCircuit,
+    seriesMode,
+    seriesCount,
+    pauseSeries,
+    pauseCircuits,
+    pauses: {
+      stations: fallbackConfig?.pauseStations ?? fallbackConfig?.pauses?.stations ?? 0,
+      series: pauseSeries,
+      circuits: pauseCircuits
+    },
+    executionMode: fallbackConfig?.executionMode ?? 'vertical'
+  };
+
+  return { config, circuits };
+};
+
 export default function BatteryCircuitPlanner({
   sectionId,
   sport,
@@ -66,8 +200,28 @@ export default function BatteryCircuitPlanner({
   targetMovelap: _targetMovelap,
   hideUI: _hideUI
 }: BatteryCircuitPlannerProps) {
-  // Extract existing circuit data if in edit mode
-  const existingCircuitData = existingMoveframe ? extractCircuitData(existingMoveframe.notes) : null;
+  const existingCircuitData = React.useMemo(() => {
+    if (!existingMoveframe) return null;
+    const fromNotes = extractCircuitData(existingMoveframe.notes);
+    if (fromNotes) return fromNotes;
+    const hasCircuitData =
+      !!existingMoveframe.circuitConfig ||
+      Array.isArray(existingMoveframe.circuits) ||
+      Array.isArray(existingMoveframe.rows);
+    if (!hasCircuitData) return null;
+    const fallback = {
+      config: existingMoveframe.circuitConfig || existingMoveframe.config || {},
+      circuits: Array.isArray(existingMoveframe.circuits) ? existingMoveframe.circuits : null,
+      rows: Array.isArray(existingMoveframe.rows) ? existingMoveframe.rows : null
+    };
+    if (!fallback.circuits && Array.isArray(existingMoveframe.movelaps) && existingMoveframe.movelaps.length > 0) {
+      const built = buildCircuitsFromMovelaps(existingMoveframe.movelaps, fallback.config);
+      if (built) {
+        return built;
+      }
+    }
+    return fallback;
+  }, [existingMoveframe]);
   const config = existingCircuitData?.config;
   
   const [description, setDescription] = useState(existingMoveframe?.description || '');
@@ -128,7 +282,7 @@ export default function BatteryCircuitPlanner({
   const [seriesMode, setSeriesMode] = useState<'series' | 'time'>(
     config?.seriesMode === 'time' ? 'time' : 'series'
   );
-  const [seriesPerCircuit, setSeriesPerCircuit] = useState(config?.seriesCount || 2);
+  const [seriesPerCircuit, setSeriesPerCircuit] = useState(config?.seriesCount || 3);
   const [timePerCircuit, setTimePerCircuit] = useState(config?.seriesTime || 5); // in minutes
   // Support both flat structure (pauseSeries) and nested (pauses.series in seconds)
   const [pauseSeries, setPauseSeries] = useState(() => {
@@ -149,8 +303,19 @@ export default function BatteryCircuitPlanner({
   // Fetch time circuit instructions translation on mount
   useEffect(() => {
     const fetchTimeInstructions = async () => {
+      const defaultText = 'If the series are set in minutes therefore the athlete will repeat all the stations continuosly for the time set. And once finished the time, after the Pause at the end, he will start again with the next serie.';
+      const isAdminPath = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
+      const token = localStorage.getItem('token');
+      if (!isAdminPath || !token) {
+        setTimeInstructions(defaultText);
+        return;
+      }
       try {
-        const response = await fetch('/api/admin/translations');
+        const response = await fetch('/api/admin/translations', {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.translations) {
@@ -165,15 +330,14 @@ export default function BatteryCircuitPlanner({
               const text = translation.values[currentLang] || translation.values['en'] || '';
               setTimeInstructions(text);
             } else {
-              // Set default English text if translation doesn't exist yet
-              setTimeInstructions('If the series are set in minutes therefore the athlete will repeat all the stations continuosly for the time set. And once finished the time, after the Pause at the end, he will start again with the next serie.');
+              setTimeInstructions(defaultText);
             }
+            return;
           }
         }
+        setTimeInstructions(defaultText);
       } catch (error) {
-        console.error('Error fetching time instructions:', error);
-        // Use default English text on error
-        setTimeInstructions('If the series are set in minutes therefore the athlete will repeat all the stations continuosly for the time set. And once finished the time, after the Pause at the end, he will start again with the next serie.');
+        setTimeInstructions(defaultText);
       }
     };
     
@@ -186,6 +350,12 @@ export default function BatteryCircuitPlanner({
       setShowOldCircuitPlanner(true);
     }
   }, [startInSecondView]);
+  
+  useEffect(() => {
+    if (existingCircuits && Array.isArray(existingCircuits) && existingCircuits.length > 0) {
+      setShowOldCircuitPlanner(true);
+    }
+  }, [existingCircuits]);
   
   // Toggle circuit active state
   const toggleCircuit = (index: number) => {
@@ -235,8 +405,9 @@ export default function BatteryCircuitPlanner({
           executionMode: executionOrder,
           startInTablePhase: true,
           existingCircuits: existingCircuits, // Pass existing circuit data for edit mode
-          editingFromMovelap: startInSecondView, // Pass flag for renaming button
-          editingMovelapTarget: editingMovelapTarget
+          editingFromMovelap: !!editingMovelapTarget,
+          editingMovelapTarget: editingMovelapTarget,
+          editingMovelapData: _targetMovelap
         }}
         onSave={(data: any) => {
           // Pass the circuit data to the parent component

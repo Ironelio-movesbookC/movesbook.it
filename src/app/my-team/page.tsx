@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Users, UserPlus, X, Loader2 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
@@ -43,33 +43,7 @@ function MyTeamContent() {
   const [addingMember, setAddingMember] = useState(false);
   const [addMemberError, setAddMemberError] = useState('');
 
-  // Redirect to home if not authenticated
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/');
-    }
-  }, [user, authLoading, router]);
-
-  useEffect(() => {
-    if (authLoading || !user) return;
-    if (!teamId) {
-      // If no teamId selected, redirect to My Page to select a team
-      if (user?.userType === 'TEAM_MANAGER') {
-        router.push('/my-page');
-        return;
-      }
-      setLoading(false);
-    } else {
-      loadTeamData();
-    }
-  }, [teamId, user, router]);
-
-  // Don't render if not authenticated
-  if (authLoading || !user) {
-    return null;
-  }
-
-  const loadTeamData = async () => {
+  const loadTeamData = useCallback(async () => {
     if (!teamId) return;
     
     setLoading(true);
@@ -91,7 +65,33 @@ function MyTeamContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [teamId]);
+
+  // Redirect to home if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/');
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+    if (!teamId) {
+      // If no teamId selected, redirect to My Page to select a team
+      if (user?.userType === 'TEAM_MANAGER') {
+        router.push('/my-page');
+        return;
+      }
+      setLoading(false);
+    } else {
+      loadTeamData();
+    }
+  }, [teamId, user, router, authLoading, loadTeamData]);
+
+  // Don't render if not authenticated
+  if (authLoading || !user) {
+    return null;
+  }
 
   const handleAddMember = async () => {
     if (!teamId || !addMemberUsername || !addMemberPassword) {

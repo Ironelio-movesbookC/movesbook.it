@@ -24,6 +24,20 @@
   border-width: var(--day-border-width, 1px);
   border-style: var(--day-border-style, solid);
   border-color: var(--day-border-color, #e5e7eb);
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+.day-row-gap td {
+  height: 3mm;
+  min-height: 3mm;
+  line-height: 3mm;
+  font-size: 0;
+  padding: 0;
+  border: 0;
+  background-color: #ffffff;
+}
+.day-row-gap {
+  background-color: #ffffff;
 }
 
 /* Workout Row Styles */

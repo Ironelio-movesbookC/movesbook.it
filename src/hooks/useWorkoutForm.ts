@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 export interface WorkoutFormData {
   name: string;
@@ -86,26 +86,26 @@ export function useWorkoutForm({
    * Example: "Workout 1", "Workout 2", "Workout 3"
    * Note: Date is not included to allow templates for 3WEEKS PLANS
    */
-  const generateDefaultName = () => {
+  const generateDefaultName = useCallback(() => {
     return `Workout ${workoutNumber}`;
-  };
+  }, [workoutNumber]);
 
   /**
    * Generate default workout code
    * Format: "<week number padded to 2 digits><day number padded to 2 digits>-<workout number>"
    * Example: "0101-1" (week 1, day 1, workout 1)
    */
-  const generateDefaultCode = () => {
+  const generateDefaultCode = useCallback(() => {
     const weekNum = String(day.weekNumber || 1).padStart(2, '0');
     const dayNum = String(day.weekday || 1).padStart(2, '0');
     return `${weekNum}${dayNum}-${workoutNumber}`;
-  };
+  }, [day.weekNumber, day.weekday, workoutNumber]);
 
   /**
    * Get sports from ALL moveframes in ALL workouts of the current day
    * These sports are automatically included and cannot be changed
    */
-  const getSportsFromMoveframes = () => {
+  const getSportsFromMoveframes = useCallback(() => {
     const sports = new Set<string>();
     
     // Scan ALL existing workouts in the day (including the current one being edited)
@@ -129,7 +129,7 @@ export function useWorkoutForm({
     }
     
     return Array.from(sports).sort(); // Sort alphabetically for consistency
-  };
+  }, [existingWorkouts, existingWorkout, mode]);
 
   /**
    * Get moveframe sports (memoized)
@@ -437,7 +437,7 @@ export function useWorkoutForm({
       });
       setIsSubmitting(false);
     }
-  }, [isOpen, mode, existingWorkout, existingWorkouts]);
+  }, [isOpen, mode, existingWorkout, existingWorkouts, generateDefaultCode, generateDefaultName, getSportsFromMoveframes]);
 
   // ==================== RETURN VALUES ====================
   return {

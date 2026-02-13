@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 export interface AuthUser {
@@ -16,11 +16,16 @@ export function useAuth() {
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<string | null>(null);
   const router = useRouter();
 
-  useEffect(() => {
-    checkAuth();
-  }, []);
+  const logout = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    }
+    setUser(null);
+    router.push('/');
+  }, [router]);
 
-  const checkAuth = async () => {
+  const checkAuth = useCallback(async () => {
     try {
       if (typeof window !== 'undefined') {
         const token = localStorage.getItem('token');
@@ -36,7 +41,11 @@ export function useAuth() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [logout]);
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   const login = (token: string, userData: AuthUser) => {
     if (typeof window !== 'undefined') {
@@ -48,12 +57,11 @@ export function useAuth() {
     
     // Redirect based on user type to category-specific dashboards
     if (userData.userType === 'ADMIN') {
-      // Admin users redirect to admin dashboard
       if (redirectAfterLogin) {
         router.push(redirectAfterLogin);
         setRedirectAfterLogin(null);
       } else {
-        router.push('/admin/dashboard');
+        router.push('/athlete/dashboard');
       }
     } else if (userData.userType === 'ATHLETE') {
       // Athletes redirect to athlete dashboard
@@ -74,15 +82,6 @@ export function useAuth() {
       // Fallback to my-page for any other types
       router.push('/my-page');
     }
-  };
-
-  const logout = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-    }
-    setUser(null);
-    router.push('/');
   };
 
   const requireAuth = (redirectPath: string) => {

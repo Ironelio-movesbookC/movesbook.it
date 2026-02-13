@@ -19,13 +19,21 @@ export const hashPasswordSHA1 = (password: string): string => {
 
 // Verify password - supports both SHA1 (old) and bcrypt (new)
 export const verifyPassword = async (password: string, hashedPassword: string): Promise<boolean> => {
-  // Check if it's a SHA1 hash (40 characters hex)
-  if (hashedPassword.length === 40 && /^[a-f0-9]+$/i.test(hashedPassword)) {
+  if (/^[a-f0-9]+$/i.test(hashedPassword)) {
     const sha1Hash = hashPasswordSHA1(password);
-    return sha1Hash === hashedPassword;
+    if (hashedPassword.length === 40) {
+      const md5Hash = crypto.createHash('md5').update(password).digest('hex');
+      const sha1OfMd5 = crypto.createHash('sha1').update(md5Hash).digest('hex');
+      const md5OfSha1 = crypto.createHash('md5').update(sha1Hash).digest('hex');
+      const sha1OfSha1 = crypto.createHash('sha1').update(sha1Hash).digest('hex');
+      return [sha1Hash, sha1OfMd5, md5OfSha1, sha1OfSha1].includes(hashedPassword);
+    }
+    if (hashedPassword.length === 32) {
+      const md5Hash = crypto.createHash('md5').update(password).digest('hex');
+      return md5Hash === hashedPassword;
+    }
   }
   
-  // Otherwise, verify as bcrypt
   try {
     return await bcrypt.compare(password, hashedPassword);
   } catch (error) {
@@ -66,10 +74,11 @@ export const verifyToken = (token: string): any => {
 };
 
 // Alternative: Export as default object
-export default {
+const auth = {
   hashPassword,
   hashPasswordSHA1,
   verifyPassword,
   generateToken,
   verifyToken
 };
+export default auth;

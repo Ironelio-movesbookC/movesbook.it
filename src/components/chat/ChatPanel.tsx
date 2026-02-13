@@ -654,10 +654,13 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
             <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
               {pendingImage && (
                 <div className="mb-2 flex items-center gap-2">
-                  <img
+                  <Image
                     src={pendingImage}
                     alt="Paste preview"
+                    width={64}
+                    height={64}
                     className="h-16 w-16 object-cover rounded border border-gray-300"
+                    unoptimized
                   />
                   <span className="text-sm text-gray-600">Pasted image — click Send or paste again to replace</span>
                   <button

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Grid, Layout, Eye, Palette, Zap, Monitor, Smartphone, Tablet, Sun, Moon, Type, Image, Play, Pause, Clock, Save, CheckCircle } from 'lucide-react';
+import { Grid, Layout, Eye, Palette, Zap, Monitor, Smartphone, Tablet, Sun, Moon, Type, Image as ImageIcon, Play, Pause, Clock, Save, CheckCircle } from 'lucide-react';
+import NextImage from 'next/image';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/hooks/useAuth';
@@ -776,7 +777,7 @@ export default function GridDisplaySettings() {
               {/* Image Quality - Visual Comparison with REAL IMAGE */}
               <div className="bg-white rounded-xl border border-gray-200 p-6">
                 <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <Image className="w-5 h-5" />
+                  <ImageIcon className="w-5 h-5" />
                   Image Quality: Real Example Comparison
                 </h3>
                 <p className="text-sm text-gray-600 mb-4">
@@ -796,10 +797,12 @@ export default function GridDisplaySettings() {
                     >
                       {/* REAL Image at different qualities */}
                       <div className="aspect-video bg-gray-100 relative overflow-hidden">
-                        <img
+                        <NextImage
                           src="/images/swimming.png"
                           alt="Swimming example"
-                          className={`w-full h-full object-cover transition-all ${
+                          fill
+                          sizes="33vw"
+                          className={`object-cover transition-all ${
                             quality === 'low' ? 'blur-sm scale-110 opacity-70' : 
                             quality === 'medium' ? 'blur-[1px] scale-105 opacity-90' : 
                             'blur-none scale-100 opacity-100'
@@ -1134,15 +1137,19 @@ export default function GridDisplaySettings() {
                                 <div key={i} className={`rounded-lg overflow-hidden shadow-md ${
                                   resolvedTheme === 'dark' ? 'bg-gray-800' : 'bg-white'
                                 } ${getRowHeightClass()}`}>
-                                  <img 
-                                    src="/images/swimming.png" 
-                                    alt={sport}
-                                    className={`w-full h-2/3 object-cover ${
-                                      settings.imageQuality === 'low' ? 'blur-sm opacity-70' :
-                                      settings.imageQuality === 'medium' ? 'blur-[0.5px] opacity-90' :
-                                      'blur-none opacity-100'
-                                    }`}
-                                  />
+                                  <div className="relative w-full h-2/3">
+                                    <NextImage
+                                      src="/images/swimming.png" 
+                                      alt={sport}
+                                      fill
+                                      sizes="33vw"
+                                      className={`object-cover ${
+                                        settings.imageQuality === 'low' ? 'blur-sm opacity-70' :
+                                        settings.imageQuality === 'medium' ? 'blur-[0.5px] opacity-90' :
+                                        'blur-none opacity-100'
+                                      }`}
+                                    />
+                                  </div>
                                   <div className="p-2">
                                     <div className={`font-semibold text-xs ${resolvedTheme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{sport}</div>
                                     <div className={`text-xs ${resolvedTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>45 min</div>
@@ -1158,9 +1165,11 @@ export default function GridDisplaySettings() {
                                 <div key={i} className={`flex items-center gap-4 p-4 rounded-lg shadow-sm ${
                                   resolvedTheme === 'dark' ? 'bg-gray-800' : 'bg-white'
                                 }`}>
-                                  <img 
+                                  <NextImage 
                                     src="/images/swimming.png" 
                                     alt={sport}
+                                    width={64}
+                                    height={64}
                                     className={`w-16 h-16 rounded-lg object-cover ${
                                       settings.imageQuality === 'low' ? 'blur-sm' :
                                       settings.imageQuality === 'medium' ? 'blur-[0.5px]' :

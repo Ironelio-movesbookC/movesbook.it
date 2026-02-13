@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import ReactDOM from 'react-dom';
 import { X, Edit, Copy, Move, Trash2, Plus, CheckCircle, Circle, Clock, MapPin, Zap, PlusCircle } from 'lucide-react';
 import { getSportIcon, isImageIcon } from '@/utils/sportIcons';
@@ -30,6 +31,17 @@ const extractCircuitDataFromNotes = (notes: unknown) => {
 const extractCircuitMetaFromNotes = (notes: unknown) => {
   if (typeof notes !== 'string') return null;
   const match = notes.match(/\[CIRCUIT_META\]([\s\S]*?)\[\/CIRCUIT_META\]/);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+};
+
+const extractFastPlannerDataFromNotes = (notes: unknown): any | null => {
+  if (typeof notes !== 'string') return null;
+  const match = notes.match(/\[FAST_PLANNER_DATA\]([\s\S]*?)\[\/FAST_PLANNER_DATA\]/);
   if (!match?.[1]) return null;
   try {
     return JSON.parse(match[1]);
@@ -126,9 +138,74 @@ export default function MoveframeInfoPanel({
 
   // Calculate totals
   const movelaps = moveframe.movelaps || [];
-  const totalMovelaps = movelaps.length;
+  const fastPlannerPayloadFromNotes = extractFastPlannerDataFromNotes(moveframe?.notes);
+  const fastPlannerPayload = moveframe?.fastPlannerData ?? fastPlannerPayloadFromNotes ?? null;
+  let fallbackTotalMovelaps = 0;
+  let fallbackTotalDistance = 0;
+  let fallbackTotalTime = 0;
+  let fallbackTotalReps = 0;
+  if ((!movelaps || movelaps.length === 0) && fastPlannerPayload && Array.isArray(fastPlannerPayload.rows)) {
+    const rows = fastPlannerPayload.rows;
+    if (fastPlannerPayload.plannerType === 'aerobic') {
+      fallbackTotalMovelaps = rows.length;
+      for (const r of rows) {
+        const dist = parseInt((r?.distance ?? '').toString()) || 0;
+        fallbackTotalDistance += dist;
+        const t = r?.time != null ? r.time.toString() : '';
+        if (t) {
+          if (t.includes('h') || t.includes("'")) {
+            const m = t.match(/(\d+)h(\d+)'(\d+)"/);
+            if (m) {
+              const hours = parseInt(m[1]) || 0;
+              const minutes = parseInt(m[2]) || 0;
+              const seconds = parseInt(m[3]) || 0;
+              fallbackTotalTime += (hours * 60) + minutes + (seconds / 60);
+            }
+          } else if (t.includes(':')) {
+            const parts = t.split(':');
+            const hours = parseInt(parts[0]) || 0;
+            const minutes = parseInt(parts[1]) || 0;
+            const seconds = parseInt(parts[2]) || 0;
+            fallbackTotalTime += (hours * 60) + minutes + (seconds / 60);
+          } else {
+            fallbackTotalTime += parseFloat(t) || 0;
+          }
+        }
+      }
+    } else {
+      const mode = fastPlannerPayload.ripTimeMode;
+      fallbackTotalMovelaps = rows.reduce((sum: number, r: any) => {
+        const seriesCount = parseInt((r?.series ?? '').toString()) || 0;
+        return sum + (seriesCount > 0 ? seriesCount : 1);
+      }, 0);
+      for (const r of rows) {
+        const rt = (r?.ripTime ?? '').toString();
+        const seriesCount = parseInt((r?.series ?? '').toString()) || 0;
+        const multiplier = seriesCount > 0 ? seriesCount : 1;
+        if (mode === 'reps') {
+          fallbackTotalReps += (parseInt(rt) || 0) * multiplier;
+        } else if (mode === 'time') {
+          if (rt) {
+            if (rt.includes("'") || rt.includes('"')) {
+              const m = rt.match(/(\d+)'(\d+)"/);
+              if (m) {
+                const minutes = parseInt(m[1]) || 0;
+                const seconds = parseInt(m[2]) || 0;
+                fallbackTotalTime += (minutes + (seconds / 60)) * multiplier;
+              }
+            } else {
+              fallbackTotalTime += (parseFloat(rt) || 0) * multiplier;
+            }
+          }
+        }
+      }
+    }
+  }
+  const totalMovelaps = movelaps.length || fallbackTotalMovelaps;
   const completedMovelaps = movelaps.filter((ml: any) => ml.status === 'COMPLETED').length;
-  const totalDistance = movelaps.reduce((sum: number, ml: any) => sum + (parseInt(ml.distance) || 0), 0);
+  const totalDistance = movelaps.length > 0
+    ? movelaps.reduce((sum: number, ml: any) => sum + (parseInt(ml.distance) || 0), 0)
+    : fallbackTotalDistance;
   const isCircuitBased = moveframe.isCircuitBased === true;
   const circuitData = isCircuitBased ? extractCircuitDataFromNotes(moveframe.notes) : null;
   const circuitConfig = circuitData?.config || null;
@@ -168,7 +245,9 @@ export default function MoveframeInfoPanel({
     : 0;
   
   // Parse time in format: HhMM'SS" (e.g., "1h23'45"")
-  const totalTime = movelaps.reduce((sum: number, ml: any) => {
+  const totalTime = movelaps.length === 0
+    ? fallbackTotalTime
+    : movelaps.reduce((sum: number, ml: any) => {
     const timeStr = ml.time != null ? ml.time.toString() : '';
     let timeSeconds = 0;
     if (timeStr) {
@@ -226,7 +305,9 @@ export default function MoveframeInfoPanel({
     return sum + ((timeSeconds + pauseSeconds + macroSeconds) / 60);
   }, 0);
   
-  const totalReps = movelaps.reduce((sum: number, ml: any) => sum + (parseInt(ml.reps) || 0), 0);
+  const totalReps = movelaps.length > 0
+    ? movelaps.reduce((sum: number, ml: any) => sum + (parseInt(ml.reps) || 0), 0)
+    : fallbackTotalReps;
 
   // Get section color
   const sectionColor = moveframe.section?.color || '#6366f1';
@@ -278,10 +359,13 @@ export default function MoveframeInfoPanel({
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
                 {useImageIcons ? (
-                  <img 
+                  <Image 
                     src={getSportIcon(moveframe.sport, iconType)} 
                     alt={moveframe.sport} 
+                    width={48}
+                    height={48}
                     className="w-12 h-12 object-cover rounded" 
+                    unoptimized
                   />
                 ) : (
                   <span className="text-4xl">{getSportIcon(moveframe.sport, iconType)}</span>

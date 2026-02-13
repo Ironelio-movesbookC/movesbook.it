@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Users, UserPlus, X, Loader2 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
@@ -42,33 +42,7 @@ function MyGroupContent() {
   const [addingMember, setAddingMember] = useState(false);
   const [addMemberError, setAddMemberError] = useState('');
 
-  // Redirect to home if not authenticated
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/');
-    }
-  }, [user, authLoading, router]);
-
-  useEffect(() => {
-    if (authLoading || !user) return;
-    if (!groupId) {
-      // If no groupId selected, redirect to My Page to select a group
-      if (user?.userType === 'GROUP_ADMIN') {
-        router.push('/my-page');
-        return;
-      }
-      setLoading(false);
-    } else {
-      loadGroupData();
-    }
-  }, [groupId, user, router]);
-
-  // Don't render if not authenticated
-  if (authLoading || !user) {
-    return null;
-  }
-
-  const loadGroupData = async () => {
+  const loadGroupData = useCallback(async () => {
     if (!groupId) return;
     
     setLoading(true);
@@ -90,7 +64,33 @@ function MyGroupContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [groupId]);
+
+  // Redirect to home if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/');
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+    if (!groupId) {
+      // If no groupId selected, redirect to My Page to select a group
+      if (user?.userType === 'GROUP_ADMIN') {
+        router.push('/my-page');
+        return;
+      }
+      setLoading(false);
+    } else {
+      loadGroupData();
+    }
+  }, [groupId, user, router, authLoading, loadGroupData]);
+
+  // Don't render if not authenticated
+  if (authLoading || !user) {
+    return null;
+  }
 
   const handleAddMember = async () => {
     if (!groupId || !addMemberUsername || !addMemberPassword) {

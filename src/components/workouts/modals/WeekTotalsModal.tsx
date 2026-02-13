@@ -368,7 +368,7 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
   const { rows: dailySummaries, totals: dailyTotals } = calculateDailySummaries();
 
   // Calculate aggregated totals across ALL displayed weeks
-  const calculateAggregatedTotals = () => {
+  const calculateAggregatedTotals = React.useCallback(() => {
     if (!weeks || weeks.length === 0) {
       return {
         sportTotals: [],
@@ -506,9 +506,9 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
       totalDuration: totalDurationSum,
       weekRange
     };
-  };
+  }, [weeks]);
 
-  const aggregatedData = React.useMemo(() => calculateAggregatedTotals(), [weeks]);
+  const aggregatedData = React.useMemo(() => calculateAggregatedTotals(), [calculateAggregatedTotals]);
 
   const handlePrint = React.useCallback(() => {
     console.log('🖨️ handlePrint called');

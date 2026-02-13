@@ -15,14 +15,15 @@ export async function GET(request: NextRequest) {
     }
     const myId = decoded.userId;
 
-    const users = await prisma.user.findMany({
+    const userSelect = { id: true, name: true, username: true, telegramAccount: true, lastSeenAt: true } as any;
+    const users = (await prisma.user.findMany({
       where: {
         id: { not: myId },
         telegramAccount: { not: null },
       },
-      select: { id: true, name: true, username: true, telegramAccount: true, lastSeenAt: true },
+      select: userSelect,
       orderBy: { name: 'asc' },
-    });
+    })) as any[];
 
     const ONLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
     const usersWithPresence = users.map((u) => ({

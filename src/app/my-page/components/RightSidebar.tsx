@@ -18,6 +18,7 @@ import {
   User
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import Image from 'next/image';
 import { useState } from 'react';
 import PersonalSettingsModal from '@/components/workouts/PersonalSettingsModal';
 
@@ -269,9 +270,13 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               </div>
 
               <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                <img
+                <Image
+                  src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
                   alt="Freewildplayer"
+                  width={48}
+                  height={48}
                   className="w-12 h-12 rounded object-cover hidden"
+                  unoptimized
                 />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-800">Freewildplayer</p>
@@ -324,9 +329,13 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               </div>
 
               <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                <img
+                <Image
+                  src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
                   alt="Freewildplayer"
+                  width={48}
+                  height={48}
                   className="w-12 h-12 rounded object-cover hidden"
+                  unoptimized
                 />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-800">Freewildplayer</p>
@@ -458,9 +467,13 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
               </div>
 
               <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                <img
+                <Image
+                  src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
                   alt="Freewildplayer"
+                  width={48}
+                  height={48}
                   className="w-12 h-12 rounded object-cover hidden"
+                  unoptimized
                 />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-800">Freewildplayer</p>
@@ -569,9 +582,13 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
 
               <div className="px-3 py-2 border-b">
                 <div className="flex items-start gap-3 mb-2">
-                  <img
+                  <Image
+                    src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
                     alt="Page"
+                    width={40}
+                    height={40}
                     className="w-10 h-10 rounded object-cover hidden"
+                    unoptimized
                   />
                   <div className="flex-1">
                     <h6 className="text-sm font-semibold text-gray-800">Papa Benedetto XVI</h6>
@@ -585,10 +602,13 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
 
               <div className="px-3 py-2 border-b">
                 <div className="flex items-start gap-3 mb-2">
-                  <img
+                  <Image
                     src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop"
                     alt="Page"
+                    width={40}
+                    height={40}
                     className="w-10 h-10 rounded object-cover"
+                    unoptimized
                   />
                   <div className="flex-1">
                     <h6 className="text-sm font-semibold text-gray-800">Il Mattino</h6>

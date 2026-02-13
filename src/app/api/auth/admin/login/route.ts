@@ -2,6 +2,236 @@ import { NextRequest, NextResponse } from 'next/server';
 import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword, generateToken, hashPassword } from '@/lib/auth';
+import mysql from 'mysql2/promise';
+
+type LegacyDbConfig = {
+  host: string;
+  port: number;
+  user: string;
+  password?: string;
+  database: string;
+};
+
+const getLegacyDbConfig = (): LegacyDbConfig | null => {
+  const legacyUrl = process.env.LEGACY_DATABASE_URL || process.env.LEGACY_DB_URL;
+  if (legacyUrl) {
+    try {
+      const parsed = new URL(legacyUrl);
+      return {
+        host: parsed.hostname,
+        port: Number(parsed.port) || 3306,
+        user: decodeURIComponent(parsed.username || ''),
+        password: decodeURIComponent(parsed.password || ''),
+        database: parsed.pathname.replace(/^\//, '')
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  const prodLegacyUrl = process.env.PROD_DATABASE_URL || process.env.PROD_DB_URL;
+  if (prodLegacyUrl) {
+    try {
+      const parsed = new URL(prodLegacyUrl);
+      return {
+        host: parsed.hostname,
+        port: Number(parsed.port) || 3306,
+        user: decodeURIComponent(parsed.username || ''),
+        password: decodeURIComponent(parsed.password || ''),
+        database: parsed.pathname.replace(/^\//, '')
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  const host = process.env.LEGACY_DB_HOST;
+  const user = process.env.LEGACY_DB_USER;
+  const database = process.env.LEGACY_DB_NAME;
+  if (!host || !user || !database) {
+    return null;
+  }
+
+  return {
+    host,
+    port: Number(process.env.LEGACY_DB_PORT || 3306),
+    user,
+    password: process.env.LEGACY_DB_PASSWORD || undefined,
+    database
+  };
+};
+
+const isMysql = () => (process.env.DATABASE_URL || '').startsWith('mysql');
+
+const ensureLegacyMappingTable = async () => {
+  if (isMysql()) {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS legacy_id_mappings (
+        id VARCHAR(255) PRIMARY KEY,
+        legacy_table VARCHAR(255),
+        legacy_id INTEGER,
+        new_id VARCHAR(255)
+      )
+    `);
+    return;
+  }
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS legacy_id_mappings (
+      id TEXT PRIMARY KEY,
+      legacy_table TEXT,
+      legacy_id INTEGER,
+      new_id TEXT
+    )
+  `);
+};
+
+const upsertLegacyMapping = async (mappingId: string, legacyId: number, newId: string) => {
+  if (isMysql()) {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO legacy_id_mappings (id, legacy_table, legacy_id, new_id)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE legacy_table=VALUES(legacy_table), legacy_id=VALUES(legacy_id), new_id=VALUES(new_id)`,
+      mappingId,
+      'users',
+      legacyId,
+      newId
+    );
+    return;
+  }
+
+  await prisma.$executeRawUnsafe(
+    `INSERT OR REPLACE INTO legacy_id_mappings (id, legacy_table, legacy_id, new_id)
+     VALUES (?, ?, ?, ?)`,
+    mappingId,
+    'users',
+    legacyId,
+    newId
+  );
+};
+
+const fetchLegacyUsersFromExternalDb = async (
+  config: LegacyDbConfig,
+  loginIdentifier: string,
+  rawLoginIdentifier: string,
+  adminOnly: boolean
+): Promise<any[]> => {
+  const connection = await mysql.createConnection({
+    host: config.host,
+    port: config.port,
+    user: config.user,
+    password: config.password,
+    database: config.database
+  });
+
+  try {
+    let columns: string[] = [];
+    try {
+      const [rows] = await connection.execute<any[]>(
+        'SELECT COLUMN_NAME as name FROM information_schema.COLUMNS WHERE table_name = ? AND table_schema = DATABASE()',
+        ['users']
+      );
+      if (Array.isArray(rows)) {
+        columns = rows
+          .map((row: any) => row?.name || row?.COLUMN_NAME)
+          .filter((value: any) => typeof value === 'string');
+      }
+    } catch {
+      columns = [];
+    }
+
+    const optionalColumns = [
+      'staff_alternative_password',
+      'enabled_staff_alternative_password',
+      'alternate_club_pass',
+      'enable_login_as_club_admin'
+    ];
+
+    const selectedOptionalColumns = optionalColumns.filter((column) =>
+      columns.length > 0 ? columns.includes(column) : false
+    );
+
+    const selectColumns = [
+      'id',
+      'username',
+      'email',
+      'password',
+      'alternate_pass',
+      'staff_password',
+      ...selectedOptionalColumns,
+      'role_id',
+      'created',
+      "COALESCE(firstname, '') as firstname",
+      "COALESCE(lastname, '') as lastname"
+    ];
+
+    const adminFilter = adminOnly
+      ? "AND (role_id IN (5, 6, 99) OR username = 'admin' OR email = 'lerkos000@gmail.com')"
+      : '';
+
+    const legacySql = `
+      SELECT ${selectColumns.join(', ')}
+      FROM users
+      WHERE (TRIM(email) = ? OR TRIM(username) = ? OR lower(TRIM(email)) = lower(?) OR lower(TRIM(username)) = lower(?))
+      AND (delete_status IS NULL OR lower(TRIM(delete_status)) = 'n')
+      ${adminFilter}
+      ORDER BY id DESC
+    `;
+
+    const [rows] = await connection.execute<any[]>(legacySql, [
+      loginIdentifier,
+      loginIdentifier,
+      loginIdentifier,
+      loginIdentifier
+    ]);
+    let legacyUser = Array.isArray(rows) ? rows : [];
+
+    if (legacyUser.length === 0 && rawLoginIdentifier) {
+      const exactSql = `
+        SELECT ${selectColumns.join(', ')}
+        FROM users
+        WHERE (email = ? OR username = ?)
+        AND delete_status = 'N'
+        ${adminFilter}
+        ORDER BY id DESC
+        LIMIT 1
+      `;
+      const [exactRows] = await connection.execute<any[]>(exactSql, [
+        rawLoginIdentifier,
+        rawLoginIdentifier
+      ]);
+      legacyUser = Array.isArray(exactRows) ? exactRows : [];
+    }
+
+    return legacyUser;
+  } finally {
+    await connection.end();
+  }
+};
+
+const hasLegacyUsersTable = async (): Promise<boolean> => {
+  if (isMysql()) {
+    try {
+      const rows = await prisma.$queryRawUnsafe<any[]>(
+        'SELECT 1 FROM information_schema.COLUMNS WHERE table_name = ? AND table_schema = DATABASE() LIMIT 1',
+        'users'
+      );
+      if (Array.isArray(rows) && rows.length > 0) return true;
+    } catch (error) {
+    }
+    return false;
+  }
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1"
+    );
+    if (Array.isArray(rows) && rows.length > 0) return true;
+  } catch (error) {
+  }
+
+  return false;
+};
 
 // Fallback admin credentials (used if no admin in database)
 // Note: Password is hashed for security. Original password: Set via ADMIN_PASSWORD env var or default hashed value
@@ -17,7 +247,8 @@ export async function POST(request: NextRequest) {
     const { username, email, identifier, password } = await request.json();
 
     // Support both email/username separately or combined in identifier field
-    const loginIdentifier = identifier || email || username;
+    const rawLoginIdentifier = identifier || email || username || '';
+    const loginIdentifier = rawLoginIdentifier.trim();
 
     // Debug logging (only in production to help diagnose issues)
     if (process.env.NODE_ENV === 'production') {
@@ -94,23 +325,51 @@ export async function POST(request: NextRequest) {
           });
         } else {
           // Fallback: use 'admin' ID if no real user found (shouldn't happen in production)
+          // Auto-create the admin user in the database so it exists for future logins
+          let adminUserForResponse = {
+            id: 'admin',
+            name: 'Admin',
+            username: FALLBACK_ADMIN.username,
+            email: FALLBACK_ADMIN.email,
+            userType: 'ADMIN'
+          };
+
+          try {
+            console.log('[Admin Login] Creating admin user in database...');
+            const newAdmin = await prisma.user.create({
+              data: {
+                username: FALLBACK_ADMIN.username,
+                email: FALLBACK_ADMIN.email,
+                password: FALLBACK_ADMIN.passwordHash,
+                name: 'Admin',
+                userType: 'ADMIN',
+              }
+            });
+            
+            adminUserForResponse = {
+              id: newAdmin.id,
+              name: newAdmin.name,
+              username: newAdmin.username,
+              email: newAdmin.email,
+              userType: newAdmin.userType
+            };
+            console.log('[Admin Login] Successfully created admin user in database');
+          } catch (error) {
+            console.error('[Admin Login] Failed to auto-create admin user:', error);
+            // Continue with synthetic user
+          }
+
           const token = generateToken(
-            'admin', 
-            FALLBACK_ADMIN.email, 
-            FALLBACK_ADMIN.username, 
-            'ADMIN'
+            adminUserForResponse.id, 
+            adminUserForResponse.email, 
+            adminUserForResponse.username, 
+            adminUserForResponse.userType
           );
 
           return NextResponse.json({
             success: true,
             token,
-            user: {
-              id: 'admin',
-              name: 'Admin',
-              username: FALLBACK_ADMIN.username,
-              email: FALLBACK_ADMIN.email,
-              userType: 'ADMIN'
-            }
+            user: adminUserForResponse
           });
         }
       }
@@ -189,12 +448,41 @@ export async function POST(request: NextRequest) {
         createdAt: true,
       }
     });
+    let passwordAlreadyVerified = false;
 
     if (process.env.NODE_ENV === 'production') {
       if (user) {
         console.log(`[Admin Login] Found user with ADMIN type: ${user.username} (${user.email}), userType: ${user.userType}`);
       } else {
         console.log(`[Admin Login] No user found with ADMIN type, trying without userType filter...`);
+      }
+    }
+    if (user) {
+      const isPasswordValid = await verifyPassword(password, user.password);
+      if (isPasswordValid) {
+        passwordAlreadyVerified = true;
+      } else {
+        user = null;
+      }
+    }
+    if (!user) {
+      const rawAdmin = await prisma.$queryRaw<any[]>`
+        SELECT id, name, username, email, password, userType, createdAt
+        FROM users_new
+        WHERE (lower(email) = lower(${loginIdentifier}) OR lower(username) = lower(${loginIdentifier}))
+        AND userType = 'ADMIN'
+        LIMIT 1
+      `;
+      if (rawAdmin.length > 0) {
+        user = rawAdmin[0];
+        if (user) {
+          const isPasswordValid = await verifyPassword(password, user.password);
+          if (isPasswordValid) {
+            passwordAlreadyVerified = true;
+          } else {
+            user = null;
+          }
+        }
       }
     }
 
@@ -232,35 +520,265 @@ export async function POST(request: NextRequest) {
           console.log(`[Admin Login] No user found even without userType filter`);
         }
       }
+      if (user) {
+        const isPasswordValid = await verifyPassword(password, user.password);
+        if (isPasswordValid) {
+          passwordAlreadyVerified = true;
+        } else {
+          user = null;
+        }
+      }
+      if (!user) {
+        const rawUser = await prisma.$queryRaw<any[]>`
+          SELECT id, name, username, email, password, userType, createdAt
+          FROM users_new
+          WHERE lower(email) = lower(${loginIdentifier}) OR lower(username) = lower(${loginIdentifier})
+          LIMIT 1
+        `;
+        if (rawUser.length > 0) {
+          user = rawUser[0];
+          if (user) {
+            const isPasswordValid = await verifyPassword(password, user.password);
+            if (isPasswordValid) {
+              passwordAlreadyVerified = true;
+            } else {
+              user = null;
+            }
+          }
+        }
+      }
     }
 
     // If not found in new table, check LEGACY table (if it exists)
     if (!user) {
       try {
-        const legacyUser = await prisma.$queryRaw<any[]>`
-          SELECT id, username, email, password, role_id,
-                 COALESCE(firstname, '') as firstname,
-                 COALESCE(lastname, '') as lastname
-          FROM users
-          WHERE (email = ${loginIdentifier} OR username = ${loginIdentifier})
-          AND delete_status = 'N'
-          AND role_id IN (5, 6)
-          LIMIT 1
-        `;
+        let legacyUser: any[] = [];
+        const legacyDbConfig = getLegacyDbConfig();
+        if (legacyDbConfig) {
+          try {
+            legacyUser = await fetchLegacyUsersFromExternalDb(
+              legacyDbConfig,
+              loginIdentifier,
+              rawLoginIdentifier,
+              true
+            );
+          } catch (legacyDbError) {
+            console.error('Legacy DB lookup failed:', legacyDbError);
+          }
+        }
+
+        const legacyTableExists = await hasLegacyUsersTable();
+        if (legacyUser.length === 0 && legacyTableExists) {
+          try {
+            let columnNames = new Set<string>();
+            try {
+              const columns = await prisma.$queryRawUnsafe<any[]>('PRAGMA table_info(users)');
+              if (Array.isArray(columns)) {
+                for (const column of columns) {
+                  if (column?.name) columnNames.add(column.name);
+                }
+              }
+            } catch (pragmaError) {
+              try {
+                const columns = await prisma.$queryRawUnsafe<any[]>(
+                  'SELECT COLUMN_NAME as name FROM information_schema.COLUMNS WHERE table_name = ? AND table_schema = DATABASE()',
+                  'users'
+                );
+                if (Array.isArray(columns)) {
+                  for (const column of columns) {
+                    const columnName = column?.name || column?.COLUMN_NAME;
+                    if (columnName) columnNames.add(columnName);
+                  }
+                }
+              } catch (schemaError) {
+                columnNames = new Set<string>();
+              }
+            }
+
+            const optionalColumns = [
+              'staff_alternative_password',
+              'enabled_staff_alternative_password',
+              'alternate_club_pass',
+              'enable_login_as_club_admin'
+            ];
+
+            const missingColumns = optionalColumns.filter(
+              (column) => columnNames.size > 0 && !columnNames.has(column)
+            );
+            if (missingColumns.length > 0) {
+              for (const column of missingColumns) {
+                const columnType =
+                  column === 'enabled_staff_alternative_password' || column === 'enable_login_as_club_admin'
+                    ? 'INTEGER'
+                    : 'TEXT';
+                try {
+                  await prisma.$executeRawUnsafe(
+                    `ALTER TABLE users ADD COLUMN ${column} ${columnType}`
+                  );
+                  columnNames.add(column);
+                } catch (alterError) {
+                }
+              }
+            }
+
+            const selectedOptionalColumns = optionalColumns.filter((column) =>
+              columnNames.size === 0 ? false : columnNames.has(column)
+            );
+
+            const selectColumns = [
+              'id',
+              'username',
+              'email',
+              'password',
+              'alternate_pass',
+              'staff_password',
+              ...selectedOptionalColumns,
+              'role_id',
+              'created',
+              "COALESCE(firstname, '') as firstname",
+              "COALESCE(lastname, '') as lastname"
+            ];
+
+            const legacySql = `
+              SELECT ${selectColumns.join(', ')}
+              FROM users
+              WHERE (TRIM(email) = ? OR TRIM(username) = ? OR lower(TRIM(email)) = lower(?) OR lower(TRIM(username)) = lower(?))
+              AND (delete_status IS NULL OR lower(TRIM(delete_status)) = 'n')
+              AND (role_id IN (5, 6, 99) OR username = 'admin' OR email = 'lerkos000@gmail.com')
+              ORDER BY id DESC
+            `;
+
+            legacyUser = await prisma.$queryRawUnsafe<any[]>(
+              legacySql,
+              loginIdentifier,
+              loginIdentifier,
+              loginIdentifier,
+              loginIdentifier
+            );
+          } catch (legacyQueryError: any) {
+            legacyUser = await prisma.$queryRaw<any[]>`
+              SELECT id, username, email, password, alternate_pass, staff_password,
+                     role_id, created,
+                     COALESCE(firstname, '') as firstname,
+                     COALESCE(lastname, '') as lastname
+              FROM users
+              WHERE (TRIM(email) = ${loginIdentifier} OR TRIM(username) = ${loginIdentifier} OR lower(TRIM(email)) = lower(${loginIdentifier}) OR lower(TRIM(username)) = lower(${loginIdentifier}))
+              AND (delete_status IS NULL OR lower(TRIM(delete_status)) = 'n')
+              AND (role_id IN (5, 6, 99) OR username = 'admin' OR email = 'lerkos000@gmail.com')
+              ORDER BY id DESC
+            `;
+          }
+
+          if (legacyUser.length === 0 && rawLoginIdentifier) {
+            try {
+              legacyUser = await prisma.$queryRaw<any[]>`
+                SELECT id, username, email, password, role_id,
+                       COALESCE(firstname, '') as firstname,
+                       COALESCE(lastname, '') as lastname
+                FROM users
+                WHERE (email = ${rawLoginIdentifier} OR username = ${rawLoginIdentifier})
+                AND delete_status = 'N'
+                AND role_id IN (5, 6)
+                ORDER BY id DESC
+                LIMIT 1
+              `;
+            } catch (legacyExactError: any) {
+            }
+          }
+        }
 
         if (legacyUser.length > 0) {
-          const legacy = legacyUser[0];
-          const name = `${legacy.firstname || ''} ${legacy.lastname || ''}`.trim() || legacy.username;
-          
-          user = {
-            id: `legacy_${legacy.id}`,
-            name: name,
-            username: legacy.username,
-            email: legacy.email,
-            password: legacy.password,
-            userType: legacy.role_id === 6 ? 'ADMIN' : 'GROUP_ADMIN',
-            createdAt: new Date(),
-          };
+          let matchedLegacy = null;
+          let passwordForNewUser = '';
+          let passwordSource = 'none';
+          for (const candidate of legacyUser) {
+            let isPasswordValid = false;
+            let candidatePasswordForNewUser = candidate.password || '';
+            if (candidate.password) {
+              isPasswordValid = await verifyPassword(password, candidate.password);
+              if (isPasswordValid) passwordSource = 'main';
+            }
+            if (!isPasswordValid && candidate.alternate_pass) {
+              isPasswordValid = await verifyPassword(password, candidate.alternate_pass);
+              if (isPasswordValid) passwordSource = 'alternate';
+            }
+            if (!isPasswordValid && candidate.staff_password) {
+              isPasswordValid = password === candidate.staff_password;
+              if (isPasswordValid) passwordSource = 'staff';
+            }
+            if (!isPasswordValid && candidate.staff_alternative_password && (candidate.enabled_staff_alternative_password === 1 || candidate.enabled_staff_alternative_password === '1')) {
+              isPasswordValid = await verifyPassword(password, candidate.staff_alternative_password);
+              if (isPasswordValid) passwordSource = 'staff_alternative';
+            }
+            if (!isPasswordValid && candidate.alternate_club_pass && (candidate.enable_login_as_club_admin === 1 || candidate.enable_login_as_club_admin === '1')) {
+              isPasswordValid = await verifyPassword(password, candidate.alternate_club_pass);
+              if (isPasswordValid) passwordSource = 'club_alternate';
+            }
+            if (isPasswordValid) {
+              matchedLegacy = candidate;
+              if (passwordSource === 'alternate') {
+                candidatePasswordForNewUser = candidate.alternate_pass || candidate.password || '';
+              } else if (passwordSource === 'staff') {
+                candidatePasswordForNewUser = await hashPassword(password);
+              } else if (passwordSource === 'staff_alternative') {
+                candidatePasswordForNewUser = candidate.staff_alternative_password || candidate.password || '';
+              } else if (passwordSource === 'club_alternate') {
+                candidatePasswordForNewUser = candidate.alternate_club_pass || candidate.password || '';
+              }
+              passwordForNewUser = candidatePasswordForNewUser;
+              break;
+            }
+          }
+
+          if (matchedLegacy) {
+            passwordAlreadyVerified = true;
+            const legacy = matchedLegacy;
+            const legacyEmail = legacy.email ? legacy.email.trim() : '';
+            const legacyUsername = legacy.username ? legacy.username.trim() : '';
+            const name = `${legacy.firstname || ''} ${legacy.lastname || ''}`.trim() || legacy.username;
+            
+            let mappedUserType: UserType = UserType.GROUP_ADMIN;
+            if (legacy.role_id === 99 || legacy.username === 'admin' || legacy.email === 'lerkos000@gmail.com') {
+              mappedUserType = UserType.ADMIN;
+            } else if (legacy.role_id === 6) {
+              mappedUserType = UserType.ADMIN;
+            }
+  
+            const newId = `legacy_${legacy.id}_${Date.now()}`;
+            
+            try {
+              console.log(`[Admin Login] Migrating legacy user ${legacy.username} to new database...`);
+              user = await prisma.user.create({
+                data: {
+                  id: newId,
+                  email: legacyEmail || `user${legacy.id}@movesbook.temp`,
+                  username: legacyUsername || `user${legacy.id}`,
+                  password: passwordForNewUser || '',
+                  name: name,
+                  userType: mappedUserType,
+                  createdAt: legacy.created ? new Date(legacy.created) : new Date(),
+                  updatedAt: new Date(),
+                }
+              });
+
+              await ensureLegacyMappingTable();
+              await upsertLegacyMapping(`${newId}_map`, legacy.id, newId);
+              
+              console.log(`[Admin Login] Successfully migrated ${legacy.username}`);
+            } catch (e) {
+              console.error(`[Admin Login] Migration failed for ${legacy.username}:`, e);
+              // Fallback to in-memory object
+              user = {
+                id: `legacy_${legacy.id}`,
+                name: name,
+                username: legacyUsername || legacy.username,
+                email: legacyEmail || legacy.email,
+                password: passwordForNewUser || legacy.password,
+                userType: mappedUserType,
+                createdAt: new Date(),
+              };
+            }
+          }
         }
       } catch (legacyError: any) {
         // Legacy table doesn't exist or query failed - that's okay, just skip it
@@ -269,26 +787,28 @@ export async function POST(request: NextRequest) {
     }
 
     if (user) {
-      // User found in database - verify password
-      if (process.env.NODE_ENV === 'production') {
-        console.log(`[Admin Login] Verifying password for user: ${user.username}`);
-        console.log(`[Admin Login] Password hash type: ${user.password.length === 40 ? 'SHA1' : user.password.startsWith('$2') ? 'bcrypt' : 'Unknown'} (length: ${user.password.length})`);
-      }
-      
-      const isPasswordValid = await verifyPassword(password, user.password);
-      
-      if (process.env.NODE_ENV === 'production') {
-        console.log(`[Admin Login] Password verification result: ${isPasswordValid}`);
-      }
-      
-      if (!isPasswordValid) {
+      if (!passwordAlreadyVerified) {
+        // User found in database - verify password
         if (process.env.NODE_ENV === 'production') {
-          console.log(`[Admin Login] ❌ Password verification failed - returning 401`);
+          console.log(`[Admin Login] Verifying password for user: ${user.username}`);
+          console.log(`[Admin Login] Password hash type: ${user.password.length === 40 ? 'SHA1' : user.password.startsWith('$2') ? 'bcrypt' : 'Unknown'} (length: ${user.password.length})`);
         }
-        return NextResponse.json(
-          { error: 'Invalid email/username or password' },
-          { status: 401 }
-        );
+        
+        const isPasswordValid = await verifyPassword(password, user.password);
+        
+        if (process.env.NODE_ENV === 'production') {
+          console.log(`[Admin Login] Password verification result: ${isPasswordValid}`);
+        }
+        
+        if (!isPasswordValid) {
+          if (process.env.NODE_ENV === 'production') {
+            console.log(`[Admin Login] ❌ Password verification failed - returning 401`);
+          }
+          return NextResponse.json(
+            { error: 'Invalid email/username or password' },
+            { status: 401 }
+          );
+        }
       }
 
       // Auto-upgrade disabled - keeping SHA1 passwords as-is

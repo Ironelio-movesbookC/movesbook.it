@@ -28,12 +28,13 @@ export async function GET(
     }
 
     // Mark conversation as read when user opens it
+    const readUpdate =
+      conv.user1Id === myId
+        ? { user1LastReadAt: new Date() }
+        : { user2LastReadAt: new Date() };
     await prisma.chatConversation.update({
       where: { id: conversationId },
-      data:
-        conv.user1Id === myId
-          ? { user1LastReadAt: new Date() }
-          : { user2LastReadAt: new Date() },
+      data: readUpdate as any,
     });
 
     const messages = await prisma.chatMessage.findMany({

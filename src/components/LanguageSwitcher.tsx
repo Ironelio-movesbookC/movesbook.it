@@ -49,11 +49,13 @@ export default function LanguageSwitcher() {
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
       >
-        <div className="w-6 h-6 rounded overflow-hidden flex-shrink-0">
-          <img 
+        <div className="w-6 h-6 rounded overflow-hidden flex-shrink-0 relative">
+          <Image 
             src={`/flags/${currentFlagFile}`}
             alt={`${currentLangName} flag`}
-            className="w-full h-full object-cover"
+            fill
+            sizes="24px"
+            className="object-cover"
           />
         </div>
         <span className="font-medium text-gray-700">{currentLanguage.toUpperCase()}</span>
@@ -78,11 +80,13 @@ export default function LanguageSwitcher() {
                   currentLanguage === lang.code ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
                 }`}
               >
-                <div className="w-7 h-7 rounded overflow-hidden flex-shrink-0">
-                  <img 
+                <div className="w-7 h-7 rounded overflow-hidden flex-shrink-0 relative">
+                  <Image 
                     src={`/flags/${getFlagFileName(lang.code)}`}
                     alt={`${lang.name} flag`}
-                    className="w-full h-full object-cover"
+                    fill
+                    sizes="28px"
+                    className="object-cover"
                   />
                 </div>
                 <span className="font-medium flex-1">{lang.name}</span>

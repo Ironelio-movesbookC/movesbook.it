@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Period,
   WorkoutSection,
@@ -113,16 +113,141 @@ export function useToolsData(): UseToolsDataReturn {
   }, []);
   
   /**
-   * Load all tools settings from database first, then fallback to localStorage
+   * Load periods from localStorage
    */
-  useEffect(() => {
-    loadToolsSettingsFromDatabase();
+  const loadPeriodsFromLocalStorage = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.PERIODS);
+    if (saved) {
+      try {
+        setPeriods(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load periods');
+        setPeriods(DEFAULT_PERIODS);
+      }
+    } else {
+      setPeriods(DEFAULT_PERIODS);
+    }
   }, []);
+  
+  /**
+   * Load sections from localStorage
+   */
+  const loadSectionsFromLocalStorage = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SECTIONS);
+    if (saved) {
+      try {
+        setSections(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load sections');
+        setSections(DEFAULT_SECTIONS);
+      }
+    } else {
+      setSections(DEFAULT_SECTIONS);
+    }
+  }, []);
+  
+  /**
+   * Load body building techniques from localStorage
+   */
+  const loadBodyBuildingTechniquesFromLocalStorage = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.BODYBUILDING_TECHNIQUES);
+    if (saved) {
+      try {
+        setBodyBuildingTechniques(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load body building techniques');
+        setBodyBuildingTechniques(DEFAULT_BODYBUILDING_TECHNIQUES);
+      }
+    } else {
+      setBodyBuildingTechniques(DEFAULT_BODYBUILDING_TECHNIQUES);
+    }
+  }, []);
+  
+  /**
+   * Load sports from localStorage
+   */
+  const loadSportsFromLocalStorage = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SPORTS);
+    if (saved) {
+      try {
+        setSports(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load sports');
+        setSports(DEFAULT_SPORTS);
+      }
+    } else {
+      setSports(DEFAULT_SPORTS);
+    }
+  }, []);
+  
+  /**
+   * Load equipment from localStorage
+   */
+  const loadEquipmentFromLocalStorage = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.EQUIPMENT);
+    if (saved) {
+      try {
+        setEquipment(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load equipment');
+        setEquipment(DEFAULT_EQUIPMENT);
+      }
+    } else {
+      setEquipment(DEFAULT_EQUIPMENT);
+    }
+  }, []);
+  
+  /**
+   * Load exercises from localStorage
+   */
+  const loadExercisesFromLocalStorage = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.EXERCISES);
+    if (saved) {
+      try {
+        setExercises(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load exercises');
+        setExercises(DEFAULT_EXERCISES);
+      }
+    } else {
+      setExercises(DEFAULT_EXERCISES);
+    }
+  }, []);
+  
+  /**
+   * Load devices from localStorage
+   */
+  const loadDevicesFromLocalStorage = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.DEVICES);
+    if (saved) {
+      try {
+        setDevices(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load devices');
+        setDevices(DEFAULT_DEVICES);
+      }
+    } else {
+      setDevices(DEFAULT_DEVICES);
+    }
+  }, []);
+  
+  /**
+   * Load all data from localStorage
+   */
+  const loadAllFromLocalStorage = useCallback(() => {
+    loadPeriodsFromLocalStorage();
+    loadSectionsFromLocalStorage();
+    loadBodyBuildingTechniquesFromLocalStorage();
+    loadSportsFromLocalStorage();
+    loadEquipmentFromLocalStorage();
+    loadExercisesFromLocalStorage();
+    loadDevicesFromLocalStorage();
+  }, [loadPeriodsFromLocalStorage, loadSectionsFromLocalStorage, loadBodyBuildingTechniquesFromLocalStorage, loadSportsFromLocalStorage, loadEquipmentFromLocalStorage, loadExercisesFromLocalStorage, loadDevicesFromLocalStorage]);
   
   /**
    * Load settings from database with localStorage fallback
    */
-  const loadToolsSettingsFromDatabase = async () => {
+  const loadToolsSettingsFromDatabase = useCallback(async () => {
     try {
       const token = getAuthToken();
       
@@ -283,139 +408,14 @@ export function useToolsData(): UseToolsDataReturn {
       // Fallback to localStorage on error
       loadAllFromLocalStorage();
     }
-  };
+  }, [loadAllFromLocalStorage, loadPeriodsFromLocalStorage, loadSectionsFromLocalStorage, loadBodyBuildingTechniquesFromLocalStorage, loadSportsFromLocalStorage, loadEquipmentFromLocalStorage, loadExercisesFromLocalStorage, loadDevicesFromLocalStorage]);
   
   /**
-   * Load all data from localStorage
+   * Load all tools settings from database first, then fallback to localStorage
    */
-  const loadAllFromLocalStorage = () => {
-    loadPeriodsFromLocalStorage();
-    loadSectionsFromLocalStorage();
-    loadBodyBuildingTechniquesFromLocalStorage();
-    loadSportsFromLocalStorage();
-    loadEquipmentFromLocalStorage();
-    loadExercisesFromLocalStorage();
-    loadDevicesFromLocalStorage();
-  };
-  
-  /**
-   * Load periods from localStorage
-   */
-  const loadPeriodsFromLocalStorage = () => {
-    const saved = localStorage.getItem(STORAGE_KEYS.PERIODS);
-    if (saved) {
-      try {
-        setPeriods(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to load periods');
-        setPeriods(DEFAULT_PERIODS);
-      }
-    } else {
-      setPeriods(DEFAULT_PERIODS);
-    }
-  };
-  
-  /**
-   * Load sections from localStorage
-   */
-  const loadSectionsFromLocalStorage = () => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SECTIONS);
-    if (saved) {
-      try {
-        setSections(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to load sections');
-        setSections(DEFAULT_SECTIONS);
-      }
-    } else {
-      setSections(DEFAULT_SECTIONS);
-    }
-  };
-  
-  /**
-   * Load body building techniques from localStorage
-   */
-  const loadBodyBuildingTechniquesFromLocalStorage = () => {
-    const saved = localStorage.getItem(STORAGE_KEYS.BODYBUILDING_TECHNIQUES);
-    if (saved) {
-      try {
-        setBodyBuildingTechniques(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to load body building techniques');
-        setBodyBuildingTechniques(DEFAULT_BODYBUILDING_TECHNIQUES);
-      }
-    } else {
-      setBodyBuildingTechniques(DEFAULT_BODYBUILDING_TECHNIQUES);
-    }
-  };
-  
-  /**
-   * Load sports from localStorage
-   */
-  const loadSportsFromLocalStorage = () => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SPORTS);
-    if (saved) {
-      try {
-        setSports(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to load sports');
-        setSports(DEFAULT_SPORTS);
-      }
-    } else {
-      setSports(DEFAULT_SPORTS);
-    }
-  };
-  
-  /**
-   * Load equipment from localStorage
-   */
-  const loadEquipmentFromLocalStorage = () => {
-    const saved = localStorage.getItem(STORAGE_KEYS.EQUIPMENT);
-    if (saved) {
-      try {
-        setEquipment(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to load equipment');
-        setEquipment(DEFAULT_EQUIPMENT);
-      }
-    } else {
-      setEquipment(DEFAULT_EQUIPMENT);
-    }
-  };
-  
-  /**
-   * Load exercises from localStorage
-   */
-  const loadExercisesFromLocalStorage = () => {
-    const saved = localStorage.getItem(STORAGE_KEYS.EXERCISES);
-    if (saved) {
-      try {
-        setExercises(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to load exercises');
-        setExercises(DEFAULT_EXERCISES);
-      }
-    } else {
-      setExercises(DEFAULT_EXERCISES);
-    }
-  };
-  
-  /**
-   * Load devices from localStorage
-   */
-  const loadDevicesFromLocalStorage = () => {
-    const saved = localStorage.getItem(STORAGE_KEYS.DEVICES);
-    if (saved) {
-      try {
-        setDevices(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to load devices');
-        setDevices(DEFAULT_DEVICES);
-      }
-    } else {
-      setDevices(DEFAULT_DEVICES);
-    }
-  };
+  useEffect(() => {
+    loadToolsSettingsFromDatabase();
+  }, [loadToolsSettingsFromDatabase]);
   
   /**
    * Save to localStorage

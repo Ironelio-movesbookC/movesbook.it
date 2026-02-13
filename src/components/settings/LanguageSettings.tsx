@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { ChevronLeft, ChevronRight, Globe, Settings as SettingsIcon, FileText, ArrowUp, ArrowDown } from 'lucide-react';
 import { i18n } from '@/lib/i18n';
 import RichTextEditor from './RichTextEditor';
@@ -155,7 +156,7 @@ export default function LanguageSettings() {
     setCurrentIndex(0);
     setTab2Page(1); // Reset to page 1 when filters change
     setTab3Page(1); // Reset Tab 3 to page 1 when filters change
-  }, [searchQuery, searchField, allKeys, selectedCategory, activeTab, tab2SearchQuery, tab3SearchQuery]);
+  }, [searchQuery, searchField, allKeys, selectedCategory, activeTab, tab2SearchQuery, tab3SearchQuery, setFilteredKeys]);
 
   // Update current key when index changes
   useEffect(() => {
@@ -180,11 +181,13 @@ export default function LanguageSettings() {
   // Flag component helper (now uses constants)
   const getFlagComponent = (code: string, size: 'small' | 'medium' | 'large' = 'medium') => {
     return (
-      <div className={`flex items-center justify-center ${getFlagSizeClass(size)} rounded overflow-hidden`}>
-        <img 
+      <div className={`flex items-center justify-center ${getFlagSizeClass(size)} rounded overflow-hidden relative`}>
+        <Image 
           src={getFlagImageSrc(code)} 
           alt={`${code} flag`}
-          className="w-full h-full object-cover"
+          fill
+          sizes={size === 'small' ? '20px' : size === 'large' ? '40px' : '28px'}
+          className="object-cover"
         />
       </div>
     );
@@ -1832,11 +1835,13 @@ export default function LanguageSettings() {
                   {/* Auto-Translation Section */}
                   <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-xl p-6 mb-6">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="w-8 h-8 rounded-lg overflow-hidden">
-                        <img 
+                      <div className="w-8 h-8 rounded-lg overflow-hidden relative">
+                        <Image 
                           src="/flags/en.png" 
                           alt="English flag"
-                          className="w-full h-full object-cover"
+                          fill
+                          sizes="32px"
+                          className="object-cover"
                         />
                       </div>
                       <div>
@@ -1897,11 +1902,13 @@ export default function LanguageSettings() {
                       {languages.filter(l => l.isActive && l.code !== 'en').map((lang) => (
                         <div key={lang.code} className="border border-gray-200 rounded-lg overflow-hidden">
                           <div className="bg-gradient-to-r from-gray-100 to-gray-200 px-6 py-3 flex items-center gap-3 border-b">
-                            <div className="w-6 h-6 rounded overflow-hidden">
-                              <img 
+                            <div className="w-6 h-6 rounded overflow-hidden relative">
+                              <Image 
                                 src={`/flags/${lang.code === 'pt' ? 'por' : lang.code === 'ru' ? 'rus' : lang.code === 'hi' ? 'ind' : lang.code === 'zh' ? 'chin' : lang.code === 'ar' ? 'arab' : lang.code}.png`}
                                 alt={`${lang.name} flag`}
-                                className="w-full h-full object-cover"
+                                fill
+                                sizes="24px"
+                                className="object-cover"
                               />
                             </div>
                             <div>

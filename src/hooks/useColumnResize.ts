@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { DEFAULT_COLUMN_WIDTHS } from '@/constants/language.constants';
 
 interface ColumnWidths {
@@ -55,7 +55,7 @@ export function useColumnResize(activeTab: string): UseColumnResizeReturn {
   /**
    * Handle mouse move during resize
    */
-  const handleResizeMove = (e: MouseEvent) => {
+  const handleResizeMove = useCallback((e: MouseEvent) => {
     if (!resizingColumn) return;
     
     const diff = e.clientX - resizeStartX;
@@ -74,14 +74,14 @@ export function useColumnResize(activeTab: string): UseColumnResizeReturn {
         setScrollbarWidth(table.scrollWidth);
       }
     }
-  };
+  }, [resizingColumn, resizeStartX, resizeStartWidth]);
   
   /**
    * Handle mouse up to end resize
    */
-  const handleResizeEnd = () => {
+  const handleResizeEnd = useCallback(() => {
     setResizingColumn(null);
-  };
+  }, []);
   
   /**
    * Add mouse event listeners for column resizing
@@ -96,7 +96,7 @@ export function useColumnResize(activeTab: string): UseColumnResizeReturn {
         document.removeEventListener('mouseup', handleResizeEnd);
       };
     }
-  }, [resizingColumn, resizeStartX, resizeStartWidth]);
+  }, [resizingColumn, handleResizeMove, handleResizeEnd]);
   
   /**
    * Sync scrollbar with table container

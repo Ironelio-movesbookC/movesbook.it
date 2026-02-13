@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 interface EditableCellProps {
   value: string | number;
@@ -36,6 +36,13 @@ export default function EditableCell({
     }
   }, [isEditing]);
 
+  const handleSave = useCallback(() => {
+    if (editValue !== value) {
+      onSave(editValue);
+    }
+    setIsEditing(false);
+  }, [editValue, value, onSave]);
+
   // Handle click outside to save
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -51,14 +58,7 @@ export default function EditableCell({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isEditing, editValue]);
-
-  const handleSave = () => {
-    if (editValue !== value) {
-      onSave(editValue);
-    }
-    setIsEditing(false);
-  };
+  }, [isEditing, handleSave]);
 
   const handleCancel = () => {
     setEditValue(value);

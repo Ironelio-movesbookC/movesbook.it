@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Users, UserPlus, X, Loader2 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
@@ -41,33 +41,7 @@ function MyCoachingGroupContent() {
   const [addingMember, setAddingMember] = useState(false);
   const [addMemberError, setAddMemberError] = useState('');
 
-  // Redirect to home if not authenticated
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/');
-    }
-  }, [user, authLoading, router]);
-
-  useEffect(() => {
-    if (authLoading || !user) return;
-    if (!groupId) {
-      // If no groupId selected, redirect to My Page to select a coaching group
-      if (user?.userType === 'COACH') {
-        router.push('/my-page');
-        return;
-      }
-      setLoading(false);
-    } else {
-      loadCoachingGroupData();
-    }
-  }, [groupId, user, router]);
-
-  // Don't render if not authenticated
-  if (authLoading || !user) {
-    return null;
-  }
-
-  const loadCoachingGroupData = async () => {
+  const loadCoachingGroupData = useCallback(async () => {
     if (!groupId) return;
     
     setLoading(true);
@@ -89,7 +63,33 @@ function MyCoachingGroupContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [groupId]);
+
+  // Redirect to home if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/');
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+    if (!groupId) {
+      // If no groupId selected, redirect to My Page to select a coaching group
+      if (user?.userType === 'COACH') {
+        router.push('/my-page');
+        return;
+      }
+      setLoading(false);
+    } else {
+      loadCoachingGroupData();
+    }
+  }, [groupId, user, router, authLoading, loadCoachingGroupData]);
+
+  // Don't render if not authenticated
+  if (authLoading || !user) {
+    return null;
+  }
 
   const handleAddMember = async () => {
     if (!groupId || !addMemberUsername || !addMemberPassword) {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import ReactDOM from 'react-dom';
 import { GripVertical, MoreVertical } from 'lucide-react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
@@ -740,7 +741,7 @@ export default function WorkoutTable({
                   const words = sportName.split(' ');
                   const isOneWord = words.length === 1;
                   const icon = sports[0].icon && (useImageIcons ? 
-                    <img src={sports[0].icon} alt={sportName} className="object-cover rounded flex-shrink-0" style={{ width: '40px', height: '40px', filter: 'grayscale(100%)' }} /> : 
+                    <Image src={sports[0].icon} alt={sportName} width={40} height={40} className="object-cover rounded flex-shrink-0" style={{ filter: 'grayscale(100%)' }} unoptimized /> : 
                     <span className="text-base flex-shrink-0">{sports[0].icon}</span>
                   );
                   
@@ -853,7 +854,7 @@ export default function WorkoutTable({
                   const words = sportName.split(' ');
                   const isOneWord = words.length === 1;
                   const icon = sports[1].icon && (useImageIcons ? 
-                    <img src={sports[1].icon} alt={sportName} className="object-cover rounded flex-shrink-0" style={{ width: '40px', height: '40px', filter: 'grayscale(100%)' }} /> : 
+                    <Image src={sports[1].icon} alt={sportName} width={40} height={40} className="object-cover rounded flex-shrink-0" style={{ filter: 'grayscale(100%)' }} unoptimized /> : 
                     <span className="text-base flex-shrink-0">{sports[1].icon}</span>
                   );
                   
@@ -962,7 +963,7 @@ export default function WorkoutTable({
                   const words = sportName.split(' ');
                   const isOneWord = words.length === 1;
                   const icon = sports[2].icon && (useImageIcons ? 
-                    <img src={sports[2].icon} alt={sportName} className="object-cover rounded flex-shrink-0" style={{ width: '40px', height: '40px', filter: 'grayscale(100%)' }} /> : 
+                    <Image src={sports[2].icon} alt={sportName} width={40} height={40} className="object-cover rounded flex-shrink-0" style={{ filter: 'grayscale(100%)' }} unoptimized /> : 
                     <span className="text-base flex-shrink-0">{sports[2].icon}</span>
                   );
                   
@@ -1071,7 +1072,7 @@ export default function WorkoutTable({
                   const words = sportName.split(' ');
                   const isOneWord = words.length === 1;
                   const icon = sports[3].icon && (useImageIcons ? 
-                    <img src={sports[3].icon} alt={sportName} className="object-cover rounded flex-shrink-0" style={{ width: '40px', height: '40px', filter: 'grayscale(100%)' }} /> : 
+                    <Image src={sports[3].icon} alt={sportName} width={40} height={40} className="object-cover rounded flex-shrink-0" style={{ filter: 'grayscale(100%)' }} unoptimized /> :
                     <span className="text-base flex-shrink-0">{sports[3].icon}</span>
                   );
                   

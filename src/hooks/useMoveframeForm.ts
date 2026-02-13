@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getSportConfig, sportNeedsExerciseName, DISTANCE_BASED_SPORTS, AEROBIC_SPORTS, isSeriesBasedSport, isAerobicSport, getRepsLabel } from '@/constants/moveframe.constants';
 
 export interface IndividualRepetitionPlan {
@@ -107,12 +107,12 @@ export function useMoveframeForm({
   const loadedMoveframeId = useRef<string | null>(null);
   
   // Default sport: use first sport from workout.sports if available, otherwise 'SWIM'
-  const getDefaultSport = () => {
+  const getDefaultSport = useCallback(() => {
     if (workout?.sports && workout.sports.length > 0) {
       return workout.sports[0].sport || 'SWIM';
     }
     return 'SWIM';
-  };
+  }, [workout?.sports]);
   
   const [sport, setSport] = useState<string>(getDefaultSport());
   const [type, setType] = useState<'STANDARD' | 'BATTERY' | 'ANNOTATION'>('STANDARD');
@@ -122,13 +122,13 @@ export function useMoveframeForm({
   const [sectionId, setSectionId] = useState<string>(''); // Workout section for ALL sports
   
   // Wrapper for setManualInputType with logging
-  const setManualInputType = (value: 'meters' | 'time') => {
+  const setManualInputType = useCallback((value: 'meters' | 'time') => {
     console.log('🎯 [SETTER] setManualInputType called with:', value);
     console.log('🎯 [SETTER] Current value before change:', manualInputType);
     console.log('🎯 [SETTER] Stack trace:', new Error().stack);
     setManualInputTypeInternal(value);
     console.log('🎯 [SETTER] setManualInputType completed');
-  };
+  }, [manualInputType]);
 
   // Planning mode
   const [planningMode, setPlanningMode] = useState<'all' | 'individual'>('all');
@@ -227,7 +227,7 @@ export function useMoveframeForm({
   /**
    * Reset form to initial state
    */
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setSport(getDefaultSport()); // Use workout's first sport as default
     setType('STANDARD');
     setManualMode(false);
@@ -275,7 +275,7 @@ export function useMoveframeForm({
     setManualContent('');
     setErrors({});
     loadedMoveframeId.current = null; // Reset loaded moveframe tracking
-  };
+  }, [getDefaultSport, setManualInputType]);
 
   /**
    * Calculate total distance (distance * repetitions)
@@ -303,23 +303,22 @@ export function useMoveframeForm({
   /**
    * Check if sport supports individual planning (all sports now support it)
    */
-  const supportsIndividualPlanning = () => {
-    // All sports now support individual planning
+  const supportsIndividualPlanning = useCallback(() => {
     return true;
-  };
+  }, []);
 
   /**
    * Check if can show individual planning (sport supports it AND reps <= 12)
    */
-  const canShowIndividualPlanning = () => {
+  const canShowIndividualPlanning = useCallback(() => {
     const repsCount = parseInt(repetitions) || 0;
     return supportsIndividualPlanning() && repsCount > 0 && repsCount <= 12;
-  };
+  }, [repetitions, supportsIndividualPlanning]);
 
   /**
    * Initialize individual plans array based on repetitions count
    */
-  const initializeIndividualPlans = (repsCount: number) => {
+  const initializeIndividualPlans = useCallback((repsCount: number) => {
     const plans: IndividualRepetitionPlan[] = [];
     const distanceBasedSports = ['SWIM', 'BIKE', 'RUN', 'ROWING', 'SKATE', 'SKI', 'SNOWBOARD'];
     const isBodyBuilding = sport === 'BODY_BUILDING';
@@ -356,7 +355,7 @@ export function useMoveframeForm({
       plans.push(plan);
     }
     setIndividualPlans(plans);
-  };
+  }, [sport, pause, macroFinal, strokes, watts, restType, pauseMin, pauseMode, pausePace, reps, repetitions, speed, pace, time]);
 
   /**
    * Update an individual plan value
@@ -855,9 +854,15 @@ export function useMoveframeForm({
       setSport(existingMoveframe.sport || 'SWIM');
       // Detect circuit-based moveframe so we show BATTERY/circuits view when editing
       // (API may not return type, or type may be missing; circuit data is in notes)
+      const hasCircuitMovelapMeta = (existingMoveframe.movelaps || []).some((movelap: any) => {
+        if (!movelap) return false;
+        if (movelap.circuitIndex != null || movelap.circuitLetter || movelap.stationNumber != null) return true;
+        return typeof movelap.notes === 'string' && movelap.notes.includes('[CIRCUIT_META]');
+      });
       const isCircuitBased =
         existingMoveframe.isCircuitBased === true ||
-        (typeof existingMoveframe.notes === 'string' && existingMoveframe.notes.includes('[CIRCUIT_DATA]'));
+        (typeof existingMoveframe.notes === 'string' && existingMoveframe.notes.includes('[CIRCUIT_DATA]')) ||
+        hasCircuitMovelapMeta;
       const resolvedType = isCircuitBased ? 'BATTERY' : (existingMoveframe.type || 'STANDARD');
       setType(resolvedType);
       setSectionId(existingMoveframe.sectionId || ''); // Load workout section
@@ -1090,7 +1095,7 @@ export function useMoveframeForm({
       }
     }
     // If we've already loaded this moveframe, do nothing to preserve user changes
-  }, [mode, existingMoveframe, isOpen, workout?.id]); // Reset when workout changes!
+  }, [mode, existingMoveframe, isOpen, workout?.id, resetForm, setManualInputType]); // Reset when workout changes!
 
   /**
    * Initialize individual plans when planning mode changes to 'individual'
@@ -1107,7 +1112,7 @@ export function useMoveframeForm({
         initializeIndividualPlans(repsCount);
       }
     }
-  }, [planningMode, repetitions, aerobicSeries, sport]);
+  }, [planningMode, repetitions, aerobicSeries, sport, canShowIndividualPlanning, initializeIndividualPlans, individualPlans.length]);
 
   /**
    * Reset distance field when manual input type changes
@@ -1120,7 +1125,7 @@ export function useMoveframeForm({
     if (manualMode) {
       setDistance('');
     }
-  }, [manualInputType]);
+  }, [manualInputType, isOpen, mode, manualMode]);
 
   /**
    * Clear pause field when rest type changes to avoid carrying over invalid formats
@@ -1133,7 +1138,7 @@ export function useMoveframeForm({
     if (restType === 'Restart time' && pause && !/^\d{1,2}h\d{2}'\d{2}"\d$/.test(pause)) {
       setPause('');
     }
-  }, [restType]);
+  }, [restType, isOpen, pause]);
 
   // ==================== RETURN VALUES ====================
   return {
@@ -1261,4 +1266,3 @@ export function useMoveframeForm({
     updateIndividualPlan
   };
 }
-

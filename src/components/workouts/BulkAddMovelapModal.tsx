@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X, Plus, Minus } from 'lucide-react';
 
 interface BulkAddMovelapModalProps {
@@ -32,7 +32,7 @@ function BulkAddMovelapModal({
   const sport = moveframe?.sport || 'RUN';
   const isBodyBuilding = sport === 'BODY_BUILDING';
 
-  const generateMovelaps = () => {
+  const generateMovelaps = useCallback(() => {
     const movelaps: any[] = [];
     const startRep = (moveframe.movelaps?.length || 0) + 1;
 
@@ -83,13 +83,13 @@ function BulkAddMovelapModal({
     }
 
     setPreview(movelaps);
-  };
+  }, [moveframe.movelaps, count, baseDistance, baseSpeed, basePause, baseReps, variation, variationAmount, isBodyBuilding]);
 
   useEffect(() => {
     if (isOpen) {
       generateMovelaps();
     }
-  }, [count, baseDistance, baseSpeed, basePause, baseReps, variation, variationAmount, isOpen]);
+  }, [isOpen, generateMovelaps]);
 
   const handleSave = () => {
     onSave(preview);
