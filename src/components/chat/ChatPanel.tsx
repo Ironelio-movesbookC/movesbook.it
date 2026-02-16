@@ -1,8 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import Image from 'next/image';
-import { MessageSquare, Send, Search, Menu, Users, X, Trash2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { MessageSquare, Send, Search, Menu, Users, X, Trash2, Settings, ChevronDown } from 'lucide-react';
+import ChatSettingsModal, {
+  loadChatTheme,
+  saveChatTheme,
+  type ChatTheme,
+} from './ChatSettingsModal';
 
 /** Turn URLs in text into clickable links (http/https only). Returns array of React nodes. */
 function linkify(text: string, isOwn: boolean): (string | React.ReactNode)[] {
@@ -103,6 +107,21 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [showChatSettings, setShowChatSettings] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [chatTheme, setChatTheme] = useState<ChatTheme>({
+    textColor: '#111827',
+    backgroundType: 'color',
+    backgroundColor: '#ffffff',
+    backgroundImage: null,
+    watermark: null,
+  });
+
+  useEffect(() => {
+    setChatTheme(loadChatTheme());
+  }, []);
 
   const loadConversations = useCallback(async () => {
     setLoadingConversations(true);
@@ -177,6 +196,33 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
     }
     setSelectedMessageIds(new Set());
   }, [selectedConversationId, loadMessages]);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const el = messagesScrollRef.current;
+    if (el) {
+      const target = el.scrollHeight - el.clientHeight;
+      if (behavior === 'smooth') {
+        el.scrollTo({ top: target, behavior: 'smooth' });
+      } else {
+        el.scrollTop = target;
+      }
+    }
+    setShowScrollToBottom(false);
+  }, []);
+
+  const handleMessagesScroll = useCallback(() => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const threshold = 80;
+    const atBottom = scrollHeight - scrollTop - clientHeight < threshold;
+    setShowScrollToBottom(!atBottom);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedConversationId || !messages.length) return;
+    scrollToBottom('auto');
+  }, [selectedConversationId, messages.length, scrollToBottom]);
 
   const handleStartChat = async (otherUser: ChatUser) => {
     try {
@@ -355,14 +401,24 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
               />
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowUserList(!showUserList)}
-            className="mt-2 w-full flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800"
-          >
-            <Users className="w-4 h-4" />
-            {showUserList ? 'Hide users' : 'Start chat with user'}
-          </button>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setShowUserList(!showUserList)}
+              className="flex-1 flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800"
+            >
+              <Users className="w-4 h-4" />
+              {showUserList ? 'Hide users' : 'Start chat with user'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowChatSettings(true)}
+              className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+              title="Chat appearance settings"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
@@ -467,7 +523,27 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col min-h-0 bg-white">
+      <div
+        className="flex-1 flex flex-col min-h-0 bg-white relative"
+        style={{
+          color: chatTheme.textColor,
+          backgroundColor:
+            chatTheme.backgroundType === 'color' ? chatTheme.backgroundColor : undefined,
+          backgroundImage:
+            chatTheme.backgroundType === 'image' && chatTheme.backgroundImage
+              ? `url(${chatTheme.backgroundImage})`
+              : undefined,
+          backgroundSize: chatTheme.backgroundType === 'image' ? 'cover' : undefined,
+          backgroundPosition: 'center',
+        }}
+      >
+        {chatTheme.watermark && (
+          <div
+            className="absolute inset-0 pointer-events-none opacity-20 bg-center bg-no-repeat bg-contain z-0"
+            style={{ backgroundImage: `url(${chatTheme.watermark})` }}
+          />
+        )}
+        <div className="relative z-10 flex flex-col flex-1 min-h-0">
         {selectedConversationId ? (
           <>
             <div className="p-4 border-b border-gray-200 bg-gray-50 flex-shrink-0 flex items-center justify-between">
@@ -508,67 +584,80 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
               </div>
             )}
 
-            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-4">
-              {loadingMessages ? (
-                <div className="text-center text-gray-500 text-sm">Loading messages…</div>
-              ) : (
-                messages.map((msg) => {
-                  const isSelected = selectedMessageIds.has(msg.id);
-                  const isImage = isImageContent(msg.content);
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex ${msg.isOwn ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
-                        role={msg.isOwn ? 'button' : undefined}
-                        tabIndex={msg.isOwn ? 0 : undefined}
-                        onClick={() => msg.isOwn && toggleMessageSelection(msg.id, true)}
-                        onKeyDown={(e) =>
-                          msg.isOwn && (e.key === 'Enter' || e.key === ' ') && toggleMessageSelection(msg.id, true)
-                        }
-                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                          msg.isOwn ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900'
-                        } ${msg.isOwn ? 'cursor-pointer select-none' : ''} ${
-                          isSelected ? 'ring-2 ring-offset-2 ring-blue-700' : ''
-                        }`}
-                      >
-                        {isImage ? (
-                          <Image
-                            src={msg.content}
-                            alt="Shared"
-                            width={320}
-                            height={192}
-                            className="max-w-full max-h-48 rounded object-contain"
-                            unoptimized
-                          />
-                        ) : (
-                          <p className="text-sm whitespace-pre-wrap break-words">
-                            {linkify(msg.content, msg.isOwn).map((part, i) => (
-                              <span key={i}>{part}</span>
-                            ))}
-                          </p>
-                        )}
-                        <p className={`text-xs mt-1 ${msg.isOwn ? 'text-blue-100' : 'text-gray-500'}`}>
-                          {formatTime(msg.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })
+            <div className="flex-1 min-h-0 relative">
+              <div
+                ref={messagesScrollRef}
+                className="absolute inset-0 overflow-y-auto overflow-x-hidden p-4 space-y-4"
+                onScroll={handleMessagesScroll}
+              >
+                {loadingMessages ? (
+                  <div className="text-center text-gray-500 text-sm">Loading messages…</div>
+                ) : (
+                  <>
+                    {messages.map((msg) => {
+                      const isSelected = selectedMessageIds.has(msg.id);
+                      const isImage = isImageContent(msg.content);
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`flex ${msg.isOwn ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div
+                            role={msg.isOwn ? 'button' : undefined}
+                            tabIndex={msg.isOwn ? 0 : undefined}
+                            onClick={() => msg.isOwn && toggleMessageSelection(msg.id, true)}
+                            onKeyDown={(e) =>
+                              msg.isOwn && (e.key === 'Enter' || e.key === ' ') && toggleMessageSelection(msg.id, true)
+                            }
+                            className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                              msg.isOwn ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900'
+                            } ${msg.isOwn ? 'cursor-pointer select-none' : ''} ${
+                              isSelected ? 'ring-2 ring-offset-2 ring-blue-700' : ''
+                            }`}
+                          >
+                            {isImage ? (
+                              <img
+                                src={msg.content}
+                                alt="Shared"
+                                className="max-w-full max-h-48 rounded object-contain"
+                              />
+                            ) : (
+                              <p className="text-sm whitespace-pre-wrap break-words">
+                                {linkify(msg.content, msg.isOwn).map((part, i) => (
+                                  <span key={i}>{part}</span>
+                                ))}
+                              </p>
+                            )}
+                            <p className={`text-xs mt-1 ${msg.isOwn ? 'text-blue-100' : 'text-gray-500'}`}>
+                              {formatTime(msg.createdAt)}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div ref={messagesEndRef} />
+                  </>
+                )}
+              </div>
+              {showScrollToBottom && !loadingMessages && messages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => scrollToBottom('smooth')}
+                  className="absolute bottom-4 right-4 w-11 h-11 rounded-full bg-gray-700 hover:bg-gray-800 text-white shadow-lg flex items-center justify-center z-20 transition-opacity"
+                  title="Jump to latest messages"
+                >
+                  <ChevronDown className="w-6 h-6" />
+                </button>
               )}
             </div>
 
             <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
               {pendingImage && (
                 <div className="mb-2 flex items-center gap-2">
-                  <Image
+                  <img
                     src={pendingImage}
                     alt="Paste preview"
-                    width={64}
-                    height={64}
                     className="h-16 w-16 object-cover rounded border border-gray-300"
-                    unoptimized
                   />
                   <span className="text-sm text-gray-600">Pasted image — click Send or paste again to replace</span>
                   <button
@@ -610,7 +699,18 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
             </div>
           </div>
         )}
+        </div>
       </div>
+
+      <ChatSettingsModal
+        open={showChatSettings}
+        onClose={() => setShowChatSettings(false)}
+        initialTheme={chatTheme}
+        onSave={(theme) => {
+          setChatTheme(theme);
+          saveChatTheme(theme);
+        }}
+      />
     </div>
   );
 }

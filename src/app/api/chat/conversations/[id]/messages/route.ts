@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { sendTelegramMessage } from '@/lib/telegram';
@@ -27,14 +28,14 @@ export async function GET(
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
-    // Mark conversation as read when user opens it
-    const readUpdate =
+    // Mark conversation as read when user opens it (schema has user1LastReadAt, user2LastReadAt)
+    const readData =
       conv.user1Id === myId
         ? { user1LastReadAt: new Date() }
         : { user2LastReadAt: new Date() };
     await prisma.chatConversation.update({
       where: { id: conversationId },
-      data: readUpdate as any,
+      data: readData as Prisma.ChatConversationUpdateInput,
     });
 
     const messages = await prisma.chatMessage.findMany({
