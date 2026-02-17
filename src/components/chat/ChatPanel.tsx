@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MessageSquare, Send, Search, Menu, Users, X, Trash2, Settings, ChevronDown } from 'lucide-react';
+import { MessageSquare, Send, Search, Menu, Users, X, Trash2, Settings, ChevronDown, Reply, Copy, Forward } from 'lucide-react';
 import ChatSettingsModal, {
   loadChatTheme,
   saveChatTheme,
@@ -109,6 +109,10 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [showChatSettings, setShowChatSettings] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: MessageItem } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<MessageItem | null>(null);
+  const [forwardingMessage, setForwardingMessage] = useState<MessageItem | null>(null);
+  const [forwarding, setForwarding] = useState(false);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [chatTheme, setChatTheme] = useState<ChatTheme>({
@@ -195,7 +199,21 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
       setMessages([]);
     }
     setSelectedMessageIds(new Set());
+    setReplyingTo(null);
+    setContextMenu(null);
+    setForwardingMessage(null);
   }, [selectedConversationId, loadMessages]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [contextMenu]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const el = messagesScrollRef.current;
@@ -262,13 +280,26 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
     [selectedConversationId, sending, getAuthHeaders, loadConversations]
   );
 
+  const buildContentWithReply = useCallback(
+    (content: string) => {
+      if (!replyingTo) return content;
+      const excerpt = isImageContent(replyingTo.content)
+        ? '[Image]'
+        : replyingTo.content.split('\n')[0].slice(0, 80);
+      return `> ${replyingTo.senderName}: ${excerpt}\n\n${content}`;
+    },
+    [replyingTo]
+  );
+
   const handleSendMessage = async () => {
     const textContent = message.trim();
     if (pendingImage) {
       setSending(true);
       try {
-        await sendContent(pendingImage);
+        const contentToSend = buildContentWithReply(pendingImage);
+        await sendContent(contentToSend);
         setPendingImage(null);
+        setReplyingTo(null);
       } catch (e) {
         console.error('Send image:', e);
       } finally {
@@ -280,8 +311,10 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
 
     setSending(true);
     try {
-      await sendContent(textContent);
+      const contentToSend = buildContentWithReply(textContent);
+      await sendContent(contentToSend);
       setMessage('');
+      setReplyingTo(null);
     } catch (e) {
       console.error('Send message:', e);
     } finally {
@@ -354,6 +387,71 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    }
+  };
+
+  const handleMessageContextMenu = (e: React.MouseEvent, msg: MessageItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, message: msg });
+  };
+
+  const handleReply = () => {
+    if (contextMenu) {
+      setReplyingTo(contextMenu.message);
+      setContextMenu(null);
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!contextMenu) return;
+    const msg = contextMenu.message;
+    setContextMenu(null);
+    try {
+      if (isImageContent(msg.content)) {
+        const res = await fetch(msg.content);
+        const blob = await res.blob();
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+      } else {
+        await navigator.clipboard.writeText(msg.content);
+      }
+    } catch {
+      await navigator.clipboard.writeText(msg.content);
+    }
+  };
+
+  const handleForwardClick = () => {
+    if (contextMenu) {
+      setForwardingMessage(contextMenu.message);
+      setContextMenu(null);
+    }
+  };
+
+  const handleForwardToConversation = async (targetConversationId: string) => {
+    if (!forwardingMessage || forwarding) return;
+    setForwarding(true);
+    try {
+      const isImage = isImageContent(forwardingMessage.content);
+      const content = isImage
+        ? forwardingMessage.content
+        : `Forwarded from ${forwardingMessage.senderName}: ${forwardingMessage.content}`;
+      const res = await fetch(`/api/chat/conversations/${targetConversationId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ content }),
+      });
+      if (res.ok) {
+        setForwardingMessage(null);
+        if (targetConversationId === selectedConversationId) {
+          const data = await res.json();
+          setMessages((prev) => [...prev, data]);
+        }
+        loadConversations();
+      }
+    } catch (e) {
+      console.error('Forward message:', e);
+    } finally {
+      setForwarding(false);
     }
   };
 
@@ -605,6 +703,7 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
                           <div
                             role={msg.isOwn ? 'button' : undefined}
                             tabIndex={msg.isOwn ? 0 : undefined}
+                            onContextMenu={(e) => handleMessageContextMenu(e, msg)}
                             onClick={() => msg.isOwn && toggleMessageSelection(msg.id, true)}
                             onKeyDown={(e) =>
                               msg.isOwn && (e.key === 'Enter' || e.key === ' ') && toggleMessageSelection(msg.id, true)
@@ -652,6 +751,26 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
             </div>
 
             <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+              {replyingTo && (
+                <div className="mb-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-200/80 text-gray-700 text-sm">
+                  <Reply className="w-4 h-4 flex-shrink-0 text-gray-500" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-800">Replying to {replyingTo.senderName}</p>
+                    <p className="truncate text-gray-600">
+                      {isImageContent(replyingTo.content) ? '[Image]' : replyingTo.content.split('\n')[0].slice(0, 60)}
+                      {replyingTo.content.length > 60 ? '…' : ''}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReplyingTo(null)}
+                    className="p-1 rounded hover:bg-gray-300 text-gray-500 hover:text-gray-700"
+                    aria-label="Cancel reply"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
               {pendingImage && (
                 <div className="mb-2 flex items-center gap-2">
                   <img
@@ -701,6 +820,89 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
         )}
         </div>
       </div>
+
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[180px] py-1 rounded-xl bg-gray-800 text-white shadow-xl border border-gray-700"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={handleReply}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-700 transition-colors"
+          >
+            <Reply className="w-4 h-4 flex-shrink-0" />
+            Reply
+          </button>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-700 transition-colors"
+          >
+            <Copy className="w-4 h-4 flex-shrink-0" />
+            Copy
+          </button>
+          <button
+            type="button"
+            onClick={handleForwardClick}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-700 transition-colors"
+          >
+            <Forward className="w-4 h-4 flex-shrink-0" />
+            Forward
+          </button>
+        </div>
+      )}
+
+      {forwardingMessage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !forwarding && setForwardingMessage(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-sm w-full max-h-[70vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="font-semibold text-gray-900">Forward to</h3>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {isImageContent(forwardingMessage.content) ? 'Image' : forwardingMessage.content.slice(0, 40)}
+                {forwardingMessage.content.length > 40 ? '…' : ''}
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              {conversations
+                .filter((c) => c.id !== selectedConversationId)
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => handleForwardToConversation(c.id)}
+                    disabled={forwarding}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 text-left disabled:opacity-50"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center font-semibold flex-shrink-0">
+                      {c.otherUser.name.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="font-medium text-gray-900 truncate">{c.otherUser.name}</span>
+                  </button>
+                ))}
+              {conversations.filter((c) => c.id !== selectedConversationId).length === 0 && (
+                <p className="text-sm text-gray-500 p-4 text-center">No other conversations. Start a chat first.</p>
+              )}
+            </div>
+            <div className="p-2 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={() => setForwardingMessage(null)}
+                className="w-full py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ChatSettingsModal
         open={showChatSettings}
