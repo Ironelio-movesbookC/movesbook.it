@@ -6,11 +6,11 @@ import { X } from 'lucide-react';
 interface NewTopicModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (name: string) => void;
+  onSave: (name: string) => void | Promise<void>;
   /** When set, modal is in edit mode: prefill name, show Delete/Save/Cancel */
   editingTopic: string | null;
   /** Called when user clicks Delete (only in edit mode) */
-  onDelete?: () => void;
+  onDelete?: () => void | Promise<void>;
   existingTopics: string[];
 }
 
@@ -33,7 +33,7 @@ export default function NewTopicModal({
     }
   }, [isOpen, isEdit, editingTopic]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
       setError('Topic name is required.');
@@ -46,12 +46,18 @@ export default function NewTopicModal({
       return;
     }
     setError('');
-    onSave(trimmed);
+    const result = onSave(trimmed);
+    if (result && typeof (result as Promise<void>).then === 'function') {
+      await (result as Promise<void>);
+    }
     onClose();
   };
 
-  const handleDelete = () => {
-    onDelete?.();
+  const handleDelete = async () => {
+    const result = onDelete?.();
+    if (result && typeof (result as Promise<void>).then === 'function') {
+      await (result as Promise<void>);
+    }
     onClose();
   };
 

@@ -51,8 +51,54 @@ model User {
   conversationsStarted    ChatConversation[] @relation("ConversationStarter")
   conversationsReceived   ChatConversation[] @relation("ConversationReceiver")
   chatMessagesSent         ChatMessage[]     @relation("MessageSender")
+  newsTopics               UserNewsTopic[]
+  ogpArticles              OgpArticle[]
+  newsTypedArticles       NewsTypedArticle[]
 
   @@map("users_new")
+}
+
+model UserNewsTopic {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  displayOrder Int     @default(0)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("user_news_topics")
+}
+
+model OgpArticle {
+  id                String   @id @default(cuid())
+  userId            String
+  title             String?  @db.Text
+  image             String?  @db.Text
+  description       String?  @db.Text
+  url               String   @db.Text
+  siteName          String?
+  type              String?
+  customDescription String?  @db.Text
+  topic             String   // Topic name (e.g. "News", "Sport")
+  savedAt           DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, topic])
+  @@map("ogp_articles")
+}
+
+model NewsTypedArticle {
+  id          String   @id @default(cuid())
+  userId      String
+  description String   @db.Text
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("news_typed_articles")
 }
 
 model ChatConversation {

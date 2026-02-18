@@ -9,21 +9,31 @@ import DarkSidebar from '@/components/DarkSidebar';
 import PersonalBanner from '@/app/my-page/components/PersonalBanner';
 import SimpleFooter from '@/components/SimpleFooter';
 import { useAuth } from '@/hooks/useAuth';
-import NewsTopicBar, { type NewsTopic, NEWS_TOPICS } from './components/NewsTopicBar';
+import { useNewsData } from '@/hooks/useNewsData';
+import NewsTopicBar, { type NewsTopic } from './components/NewsTopicBar';
 import NewTopicModal from './components/NewTopicModal';
 import OGPForm from './components/OGPForm';
-import NewsArticlesList, {
-  type ArticlePasted,
-  type ArticleTyped,
-} from './components/NewsArticlesList';
+import NewsArticlesList from './components/NewsArticlesList';
 import NewsRightSidebar from './components/NewsRightSidebar';
-
-function generateId() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
 
 export default function NewsPage() {
   const { user } = useAuth();
+  const {
+    topics,
+    customTopics,
+    pastedArticles,
+    typedArticles,
+    loading,
+    error,
+    addTopic,
+    updateTopic,
+    deleteTopic,
+    addPastedArticle,
+    removePastedArticle,
+    addTypedArticle,
+    removeTypedArticle,
+  } = useNewsData();
+
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -31,79 +41,104 @@ export default function NewsPage() {
   const [showToolbar, setShowToolbar] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showOgpForm, setShowOgpForm] = useState(false);
-  const [topics, setTopics] = useState<string[]>(() => [...NEWS_TOPICS]);
   const [activeTopic, setActiveTopic] = useState<NewsTopic | null>('News');
   const [showNewTopicModal, setShowNewTopicModal] = useState(false);
   const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
-  const [pastedArticles, setPastedArticles] = useState<ArticlePasted[]>([]);
-  const [typedArticles, setTypedArticles] = useState<ArticleTyped[]>([]);
+  const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
 
   const handleOpenTopicModal = useCallback(() => {
     setTopicModalEditing(activeTopic ?? null);
+    setTopicModalEditingId(customTopics.find((c) => c.name === (activeTopic ?? ''))?.id ?? null);
     setShowNewTopicModal(true);
-  }, [activeTopic]);
+  }, [activeTopic, customTopics]);
 
   const handleOpenAddTopicModal = useCallback(() => {
     setTopicModalEditing(null);
+    setTopicModalEditingId(null);
     setShowNewTopicModal(true);
   }, []);
 
-  const handleSaveTopic = useCallback((name: string) => {
-    if (topicModalEditing != null) {
-      setTopics((prev) =>
-        prev.map((t) => (t === topicModalEditing ? name : t))
-      );
-      if (activeTopic === topicModalEditing) setActiveTopic(name);
-    } else {
-      setTopics((prev) => [...prev, name]);
-      setActiveTopic(name);
-    }
-    setTopicModalEditing(null);
-    setShowNewTopicModal(false);
-  }, [topicModalEditing, activeTopic]);
-
-  const handleDeleteTopic = useCallback(() => {
-    if (topicModalEditing == null) return;
-    setTopics((prev) => {
-      const next = prev.filter((t) => t !== topicModalEditing);
-      if (activeTopic === topicModalEditing) setActiveTopic(next[0] ?? null);
-      return next;
-    });
-    setTopicModalEditing(null);
-    setShowNewTopicModal(false);
-  }, [topicModalEditing, activeTopic]);
-
-  const handlePastedArticle = useCallback(
-    (data: Parameters<Parameters<typeof OGPForm>[0]['onPastedArticle']>[0]) => {
-      setPastedArticles((prev) => [
-        ...prev,
-        {
-          ...data,
-          id: generateId(),
-          savedAt: new Date().toISOString(),
-          topic: activeTopic ?? 'News',
-        },
-      ]);
-      setShowOgpForm(false);
+  const handleSaveTopic = useCallback(
+    async (name: string) => {
+      try {
+        if (topicModalEditingId) {
+          await updateTopic(topicModalEditingId, name);
+          if (activeTopic === topicModalEditing) setActiveTopic(name);
+        } else {
+          await addTopic(name);
+          setActiveTopic(name);
+        }
+        setTopicModalEditing(null);
+        setTopicModalEditingId(null);
+        setShowNewTopicModal(false);
+      } catch (e) {
+        console.error(e);
+      }
     },
-    [activeTopic]
+    [topicModalEditingId, topicModalEditing, activeTopic, updateTopic, addTopic]
   );
 
-  const handleSaveTyped = useCallback((description: string) => {
-    setTypedArticles((prev) => [
-      ...prev,
-      { id: generateId(), description },
-    ]);
-    setShowOgpForm(false);
-  }, []);
+  const handleDeleteTopic = useCallback(async () => {
+    if (!topicModalEditingId) return;
+    try {
+      await deleteTopic(topicModalEditingId);
+      if (activeTopic === topicModalEditing) {
+        const remaining = topics.filter((t) => t !== topicModalEditing);
+        setActiveTopic(remaining[0] ?? null);
+      }
+      setTopicModalEditing(null);
+      setTopicModalEditingId(null);
+      setShowNewTopicModal(false);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [topicModalEditingId, topicModalEditing, activeTopic, topics, deleteTopic]);
 
-  const handleRemovePasted = useCallback((id: string) => {
-    setPastedArticles((prev) => prev.filter((a) => a.id !== id));
-  }, []);
+  const handleRemovePasted = useCallback(
+    async (id: string) => {
+      try {
+        await removePastedArticle(id);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [removePastedArticle]
+  );
 
-  const handleRemoveTyped = useCallback((id: string) => {
-    setTypedArticles((prev) => prev.filter((a) => a.id !== id));
-  }, []);
+  const handleRemoveTyped = useCallback(
+    async (id: string) => {
+      try {
+        await removeTypedArticle(id);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [removeTypedArticle]
+  );
+
+  const handlePastedArticle = useCallback(
+    async (data: Parameters<Parameters<typeof OGPForm>[0]['onPastedArticle']>[0]) => {
+      try {
+        await addPastedArticle(data, activeTopic ?? 'News');
+        setShowOgpForm(false);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [activeTopic, addPastedArticle]
+  );
+
+  const handleSaveTyped = useCallback(
+    async (description: string) => {
+      try {
+        await addTypedArticle(description);
+        setShowOgpForm(false);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [addTypedArticle]
+  );
 
   const showLeft = showLeftSidebar && !isExpanded && user;
   const showRight = showRightSidebar && !isExpanded;
@@ -150,6 +185,8 @@ export default function NewsPage() {
         )}
 
         <div className="flex-1 min-w-0 px-4">
+          {loading && <p className="text-sm text-gray-500 mb-2">Loading news...</p>}
+          {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
           <NewsTopicBar
             topics={topics}
             activeTopic={activeTopic}
@@ -166,10 +203,11 @@ export default function NewsPage() {
             onClose={() => {
               setShowNewTopicModal(false);
               setTopicModalEditing(null);
+              setTopicModalEditingId(null);
             }}
             onSave={handleSaveTopic}
             editingTopic={topicModalEditing}
-            onDelete={topicModalEditing != null ? handleDeleteTopic : undefined}
+            onDelete={topicModalEditingId ? handleDeleteTopic : undefined}
             existingTopics={topics}
           />
 

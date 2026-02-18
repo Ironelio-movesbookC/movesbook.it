@@ -2,103 +2,144 @@
 
 import { useState, useCallback } from 'react';
 import { X } from 'lucide-react';
-import NewsTopicBar, { type NewsTopic, NEWS_TOPICS } from '@/app/news/components/NewsTopicBar';
+import NewsTopicBar, { type NewsTopic } from '@/app/news/components/NewsTopicBar';
 import NewTopicModal from '@/app/news/components/NewTopicModal';
 import OGPForm from '@/app/news/components/OGPForm';
-import NewsArticlesList, {
-  type ArticlePasted,
-  type ArticleTyped,
-} from '@/app/news/components/NewsArticlesList';
-
-function generateId() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
+import NewsArticlesList from '@/app/news/components/NewsArticlesList';
+import { useNewsData } from '@/hooks/useNewsData';
 
 interface NewsOGPPanelProps {
   onClose: () => void;
   embedded?: boolean;
-  /** When provided (e.g. on dashboard), Expand/Reduce button toggles this; parent should hide/show sidebars when true */
   isExpanded?: boolean;
   onExpandReduce?: () => void;
 }
 
 export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = false, onExpandReduce }: NewsOGPPanelProps) {
-  const [topics, setTopics] = useState<string[]>(() => [...NEWS_TOPICS]);
+  const {
+    topics,
+    customTopics,
+    pastedArticles,
+    typedArticles,
+    loading,
+    error,
+    addTopic,
+    updateTopic,
+    deleteTopic,
+    addPastedArticle,
+    removePastedArticle,
+    addTypedArticle,
+    removeTypedArticle,
+  } = useNewsData();
+
   const [activeTopic, setActiveTopic] = useState<NewsTopic | null>('News');
   const [showNewTopicModal, setShowNewTopicModal] = useState(false);
   const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
+  const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
   const [showOgpForm, setShowOgpForm] = useState(false);
-  const [pastedArticles, setPastedArticles] = useState<ArticlePasted[]>([]);
-  const [typedArticles, setTypedArticles] = useState<ArticleTyped[]>([]);
 
   const handleOpenTopicModal = useCallback(() => {
     setTopicModalEditing(activeTopic ?? null);
+    setTopicModalEditingId(customTopics.find((c) => c.name === (activeTopic ?? ''))?.id ?? null);
     setShowNewTopicModal(true);
-  }, [activeTopic]);
+  }, [activeTopic, customTopics]);
 
   const handleOpenAddTopicModal = useCallback(() => {
     setTopicModalEditing(null);
+    setTopicModalEditingId(null);
     setShowNewTopicModal(true);
   }, []);
 
-  const handleSaveTopic = useCallback((name: string) => {
-    if (topicModalEditing != null) {
-      setTopics((prev) =>
-        prev.map((t) => (t === topicModalEditing ? name : t))
-      );
-      if (activeTopic === topicModalEditing) setActiveTopic(name);
-    } else {
-      setTopics((prev) => [...prev, name]);
-      setActiveTopic(name);
-    }
-    setTopicModalEditing(null);
-    setShowNewTopicModal(false);
-  }, [topicModalEditing, activeTopic]);
-
-  const handleDeleteTopic = useCallback(() => {
-    if (topicModalEditing == null) return;
-    setTopics((prev) => {
-      const next = prev.filter((t) => t !== topicModalEditing);
-      if (activeTopic === topicModalEditing) setActiveTopic(next[0] ?? null);
-      return next;
-    });
-    setTopicModalEditing(null);
-    setShowNewTopicModal(false);
-  }, [topicModalEditing, activeTopic]);
-
-  const handlePastedArticle = useCallback(
-    (data: Parameters<Parameters<typeof OGPForm>[0]['onPastedArticle']>[0]) => {
-      setPastedArticles((prev) => [
-        ...prev,
-        {
-          ...data,
-          id: generateId(),
-          savedAt: new Date().toISOString(),
-          topic: activeTopic ?? 'News',
-        },
-      ]);
-      setShowOgpForm(false);
+  const handleSaveTopic = useCallback(
+    async (name: string) => {
+      try {
+        if (topicModalEditingId) {
+          await updateTopic(topicModalEditingId, name);
+          if (activeTopic === topicModalEditing) setActiveTopic(name);
+        } else {
+          await addTopic(name);
+          setActiveTopic(name);
+        }
+        setTopicModalEditing(null);
+        setTopicModalEditingId(null);
+        setShowNewTopicModal(false);
+      } catch (e) {
+        console.error(e);
+        throw e;
+      }
     },
-    [activeTopic]
+    [topicModalEditingId, topicModalEditing, activeTopic, updateTopic, addTopic]
   );
 
-  const handleSaveTyped = useCallback((description: string) => {
-    setTypedArticles((prev) => [...prev, { id: generateId(), description }]);
-    setShowOgpForm(false);
-  }, []);
+  const handleDeleteTopic = useCallback(async () => {
+    if (!topicModalEditingId) return;
+    try {
+      await deleteTopic(topicModalEditingId);
+      if (activeTopic === topicModalEditing) {
+        const remaining = topics.filter((t) => t !== topicModalEditing);
+        setActiveTopic(remaining[0] ?? null);
+      }
+      setTopicModalEditing(null);
+      setTopicModalEditingId(null);
+      setShowNewTopicModal(false);
+    } catch (e) {
+      console.error(e);
+      throw e;
+    }
+  }, [topicModalEditingId, topicModalEditing, activeTopic, topics, deleteTopic]);
 
-  const handleRemovePasted = useCallback((id: string) => {
-    setPastedArticles((prev) => prev.filter((a) => a.id !== id));
-  }, []);
+  const handlePastedArticle = useCallback(
+    async (data: Parameters<Parameters<typeof OGPForm>[0]['onPastedArticle']>[0]) => {
+      try {
+        await addPastedArticle(data, activeTopic ?? 'News');
+        setShowOgpForm(false);
+      } catch (e) {
+        console.error(e);
+        throw e;
+      }
+    },
+    [activeTopic, addPastedArticle]
+  );
 
-  const handleRemoveTyped = useCallback((id: string) => {
-    setTypedArticles((prev) => prev.filter((a) => a.id !== id));
-  }, []);
+  const handleSaveTyped = useCallback(
+    async (description: string) => {
+      try {
+        await addTypedArticle(description);
+        setShowOgpForm(false);
+      } catch (e) {
+        console.error(e);
+        throw e;
+      }
+    },
+    [addTypedArticle]
+  );
+
+  const handleRemovePasted = useCallback(
+    async (id: string) => {
+      try {
+        await removePastedArticle(id);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [removePastedArticle]
+  );
+
+  const handleRemoveTyped = useCallback(
+    async (id: string) => {
+      try {
+        await removeTypedArticle(id);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [removeTypedArticle]
+  );
 
   return (
     <div
       className={`flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden ${
-        embedded ? 'flex-1 min-h-0 max-h-[95vh]' : ''
+        embedded ? 'flex-1 min-h-0 max-h-[98vh]' : ''
       }`}
     >
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50">
@@ -114,6 +155,12 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
+        {loading && (
+          <p className="text-sm text-gray-500 mb-4">Loading news...</p>
+        )}
+        {error && (
+          <p className="text-sm text-red-600 mb-4">{error}</p>
+        )}
         <NewsTopicBar
           topics={topics}
           activeTopic={activeTopic}
@@ -130,10 +177,11 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           onClose={() => {
             setShowNewTopicModal(false);
             setTopicModalEditing(null);
+            setTopicModalEditingId(null);
           }}
           onSave={handleSaveTopic}
           editingTopic={topicModalEditing}
-          onDelete={topicModalEditing != null ? handleDeleteTopic : undefined}
+          onDelete={topicModalEditingId ? handleDeleteTopic : undefined}
           existingTopics={topics}
         />
 
