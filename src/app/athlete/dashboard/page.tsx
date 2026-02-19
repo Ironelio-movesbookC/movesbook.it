@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Image from 'next/image';
 
 // Force dynamic rendering for authenticated pages
@@ -39,7 +39,8 @@ import {
   Trophy,
   Grid,
   Download,
-  MessageSquare
+  MessageSquare,
+  Loader2
 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
@@ -47,7 +48,7 @@ import DarkSidebar from '@/components/DarkSidebar';
 import SimpleFooter from '@/components/SimpleFooter';
 import AddMemberModal from '@/components/AddMemberModal';
 import { useAuth } from '@/hooks/useAuth';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import WorkoutSection from '@/components/workouts/WorkoutSection';
 import ChatPanel from '@/components/chat/ChatPanel';
@@ -56,6 +57,7 @@ import ToolsSettings from '@/components/settings/ToolsSettings';
 import FavouritesSettings from '@/components/settings/FavouritesSettings';
 import MyBestSettings from '@/components/settings/MyBestSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
+import NewsOGPPanel from '@/components/news/NewsOGPPanel';
 
 // 2026-01-22 13:30 UTC - Placeholder component for avatar images (replaces Unsplash timeout issues)
 const AvatarPlaceholder = ({ size = 'w-10 h-10' }: { size?: string }) => (
@@ -64,17 +66,19 @@ const AvatarPlaceholder = ({ size = 'w-10 h-10' }: { size?: string }) => (
   </div>
 );
 
-export default function AthleteDashboard() {
+function AthleteDashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading } = useAuth();
   const { t } = useLanguage();
   
   // All hooks must be called before any conditional returns
-  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'progress' | 'settings' | 'personal-settings' | 'chat'>('overview');
+  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'progress' | 'settings' | 'personal-settings' | 'chat' | 'news'>('overview');
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
+  const [newsExpanded, setNewsExpanded] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
   const showLegacyButtonBars = false;
   const [activeRightTab, setActiveRightTab] = useState<'actions-planner' | 'chat-panel'>('actions-planner');
@@ -108,6 +112,14 @@ export default function AthleteDashboard() {
       router.push('/my-page');
     }
   }, [user, router]);
+
+  // Open News/OGP section when navigating with ?open=news
+  useEffect(() => {
+    if (searchParams != null && searchParams.get('open') === 'news') {
+      setActiveSection('news');
+      router.replace('/athlete/dashboard', { scroll: false });
+    }
+  }, [searchParams, router]);
 
   // Load entities the athlete belongs to
   useEffect(() => {
@@ -589,8 +601,8 @@ export default function AthleteDashboard() {
         )}
 
         <div className="flex-1 flex gap-0">
-          {/* Left Sidebar - Always Visible */}
-          {showLeftSidebar && (
+          {/* Left Sidebar - Hidden when News Expand is on */}
+          {showLeftSidebar && !newsExpanded && (
             <div className="w-80 flex-shrink-0 sticky top-0 self-start print:hidden">
               <DarkSidebar
                 userType={user?.userType || ''}
@@ -625,6 +637,19 @@ export default function AthleteDashboard() {
                     />
                   </div>
                 )}
+                {activeSection === 'news' && (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <NewsOGPPanel
+                      onClose={() => {
+                        setActiveSection('overview');
+                        setNewsExpanded(false);
+                      }}
+                      embedded
+                      isExpanded={newsExpanded}
+                      onExpandReduce={() => setNewsExpanded((prev) => !prev)}
+                    />
+                  </div>
+                )}
               </div>
             )}
             
@@ -638,8 +663,8 @@ export default function AthleteDashboard() {
             )}
           </div>
 
-          {/* Right Sidebar - Hidden when Personal Settings is active */}
-          {!(activeTab === 'my-page' && activeSection === 'personal-settings') && showRightSidebar && (
+          {/* Right Sidebar - Hidden when Personal Settings or News Expand is on */}
+          {!(activeTab === 'my-page' && activeSection === 'personal-settings') && showRightSidebar && !newsExpanded && (
             <div className="w-80 flex-shrink-0 print:hidden">
               <div className="bg-white rounded-lg shadow-sm border p-4 h-full flex flex-col overflow-y-auto">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('sidebar_quick_actions')}</h3>
@@ -1326,3 +1351,14 @@ function PersonalSettingsContent({ t, user }: { t: (key: string) => string; user
   );
 }
 
+export default function AthleteDashboard() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    }>
+      <AthleteDashboardContent />
+    </Suspense>
+  );
+}
