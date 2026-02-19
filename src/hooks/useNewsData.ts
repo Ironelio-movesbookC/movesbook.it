@@ -6,9 +6,9 @@ import type { ArticlePasted, ArticleTyped } from '@/app/news/components/NewsArti
 import type { OGPData, OgpVisibilitySettingsExport } from '@/app/news/components/OGPForm';
 import { NEWS_TOPICS } from '@/app/news/components/NewsTopicBar';
 
-function getAuthHeaders(): HeadersInit {
+function getAuthHeaders(adminContext?: boolean): HeadersInit {
   if (typeof window === 'undefined') return {};
-  const token = localStorage.getItem('token');
+  const token = adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token');
   if (!token) return {};
   return { Authorization: `Bearer ${token}` };
 }
@@ -38,8 +38,15 @@ export interface UseNewsDataResult {
   removeTypedArticle: (id: string) => Promise<void>;
 }
 
-export function useNewsData(): UseNewsDataResult {
+export interface UseNewsDataOptions {
+  /** When true, use adminToken and adminUser from localStorage (super admin in admin panel). */
+  adminContext?: boolean;
+}
+
+export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   const { user } = useAuth();
+  const adminContext = options?.adminContext === true;
+  const [adminUserId, setAdminUserId] = useState<string | null>(null);
   const [topics, setTopics] = useState<string[]>(() => [...NEWS_TOPICS]);
   const [customTopics, setCustomTopics] = useState<CustomTopic[]>([]);
   const [pastedArticles, setPastedArticles] = useState<ArticlePasted[]>([]);
@@ -47,8 +54,24 @@ export function useNewsData(): UseNewsDataResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (adminContext && typeof window !== 'undefined') {
+      const raw = localStorage.getItem('adminUser');
+      const u = raw ? JSON.parse(raw) : null;
+      setAdminUserId(u?.id ?? null);
+    } else {
+      setAdminUserId(null);
+    }
+  }, [adminContext]);
+
+  const effectiveUserId = adminContext ? adminUserId : user?.id;
+  const getHeaders = useCallback(
+    () => getAuthHeaders(adminContext),
+    [adminContext]
+  );
+
   const fetchAll = useCallback(async () => {
-    if (!user?.id) {
+    if (!effectiveUserId) {
       setTopics([...NEWS_TOPICS]);
       setCustomTopics([]);
       setPastedArticles([]);
@@ -58,7 +81,7 @@ export function useNewsData(): UseNewsDataResult {
     }
     setLoading(true);
     setError(null);
-    const headers = getAuthHeaders();
+    const headers = getHeaders();
     try {
       const [topicsRes, ogpRes, typedRes, orderRes] = await Promise.all([
         fetch('/api/news/topics', { headers }),
@@ -134,7 +157,7 @@ export function useNewsData(): UseNewsDataResult {
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [effectiveUserId, getHeaders]);
 
   useEffect(() => {
     fetchAll();
@@ -142,8 +165,8 @@ export function useNewsData(): UseNewsDataResult {
 
   const saveTopicOrder = useCallback(
     async (order: string[]) => {
-      if (!user?.id) return;
-      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch('/api/news/topic-order', {
         method: 'PUT',
         headers,
@@ -152,13 +175,13 @@ export function useNewsData(): UseNewsDataResult {
       if (!res.ok) throw new Error('Failed to save topic order');
       await fetchAll();
     },
-    [user?.id, fetchAll]
+    [effectiveUserId, fetchAll, getHeaders]
   );
 
   const addTopic = useCallback(
     async (name: string) => {
-      if (!user?.id) return;
-      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch('/api/news/topics', {
         method: 'POST',
         headers,
@@ -172,13 +195,13 @@ export function useNewsData(): UseNewsDataResult {
       setCustomTopics((prev) => [...prev, { id: created.id, name: created.name }]);
       setTopics((prev) => [...prev, created.name]);
     },
-    [user?.id]
+    [effectiveUserId, getHeaders]
   );
 
   const updateTopic = useCallback(
     async (id: string, name: string) => {
-      if (!user?.id) return;
-      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch(`/api/news/topics/${id}`, {
         method: 'PATCH',
         headers,
@@ -192,26 +215,26 @@ export function useNewsData(): UseNewsDataResult {
       setCustomTopics((prev) => prev.map((t) => (t.id === id ? { id, name: updated.name } : t)));
       setTopics((prev) => prev.map((t) => (t === (customTopics.find((c) => c.id === id)?.name ?? '') ? updated.name : t)));
     },
-    [user?.id, customTopics]
+    [effectiveUserId, customTopics, getHeaders]
   );
 
   const deleteTopic = useCallback(
     async (id: string) => {
-      if (!user?.id) return;
-      const headers = getAuthHeaders();
+      if (!effectiveUserId) return;
+      const headers = getHeaders();
       const res = await fetch(`/api/news/topics/${id}`, { method: 'DELETE', headers });
       if (!res.ok) throw new Error('Failed to delete topic');
       const name = customTopics.find((c) => c.id === id)?.name;
       setCustomTopics((prev) => prev.filter((t) => t.id !== id));
       if (name) setTopics((prev) => prev.filter((t) => t !== name));
     },
-    [user?.id, customTopics]
+    [effectiveUserId, customTopics, getHeaders]
   );
 
   const addPastedArticle = useCallback(
     async (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport; languageCode?: string | null }, topic: string) => {
-      if (!user?.id) return;
-      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const vis = data.visibility;
       const res = await fetch('/api/news/ogp', {
         method: 'POST',
@@ -255,24 +278,24 @@ export function useNewsData(): UseNewsDataResult {
         },
       ]);
     },
-    [user?.id]
+    [effectiveUserId, getHeaders]
   );
 
   const removePastedArticle = useCallback(
     async (id: string) => {
-      if (!user?.id) return;
-      const headers = getAuthHeaders();
+      if (!effectiveUserId) return;
+      const headers = getHeaders();
       const res = await fetch(`/api/news/ogp/${id}`, { method: 'DELETE', headers });
       if (!res.ok) throw new Error('Failed to remove article');
       setPastedArticles((prev) => prev.filter((a) => a.id !== id));
     },
-    [user?.id]
+    [effectiveUserId, getHeaders]
   );
 
   const updatePastedArticleSettings = useCallback(
     async (id: string, settings: OgpVisibilitySettingsExport) => {
-      if (!user?.id) return;
-      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch(`/api/news/ogp/${id}`, {
         method: 'PATCH',
         headers,
@@ -302,15 +325,15 @@ export function useNewsData(): UseNewsDataResult {
         )
       );
     },
-    [user?.id]
+    [effectiveUserId, getHeaders]
   );
 
   const updatePastedArticleTopic = useCallback(
     async (id: string, topic: string) => {
-      if (!user?.id) return;
+      if (!effectiveUserId) return;
       const trimmed = topic.trim();
       if (!trimmed) return;
-      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch(`/api/news/ogp/${id}`, {
         method: 'PATCH',
         headers,
@@ -321,13 +344,13 @@ export function useNewsData(): UseNewsDataResult {
         prev.map((a) => (a.id !== id ? a : { ...a, topic: trimmed }))
       );
     },
-    [user?.id]
+    [effectiveUserId, getHeaders]
   );
 
   const addTypedArticle = useCallback(
     async (description: string) => {
-      if (!user?.id) return;
-      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch('/api/news/typed', {
         method: 'POST',
         headers,
@@ -337,18 +360,18 @@ export function useNewsData(): UseNewsDataResult {
       const created = await res.json();
       setTypedArticles((prev) => [...prev, { id: created.id, description: created.description }]);
     },
-    [user?.id]
+    [effectiveUserId, getHeaders]
   );
 
   const removeTypedArticle = useCallback(
     async (id: string) => {
-      if (!user?.id) return;
-      const headers = getAuthHeaders();
+      if (!effectiveUserId) return;
+      const headers = getHeaders();
       const res = await fetch(`/api/news/typed/${id}`, { method: 'DELETE', headers });
       if (!res.ok) throw new Error('Failed to remove');
       setTypedArticles((prev) => prev.filter((a) => a.id !== id));
     },
-    [user?.id]
+    [effectiveUserId, getHeaders]
   );
 
   return {

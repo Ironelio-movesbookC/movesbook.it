@@ -77,6 +77,8 @@ interface NewsArticlesListProps {
   topics?: string[];
   /** Called when creator changes an OGP's topic (Pencil button). */
   onUpdatePastedTopic?: (id: string, topic: string) => void | Promise<void>;
+  /** When true, use adminToken for API calls (e.g. creator fetch) so super admin can use User button. */
+  adminContext?: boolean;
 }
 
 export default function NewsArticlesList({
@@ -90,6 +92,7 @@ export default function NewsArticlesList({
   onUpdatePastedSettings,
   topics: topicsProp = [],
   onUpdatePastedTopic,
+  adminContext = false,
 }: NewsArticlesListProps) {
   const topicsList = topicsProp.length > 0 ? topicsProp : ['News', 'Sport', 'Events', 'Nutrition', 'Training', 'Medicine', 'Equipments', 'Lounge music'];
   const [search, setSearch] = useState('');
@@ -149,7 +152,9 @@ export default function NewsArticlesList({
     setCreatorError(null);
     setCreatorInfo(null);
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      const token = typeof window !== 'undefined'
+        ? (adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token'))
+        : null;
       const headers: HeadersInit = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
       const res = await fetch(`/api/news/ogp/${articleId}/creator`, { headers });
       const data = await res.json();
@@ -167,7 +172,7 @@ export default function NewsArticlesList({
     } finally {
       setCreatorLoading(false);
     }
-  }, []);
+  }, [adminContext]);
 
   useEffect(() => {
     if (creatorModalArticleId != null) {
