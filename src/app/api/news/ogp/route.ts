@@ -20,13 +20,21 @@ export async function GET(request: NextRequest) {
   const topic = searchParams.get('topic');
 
   try {
-    const where: { deletedAt: null; topic?: string } = { deletedAt: null };
+    const where: { topic?: string; deletedAt?: null } = isAdmin ? {} : { deletedAt: null };
     if (topic != null && topic !== '') where.topic = topic;
 
-    const list = await prisma.ogpArticle.findMany({
+    const list = (await prisma.ogpArticle.findMany({
       where,
       orderBy: { savedAt: 'desc' },
-    });
+      include: {
+        deletedBy: { select: { name: true, username: true } },
+      } as never,
+    })) as Array<
+      Awaited<ReturnType<typeof prisma.ogpArticle.findMany>>[number] & {
+        deletedByUserId: string | null;
+        deletedBy: { name: string | null; username: string } | null;
+      }
+    >;
 
     let userSports: string[] = [];
     if (!isAdmin) {
@@ -39,7 +47,10 @@ export async function GET(request: NextRequest) {
 
     const now = new Date();
     const filtered = list.filter((a) => {
-      if (a.deletedAt) return false;
+      if (a.deletedAt) {
+        if (isAdmin) return true;
+        return false;
+      }
       if (isAdmin) return true;
       if (a.userId === userId) return true;
       if (a.expiresAt && a.expiresAt < now) return false;
@@ -59,6 +70,7 @@ export async function GET(request: NextRequest) {
 
     const articles = filtered.map((a) => ({
       id: a.id,
+      userId: a.userId,
       title: a.title,
       image: a.image,
       description: a.description,
@@ -69,6 +81,16 @@ export async function GET(request: NextRequest) {
       topic: a.topic,
       languageCode: a.languageCode ?? null,
       savedAt: a.savedAt.toISOString(),
+      visibilityUserTypes: parseJsonArray(a.visibilityUserTypes),
+      visibilityCountries: parseJsonArray(a.visibilityCountries),
+      visibilityLanguages: parseJsonArray(a.visibilityLanguages),
+      visibilitySports: parseJsonArray(a.visibilitySports),
+      expiresAt: a.expiresAt?.toISOString() ?? null,
+      ...(a.deletedAt && {
+        deletedAt: a.deletedAt.toISOString(),
+        deletedByUserId: a.deletedByUserId ?? undefined,
+        deletedByName: a.deletedBy ? (a.deletedBy.name || a.deletedBy.username) : undefined,
+      }),
     }));
     return NextResponse.json(articles);
   } catch (e) {

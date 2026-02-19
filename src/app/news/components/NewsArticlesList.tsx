@@ -1,18 +1,26 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
-import { Search, ArrowDownAZ, Clock, Plus } from 'lucide-react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
 import { ALL_TOPICS } from './NewsTopicBar';
 import { ALL_LANGUAGES } from '@/constants/language.constants';
+import NewsSettingModal, { type OgpVisibilitySettings, defaultSettings } from './NewsSettingModal';
 
 export type ArticlePasted = OGPData & {
   customDescription?: string;
   id: string;
+  userId?: string;
   savedAt?: string;
   topic?: NewsTopic;
   languageCode?: string | null;
+  /** Set when soft-deleted by creator; admin/super_admin see these. */
+  deletedAt?: string;
+  deletedByUserId?: string;
+  deletedByName?: string;
+  /** Visibility settings for News Setting modal (creator / admin / super admin only). */
+  visibility?: OgpVisibilitySettings;
 };
 export type ArticleTyped = { id: string; description: string };
 
@@ -55,12 +63,20 @@ interface NewsArticlesListProps {
   activeTopic: NewsTopic | null;
   onRemovePasted?: (id: string) => void;
   onRemoveTyped?: (id: string) => void;
-  /** Only admin (and super admin) can delete OGPs; when false, Remove button is hidden */
+  /** When true, current user is admin or super admin (can delete any OGP). Creator can always delete their own. */
   canDeleteOgp?: boolean;
+  /** Current user id – used to allow creator to delete their own OGP. */
+  currentUserId?: string | null;
   /** Called when the "+" button is clicked to show the OGP input form. Rendered below pagination when provided. */
   onAddClick?: () => void;
   /** When true, the "+" button is disabled (e.g. when "All" is selected) */
   addButtonDisabled?: boolean;
+  /** Called when saving visibility settings from the gear modal (creator / admin / super admin only). */
+  onUpdatePastedSettings?: (id: string, settings: OgpVisibilitySettings) => void | Promise<void>;
+  /** Topic names for the change-topic modal (Events, Nutrition, Sport, etc.). */
+  topics?: string[];
+  /** Called when creator changes an OGP's topic (Pencil button). */
+  onUpdatePastedTopic?: (id: string, topic: string) => void | Promise<void>;
 }
 
 export default function NewsArticlesList({
@@ -68,9 +84,14 @@ export default function NewsArticlesList({
   activeTopic,
   onRemovePasted,
   canDeleteOgp = false,
+  currentUserId = null,
   onAddClick,
   addButtonDisabled = false,
+  onUpdatePastedSettings,
+  topics: topicsProp = [],
+  onUpdatePastedTopic,
 }: NewsArticlesListProps) {
+  const topicsList = topicsProp.length > 0 ? topicsProp : ['News', 'Sport', 'Events', 'Nutrition', 'Training', 'Medicine', 'Equipments', 'Lounge music'];
   const [search, setSearch] = useState('');
   const [highlightMatches, setHighlightMatches] = useState(false);
   const [selectedSport, setSelectedSport] = useState('');
@@ -78,6 +99,90 @@ export default function NewsArticlesList({
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(5);
   const [sortOrder, setSortOrder] = useState<SortOrder>('date-desc');
+  const [settingsArticleId, setSettingsArticleId] = useState<string | null>(null);
+  const [settingsOptions, setSettingsOptions] = useState<{
+    userTypes: { value: string; label: string }[];
+    countries: string[];
+    languages: { value: string; label: string }[];
+    sports: { value: string; label: string }[];
+  } | null>(null);
+  const [creatorModalArticleId, setCreatorModalArticleId] = useState<string | null>(null);
+  const [creatorInfo, setCreatorInfo] = useState<{
+    name: string | null;
+    email: string | null;
+    username: string | null;
+    gender: string | null;
+    country: string | null;
+    telegramAccount: string | null;
+  } | null>(null);
+  const [creatorLoading, setCreatorLoading] = useState(false);
+  const [creatorError, setCreatorError] = useState<string | null>(null);
+  const [copiedArticleId, setCopiedArticleId] = useState<string | null>(null);
+  const [editTopicArticleId, setEditTopicArticleId] = useState<string | null>(null);
+  const [editTopicValue, setEditTopicValue] = useState<string>('News');
+  const [expandedArticleIds, setExpandedArticleIds] = useState<Set<string>>(new Set());
+
+  const toggleArticleExpanded = useCallback((articleId: string) => {
+    setExpandedArticleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(articleId)) next.delete(articleId);
+      else next.add(articleId);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (editTopicArticleId != null) {
+      const article = pasted.find((a) => a.id === editTopicArticleId);
+      setEditTopicValue(article?.topic ?? 'News');
+    }
+  }, [editTopicArticleId, pasted]);
+
+  useEffect(() => {
+    if (copiedArticleId == null) return;
+    const t = setTimeout(() => setCopiedArticleId(null), 1500);
+    return () => clearTimeout(t);
+  }, [copiedArticleId]);
+
+  const fetchCreator = useCallback(async (articleId: string) => {
+    setCreatorLoading(true);
+    setCreatorError(null);
+    setCreatorInfo(null);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      const headers: HeadersInit = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      const res = await fetch(`/api/news/ogp/${articleId}/creator`, { headers });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load creator');
+      setCreatorInfo({
+        name: data.name ?? null,
+        email: data.email ?? null,
+        username: data.username ?? null,
+        gender: data.gender ?? null,
+        country: data.country ?? null,
+        telegramAccount: data.telegramAccount ?? null,
+      });
+    } catch (e) {
+      setCreatorError(e instanceof Error ? e.message : 'Failed to load creator');
+    } finally {
+      setCreatorLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (creatorModalArticleId != null) {
+      fetchCreator(creatorModalArticleId);
+    }
+  }, [creatorModalArticleId, fetchCreator]);
+
+  useEffect(() => {
+    if (settingsArticleId != null && !settingsOptions) {
+      fetch('/api/news/ogp-settings-options')
+        .then((r) => r.json())
+        .then((data) => setSettingsOptions(data))
+        .catch(() => setSettingsOptions({ userTypes: [], countries: [], languages: [], sports: [] }));
+    }
+  }, [settingsArticleId, settingsOptions]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -356,7 +461,11 @@ export default function NewsArticlesList({
               {paginated.map((a) => (
                 <article
                   key={a.id}
-                  className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 group flex flex-col min-w-0 relative"
+                  className={`border rounded-lg p-3 group flex flex-col min-w-0 relative ${
+                    a.deletedAt
+                      ? 'border-amber-200 bg-amber-50/50 hover:bg-amber-50/70'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
                 >
                   <a
                     href={a.url}
@@ -370,15 +479,21 @@ export default function NewsArticlesList({
                       <img
                         src={a.image}
                         alt=""
-                        className="w-full h-28 object-cover rounded mb-2 flex-shrink-0"
+                        className={`w-full h-28 object-cover rounded mb-2 flex-shrink-0 ${a.deletedAt ? 'opacity-75' : ''}`}
                       />
                     )}
-                    <h4 className="font-medium text-gray-900 text-sm line-clamp-2">
+                    <h4 className={`font-medium text-sm line-clamp-2 ${a.deletedAt ? 'text-gray-600' : 'text-gray-900'}`}>
                       {highlightMatches && search.trim()
                         ? highlightText(a.title || a.url, search)
                         : a.title || a.url}
                     </h4>
-                    <p className="text-xs text-gray-600 line-clamp-2 mt-1 flex-1">
+                    <p
+                      className={`text-xs text-gray-600 mt-1 flex-1 ${
+                        expandedArticleIds.has(a.id)
+                          ? 'max-h-28 overflow-y-auto overflow-x-hidden'
+                          : 'line-clamp-2'
+                      }`}
+                    >
                       {highlightMatches && search.trim()
                         ? highlightText(
                             a.customDescription || a.description || a.url,
@@ -389,26 +504,270 @@ export default function NewsArticlesList({
                     <p className="text-sm text-gray-600 mt-2">
                       {formatDate(a.savedAt ?? new Date().toISOString())}
                     </p>
+                    {a.deletedAt && (
+                      <p className="text-xs text-amber-800 mt-1 font-medium">
+                        Deleted on {formatDate(a.deletedAt)}
+                        {a.deletedByName ? ` by ${a.deletedByName}` : ' by creator'}
+                      </p>
+                    )}
                   </div>
-                  {onRemovePasted && canDeleteOgp && (
+                  {/* Action icons row below each OGP */}
+                  <div className="relative z-20 pointer-events-auto mt-3 pt-2 border-t border-gray-100 flex items-center justify-evenly gap-1">
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (a.userId === currentUserId) setEditTopicArticleId(a.id);
+                        }}
+                        disabled={!onUpdatePastedTopic || a.userId !== currentUserId}
+                        className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
+                        title={a.userId === currentUserId ? 'Change topic (creator only)' : 'Only the creator can change this article\'s topic'}
+                        aria-label="Change topic"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleArticleExpanded(a.id);
+                        }}
+                        className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        title={expandedArticleIds.has(a.id) ? 'Show less (2 rows)' : 'Show full text'}
+                        aria-label={expandedArticleIds.has(a.id) ? 'Collapse text' : 'Expand to full text'}
+                      >
+                        {expandedArticleIds.has(a.id) ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (a.url) {
+                            navigator.clipboard?.writeText(a.url).then(() => setCopiedArticleId(a.id));
+                          }
+                        }}
+                        className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        title={copiedArticleId === a.id ? 'Copied!' : 'Copy OGP URL to clipboard'}
+                        aria-label={copiedArticleId === a.id ? 'Copied!' : 'Copy link'}
+                      >
+                        <Link className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setCreatorModalArticleId(a.id);
+                        }}
+                        className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        title="View creator of this article"
+                        aria-label="View creator"
+                      >
+                        <User className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (canDeleteOgp || a.userId === currentUserId) setSettingsArticleId(a.id);
+                        }}
+                        disabled={!onUpdatePastedSettings || (!canDeleteOgp && a.userId !== currentUserId)}
+                        className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
+                        title={canDeleteOgp || a.userId === currentUserId ? 'News settings (visibility)' : 'Only creator, admin, or super admin can edit settings'}
+                        aria-label="News settings"
+                      >
+                        <Settings className="w-4 h-4" />
+                      </button>
                     <button
                       type="button"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        onRemovePasted(a.id);
+                        if (canDeleteOgp || a.userId === currentUserId) onRemovePasted?.(a.id);
                       }}
-                      className="mt-2 text-xs text-red-600 opacity-0 group-hover:opacity-100 transition-opacity relative z-20 pointer-events-auto"
+                      disabled={!onRemovePasted || (!canDeleteOgp && a.userId !== currentUserId)}
+                      className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 hover:text-red-600 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:text-gray-600"
+                      title={canDeleteOgp || a.userId === currentUserId ? 'Delete' : 'Only super admin, admin, or creator can delete'}
+                      aria-label="Delete article"
                     >
-                      Remove
+                      <Trash2 className="w-4 h-4" />
                     </button>
-                  )}
+                  </div>
                 </article>
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {settingsArticleId != null && (
+        <NewsSettingModal
+          isOpen={true}
+          onClose={() => setSettingsArticleId(null)}
+          initialSettings={
+            pasted.find((a) => a.id === settingsArticleId)?.visibility ?? defaultSettings
+          }
+          onSave={(settings) => {
+            onUpdatePastedSettings?.(settingsArticleId, settings);
+            setSettingsArticleId(null);
+          }}
+          onDeleteSettings={() => {
+            onUpdatePastedSettings?.(settingsArticleId, defaultSettings);
+          }}
+          options={settingsOptions}
+        />
+      )}
+
+      {creatorModalArticleId != null && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+          onClick={() => setCreatorModalArticleId(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="creator-modal-title"
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center p-4 border-b border-gray-200">
+              <h2 id="creator-modal-title" className="text-lg font-semibold text-gray-900">
+                OGP creator
+              </h2>
+              <button
+                type="button"
+                onClick={() => setCreatorModalArticleId(null)}
+                className="p-1 rounded-lg text-gray-500 hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto">
+              {creatorLoading && (
+                <p className="text-sm text-gray-500">Loading creator info…</p>
+              )}
+              {creatorError && (
+                <p className="text-sm text-red-600">{creatorError}</p>
+              )}
+              {!creatorLoading && !creatorError && creatorInfo && (
+                <dl className="space-y-3 text-sm">
+                  {creatorInfo.name != null && creatorInfo.name !== '' && (
+                    <div>
+                      <dt className="text-gray-500 font-medium">Name</dt>
+                      <dd className="text-gray-900 mt-0.5">{creatorInfo.name}</dd>
+                    </div>
+                  )}
+                  {creatorInfo.username != null && creatorInfo.username !== '' && (
+                    <div>
+                      <dt className="text-gray-500 font-medium">Username</dt>
+                      <dd className="text-gray-900 mt-0.5">{creatorInfo.username}</dd>
+                    </div>
+                  )}
+                  {creatorInfo.email != null && creatorInfo.email !== '' && (
+                    <div>
+                      <dt className="text-gray-500 font-medium">Email</dt>
+                      <dd className="text-gray-900 mt-0.5">{creatorInfo.email}</dd>
+                    </div>
+                  )}
+                  {creatorInfo.gender != null && creatorInfo.gender !== '' && (
+                    <div>
+                      <dt className="text-gray-500 font-medium">Gender</dt>
+                      <dd className="text-gray-900 mt-0.5">{creatorInfo.gender}</dd>
+                    </div>
+                  )}
+                  {creatorInfo.country != null && creatorInfo.country !== '' && (
+                    <div>
+                      <dt className="text-gray-500 font-medium">Country</dt>
+                      <dd className="text-gray-900 mt-0.5">{creatorInfo.country}</dd>
+                    </div>
+                  )}
+                  {creatorInfo.telegramAccount != null && creatorInfo.telegramAccount !== '' && (
+                    <div>
+                      <dt className="text-gray-500 font-medium">Telegram</dt>
+                      <dd className="text-gray-900 mt-0.5">{creatorInfo.telegramAccount}</dd>
+                    </div>
+                  )}
+                  {[
+                    creatorInfo.name,
+                    creatorInfo.username,
+                    creatorInfo.email,
+                    creatorInfo.gender,
+                    creatorInfo.country,
+                    creatorInfo.telegramAccount,
+                  ].every((v) => v == null || v === '') && (
+                    <p className="text-gray-500">No creator details available.</p>
+                  )}
+                </dl>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editTopicArticleId != null && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+          onClick={() => setEditTopicArticleId(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-topic-modal-title"
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-sm w-full p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="edit-topic-modal-title" className="text-lg font-semibold text-gray-900 mb-3">
+              Change OGP topic
+            </h2>
+            <p className="text-sm text-gray-600 mb-3">
+              Move this article to another topic (e.g. Events, Nutrition, Sport).
+            </p>
+            <label htmlFor="edit-topic-select" className="block text-sm font-medium text-gray-700 mb-1">
+              Topic
+            </label>
+            <select
+              id="edit-topic-select"
+              value={editTopicValue}
+              onChange={(e) => setEditTopicValue(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 mb-4"
+            >
+              {topicsList.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setEditTopicArticleId(null)}
+                className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdatePastedTopic?.(editTopicArticleId, editTopicValue);
+                  setEditTopicArticleId(null);
+                }}
+                className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-medium"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

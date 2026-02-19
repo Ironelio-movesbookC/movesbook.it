@@ -53,6 +53,7 @@ model User {
   chatMessagesSent         ChatMessage[]     @relation("MessageSender")
   newsTopics               UserNewsTopic[]
   ogpArticles              OgpArticle[]
+  ogpArticlesDeleted       OgpArticle[]       @relation("OgpDeletedBy")
   newsTypedArticles       NewsTypedArticle[]
 
   @@map("users_new")
@@ -85,12 +86,14 @@ model OgpArticle {
   languageCode          String?   // Language of the article e.g. "en", "it" for search/filter
   savedAt               DateTime  @default(now())
   expiresAt             DateTime? // After this date hidden from normal users; admin/super_admin still see
-  deletedAt             DateTime? // Set when deleted by admin; then hidden from everyone
+  deletedAt             DateTime? // Set when deleted by creator (soft delete); admin/super_admin delete permanently
+  deletedByUserId       String?   // Who performed soft delete (creator's user id); for display "deleted by"
   visibilityUserTypes   String?   @db.Text // JSON array of UserType e.g. ["ATHLETE","COACH"]
   visibilityCountries   String?   @db.Text // JSON array of country names
   visibilityLanguages   String?   @db.Text // JSON array of language codes e.g. ["en","de"]
   visibilitySports      String?   @db.Text // JSON array of SportType e.g. ["RUN","SWIM"]
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deletedBy             User?     @relation("OgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([userId, topic])

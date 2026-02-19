@@ -31,6 +31,8 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
     saveTopicOrder,
     addPastedArticle,
     removePastedArticle,
+    updatePastedArticleSettings,
+    updatePastedArticleTopic,
     addTypedArticle,
     removeTypedArticle,
   } = useNewsData();
@@ -104,6 +106,28 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
       }
     },
     [activeTopic, addPastedArticle]
+  );
+
+  const handleUpdatePastedSettings = useCallback(
+    async (id: string, settings: { userTypes: string[]; countries: string[]; languages: string[]; sports: string[]; expiresAt: string | null }) => {
+      try {
+        await updatePastedArticleSettings(id, settings);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [updatePastedArticleSettings]
+  );
+
+  const handleUpdatePastedTopic = useCallback(
+    async (id: string, topic: string) => {
+      try {
+        await updatePastedArticleTopic(id, topic);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [updatePastedArticleTopic]
   );
 
   const handleSaveTyped = useCallback(
@@ -238,9 +262,13 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           pasted={pastedArticles}
           typed={typedArticles}
           activeTopic={activeTopic}
+          topics={topics}
           onRemovePasted={handleRemovePasted}
           onRemoveTyped={handleRemoveTyped}
           canDeleteOgp={user?.userType === 'ADMIN'}
+          currentUserId={user?.id ?? null}
+          onUpdatePastedSettings={handleUpdatePastedSettings}
+          onUpdatePastedTopic={handleUpdatePastedTopic}
           onAddClick={() => setShowOgpForm((prev) => !prev)}
           addButtonDisabled={activeTopic === ALL_TOPICS}
         />

@@ -32,6 +32,8 @@ export interface UseNewsDataResult {
   deleteTopic: (id: string) => Promise<void>;
   addPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport; languageCode?: string | null }, topic: string) => Promise<void>;
   removePastedArticle: (id: string) => Promise<void>;
+  updatePastedArticleSettings: (id: string, settings: OgpVisibilitySettingsExport) => Promise<void>;
+  updatePastedArticleTopic: (id: string, topic: string) => Promise<void>;
   addTypedArticle: (description: string) => Promise<void>;
   removeTypedArticle: (id: string) => Promise<void>;
 }
@@ -92,6 +94,7 @@ export function useNewsData(): UseNewsDataResult {
       setPastedArticles(
         (ogpData ?? []).map((a: any) => ({
           id: a.id,
+          userId: a.userId,
           title: a.title,
           image: a.image,
           description: a.description,
@@ -102,6 +105,16 @@ export function useNewsData(): UseNewsDataResult {
           topic: a.topic,
           languageCode: a.languageCode ?? undefined,
           savedAt: a.savedAt,
+          deletedAt: a.deletedAt,
+          deletedByUserId: a.deletedByUserId,
+          deletedByName: a.deletedByName,
+          visibility: {
+            userTypes: a.visibilityUserTypes ?? [],
+            countries: a.visibilityCountries ?? [],
+            languages: a.visibilityLanguages ?? [],
+            sports: a.visibilitySports ?? [],
+            expiresAt: a.expiresAt ?? null,
+          },
         }))
       );
 
@@ -256,6 +269,61 @@ export function useNewsData(): UseNewsDataResult {
     [user?.id]
   );
 
+  const updatePastedArticleSettings = useCallback(
+    async (id: string, settings: OgpVisibilitySettingsExport) => {
+      if (!user?.id) return;
+      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const res = await fetch(`/api/news/ogp/${id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          visibilityUserTypes: settings.userTypes ?? [],
+          visibilityCountries: settings.countries ?? [],
+          visibilityLanguages: settings.languages ?? [],
+          visibilitySports: settings.sports ?? [],
+          expiresAt: settings.expiresAt ?? null,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to update article settings');
+      setPastedArticles((prev) =>
+        prev.map((a) =>
+          a.id !== id
+            ? a
+            : {
+                ...a,
+                visibility: {
+                  userTypes: settings.userTypes ?? [],
+                  countries: settings.countries ?? [],
+                  languages: settings.languages ?? [],
+                  sports: settings.sports ?? [],
+                  expiresAt: settings.expiresAt ?? null,
+                },
+              }
+        )
+      );
+    },
+    [user?.id]
+  );
+
+  const updatePastedArticleTopic = useCallback(
+    async (id: string, topic: string) => {
+      if (!user?.id) return;
+      const trimmed = topic.trim();
+      if (!trimmed) return;
+      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const res = await fetch(`/api/news/ogp/${id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ topic: trimmed }),
+      });
+      if (!res.ok) throw new Error('Failed to update article topic');
+      setPastedArticles((prev) =>
+        prev.map((a) => (a.id !== id ? a : { ...a, topic: trimmed }))
+      );
+    },
+    [user?.id]
+  );
+
   const addTypedArticle = useCallback(
     async (description: string) => {
       if (!user?.id) return;
@@ -297,6 +365,8 @@ export function useNewsData(): UseNewsDataResult {
     deleteTopic,
     addPastedArticle,
     removePastedArticle,
+    updatePastedArticleSettings,
+    updatePastedArticleTopic,
     addTypedArticle,
     removeTypedArticle,
   };
