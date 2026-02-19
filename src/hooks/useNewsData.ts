@@ -26,10 +26,11 @@ export interface UseNewsDataResult {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  saveTopicOrder: (order: string[]) => Promise<void>;
   addTopic: (name: string) => Promise<void>;
   updateTopic: (id: string, name: string) => Promise<void>;
   deleteTopic: (id: string) => Promise<void>;
-  addPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport }, topic: string) => Promise<void>;
+  addPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport; languageCode?: string | null }, topic: string) => Promise<void>;
   removePastedArticle: (id: string) => Promise<void>;
   addTypedArticle: (description: string) => Promise<void>;
   removeTypedArticle: (id: string) => Promise<void>;
@@ -57,25 +58,36 @@ export function useNewsData(): UseNewsDataResult {
     setError(null);
     const headers = getAuthHeaders();
     try {
-      const [topicsRes, ogpRes, typedRes] = await Promise.all([
+      const [topicsRes, ogpRes, typedRes, orderRes] = await Promise.all([
         fetch('/api/news/topics', { headers }),
         fetch('/api/news/ogp', { headers }),
         fetch('/api/news/typed', { headers }),
+        fetch('/api/news/topic-order', { headers }),
       ]);
 
       if (!topicsRes.ok || !ogpRes.ok || !typedRes.ok) {
         throw new Error('Failed to load news data');
       }
 
-      const [topicsData, ogpData, typedData] = await Promise.all([
+      const [topicsData, ogpData, typedData, orderData] = await Promise.all([
         topicsRes.json(),
         ogpRes.json(),
         typedRes.json(),
+        orderRes.ok ? orderRes.json() : Promise.resolve({ order: [] }),
       ]);
 
       const custom = topicsData.customTopics ?? [];
       setCustomTopics(custom);
-      setTopics([...(topicsData.defaultTopicNames ?? NEWS_TOPICS), ...custom.map((t: CustomTopic) => t.name)]);
+      const rawTopics = [...(topicsData.defaultTopicNames ?? NEWS_TOPICS), ...custom.map((t: CustomTopic) => t.name)];
+      const order: string[] = orderData?.order ?? [];
+      const sorted =
+        order.length > 0
+          ? [
+              ...order.filter((t: string) => rawTopics.includes(t)),
+              ...rawTopics.filter((t: string) => !order.includes(t)),
+            ]
+          : rawTopics;
+      setTopics(sorted);
 
       setPastedArticles(
         (ogpData ?? []).map((a: any) => ({
@@ -88,6 +100,7 @@ export function useNewsData(): UseNewsDataResult {
           type: a.type,
           customDescription: a.customDescription,
           topic: a.topic,
+          languageCode: a.languageCode ?? undefined,
           savedAt: a.savedAt,
         }))
       );
@@ -113,6 +126,21 @@ export function useNewsData(): UseNewsDataResult {
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  const saveTopicOrder = useCallback(
+    async (order: string[]) => {
+      if (!user?.id) return;
+      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const res = await fetch('/api/news/topic-order', {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ order }),
+      });
+      if (!res.ok) throw new Error('Failed to save topic order');
+      await fetchAll();
+    },
+    [user?.id, fetchAll]
+  );
 
   const addTopic = useCallback(
     async (name: string) => {
@@ -168,7 +196,7 @@ export function useNewsData(): UseNewsDataResult {
   );
 
   const addPastedArticle = useCallback(
-    async (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport }, topic: string) => {
+    async (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport; languageCode?: string | null }, topic: string) => {
       if (!user?.id) return;
       const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
       const vis = data.visibility;
@@ -184,6 +212,7 @@ export function useNewsData(): UseNewsDataResult {
           type: data.type,
           customDescription: data.customDescription,
           topic: topic || 'News',
+          languageCode: data.languageCode ?? null,
           expiresAt: vis?.expiresAt ?? null,
           visibilityUserTypes: vis?.userTypes ?? [],
           visibilityCountries: vis?.countries ?? [],
@@ -208,6 +237,7 @@ export function useNewsData(): UseNewsDataResult {
           type: created.type,
           customDescription: created.customDescription,
           topic: created.topic,
+          languageCode: created.languageCode ?? undefined,
           savedAt: created.savedAt,
         },
       ]);
@@ -261,6 +291,7 @@ export function useNewsData(): UseNewsDataResult {
     loading,
     error,
     refresh: fetchAll,
+    saveTopicOrder,
     addTopic,
     updateTopic,
     deleteTopic,

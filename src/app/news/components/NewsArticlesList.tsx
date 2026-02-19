@@ -1,20 +1,25 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { Search } from 'lucide-react';
+import { Search, ArrowDownAZ, Clock, Plus } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
+import { ALL_TOPICS } from './NewsTopicBar';
+import { ALL_LANGUAGES } from '@/constants/language.constants';
 
 export type ArticlePasted = OGPData & {
   customDescription?: string;
   id: string;
   savedAt?: string;
   topic?: NewsTopic;
+  languageCode?: string | null;
 };
 export type ArticleTyped = { id: string; description: string };
 
 const ITEMS_PER_PAGE_OPTIONS = [5, 10, 15, 20];
 const MAX_PAGE_BUTTONS = 9;
+
+export type SortOrder = 'date-desc' | 'date-asc' | 'alpha-asc' | 'alpha-desc';
 
 function formatDate(iso?: string) {
   if (!iso) return '';
@@ -52,6 +57,10 @@ interface NewsArticlesListProps {
   onRemoveTyped?: (id: string) => void;
   /** Only admin (and super admin) can delete OGPs; when false, Remove button is hidden */
   canDeleteOgp?: boolean;
+  /** Called when the "+" button is clicked to show the OGP input form. Rendered below pagination when provided. */
+  onAddClick?: () => void;
+  /** When true, the "+" button is disabled (e.g. when "All" is selected) */
+  addButtonDisabled?: boolean;
 }
 
 export default function NewsArticlesList({
@@ -59,6 +68,8 @@ export default function NewsArticlesList({
   activeTopic,
   onRemovePasted,
   canDeleteOgp = false,
+  onAddClick,
+  addButtonDisabled = false,
 }: NewsArticlesListProps) {
   const [search, setSearch] = useState('');
   const [highlightMatches, setHighlightMatches] = useState(false);
@@ -66,13 +77,14 @@ export default function NewsArticlesList({
   const [selectedLanguage, setSelectedLanguage] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(5);
+  const [sortOrder, setSortOrder] = useState<SortOrder>('date-desc');
 
   useEffect(() => {
     setCurrentPage(1);
   }, [activeTopic]);
 
   const byTopic = useMemo(() => {
-    if (!activeTopic) return pasted;
+    if (!activeTopic || activeTopic === ALL_TOPICS) return pasted;
     return pasted.filter((a) => (a.topic ?? 'News') === activeTopic);
   }, [pasted, activeTopic]);
 
@@ -82,13 +94,7 @@ export default function NewsArticlesList({
       list = list.filter((a) => (a.topic ?? '').toLowerCase() === selectedSport.toLowerCase());
     }
     if (selectedLanguage) {
-      const lang = selectedLanguage.toLowerCase();
-      list = list.filter(
-        (a) =>
-          (a.title || '').toLowerCase().includes(lang) ||
-          (a.description || '').toLowerCase().includes(lang) ||
-          (a.customDescription || '').toLowerCase().includes(lang)
-      );
+      list = list.filter((a) => (a.languageCode ?? '') === selectedLanguage);
     }
     if (!search.trim()) return list;
     const q = search.toLowerCase();
@@ -101,7 +107,21 @@ export default function NewsArticlesList({
     );
   }, [byTopic, search, selectedSport, selectedLanguage]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+  const sorted = useMemo(() => {
+    const list = [...filtered];
+    if (sortOrder === 'date-desc') {
+      list.sort((a, b) => new Date(b.savedAt ?? 0).getTime() - new Date(a.savedAt ?? 0).getTime());
+    } else if (sortOrder === 'date-asc') {
+      list.sort((a, b) => new Date(a.savedAt ?? 0).getTime() - new Date(b.savedAt ?? 0).getTime());
+    } else if (sortOrder === 'alpha-asc') {
+      list.sort((a, b) => (a.title || a.url || '').localeCompare(b.title || b.url || '', undefined, { sensitivity: 'base' }));
+    } else {
+      list.sort((a, b) => (b.title || b.url || '').localeCompare(a.title || a.url || '', undefined, { sensitivity: 'base' }));
+    }
+    return list;
+  }, [filtered, sortOrder]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / itemsPerPage));
   const start = (currentPage - 1) * itemsPerPage;
 
   // Clamp current page when total pages shrinks (e.g. after filter or items-per-page change)
@@ -110,8 +130,8 @@ export default function NewsArticlesList({
   }, [totalPages, currentPage]);
 
   const paginated = useMemo(
-    () => filtered.slice(start, start + itemsPerPage),
-    [filtered, start, itemsPerPage]
+    () => sorted.slice(start, start + itemsPerPage),
+    [sorted, start, itemsPerPage]
   );
 
   const pageNumbers = useMemo(() => {
@@ -197,12 +217,14 @@ export default function NewsArticlesList({
               setCurrentPage(1);
             }}
             className="px-3 py-1.5 bg-white text-gray-800 rounded text-sm border border-gray-300"
-            aria-label="Filter by language or text"
+            aria-label="Filter by article language"
           >
             <option value="">Language</option>
-            <option value="en">English</option>
-            <option value="de">German</option>
-            <option value="fr">French</option>
+            {ALL_LANGUAGES.map((lang) => (
+              <option key={lang.code} value={lang.code}>
+                {lang.name}
+              </option>
+            ))}
           </select>
           <button
             type="button"
@@ -265,20 +287,69 @@ export default function NewsArticlesList({
           >
             Next
           </button>
+          {/* Add article "+" at right end of pagination row */}
+          {onAddClick != null && (
+            <button
+              type="button"
+              onClick={onAddClick}
+              disabled={addButtonDisabled}
+              className={`ml-auto flex items-center justify-center w-10 h-10 rounded-lg border transition-colors flex-shrink-0 ${
+                addButtonDisabled
+                  ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+              title={addButtonDisabled ? 'Select a topic to add an article' : 'Add article'}
+              aria-label="Add article"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Pasted - OGP cards in a grid (multiple per row) */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden max-h-[100vh]">
-        <div className="bg-gray-800 text-white px-4 py-2 font-semibold">
-          {activeTopic ? `${activeTopic}` : ''}
+        <div className="bg-gray-800 text-white px-4 py-2 flex items-center justify-between gap-2">
+          <span className="font-semibold">
+            {activeTopic === ALL_TOPICS ? 'All' : activeTopic ?? ''}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setSortOrder((s) => (s === 'alpha-asc' ? 'alpha-desc' : 'alpha-asc'))}
+              className={`p-2 rounded-lg transition-colors ${
+                sortOrder === 'alpha-asc' || sortOrder === 'alpha-desc'
+                  ? 'bg-amber-500 text-amber-900'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+              title={sortOrder === 'alpha-asc' ? 'Sort A–Z (click for Z–A)' : sortOrder === 'alpha-desc' ? 'Sort Z–A (click for A–Z)' : 'Sort by title'}
+              aria-label="Sort alphabetically"
+            >
+              <ArrowDownAZ className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortOrder((s) => (s === 'date-desc' ? 'date-asc' : 'date-desc'))}
+              className={`p-2 rounded-lg transition-colors ${
+                sortOrder === 'date-desc' || sortOrder === 'date-asc'
+                  ? 'bg-amber-500 text-amber-900'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+              title={sortOrder === 'date-desc' ? 'Newest first (click for oldest)' : 'Oldest first (click for newest)'}
+              aria-label="Sort by date"
+            >
+              <Clock className="w-5 h-5" />
+            </button>
+          </div>
         </div>
         <div className="p-4">
           {filtered.length === 0 ? (
             <p className="text-sm text-gray-500">
-              {activeTopic
-                ? `No articles for ${activeTopic} yet. Paste a URL or switch topic.`
-                : 'Articles from pasted URLs will appear here.'}
+              {activeTopic === ALL_TOPICS
+                ? 'No articles yet. Select a topic and add one.'
+                : activeTopic
+                  ? `No articles for ${activeTopic} yet. Paste a URL or switch topic.`
+                  : 'Articles from pasted URLs will appear here.'}
             </p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[500px] overflow-y-auto">

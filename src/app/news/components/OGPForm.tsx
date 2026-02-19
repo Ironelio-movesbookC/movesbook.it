@@ -6,6 +6,7 @@ import NewsSettingModal, {
   type OgpVisibilitySettings,
   defaultSettings,
 } from './NewsSettingModal';
+import { ALL_LANGUAGES } from '@/constants/language.constants';
 
 export interface OGPData {
   title: string | null;
@@ -19,7 +20,7 @@ export interface OGPData {
 export type OgpVisibilitySettingsExport = OgpVisibilitySettings;
 
 interface OGPFormProps {
-  onPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettings }) => void;
+  onPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettings; languageCode?: string | null }) => void;
   onSaveTyped?: (description: string) => void;
   onCancel?: () => void;
 }
@@ -31,6 +32,7 @@ export default function OGPForm({
 }: OGPFormProps) {
   const [url, setUrl] = useState('');
   const [description, setDescription] = useState('');
+  const [languageCode, setLanguageCode] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetchedOg, setFetchedOg] = useState<OGPData | null>(null);
@@ -89,9 +91,11 @@ export default function OGPForm({
         ...fetchedOg,
         customDescription: description.trim() || undefined,
         visibility,
+        languageCode: languageCode || undefined,
       });
       setUrl('');
       setDescription('');
+      setLanguageCode('');
       setFetchedOg(null);
       setError(null);
       setVisibility(defaultSettings);
@@ -168,12 +172,47 @@ export default function OGPForm({
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Brief description..."
-          rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-gray-900 placeholder-gray-400 resize-none"
+          rows={6}
+          className="w-full min-h-[120px] px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-gray-900 placeholder-gray-400 resize-y"
         />
       </div>
 
-      {/* Actions: Save, Cancel, Set — centered with even spacing */}
+      {/* Article options: Language + Visibility */}
+      <div className="mb-6 rounded-xl bg-gray-50 border border-gray-100 p-4">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-6">
+          <div className="flex-1 min-w-0">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Language used</label>
+            <select
+              value={languageCode}
+              onChange={(e) => setLanguageCode(e.target.value)}
+              className="w-full min-w-[160px] max-w-sm px-3 py-2.5 border border-gray-200 rounded-lg bg-white text-gray-900 shadow-sm focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-shadow"
+              aria-label="Language used in the article"
+            >
+              <option value="">Select language</option>
+              {ALL_LANGUAGES.map((lang) => (
+                <option key={lang.code} value={lang.code}>
+                  {lang.name} ({lang.nativeName})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="shrink-0 pt-0.5">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 sm:sr-only">Visibility</label>
+            <button
+              type="button"
+              onClick={() => setShowSettingsModal(true)}
+              className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-colors font-medium text-sm"
+              title="Who will see the article"
+              aria-label="Who will see the article"
+            >
+              <Settings className="w-5 h-5 text-gray-500" />
+              <span>Who will see the article</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Actions: Save, Cancel */}
       <div className="flex gap-6 mt-6 justify-center items-center">
         <button
           type="button"
@@ -188,15 +227,6 @@ export default function OGPForm({
           className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 font-medium transition-colors"
         >
           Cancel
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowSettingsModal(true)}
-          className="p-2 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
-          title="News visibility and expiration settings"
-          aria-label="Settings"
-        >
-          <Settings className="w-5 h-5" />
         </button>
       </div>
 

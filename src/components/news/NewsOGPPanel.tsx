@@ -2,8 +2,9 @@
 
 import { useState, useCallback } from 'react';
 import { X } from 'lucide-react';
-import NewsTopicBar, { type NewsTopic } from '@/app/news/components/NewsTopicBar';
+import NewsTopicBar, { type NewsTopic, ALL_TOPICS } from '@/app/news/components/NewsTopicBar';
 import NewTopicModal from '@/app/news/components/NewTopicModal';
+import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
 import OGPForm from '@/app/news/components/OGPForm';
 import NewsArticlesList from '@/app/news/components/NewsArticlesList';
 import { useAuth } from '@/hooks/useAuth';
@@ -27,6 +28,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
     addTopic,
     updateTopic,
     deleteTopic,
+    saveTopicOrder,
     addPastedArticle,
     removePastedArticle,
     addTypedArticle,
@@ -36,6 +38,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
 
   const [activeTopic, setActiveTopic] = useState<NewsTopic | null>('News');
   const [showNewTopicModal, setShowNewTopicModal] = useState(false);
+  const [showTopicSortModal, setShowTopicSortModal] = useState(false);
   const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
   const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
   const [showOgpForm, setShowOgpForm] = useState(false);
@@ -169,9 +172,9 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           onTopicSelect={setActiveTopic}
           onAddNewTopic={handleOpenTopicModal}
           onAddTopic={handleOpenAddTopicModal}
-          onAddClick={() => setShowOgpForm((prev) => !prev)}
           isExpanded={isExpanded}
           onExpandReduce={onExpandReduce ?? (() => {})}
+          onOpenTopicSort={() => setShowTopicSortModal(true)}
         />
 
         <NewTopicModal
@@ -185,6 +188,15 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           editingTopic={topicModalEditing}
           onDelete={topicModalEditingId ? handleDeleteTopic : undefined}
           existingTopics={topics}
+        />
+
+        <NewsTopicSortModal
+          isOpen={showTopicSortModal}
+          onClose={() => setShowTopicSortModal(false)}
+          topics={topics}
+          onSave={async (ordered) => {
+            await saveTopicOrder(ordered);
+          }}
         />
 
         {showOgpForm && (
@@ -229,6 +241,8 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           onRemovePasted={handleRemovePasted}
           onRemoveTyped={handleRemoveTyped}
           canDeleteOgp={user?.userType === 'ADMIN'}
+          onAddClick={() => setShowOgpForm((prev) => !prev)}
+          addButtonDisabled={activeTopic === ALL_TOPICS}
         />
       </div>
     </div>

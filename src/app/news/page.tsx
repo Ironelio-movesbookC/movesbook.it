@@ -10,8 +10,9 @@ import PersonalBanner from '@/app/my-page/components/PersonalBanner';
 import SimpleFooter from '@/components/SimpleFooter';
 import { useAuth } from '@/hooks/useAuth';
 import { useNewsData } from '@/hooks/useNewsData';
-import NewsTopicBar, { type NewsTopic } from './components/NewsTopicBar';
+import NewsTopicBar, { type NewsTopic, ALL_TOPICS } from './components/NewsTopicBar';
 import NewTopicModal from './components/NewTopicModal';
+import NewsTopicSortModal from './components/NewsTopicSortModal';
 import OGPForm from './components/OGPForm';
 import NewsArticlesList from './components/NewsArticlesList';
 import NewsRightSidebar from './components/NewsRightSidebar';
@@ -28,6 +29,7 @@ export default function NewsPage() {
     addTopic,
     updateTopic,
     deleteTopic,
+    saveTopicOrder,
     addPastedArticle,
     removePastedArticle,
     addTypedArticle,
@@ -43,6 +45,7 @@ export default function NewsPage() {
   const [showOgpForm, setShowOgpForm] = useState(false);
   const [activeTopic, setActiveTopic] = useState<NewsTopic | null>('News');
   const [showNewTopicModal, setShowNewTopicModal] = useState(false);
+  const [showTopicSortModal, setShowTopicSortModal] = useState(false);
   const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
   const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
 
@@ -119,7 +122,7 @@ export default function NewsPage() {
   const handlePastedArticle = useCallback(
     async (data: Parameters<Parameters<typeof OGPForm>[0]['onPastedArticle']>[0]) => {
       try {
-        await addPastedArticle(data, activeTopic ?? 'News');
+        await addPastedArticle(data, activeTopic === ALL_TOPICS ? 'News' : (activeTopic ?? 'News'));
         setShowOgpForm(false);
       } catch (e) {
         console.error(e);
@@ -193,9 +196,9 @@ export default function NewsPage() {
             onTopicSelect={setActiveTopic}
             onAddNewTopic={handleOpenTopicModal}
             onAddTopic={handleOpenAddTopicModal}
-            onAddClick={() => setShowOgpForm((prev) => !prev)}
             isExpanded={isExpanded}
             onExpandReduce={() => setIsExpanded((e) => !e)}
+            onOpenTopicSort={() => setShowTopicSortModal(true)}
           />
 
           <NewTopicModal
@@ -209,6 +212,15 @@ export default function NewsPage() {
             editingTopic={topicModalEditing}
             onDelete={topicModalEditingId ? handleDeleteTopic : undefined}
             existingTopics={topics}
+          />
+
+          <NewsTopicSortModal
+            isOpen={showTopicSortModal}
+            onClose={() => setShowTopicSortModal(false)}
+            topics={topics}
+            onSave={async (ordered) => {
+              await saveTopicOrder(ordered);
+            }}
           />
 
           {showOgpForm && (
@@ -255,6 +267,8 @@ export default function NewsPage() {
             onRemovePasted={handleRemovePasted}
             onRemoveTyped={handleRemoveTyped}
             canDeleteOgp={user?.userType === 'ADMIN'}
+            onAddClick={() => setShowOgpForm((prev) => !prev)}
+            addButtonDisabled={activeTopic === ALL_TOPICS}
           />
         </div>
 

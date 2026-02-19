@@ -82,6 +82,7 @@ model OgpArticle {
   type                  String?
   customDescription     String?   @db.Text
   topic                 String    // Topic name (e.g. "News", "Sport")
+  languageCode          String?   // Language of the article e.g. "en", "it" for search/filter
   savedAt               DateTime  @default(now())
   expiresAt             DateTime? // After this date hidden from normal users; admin/super_admin still see
   deletedAt             DateTime? // Set when deleted by admin; then hidden from everyone
@@ -436,6 +437,7 @@ model UserSettings {
   workoutPreferences     String    @db.Text
   yearlyPlanStartDate    DateTime? // Start date for Section B (Yearly Plan)
   templateWeeksStartDate DateTime? // Start date for Section A (3 Weeks Plan)
+  newsTopicOrder         String?   @db.Text // JSON array of topic names for user's favorite order
   user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_settings")

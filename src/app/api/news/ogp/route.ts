@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
       type: a.type,
       customDescription: a.customDescription,
       topic: a.topic,
+      languageCode: a.languageCode ?? null,
       savedAt: a.savedAt.toISOString(),
     }));
     return NextResponse.json(articles);
@@ -92,6 +93,7 @@ export async function POST(request: NextRequest) {
       type,
       customDescription,
       topic,
+      languageCode,
       expiresAt,
       visibilityUserTypes,
       visibilityCountries,
@@ -113,6 +115,7 @@ export async function POST(request: NextRequest) {
         type: type ?? null,
         customDescription: customDescription ?? null,
         topic: topicName,
+        languageCode: typeof languageCode === 'string' && languageCode.trim() ? languageCode.trim() : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         visibilityUserTypes: Array.isArray(visibilityUserTypes) ? JSON.stringify(visibilityUserTypes) : null,
         visibilityCountries: Array.isArray(visibilityCountries) ? JSON.stringify(visibilityCountries) : null,
@@ -130,6 +133,7 @@ export async function POST(request: NextRequest) {
       type: created.type,
       customDescription: created.customDescription,
       topic: created.topic,
+      languageCode: created.languageCode ?? null,
       savedAt: created.savedAt.toISOString(),
     });
   } catch (e) {
