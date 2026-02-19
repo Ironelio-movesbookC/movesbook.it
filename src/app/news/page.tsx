@@ -254,6 +254,7 @@ export default function NewsPage() {
             activeTopic={activeTopic}
             onRemovePasted={handleRemovePasted}
             onRemoveTyped={handleRemoveTyped}
+            canDeleteOgp={user?.userType === 'ADMIN'}
           />
         </div>
 

@@ -50,12 +50,15 @@ interface NewsArticlesListProps {
   activeTopic: NewsTopic | null;
   onRemovePasted?: (id: string) => void;
   onRemoveTyped?: (id: string) => void;
+  /** Only admin (and super admin) can delete OGPs; when false, Remove button is hidden */
+  canDeleteOgp?: boolean;
 }
 
 export default function NewsArticlesList({
   pasted,
   activeTopic,
   onRemovePasted,
+  canDeleteOgp = false,
 }: NewsArticlesListProps) {
   const [search, setSearch] = useState('');
   const [highlightMatches, setHighlightMatches] = useState(false);
@@ -316,7 +319,7 @@ export default function NewsArticlesList({
                       {formatDate(a.savedAt ?? new Date().toISOString())}
                     </p>
                   </div>
-                  {onRemovePasted && (
+                  {onRemovePasted && canDeleteOgp && (
                     <button
                       type="button"
                       onClick={(e) => {

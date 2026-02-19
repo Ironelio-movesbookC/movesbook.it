@@ -6,6 +6,7 @@ import NewsTopicBar, { type NewsTopic } from '@/app/news/components/NewsTopicBar
 import NewTopicModal from '@/app/news/components/NewTopicModal';
 import OGPForm from '@/app/news/components/OGPForm';
 import NewsArticlesList from '@/app/news/components/NewsArticlesList';
+import { useAuth } from '@/hooks/useAuth';
 import { useNewsData } from '@/hooks/useNewsData';
 
 interface NewsOGPPanelProps {
@@ -31,6 +32,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
     addTypedArticle,
     removeTypedArticle,
   } = useNewsData();
+  const { user } = useAuth();
 
   const [activeTopic, setActiveTopic] = useState<NewsTopic | null>('News');
   const [showNewTopicModal, setShowNewTopicModal] = useState(false);
@@ -226,6 +228,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           activeTopic={activeTopic}
           onRemovePasted={handleRemovePasted}
           onRemoveTyped={handleRemoveTyped}
+          canDeleteOgp={user?.userType === 'ADMIN'}
         />
       </div>
     </div>

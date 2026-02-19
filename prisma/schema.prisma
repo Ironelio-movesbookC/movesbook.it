@@ -72,21 +72,28 @@ model UserNewsTopic {
 }
 
 model OgpArticle {
-  id                String   @id @default(cuid())
-  userId            String
-  title             String?  @db.Text
-  image             String?  @db.Text
-  description       String?  @db.Text
-  url               String   @db.Text
-  siteName          String?
-  type              String?
-  customDescription String?  @db.Text
-  topic             String   // Topic name (e.g. "News", "Sport")
-  savedAt           DateTime @default(now())
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                    String    @id @default(cuid())
+  userId                String
+  title                 String?   @db.Text
+  image                 String?   @db.Text
+  description           String?   @db.Text
+  url                   String    @db.Text
+  siteName              String?
+  type                  String?
+  customDescription     String?   @db.Text
+  topic                 String    // Topic name (e.g. "News", "Sport")
+  savedAt               DateTime  @default(now())
+  expiresAt             DateTime? // After this date hidden from normal users; admin/super_admin still see
+  deletedAt             DateTime? // Set when deleted by admin; then hidden from everyone
+  visibilityUserTypes   String?   @db.Text // JSON array of UserType e.g. ["ATHLETE","COACH"]
+  visibilityCountries   String?   @db.Text // JSON array of country names
+  visibilityLanguages   String?   @db.Text // JSON array of language codes e.g. ["en","de"]
+  visibilitySports      String?   @db.Text // JSON array of SportType e.g. ["RUN","SWIM"]
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([userId, topic])
+  @@index([deletedAt])
   @@map("ogp_articles")
 }
 

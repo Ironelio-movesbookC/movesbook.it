@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useAuth } from './useAuth';
 import type { ArticlePasted, ArticleTyped } from '@/app/news/components/NewsArticlesList';
-import type { OGPData } from '@/app/news/components/OGPForm';
+import type { OGPData, OgpVisibilitySettingsExport } from '@/app/news/components/OGPForm';
 import { NEWS_TOPICS } from '@/app/news/components/NewsTopicBar';
 
 function getAuthHeaders(): HeadersInit {
@@ -29,7 +29,7 @@ export interface UseNewsDataResult {
   addTopic: (name: string) => Promise<void>;
   updateTopic: (id: string, name: string) => Promise<void>;
   deleteTopic: (id: string) => Promise<void>;
-  addPastedArticle: (data: OGPData & { customDescription?: string }, topic: string) => Promise<void>;
+  addPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport }, topic: string) => Promise<void>;
   removePastedArticle: (id: string) => Promise<void>;
   addTypedArticle: (description: string) => Promise<void>;
   removeTypedArticle: (id: string) => Promise<void>;
@@ -168,9 +168,10 @@ export function useNewsData(): UseNewsDataResult {
   );
 
   const addPastedArticle = useCallback(
-    async (data: OGPData & { customDescription?: string }, topic: string) => {
+    async (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport }, topic: string) => {
       if (!user?.id) return;
       const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const vis = data.visibility;
       const res = await fetch('/api/news/ogp', {
         method: 'POST',
         headers,
@@ -183,6 +184,11 @@ export function useNewsData(): UseNewsDataResult {
           type: data.type,
           customDescription: data.customDescription,
           topic: topic || 'News',
+          expiresAt: vis?.expiresAt ?? null,
+          visibilityUserTypes: vis?.userTypes ?? [],
+          visibilityCountries: vis?.countries ?? [],
+          visibilityLanguages: vis?.languages ?? [],
+          visibilitySports: vis?.sports ?? [],
         }),
       });
       if (!res.ok) {

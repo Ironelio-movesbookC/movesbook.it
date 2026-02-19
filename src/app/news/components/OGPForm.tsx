@@ -1,7 +1,11 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Settings } from 'lucide-react';
+import NewsSettingModal, {
+  type OgpVisibilitySettings,
+  defaultSettings,
+} from './NewsSettingModal';
 
 export interface OGPData {
   title: string | null;
@@ -12,8 +16,10 @@ export interface OGPData {
   type?: string | null;
 }
 
+export type OgpVisibilitySettingsExport = OgpVisibilitySettings;
+
 interface OGPFormProps {
-  onPastedArticle: (data: OGPData & { customDescription?: string }) => void;
+  onPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettings }) => void;
   onSaveTyped?: (description: string) => void;
   onCancel?: () => void;
 }
@@ -28,6 +34,23 @@ export default function OGPForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetchedOg, setFetchedOg] = useState<OGPData | null>(null);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [visibility, setVisibility] = useState<OgpVisibilitySettings>(defaultSettings);
+  const [settingsOptions, setSettingsOptions] = useState<{
+    userTypes: { value: string; label: string }[];
+    countries: string[];
+    languages: { value: string; label: string }[];
+    sports: { value: string; label: string }[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (showSettingsModal && !settingsOptions) {
+      fetch('/api/news/ogp-settings-options')
+        .then((r) => r.json())
+        .then((data) => setSettingsOptions(data))
+        .catch(() => setSettingsOptions({ userTypes: [], countries: [], languages: [], sports: [] }));
+    }
+  }, [showSettingsModal, settingsOptions]);
 
   const fetchOGP = useCallback(async (urlToFetch: string) => {
     if (!urlToFetch.trim()) return;
@@ -65,11 +88,13 @@ export default function OGPForm({
       onPastedArticle({
         ...fetchedOg,
         customDescription: description.trim() || undefined,
+        visibility,
       });
       setUrl('');
       setDescription('');
       setFetchedOg(null);
       setError(null);
+      setVisibility(defaultSettings);
     } else if (description.trim() && onSaveTyped) {
       onSaveTyped(description.trim());
       setDescription('');
@@ -166,13 +191,23 @@ export default function OGPForm({
         </button>
         <button
           type="button"
+          onClick={() => setShowSettingsModal(true)}
           className="p-2 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
-          title="Settings"
+          title="News visibility and expiration settings"
           aria-label="Settings"
         >
           <Settings className="w-5 h-5" />
         </button>
       </div>
+
+      <NewsSettingModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        initialSettings={visibility}
+        onSave={(s) => setVisibility(s)}
+        onDeleteSettings={() => setVisibility(defaultSettings)}
+        options={settingsOptions}
+      />
     </div>
   );
 }
