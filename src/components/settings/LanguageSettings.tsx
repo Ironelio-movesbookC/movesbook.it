@@ -886,15 +886,14 @@ export default function LanguageSettings() {
             {/* Table View - Horizontal Scroll with Sticky En & It */}
             <div 
               ref={tableContainerRef}
-              className="bg-white border border-gray-300" 
+              className="bg-white border border-gray-300 relative" 
               id="language-table-container" 
               style={{
                 maxHeight: 'calc(100vh - 360px)', 
                 overflowY: 'auto',
                 overflowX: 'auto',
                 scrollbarWidth: 'none',
-                msOverflowStyle: 'none',
-                position: 'relative'
+                msOverflowStyle: 'none'
               }}
             >
               <table style={{ 
@@ -904,7 +903,7 @@ export default function LanguageSettings() {
               }}>
                 <thead className="bg-gray-100 border-b border-gray-300 sticky top-0 z-30">
                   <tr>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-900 sticky left-0 bg-gray-100 z-40 relative select-none" style={{width: `${columnWidths.srNo}px`}}>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-900 sticky left-0 bg-gray-100 z-40 select-none" style={{width: `${columnWidths.srNo}px`}}>
                       Sr.No
                       <div 
                         className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 group"
@@ -913,7 +912,7 @@ export default function LanguageSettings() {
                         <div className="w-full h-full group-hover:bg-blue-500"></div>
                       </div>
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-900 sticky bg-gray-100 z-40 relative select-none" style={{width: `${columnWidths.varName}px`, left: `${columnWidths.srNo}px`}}>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-900 sticky bg-gray-100 z-40 select-none" style={{width: `${columnWidths.varName}px`, left: `${columnWidths.srNo}px`}}>
                       Variable_name
                       <div 
                         className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 group"
@@ -922,7 +921,7 @@ export default function LanguageSettings() {
                         <div className="w-full h-full group-hover:bg-blue-500"></div>
                       </div>
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-red-700 sticky bg-gray-100 z-40 relative select-none" style={{width: `${columnWidths.en}px`, left: `${columnWidths.srNo + columnWidths.varName}px`}}>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-red-700 sticky bg-gray-100 z-40 select-none" style={{width: `${columnWidths.en}px`, left: `${columnWidths.srNo + columnWidths.varName}px`}}>
                       En
                       <div 
                         className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 group"
@@ -931,7 +930,7 @@ export default function LanguageSettings() {
                         <div className="w-full h-full group-hover:bg-blue-500"></div>
                       </div>
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-red-700 sticky bg-gray-100 z-40 relative select-none" style={{width: `${columnWidths.it}px`, left: `${columnWidths.srNo + columnWidths.varName + columnWidths.en}px`}}>
+                    <th className="px-4 py-3 text-left text-sm font-bold text-red-700 sticky bg-gray-100 z-40 select-none" style={{width: `${columnWidths.it}px`, left: `${columnWidths.srNo + columnWidths.varName + columnWidths.en}px`}}>
                       It
                       <div 
                         className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 group"

@@ -1,24 +1,20 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
-import ModernNavbar from '@/components/ModernNavbar';
-import AdvertisementCarousel from '@/components/AdvertisementCarousel';
-import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolbar';
-import DarkSidebar from '@/components/DarkSidebar';
-import PersonalBanner from '@/app/my-page/components/PersonalBanner';
-import SimpleFooter from '@/components/SimpleFooter';
-import { useAuth } from '@/hooks/useAuth';
 import { useNewsData } from '@/hooks/useNewsData';
-import NewsTopicBar, { type NewsTopic, ALL_TOPICS } from './components/NewsTopicBar';
-import NewTopicModal from './components/NewTopicModal';
-import NewsTopicSortModal from './components/NewsTopicSortModal';
-import OGPForm from './components/OGPForm';
-import NewsArticlesList from './components/NewsArticlesList';
-import NewsRightSidebar from './components/NewsRightSidebar';
+import NewsTopicBar, { type NewsTopic, ALL_TOPICS } from '@/app/news/components/NewsTopicBar';
+import NewTopicModal from '@/app/news/components/NewTopicModal';
+import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
+import OGPForm from '@/app/news/components/OGPForm';
+import NewsArticlesList from '@/app/news/components/NewsArticlesList';
 
-export default function NewsPage() {
-  const { user } = useAuth();
+export default function AdminNewsLinksPage() {
+  const router = useRouter();
+  const [adminUser, setAdminUser] = useState<{ id: string; name?: string } | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
   const {
     topics,
     customTopics,
@@ -36,20 +32,33 @@ export default function NewsPage() {
     updatePastedArticleTopic,
     addTypedArticle,
     removeTypedArticle,
-  } = useNewsData();
+  } = useNewsData({ adminContext: true });
 
-  const [showAdBanner, setShowAdBanner] = useState(true);
-  const [showPersonalBanner, setShowPersonalBanner] = useState(true);
-  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
-  const [showRightSidebar, setShowRightSidebar] = useState(true);
-  const [showToolbar, setShowToolbar] = useState(true);
-  const [isExpanded, setIsExpanded] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = localStorage.getItem('adminUser');
+    if (!raw) {
+      router.replace('/admin/dashboard');
+      return;
+    }
+    try {
+      const u = JSON.parse(raw);
+      setAdminUser(u?.id ? { id: u.id, name: u.name } : null);
+      if (!u?.id) router.replace('/admin/dashboard');
+    } catch {
+      router.replace('/admin/dashboard');
+    } finally {
+      setAuthChecked(true);
+    }
+  }, [router]);
+
   const [showOgpForm, setShowOgpForm] = useState(false);
   const [activeTopic, setActiveTopic] = useState<NewsTopic | null>('News');
   const [showNewTopicModal, setShowNewTopicModal] = useState(false);
   const [showTopicSortModal, setShowTopicSortModal] = useState(false);
   const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
   const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const handleOpenTopicModal = useCallback(() => {
     setTopicModalEditing(activeTopic ?? null);
@@ -167,53 +176,28 @@ export default function NewsPage() {
     [addTypedArticle]
   );
 
-  const showLeft = showLeftSidebar && !isExpanded && user;
-  const showRight = showRightSidebar && !isExpanded;
+  if (!authChecked || !adminUser) {
+    return null;
+  }
 
   return (
-    <div className="bg-gray-50 flex flex-col min-h-screen">
-      <ModernNavbar />
-
-      <DisplayOptionsToolbar
-        showAdBanner={showAdBanner}
-        showPersonalBanner={showPersonalBanner}
-        showLeftSidebar={showLeftSidebar}
-        showRightSidebar={showRightSidebar}
-        showToolbar={showToolbar}
-        onToggleAdBanner={setShowAdBanner}
-        onTogglePersonalBanner={setShowPersonalBanner}
-        onToggleLeftSidebar={setShowLeftSidebar}
-        onToggleRightSidebar={setShowRightSidebar}
-        onToggleToolbar={setShowToolbar}
-      />
-
-      {showAdBanner && (
-        <div className="mb-4 px-4 flex-shrink-0">
-          <AdvertisementCarousel />
+    <div className="p-4 md:p-6 max-w-[1920px] mx-auto">
+      <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <h1 className="text-lg font-semibold text-gray-900">News</h1>
+          <a
+            href="/admin/dashboard"
+            className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-200 hover:text-gray-700 transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </a>
         </div>
-      )}
 
-      {showPersonalBanner && user && (
-        <div className="mb-4 flex-shrink-0">
-          <PersonalBanner user={user} />
-        </div>
-      )}
-
-      <div className="flex-1 flex gap-0 py-4">
-        {showLeft && (
-          <div className="w-80 flex-shrink-0 sticky top-0 self-start pl-4">
-            <DarkSidebar
-              userType={user?.userType || ''}
-              entities={[]}
-              selectedEntityId={null}
-              activeTab="my-page"
-            />
-          </div>
-        )}
-
-        <div className="flex-1 min-w-0 px-4">
+        <div className="p-4">
           {loading && <p className="text-sm text-gray-500 mb-2">Loading news...</p>}
           {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
+
           <NewsTopicBar
             topics={topics}
             activeTopic={activeTopic}
@@ -291,23 +275,16 @@ export default function NewsPage() {
             topics={topics}
             onRemovePasted={handleRemovePasted}
             onRemoveTyped={handleRemoveTyped}
-            canDeleteOgp={user?.userType === 'ADMIN'}
-            currentUserId={user?.id ?? null}
+            canDeleteOgp={true}
+            currentUserId={adminUser.id}
             onUpdatePastedSettings={handleUpdatePastedSettings}
             onUpdatePastedTopic={handleUpdatePastedTopic}
             onAddClick={() => setShowOgpForm((prev) => !prev)}
             addButtonDisabled={activeTopic === ALL_TOPICS}
+            adminContext={true}
           />
         </div>
-
-        {showRight && (
-          <div className="pr-4">
-            <NewsRightSidebar />
-          </div>
-        )}
       </div>
-
-      <SimpleFooter />
     </div>
   );
 }

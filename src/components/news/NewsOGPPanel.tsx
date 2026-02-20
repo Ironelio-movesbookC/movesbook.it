@@ -2,10 +2,12 @@
 
 import { useState, useCallback } from 'react';
 import { X } from 'lucide-react';
-import NewsTopicBar, { type NewsTopic } from '@/app/news/components/NewsTopicBar';
+import NewsTopicBar, { type NewsTopic, ALL_TOPICS } from '@/app/news/components/NewsTopicBar';
 import NewTopicModal from '@/app/news/components/NewTopicModal';
+import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
 import OGPForm from '@/app/news/components/OGPForm';
 import NewsArticlesList from '@/app/news/components/NewsArticlesList';
+import { useAuth } from '@/hooks/useAuth';
 import { useNewsData } from '@/hooks/useNewsData';
 
 interface NewsOGPPanelProps {
@@ -26,14 +28,19 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
     addTopic,
     updateTopic,
     deleteTopic,
+    saveTopicOrder,
     addPastedArticle,
     removePastedArticle,
+    updatePastedArticleSettings,
+    updatePastedArticleTopic,
     addTypedArticle,
     removeTypedArticle,
   } = useNewsData();
+  const { user } = useAuth();
 
   const [activeTopic, setActiveTopic] = useState<NewsTopic | null>('News');
   const [showNewTopicModal, setShowNewTopicModal] = useState(false);
+  const [showTopicSortModal, setShowTopicSortModal] = useState(false);
   const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
   const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
   const [showOgpForm, setShowOgpForm] = useState(false);
@@ -99,6 +106,28 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
       }
     },
     [activeTopic, addPastedArticle]
+  );
+
+  const handleUpdatePastedSettings = useCallback(
+    async (id: string, settings: { userTypes: string[]; countries: string[]; languages: string[]; sports: string[]; expiresAt: string | null }) => {
+      try {
+        await updatePastedArticleSettings(id, settings);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [updatePastedArticleSettings]
+  );
+
+  const handleUpdatePastedTopic = useCallback(
+    async (id: string, topic: string) => {
+      try {
+        await updatePastedArticleTopic(id, topic);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [updatePastedArticleTopic]
   );
 
   const handleSaveTyped = useCallback(
@@ -167,9 +196,9 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           onTopicSelect={setActiveTopic}
           onAddNewTopic={handleOpenTopicModal}
           onAddTopic={handleOpenAddTopicModal}
-          onAddClick={() => setShowOgpForm((prev) => !prev)}
           isExpanded={isExpanded}
           onExpandReduce={onExpandReduce ?? (() => {})}
+          onOpenTopicSort={() => setShowTopicSortModal(true)}
         />
 
         <NewTopicModal
@@ -183,6 +212,15 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           editingTopic={topicModalEditing}
           onDelete={topicModalEditingId ? handleDeleteTopic : undefined}
           existingTopics={topics}
+        />
+
+        <NewsTopicSortModal
+          isOpen={showTopicSortModal}
+          onClose={() => setShowTopicSortModal(false)}
+          topics={topics}
+          onSave={async (ordered) => {
+            await saveTopicOrder(ordered);
+          }}
         />
 
         {showOgpForm && (
@@ -224,8 +262,15 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           pasted={pastedArticles}
           typed={typedArticles}
           activeTopic={activeTopic}
+          topics={topics}
           onRemovePasted={handleRemovePasted}
           onRemoveTyped={handleRemoveTyped}
+          canDeleteOgp={user?.userType === 'ADMIN'}
+          currentUserId={user?.id ?? null}
+          onUpdatePastedSettings={handleUpdatePastedSettings}
+          onUpdatePastedTopic={handleUpdatePastedTopic}
+          onAddClick={() => setShowOgpForm((prev) => !prev)}
+          addButtonDisabled={activeTopic === ALL_TOPICS}
         />
       </div>
     </div>
