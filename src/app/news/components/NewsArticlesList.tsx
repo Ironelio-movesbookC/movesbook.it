@@ -462,7 +462,7 @@ export default function NewsArticlesList({
                   : 'Articles from pasted URLs will appear here.'}
             </p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[500px] overflow-y-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 max-h-[500px] overflow-y-auto">
               {paginated.map((a) => (
                 <article
                   key={a.id}
@@ -516,8 +516,8 @@ export default function NewsArticlesList({
                       </p>
                     )}
                   </div>
-                  {/* Action icons row below each OGP */}
-                  <div className="relative z-20 pointer-events-auto mt-3 pt-2 border-t border-gray-100 flex items-center justify-evenly gap-1">
+                  {/* Action icons row below each OGP - compact so 6 fit within narrow cards */}
+                  <div className="relative z-20 pointer-events-auto mt-3 pt-2 border-t border-gray-100 flex items-center justify-between gap-0.5 min-w-0">
                     <button
                         type="button"
                         onClick={(e) => {
@@ -526,11 +526,11 @@ export default function NewsArticlesList({
                           if (a.userId === currentUserId) setEditTopicArticleId(a.id);
                         }}
                         disabled={!onUpdatePastedTopic || a.userId !== currentUserId}
-                        className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
+                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
                         title={a.userId === currentUserId ? 'Change topic (creator only)' : 'Only the creator can change this article\'s topic'}
                         aria-label="Change topic"
                       >
-                        <Pencil className="w-4 h-4" />
+                        <Pencil className="w-3.5 h-3.5" />
                       </button>
                       <button
                         type="button"
@@ -539,14 +539,14 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           toggleArticleExpanded(a.id);
                         }}
-                        className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
                         title={expandedArticleIds.has(a.id) ? 'Show less (2 rows)' : 'Show full text'}
                         aria-label={expandedArticleIds.has(a.id) ? 'Collapse text' : 'Expand to full text'}
                       >
                         {expandedArticleIds.has(a.id) ? (
-                          <EyeOff className="w-4 h-4" />
+                          <EyeOff className="w-3.5 h-3.5" />
                         ) : (
-                          <Eye className="w-4 h-4" />
+                          <Eye className="w-3.5 h-3.5" />
                         )}
                       </button>
                       <button
@@ -558,11 +558,11 @@ export default function NewsArticlesList({
                             navigator.clipboard?.writeText(a.url).then(() => setCopiedArticleId(a.id));
                           }
                         }}
-                        className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
                         title={copiedArticleId === a.id ? 'Copied!' : 'Copy OGP URL to clipboard'}
                         aria-label={copiedArticleId === a.id ? 'Copied!' : 'Copy link'}
                       >
-                        <Link className="w-4 h-4" />
+                        <Link className="w-3.5 h-3.5" />
                       </button>
                       <button
                         type="button"
@@ -571,11 +571,11 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           setCreatorModalArticleId(a.id);
                         }}
-                        className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
                         title="View creator of this article"
                         aria-label="View creator"
                       >
-                        <User className="w-4 h-4" />
+                        <User className="w-3.5 h-3.5" />
                       </button>
                       <button
                         type="button"
@@ -585,11 +585,11 @@ export default function NewsArticlesList({
                           if (canDeleteOgp || a.userId === currentUserId) setSettingsArticleId(a.id);
                         }}
                         disabled={!onUpdatePastedSettings || (!canDeleteOgp && a.userId !== currentUserId)}
-                        className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
+                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
                         title={canDeleteOgp || a.userId === currentUserId ? 'News settings (visibility)' : 'Only creator, admin, or super admin can edit settings'}
                         aria-label="News settings"
                       >
-                        <Settings className="w-4 h-4" />
+                        <Settings className="w-3.5 h-3.5" />
                       </button>
                     <button
                       type="button"
@@ -599,11 +599,11 @@ export default function NewsArticlesList({
                         if (canDeleteOgp || a.userId === currentUserId) onRemovePasted?.(a.id);
                       }}
                       disabled={!onRemovePasted || (!canDeleteOgp && a.userId !== currentUserId)}
-                      className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 hover:text-red-600 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:text-gray-600"
+                      className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 hover:text-red-600 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:text-gray-600"
                       title={canDeleteOgp || a.userId === currentUserId ? 'Delete' : 'Only super admin, admin, or creator can delete'}
                       aria-label="Delete article"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </article>
