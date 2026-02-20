@@ -7,7 +7,6 @@ import { Plus } from 'lucide-react';
 import NewsList from '@/components/news/NewsList';
 import GetSocialBlock from '@/components/news/GetSocialBlock';
 import NewsToolbox from '@/components/news/NewsToolbox';
-import SimpleFooter from '@/components/SimpleFooter';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -308,8 +307,6 @@ export default function PublicNewsListPage() {
           </div>
         )}
       </div>
-
-      <SimpleFooter />
     </div>
   );
 }

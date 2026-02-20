@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Users, Heart, ChevronDown, ChevronUp, Calendar, ExternalLink, Facebook, Twitter, Linkedin, Rss } from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface PopularPost {
   id: string;
@@ -18,10 +19,11 @@ interface GetSocialBlockProps {
 }
 
 export default function GetSocialBlock({ popularPosts = [] }: GetSocialBlockProps) {
+  const { t } = useLanguage();
   const [isSocialExpanded, setIsSocialExpanded] = useState(true);
 
   const formatDate = (dateString?: string) => {
-    if (!dateString) return 'No date';
+    if (!dateString) return t('news_no_date');
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
       year: 'numeric', 
@@ -150,7 +152,7 @@ export default function GetSocialBlock({ popularPosts = [] }: GetSocialBlockProp
                   {post.title}
                 </h4>
                 <div className="mt-1 sm:mt-2 flex items-center gap-1 text-xs text-blue-600 group-hover:text-blue-700">
-                  <span>Read more</span>
+                  <span>{t('news_read_more_text')}</span>
                   <ExternalLink className="w-3 h-3" />
                 </div>
               </div>

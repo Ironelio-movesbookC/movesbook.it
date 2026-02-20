@@ -352,15 +352,15 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs sm:text-sm text-gray-600">
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4" />
-              <span>Posted: {formatDate(news.createdAt)}</span>
+              <span>{t('news_posted')}: {formatDate(news.createdAt)}</span>
             </div>
             <div className="flex items-center gap-2">
               <User className="w-4 h-4" />
-              <span>By {authorName}</span>
+              <span>{t('news_by')} {authorName}</span>
             </div>
             {news.author && (
               <div className="text-gray-500">
-                Author: {news.author}
+                {t('news_author')}: {news.author}
               </div>
             )}
           </div>
@@ -404,7 +404,7 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
 
           {news.mode === 'url' && news.internetLink && (
             <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <p className="text-sm text-gray-600 mb-2">External Link:</p>
+              <p className="text-sm text-gray-600 mb-2">{t('news_external_link')}:</p>
               <a
                 href={news.internetLink}
                 target="_blank"
@@ -419,7 +419,7 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
           {news.originalAuthor && (
             <div className="mt-6 pt-6 border-t border-gray-200">
               <p className="text-sm text-gray-600">
-                <span className="font-medium">Original Author:</span> {news.originalAuthor}
+                <span className="font-medium">{t('news_original_author')}:</span> {news.originalAuthor}
               </p>
             </div>
           )}

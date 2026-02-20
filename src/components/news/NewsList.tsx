@@ -399,7 +399,7 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 text-xs sm:text-sm text-gray-500">
                     <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
                       <span>
-                        By <span className="font-medium text-gray-700">{authorName}</span>
+                        {t('news_by')} <span className="font-medium text-gray-700">{authorName}</span>
                       </span>
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
@@ -633,7 +633,7 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
                     <div className="flex items-center justify-between text-sm text-gray-500">
                       <div className="flex items-center gap-2">
                         {item.user && <AuthorAvatar item={item} size="sm" />}
-                        <span>By {item.user?.username || item.author || item.originalAuthor || 'private'}</span>
+                        <span>{t('news_by')} {item.user?.username || item.author || item.originalAuthor || 'private'}</span>
                       </div>
                       <span className="flex items-center gap-1">
                         <Calendar className="w-4 h-4" />
@@ -692,7 +692,7 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
                 <div className="flex items-center justify-between text-xs text-gray-500">
                   <div className="flex items-center gap-2">
                     {item.user && <AuthorAvatar item={item} size="sm" />}
-                    <span>By {item.user?.username || authorName}</span>
+                    <span>{t('news_by')} {item.user?.username || authorName}</span>
                   </div>
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3 h-3" />
@@ -748,7 +748,7 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <div className="flex items-center gap-2">
                   {item.user && <AuthorAvatar item={item} size="sm" />}
-                  <span>By {item.user?.username || authorName}</span>
+                  <span>{t('news_by')} {item.user?.username || authorName}</span>
                 </div>
                 <span className="flex items-center gap-1">
                   <Calendar className="w-3 h-3" />
