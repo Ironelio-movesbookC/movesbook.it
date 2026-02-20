@@ -886,15 +886,14 @@ export default function LanguageSettings() {
             {/* Table View - Horizontal Scroll with Sticky En & It */}
             <div 
               ref={tableContainerRef}
-              className="bg-white border border-gray-300" 
+              className="bg-white border border-gray-300 relative" 
               id="language-table-container" 
               style={{
                 maxHeight: 'calc(100vh - 360px)', 
                 overflowY: 'auto',
                 overflowX: 'auto',
                 scrollbarWidth: 'none',
-                msOverflowStyle: 'none',
-                position: 'relative'
+                msOverflowStyle: 'none'
               }}
             >
               <table style={{ 
