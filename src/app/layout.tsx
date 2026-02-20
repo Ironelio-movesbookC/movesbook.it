@@ -26,6 +26,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" />
+      </head>
       <body className="font-sans">
         <ClientProviders>
           <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
