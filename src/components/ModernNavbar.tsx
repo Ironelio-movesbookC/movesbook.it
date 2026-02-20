@@ -147,7 +147,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
     // Removed non-existent routes: /athletes, /coaches, /teams, /groups, /clubs
     { href: '/testimonials', label: 'Testimonials', icon: MessageCircle },
     { href: '/blog', label: t('nav_blog'), icon: MessageCircle },
-    { href: '/athlete/dashboard?open=news', label: t('nav_news'), icon: Newspaper },
+    { href: '/news', label: t('nav_news'), icon: Newspaper },
     { href: '/sell-buy', label: 'Sell/Buy', icon: ShoppingCart },
     { href: '/job-offers', label: 'Jobs', icon: Briefcase },
     { href: '/promote-yourself', label: 'Promote', icon: Megaphone },
