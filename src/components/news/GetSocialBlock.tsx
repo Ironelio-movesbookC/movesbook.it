@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Users, Heart, ChevronDown, ChevronUp, Calendar, ExternalLink } from 'lucide-react';
+import { Users, Heart, ChevronDown, ChevronUp, Calendar, ExternalLink, Facebook, Twitter, Linkedin, Rss } from 'lucide-react';
 
 interface PopularPost {
   id: string;
@@ -66,48 +66,54 @@ export default function GetSocialBlock({ popularPosts = [] }: GetSocialBlockProp
         {isSocialExpanded && (
           <div className="space-y-4">
             <div className="flex flex-wrap gap-3">
-              <a 
-                href="#" 
+              <button
+                type="button"
                 className="w-10 h-10 flex items-center justify-center bg-[#3b5998] hover:bg-[#2d4373] rounded-lg transition-colors"
                 onClick={(e) => e.preventDefault()}
+                aria-label="Facebook"
               >
-                <i className="fa fa-facebook text-white text-lg"></i>
-              </a>
-              <a 
-                href="#" 
+                <Facebook className="w-5 h-5 text-white" />
+              </button>
+              <button
+                type="button"
                 className="w-10 h-10 flex items-center justify-center bg-[#00aced] hover:bg-[#0084b4] rounded-lg transition-colors"
                 onClick={(e) => e.preventDefault()}
+                aria-label="Twitter"
               >
-                <i className="fa fa-twitter text-white text-lg"></i>
-              </a>
-              <a 
-                href="#" 
+                <Twitter className="w-5 h-5 text-white" />
+              </button>
+              <button
+                type="button"
                 className="w-10 h-10 flex items-center justify-center bg-[#23659f] hover:bg-[#1a4a7a] rounded-lg transition-colors"
                 onClick={(e) => e.preventDefault()}
+                aria-label="LinkedIn"
               >
-                <i className="fa fa-linkedin text-white text-lg"></i>
-              </a>
-              <a 
-                href="#" 
+                <Linkedin className="w-5 h-5 text-white" />
+              </button>
+              <button
+                type="button"
                 className="w-10 h-10 flex items-center justify-center bg-[#d94c3b] hover:bg-[#b83a2b] rounded-lg transition-colors"
                 onClick={(e) => e.preventDefault()}
+                aria-label="Google Plus"
               >
-                <i className="fa fa-google-plus text-white text-lg"></i>
-              </a>
-              <a 
-                href="#" 
+                <span className="text-white text-lg font-bold">G+</span>
+              </button>
+              <button
+                type="button"
                 className="w-10 h-10 flex items-center justify-center bg-[#e94e5c] hover:bg-[#c93d4a] rounded-lg transition-colors"
                 onClick={(e) => e.preventDefault()}
+                aria-label="Pinterest"
               >
-                <i className="fa fa-pinterest text-white text-lg"></i>
-              </a>
-              <a 
-                href="#" 
+                <span className="text-white text-lg font-bold">P</span>
+              </button>
+              <button
+                type="button"
                 className="w-10 h-10 flex items-center justify-center bg-[#ff6600] hover:bg-[#cc5200] rounded-lg transition-colors"
                 onClick={(e) => e.preventDefault()}
+                aria-label="RSS"
               >
-                <i className="fa fa-rss text-white text-lg"></i>
-              </a>
+                <Rss className="w-5 h-5 text-white" />
+              </button>
             </div>
           </div>
         )}

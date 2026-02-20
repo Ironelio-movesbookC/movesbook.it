@@ -252,7 +252,7 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
     return (
       <div className="p-6">
         <div className="bg-white rounded-xl shadow-md border border-gray-200 p-8 text-center">
-          <p className="text-gray-600">Loading news...</p>
+          <p className="text-gray-600">{t('news_loading')}</p>
         </div>
       </div>
     );
@@ -262,7 +262,7 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
     return (
       <div className="p-6">
         <div className="bg-white rounded-xl shadow-md border border-gray-200 p-8 text-center">
-          <p className="text-gray-600">News not found.</p>
+          <p className="text-gray-600">{t('news_no_news_found')}</p>
         </div>
       </div>
     );
@@ -282,7 +282,7 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
             className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors w-full sm:w-auto"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to News</span>
+            <span>{t('news_back_to_news')}</span>
           </Link>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
@@ -309,7 +309,7 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
               aria-label="Share this article"
             >
               <Share2 className="w-4 h-4" />
-              <span>Share</span>
+              <span>{t('news_share_article')}</span>
             </button>
           </div>
         </div>

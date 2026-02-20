@@ -66,7 +66,7 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
             <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
               <Newspaper className="w-5 h-5 text-blue-600" />
-              News
+              {t('nav_news')}
             </h2>
             <button
               onClick={onToggle}
@@ -81,7 +81,7 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
             <div className="space-y-4">
               <div>
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-3">
-                  View Modes
+                  {t('news_view_modes')}
                 </h3>
                   <div className="space-y-1">
                     <Link
@@ -93,7 +93,7 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
                       }`}
                     >
                       <Home className="w-4 h-4" />
-                      <span>Default View</span>
+                      <span>{t('news_default_view')}</span>
                     </Link>
                     <Link
                       href="/news/list"
@@ -104,7 +104,7 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
                       }`}
                     >
                       <List className="w-4 h-4" />
-                      <span>List View</span>
+                      <span>{t('news_list_view')}</span>
                     </Link>
                     <Link
                       href="/news/miniature"
@@ -115,7 +115,7 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
                       }`}
                     >
                       <Grid className="w-4 h-4" />
-                      <span>Miniature View</span>
+                      <span>{t('news_miniature_view')}</span>
                     </Link>
                     <Link
                       href="/news/section"
@@ -126,7 +126,7 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
                       }`}
                     >
                       <FolderOpen className="w-4 h-4" />
-                      <span>Section View</span>
+                      <span>{t('news_section_view')}</span>
                     </Link>
                     <Link
                       href="/news/browser"
@@ -137,54 +137,51 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
                       }`}
                     >
                       <Monitor className="w-4 h-4" />
-                      <span>Browser View</span>
+                      <span>{t('news_browser_view')}</span>
                     </Link>
                   </div>
                 </div>
 
               <div className="pt-4 border-t border-gray-200">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-3">
-                  Categories
+                  {t('news_category')}s
                 </h3>
-                <>
-                    {loading ? (
-                      <div className="space-y-2">
-                        {[1, 2, 3, 4, 5].map((i) => (
-                          <div key={i} className="h-8 bg-gray-200 rounded animate-pulse"></div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="space-y-1">
+                {loading ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <div key={i} className="h-8 bg-gray-200 rounded animate-pulse"></div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Link
+                      href="/news"
+                      className={`block px-3 py-2 text-sm rounded-lg transition-colors ${
+                        !searchParams?.get('categoryId')
+                          ? 'bg-blue-100 text-blue-700 font-medium'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {t('news_all_categories')}
+                    </Link>
+                    {localCategories.map((category) => {
+                      const currentCategoryId = searchParams?.get('categoryId') || '';
+                      const isCategoryActive = currentCategoryId === category.id;
+                      return (
                         <Link
-                          href="/news"
+                          key={category.id}
+                          href={`/news?categoryId=${category.id}`}
                           className={`block px-3 py-2 text-sm rounded-lg transition-colors ${
-                            !searchParams?.get('categoryId')
+                            isCategoryActive
                               ? 'bg-blue-100 text-blue-700 font-medium'
                               : 'text-gray-700 hover:bg-gray-100'
                           }`}
                         >
-                          All Categories
+                          {category.categoryName}
                         </Link>
-                        {localCategories.map((category) => {
-                          const currentCategoryId = searchParams?.get('categoryId') || '';
-                          const isCategoryActive = currentCategoryId === category.id;
-                          return (
-                            <Link
-                              key={category.id}
-                              href={`/news?categoryId=${category.id}`}
-                              className={`block px-3 py-2 text-sm rounded-lg transition-colors ${
-                                isCategoryActive
-                                  ? 'bg-blue-100 text-blue-700 font-medium'
-                                  : 'text-gray-700 hover:bg-gray-100'
-                              }`}
-                            >
-                              {category.categoryName}
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             </div>
