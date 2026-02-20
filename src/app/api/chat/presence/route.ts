@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
     await prisma.user.update({
       where: { id: myId },
-      data: { lastSeenAt: new Date() } as any,
+      data: { lastSeenAt: new Date() },
     });
 
     return NextResponse.json({ ok: true });

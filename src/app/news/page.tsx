@@ -307,6 +307,8 @@ export default function PublicNewsListPage() {
           </div>
         )}
       </div>
+
+      <SimpleFooter />
     </div>
   );
 }
