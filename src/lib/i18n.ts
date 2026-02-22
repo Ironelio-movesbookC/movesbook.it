@@ -49,6 +49,7 @@ export interface LanguageStrings {
         'nav_profile': 'Profile',
         'nav_forum': 'Forum',
         'nav_news': 'News',
+        'nav_news_by_movesbook': 'News by Movesbook',
         'nav_blog': 'Blog',
         'nav_sell_buy': 'Sell-Buy',
         'nav_job_offers': 'Job Offers',
