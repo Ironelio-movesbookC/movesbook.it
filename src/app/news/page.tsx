@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import ModernNavbar from '@/components/ModernNavbar';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
@@ -45,11 +45,21 @@ export default function NewsPage() {
   const [showToolbar, setShowToolbar] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showOgpForm, setShowOgpForm] = useState(false);
-  const [activeTopic, setActiveTopic] = useState<NewsTopic | null>('News');
+  const [activeTopic, setActiveTopic] = useState<NewsTopic | null>(null);
+  const prevLoading = useRef(true);
   const [showNewTopicModal, setShowNewTopicModal] = useState(false);
   const [showTopicSortModal, setShowTopicSortModal] = useState(false);
   const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
   const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
+
+  // On reload (and whenever data finishes loading): select the first topic so the OGP area shows its OGPs.
+  // Use transition from loading→done so we apply the user's saved topic order when it arrives (after auth).
+  useEffect(() => {
+    if (prevLoading.current && !loading && topics.length > 0) {
+      setActiveTopic(topics[0]);
+    }
+    prevLoading.current = loading;
+  }, [loading, topics]);
 
   const handleOpenTopicModal = useCallback(() => {
     setTopicModalEditing(activeTopic ?? null);
@@ -133,9 +143,9 @@ export default function NewsPage() {
   );
 
   const handleUpdatePastedTopic = useCallback(
-    async (id: string, topic: string) => {
+    async (id: string, topic: string, customDescription?: string) => {
       try {
-        await updatePastedArticleTopic(id, topic);
+        await updatePastedArticleTopic(id, topic, customDescription);
       } catch (e) {
         console.error(e);
       }

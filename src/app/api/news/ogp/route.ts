@@ -58,6 +58,14 @@ export async function GET(request: NextRequest) {
       const vCountries = parseJsonArray(a.visibilityCountries);
       const vLanguages = parseJsonArray(a.visibilityLanguages);
       const vSports = parseJsonArray(a.visibilitySports);
+      // If creator didn't set any visibility (no user types, countries, languages, sports, or expiry), hide from all non-admin users
+      const hasNoVisibilitySet =
+        vUserTypes.length === 0 &&
+        vCountries.length === 0 &&
+        vLanguages.length === 0 &&
+        vSports.length === 0 &&
+        !a.expiresAt;
+      if (hasNoVisibilitySet) return false;
       if (vUserTypes.length > 0 && !vUserTypes.includes(userType)) return false;
       if (vCountries.length > 0 && !vCountries.includes(country ?? '')) return false;
       if (vLanguages.length > 0) {

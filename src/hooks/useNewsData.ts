@@ -33,7 +33,7 @@ export interface UseNewsDataResult {
   addPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport; languageCode?: string | null }, topic: string) => Promise<void>;
   removePastedArticle: (id: string) => Promise<void>;
   updatePastedArticleSettings: (id: string, settings: OgpVisibilitySettingsExport) => Promise<void>;
-  updatePastedArticleTopic: (id: string, topic: string) => Promise<void>;
+  updatePastedArticleTopic: (id: string, topic: string, customDescription?: string) => Promise<void>;
   addTypedArticle: (description: string) => Promise<void>;
   removeTypedArticle: (id: string) => Promise<void>;
 }
@@ -329,19 +329,31 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   );
 
   const updatePastedArticleTopic = useCallback(
-    async (id: string, topic: string) => {
+    async (id: string, topic: string, customDescription?: string) => {
       if (!effectiveUserId) return;
       const trimmed = topic.trim();
       if (!trimmed) return;
       const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
+      const payload: { topic: string; customDescription?: string | null } = { topic: trimmed };
+      if (customDescription !== undefined) {
+        payload.customDescription = customDescription.trim() || null;
+      }
       const res = await fetch(`/api/news/ogp/${id}`, {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({ topic: trimmed }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('Failed to update article topic');
       setPastedArticles((prev) =>
-        prev.map((a) => (a.id !== id ? a : { ...a, topic: trimmed }))
+        prev.map((a) =>
+          a.id !== id
+            ? a
+            : {
+                ...a,
+                topic: trimmed,
+                ...(customDescription !== undefined && { customDescription: customDescription.trim() || undefined }),
+              }
+        )
       );
     },
     [effectiveUserId, getHeaders]
