@@ -108,7 +108,7 @@ export default function SectionModePage() {
     if (selectedLanguage) params.set('languageId', selectedLanguage);
     params.set('limit', pagination.limit.toString());
     params.set('page', pagination.page.toString());
-    router.push(`/news/section?${params.toString()}`);
+    router.push(`/news-by-movesbook/section?${params.toString()}`);
   };
 
   const handleShow = () => {
@@ -131,15 +131,15 @@ export default function SectionModePage() {
     params.set('page', '1');
     
     if (mode === 'default') {
-      router.push(`/news?${params.toString()}`);
+      router.push(`/news-by-movesbook?${params.toString()}`);
     } else if (mode === 'list') {
-      router.push(`/news/list?${params.toString()}`);
+      router.push(`/news-by-movesbook/list?${params.toString()}`);
     } else if (mode === 'miniature') {
-      router.push(`/news/miniature?${params.toString()}`);
+      router.push(`/news-by-movesbook/miniature?${params.toString()}`);
     } else if (mode === 'section') {
-      router.push(`/news/section?${params.toString()}`);
+      router.push(`/news-by-movesbook/section?${params.toString()}`);
     } else if (mode === 'browser') {
-      router.push(`/news/browser?${params.toString()}`);
+      router.push(`/news-by-movesbook/browser?${params.toString()}`);
     }
   };
 

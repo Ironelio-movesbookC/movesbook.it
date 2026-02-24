@@ -223,7 +223,7 @@ export default function EditNewsPage() {
         if (!res.ok) {
           setLoadingNews(false);
           if (res.status === 404) {
-            router.push('/news/indexall');
+            router.push('/news-by-movesbook/indexall');
             return;
           }
           throw new Error('Failed to fetch news');
@@ -233,7 +233,7 @@ export default function EditNewsPage() {
         
         if (currentUserId && newsData.userId !== currentUserId) {
           setLoadingNews(false);
-          router.push('/news/indexall');
+          router.push('/news-by-movesbook/indexall');
           return;
         }
 
@@ -371,7 +371,7 @@ export default function EditNewsPage() {
         hasFetchedRef.current = true;
       } catch (error) {
         console.error('Error fetching news:', error);
-        router.push('/news/indexall');
+        router.push('/news-by-movesbook/indexall');
       } finally {
         fetchingRef.current = false;
         setLoadingNews(false);
@@ -864,7 +864,7 @@ export default function EditNewsPage() {
 
       const result = await res.json();
       alert('News article updated successfully!');
-      router.push('/news/indexall');
+      router.push('/news-by-movesbook/indexall');
     } catch (error) {
       console.error('Error updating news:', error);
       alert(error instanceof Error ? error.message : 'Failed to update news article');
@@ -917,7 +917,7 @@ export default function EditNewsPage() {
       <div className="w-full">
         <div className="flex items-center gap-4 mb-6">
           <Link
-            href="/news/indexall"
+            href="/news-by-movesbook/indexall"
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-gray-600" />
@@ -2175,7 +2175,7 @@ export default function EditNewsPage() {
 
           <div className="flex items-center justify-end gap-4 pt-4 border-t border-gray-200">
             <Link
-              href="/news/indexall"
+              href="/news-by-movesbook/indexall"
               className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
             >
               Cancel

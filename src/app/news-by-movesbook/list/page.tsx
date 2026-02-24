@@ -7,6 +7,22 @@ import NewsList from '@/components/news/NewsList';
 import GetSocialBlock from '@/components/news/GetSocialBlock';
 import NewsToolbox from '@/components/news/NewsToolbox';
 
+interface Category {
+  id: string;
+  categoryName: string;
+}
+
+interface Sport {
+  id: string;
+  name: string;
+}
+
+interface Language {
+  id: string;
+  code: string;
+  name: string;
+}
+
 interface NewsArticle {
   id: string;
   title: string;
@@ -38,8 +54,11 @@ interface NewsArticle {
   }>;
 }
 
-export default function MiniatureModePage() {
+export default function ListModePage() {
   const router = useRouter();
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [sports, setSports] = useState<Sport[]>([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
   const [news, setNews] = useState<NewsArticle[]>([]);
   const [popularPosts, setPopularPosts] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +85,37 @@ export default function MiniatureModePage() {
       limit: parseInt(params.get('limit') || '10'),
       page: parseInt(params.get('page') || '1'),
     }));
+  }, []);
+
+  useEffect(() => {
+    const fetchDropdownData = async () => {
+      try {
+        const [categoriesRes, sportsRes, languagesRes] = await Promise.all([
+          fetch('/api/public/news/categories'),
+          fetch('/api/public/news/sports'),
+          fetch('/api/public/news/languages'),
+        ]);
+
+        if (categoriesRes.ok) {
+          const data = await categoriesRes.json();
+          setCategories(data);
+        }
+
+        if (sportsRes.ok) {
+          const data = await sportsRes.json();
+          setSports(data);
+        }
+
+        if (languagesRes.ok) {
+          const data = await languagesRes.json();
+          setLanguages(data);
+        }
+      } catch (error) {
+        console.error('Error fetching dropdown data:', error);
+      }
+    };
+
+    fetchDropdownData();
   }, []);
 
   useEffect(() => {
@@ -108,7 +158,7 @@ export default function MiniatureModePage() {
     if (selectedLanguage) params.set('languageId', selectedLanguage);
     params.set('limit', pagination.limit.toString());
     params.set('page', pagination.page.toString());
-    router.push(`/news/miniature?${params.toString()}`);
+    router.push(`/news-by-movesbook/list?${params.toString()}`);
   };
 
   const handleShow = () => {
@@ -131,15 +181,15 @@ export default function MiniatureModePage() {
     params.set('page', '1');
     
     if (mode === 'default') {
-      router.push(`/news?${params.toString()}`);
+      router.push(`/news-by-movesbook?${params.toString()}`);
     } else if (mode === 'list') {
-      router.push(`/news/list?${params.toString()}`);
+      router.push(`/news-by-movesbook/list?${params.toString()}`);
     } else if (mode === 'miniature') {
-      router.push(`/news/miniature?${params.toString()}`);
+      router.push(`/news-by-movesbook/miniature?${params.toString()}`);
     } else if (mode === 'section') {
-      router.push(`/news/section?${params.toString()}`);
+      router.push(`/news-by-movesbook/section?${params.toString()}`);
     } else if (mode === 'browser') {
-      router.push(`/news/browser?${params.toString()}`);
+      router.push(`/news-by-movesbook/browser?${params.toString()}`);
     }
   };
 
@@ -149,7 +199,7 @@ export default function MiniatureModePage() {
   };
 
   return (
-    <>
+    <div className="p-6">
       <NewsToolbox
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
@@ -160,48 +210,49 @@ export default function MiniatureModePage() {
         selectedLanguage={selectedLanguage}
         setSelectedLanguage={setSelectedLanguage}
         onShow={handleShow}
+        categories={categories}
+        sports={sports}
+        languages={languages}
       />
 
-      <div className="p-6">
-        <SectionGroupBar
-          currentMode="miniature"
-          currentLimit={pagination.limit}
-          onLimitChange={handleLimitChange}
-          currentPage={pagination.page}
-          totalPages={pagination.totalPages}
-          onPageChange={handlePageChange}
-          hideShowStatus={hideShowStatus}
-          onHideShowChange={setHideShowStatus}
-        />
+      <SectionGroupBar
+        currentMode="list"
+        currentLimit={pagination.limit}
+        onLimitChange={handleLimitChange}
+        currentPage={pagination.page}
+        totalPages={pagination.totalPages}
+        onPageChange={handlePageChange}
+        hideShowStatus={hideShowStatus}
+        onHideShowChange={setHideShowStatus}
+      />
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-          <div className={hideShowStatus ? 'lg:col-span-3' : 'lg:col-span-2'}>
-            {loading ? (
-              <div className="bg-white rounded-xl shadow-md border border-gray-200 p-8 text-center">
-                <p className="text-gray-600">Loading news...</p>
-              </div>
-            ) : news.length > 0 ? (
-              <NewsList 
-                news={news} 
-                mode="miniature" 
-                currentLanguage="en"
-                hideShowStatus={hideShowStatus}
-                onHideShowChange={setHideShowStatus}
-              />
-            ) : (
-              <div className="bg-white rounded-xl shadow-md border border-gray-200 p-8 text-center">
-                <p className="text-gray-600">No news found.</p>
-              </div>
-            )}
-          </div>
-          
-          {!hideShowStatus && (
-            <div className="lg:col-span-1">
-              <GetSocialBlock popularPosts={popularPosts} />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+        <div className={hideShowStatus ? 'lg:col-span-3' : 'lg:col-span-2'}>
+          {loading ? (
+            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-8 text-center">
+              <p className="text-gray-600">Loading news...</p>
+            </div>
+          ) : news.length > 0 ? (
+            <NewsList 
+              news={news} 
+              mode="list" 
+              currentLanguage="en"
+              hideShowStatus={hideShowStatus}
+              onHideShowChange={setHideShowStatus}
+            />
+          ) : (
+            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-8 text-center">
+              <p className="text-gray-600">No news found.</p>
             </div>
           )}
         </div>
+        
+        {!hideShowStatus && (
+          <div className="lg:col-span-1">
+            <GetSocialBlock popularPosts={popularPosts} />
+          </div>
+        )}
       </div>
-    </>
+    </div>
   );
 }

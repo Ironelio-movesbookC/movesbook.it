@@ -19,6 +19,24 @@ const defaultSettings: OgpVisibilitySettings = {
   expiresAt: null,
 };
 
+/** Normalize ISO or date string to YYYY-MM-DD for <input type="date">. */
+function toDateInputValue(expiresAt: string | null | undefined): string {
+  if (expiresAt == null || expiresAt === '') return '';
+  const s = String(expiresAt).trim();
+  if (!s) return '';
+  try {
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  } catch {
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    return '';
+  }
+}
+
 interface Option {
   value: string;
   label: string;
@@ -63,7 +81,7 @@ export default function NewsSettingModal({
       setCountries(s.countries ?? []);
       setLanguages(s.languages ?? []);
       setSports(s.sports ?? []);
-      setExpiresAt(s.expiresAt ?? '');
+      setExpiresAt(toDateInputValue(s.expiresAt ?? null));
       setEnableUserTypes((s.userTypes?.length ?? 0) > 0);
       setEnableCountries((s.countries?.length ?? 0) > 0);
       setEnableLanguages((s.languages?.length ?? 0) > 0);

@@ -220,7 +220,7 @@ export default function NewsIndexAllPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-4 sm:mb-6">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('news_archive')}</h1>
           <Link
-            href="/news/add"
+            href="/news-by-movesbook/add"
             className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base w-full sm:w-auto"
           >
             <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -381,7 +381,7 @@ export default function NewsIndexAllPage() {
                       <td className="px-6 py-4 text-sm">
                         <div className="flex items-center gap-2">
                           <Link
-                            href={`/news/edit/${item.id}`}
+                            href={`/news-by-movesbook/edit/${item.id}`}
                             className="text-blue-600 hover:text-blue-800 transition-colors"
                             title="Edit"
                           >

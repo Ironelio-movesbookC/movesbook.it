@@ -88,6 +88,7 @@ export async function PATCH(
     const body = await request.json().catch(() => ({}));
     const data: {
       topic?: string;
+      customDescription?: string | null;
       visibilityUserTypes?: string;
       visibilityCountries?: string;
       visibilityLanguages?: string;
@@ -97,6 +98,11 @@ export async function PATCH(
 
     if (body.topic !== undefined && typeof body.topic === 'string' && body.topic.trim()) {
       data.topic = body.topic.trim();
+    }
+    if (body.customDescription !== undefined) {
+      data.customDescription = typeof body.customDescription === 'string'
+        ? (body.customDescription.trim() || null)
+        : null;
     }
     if (body.visibilityUserTypes !== undefined) {
       data.visibilityUserTypes = JSON.stringify(parseJsonArray(body.visibilityUserTypes));

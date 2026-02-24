@@ -24,7 +24,10 @@ export type ArticlePasted = OGPData & {
 };
 export type ArticleTyped = { id: string; description: string };
 
-const ITEMS_PER_PAGE_OPTIONS = [5, 10, 15, 20];
+/** Number of OGP cards per row (each row = 6 OGPs). */
+const OGPS_PER_ROW = 6;
+/** Dropdown options: number of rows to display per page. Items per page = rows × OGPS_PER_ROW. */
+const ROWS_PER_PAGE_OPTIONS = [3, 5, 10, 15, 20];
 const MAX_PAGE_BUTTONS = 9;
 
 export type SortOrder = 'date-desc' | 'date-asc' | 'alpha-asc' | 'alpha-desc';
@@ -75,8 +78,8 @@ interface NewsArticlesListProps {
   onUpdatePastedSettings?: (id: string, settings: OgpVisibilitySettings) => void | Promise<void>;
   /** Topic names for the change-topic modal (Events, Nutrition, Sport, etc.). */
   topics?: string[];
-  /** Called when creator changes an OGP's topic (Pencil button). */
-  onUpdatePastedTopic?: (id: string, topic: string) => void | Promise<void>;
+  /** Called when creator changes an OGP's topic and/or description (Pencil button). */
+  onUpdatePastedTopic?: (id: string, topic: string, customDescription?: string) => void | Promise<void>;
   /** When true, use adminToken for API calls (e.g. creator fetch) so super admin can use User button. */
   adminContext?: boolean;
 }
@@ -100,7 +103,8 @@ export default function NewsArticlesList({
   const [selectedSport, setSelectedSport] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(5);
+  const [rowsPerPage, setRowsPerPage] = useState(5);
+  const itemsPerPage = rowsPerPage * OGPS_PER_ROW;
   const [sortOrder, setSortOrder] = useState<SortOrder>('date-desc');
   const [settingsArticleId, setSettingsArticleId] = useState<string | null>(null);
   const [settingsOptions, setSettingsOptions] = useState<{
@@ -123,7 +127,9 @@ export default function NewsArticlesList({
   const [copiedArticleId, setCopiedArticleId] = useState<string | null>(null);
   const [editTopicArticleId, setEditTopicArticleId] = useState<string | null>(null);
   const [editTopicValue, setEditTopicValue] = useState<string>('News');
+  const [editTopicDescription, setEditTopicDescription] = useState<string>('');
   const [expandedArticleIds, setExpandedArticleIds] = useState<Set<string>>(new Set());
+  const [removeConfirmArticleId, setRemoveConfirmArticleId] = useState<string | null>(null);
 
   const toggleArticleExpanded = useCallback((articleId: string) => {
     setExpandedArticleIds((prev) => {
@@ -138,6 +144,7 @@ export default function NewsArticlesList({
     if (editTopicArticleId != null) {
       const article = pasted.find((a) => a.id === editTopicArticleId);
       setEditTopicValue(article?.topic ?? 'News');
+      setEditTopicDescription(article?.customDescription ?? '');
     }
   }, [editTopicArticleId, pasted]);
 
@@ -310,7 +317,7 @@ export default function NewsArticlesList({
             className="px-3 py-1.5 bg-white text-gray-800 rounded text-sm border border-gray-300"
             aria-label="Filter by topic (sport)"
           >
-            <option value="">Select Sport</option>
+            <option value="">Select</option>
             <option value="Sport">Sport</option>
             <option value="Training">Training</option>
             <option value="Events">Events</option>
@@ -345,24 +352,24 @@ export default function NewsArticlesList({
             Show
           </button>
         </div>
-        {/* Row 2: Items per page dropdown, Prev, page numbers, Next (pagination strip) */}
+        {/* Row 2: Rows per page dropdown (each row = 6 OGPs), Prev, page numbers, Next */}
         <div className="bg-gray-100 flex flex-wrap items-center gap-2 p-3 border-t border-gray-200">
           <select
-            value={itemsPerPage}
+            value={rowsPerPage}
             onChange={(e) => {
-              setItemsPerPage(Number(e.target.value));
+              setRowsPerPage(Number(e.target.value));
               setCurrentPage(1);
             }}
             className="px-2 py-1.5 bg-white text-gray-800 rounded text-sm border border-gray-300"
-            aria-label="Items per page"
+            aria-label="Rows per page"
           >
-            {ITEMS_PER_PAGE_OPTIONS.map((n) => (
+            {ROWS_PER_PAGE_OPTIONS.map((n) => (
               <option key={n} value={n}>
                 {n}
               </option>
             ))}
           </select>
-          <span className="text-xs text-gray-500 hidden sm:inline">per page</span>
+          <span className="text-xs text-gray-500 hidden sm:inline">rows</span>
           <button
             type="button"
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
@@ -462,11 +469,11 @@ export default function NewsArticlesList({
                   : 'Articles from pasted URLs will appear here.'}
             </p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 max-h-[500px] overflow-y-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 max-h-[500px] overflow-y-auto">
               {paginated.map((a) => (
                 <article
                   key={a.id}
-                  className={`border rounded-lg p-3 group flex flex-col min-w-0 relative ${
+                  className={`border rounded-lg p-3 group flex flex-col min-w-0 relative h-full min-h-0 ${
                     a.deletedAt
                       ? 'border-amber-200 bg-amber-50/50 hover:bg-amber-50/70'
                       : 'border-gray-200 hover:bg-gray-50'
@@ -479,7 +486,7 @@ export default function NewsArticlesList({
                     className="absolute inset-0 z-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-inset"
                     aria-label={`Open: ${a.title || a.url}`}
                   />
-                  <div className="relative z-10 pointer-events-none">
+                  <div className="relative z-10 pointer-events-none flex-1 min-h-0 flex flex-col">
                     {a.image && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -518,7 +525,7 @@ export default function NewsArticlesList({
                     )}
                   </div>
                   {/* Action icons row below each OGP - compact so 6 fit within narrow cards */}
-                  <div className="relative z-20 pointer-events-auto mt-3 pt-2 border-t border-gray-100 flex items-center justify-between gap-0.5 min-w-0">
+                  <div className="relative z-20 pointer-events-auto mt-auto pt-2 border-t border-gray-100 flex items-center justify-between gap-0.5 min-w-0 flex-shrink-0">
                     <button
                         type="button"
                         onClick={(e) => {
@@ -597,7 +604,7 @@ export default function NewsArticlesList({
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        if (canDeleteOgp || a.userId === currentUserId) onRemovePasted?.(a.id);
+                        if (canDeleteOgp || a.userId === currentUserId) setRemoveConfirmArticleId(a.id);
                       }}
                       disabled={!onRemovePasted || (!canDeleteOgp && a.userId !== currentUserId)}
                       className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 hover:text-red-600 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:text-gray-600"
@@ -719,6 +726,47 @@ export default function NewsArticlesList({
         </div>
       )}
 
+      {removeConfirmArticleId != null && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+          onClick={() => setRemoveConfirmArticleId(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="remove-confirm-modal-title"
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-sm w-full p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="remove-confirm-modal-title" className="text-lg font-semibold text-gray-900 mb-3">
+              Remove OGP
+            </h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure you want to remove this article? This action cannot be undone.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setRemoveConfirmArticleId(null)}
+                className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onRemovePasted?.(removeConfirmArticleId);
+                  setRemoveConfirmArticleId(null);
+                }}
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editTopicArticleId != null && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
@@ -752,6 +800,17 @@ export default function NewsArticlesList({
                 </option>
               ))}
             </select>
+            <label htmlFor="edit-topic-description" className="block text-sm font-medium text-gray-700 mb-1">
+              Type here a brief description...
+            </label>
+            <textarea
+              id="edit-topic-description"
+              value={editTopicDescription}
+              onChange={(e) => setEditTopicDescription(e.target.value)}
+              placeholder="Brief description..."
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 resize-y min-h-[80px] mb-4 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+            />
             <div className="flex gap-2 justify-end">
               <button
                 type="button"
@@ -763,7 +822,7 @@ export default function NewsArticlesList({
               <button
                 type="button"
                 onClick={() => {
-                  onUpdatePastedTopic?.(editTopicArticleId, editTopicValue);
+                  onUpdatePastedTopic?.(editTopicArticleId, editTopicValue, editTopicDescription);
                   setEditTopicArticleId(null);
                 }}
                 className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-medium"

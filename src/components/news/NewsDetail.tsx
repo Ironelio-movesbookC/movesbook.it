@@ -278,7 +278,7 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
       <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-4 md:mb-6">
           <Link
-            href="/news"
+            href="/news-by-movesbook"
             className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors w-full sm:w-auto"
           >
             <ArrowLeft className="w-4 h-4" />

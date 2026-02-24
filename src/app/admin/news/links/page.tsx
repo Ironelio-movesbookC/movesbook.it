@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
 import { useNewsData } from '@/hooks/useNewsData';
@@ -34,6 +34,16 @@ export default function AdminNewsLinksPage() {
     removeTypedArticle,
   } = useNewsData({ adminContext: true });
 
+  const prevLoading = useRef(true);
+
+  // On reload (and whenever data finishes loading): select the first topic so the OGP area shows its OGPs.
+  useEffect(() => {
+    if (prevLoading.current && !loading && topics.length > 0) {
+      setActiveTopic(topics[0]);
+    }
+    prevLoading.current = loading;
+  }, [loading, topics]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const raw = localStorage.getItem('adminUser');
@@ -53,7 +63,7 @@ export default function AdminNewsLinksPage() {
   }, [router]);
 
   const [showOgpForm, setShowOgpForm] = useState(false);
-  const [activeTopic, setActiveTopic] = useState<NewsTopic | null>('News');
+  const [activeTopic, setActiveTopic] = useState<NewsTopic | null>(null);
   const [showNewTopicModal, setShowNewTopicModal] = useState(false);
   const [showTopicSortModal, setShowTopicSortModal] = useState(false);
   const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
@@ -142,9 +152,9 @@ export default function AdminNewsLinksPage() {
   );
 
   const handleUpdatePastedTopic = useCallback(
-    async (id: string, topic: string) => {
+    async (id: string, topic: string, customDescription?: string) => {
       try {
-        await updatePastedArticleTopic(id, topic);
+        await updatePastedArticleTopic(id, topic, customDescription);
       } catch (e) {
         console.error(e);
       }

@@ -54,8 +54,8 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
   }, [pathname, categories]);
 
   const isActive = (path: string) => {
-    if (path === '/news' && pathname === '/news') return true;
-    if (path !== '/news' && pathname?.startsWith(path)) return true;
+    if (path === '/news-by-movesbook' && pathname === '/news-by-movesbook') return true;
+    if (path !== '/news-by-movesbook' && pathname?.startsWith(path)) return true;
     return false;
   };
 
@@ -85,9 +85,9 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
                 </h3>
                   <div className="space-y-1">
                     <Link
-                      href="/news"
+                      href="/news-by-movesbook"
                       className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
-                        isActive('/news') && pathname === '/news'
+                        isActive('/news-by-movesbook') && pathname === '/news-by-movesbook'
                           ? 'bg-blue-100 text-blue-700 font-medium'
                           : 'text-gray-700 hover:bg-gray-100'
                       }`}
@@ -96,9 +96,9 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
                       <span>{t('news_default_view')}</span>
                     </Link>
                     <Link
-                      href="/news/list"
+                      href="/news-by-movesbook/list"
                       className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
-                        isActive('/news/list')
+                        isActive('/news-by-movesbook/list')
                           ? 'bg-blue-100 text-blue-700 font-medium'
                           : 'text-gray-700 hover:bg-gray-100'
                       }`}
@@ -107,9 +107,9 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
                       <span>{t('news_list_view')}</span>
                     </Link>
                     <Link
-                      href="/news/miniature"
+                      href="/news-by-movesbook/miniature"
                       className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
-                        isActive('/news/miniature')
+                        isActive('/news-by-movesbook/miniature')
                           ? 'bg-blue-100 text-blue-700 font-medium'
                           : 'text-gray-700 hover:bg-gray-100'
                       }`}
@@ -118,9 +118,9 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
                       <span>{t('news_miniature_view')}</span>
                     </Link>
                     <Link
-                      href="/news/section"
+                      href="/news-by-movesbook/section"
                       className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
-                        isActive('/news/section')
+                        isActive('/news-by-movesbook/section')
                           ? 'bg-blue-100 text-blue-700 font-medium'
                           : 'text-gray-700 hover:bg-gray-100'
                       }`}
@@ -129,9 +129,9 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
                       <span>{t('news_section_view')}</span>
                     </Link>
                     <Link
-                      href="/news/browser"
+                      href="/news-by-movesbook/browser"
                       className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
-                        isActive('/news/browser')
+                        isActive('/news-by-movesbook/browser')
                           ? 'bg-blue-100 text-blue-700 font-medium'
                           : 'text-gray-700 hover:bg-gray-100'
                       }`}
@@ -155,7 +155,7 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
                 ) : (
                   <div className="space-y-1">
                     <Link
-                      href="/news"
+                      href="/news-by-movesbook"
                       className={`block px-3 py-2 text-sm rounded-lg transition-colors ${
                         !searchParams?.get('categoryId')
                           ? 'bg-blue-100 text-blue-700 font-medium'
@@ -170,7 +170,7 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
                       return (
                         <Link
                           key={category.id}
-                          href={`/news?categoryId=${category.id}`}
+                          href={`/news-by-movesbook?categoryId=${category.id}`}
                           className={`block px-3 py-2 text-sm rounded-lg transition-colors ${
                             isCategoryActive
                               ? 'bg-blue-100 text-blue-700 font-medium'

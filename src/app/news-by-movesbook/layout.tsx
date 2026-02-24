@@ -24,8 +24,7 @@ export default function NewsLayout({ children }: { children: React.ReactNode }) 
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Skip this layout for /news/add, /news/edit, and /news/indexall as they have their own layouts
-  if (pathname === '/news/add' || pathname?.startsWith('/news/edit/') || pathname === '/news/indexall') {
+  if (pathname === '/news-by-movesbook/add' || pathname?.startsWith('/news-by-movesbook/edit/') || pathname === '/news-by-movesbook/indexall') {
     return <>{children}</>;
   }
 
