@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Search, Plus, Edit, Trash2 } from 'lucide-react';
@@ -97,27 +97,6 @@ export default function NewsIndexAllPage() {
     }
   }, [user, adminUser, loading, authLoading, router]);
 
-  useEffect(() => {
-    const isAdmin = (user && user.userType === 'ADMIN') || (adminUser && adminUser.userType === 'ADMIN');
-    if (isAdmin && !authLoading) {
-      fetchData();
-    }
-  }, [user, adminUser, authLoading]);
-
-  useEffect(() => {
-    const isAdmin = (user && user.userType === 'ADMIN') || (adminUser && adminUser.userType === 'ADMIN');
-    if (isAdmin && !authLoading) {
-      setPage(1);
-    }
-  }, [filters]);
-
-  useEffect(() => {
-    const isAdmin = (user && user.userType === 'ADMIN') || (adminUser && adminUser.userType === 'ADMIN');
-    if (isAdmin && !authLoading) {
-      fetchNews();
-    }
-  }, [page, filters, user, adminUser, authLoading]);
-
   const fetchData = async () => {
     try {
       const [categoriesRes, languagesRes] = await Promise.all([
@@ -139,7 +118,7 @@ export default function NewsIndexAllPage() {
     }
   };
 
-  const fetchNews = async () => {
+  const fetchNews = useCallback(async () => {
     try {
       setIsLoading(true);
       const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
@@ -183,7 +162,28 @@ export default function NewsIndexAllPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [page, filters]);
+
+  useEffect(() => {
+    const isAdmin = (user && user.userType === 'ADMIN') || (adminUser && adminUser.userType === 'ADMIN');
+    if (isAdmin && !authLoading) {
+      fetchData();
+    }
+  }, [user, adminUser, authLoading]);
+
+  useEffect(() => {
+    const isAdmin = (user && user.userType === 'ADMIN') || (adminUser && adminUser.userType === 'ADMIN');
+    if (isAdmin && !authLoading) {
+      setPage(1);
+    }
+  }, [filters, user, adminUser, authLoading]);
+
+  useEffect(() => {
+    const isAdmin = (user && user.userType === 'ADMIN') || (adminUser && adminUser.userType === 'ADMIN');
+    if (isAdmin && !authLoading) {
+      fetchNews();
+    }
+  }, [page, filters, user, adminUser, authLoading, fetchNews]);
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this news article?')) return;

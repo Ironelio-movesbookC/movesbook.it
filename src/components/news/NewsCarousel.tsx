@@ -19,13 +19,9 @@ export default function NewsCarousel({ children, itemsPerView = 1 }: NewsCarouse
   const maxIndex = Math.max(0, totalItems - itemsPerView);
 
   useEffect(() => {
-    updateScrollButtons();
-  }, [currentIndex, totalItems, itemsPerView]);
-
-  const updateScrollButtons = () => {
     setCanScrollLeft(currentIndex > 0);
     setCanScrollRight(currentIndex < maxIndex);
-  };
+  }, [currentIndex, maxIndex]);
 
   const scrollToIndex = (index: number) => {
     const newIndex = Math.max(0, Math.min(index, maxIndex));

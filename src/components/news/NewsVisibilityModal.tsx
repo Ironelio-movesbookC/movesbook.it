@@ -30,6 +30,43 @@ export default function NewsVisibilityModal({
 
   useEffect(() => {
     if (isOpen) {
+      const fetchFriends = async () => {
+        try {
+          setLoading(true);
+          const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+          if (!token) return;
+
+          const res = await fetch('/api/user/friends', {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setFriends(data.friends.map((f: any) => ({ ...f, isAuthorized: false })));
+          }
+        } catch (error) {
+          console.error('Error fetching friends:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const fetchAuthorizedFriends = async () => {
+        try {
+          const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+          if (!token) return;
+
+          const res = await fetch(`/api/news/${newsId}/authorized-friends`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setAuthorizedFriends(new Set(data.friendIds || []));
+          }
+        } catch (error) {
+          console.error('Error fetching authorized friends:', error);
+        }
+      };
+
       fetchFriends();
       fetchAuthorizedFriends();
     }
@@ -45,47 +82,6 @@ export default function NewsVisibilityModal({
       document.body.style.overflow = 'unset';
     };
   }, [isOpen]);
-
-  const fetchFriends = async () => {
-    try {
-      setLoading(true);
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      if (!token) return;
-
-      const res = await fetch('/api/user/friends', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setFriends(data.friends.map((f: any) => ({ ...f, isAuthorized: false })));
-      }
-    } catch (error) {
-      console.error('Error fetching friends:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchAuthorizedFriends = async () => {
-    try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      if (!token) return;
-
-      const res = await fetch(`/api/news/${newsId}/authorized-friends`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAuthorizedFriends(new Set(data.friendIds || []));
-      }
-    } catch (error) {
-      console.error('Error fetching authorized friends:', error);
-    }
-  };
 
   const toggleFriendAuthorization = (friendId: string) => {
     const newAuthorized = new Set(authorizedFriends);

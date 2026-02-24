@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
@@ -66,7 +66,7 @@ interface NewsArticle {
 }
 
 
-export default function PublicNewsListPage() {
+function PublicNewsListPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useLanguage();
@@ -190,7 +190,7 @@ export default function PublicNewsListPage() {
         if (res.ok) {
           const data = await res.json();
           setNews(data.news || []);
-          setPagination(data.pagination || pagination);
+          setPagination(prev => data.pagination || prev);
         }
       } catch (error) {
         console.error('Error fetching news:', error);
@@ -308,5 +308,13 @@ export default function PublicNewsListPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function PublicNewsListPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-600">Loading...</div>}>
+      <PublicNewsListPageContent />
+    </Suspense>
   );
 }

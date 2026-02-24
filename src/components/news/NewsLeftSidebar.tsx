@@ -51,7 +51,7 @@ export default function NewsLeftSidebar({ isOpen, onToggle, categories = [] }: N
       };
       fetchCategories();
     }
-  }, [pathname]);
+  }, [pathname, categories]);
 
   const isActive = (path: string) => {
     if (path === '/news' && pathname === '/news') return true;

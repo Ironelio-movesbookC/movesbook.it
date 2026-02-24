@@ -715,6 +715,7 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
                             }`}
                           >
                             {isImage ? (
+                              // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={msg.content}
                                 alt="Shared"
@@ -773,6 +774,7 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
               )}
               {pendingImage && (
                 <div className="mb-2 flex items-center gap-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={pendingImage}
                     alt="Paste preview"

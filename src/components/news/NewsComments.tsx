@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { Send } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -38,13 +38,7 @@ export default function NewsComments({ newsId, enabled }: NewsCommentsProps) {
   const [verifyingEntity, setVerifyingEntity] = useState(false);
   const [entityError, setEntityError] = useState('');
 
-  useEffect(() => {
-    if (enabled && newsId) {
-      fetchComments();
-    }
-  }, [newsId, enabled]);
-
-  const fetchComments = async () => {
+  const fetchComments = useCallback(async () => {
     try {
       const res = await fetch(`/api/news/${newsId}/comments`);
       if (res.ok) {
@@ -56,7 +50,13 @@ export default function NewsComments({ newsId, enabled }: NewsCommentsProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [newsId]);
+
+  useEffect(() => {
+    if (enabled && newsId) {
+      fetchComments();
+    }
+  }, [newsId, enabled, fetchComments]);
 
   const handleVerifyEntity = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -400,6 +400,7 @@ function CommentAvatar({ user, size = 'md' }: { user?: { image?: string | null; 
 
   if (imageUrl) {
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={imageUrl}
         alt={user?.username || 'User'}

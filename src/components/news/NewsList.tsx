@@ -197,6 +197,7 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
     
     if (imageUrl) {
       return (
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={imageUrl}
           alt={item.user?.username || 'Author'}
