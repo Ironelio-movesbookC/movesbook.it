@@ -1,7 +1,7 @@
 'use client';
 
 import { Search, Filter, X } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, Dispatch, SetStateAction } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface Category {
@@ -22,17 +22,18 @@ interface Language {
 
 interface NewsToolboxProps {
   searchQuery: string;
-  setSearchQuery: (query: string) => void;
+  setSearchQuery: Dispatch<SetStateAction<string>>;
   selectedCategory: string;
-  setSelectedCategory: (category: string) => void;
+  setSelectedCategory: Dispatch<SetStateAction<string>>;
   selectedSport: string;
-  setSelectedSport: (sport: string) => void;
+  setSelectedSport: Dispatch<SetStateAction<string>>;
   selectedLanguage: string;
-  setSelectedLanguage: (language: string) => void;
+  setSelectedLanguage: Dispatch<SetStateAction<string>>;
   onShow: () => void;
-  categories: Category[];
-  sports: Sport[];
-  languages: Language[];
+
+  categories?: Category[];
+  sports?: Sport[];
+  languages?: Language[];
 }
 
 export default function NewsToolbox({
@@ -45,9 +46,9 @@ export default function NewsToolbox({
   selectedLanguage,
   setSelectedLanguage,
   onShow,
-  categories,
-  sports,
-  languages,
+  categories = [],
+  sports = [],
+  languages = [],
 }: NewsToolboxProps) {
   const { t } = useLanguage();
   const [showFilters, setShowFilters] = useState(false);

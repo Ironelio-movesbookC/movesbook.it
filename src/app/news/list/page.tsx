@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import SectionGroupBar from '@/components/news/SectionGroupBar';
 import NewsList from '@/components/news/NewsList';
@@ -56,7 +56,6 @@ interface NewsArticle {
 
 export default function ListModePage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [categories, setCategories] = useState<Category[]>([]);
   const [sports, setSports] = useState<Sport[]>([]);
   const [languages, setLanguages] = useState<Language[]>([]);
@@ -135,7 +134,7 @@ export default function ListModePage() {
         if (res.ok) {
           const data = await res.json();
           setNews(data.news || []);
-          setPagination(data.pagination || pagination);
+          setPagination(prev => data.pagination || prev);
           
           if (data.news && data.news.length > 0) {
             setPopularPosts(data.news.slice(0, 4));

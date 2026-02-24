@@ -185,7 +185,7 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
     };
 
     fetchNews();
-  }, [newsId, allLanguages]);
+  }, [newsId, allLanguages, selectedLanguage]);
 
   const handleLanguageChange = (langCode: string) => {
     setSelectedLanguage(langCode);

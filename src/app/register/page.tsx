@@ -258,7 +258,7 @@ export default function RegisterPage() {
                   onChange={(e) => setFormData({...formData, country: e.target.value})}
                 >
                   <option value="" className="text-gray-400 bg-gray-800">Select country</option>
-                  {countries.map((country) => (
+                  {COUNTRIES.map((country) => (
                     <option key={country} value={country} className="text-white bg-gray-800">
                       {country}
                     </option>

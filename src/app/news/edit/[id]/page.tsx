@@ -388,7 +388,7 @@ export default function EditNewsPage() {
     }
 
     fetchNews();
-  }, [newsId, router]);
+  }, [newsId, router, languages, user]);
 
 
   useEffect(() => {
@@ -1132,6 +1132,7 @@ export default function EditNewsPage() {
                 </div>
                 {picturePreview && (
                   <div className="mt-4 relative w-64 h-48">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={picturePreview} alt="Preview" className="w-full h-full object-cover rounded-lg" />
                   </div>
                 )}
@@ -1184,6 +1185,7 @@ export default function EditNewsPage() {
                 </div>
                 {bannerPreview && (
                   <div className="mt-4 relative w-full h-48">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={bannerPreview} alt="Banner Preview" className="w-full h-full object-cover rounded-lg" />
                     <button
                       type="button"
@@ -1403,6 +1405,7 @@ export default function EditNewsPage() {
                         {ogData.image && (
                           <div className="mt-2">
                             <span className="text-xs font-medium text-gray-700">Image: </span>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={ogData.image} alt="OG Preview" className="mt-1 max-w-xs h-24 object-cover rounded" />
                           </div>
                         )}
