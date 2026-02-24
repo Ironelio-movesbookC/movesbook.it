@@ -1,9 +1,12 @@
 'use client';
 
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Pencil, Plus, ChevronLeft, ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
+import { Pencil, ChevronLeft, ChevronRight, Maximize2, Minimize2, Settings } from 'lucide-react';
 
 const SCROLL_STEP = 220;
+
+/** Special topic: show all articles sorted by date (most recent); "+" is disabled when this is selected */
+export const ALL_TOPICS = 'All';
 
 export const NEWS_TOPICS = [
   'Events',
@@ -27,10 +30,10 @@ interface NewsTopicBarProps {
   onAddNewTopic: () => void;
   /** Called when the "Add" button is clicked to add a new topic */
   onAddTopic?: () => void;
-  /** Called when the "+" button is clicked to show the OGP input form (Save/Cancel area) */
-  onAddClick?: () => void;
   isExpanded: boolean;
   onExpandReduce: () => void;
+  /** Called when the gear (topic sort) button is clicked */
+  onOpenTopicSort?: () => void;
 }
 
 export default function NewsTopicBar({
@@ -39,9 +42,9 @@ export default function NewsTopicBar({
   onTopicSelect,
   onAddNewTopic,
   onAddTopic,
-  onAddClick,
   isExpanded,
   onExpandReduce,
+  onOpenTopicSort,
 }: NewsTopicBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -86,7 +89,7 @@ export default function NewsTopicBar({
           title="Add new topic"
           aria-label="Add new topic"
         >
-          Add
+          Add topic
         </button>
       )}
 
@@ -99,6 +102,21 @@ export default function NewsTopicBar({
         aria-label="Edit topic"
       >
         <Pencil className="w-5 h-5" />
+      </button>
+
+      {/* "All" - show all articles by date; when selected, "+" is disabled */}
+      <button
+        type="button"
+        onClick={() => onTopicSelect(ALL_TOPICS)}
+        className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+          activeTopic === ALL_TOPICS
+            ? 'bg-gray-800 text-white'
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+        }`}
+        title="Show all articles sorted by date (most recent). Add article is disabled."
+        aria-label="Show all articles"
+      >
+        {ALL_TOPICS}
       </button>
 
       {/* Left arrow - scroll left */}
@@ -157,17 +175,6 @@ export default function NewsTopicBar({
         <ChevronRight className="w-5 h-5" />
       </button>
 
-      {/* Plus button - shows the OGP input form (Save/Cancel area) when clicked */}
-      <button
-        type="button"
-        onClick={onAddClick}
-        className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 transition-colors"
-        title="Add"
-        aria-label="Add"
-      >
-        <Plus className="w-5 h-5" />
-      </button>
-
       {/* Expand / Reduce button */}
       <button
         type="button"
@@ -182,6 +189,19 @@ export default function NewsTopicBar({
           <Maximize2 className="w-5 h-5" />
         )}
       </button>
+
+      {/* Gear - topic sort order (user's favorite sorting) */}
+      {onOpenTopicSort && (
+        <button
+          type="button"
+          onClick={onOpenTopicSort}
+          className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 transition-colors"
+          title="Sort topics (your favorite order)"
+          aria-label="Sort topics"
+        >
+          <Settings className="w-5 h-5" />
+        </button>
+      )}
     </div>
   );
 }

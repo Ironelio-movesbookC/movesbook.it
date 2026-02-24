@@ -3,12 +3,12 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useAuth } from './useAuth';
 import type { ArticlePasted, ArticleTyped } from '@/app/news/components/NewsArticlesList';
-import type { OGPData } from '@/app/news/components/OGPForm';
+import type { OGPData, OgpVisibilitySettingsExport } from '@/app/news/components/OGPForm';
 import { NEWS_TOPICS } from '@/app/news/components/NewsTopicBar';
 
-function getAuthHeaders(): HeadersInit {
+function getAuthHeaders(adminContext?: boolean): HeadersInit {
   if (typeof window === 'undefined') return {};
-  const token = localStorage.getItem('token');
+  const token = adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token');
   if (!token) return {};
   return { Authorization: `Bearer ${token}` };
 }
@@ -26,17 +26,27 @@ export interface UseNewsDataResult {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  saveTopicOrder: (order: string[]) => Promise<void>;
   addTopic: (name: string) => Promise<void>;
   updateTopic: (id: string, name: string) => Promise<void>;
   deleteTopic: (id: string) => Promise<void>;
-  addPastedArticle: (data: OGPData & { customDescription?: string }, topic: string) => Promise<void>;
+  addPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport; languageCode?: string | null }, topic: string) => Promise<void>;
   removePastedArticle: (id: string) => Promise<void>;
+  updatePastedArticleSettings: (id: string, settings: OgpVisibilitySettingsExport) => Promise<void>;
+  updatePastedArticleTopic: (id: string, topic: string, customDescription?: string) => Promise<void>;
   addTypedArticle: (description: string) => Promise<void>;
   removeTypedArticle: (id: string) => Promise<void>;
 }
 
-export function useNewsData(): UseNewsDataResult {
+export interface UseNewsDataOptions {
+  /** When true, use adminToken and adminUser from localStorage (super admin in admin panel). */
+  adminContext?: boolean;
+}
+
+export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   const { user } = useAuth();
+  const adminContext = options?.adminContext === true;
+  const [adminUserId, setAdminUserId] = useState<string | null>(null);
   const [topics, setTopics] = useState<string[]>(() => [...NEWS_TOPICS]);
   const [customTopics, setCustomTopics] = useState<CustomTopic[]>([]);
   const [pastedArticles, setPastedArticles] = useState<ArticlePasted[]>([]);
@@ -44,8 +54,24 @@ export function useNewsData(): UseNewsDataResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (adminContext && typeof window !== 'undefined') {
+      const raw = localStorage.getItem('adminUser');
+      const u = raw ? JSON.parse(raw) : null;
+      setAdminUserId(u?.id ?? null);
+    } else {
+      setAdminUserId(null);
+    }
+  }, [adminContext]);
+
+  const effectiveUserId = adminContext ? adminUserId : user?.id;
+  const getHeaders = useCallback(
+    () => getAuthHeaders(adminContext),
+    [adminContext]
+  );
+
   const fetchAll = useCallback(async () => {
-    if (!user?.id) {
+    if (!effectiveUserId) {
       setTopics([...NEWS_TOPICS]);
       setCustomTopics([]);
       setPastedArticles([]);
@@ -55,31 +81,43 @@ export function useNewsData(): UseNewsDataResult {
     }
     setLoading(true);
     setError(null);
-    const headers = getAuthHeaders();
+    const headers = getHeaders();
     try {
-      const [topicsRes, ogpRes, typedRes] = await Promise.all([
+      const [topicsRes, ogpRes, typedRes, orderRes] = await Promise.all([
         fetch('/api/news/topics', { headers }),
         fetch('/api/news/ogp', { headers }),
         fetch('/api/news/typed', { headers }),
+        fetch('/api/news/topic-order', { headers }),
       ]);
 
       if (!topicsRes.ok || !ogpRes.ok || !typedRes.ok) {
         throw new Error('Failed to load news data');
       }
 
-      const [topicsData, ogpData, typedData] = await Promise.all([
+      const [topicsData, ogpData, typedData, orderData] = await Promise.all([
         topicsRes.json(),
         ogpRes.json(),
         typedRes.json(),
+        orderRes.ok ? orderRes.json() : Promise.resolve({ order: [] }),
       ]);
 
       const custom = topicsData.customTopics ?? [];
       setCustomTopics(custom);
-      setTopics([...(topicsData.defaultTopicNames ?? NEWS_TOPICS), ...custom.map((t: CustomTopic) => t.name)]);
+      const rawTopics = [...(topicsData.defaultTopicNames ?? NEWS_TOPICS), ...custom.map((t: CustomTopic) => t.name)];
+      const order: string[] = orderData?.order ?? [];
+      const sorted =
+        order.length > 0
+          ? [
+              ...order.filter((t: string) => rawTopics.includes(t)),
+              ...rawTopics.filter((t: string) => !order.includes(t)),
+            ]
+          : rawTopics;
+      setTopics(sorted);
 
       setPastedArticles(
         (ogpData ?? []).map((a: any) => ({
           id: a.id,
+          userId: a.userId,
           title: a.title,
           image: a.image,
           description: a.description,
@@ -88,7 +126,18 @@ export function useNewsData(): UseNewsDataResult {
           type: a.type,
           customDescription: a.customDescription,
           topic: a.topic,
+          languageCode: a.languageCode ?? undefined,
           savedAt: a.savedAt,
+          deletedAt: a.deletedAt,
+          deletedByUserId: a.deletedByUserId,
+          deletedByName: a.deletedByName,
+          visibility: {
+            userTypes: a.visibilityUserTypes ?? [],
+            countries: a.visibilityCountries ?? [],
+            languages: a.visibilityLanguages ?? [],
+            sports: a.visibilitySports ?? [],
+            expiresAt: a.expiresAt ?? null,
+          },
         }))
       );
 
@@ -108,16 +157,31 @@ export function useNewsData(): UseNewsDataResult {
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [effectiveUserId, getHeaders]);
 
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
 
+  const saveTopicOrder = useCallback(
+    async (order: string[]) => {
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
+      const res = await fetch('/api/news/topic-order', {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ order }),
+      });
+      if (!res.ok) throw new Error('Failed to save topic order');
+      await fetchAll();
+    },
+    [effectiveUserId, fetchAll, getHeaders]
+  );
+
   const addTopic = useCallback(
     async (name: string) => {
-      if (!user?.id) return;
-      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch('/api/news/topics', {
         method: 'POST',
         headers,
@@ -131,13 +195,13 @@ export function useNewsData(): UseNewsDataResult {
       setCustomTopics((prev) => [...prev, { id: created.id, name: created.name }]);
       setTopics((prev) => [...prev, created.name]);
     },
-    [user?.id]
+    [effectiveUserId, getHeaders]
   );
 
   const updateTopic = useCallback(
     async (id: string, name: string) => {
-      if (!user?.id) return;
-      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch(`/api/news/topics/${id}`, {
         method: 'PATCH',
         headers,
@@ -151,26 +215,27 @@ export function useNewsData(): UseNewsDataResult {
       setCustomTopics((prev) => prev.map((t) => (t.id === id ? { id, name: updated.name } : t)));
       setTopics((prev) => prev.map((t) => (t === (customTopics.find((c) => c.id === id)?.name ?? '') ? updated.name : t)));
     },
-    [user?.id, customTopics]
+    [effectiveUserId, customTopics, getHeaders]
   );
 
   const deleteTopic = useCallback(
     async (id: string) => {
-      if (!user?.id) return;
-      const headers = getAuthHeaders();
+      if (!effectiveUserId) return;
+      const headers = getHeaders();
       const res = await fetch(`/api/news/topics/${id}`, { method: 'DELETE', headers });
       if (!res.ok) throw new Error('Failed to delete topic');
       const name = customTopics.find((c) => c.id === id)?.name;
       setCustomTopics((prev) => prev.filter((t) => t.id !== id));
       if (name) setTopics((prev) => prev.filter((t) => t !== name));
     },
-    [user?.id, customTopics]
+    [effectiveUserId, customTopics, getHeaders]
   );
 
   const addPastedArticle = useCallback(
-    async (data: OGPData & { customDescription?: string }, topic: string) => {
-      if (!user?.id) return;
-      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+    async (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport; languageCode?: string | null }, topic: string) => {
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
+      const vis = data.visibility;
       const res = await fetch('/api/news/ogp', {
         method: 'POST',
         headers,
@@ -183,6 +248,12 @@ export function useNewsData(): UseNewsDataResult {
           type: data.type,
           customDescription: data.customDescription,
           topic: topic || 'News',
+          languageCode: data.languageCode ?? null,
+          expiresAt: vis?.expiresAt ?? null,
+          visibilityUserTypes: vis?.userTypes ?? [],
+          visibilityCountries: vis?.countries ?? [],
+          visibilityLanguages: vis?.languages ?? [],
+          visibilitySports: vis?.sports ?? [],
         }),
       });
       if (!res.ok) {
@@ -202,28 +273,96 @@ export function useNewsData(): UseNewsDataResult {
           type: created.type,
           customDescription: created.customDescription,
           topic: created.topic,
+          languageCode: created.languageCode ?? undefined,
           savedAt: created.savedAt,
         },
       ]);
     },
-    [user?.id]
+    [effectiveUserId, getHeaders]
   );
 
   const removePastedArticle = useCallback(
     async (id: string) => {
-      if (!user?.id) return;
-      const headers = getAuthHeaders();
+      if (!effectiveUserId) return;
+      const headers = getHeaders();
       const res = await fetch(`/api/news/ogp/${id}`, { method: 'DELETE', headers });
       if (!res.ok) throw new Error('Failed to remove article');
       setPastedArticles((prev) => prev.filter((a) => a.id !== id));
     },
-    [user?.id]
+    [effectiveUserId, getHeaders]
+  );
+
+  const updatePastedArticleSettings = useCallback(
+    async (id: string, settings: OgpVisibilitySettingsExport) => {
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
+      const res = await fetch(`/api/news/ogp/${id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          visibilityUserTypes: settings.userTypes ?? [],
+          visibilityCountries: settings.countries ?? [],
+          visibilityLanguages: settings.languages ?? [],
+          visibilitySports: settings.sports ?? [],
+          expiresAt: settings.expiresAt ?? null,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to update article settings');
+      setPastedArticles((prev) =>
+        prev.map((a) =>
+          a.id !== id
+            ? a
+            : {
+                ...a,
+                visibility: {
+                  userTypes: settings.userTypes ?? [],
+                  countries: settings.countries ?? [],
+                  languages: settings.languages ?? [],
+                  sports: settings.sports ?? [],
+                  expiresAt: settings.expiresAt ?? null,
+                },
+              }
+        )
+      );
+    },
+    [effectiveUserId, getHeaders]
+  );
+
+  const updatePastedArticleTopic = useCallback(
+    async (id: string, topic: string, customDescription?: string) => {
+      if (!effectiveUserId) return;
+      const trimmed = topic.trim();
+      if (!trimmed) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
+      const payload: { topic: string; customDescription?: string | null } = { topic: trimmed };
+      if (customDescription !== undefined) {
+        payload.customDescription = customDescription.trim() || null;
+      }
+      const res = await fetch(`/api/news/ogp/${id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Failed to update article topic');
+      setPastedArticles((prev) =>
+        prev.map((a) =>
+          a.id !== id
+            ? a
+            : {
+                ...a,
+                topic: trimmed,
+                ...(customDescription !== undefined && { customDescription: customDescription.trim() || undefined }),
+              }
+        )
+      );
+    },
+    [effectiveUserId, getHeaders]
   );
 
   const addTypedArticle = useCallback(
     async (description: string) => {
-      if (!user?.id) return;
-      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch('/api/news/typed', {
         method: 'POST',
         headers,
@@ -233,18 +372,18 @@ export function useNewsData(): UseNewsDataResult {
       const created = await res.json();
       setTypedArticles((prev) => [...prev, { id: created.id, description: created.description }]);
     },
-    [user?.id]
+    [effectiveUserId, getHeaders]
   );
 
   const removeTypedArticle = useCallback(
     async (id: string) => {
-      if (!user?.id) return;
-      const headers = getAuthHeaders();
+      if (!effectiveUserId) return;
+      const headers = getHeaders();
       const res = await fetch(`/api/news/typed/${id}`, { method: 'DELETE', headers });
       if (!res.ok) throw new Error('Failed to remove');
       setTypedArticles((prev) => prev.filter((a) => a.id !== id));
     },
-    [user?.id]
+    [effectiveUserId, getHeaders]
   );
 
   return {
@@ -255,11 +394,14 @@ export function useNewsData(): UseNewsDataResult {
     loading,
     error,
     refresh: fetchAll,
+    saveTopicOrder,
     addTopic,
     updateTopic,
     deleteTopic,
     addPastedArticle,
     removePastedArticle,
+    updatePastedArticleSettings,
+    updatePastedArticleTopic,
     addTypedArticle,
     removeTypedArticle,
   };
