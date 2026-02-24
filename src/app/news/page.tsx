@@ -1,313 +1,312 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { X } from 'lucide-react';
-import ModernNavbar from '@/components/ModernNavbar';
-import AdvertisementCarousel from '@/components/AdvertisementCarousel';
-import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolbar';
-import DarkSidebar from '@/components/DarkSidebar';
-import PersonalBanner from '@/app/my-page/components/PersonalBanner';
-import SimpleFooter from '@/components/SimpleFooter';
+import { useEffect, useState, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { Plus } from 'lucide-react';
+import NewsList from '@/components/news/NewsList';
+import GetSocialBlock from '@/components/news/GetSocialBlock';
+import NewsToolbox from '@/components/news/NewsToolbox';
 import { useAuth } from '@/hooks/useAuth';
-import { useNewsData } from '@/hooks/useNewsData';
-import NewsTopicBar, { type NewsTopic, ALL_TOPICS } from './components/NewsTopicBar';
-import NewTopicModal from './components/NewTopicModal';
-import NewsTopicSortModal from './components/NewsTopicSortModal';
-import OGPForm from './components/OGPForm';
-import NewsArticlesList from './components/NewsArticlesList';
-import NewsRightSidebar from './components/NewsRightSidebar';
+import { useLanguage } from '@/contexts/LanguageContext';
 
-export default function NewsPage() {
-  const { user } = useAuth();
-  const {
-    topics,
-    customTopics,
-    pastedArticles,
-    typedArticles,
-    loading,
-    error,
-    addTopic,
-    updateTopic,
-    deleteTopic,
-    saveTopicOrder,
-    addPastedArticle,
-    removePastedArticle,
-    updatePastedArticleSettings,
-    updatePastedArticleTopic,
-    addTypedArticle,
-    removeTypedArticle,
-  } = useNewsData();
+interface Category {
+  id: string;
+  categoryName: string;
+}
 
-  const [showAdBanner, setShowAdBanner] = useState(true);
-  const [showPersonalBanner, setShowPersonalBanner] = useState(true);
-  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
-  const [showRightSidebar, setShowRightSidebar] = useState(true);
-  const [showToolbar, setShowToolbar] = useState(true);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [showOgpForm, setShowOgpForm] = useState(false);
-  const [activeTopic, setActiveTopic] = useState<NewsTopic | null>('News');
-  const [showNewTopicModal, setShowNewTopicModal] = useState(false);
-  const [showTopicSortModal, setShowTopicSortModal] = useState(false);
-  const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
-  const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
+interface Sport {
+  id: string;
+  name: string;
+}
 
-  const handleOpenTopicModal = useCallback(() => {
-    setTopicModalEditing(activeTopic ?? null);
-    setTopicModalEditingId(customTopics.find((c) => c.name === (activeTopic ?? ''))?.id ?? null);
-    setShowNewTopicModal(true);
-  }, [activeTopic, customTopics]);
+interface Language {
+  id: string;
+  code: string;
+  name: string;
+}
 
-  const handleOpenAddTopicModal = useCallback(() => {
-    setTopicModalEditing(null);
-    setTopicModalEditingId(null);
-    setShowNewTopicModal(true);
+interface NewsArticle {
+  id: string;
+  title: string;
+  content?: string | Record<string, string>;
+  image?: string | null;
+  createdAt: string;
+  mode?: string;
+  internetLinkEditor?: string;
+  inLastNews?: string;
+  feturedNews?: string;
+  author?: string;
+  originalAuthor?: string;
+  searchingKeywords?: string;
+  briefDesc?: string | null;
+  category?: {
+    id: string;
+    categoryName: string;
+  } | null;
+  languageTitles?: Array<{
+    title: string;
+    language: {
+      code: string;
+      name: string;
+    };
+  }>;
+  settings?: Array<{
+    sports?: Array<{
+      sport: string;
+    }>;
+  }>;
+  user?: {
+    id: string;
+    username: string;
+    image: string | null;
+    firstname?: string | null;
+    lastname?: string | null;
+  } | null;
+}
+
+
+export default function PublicNewsListPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { t } = useLanguage();
+  const { user, loading: authLoading } = useAuth();
+  const [adminUser, setAdminUser] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [sports, setSports] = useState<Sport[]>([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedSport, setSelectedSport] = useState<string>('');
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [news, setNews] = useState<NewsArticle[]>([]);
+  const [popularPosts, setPopularPosts] = useState<NewsArticle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [hideShowStatus, setHideShowStatus] = useState(false);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0,
+  });
+  
+  const hasFetchedDropdownDataRef = useRef(false);
+  const fetchingNewsRef = useRef(false);
+  const hasFetchedPopularPostsRef = useRef(false);
+
+  useEffect(() => {
+    const checkAdmin = () => {
+      try {
+        const adminData = localStorage.getItem('adminUser');
+        if (adminData) {
+          const parsed = JSON.parse(adminData);
+          setAdminUser(parsed);
+        }
+      } catch (error) {
+        console.error('Error parsing admin user:', error);
+      }
+    };
+
+    checkAdmin();
   }, []);
 
-  const handleSaveTopic = useCallback(
-    async (name: string) => {
-      try {
-        if (topicModalEditingId) {
-          await updateTopic(topicModalEditingId, name);
-          if (activeTopic === topicModalEditing) setActiveTopic(name);
-        } else {
-          await addTopic(name);
-          setActiveTopic(name);
-        }
-        setTopicModalEditing(null);
-        setTopicModalEditingId(null);
-        setShowNewTopicModal(false);
-      } catch (e) {
-        console.error(e);
-      }
-    },
-    [topicModalEditingId, topicModalEditing, activeTopic, updateTopic, addTopic]
-  );
-
-  const handleDeleteTopic = useCallback(async () => {
-    if (!topicModalEditingId) return;
-    try {
-      await deleteTopic(topicModalEditingId);
-      if (activeTopic === topicModalEditing) {
-        const remaining = topics.filter((t) => t !== topicModalEditing);
-        setActiveTopic(remaining[0] ?? null);
-      }
-      setTopicModalEditing(null);
-      setTopicModalEditingId(null);
-      setShowNewTopicModal(false);
-    } catch (e) {
-      console.error(e);
+  useEffect(() => {
+    if (!authLoading) {
+      const admin = (user && user.userType === 'ADMIN') || (adminUser && adminUser.userType === 'ADMIN');
+      setIsAdmin(admin || false);
     }
-  }, [topicModalEditingId, topicModalEditing, activeTopic, topics, deleteTopic]);
+  }, [user, adminUser, authLoading]);
+  
+  useEffect(() => {
+    const categoryId = searchParams?.get('categoryId') || searchParams?.get('category') || '';
+    const sportId = searchParams?.get('sportId') || searchParams?.get('sport') || '';
+    const languageId = searchParams?.get('languageId') || searchParams?.get('language') || '';
+    const search = searchParams?.get('search') || '';
+    const page = parseInt(searchParams?.get('page') || '1');
+    const limit = parseInt(searchParams?.get('limit') || '10');
+    
+    setSearchQuery(search);
+    setSelectedCategory(categoryId);
+    setSelectedSport(sportId);
+    setSelectedLanguage(languageId);
+    setPagination(prev => ({
+      ...prev,
+      limit,
+      page,
+    }));
+  }, [searchParams]);
 
-  const handleRemovePasted = useCallback(
-    async (id: string) => {
+  useEffect(() => {
+    if (hasFetchedDropdownDataRef.current) return;
+    hasFetchedDropdownDataRef.current = true;
+    
+    const fetchData = async () => {
       try {
-        await removePastedArticle(id);
-      } catch (e) {
-        console.error(e);
-      }
-    },
-    [removePastedArticle]
-  );
+        const [categoriesRes, sportsRes, languagesRes] = await Promise.all([
+          fetch('/api/public/news/categories'),
+          fetch('/api/public/news/sports'),
+          fetch('/api/public/news/languages'),
+        ]);
 
-  const handleRemoveTyped = useCallback(
-    async (id: string) => {
+        if (categoriesRes.ok) {
+          const data = await categoriesRes.json();
+          setCategories(data);
+        }
+
+        if (sportsRes.ok) {
+          const data = await sportsRes.json();
+          setSports(data);
+        }
+
+        if (languagesRes.ok) {
+          const data = await languagesRes.json();
+          setLanguages(data);
+        }
+      } catch (error) {
+        console.error('Error fetching dropdown data:', error);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  useEffect(() => {
+    if (fetchingNewsRef.current) return;
+    
+    const fetchNews = async () => {
+      fetchingNewsRef.current = true;
+      setLoading(true);
       try {
-        await removeTypedArticle(id);
-      } catch (e) {
-        console.error(e);
-      }
-    },
-    [removeTypedArticle]
-  );
+        const params = new URLSearchParams();
+        if (searchQuery) params.append('search', searchQuery);
+        if (selectedCategory) params.append('categoryId', selectedCategory);
+        if (selectedSport) params.append('sportId', selectedSport);
+        if (selectedLanguage) params.append('languageId', selectedLanguage);
+        params.append('page', pagination.page.toString());
+        params.append('limit', pagination.limit.toString());
 
-  const handleUpdatePastedSettings = useCallback(
-    async (id: string, settings: { userTypes: string[]; countries: string[]; languages: string[]; sports: string[]; expiresAt: string | null }) => {
+        const res = await fetch(`/api/public/news?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          setNews(data.news || []);
+          setPagination(data.pagination || pagination);
+        }
+      } catch (error) {
+        console.error('Error fetching news:', error);
+      } finally {
+        setLoading(false);
+        fetchingNewsRef.current = false;
+      }
+    };
+
+    fetchNews();
+  }, [searchQuery, selectedCategory, selectedSport, selectedLanguage, pagination.page, pagination.limit]);
+
+  useEffect(() => {
+    const fetchPopularPosts = async () => {
       try {
-        await updatePastedArticleSettings(id, settings);
-      } catch (e) {
-        console.error(e);
+        const currentLanguage = languages.find(l => l.id === selectedLanguage)?.code || 
+                               languages.find(l => l.code === 'en')?.code || 
+                               'en';
+        const res = await fetch(`/api/public/news/popular?limit=4&language=${currentLanguage}`);
+        if (res.ok) {
+          const data = await res.json();
+          setPopularPosts(data.popularPosts || []);
+        }
+      } catch (error) {
+        console.error('Error fetching popular posts:', error);
       }
-    },
-    [updatePastedArticleSettings]
-  );
+    };
 
-  const handleUpdatePastedTopic = useCallback(
-    async (id: string, topic: string) => {
-      try {
-        await updatePastedArticleTopic(id, topic);
-      } catch (e) {
-        console.error(e);
-      }
-    },
-    [updatePastedArticleTopic]
-  );
+    if (languages.length > 0) {
+      fetchPopularPosts();
+    }
+  }, [languages, selectedLanguage]);
 
-  const handlePastedArticle = useCallback(
-    async (data: Parameters<Parameters<typeof OGPForm>[0]['onPastedArticle']>[0]) => {
-      try {
-        await addPastedArticle(data, activeTopic === ALL_TOPICS ? 'News' : (activeTopic ?? 'News'));
-        setShowOgpForm(false);
-      } catch (e) {
-        console.error(e);
-      }
-    },
-    [activeTopic, addPastedArticle]
-  );
+  const updateUrlParams = () => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set('search', searchQuery);
+    if (selectedCategory) params.set('categoryId', selectedCategory);
+    if (selectedSport) params.set('sportId', selectedSport);
+    if (selectedLanguage) params.set('languageId', selectedLanguage);
+    if (pagination.limit) params.set('limit', pagination.limit.toString());
+    if (pagination.page) params.set('page', pagination.page.toString());
+    router.push(`/news?${params.toString()}`);
+  };
 
-  const handleSaveTyped = useCallback(
-    async (description: string) => {
-      try {
-        await addTypedArticle(description);
-        setShowOgpForm(false);
-      } catch (e) {
-        console.error(e);
-      }
-    },
-    [addTypedArticle]
-  );
+  const handleShow = () => {
+    setPagination(prev => ({ ...prev, page: 1 }));
+    updateUrlParams();
+  };
 
-  const showLeft = showLeftSidebar && !isExpanded && user;
-  const showRight = showRightSidebar && !isExpanded;
+  const handleLimitChange = (limit: number) => {
+    setPagination(prev => ({ ...prev, limit, page: 1 }));
+    updateUrlParams();
+  };
+
+
+  const handlePageChange = (page: number) => {
+    setPagination(prev => ({ ...prev, page }));
+    updateUrlParams();
+  };
 
   return (
-    <div className="bg-gray-50 flex flex-col min-h-screen">
-      <ModernNavbar />
+    <div className="p-3 sm:p-4 md:p-6">
+      {isAdmin && (
+        <div className="mb-4 flex justify-end">
+          <Link
+            href="/news/add"
+            className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base"
+          >
+            <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span>{t('news_add_article')}</span>
+          </Link>
+        </div>
+      )}
 
-      <DisplayOptionsToolbar
-        showAdBanner={showAdBanner}
-        showPersonalBanner={showPersonalBanner}
-        showLeftSidebar={showLeftSidebar}
-        showRightSidebar={showRightSidebar}
-        showToolbar={showToolbar}
-        onToggleAdBanner={setShowAdBanner}
-        onTogglePersonalBanner={setShowPersonalBanner}
-        onToggleLeftSidebar={setShowLeftSidebar}
-        onToggleRightSidebar={setShowRightSidebar}
-        onToggleToolbar={setShowToolbar}
+      <NewsToolbox
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        selectedCategory={selectedCategory}
+        setSelectedCategory={setSelectedCategory}
+        selectedSport={selectedSport}
+        setSelectedSport={setSelectedSport}
+        selectedLanguage={selectedLanguage}
+        setSelectedLanguage={setSelectedLanguage}
+        onShow={handleShow}
+        categories={categories}
+        sports={sports}
+        languages={languages}
       />
 
-      {showAdBanner && (
-        <div className="mb-4 px-4 flex-shrink-0">
-          <AdvertisementCarousel />
-        </div>
-      )}
-
-      {showPersonalBanner && user && (
-        <div className="mb-4 flex-shrink-0">
-          <PersonalBanner user={user} />
-        </div>
-      )}
-
-      <div className="flex-1 flex gap-0 py-4">
-        {showLeft && (
-          <div className="w-80 flex-shrink-0 sticky top-0 self-start pl-4">
-            <DarkSidebar
-              userType={user?.userType || ''}
-              entities={[]}
-              selectedEntityId={null}
-              activeTab="my-page"
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+        <div className={hideShowStatus ? 'lg:col-span-3' : 'lg:col-span-2'}>
+          {loading ? (
+            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 md:p-8 text-center">
+              <p className="text-gray-600">{t('news_loading')}</p>
+            </div>
+          ) : news.length > 0 ? (
+            <NewsList 
+              news={news} 
+              mode="default" 
+              currentLanguage={languages.find(l => l.id === selectedLanguage)?.code || 'en'}
+              hideShowStatus={hideShowStatus}
+              onHideShowChange={setHideShowStatus}
             />
-          </div>
-        )}
-
-        <div className="flex-1 min-w-0 px-4">
-          {loading && <p className="text-sm text-gray-500 mb-2">Loading news...</p>}
-          {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
-          <NewsTopicBar
-            topics={topics}
-            activeTopic={activeTopic}
-            onTopicSelect={setActiveTopic}
-            onAddNewTopic={handleOpenTopicModal}
-            onAddTopic={handleOpenAddTopicModal}
-            isExpanded={isExpanded}
-            onExpandReduce={() => setIsExpanded((e) => !e)}
-            onOpenTopicSort={() => setShowTopicSortModal(true)}
-          />
-
-          <NewTopicModal
-            isOpen={showNewTopicModal}
-            onClose={() => {
-              setShowNewTopicModal(false);
-              setTopicModalEditing(null);
-              setTopicModalEditingId(null);
-            }}
-            onSave={handleSaveTopic}
-            editingTopic={topicModalEditing}
-            onDelete={topicModalEditingId ? handleDeleteTopic : undefined}
-            existingTopics={topics}
-          />
-
-          <NewsTopicSortModal
-            isOpen={showTopicSortModal}
-            onClose={() => setShowTopicSortModal(false)}
-            topics={topics}
-            onSave={async (ordered) => {
-              await saveTopicOrder(ordered);
-            }}
-          />
-
-          {showOgpForm && (
-            <div
-              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-              onClick={() => setShowOgpForm(false)}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="ogp-modal-title"
-            >
-              <div
-                className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.key === 'Escape' && setShowOgpForm(false)}
-              >
-                <div className="flex justify-between items-center p-4 border-b border-gray-200 sticky top-0 bg-white rounded-t-xl">
-                  <h2 id="ogp-modal-title" className="text-lg font-semibold text-gray-900">
-                    Add article
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => setShowOgpForm(false)}
-                    className="p-1 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
-                    aria-label="Close"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-                <div className="p-6">
-                  <OGPForm
-                    onPastedArticle={handlePastedArticle}
-                    onSaveTyped={handleSaveTyped}
-                    onCancel={() => setShowOgpForm(false)}
-                  />
-                </div>
-              </div>
+          ) : (
+            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 md:p-8 text-center">
+              <p className="text-gray-600">{t('news_no_news_found')}</p>
             </div>
           )}
-
-          <NewsArticlesList
-            pasted={pastedArticles}
-            typed={typedArticles}
-            activeTopic={activeTopic}
-            topics={topics}
-            onRemovePasted={handleRemovePasted}
-            onRemoveTyped={handleRemoveTyped}
-            canDeleteOgp={user?.userType === 'ADMIN'}
-            currentUserId={user?.id ?? null}
-            onUpdatePastedSettings={handleUpdatePastedSettings}
-            onUpdatePastedTopic={handleUpdatePastedTopic}
-            onAddClick={() => setShowOgpForm((prev) => !prev)}
-            addButtonDisabled={activeTopic === ALL_TOPICS}
-          />
         </div>
-
-        {showRight && (
-          <div className="pr-4">
-            <NewsRightSidebar />
+        
+        {!hideShowStatus && (
+          <div className="lg:col-span-1">
+            <GetSocialBlock popularPosts={popularPosts} />
           </div>
         )}
       </div>
-
-      <SimpleFooter />
     </div>
   );
 }

@@ -1,0 +1,1940 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
+import { ArrowLeft, Save, Upload, X, CheckCircle, AlertCircle, Settings, Link as LinkIcon } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { SPORTS_LIST } from '@/constants/moveframe.constants';
+import { DOCUMENT_TYPES, PRIORITY_OPTIONS, DISPLAY_MODE_OPTIONS } from '@/lib/news/mappings';
+import { COUNTRIES_WITH_CODES } from '@/lib/news/countries';
+
+const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), {
+  ssr: false,
+});
+
+export default function AddNewsPage() {
+  const router = useRouter();
+  const { t } = useLanguage();
+  const { user, loading } = useAuth();
+  const [saving, setSaving] = useState(false);
+  const [categories, setCategories] = useState<Array<{ id: string; categoryName: string }>>([]);
+  const [languages, setLanguages] = useState<Array<{ id: string; code: string; name: string }>>([]);
+  const [sports, setSports] = useState<Array<{ id: string; name: string }>>([]);
+  const [countries, setCountries] = useState<Array<{ id: string; name: string }>>([]);
+  const [writerVerifying, setWriterVerifying] = useState(false);
+  const [writerVerified, setWriterVerified] = useState(false);
+  const [writerVerificationError, setWriterVerificationError] = useState<string | null>(null);
+  const [picturePreview, setPicturePreview] = useState<string | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [pictureFile, setPictureFile] = useState<File | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [fetchingOG, setFetchingOG] = useState(false);
+  const [ogData, setOgData] = useState<{ title?: string; description?: string; image?: string } | null>(null);
+  const [ogError, setOgError] = useState<string | null>(null);
+  
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('');
+  const [languageContents, setLanguageContents] = useState<Record<string, string>>({});
+  const [languageTitles, setLanguageTitles] = useState<Record<string, string>>({});
+  const [relatedArticles, setRelatedArticles] = useState<Array<{ id: string; title: string; categoryName: string }>>([]);
+  const [availableArticles, setAvailableArticles] = useState<Array<{ id: string; title: string; categoryName: string }>>([]);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'display' | 'related'>('display');
+  const [userTypes, setUserTypes] = useState<Array<{ id: string; name: string }>>([]);
+  
+  const [formData, setFormData] = useState({
+    date: new Date().toISOString().split('T')[0],
+    langValueId: '',
+    documentType: 'articles',
+    title: '',
+    newsCategoryId: '',
+    section: '',
+    mode: 'content',
+    internetLink: '',
+    internetLinkEditor: '',
+    pageOption: '1',
+    displayMode: '1',
+    searchingKeywords: '',
+    method: 'Typed',
+    priority: 'middle',
+    feturedNews: false,
+    briefDesc: '',
+    inLastNews: false,
+    checkedBanner: false,
+    visualizeInReadingPageAuthorName: false,
+    visualizeInReadingPageActualAuthorName: false,
+    shareEnable: false,
+    shareCommentOption: false,
+    editableAdmin: false,
+    editableOperators: false,
+    editableUsers: false,
+    editableTranslators: false,
+    enableCheck: false,
+    favArticleAuthor: false,
+    writerUsername: '',
+    writerPassword: '',
+    image: null as string | null,
+    bannerImage: null as string | null,
+    settings: {
+      duration: '',
+      reshare: false,
+      sports: [] as string[],
+      roles: [] as string[],
+      languages: [] as string[],
+      countries: [] as string[],
+      functions: {
+        commentOption: false,
+        likeButton: false,
+        unlikeButton: false,
+        shareTf: false,
+        otherSetting: false,
+        rankingButton: false,
+        sendByEmail: false,
+        exportInPdf: false,
+        downloadDocument: false,
+        printOption: false,
+      },
+    },
+  });
+
+  useEffect(() => {
+    if (loading) return;
+    
+    if (typeof window === 'undefined') return;
+    
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+      if (!token && !user) {
+        router.push('/');
+      }
+    } catch (error) {
+      console.error('Error checking authentication:', error);
+    }
+  }, [user, loading, router]);
+
+  useEffect(() => {
+    if (loading) return;
+    
+    const fetchData = async () => {
+      try {
+        const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+        if (!token && !user) return;
+        
+        const [categoriesRes, languagesRes, articlesRes] = await Promise.all([
+          fetch('/api/public/news/categories'),
+          fetch('/api/public/news/languages'),
+          token ? fetch('/api/news?limit=100', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          }).catch(() => null) : Promise.resolve(null),
+        ]);
+        
+        if (categoriesRes.ok) {
+          const data = await categoriesRes.json();
+          setCategories(data || []);
+        }
+        
+        if (languagesRes.ok) {
+          const data = await languagesRes.json();
+          setLanguages(data || []);
+          if (data && data.length > 0) {
+            const firstLang = data[0];
+            setSelectedLanguage(firstLang.id);
+            setFormData(prev => ({ ...prev, langValueId: firstLang.id }));
+          }
+        }
+
+        if (articlesRes && articlesRes.ok) {
+          const data = await articlesRes.json();
+          setAvailableArticles(data.news?.map((n: any) => ({
+            id: n.id,
+            title: n.title || '',
+            categoryName: n.category?.categoryName || ''
+          })) || []);
+        }
+
+        setCountries(COUNTRIES_WITH_CODES);
+
+        const userTypesRes = await fetch('/api/public/user-types');
+        if (userTypesRes.ok) {
+          const userTypesData = await userTypesRes.json();
+          setUserTypes(userTypesData || []);
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      }
+    };
+    
+    fetchData();
+  }, [loading, user]);
+
+  useEffect(() => {
+  }, []);
+
+  useEffect(() => {
+    if (ogData?.title) {
+      const newTitle = ogData.title.trim();
+      setFormData(prev => {
+        if (prev.title !== newTitle) {
+          return { ...prev, title: newTitle };
+        }
+        return prev;
+      });
+    }
+  }, [ogData]);
+
+  const handleFetchOGTags = async (e?: React.MouseEvent | React.FormEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if ('nativeEvent' in e && e.nativeEvent) {
+        e.nativeEvent.stopImmediatePropagation();
+      }
+    }
+
+    const url = formData.internetLink.trim();
+    if (!url) {
+      setOgError('Please enter a URL first');
+      return;
+    }
+
+    setFetchingOG(true);
+    setOgError(null);
+    setOgData(null);
+
+    try {
+      const res = await fetch('/api/news/fetch-og-tags', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+      });
+
+      if (!res.ok) {
+        let errorData;
+        try {
+          errorData = await res.json();
+        } catch {
+          errorData = { message: `HTTP ${res.status}: ${res.statusText}` };
+        }
+        throw new Error(errorData.message || `HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const data = await res.json();
+
+      if (data.success && data.og_data) {
+        setOgData(data.og_data);
+        setOgError(null);
+        
+        setFormData(prev => ({
+          ...prev,
+          method: 'Pasted',
+          mode: 'url',
+        }));
+
+        if (data.og_data.description) {
+          if (formData.mode === 'url') {
+            setFormData(prev => ({
+              ...prev,
+              internetLinkEditor: data.og_data.description,
+            }));
+          } else {
+            const targetLang = selectedLanguage || formData.langValueId || (languages.length > 0 ? languages[0].id : '');
+            if (targetLang) {
+              setLanguageContents(prev => {
+                const currentContent = prev[targetLang] || '';
+                return {
+                  ...prev,
+                  [targetLang]: currentContent ? `${currentContent}\n\n${data.og_data.description}` : data.og_data.description,
+                };
+              });
+              if (!selectedLanguage && targetLang) {
+                setSelectedLanguage(targetLang);
+              }
+            } else if (languages.length > 0) {
+              const firstLang = languages[0].id;
+              setLanguageContents(prev => {
+                const currentContent = prev[firstLang] || '';
+                return {
+                  ...prev,
+                  [firstLang]: currentContent ? `${currentContent}\n\n${data.og_data.description}` : data.og_data.description,
+                };
+              });
+              if (!selectedLanguage) {
+                setSelectedLanguage(firstLang);
+              }
+            }
+          }
+        }
+
+        if (data.og_data.image) {
+          try {
+            const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+            const uploadRes = await fetch('/api/news/upload-image', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                url: data.og_data.image,
+                type: 'picture',
+              }),
+            });
+
+            if (uploadRes.ok) {
+              const uploadData = await uploadRes.json();
+              if (uploadData.success && uploadData.path) {
+                setPicturePreview(uploadData.path);
+                setFormData(prev => ({ ...prev, image: uploadData.path }));
+              }
+            } else {
+              setPicturePreview(data.og_data.image);
+              setFormData(prev => ({ ...prev, image: data.og_data.image }));
+            }
+          } catch (error) {
+            setPicturePreview(data.og_data.image);
+            setFormData(prev => ({ ...prev, image: data.og_data.image }));
+          }
+        }
+      } else {
+        let errorMessage = data.message || 'Failed to fetch OG tags';
+        if (errorMessage.includes('blocked') || errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
+          errorMessage += ' Some websites block automated requests. You can manually enter the title, description, and image.';
+        }
+        setOgError(errorMessage);
+        setOgData(null);
+      }
+    } catch (error: any) {
+      console.error('Error fetching OG tags:', error);
+      let errorMessage = 'Failed to fetch OG tags';
+      
+      if (error?.message) {
+        errorMessage = error.message;
+      } else if (error instanceof TypeError && error.message?.includes('fetch')) {
+        errorMessage = 'Network error: Unable to connect to the server. Please check your connection and try again.';
+      } else {
+        errorMessage = 'An unexpected error occurred while fetching OG tags. Please try again.';
+      }
+
+      if (errorMessage.includes('blocked') || errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
+        errorMessage += ' Some websites block automated requests. You can manually enter the title, description, and image.';
+      }
+      
+      setOgError(errorMessage);
+      setOgData(null);
+    } finally {
+      setFetchingOG(false);
+    }
+  };
+
+  const handleVerifyWriter = async (e?: React.MouseEvent<HTMLButtonElement>) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    if (!formData.writerUsername || !formData.writerPassword) {
+      setWriterVerificationError('Please enter username and password');
+      return;
+    }
+
+    try {
+      setWriterVerifying(true);
+      setWriterVerificationError(null);
+      
+      const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+      
+      const res = await fetch('/api/news/verify-writer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          username: formData.writerUsername,
+          password: formData.writerPassword,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.verified) {
+        setWriterVerificationError(data.error || 'Invalid credentials. Please check username and password.');
+        setWriterVerified(false);
+        return;
+      }
+
+      setWriterVerified(true);
+      setWriterVerificationError(null);
+    } catch (error) {
+      console.error('Error verifying writer:', error);
+      setWriterVerificationError('Failed to verify writer. Please try again.');
+      setWriterVerified(false);
+    } finally {
+      setWriterVerifying(false);
+    }
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'picture' | 'banner') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const previewUrl = reader.result as string;
+      if (type === 'picture') {
+        setPicturePreview(previewUrl);
+        setPictureFile(file);
+      } else {
+        setBannerPreview(previewUrl);
+        setBannerFile(file);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.title.trim()) {
+      alert('Please enter a title');
+      return;
+    }
+
+    if (!formData.newsCategoryId) {
+      alert('Please select a category');
+      return;
+    }
+
+    if (!formData.langValueId) {
+      alert('Please select original language');
+      return;
+    }
+
+    if (!formData.writerUsername || !formData.writerPassword) {
+      alert('Please enter writer credentials to verify');
+      return;
+    }
+
+    if (!writerVerified) {
+      alert('Please verify the writer credentials before submitting');
+      return;
+    }
+
+    if (formData.mode === 'content') {
+      const hasContent = Object.values(languageContents).some(content => content && content.trim().length > 0);
+      if (!hasContent) {
+        alert('Please enter article content');
+        return;
+      }
+    } else if (formData.mode === 'url') {
+      if (!formData.internetLink || !formData.internetLink.trim()) {
+        alert('Please enter an internet link');
+        return;
+      }
+      try {
+        new URL(formData.internetLink.trim());
+      } catch {
+        alert('Please enter a valid URL');
+        return;
+      }
+      if (!formData.internetLinkEditor || !formData.internetLinkEditor.trim()) {
+        alert('Please enter content for the internet link');
+        return;
+      }
+    }
+
+    try {
+      setSaving(true);
+      const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+      
+      let imagePath = formData.image || null;
+      let bannerImagePath = formData.bannerImage || null;
+
+      if (pictureFile) {
+        const uploadFormData = new FormData();
+        uploadFormData.append('file', pictureFile);
+        uploadFormData.append('type', 'picture');
+
+        const uploadRes = await fetch('/api/news/upload-image', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: uploadFormData,
+        });
+
+        if (!uploadRes.ok) {
+          const errorData = await uploadRes.json();
+          setSaving(false);
+          alert(`Failed to upload picture: ${errorData.error || 'Unknown error'}`);
+          return;
+        }
+
+        const uploadData = await uploadRes.json();
+        if (uploadData.success && uploadData.path) {
+          imagePath = uploadData.path;
+        }
+      }
+
+      if (bannerFile) {
+        const uploadFormData = new FormData();
+        uploadFormData.append('file', bannerFile);
+        uploadFormData.append('type', 'banner');
+
+        const uploadRes = await fetch('/api/news/upload-image', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: uploadFormData,
+        });
+
+        if (!uploadRes.ok) {
+          const errorData = await uploadRes.json();
+          setSaving(false);
+          alert(`Failed to upload banner: ${errorData.error || 'Unknown error'}`);
+          return;
+        }
+
+        const uploadData = await uploadRes.json();
+        if (uploadData.success && uploadData.path) {
+          bannerImagePath = uploadData.path;
+        }
+      }
+      
+      const submitData: any = {
+        date: formData.date,
+        langValueId: formData.langValueId,
+        documentType: formData.documentType,
+        title: formData.title,
+        newsCategoryId: formData.newsCategoryId,
+        section: formData.section || null,
+        image: imagePath,
+        bannerImage: bannerImagePath,
+        content: (() => {
+          const contentObj: Record<string, string> = {};
+          languages.forEach((lang) => {
+            const langId = lang.id;
+            const langCode = (lang as any).code || lang.id;
+            if (languageContents[langId]) {
+              contentObj[langCode] = languageContents[langId];
+            }
+          });
+          if (Object.keys(contentObj).length === 0) {
+            const defaultLang = languages.find(l => l.id === selectedLanguage) || languages[0];
+            const defaultCode = defaultLang ? ((defaultLang as any).code || defaultLang.id) : 'en';
+            contentObj[defaultCode] = '';
+          }
+          return contentObj;
+        })(),
+        languageTitles: languages.map((lang) => {
+          return {
+            languageId: lang.id,
+            title: languageTitles[lang.id] || '',
+          };
+        }).filter(lt => lt.title),
+        relatedArticleIds: relatedArticles.map(ra => ra.id),
+        mode: formData.mode,
+        internetLink: formData.mode === 'url' ? formData.internetLink : null,
+        internetLinkEditor: formData.mode === 'url' ? formData.internetLinkEditor : null,
+        pageOption: formData.mode === 'url' ? formData.pageOption : null,
+        displayMode: formData.mode === 'content' ? formData.displayMode : null,
+        searchingKeywords: formData.searchingKeywords || null,
+        method: formData.mode === 'url' ? 'Pasted' : (formData.method || 'Typed'),
+        author: formData.writerUsername || null,
+        originalAuthor: null,
+        priority: formData.priority,
+        feturedNews: formData.feturedNews ? 'Y' : 'N',
+        briefDesc: formData.feturedNews ? formData.briefDesc : null,
+        inLastNews: formData.inLastNews ? 'Y' : 'N',
+        checkedBanner: formData.checkedBanner ? 'Y' : 'N',
+        visualizeInReadingPageAuthorName: 'N',
+        visualizeInReadingPageActualAuthorName: 'N',
+        shareEnable: formData.shareEnable ? 'Y' : 'N',
+        shareCommentOption: formData.shareCommentOption ? 'Y' : 'N',
+        editableAdmin: formData.editableAdmin ? 'Y' : 'N',
+        editableOperators: formData.editableOperators ? 'Y' : 'N',
+        editableUsers: formData.editableUsers ? 'Y' : 'N',
+        editableTranslators: formData.editableTranslators ? 'Y' : 'N',
+        enableCheck: formData.enableCheck ? 'Y' : 'N',
+        favArticleAuthor: formData.favArticleAuthor ? 'Y' : 'N',
+        writerUsername: formData.writerUsername || null,
+        writerPassword: formData.writerPassword || null,
+        writerVerified: writerVerified,
+        settings: {
+          duration: formData.settings.duration || null,
+          reshare: formData.settings.reshare ? 'Y' : 'N',
+          sports: formData.settings.sports,
+          roles: formData.settings.roles,
+          languages: formData.settings.languages,
+          countries: formData.settings.countries,
+          functions: {
+            commentOption: formData.settings.functions.commentOption ? 'Y' : 'N',
+            likeButton: formData.settings.functions.likeButton ? 'Y' : 'N',
+            unlikeButton: formData.settings.functions.unlikeButton ? 'Y' : 'N',
+            shareTf: formData.settings.functions.shareTf ? 'Y' : 'N',
+            otherSetting: formData.settings.functions.otherSetting ? 'Y' : 'N',
+            rankingButton: formData.settings.functions.rankingButton ? 'Y' : 'N',
+            sendByEmail: formData.settings.functions.sendByEmail ? 'Y' : 'N',
+            exportInPdf: formData.settings.functions.exportInPdf ? 'Y' : 'N',
+            downloadDocument: formData.settings.functions.downloadDocument ? 'Y' : 'N',
+            printOption: formData.settings.functions.printOption ? 'Y' : 'N',
+          },
+        },
+      };
+
+      const res = await fetch('/api/news', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(submitData),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to create news');
+      }
+
+      await res.json();
+
+      alert('News article created successfully!');
+      router.push('/news/indexall');
+    } catch (error) {
+      console.error('Error creating news:', error);
+      alert(error instanceof Error ? error.message : 'Failed to create news article');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-6 bg-gray-50 min-h-full flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (typeof window === 'undefined') {
+    return (
+      <div className="p-6 bg-gray-50 min-h-full flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    );
+  }
+
+  let token: string | null = null;
+  try {
+    token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+  } catch (error) {
+    console.error('Error accessing localStorage:', error);
+  }
+
+  if (!token && !user) {
+    return (
+      <div className="p-6 bg-gray-50 min-h-full flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">Please log in to create news articles</p>
+          <Link
+            href="/"
+            className="text-blue-600 hover:text-blue-700 underline"
+          >
+            Go to home page
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 bg-gray-50 min-h-full">
+      <div className="w-full">
+        <div className="flex items-center gap-4 mb-6">
+          <Link
+            href="/news/indexall"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-600" />
+          </Link>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Add News Article</h1>
+            <p className="text-gray-600 mt-1">Create a new news article</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-md border border-gray-200 p-6 space-y-8">
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold text-gray-900 border-b pb-2">Basic Information</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
+                <input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Original Language <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formData.langValueId}
+                  onChange={(e) => setFormData({ ...formData, langValueId: e.target.value })}
+                  className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="" className="text-gray-900">Select Language</option>
+                  {languages.map((lang) => (
+                    <option key={lang.id} value={lang.id} className="text-gray-900">
+                      {lang.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Category <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formData.newsCategoryId}
+                  onChange={(e) => setFormData({ ...formData, newsCategoryId: e.target.value })}
+                  className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="" className="text-gray-900">Select Category</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id} className="text-gray-900">
+                      {category.categoryName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Document Type</label>
+                <select
+                  value={formData.documentType}
+                  onChange={(e) => setFormData({ ...formData, documentType: e.target.value })}
+                  className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {DOCUMENT_TYPES.map((type) => (
+                    <option key={type.value} value={type.value} className="text-gray-900">
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Original Title <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.title || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Section</label>
+                <input
+                  type="text"
+                  value={formData.section}
+                  onChange={(e) => setFormData(prev => ({ ...prev, section: e.target.value }))}
+                  className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter section"
+                />
+              </div>
+            </div>
+          </div>
+
+          {(
+            <div className="space-y-4 p-4 bg-yellow-50 border-2 border-yellow-400 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle className="w-5 h-5 text-yellow-600" />
+                <h2 className="text-lg font-semibold text-gray-900">Writer Verification Required</h2>
+              </div>
+              <p className="text-sm text-gray-700">
+                Please verify the author credentials by entering username and password.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Username <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.writerUsername}
+                    onChange={(e) => {
+                      setFormData({ ...formData, writerUsername: e.target.value });
+                      setWriterVerified(false);
+                      setWriterVerificationError(null);
+                    }}
+                    className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter author username"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Password <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={formData.writerPassword}
+                    onChange={(e) => {
+                      setFormData({ ...formData, writerPassword: e.target.value });
+                      setWriterVerified(false);
+                      setWriterVerificationError(null);
+                    }}
+                    className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter author password"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleVerifyWriter(e);
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }
+                  }}
+                  disabled={writerVerifying || writerVerified}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {writerVerifying ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Verifying...
+                    </>
+                  ) : writerVerified ? (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      Verified
+                    </>
+                  ) : (
+                    'Verify Writer'
+                  )}
+                </button>
+                {writerVerified && (
+                  <div className="flex items-center gap-2 text-green-600">
+                    <CheckCircle className="w-5 h-5" />
+                    <span className="font-medium">Writer verified successfully</span>
+                  </div>
+                )}
+              </div>
+              {writerVerificationError && (
+                <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg">
+                  <AlertCircle className="w-5 h-5" />
+                  <span>{writerVerificationError}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold text-gray-900 border-b pb-2">Images</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Picture Logo</label>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleImageChange(e, 'picture')}
+                    className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                {picturePreview && (
+                  <div className="mt-4 relative w-64 h-48">
+                    <img src={picturePreview} alt="Preview" className="w-full h-full object-cover rounded-lg" />
+                  </div>
+                )}
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="feturedNews"
+                    checked={formData.feturedNews}
+                    onChange={(e) => setFormData({ ...formData, feturedNews: e.target.checked })}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="feturedNews" className="text-sm text-gray-700">Allow in Featured News</label>
+                </div>
+                {formData.feturedNews && (
+                  <div className="mt-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Brief Description (max 35 chars)</label>
+                    <input
+                      type="text"
+                      maxLength={35}
+                      value={formData.briefDesc}
+                      onChange={(e) => setFormData({ ...formData, briefDesc: e.target.value })}
+                      className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="inLastNews"
+                    checked={formData.inLastNews}
+                    onChange={(e) => setFormData({ ...formData, inLastNews: e.target.checked })}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="inLastNews" className="text-sm text-gray-700">
+                    Put this picture as default of related Content document in Last News of System Mainpage
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Banner Logo</label>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="file"
+                    id="banner-file-input"
+                    accept="image/*"
+                    onChange={(e) => handleImageChange(e, 'banner')}
+                    className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                {bannerPreview && (
+                  <div className="mt-4 relative w-full h-48">
+                    <img src={bannerPreview} alt="Banner Preview" className="w-full h-full object-cover rounded-lg" />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setBannerPreview(null);
+                        setBannerFile(null);
+                        setFormData(prev => ({ ...prev, bannerImage: null }));
+                        const fileInput = document.getElementById('banner-file-input') as HTMLInputElement;
+                        if (fileInput) {
+                          fileInput.value = '';
+                        }
+                      }}
+                      className="absolute top-2 right-2 bg-red-600 text-white px-3 py-1 rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+                    >
+                      <span>Delete Banner</span>
+                    </button>
+                  </div>
+                )}
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="checkedBanner"
+                    checked={formData.checkedBanner}
+                    onChange={(e) => setFormData({ ...formData, checkedBanner: e.target.checked })}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="checkedBanner" className="text-sm text-gray-700">Display this banner</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold text-gray-900 border-b pb-2">Article Properties</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
+                <select
+                  value={formData.priority}
+                  onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+                  className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {PRIORITY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value} className="text-gray-900">
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="favArticleAuthor"
+                  checked={formData.favArticleAuthor}
+                  onChange={(e) => setFormData({ ...formData, favArticleAuthor: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="favArticleAuthor" className="text-sm text-gray-700">This is favourite article by the author</label>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold text-gray-900 border-b pb-2">Content</h2>
+            
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="mode"
+                    value="content"
+                    checked={formData.mode === 'content'}
+                    onChange={(e) => {
+                      const newMode = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        mode: newMode,
+                        method: newMode === 'url' ? 'Pasted' : (prev.method === 'Pasted' && newMode === 'content' ? 'Typed' : prev.method),
+                      }));
+                    }}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-gray-900">Content</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="mode"
+                    value="url"
+                    checked={formData.mode === 'url'}
+                    onChange={(e) => {
+                      const newMode = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        mode: newMode,
+                        method: newMode === 'url' ? 'Pasted' : (prev.method === 'Pasted' && newMode === 'content' ? 'Typed' : prev.method),
+                      }));
+                    }}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-gray-900">Internet Link</span>
+                </label>
+              </div>
+
+              {formData.mode === 'url' ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Internet Link</label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="url"
+                        value={formData.internetLink}
+                        onChange={(e) => {
+                          setFormData({ ...formData, internetLink: e.target.value });
+                          setOgError(null);
+                          setOgData(null);
+                        }}
+                        onPaste={async (e) => {
+                          const pastedText = e.clipboardData.getData('text');
+                          if (pastedText && (pastedText.startsWith('http://') || pastedText.startsWith('https://'))) {
+                            setTimeout(() => {
+                              handleFetchOGTags();
+                            }, 200);
+                          }
+                        }}
+                        className="flex-1 w-full sm:w-auto px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
+                        placeholder="https://example.com"
+                      />
+                      <div
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        className="w-full sm:w-auto"
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (e.nativeEvent) {
+                              e.nativeEvent.stopImmediatePropagation();
+                            }
+                            const url = formData.internetLink.trim();
+                            if (!url) {
+                              setOgError('Please enter a URL first');
+                              return;
+                            }
+                            handleFetchOGTags(e).catch((err) => {
+                              console.error('Error in handleFetchOGTags:', err);
+                              setOgError('An error occurred while fetching OG tags. Please try again.');
+                            });
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (e.nativeEvent) {
+                                e.nativeEvent.stopImmediatePropagation();
+                              }
+                            }
+                          }}
+                          disabled={fetchingOG || !formData.internetLink.trim()}
+                          className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap text-sm sm:text-base"
+                        >
+                        {fetchingOG ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span>Fetching...</span>
+                          </>
+                        ) : (
+                          <>
+                            <LinkIcon className="w-4 h-4 flex-shrink-0" />
+                            <span>Fetch OG Tags</span>
+                          </>
+                        )}
+                      </button>
+                      </div>
+                    </div>
+                    {ogError && (
+                      <div className="mt-2 flex items-center gap-2 text-red-600 bg-red-50 p-2 rounded">
+                        <AlertCircle className="w-4 h-4" />
+                        <span className="text-sm">{ogError}</span>
+                      </div>
+                    )}
+                    {ogData && (
+                      <div className="mt-2 bg-green-50 border border-green-200 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <CheckCircle className="w-4 h-4 text-green-600" />
+                          <span className="text-sm font-medium text-green-800">OG Tags Fetched Successfully</span>
+                        </div>
+                        {ogData.title && (
+                          <div className="mb-1">
+                            <span className="text-xs font-medium text-gray-700">Title: </span>
+                            <span className="text-sm text-gray-900">{ogData.title}</span>
+                          </div>
+                        )}
+                        {ogData.description && (
+                          <div className="mb-1">
+                            <span className="text-xs font-medium text-gray-700">Description: </span>
+                            <div className="text-sm text-gray-900 max-h-20 overflow-y-auto mt-1">{ogData.description}</div>
+                          </div>
+                        )}
+                        {ogData.image && (
+                          <div className="mt-2">
+                            <span className="text-xs font-medium text-gray-700">Image: </span>
+                            <img src={ogData.image} alt="OG Preview" className="mt-1 max-w-xs h-24 object-cover rounded" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Page Option</label>
+                    <select
+                      value={formData.pageOption}
+                      onChange={(e) => setFormData({ ...formData, pageOption: e.target.value })}
+                      className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {DISPLAY_MODE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value} className="text-gray-900">
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Internet Link Editor Content</label>
+                    <CKEditorComponent
+                      value={formData.internetLinkEditor}
+                      onChange={(value) => setFormData({ ...formData, internetLinkEditor: value })}
+                      placeholder="Enter editor content for the link..."
+                      id="internet-link-editor"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Display Mode</label>
+                    <select
+                      value={formData.displayMode}
+                      onChange={(e) => setFormData({ ...formData, displayMode: e.target.value })}
+                      className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {DISPLAY_MODE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value} className="text-gray-900">
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    {languages.length > 0 && (
+                      <>
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Title of the article in other languages</label>
+                          <div className="flex gap-2 mb-2 border-b border-gray-300">
+                            {languages.map((lang) => {
+                              return (
+                                <button
+                                  key={lang.id}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setSelectedLanguage(lang.id);
+                                    setFormData(prev => ({ ...prev, langValueId: lang.id }));
+                                  }}
+                                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                                    selectedLanguage === lang.id
+                                      ? 'border-blue-500 text-blue-600'
+                                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                                  }`}
+                                >
+                                  {lang.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {languages.map((lang) => {
+                            return (
+                              <div
+                                key={lang.id}
+                                className={`mb-2 ${selectedLanguage === lang.id ? '' : 'hidden'}`}
+                              >
+                                <input
+                                  type="text"
+                                  value={languageTitles[lang.id] || ''}
+                                  onChange={(e) => setLanguageTitles(prev => ({ ...prev, [lang.id]: e.target.value }))}
+                                  className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  placeholder={`Title in ${lang.name}...`}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                        
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Content</label>
+                          <div className="flex gap-2 mb-2 border-b border-gray-300">
+                            {languages.map((lang) => {
+                              return (
+                                <button
+                                  key={lang.id}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setSelectedLanguage(lang.id);
+                                    setFormData(prev => ({ ...prev, langValueId: lang.id }));
+                                  }}
+                                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                                    selectedLanguage === lang.id
+                                      ? 'border-blue-500 text-blue-600'
+                                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                                  }`}
+                                >
+                                  {lang.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {languages.map((lang) => {
+                            return (
+                              <div
+                                key={lang.id}
+                                className={`${selectedLanguage === lang.id ? '' : 'hidden'}`}
+                              >
+                                <CKEditorComponent
+                                  value={languageContents[lang.id] || ''}
+                                  onChange={(value) => setLanguageContents(prev => ({ ...prev, [lang.id]: value }))}
+                                  placeholder={`Enter content in ${lang.name}...`}
+                                  id={`content-editor-${lang.id}`}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Search Keywords</label>
+            <input
+              type="text"
+              value={formData.searchingKeywords}
+              onChange={(e) => setFormData({ ...formData, searchingKeywords: e.target.value })}
+              className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Enter keywords separated by spaces"
+            />
+          </div>
+
+          <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+            <h2 className="text-lg font-semibold text-gray-900">Editable Options</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.editableAdmin}
+                  onChange={(e) => setFormData({ ...formData, editableAdmin: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm text-gray-700">Editable by the Movesbook admins</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.editableOperators}
+                  onChange={(e) => setFormData({ ...formData, editableOperators: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm text-gray-700">Editable by the Movesbook operators</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.editableUsers}
+                  onChange={(e) => setFormData({ ...formData, editableUsers: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm text-gray-700">Editable by other registered users</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.editableTranslators}
+                  onChange={(e) => setFormData({ ...formData, editableTranslators: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm text-gray-700">Permit to Movesbook translators to edit in the other languages</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="space-y-4 p-4 bg-blue-50 rounded-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Article Settings</h2>
+            </div>
+            
+            <div className="flex gap-2 border-b border-gray-300 mb-4">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setActiveSettingsTab('display');
+                }}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeSettingsTab === 'display'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Settings className="w-4 h-4 inline mr-2" />
+                Display settings
+              </button>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setActiveSettingsTab('related');
+                  if (availableArticles.length === 0) {
+                    try {
+                      const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+                      if (token) {
+                        const res = await fetch('/api/news?limit=100', {
+                          headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        if (res.ok) {
+                          const data = await res.json();
+                          const articles = (data.news || []).map((n: any) => ({
+                            id: n.id,
+                            title: n.title || '',
+                            categoryName: n.category?.categoryName || ''
+                          }));
+                          setAvailableArticles(articles);
+                        }
+                      }
+                    } catch (error) {
+                      console.error('Error fetching available articles:', error);
+                    }
+                  }
+                }}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeSettingsTab === 'related'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <LinkIcon className="w-4 h-4 inline mr-2" />
+                Related articles
+              </button>
+            </div>
+
+            {activeSettingsTab === 'display' && (
+              <div className="space-y-6">
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 mb-4">Resharing of the article and enable comments</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={formData.settings.reshare}
+                        onChange={(e) => setFormData(prev => ({
+                          ...prev,
+                          settings: { ...prev.settings, reshare: e.target.checked }
+                        }))}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm text-gray-700">Allow users to reshare the article</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={formData.shareCommentOption}
+                        onChange={(e) => setFormData({ ...formData, shareCommentOption: e.target.checked })}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm text-gray-700">Allow users who are enabled to make comments</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 mb-4">What are the functions enabled in the page of displaying of the article?</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-3">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.functions.commentOption}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            settings: {
+                              ...prev.settings,
+                              functions: { ...prev.settings.functions, commentOption: e.target.checked }
+                            }
+                          }))}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Comments to the article</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.functions.likeButton}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            settings: {
+                              ...prev.settings,
+                              functions: { ...prev.settings.functions, likeButton: e.target.checked }
+                            }
+                          }))}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Button 'I like'</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.functions.unlikeButton}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            settings: {
+                              ...prev.settings,
+                              functions: { ...prev.settings.functions, unlikeButton: e.target.checked }
+                            }
+                          }))}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Button 'I don't like'</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.functions.shareTf}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            settings: {
+                              ...prev.settings,
+                              functions: { ...prev.settings.functions, shareTf: e.target.checked }
+                            }
+                          }))}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Share on Twitter and Facebook</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.functions.otherSetting}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            settings: {
+                              ...prev.settings,
+                              functions: { ...prev.settings.functions, otherSetting: e.target.checked }
+                            }
+                          }))}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Other sharings</span>
+                      </label>
+                    </div>
+                    <div className="space-y-3">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.functions.rankingButton}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            settings: {
+                              ...prev.settings,
+                              functions: { ...prev.settings.functions, rankingButton: e.target.checked }
+                            }
+                          }))}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Ranking button</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.functions.sendByEmail}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            settings: {
+                              ...prev.settings,
+                              functions: { ...prev.settings.functions, sendByEmail: e.target.checked }
+                            }
+                          }))}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Send by mail</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.functions.exportInPdf}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            settings: {
+                              ...prev.settings,
+                              functions: { ...prev.settings.functions, exportInPdf: e.target.checked }
+                            }
+                          }))}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Export in PDF</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.functions.downloadDocument}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            settings: {
+                              ...prev.settings,
+                              functions: { ...prev.settings.functions, downloadDocument: e.target.checked }
+                            }
+                          }))}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Download document</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.functions.printOption}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            settings: {
+                              ...prev.settings,
+                              functions: { ...prev.settings.functions, printOption: e.target.checked }
+                            }
+                          }))}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">Print option</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 mb-4">Who can see it?</h3>
+                  
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Duration until to this date
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.settings.duration || new Date().toISOString().split('T')[0]}
+                      onChange={(e) => setFormData(prev => ({
+                        ...prev,
+                        settings: { ...prev.settings, duration: e.target.value }
+                      }))}
+                      className="px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="flex items-center gap-2 mb-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.sports.length === SPORTS_LIST.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData(prev => ({
+                                ...prev,
+                                settings: { ...prev.settings, sports: [...SPORTS_LIST] }
+                              }));
+                            } else {
+                              setFormData(prev => ({
+                                ...prev,
+                                settings: { ...prev.settings, sports: [] }
+                              }));
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium text-gray-700">Users Sports</span>
+                      </label>
+                      <div className="border border-gray-300 rounded-lg p-4 max-h-48 overflow-y-auto bg-white">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {SPORTS_LIST.map((sport) => (
+                            <label key={sport} className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={formData.settings.sports.includes(sport)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      settings: {
+                                        ...prev.settings,
+                                        sports: [...prev.settings.sports, sport]
+                                      }
+                                    }));
+                                  } else {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      settings: {
+                                        ...prev.settings,
+                                        sports: prev.settings.sports.filter(s => s !== sport)
+                                      }
+                                    }));
+                                  }
+                                }}
+                                className="w-4 h-4"
+                              />
+                              <span className="text-gray-700">{sport.replace(/_/g, ' ')}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="flex items-center gap-2 mb-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.roles.length === userTypes.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData(prev => ({
+                                ...prev,
+                                settings: { ...prev.settings, roles: userTypes.map(ut => ut.id) }
+                              }));
+                            } else {
+                              setFormData(prev => ({
+                                ...prev,
+                                settings: { ...prev.settings, roles: [] }
+                              }));
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium text-gray-700">Users Type</span>
+                      </label>
+                      <div className="border border-gray-300 rounded-lg p-4 bg-white">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {userTypes.map((userType) => (
+                            <label key={userType.id} className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={formData.settings.roles.includes(userType.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      settings: {
+                                        ...prev.settings,
+                                        roles: [...prev.settings.roles, userType.id]
+                                      }
+                                    }));
+                                  } else {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      settings: {
+                                        ...prev.settings,
+                                        roles: prev.settings.roles.filter(r => r !== userType.id)
+                                      }
+                                    }));
+                                  }
+                                }}
+                                className="w-4 h-4"
+                              />
+                              <span className="text-gray-700">{userType.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="flex items-center gap-2 mb-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.languages.length === languages.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData(prev => ({
+                                ...prev,
+                                settings: { ...prev.settings, languages: languages.map(l => l.id) }
+                              }));
+                            } else {
+                              setFormData(prev => ({
+                                ...prev,
+                                settings: { ...prev.settings, languages: [] }
+                              }));
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium text-gray-700">Language</span>
+                      </label>
+                      <div className="border border-gray-300 rounded-lg p-4 max-h-48 overflow-y-auto bg-white">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {languages.map((lang) => (
+                            <label key={lang.id} className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={formData.settings.languages.includes(lang.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      settings: {
+                                        ...prev.settings,
+                                        languages: [...prev.settings.languages, lang.id]
+                                      }
+                                    }));
+                                  } else {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      settings: {
+                                        ...prev.settings,
+                                        languages: prev.settings.languages.filter(l => l !== lang.id)
+                                      }
+                                    }));
+                                  }
+                                }}
+                                className="w-4 h-4"
+                              />
+                              <span className="text-gray-700">{lang.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="flex items-center gap-2 mb-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.settings.countries.length > 0 && formData.settings.countries.length === countries.length}
+                          onChange={(e) => {
+                            if (e.target.checked && countries.length > 0) {
+                              setFormData(prev => ({
+                                ...prev,
+                                settings: { ...prev.settings, countries: countries.map(c => c.id) }
+                              }));
+                            } else {
+                              setFormData(prev => ({
+                                ...prev,
+                                settings: { ...prev.settings, countries: [] }
+                              }));
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium text-gray-700">Country</span>
+                      </label>
+                      <div className="border border-gray-300 rounded-lg p-4 max-h-48 overflow-y-auto bg-white">
+                        {countries.length > 0 ? (
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            {countries.map((country, index) => {
+                              const countryId = country.id;
+                              const countryName = country.name;
+                              const isChecked = formData.settings.countries.includes(countryId);
+                              return (
+                                <label key={`country-${index}-${countryName}`} className="flex items-center gap-2 text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      if (e.target.checked) {
+                                        if (!formData.settings.countries.includes(countryId)) {
+                                          setFormData(prev => ({
+                                            ...prev,
+                                            settings: {
+                                              ...prev.settings,
+                                              countries: [...prev.settings.countries, countryId]
+                                            }
+                                          }));
+                                        }
+                                      } else {
+                                        setFormData(prev => ({
+                                          ...prev,
+                                          settings: {
+                                            ...prev.settings,
+                                            countries: prev.settings.countries.filter(c => c !== countryId)
+                                          }
+                                        }));
+                                      }
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="w-4 h-4"
+                                  />
+                                  <span className="text-gray-700">{countryName}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-500">No countries available</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeSettingsTab === 'related' && (
+              <div className="space-y-4">
+                <h3 className="font-semibold text-gray-900">Related Articles</h3>
+                {availableArticles.length > 0 ? (
+                  <div className="border border-gray-300 rounded-lg overflow-hidden max-h-96 overflow-y-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2 text-left">
+                            <input
+                              type="checkbox"
+                              checked={availableArticles.every(a => relatedArticles.some(ra => ra.id === a.id))}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setRelatedArticles([...availableArticles]);
+                                } else {
+                                  setRelatedArticles([]);
+                                }
+                              }}
+                              className="w-4 h-4"
+                            />
+                          </th>
+                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Title</th>
+                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Category</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {availableArticles.map((article) => {
+                          const isSelected = relatedArticles.some(ra => ra.id === article.id);
+                          return (
+                            <tr
+                              key={article.id}
+                              className={`border-t border-gray-200 hover:bg-gray-50 ${isSelected ? 'bg-yellow-50' : ''}`}
+                            >
+                              <td className="px-4 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    if (e.target.checked) {
+                                      if (!relatedArticles.some(ra => ra.id === article.id)) {
+                                        setRelatedArticles(prev => [...prev, article]);
+                                      }
+                                    } else {
+                                      setRelatedArticles(prev => prev.filter(a => a.id !== article.id));
+                                    }
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-4 h-4"
+                                />
+                              </td>
+                              <td className="px-4 py-2 text-sm text-gray-900">{article.title}</td>
+                              <td className="px-4 py-2 text-sm text-gray-700">{article.categoryName}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No articles available</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-4 pt-4 border-t border-gray-200">
+            <Link
+              href="/news/indexall"
+              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              Cancel
+            </Link>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? 'Saving...' : 'Create Article'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

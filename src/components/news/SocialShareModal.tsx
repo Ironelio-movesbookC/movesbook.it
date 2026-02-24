@@ -1,0 +1,155 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { X, Link2, MessageCircle, Send, Facebook } from 'lucide-react';
+
+interface SocialShareModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  articleUrl: string;
+  articleTitle: string;
+  articleImage?: string | null;
+  onPostToMovesbook?: () => void;
+}
+
+export default function SocialShareModal({
+  isOpen,
+  onClose,
+  articleUrl,
+  articleTitle,
+  articleImage,
+  onPostToMovesbook,
+}: SocialShareModalProps) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setCopied(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const encodedUrl = encodeURIComponent(articleUrl);
+  const encodedTitle = encodeURIComponent(articleTitle);
+
+  const handleWhatsApp = () => {
+    window.open(`https://wa.me/?text=${encodedTitle}%20${encodedUrl}`, '_blank');
+  };
+
+  const handleTelegram = () => {
+    window.open(`https://t.me/share/url?url=${encodedUrl}&text=${encodedTitle}`, '_blank');
+  };
+
+  const handleFacebook = () => {
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`, '_blank');
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(articleUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 z-[9999] transition-opacity"
+        onClick={onClose}
+      />
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+        <div
+          className="bg-white rounded-xl shadow-2xl w-full max-w-md border border-gray-200 relative"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-gray-900">
+                Share this article
+              </h3>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Close modal"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <button
+                onClick={handleWhatsApp}
+                className="flex flex-col items-center justify-center p-4 border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all group"
+              >
+                <MessageCircle className="w-8 h-8 text-green-600 mb-2" />
+                <span className="text-sm font-medium text-gray-700 group-hover:text-green-700">
+                  WhatsApp
+                </span>
+              </button>
+
+              <button
+                onClick={handleTelegram}
+                className="flex flex-col items-center justify-center p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all group"
+              >
+                <Send className="w-8 h-8 text-blue-600 mb-2" />
+                <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700">
+                  Telegram
+                </span>
+              </button>
+
+              <button
+                onClick={handleFacebook}
+                className="flex flex-col items-center justify-center p-4 border-2 border-gray-200 rounded-lg hover:border-blue-700 hover:bg-blue-50 transition-all group"
+              >
+                <Facebook className="w-8 h-8 text-blue-700 mb-2" />
+                <span className="text-sm font-medium text-gray-700 group-hover:text-blue-800">
+                  Facebook
+                </span>
+              </button>
+            </div>
+
+            <div className="border-t border-gray-200 pt-4 space-y-2">
+              <button
+                onClick={handleCopyLink}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Link2 className="w-5 h-5 text-gray-600" />
+                <span className="font-medium">
+                  {copied ? 'Link copied!' : 'Get link'}
+                </span>
+              </button>
+
+              {onPostToMovesbook && (
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onPostToMovesbook();
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <span className="text-xl">📝</span>
+                  <span className="font-medium">Post on Movesbook</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
