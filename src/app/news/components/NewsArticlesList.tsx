@@ -98,6 +98,8 @@ export default function NewsArticlesList({
   adminContext = false,
 }: NewsArticlesListProps) {
   const topicsList = topicsProp.length > 0 ? topicsProp : ['News', 'Sport', 'Events', 'Nutrition', 'Training', 'Medicine', 'Equipments', 'Lounge music'];
+  const sortedTopics = useMemo(() => [...topicsList].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })), [topicsList]);
+  const sortedLanguages = useMemo(() => [...ALL_LANGUAGES].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })), []);
   const [search, setSearch] = useState('');
   const [highlightMatches, setHighlightMatches] = useState(false);
   const [selectedSport, setSelectedSport] = useState('');
@@ -318,14 +320,11 @@ export default function NewsArticlesList({
             aria-label="Filter by topic (sport)"
           >
             <option value="">Select</option>
-            <option value="Sport">Sport</option>
-            <option value="Training">Training</option>
-            <option value="Events">Events</option>
-            <option value="Nutrition">Nutrition</option>
-            <option value="Medicine">Medicine</option>
-            <option value="News">News</option>
-            <option value="Equipments">Equipments</option>
-            <option value="Lounge music">Lounge music</option>
+            {sortedTopics.map((topic) => (
+              <option key={topic} value={topic}>
+                {topic}
+              </option>
+            ))}
           </select>
           <select
             value={selectedLanguage}
@@ -337,7 +336,7 @@ export default function NewsArticlesList({
             aria-label="Filter by article language"
           >
             <option value="">Language</option>
-            {ALL_LANGUAGES.map((lang) => (
+            {sortedLanguages.map((lang) => (
               <option key={lang.code} value={lang.code}>
                 {lang.name}
               </option>
