@@ -67,6 +67,7 @@ function OGPCard({ article: a, onRemove }: { article: ArticlePasted; onRemove?: 
       >
         <div className="aspect-video bg-gray-100 relative overflow-hidden">
           {showImage && imgSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               key={imgSrc}
               src={imgSrc}

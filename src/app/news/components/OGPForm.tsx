@@ -147,6 +147,7 @@ export default function OGPForm({
             )}
             <div className="flex gap-3 items-start">
               {fetchedOg.image && (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={fetchedOg.image}
                   alt=""

@@ -2,7 +2,7 @@
     "name": "workout-management-system",
     "version": "1.0.0",
     "prisma": {
-        "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed-translations.ts"
+        "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
     },
     "scripts": {
         "dev": "next dev -p 3000",
@@ -23,11 +23,21 @@
         "db:compare": "node scripts/compare-databases.js",
         "db:check-prod": "node scripts/check-production-db.js",
         "admin:check": "node scripts/check-admin.js",
-    "db:migrate-text": "node scripts/migrate-text-fields.js",
-    "db:add-moveframe-fields": "node scripts/add-moveframe-fields.js",
-    "db:check-manual": "node scripts/check-manual-moveframes.js"
+        "db:migrate-text": "node scripts/migrate-text-fields.js",
+        "db:add-moveframe-fields": "node scripts/add-moveframe-fields.js",
+        "db:check-manual": "node scripts/check-manual-moveframes.js"
     },
     "dependencies": {
+        "@ckeditor/ckeditor5-alignment": "^47.5.0",
+        "@ckeditor/ckeditor5-build-classic": "^41.4.2",
+        "@ckeditor/ckeditor5-code-block": "^47.5.0",
+        "@ckeditor/ckeditor5-find-and-replace": "^47.5.0",
+        "@ckeditor/ckeditor5-font": "^47.5.0",
+        "@ckeditor/ckeditor5-horizontal-line": "^47.5.0",
+        "@ckeditor/ckeditor5-react": "^11.0.1",
+        "@ckeditor/ckeditor5-remove-format": "^47.5.0",
+        "@ckeditor/ckeditor5-source-editing": "^47.5.0",
+        "@ckeditor/ckeditor5-special-characters": "^47.5.0",
         "@dnd-kit/core": "^6.3.1",
         "@dnd-kit/sortable": "^10.0.0",
         "@dnd-kit/utilities": "^3.2.2",
@@ -43,6 +53,7 @@
         "mysql2": "^3.15.3",
         "next": "^14.2.33",
         "node-fetch": "^2.7.0",
+        "php-serialize": "^5.1.3",
         "react": "^18.0.0",
         "react-dom": "^18.0.0",
         "react-hook-form": "^7.66.0",

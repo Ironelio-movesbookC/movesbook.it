@@ -199,6 +199,7 @@ export default function ChatSettingsModal({
                         className="sr-only"
                       />
                       {value ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={value}
                           alt={label}
@@ -229,6 +230,7 @@ export default function ChatSettingsModal({
                   <ChevronLeft className="w-5 h-5" />
                 </button>
                 <div className="flex-1 min-h-[200px] bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={BACKGROUND_IMAGES[imageIndex]}
                     alt="Background preview"

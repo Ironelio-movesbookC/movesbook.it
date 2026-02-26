@@ -488,6 +488,7 @@ export default function NewsArticlesList({
                   />
                   <div className="relative z-10 pointer-events-none flex-1 min-h-0 flex flex-col">
                     {a.image && (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={a.image}
                         alt=""

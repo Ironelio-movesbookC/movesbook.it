@@ -148,6 +148,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
     { href: '/testimonials', label: 'Testimonials', icon: MessageCircle },
     { href: '/blog', label: t('nav_blog'), icon: MessageCircle },
     { href: '/athlete/dashboard?open=news', label: t('nav_news'), icon: Newspaper },
+    { href: '/news-by-movesbook', label: t('nav_news_by_movesbook'), icon: Newspaper },
     { href: '/sell-buy', label: 'Sell/Buy', icon: ShoppingCart },
     { href: '/job-offers', label: 'Jobs', icon: Briefcase },
     { href: '/promote-yourself', label: 'Promote', icon: Megaphone },
@@ -611,7 +612,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                 {menuItems.map((item, index) => {
                   const isActive = pathname === item.href;
                   const isHome = item.href === '/';
-                  const isPublicRoute = isHome || item.href === '/testimonials' || item.href === '/athlete/dashboard?open=news' || item.href === '/sell-buy' || item.href === '/job-offers' || item.href === '/promote-yourself' || item.href === '/our-shop';
+                  const isPublicRoute = isHome || item.href === '/testimonials' || item.href === '/athlete/dashboard?open=news' || item.href === '/sell-buy' || item.href === '/job-offers' || item.href === '/promote-yourself' || item.href === '/our-shop' || item.href === '/news-by-movesbook';
                   const canAccess = isPublicRoute || isAuthenticated;
                   
                   return (
