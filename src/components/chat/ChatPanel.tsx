@@ -130,6 +130,7 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [showUserList, setShowUserList] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
@@ -168,9 +169,12 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
     }
   }, [getAuthHeaders]);
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (search?: string) => {
     try {
-      const res = await fetch('/api/chat/users', { headers: getAuthHeaders() });
+      const url = search != null && search.trim() !== ''
+        ? `/api/chat/users?search=${encodeURIComponent(search.trim())}`
+        : '/api/chat/users';
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setUsers(data.users || []);
@@ -184,6 +188,15 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
     loadConversations();
     loadUsers();
   }, [loadConversations, loadUsers]);
+
+  // Debounced search when user list is visible (Telegram-style: by telegramAccount or name)
+  useEffect(() => {
+    if (!showUserList) return;
+    const t = setTimeout(() => {
+      loadUsers(searchQuery);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [showUserList, searchQuery, loadUsers]);
 
   useEffect(() => {
     const ping = () => {
@@ -526,6 +539,8 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
               <input
                 type="text"
                 placeholder="Search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
