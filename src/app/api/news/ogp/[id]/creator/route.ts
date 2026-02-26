@@ -29,6 +29,7 @@ export async function GET(
         gender: true,
         country: true,
         telegramAccount: true,
+        image: true,
       },
     });
     if (!creator) {
@@ -42,6 +43,7 @@ export async function GET(
       gender: creator.gender,
       country: creator.country,
       telegramAccount: creator.telegramAccount,
+      image: creator.image ?? null,
     });
   } catch (e) {
     console.error('GET /api/news/ogp/[id]/creator', e);

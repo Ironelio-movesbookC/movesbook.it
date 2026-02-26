@@ -4,9 +4,10 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
-import { ALL_TOPICS } from './NewsTopicBar';
+import { ALL_TOPICS, NEWS_TOPIC_KEYS } from './NewsTopicBar';
 import { ALL_LANGUAGES } from '@/constants/language.constants';
 import NewsSettingModal, { type OgpVisibilitySettings, defaultSettings } from './NewsSettingModal';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 export type ArticlePasted = OGPData & {
   customDescription?: string;
@@ -97,7 +98,13 @@ export default function NewsArticlesList({
   onUpdatePastedTopic,
   adminContext = false,
 }: NewsArticlesListProps) {
+  const { t } = useLanguage();
   const topicsList = topicsProp.length > 0 ? topicsProp : ['News', 'Sport', 'Events', 'Nutrition', 'Training', 'Medicine', 'Equipments', 'Lounge music'];
+
+  const translateTopic = useCallback((topic: string) => {
+    const key = NEWS_TOPIC_KEYS[topic];
+    return key ? t(key) : topic;
+  }, [t]);
   const sortedTopics = useMemo(() => [...topicsList].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })), [topicsList]);
   const sortedLanguages = useMemo(() => [...ALL_LANGUAGES].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })), []);
   const [search, setSearch] = useState('');
@@ -123,6 +130,7 @@ export default function NewsArticlesList({
     gender: string | null;
     country: string | null;
     telegramAccount: string | null;
+    image: string | null;
   } | null>(null);
   const [creatorLoading, setCreatorLoading] = useState(false);
   const [creatorError, setCreatorError] = useState<string | null>(null);
@@ -132,6 +140,7 @@ export default function NewsArticlesList({
   const [editTopicDescription, setEditTopicDescription] = useState<string>('');
   const [expandedArticleIds, setExpandedArticleIds] = useState<Set<string>>(new Set());
   const [removeConfirmArticleId, setRemoveConfirmArticleId] = useState<string | null>(null);
+  const [previewArticleId, setPreviewArticleId] = useState<string | null>(null);
 
   const toggleArticleExpanded = useCallback((articleId: string) => {
     setExpandedArticleIds((prev) => {
@@ -175,6 +184,7 @@ export default function NewsArticlesList({
         gender: data.gender ?? null,
         country: data.country ?? null,
         telegramAccount: data.telegramAccount ?? null,
+        image: data.image ?? null,
       });
     } catch (e) {
       setCreatorError(e instanceof Error ? e.message : 'Failed to load creator');
@@ -270,7 +280,7 @@ export default function NewsArticlesList({
             <Search className="w-4 h-4 text-gray-400 ml-2 flex-shrink-0" />
             <input
               type="text"
-              placeholder="Q Search"
+              placeholder={t('news_search_placeholder')}
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -292,7 +302,7 @@ export default function NewsArticlesList({
             title={highlightMatches ? 'Hide highlights' : 'Highlight search matches in results'}
             aria-pressed={highlightMatches}
           >
-            Highlight
+            {t('news_highlight')}
           </button>
           <button
             type="button"
@@ -300,7 +310,7 @@ export default function NewsArticlesList({
             disabled={currentPage >= totalPages}
             className="px-3 py-1.5 bg-white text-gray-800 rounded text-sm font-medium hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            next
+            {t('news_next')}
           </button>
           <button
             type="button"
@@ -308,7 +318,7 @@ export default function NewsArticlesList({
             disabled={currentPage <= 1}
             className="px-3 py-1.5 bg-white text-gray-800 rounded text-sm font-medium hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            prev
+            {t('news_prev')}
           </button>
           <select
             value={selectedSport}
@@ -317,12 +327,12 @@ export default function NewsArticlesList({
               setCurrentPage(1);
             }}
             className="px-3 py-1.5 bg-white text-gray-800 rounded text-sm border border-gray-300"
-            aria-label="Filter by topic (sport)"
+            aria-label={t('news_select')}
           >
-            <option value="">Select</option>
+            <option value="">{t('news_select')}</option>
             {sortedTopics.map((topic) => (
               <option key={topic} value={topic}>
-                {topic}
+                {translateTopic(topic)}
               </option>
             ))}
           </select>
@@ -333,9 +343,9 @@ export default function NewsArticlesList({
               setCurrentPage(1);
             }}
             className="px-3 py-1.5 bg-white text-gray-800 rounded text-sm border border-gray-300"
-            aria-label="Filter by article language"
+            aria-label={t('news_language')}
           >
-            <option value="">Language</option>
+            <option value="">{t('news_language')}</option>
             {sortedLanguages.map((lang) => (
               <option key={lang.code} value={lang.code}>
                 {lang.name}
@@ -346,9 +356,9 @@ export default function NewsArticlesList({
             type="button"
             onClick={() => setCurrentPage(1)}
             className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium"
-            title="Apply filters and go to first page"
+            title={t('news_show')}
           >
-            Show
+            {t('news_show')}
           </button>
         </div>
         {/* Row 2: Rows per page dropdown (each row = 6 OGPs), Prev, page numbers, Next */}
@@ -360,7 +370,7 @@ export default function NewsArticlesList({
               setCurrentPage(1);
             }}
             className="px-2 py-1.5 bg-white text-gray-800 rounded text-sm border border-gray-300"
-            aria-label="Rows per page"
+            aria-label={t('news_rows')}
           >
             {ROWS_PER_PAGE_OPTIONS.map((n) => (
               <option key={n} value={n}>
@@ -368,15 +378,15 @@ export default function NewsArticlesList({
               </option>
             ))}
           </select>
-          <span className="text-xs text-gray-500 hidden sm:inline">rows</span>
+          <span className="text-xs text-gray-500 hidden sm:inline">{t('news_rows')}</span>
           <button
             type="button"
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
             disabled={currentPage <= 1}
             className="px-3 py-1.5 bg-amber-100 text-amber-900 rounded text-sm font-medium hover:bg-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Previous page"
+            aria-label={t('btn_previous')}
           >
-            Prev
+            {t('news_prev')}
           </button>
           {pageNumbers.map((n) => (
             <button
@@ -399,9 +409,9 @@ export default function NewsArticlesList({
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
             disabled={currentPage >= totalPages}
             className="px-3 py-1.5 bg-amber-100 text-amber-900 rounded text-sm font-medium hover:bg-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Next page"
+            aria-label={t('btn_next')}
           >
-            Next
+            {t('news_next')}
           </button>
           {/* Add article "+" at right end of pagination row */}
           {onAddClick != null && (
@@ -427,7 +437,7 @@ export default function NewsArticlesList({
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden max-h-[100vh]">
         <div className="bg-gray-800 text-white px-4 py-2 flex items-center justify-between gap-2">
           <span className="font-semibold">
-            {activeTopic === ALL_TOPICS ? 'All' : activeTopic ?? ''}
+            {activeTopic === ALL_TOPICS ? t('news_all') : (activeTopic ? translateTopic(activeTopic) : '')}
           </span>
           <div className="flex items-center gap-1">
             <button
@@ -462,10 +472,10 @@ export default function NewsArticlesList({
           {filtered.length === 0 ? (
             <p className="text-sm text-gray-500">
               {activeTopic === ALL_TOPICS
-                ? 'No articles yet. Select a topic and add one.'
+                ? t('news_no_articles_all')
                 : activeTopic
-                  ? `No articles for ${activeTopic} yet. Paste a URL or switch topic.`
-                  : 'Articles from pasted URLs will appear here.'}
+                  ? t('news_no_articles_for_topic').replace('{topic}', translateTopic(activeTopic))
+                  : t('news_no_articles_default')}
             </p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 max-h-[500px] overflow-y-auto">
@@ -478,45 +488,67 @@ export default function NewsArticlesList({
                       : 'border-gray-200 hover:bg-gray-50'
                   }`}
                 >
-                  <a
-                    href={a.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="absolute inset-0 z-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-inset"
-                    aria-label={`Open: ${a.title || a.url}`}
-                  />
-                  <div className="relative z-10 pointer-events-none flex-1 min-h-0 flex flex-col">
+                  <div className="relative z-10 flex-1 min-h-0 flex flex-col">
                     {a.image && (
-                      <img
-                        src={a.image}
-                        alt=""
-                        className={`w-full h-28 object-cover rounded mb-2 flex-shrink-0 ${a.deletedAt ? 'opacity-75' : ''}`}
-                      />
+                      <a
+                        href={a.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block w-full flex-shrink-0 pointer-events-auto rounded mb-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-inset"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Open article: ${a.title || a.url}`}
+                      >
+                        <img
+                          src={a.image}
+                          alt=""
+                          className={`w-full h-28 object-cover rounded ${a.deletedAt ? 'opacity-75' : ''}`}
+                        />
+                      </a>
                     )}
-                    <h4 className={`font-medium text-sm line-clamp-2 ${a.deletedAt ? 'text-gray-600' : 'text-gray-900'}`}>
-                      {highlightMatches && search.trim()
-                        ? highlightText(a.title || a.url, search)
-                        : a.title || a.url}
-                    </h4>
-                    <p
-                      className={`text-xs text-gray-600 mt-1 flex-1 ${
-                        expandedArticleIds.has(a.id)
-                          ? 'max-h-28 overflow-y-auto overflow-x-hidden'
-                          : 'line-clamp-2'
-                      }`}
+                    <button
+                      type="button"
+                      className="relative z-10 text-left pointer-events-auto flex-1 min-h-0 flex flex-col group/text"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setPreviewArticleId(a.id);
+                      }}
                     >
-                      {highlightMatches && search.trim()
-                        ? highlightText(
-                            a.customDescription || a.description || a.url,
-                            search
-                          )
-                        : a.customDescription || a.description || a.url}
-                    </p>
-                    <p className="text-sm text-gray-600 mt-2">
-                      {formatDate(a.savedAt ?? new Date().toISOString())}
-                    </p>
+                      <h4 className={`font-medium text-sm line-clamp-2 ${a.deletedAt ? 'text-gray-600' : 'text-gray-900'} group-hover/text:underline`}>
+                        {highlightMatches && search.trim()
+                          ? highlightText(a.title || a.url, search)
+                          : a.title || a.url}
+                      </h4>
+                      <p
+                        className={`text-xs text-gray-600 mt-1 flex-1 min-h-0 ${
+                          expandedArticleIds.has(a.id)
+                            ? 'max-h-28 overflow-y-auto overflow-x-hidden pointer-events-auto'
+                            : 'line-clamp-2'
+                        }`}
+                        onClick={(e) => {
+                          if (expandedArticleIds.has(a.id)) {
+                            e.stopPropagation();
+                          } else {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setPreviewArticleId(a.id);
+                          }
+                        }}
+                        onMouseDown={(e) => expandedArticleIds.has(a.id) && e.stopPropagation()}
+                      >
+                        {highlightMatches && search.trim()
+                          ? highlightText(
+                              a.customDescription || a.description || a.url,
+                              search
+                            )
+                          : a.customDescription || a.description || a.url}
+                      </p>
+                      <p className="text-sm text-gray-600 mt-2">
+                        {formatDate(a.savedAt ?? new Date().toISOString())}
+                      </p>
+                    </button>
                     {a.deletedAt && (
-                      <p className="text-xs text-amber-800 mt-1 font-medium">
+                      <p className="relative z-10 pointer-events-none text-xs text-amber-800 mt-1 font-medium">
                         Deleted on {formatDate(a.deletedAt)}
                         {a.deletedByName ? ` by ${a.deletedByName}` : ' by creator'}
                       </p>
@@ -646,7 +678,7 @@ export default function NewsArticlesList({
           aria-labelledby="creator-modal-title"
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col"
+            className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
@@ -670,59 +702,127 @@ export default function NewsArticlesList({
                 <p className="text-sm text-red-600">{creatorError}</p>
               )}
               {!creatorLoading && !creatorError && creatorInfo && (
-                <dl className="space-y-3 text-sm">
-                  {creatorInfo.name != null && creatorInfo.name !== '' && (
-                    <div>
-                      <dt className="text-gray-500 font-medium">Name</dt>
-                      <dd className="text-gray-900 mt-0.5">{creatorInfo.name}</dd>
-                    </div>
-                  )}
-                  {creatorInfo.username != null && creatorInfo.username !== '' && (
-                    <div>
-                      <dt className="text-gray-500 font-medium">Username</dt>
-                      <dd className="text-gray-900 mt-0.5">{creatorInfo.username}</dd>
-                    </div>
-                  )}
-                  {creatorInfo.email != null && creatorInfo.email !== '' && (
-                    <div>
-                      <dt className="text-gray-500 font-medium">Email</dt>
-                      <dd className="text-gray-900 mt-0.5">{creatorInfo.email}</dd>
-                    </div>
-                  )}
-                  {creatorInfo.gender != null && creatorInfo.gender !== '' && (
-                    <div>
-                      <dt className="text-gray-500 font-medium">Gender</dt>
-                      <dd className="text-gray-900 mt-0.5">{creatorInfo.gender}</dd>
-                    </div>
-                  )}
-                  {creatorInfo.country != null && creatorInfo.country !== '' && (
-                    <div>
-                      <dt className="text-gray-500 font-medium">Country</dt>
-                      <dd className="text-gray-900 mt-0.5">{creatorInfo.country}</dd>
-                    </div>
-                  )}
-                  {creatorInfo.telegramAccount != null && creatorInfo.telegramAccount !== '' && (
-                    <div>
-                      <dt className="text-gray-500 font-medium">Telegram</dt>
-                      <dd className="text-gray-900 mt-0.5">{creatorInfo.telegramAccount}</dd>
-                    </div>
-                  )}
-                  {[
-                    creatorInfo.name,
-                    creatorInfo.username,
-                    creatorInfo.email,
-                    creatorInfo.gender,
-                    creatorInfo.country,
-                    creatorInfo.telegramAccount,
-                  ].every((v) => v == null || v === '') && (
-                    <p className="text-gray-500">No creator details available.</p>
-                  )}
-                </dl>
+                <div className="flex gap-4 items-start">
+                  <dl className="space-y-3 text-sm flex-1 min-w-0">
+                    {creatorInfo.name != null && creatorInfo.name !== '' && (
+                      <div>
+                        <dt className="text-gray-500 font-medium">Name</dt>
+                        <dd className="text-gray-900 mt-0.5">{creatorInfo.name}</dd>
+                      </div>
+                    )}
+                    {creatorInfo.username != null && creatorInfo.username !== '' && (
+                      <div>
+                        <dt className="text-gray-500 font-medium">Username</dt>
+                        <dd className="text-gray-900 mt-0.5">{creatorInfo.username}</dd>
+                      </div>
+                    )}
+                    {creatorInfo.email != null && creatorInfo.email !== '' && (
+                      <div>
+                        <dt className="text-gray-500 font-medium">Email</dt>
+                        <dd className="text-gray-900 mt-0.5">{creatorInfo.email}</dd>
+                      </div>
+                    )}
+                    {creatorInfo.gender != null && creatorInfo.gender !== '' && (
+                      <div>
+                        <dt className="text-gray-500 font-medium">Gender</dt>
+                        <dd className="text-gray-900 mt-0.5">{creatorInfo.gender}</dd>
+                      </div>
+                    )}
+                    {creatorInfo.country != null && creatorInfo.country !== '' && (
+                      <div>
+                        <dt className="text-gray-500 font-medium">Country</dt>
+                        <dd className="text-gray-900 mt-0.5">{creatorInfo.country}</dd>
+                      </div>
+                    )}
+                    {creatorInfo.telegramAccount != null && creatorInfo.telegramAccount !== '' && (
+                      <div>
+                        <dt className="text-gray-500 font-medium">Telegram</dt>
+                        <dd className="text-gray-900 mt-0.5">{creatorInfo.telegramAccount}</dd>
+                      </div>
+                    )}
+                    {[
+                      creatorInfo.name,
+                      creatorInfo.username,
+                      creatorInfo.email,
+                      creatorInfo.gender,
+                      creatorInfo.country,
+                      creatorInfo.telegramAccount,
+                    ].every((v) => v == null || v === '') && (
+                      <p className="text-gray-500">No creator details available.</p>
+                    )}
+                  </dl>
+                  <div className="flex-shrink-0">
+                    <img
+                      src={
+                        creatorInfo.image && creatorInfo.image.trim() !== ''
+                          ? creatorInfo.image
+                          : creatorInfo.gender?.toLowerCase() === 'female'
+                            ? '/default-avatar-female.svg'
+                            : '/default-avatar-male.svg'
+                      }
+                      alt=""
+                      className="w-24 h-24 rounded-full object-cover bg-gray-200 border border-gray-300"
+                    />
+                  </div>
+                </div>
               )}
             </div>
           </div>
         </div>
       )}
+
+      {previewArticleId != null && (() => {
+        const article = pasted.find((x) => x.id === previewArticleId);
+        if (!article) return null;
+        return (
+          <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+            onClick={() => setPreviewArticleId(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ogp-preview-modal-title"
+          >
+            <div
+              className="bg-white rounded-xl shadow-xl border border-gray-300 max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-gray-800 text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
+                <span className="font-semibold" id="ogp-preview-modal-title">
+                  {translateTopic(article.topic ?? 'News')}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewArticleId(null)}
+                  className="p-1 rounded text-gray-300 hover:text-white hover:bg-gray-700"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                {article.image && (
+                  <img
+                    src={article.image}
+                    alt=""
+                    className="w-full max-h-64 object-cover"
+                  />
+                )}
+                <div className="p-4">
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {article.title || article.url}
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {formatDate(article.savedAt ?? new Date().toISOString())}
+                  </p>
+                  <div className="mt-3 text-sm text-gray-700 max-h-60 overflow-y-auto overflow-x-hidden pr-2 border border-gray-200 rounded-lg p-3">
+                    {article.customDescription || article.description || article.url}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {removeConfirmArticleId != null && (
         <div

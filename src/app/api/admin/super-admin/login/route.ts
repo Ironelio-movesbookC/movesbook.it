@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
-
+import { generateToken } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
@@ -57,9 +57,27 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Super Admin logged in: ${superAdmin.username}`);
 
+    // Generate JWT so admin panel and news API can authenticate (same as /api/auth/admin/login)
+    const token = generateToken(
+      superAdmin.id,
+      superAdmin.email ?? '',
+      superAdmin.username,
+      'ADMIN'
+    );
+
+    const user = {
+      id: superAdmin.id,
+      name: superAdmin.name ?? superAdmin.username,
+      username: superAdmin.username,
+      email: superAdmin.email ?? '',
+      userType: 'ADMIN' as const,
+    };
+
     return NextResponse.json({
       success: true,
       message: 'Login successful',
+      token,
+      user,
       superAdmin: {
         id: superAdmin.id,
         username: superAdmin.username,

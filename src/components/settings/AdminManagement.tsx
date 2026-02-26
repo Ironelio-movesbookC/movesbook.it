@@ -184,6 +184,11 @@ export default function AdminManagement() {
       if (response.ok) {
         setMessage({ type: 'success', text: '✅ Logged in successfully!' });
         localStorage.setItem('superAdminUser', JSON.stringify(data.superAdmin));
+        // So admin panel (e.g. News, dashboard) and APIs work: use same session shape as admin login
+        if (data.token && data.user) {
+          localStorage.setItem('adminToken', data.token);
+          localStorage.setItem('adminUser', JSON.stringify(data.user));
+        }
         setSuperAdminLoggedIn(true);
       } else {
         setMessage({ type: 'error', text: `❌ ${data.error || 'Login failed'}` });
@@ -198,6 +203,8 @@ export default function AdminManagement() {
 
   const handleSuperAdminLogout = () => {
     localStorage.removeItem('superAdminUser');
+    localStorage.removeItem('adminUser');
+    localStorage.removeItem('adminToken');
     setSuperAdminLoggedIn(false);
     setMessage({ type: 'success', text: 'Logged out successfully' });
   };

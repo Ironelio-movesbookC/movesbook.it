@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, requireAuthWithUser } from '../auth';
+import { requireAuthWithUser, requireAuthForNews } from '../auth';
 
 function parseJsonArray(str: string | null | undefined): string[] {
   if (str == null || str === '') return [];
@@ -58,14 +58,14 @@ export async function GET(request: NextRequest) {
       const vCountries = parseJsonArray(a.visibilityCountries);
       const vLanguages = parseJsonArray(a.visibilityLanguages);
       const vSports = parseJsonArray(a.visibilitySports);
-      // If creator didn't set any visibility (no user types, countries, languages, sports, or expiry), hide from all non-admin users
+      // If creator didn't set any visibility, show to everyone (default public)
       const hasNoVisibilitySet =
         vUserTypes.length === 0 &&
         vCountries.length === 0 &&
         vLanguages.length === 0 &&
         vSports.length === 0 &&
         !a.expiresAt;
-      if (hasNoVisibilitySet) return false;
+      if (hasNoVisibilitySet) return true;
       if (vUserTypes.length > 0 && !vUserTypes.includes(userType)) return false;
       if (vCountries.length > 0 && !vCountries.includes(country ?? '')) return false;
       if (vLanguages.length > 0) {
@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuthForNews(request);
   if (auth instanceof NextResponse) return auth;
   const { userId } = auth;
 

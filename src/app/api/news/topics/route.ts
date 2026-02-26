@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '../auth';
+import { requireAuthForNews } from '../auth';
 
 const DEFAULT_TOPIC_NAMES = [
   'Events',
@@ -14,15 +14,21 @@ const DEFAULT_TOPIC_NAMES = [
 ];
 
 export async function GET(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuthForNews(request);
   if (auth instanceof NextResponse) return auth;
-  const { userId } = auth;
 
   try {
-    const custom = await prisma.userNewsTopic.findMany({
-      where: { userId },
-      orderBy: { displayOrder: 'asc' },
+    // Return all custom topics from all users so everyone sees the same topic list (SuperAdmin + athletes)
+    const allCustom = await prisma.userNewsTopic.findMany({
+      orderBy: [{ name: 'asc' }, { displayOrder: 'asc' }],
       select: { id: true, name: true, displayOrder: true },
+    });
+    // Distinct by name; keep one id per name (first occurrence for edit/delete)
+    const seen = new Set<string>();
+    const custom = allCustom.filter((t) => {
+      if (seen.has(t.name)) return false;
+      seen.add(t.name);
+      return true;
     });
     return NextResponse.json({
       defaultTopicNames: DEFAULT_TOPIC_NAMES,
@@ -35,7 +41,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuthForNews(request);
   if (auth instanceof NextResponse) return auth;
   const { userId } = auth;
 

@@ -253,7 +253,7 @@ export default function NewsSettingModal({
                   />
                   <span className="text-sm font-medium">Country</span>
                 </label>
-                <div className="border border-gray-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                <div className="border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto">
                   <div className="flex flex-col gap-1.5">
                     {options.countries.map((c) => (
                       <label key={c} className="flex items-center gap-1.5 text-sm">
@@ -268,7 +268,7 @@ export default function NewsSettingModal({
                       </label>
                     ))}
                     {options.countries.length === 0 && (
-                      <p className="text-xs text-gray-500">No countries in database. Add users with country to see options.</p>
+                      <p className="text-xs text-gray-500">No countries available.</p>
                     )}
                   </div>
                 </div>

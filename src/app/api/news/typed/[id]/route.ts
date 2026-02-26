@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '../../auth';
+import { requireAuthForNews } from '../../auth';
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireAuth(request);
+  const auth = await requireAuthForNews(request);
   if (auth instanceof NextResponse) return auth;
   const { userId } = auth;
   const { id } = await params;
