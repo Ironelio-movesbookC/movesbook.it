@@ -155,6 +155,10 @@ model Language {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  news                                    News[]                 @relation("NewsOriginalLanguage")
+  newsLanguageTitles                      NewsLanguageTitle[]
+  newsSettingLanguages                   NewsSettingLanguage[]
+
   @@map("languages_new")
 }
 
@@ -830,4 +834,210 @@ enum SportType {
   SPARTAN
   TRIATHLON
   TRACK_FIELD
+}
+
+// News System Models
+model News {
+  id                                      String                @id @default(cuid())
+  userId                                  String?               // Creator user ID
+  date                                    DateTime              @default(now())
+  langValueId                             String?               // Original language ID
+  authorType                              String?               // Writer type (Admin, Sub-Admin, Operator, Athlete, Coach, Team, Club, Group, External)
+  documentType                            String?               // articles, document, press_release, interview
+  title                                   String?               // Original title
+  newsCategoryId                          String?
+  section                                 String?
+  image                                   String?               // Picture logo filename
+  bannerImage                             String?               // Banner logo filename
+  author                                  String?
+  originalAuthor                           String?
+  priority                                String?               // high, middle, low
+  content                                 String                @db.Text // Base64 encoded serialized multi-language content
+  mode                                    String?               // content or url
+  internetLink                            String?
+  internetLinkEditor                      String?               @db.Text // CKEditor content for URL mode
+  pageOption                              String?               // Same page, Another label, Another page (for URL mode)
+  displayMode                              String?               // 1: Same page, 2: Another label, 3: Another page (for content display)
+  searchingKeywords                        String?
+  method                                  String?               // Typed, Pasted, Shared
+  shareEnable                             String                @default("N") // Y or N
+  shareCommentOption                       String                @default("N") // Y or N
+  visualizeInReadingPageAuthorName        String                @default("N") // Y or N
+  visualizeInReadingPageActualAuthorName  String                @default("N") // Y or N
+  inLastNews                              String                @default("N") // Y or N
+  editableAdmin                            String                @default("N") // Y or N
+  editableOperators                        String                @default("N") // Y or N
+  editableUsers                            String                @default("N") // Y or N
+  editableTranslators                      String                @default("N") // Y or N
+  enableCheck                              String                @default("N") // Y or N
+  checkedBanner                            String                @default("N") // Y or N
+  comments                                 String                @default("N") // Y or N
+  favArticleAuthor                         String                @default("N") // Y or N
+  feturedNews                              String                @default("N") // Y or N (featured news)
+  briefDesc                                String?               // Brief description for featured news
+  writerUsername                            String?               // Writer username (for verification)
+  writerClubTeamName                        String?               // Club/Team name (for Team/Club writers)
+  writerVerified                            Boolean               @default(false)
+  createdAt                                DateTime              @default(now())
+  updatedAt                                DateTime              @updatedAt
+
+  category                                 NewsCategory?         @relation(fields: [newsCategoryId], references: [id])
+  originalLanguage                          Language?             @relation("NewsOriginalLanguage", fields: [langValueId], references: [id])
+  settings                                 NewsSetting[]
+  relatedArticles                          NewsRelatedArticle[]   @relation("NewsRelated")
+  relatedToArticles                        NewsRelatedArticle[]   @relation("ArticleRelated")
+  languageTitles                           NewsLanguageTitle[]
+  newsComments                             NewsComment[]
+
+  @@index([newsCategoryId])
+  @@index([langValueId])
+  @@index([userId])
+  @@index([date])
+  @@index([createdAt])
+  @@map("news")
+}
+
+model NewsCategory {
+  id              String   @id @default(cuid())
+  categoryName    String
+  parentId         String?
+  displayOrder     Int      @default(0)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  parent           NewsCategory?  @relation("CategoryParent", fields: [parentId], references: [id])
+  subcategories    NewsCategory[] @relation("CategoryParent")
+  news             News[]
+
+  @@index([parentId])
+  @@map("news_categories")
+}
+
+model NewsSetting {
+  id              String   @id @default(cuid())
+  newsId          String
+  sectorId        String?  // 0 for global, specific sector ID otherwise
+  duration        Int?     // Duration in days
+  reshare         String   @default("N") // Y or N
+  functions       String?  // JSON string for function settings
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  news            News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  sports          NewsSettingSport[]
+  roles           NewsSettingRole[]
+  languages       NewsSettingLanguage[]
+  countries       NewsSettingCountry[]
+
+  @@index([newsId])
+  @@index([sectorId])
+  @@map("news_settings")
+}
+
+model NewsSettingSport {
+  id              String       @id @default(cuid())
+  newsSettingId   String
+  sport           SportType
+  createdAt       DateTime     @default(now())
+
+  newsSetting     NewsSetting  @relation(fields: [newsSettingId], references: [id], onDelete: Cascade)
+
+  @@unique([newsSettingId, sport])
+  @@index([newsSettingId])
+  @@map("news_setting_sports")
+}
+
+model NewsSettingRole {
+  id              String       @id @default(cuid())
+  newsSettingId   String
+  role            UserType
+  createdAt       DateTime     @default(now())
+
+  newsSetting     NewsSetting  @relation(fields: [newsSettingId], references: [id], onDelete: Cascade)
+
+  @@unique([newsSettingId, role])
+  @@index([newsSettingId])
+  @@map("news_setting_roles")
+}
+
+model NewsSettingLanguage {
+  id              String       @id @default(cuid())
+  newsSettingId   String
+  languageId      String
+  createdAt       DateTime     @default(now())
+
+  newsSetting     NewsSetting  @relation(fields: [newsSettingId], references: [id], onDelete: Cascade)
+  language        Language     @relation(fields: [languageId], references: [id], onDelete: Cascade)
+
+  @@unique([newsSettingId, languageId])
+  @@index([newsSettingId])
+  @@index([languageId])
+  @@map("news_setting_languages")
+}
+
+model NewsSettingCountry {
+  id              String       @id @default(cuid())
+  newsSettingId   String
+  countryCode     String       // Country code (e.g., "US", "FR")
+  createdAt       DateTime     @default(now())
+
+  newsSetting     NewsSetting  @relation(fields: [newsSettingId], references: [id], onDelete: Cascade)
+
+  @@unique([newsSettingId, countryCode])
+  @@index([newsSettingId])
+  @@map("news_setting_countries")
+}
+
+model NewsRelatedArticle {
+  id              String   @id @default(cuid())
+  newsId          String
+  articleId       String
+  createdAt       DateTime @default(now())
+
+  news            News     @relation("NewsRelated", fields: [newsId], references: [id], onDelete: Cascade)
+  article         News     @relation("ArticleRelated", fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([newsId, articleId])
+  @@index([newsId])
+  @@index([articleId])
+  @@map("news_related_articles")
+}
+
+model NewsLanguageTitle {
+  id              String   @id @default(cuid())
+  newsId          String
+  languageId      String
+  title           String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  news            News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  language        Language @relation(fields: [languageId], references: [id], onDelete: Cascade)
+
+  @@unique([newsId, languageId])
+  @@index([newsId])
+  @@index([languageId])
+  @@map("news_language_titles")
+}
+
+model NewsComment {
+  id              String   @id @default(cuid())
+  newsId          String
+  userId          String?
+  username        String?
+  email           String?
+  comment         String
+  parentId        String?  // For reply comments
+  isApproved      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  news            News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  parent          NewsComment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies         NewsComment[] @relation("CommentReplies")
+
+  @@index([newsId])
+  @@index([parentId])
+  @@map("news_comments")
 }

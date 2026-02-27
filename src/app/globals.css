@@ -24,6 +24,11 @@
   /* Page Background Settings */
   --page-background: #eeefe6;
   --page-background-opacity: 0.89;
+  
+  /* News Colors */
+  --news-red-start: #da1a03;
+  --news-red-end: #911700;
+  --news-red-border: #a60300;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -77,6 +82,10 @@ body {
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+  
+  .bg-news-red-gradient {
+    background: linear-gradient(to bottom, var(--news-red-start, #da1a03) 1%, var(--news-red-end, #911700) 100%);
   }
 }
 
@@ -215,3 +224,17 @@ form select {
   }
 }
 
+/* FontAwesome for news pages */
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css');
+
+/* Ensure FontAwesome icons render properly */
+.fa {
+  display: inline-block;
+  font-family: FontAwesome;
+  font-style: normal;
+  font-weight: normal;
+  line-height: 1;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowLeft } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { COUNTRIES } from '@/lib/news/countries';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
 
 export default function RegisterPage() {
@@ -258,7 +259,7 @@ export default function RegisterPage() {
                   onChange={(e) => setFormData({...formData, country: e.target.value})}
                 >
                   <option value="" className="text-gray-400 bg-gray-800">Select country</option>
-                  {ALL_COUNTRIES.map((country) => (
+                  {COUNTRIES.map((country) => (
                     <option key={country} value={country} className="text-white bg-gray-800">
                       {country}
                     </option>
