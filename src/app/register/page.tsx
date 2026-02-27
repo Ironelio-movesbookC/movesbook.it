@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { ArrowLeft } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { COUNTRIES } from '@/lib/news/countries';
+import { ALL_COUNTRIES } from '@/constants/countries.constants';
 
 export default function RegisterPage() {
   const { t } = useLanguage();

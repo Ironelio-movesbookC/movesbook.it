@@ -829,6 +829,14 @@ export function getHindiStrings(): LanguageStrings {
     'sidebar_internet_links': 'इंटरनेट लिंक',
     'sidebar_other_item': 'अन्य आइटम',
     'sidebar_communities': 'समुदाय',
+    'news_topic_news': 'समाचार',
+    'news_topic_equipments': 'सामान्य सामग्री',
+    'news_topic_lounge_music': 'लॉन्ज संगीत',
+    'news_topic_training': 'ट्रेनिंग',
+    'news_topic_medicine': 'औषधि',
+    'news_topic_events': 'घटनाएं',
+    'news_topic_nutrition': 'आहार',
+    'news_topic_sport': 'खेल',
   };
 }
 

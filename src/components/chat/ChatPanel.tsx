@@ -44,6 +44,32 @@ function isImageContent(content: string): boolean {
   return content.startsWith('data:image/');
 }
 
+/** Parse "> SenderName: excerpt\n\nbody" reply prefix. Returns null if not a reply. */
+function parseReplyQuote(content: string): { replyLine: string; senderName: string; excerpt: string; body: string } | null {
+  if (!content.startsWith('> ') || !content.includes('\n\n')) return null;
+  const firstLine = content.split('\n')[0];
+  const colonIdx = firstLine.indexOf(': ', 2); // skip "> "
+  if (colonIdx === -1) return null;
+  const senderName = firstLine.slice(2, colonIdx).trim();
+  const excerpt = firstLine.slice(colonIdx + 2).trim();
+  const body = content.slice(firstLine.length + 2).trimStart(); // after \n\n
+  return { replyLine: firstLine, senderName, excerpt, body };
+}
+
+function findRepliedMessageId(messages: MessageItem[], senderName: string, excerpt: string): string | null {
+  const norm = excerpt.trim().slice(0, 80);
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.senderName !== senderName) continue;
+    if (norm === '[Image]' && isImageContent(m.content)) return m.id;
+    const firstLine = m.content.split('\n')[0].trim();
+    if (!firstLine) continue;
+    if (firstLine === norm || firstLine.startsWith(norm) || norm.startsWith(firstLine)) return m.id;
+    if (m.content.startsWith(norm) || norm.startsWith(m.content.slice(0, 80))) return m.id;
+  }
+  return null;
+}
+
 export type ConversationItem = {
   id: string;
   otherUser: {
@@ -104,6 +130,7 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [showUserList, setShowUserList] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
@@ -142,9 +169,12 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
     }
   }, [getAuthHeaders]);
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (search?: string) => {
     try {
-      const res = await fetch('/api/chat/users', { headers: getAuthHeaders() });
+      const url = search != null && search.trim() !== ''
+        ? `/api/chat/users?search=${encodeURIComponent(search.trim())}`
+        : '/api/chat/users';
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setUsers(data.users || []);
@@ -158,6 +188,15 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
     loadConversations();
     loadUsers();
   }, [loadConversations, loadUsers]);
+
+  // Debounced search when user list is visible (Telegram-style: by telegramAccount or name)
+  useEffect(() => {
+    if (!showUserList) return;
+    const t = setTimeout(() => {
+      loadUsers(searchQuery);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [showUserList, searchQuery, loadUsers]);
 
   useEffect(() => {
     const ping = () => {
@@ -226,6 +265,11 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
       }
     }
     setShowScrollToBottom(false);
+  }, []);
+
+  const scrollToMessage = useCallback((messageId: string) => {
+    const el = messagesScrollRef.current?.querySelector(`[data-message-id="${messageId}"]`);
+    (el as HTMLElement)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, []);
 
   const handleMessagesScroll = useCallback(() => {
@@ -495,6 +539,8 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
               <input
                 type="text"
                 placeholder="Search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -695,16 +741,19 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
                     {messages.map((msg) => {
                       const isSelected = selectedMessageIds.has(msg.id);
                       const isImage = isImageContent(msg.content);
+                      const replyQuote = !isImage ? parseReplyQuote(msg.content) : null;
+                      const linkedMessageId = replyQuote ? findRepliedMessageId(messages, replyQuote.senderName, replyQuote.excerpt) : null;
                       return (
                         <div
                           key={msg.id}
+                          data-message-id={msg.id}
                           className={`flex ${msg.isOwn ? 'justify-end' : 'justify-start'}`}
                         >
                           <div
                             role={msg.isOwn ? 'button' : undefined}
                             tabIndex={msg.isOwn ? 0 : undefined}
                             onContextMenu={(e) => handleMessageContextMenu(e, msg)}
-                            onClick={() => msg.isOwn && toggleMessageSelection(msg.id, true)}
+                            onDoubleClick={() => msg.isOwn && toggleMessageSelection(msg.id, true)}
                             onKeyDown={(e) =>
                               msg.isOwn && (e.key === 'Enter' || e.key === ' ') && toggleMessageSelection(msg.id, true)
                             }
@@ -723,9 +772,37 @@ export default function ChatPanel({ embedded, onClose, getAuthHeaders: getAuthHe
                               />
                             ) : (
                               <p className="text-sm whitespace-pre-wrap break-words">
-                                {linkify(msg.content, msg.isOwn).map((part, i) => (
-                                  <span key={i}>{part}</span>
-                                ))}
+                                {replyQuote ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (linkedMessageId) scrollToMessage(linkedMessageId);
+                                      }}
+                                      className={`text-left w-full rounded px-1 -mx-1 py-0.5 border-l-2 ${
+                                        msg.isOwn
+                                          ? 'border-blue-300 text-blue-100 hover:bg-blue-600'
+                                          : 'border-gray-400 text-gray-600 hover:bg-gray-300'
+                                      } ${linkedMessageId ? 'cursor-pointer' : 'cursor-default'}`}
+                                      title={linkedMessageId ? 'Jump to linked message' : undefined}
+                                    >
+                                      {replyQuote.replyLine}
+                                    </button>
+                                    {replyQuote.body ? (
+                                      <>
+                                        {'\n\n'}
+                                        {linkify(replyQuote.body, msg.isOwn).map((part, i) => (
+                                          <span key={i}>{part}</span>
+                                        ))}
+                                      </>
+                                    ) : null}
+                                  </>
+                                ) : (
+                                  linkify(msg.content, msg.isOwn).map((part, i) => (
+                                    <span key={i}>{part}</span>
+                                  ))
+                                )}
                               </p>
                             )}
                             <p className={`text-xs mt-1 ${msg.isOwn ? 'text-blue-100' : 'text-gray-500'}`}>

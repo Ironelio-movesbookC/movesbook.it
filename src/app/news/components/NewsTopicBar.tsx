@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { Pencil, ChevronLeft, ChevronRight, Maximize2, Minimize2, Settings } from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const SCROLL_STEP = 220;
 
@@ -18,6 +19,18 @@ export const NEWS_TOPICS = [
   'Equipments',
   'Lounge music',
 ] as const;
+
+/** Map from default topic label to i18n key (for translation). */
+export const NEWS_TOPIC_KEYS: Record<string, string> = {
+  'Events': 'news_topic_events',
+  'Nutrition': 'news_topic_nutrition',
+  'Sport': 'news_topic_sport',
+  'Training': 'news_topic_training',
+  'Medicine': 'news_topic_medicine',
+  'News': 'news_topic_news',
+  'Equipments': 'news_topic_equipments',
+  'Lounge music': 'news_topic_lounge_music',
+};
 
 export type NewsTopic = (typeof NEWS_TOPICS)[number] | string;
 
@@ -46,9 +59,15 @@ export default function NewsTopicBar({
   onExpandReduce,
   onOpenTopicSort,
 }: NewsTopicBarProps) {
+  const { t } = useLanguage();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const translateTopic = useCallback((topic: string) => {
+    const key = NEWS_TOPIC_KEYS[topic];
+    return key ? t(key) : topic;
+  }, [t]);
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
@@ -86,10 +105,10 @@ export default function NewsTopicBar({
           type="button"
           onClick={onAddTopic}
           className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium border-2 border-cyan-500 bg-cyan-50 text-cyan-700 hover:bg-cyan-100 transition-colors"
-          title="Add new topic"
-          aria-label="Add new topic"
+          title={t('news_add_topic')}
+          aria-label={t('news_add_topic')}
         >
-          Add topic
+          {t('news_add_topic')}
         </button>
       )}
 
@@ -113,10 +132,10 @@ export default function NewsTopicBar({
             ? 'bg-gray-800 text-white'
             : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
         }`}
-        title="Show all articles sorted by date (most recent). Add article is disabled."
-        aria-label="Show all articles"
+        title={t('news_all')}
+        aria-label={t('news_all')}
       >
-        {ALL_TOPICS}
+        {t('news_all')}
       </button>
 
       {/* Left arrow - scroll left */}
@@ -153,7 +172,7 @@ export default function NewsTopicBar({
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              {topic}
+              {translateTopic(topic)}
             </button>
           ))}
         </div>

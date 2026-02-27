@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '../../auth';
+import { requireAuthForNews } from '../../auth';
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireAuth(request);
+  const auth = await requireAuthForNews(request);
   if (auth instanceof NextResponse) return auth;
-  const { userId } = auth;
+  const { userId, isAdmin } = auth;
   const { id } = await params;
 
   try {
@@ -18,7 +18,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Topic name is required' }, { status: 400 });
     }
     const existing = await prisma.userNewsTopic.findFirst({
-      where: { id, userId },
+      where: isAdmin ? { id } : { id, userId },
     });
     if (!existing) {
       return NextResponse.json({ error: 'Topic not found' }, { status: 404 });
@@ -41,14 +41,14 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireAuth(request);
+  const auth = await requireAuthForNews(request);
   if (auth instanceof NextResponse) return auth;
-  const { userId } = auth;
+  const { userId, isAdmin } = auth;
   const { id } = await params;
 
   try {
     const existing = await prisma.userNewsTopic.findFirst({
-      where: { id, userId },
+      where: isAdmin ? { id } : { id, userId },
     });
     if (!existing) {
       return NextResponse.json({ error: 'Topic not found' }, { status: 404 });
