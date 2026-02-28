@@ -79,13 +79,17 @@ function isArticleVisible(article: any, ctx: VisibilityCtx): boolean {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const categoryId = searchParams.get('categoryId');
-    const sportId    = searchParams.get('sportId');
-    const languageId = searchParams.get('languageId');
-    const search     = searchParams.get('search');
-    const page       = parseInt(searchParams.get('page')  || '1');
-    const limit      = parseInt(searchParams.get('limit') || '10');
-    const skip       = (page - 1) * limit;
+    const categoryId        = searchParams.get('categoryId');
+    const sportId           = searchParams.get('sportId');
+    const languageId        = searchParams.get('languageId');
+    const search            = searchParams.get('search');
+    const userId            = searchParams.get('userId');
+    const userIdsRaw        = searchParams.get('userIds');
+    const writerUsername    = searchParams.get('writerUsername');
+    const writerUsernamesRaw = searchParams.get('writerUsernames');
+    const page              = parseInt(searchParams.get('page')  || '1');
+    const limit             = parseInt(searchParams.get('limit') || '10');
+    const skip              = (page - 1) * limit;
 
     let isLoggedIn = false;
     let userSports: string[]    = [];
@@ -136,6 +140,22 @@ export async function GET(request: NextRequest) {
       where.languageTitles = {
         some: { languageId },
       };
+    }
+
+    if (writerUsername) {
+      where.writerUsername = writerUsername;
+    } else if (writerUsernamesRaw) {
+      const usernames = writerUsernamesRaw.split(',').map((s) => s.trim()).filter(Boolean);
+      if (usernames.length > 0) {
+        where.writerUsername = { in: usernames };
+      }
+    } else if (userId) {
+      where.userId = userId;
+    } else if (userIdsRaw) {
+      const ids = userIdsRaw.split(',').map((s) => s.trim()).filter(Boolean);
+      if (ids.length > 0) {
+        where.userId = { in: ids };
+      }
     }
 
     if (search) {

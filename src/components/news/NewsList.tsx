@@ -118,6 +118,17 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
     }
   }, []);
 
+  useEffect(() => {
+    if (mode !== 'section') return;
+    const grouped: Record<string, NewsItem[]> = {};
+    news.forEach(item => {
+      const categoryId = item.category?.id || 'uncategorized';
+      if (!grouped[categoryId]) grouped[categoryId] = [];
+      grouped[categoryId].push(item);
+    });
+    Object.keys(grouped).forEach((categoryId) => handleSliderScroll(categoryId));
+  }, [mode, news]);
+
   const getNewsTitle = (item: NewsItem, langCode?: string) => {
     const lang = langCode || currentLanguage || 'en';
     
@@ -620,13 +631,6 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
       groupedByCategory[categoryId].push(item);
     });
 
-    
-    useEffect(() => {
-      Object.entries(groupedByCategory).forEach(([categoryId, categoryNews]) => {
-        handleSliderScroll(categoryId);
-      });
-    }, []);
-    
 
         return (
       <div className="space-y-10">

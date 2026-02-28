@@ -36,6 +36,7 @@ interface NewsData {
   checkedBanner: string;
   showWriterImage: boolean;
   writerImage: string | null;
+  reshareDisabled: boolean;
   category: {
     id: string;
     categoryName: string;
@@ -306,7 +307,7 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
               </div>
             )}
 
-            {news.settings[0]?.reshare && (
+            {news.settings[0]?.reshare && !news.reshareDisabled && (
               <button
                 onClick={() => setShareModalOpen(true)}
                 className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors w-full sm:w-auto"

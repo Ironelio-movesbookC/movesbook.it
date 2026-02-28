@@ -110,9 +110,9 @@ export async function POST(request: NextRequest) {
 
       await prisma.$executeRaw`
         INSERT INTO news_share_post 
-        (id, user_id, news_id, share_option, created)
+        (id, user_id, news_id, share_option, is_reshare_disabled, is_comments_enabled, created)
         VALUES 
-        (UUID(), ${userId}, ${article_id}, ${shareOptionId}, NOW())
+        (UUID(), ${userId}, ${article_id}, ${shareOptionId}, ${is_reshare_disabled || 0}, ${is_comments_enabled || 1}, NOW())
       `;
 
       return NextResponse.json({
