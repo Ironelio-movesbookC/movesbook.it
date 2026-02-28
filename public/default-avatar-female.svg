@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <circle cx="60" cy="60" r="58" fill="#e5e7eb"/>
+  <!-- Female silhouette: head and shoulders, longer hair -->
+  <g fill="#4b5563" transform="translate(60,60) scale(0.9)">
+    <ellipse cx="0" cy="-18" rx="22" ry="26"/>
+    <path d="M -30 -20 Q -38 -8 -35 12 Q -32 25 -25 35 L -20 42 L 20 42 L 25 35 Q 32 25 35 12 Q 38 -8 30 -20 Q 22 -28 0 -30 Q -22 -28 -30 -20 Z"/>
+    <path d="M -28 8 Q -32 28 -22 42 L 22 42 Q 32 28 28 8 L 28 2 Q 25 -5 15 -8 L -15 -8 Q -25 -5 -28 2 Z"/>
+    <path d="M -22 42 L -35 55 L -30 58 L -18 46 M 22 42 L 35 55 L 30 58 L 18 46"/>
+  </g>
+</svg>

@@ -47,19 +47,34 @@ export default function AdminNewsLinksPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const raw = localStorage.getItem('adminUser');
-    if (!raw) {
-      router.replace('/admin/dashboard');
-      return;
+    if (raw) {
+      try {
+        const u = JSON.parse(raw);
+        setAdminUser(u?.id ? { id: u.id, name: u.name } : null);
+        if (!u?.id) router.replace('/admin/dashboard');
+      } catch {
+        router.replace('/admin/dashboard');
+      }
+    } else {
+      const superRaw = localStorage.getItem('superAdminUser');
+      if (superRaw) {
+        try {
+          const su = JSON.parse(superRaw);
+          if (su?.id) {
+            const u = { id: su.id, name: su.name ?? su.username };
+            localStorage.setItem('adminUser', JSON.stringify(u));
+            setAdminUser(u);
+          } else {
+            router.replace('/admin/dashboard');
+          }
+        } catch {
+          router.replace('/admin/dashboard');
+        }
+      } else {
+        router.replace('/admin/dashboard');
+      }
     }
-    try {
-      const u = JSON.parse(raw);
-      setAdminUser(u?.id ? { id: u.id, name: u.name } : null);
-      if (!u?.id) router.replace('/admin/dashboard');
-    } catch {
-      router.replace('/admin/dashboard');
-    } finally {
-      setAuthChecked(true);
-    }
+    setAuthChecked(true);
   }, [router]);
 
   const [showOgpForm, setShowOgpForm] = useState(false);

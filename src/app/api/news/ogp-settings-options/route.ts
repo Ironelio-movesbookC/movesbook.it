@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ALL_LANGUAGES } from '@/constants/language.constants';
+import { ALL_COUNTRIES } from '@/constants/countries.constants';
 import { UserType, SportType } from '@prisma/client';
 
 const USER_TYPE_LABELS: Record<string, string> = {
@@ -58,12 +59,7 @@ export async function GET() {
       label: USER_TYPE_LABELS[value] ?? value,
     }));
 
-    const countries = await prisma.user.findMany({
-      where: { country: { not: null } },
-      select: { country: true },
-      distinct: ['country'],
-    });
-    const countryList = Array.from(new Set(countries.map((u) => u.country).filter(Boolean) as string[])).sort();
+    const countryList = [...ALL_COUNTRIES].sort();
 
     const languages = ALL_LANGUAGES.map((l) => ({ value: l.code, label: `${l.code} (${l.name})` }));
 

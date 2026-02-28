@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '../auth';
+import { requireAuthForNews } from '../auth';
 
 export async function GET(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuthForNews(request);
   if (auth instanceof NextResponse) return auth;
   const { userId } = auth;
 
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuthForNews(request);
   if (auth instanceof NextResponse) return auth;
   const { userId } = auth;
 
