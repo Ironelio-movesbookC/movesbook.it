@@ -81,7 +81,6 @@ function PublicNewsListPageContent() {
   const [selectedLanguage, setSelectedLanguage] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [news, setNews] = useState<NewsArticle[]>([]);
-  const [popularPosts, setPopularPosts] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [hideShowStatus, setHideShowStatus] = useState(false);
   const [pagination, setPagination] = useState({
@@ -92,7 +91,6 @@ function PublicNewsListPageContent() {
   });
   
   const hasFetchedDropdownDataRef = useRef(false);
-  const hasFetchedPopularPostsRef = useRef(false);
 
   useEffect(() => {
     const checkAdmin = () => {
@@ -201,27 +199,6 @@ function PublicNewsListPageContent() {
     fetchNews();
   }, [searchQuery, selectedCategory, selectedSport, selectedLanguage, pagination.page, pagination.limit]);
 
-  useEffect(() => {
-    const fetchPopularPosts = async () => {
-      try {
-        const currentLanguage = languages.find(l => l.id === selectedLanguage)?.code || 
-                               languages.find(l => l.code === 'en')?.code || 
-                               'en';
-        const res = await fetch(`/api/public/news/popular?limit=4&language=${currentLanguage}`);
-        if (res.ok) {
-          const data = await res.json();
-          setPopularPosts(data.popularPosts || []);
-        }
-      } catch (error) {
-        console.error('Error fetching popular posts:', error);
-      }
-    };
-
-    if (languages.length > 0) {
-      fetchPopularPosts();
-    }
-  }, [languages, selectedLanguage]);
-
   const updateUrlParams = () => {
     const params = new URLSearchParams();
     if (searchQuery) params.set('search', searchQuery);
@@ -301,7 +278,7 @@ function PublicNewsListPageContent() {
         
         {!hideShowStatus && (
           <div className="lg:col-span-1">
-            <GetSocialBlock popularPosts={popularPosts} />
+            <GetSocialBlock />
           </div>
         )}
       </div>

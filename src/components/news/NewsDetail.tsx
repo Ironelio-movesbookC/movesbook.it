@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, Share2, Globe, Calendar, User } from 'lucide-react';
+import { ArrowLeft, Share2, Globe, Calendar, User, Facebook, Twitter, Linkedin, MessageCircle, Send, Link2, Check } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { deserializeMultiLanguageContent, getContentForLanguage } from '@/lib/news/contentParser';
 import SocialShareModal from './SocialShareModal';
@@ -84,6 +84,7 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
   const [allLanguages, setAllLanguages] = useState<Array<{ id: string; code: string; name: string }>>([]);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [postToMovesbookModalOpen, setPostToMovesbookModalOpen] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const hasFetchedLanguagesRef = useRef(false);
   const hasFetchedNewsRef = useRef(false);
@@ -439,6 +440,90 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
               </p>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Disclaimer */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 sm:p-5">
+        <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-1.5">
+          {t('news_disclaimer_title')}
+        </p>
+        <p className="text-xs text-amber-700 leading-relaxed">
+          {t('news_disclaimer_body')}
+        </p>
+      </div>
+
+      {/* Social share bar */}
+      <div className="bg-white rounded-xl shadow-md border border-gray-200 px-4 sm:px-6 py-4">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          {t('news_share')}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Facebook */}
+          <button
+            onClick={() => window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}`, '_blank')}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1877F2] hover:bg-[#166fe5] text-white text-sm font-medium transition-colors"
+            aria-label="Share on Facebook"
+          >
+            <Facebook className="w-4 h-4" />
+            <span>Facebook</span>
+          </button>
+
+          {/* X / Twitter */}
+          <button
+            onClick={() => window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}&text=${encodeURIComponent(newsTitle)}`, '_blank')}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black hover:bg-gray-800 text-white text-sm font-medium transition-colors"
+            aria-label="Share on X"
+          >
+            <Twitter className="w-4 h-4" />
+            <span>X</span>
+          </button>
+
+          {/* LinkedIn */}
+          <button
+            onClick={() => window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}`, '_blank')}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0A66C2] hover:bg-[#0958a8] text-white text-sm font-medium transition-colors"
+            aria-label="Share on LinkedIn"
+          >
+            <Linkedin className="w-4 h-4" />
+            <span>LinkedIn</span>
+          </button>
+
+          {/* WhatsApp */}
+          <button
+            onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(newsTitle + ' ' + (typeof window !== 'undefined' ? window.location.href : ''))}`, '_blank')}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#25D366] hover:bg-[#1ebe5d] text-white text-sm font-medium transition-colors"
+            aria-label="Share on WhatsApp"
+          >
+            <MessageCircle className="w-4 h-4" />
+            <span>WhatsApp</span>
+          </button>
+
+          {/* Telegram */}
+          <button
+            onClick={() => window.open(`https://t.me/share/url?url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}&text=${encodeURIComponent(newsTitle)}`, '_blank')}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#229ED9] hover:bg-[#1a8fbf] text-white text-sm font-medium transition-colors"
+            aria-label="Share on Telegram"
+          >
+            <Send className="w-4 h-4" />
+            <span>Telegram</span>
+          </button>
+
+          {/* Copy link */}
+          <button
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(typeof window !== 'undefined' ? window.location.href : '');
+                setLinkCopied(true);
+                setTimeout(() => setLinkCopied(false), 2000);
+              } catch { /* silent */ }
+            }}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium transition-colors"
+            aria-label="Copy link"
+          >
+            {linkCopied ? <Check className="w-4 h-4 text-green-600" /> : <Link2 className="w-4 h-4" />}
+            <span>{linkCopied ? 'Copied!' : 'Copy link'}</span>
+          </button>
         </div>
       </div>
 
