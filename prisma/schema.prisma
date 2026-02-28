@@ -877,6 +877,7 @@ model News {
   writerUsername                            String?               // Writer username (for verification)
   writerClubTeamName                        String?               // Club/Team name (for Team/Club writers)
   writerVerified                            Boolean               @default(false)
+  showWriterImage                           Boolean               @default(false) // Show writer profile image on detail page
   createdAt                                DateTime              @default(now())
   updatedAt                                DateTime              @updatedAt
 

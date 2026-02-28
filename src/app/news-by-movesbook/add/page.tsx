@@ -27,6 +27,7 @@ export default function AddNewsPage() {
   const [writerVerifying, setWriterVerifying] = useState(false);
   const [writerVerified, setWriterVerified] = useState(false);
   const [writerVerificationError, setWriterVerificationError] = useState<string | null>(null);
+  const [writerImage, setWriterImage] = useState<string | null>(null);
   const [picturePreview, setPicturePreview] = useState<string | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [pictureFile, setPictureFile] = useState<File | null>(null);
@@ -41,6 +42,8 @@ export default function AddNewsPage() {
   const [relatedArticles, setRelatedArticles] = useState<Array<{ id: string; title: string; categoryName: string }>>([]);
   const [availableArticles, setAvailableArticles] = useState<Array<{ id: string; title: string; categoryName: string }>>([]);
   const [activeSettingsTab, setActiveSettingsTab] = useState<'display' | 'related'>('display');
+  const [relatedPage, setRelatedPage] = useState(1);
+  const [relatedPerPage, setRelatedPerPage] = useState(5);
   const [userTypes, setUserTypes] = useState<Array<{ id: string; name: string }>>([]);
   
   const [formData, setFormData] = useState({
@@ -74,6 +77,7 @@ export default function AddNewsPage() {
     favArticleAuthor: false,
     writerUsername: '',
     writerPassword: '',
+    showWriterImage: false,
     image: null as string | null,
     bannerImage: null as string | null,
     settings: {
@@ -268,7 +272,7 @@ export default function AddNewsPage() {
           }
         }
 
-        if (data.og_data.image) {
+        if (data.og_data.image && !formData.inLastNews) {
           try {
             const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
             const uploadRes = await fetch('/api/news/upload-image', {
@@ -288,14 +292,17 @@ export default function AddNewsPage() {
               if (uploadData.success && uploadData.path) {
                 setPicturePreview(uploadData.path);
                 setFormData(prev => ({ ...prev, image: uploadData.path }));
+                setPictureFile(null);
               }
             } else {
               setPicturePreview(data.og_data.image);
               setFormData(prev => ({ ...prev, image: data.og_data.image }));
+              setPictureFile(null);
             }
           } catch (error) {
             setPicturePreview(data.og_data.image);
             setFormData(prev => ({ ...prev, image: data.og_data.image }));
+            setPictureFile(null);
           }
         }
       } else {
@@ -368,10 +375,12 @@ export default function AddNewsPage() {
 
       setWriterVerified(true);
       setWriterVerificationError(null);
+      setWriterImage(data.user?.image || null);
     } catch (error) {
       console.error('Error verifying writer:', error);
       setWriterVerificationError('Failed to verify writer. Please try again.');
       setWriterVerified(false);
+      setWriterImage(null);
     } finally {
       setWriterVerifying(false);
     }
@@ -564,6 +573,7 @@ export default function AddNewsPage() {
         writerUsername: formData.writerUsername || null,
         writerPassword: formData.writerPassword || null,
         writerVerified: writerVerified,
+        showWriterImage: formData.showWriterImage,
         settings: {
           duration: formData.settings.duration || null,
           reshare: formData.settings.reshare ? 'Y' : 'N',
@@ -782,6 +792,7 @@ export default function AddNewsPage() {
                       setFormData({ ...formData, writerUsername: e.target.value });
                       setWriterVerified(false);
                       setWriterVerificationError(null);
+                      setWriterImage(null);
                     }}
                     className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Enter author username"
@@ -798,6 +809,7 @@ export default function AddNewsPage() {
                       setFormData({ ...formData, writerPassword: e.target.value });
                       setWriterVerified(false);
                       setWriterVerificationError(null);
+                      setWriterImage(null);
                     }}
                     className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Enter author password"
@@ -840,9 +852,36 @@ export default function AddNewsPage() {
                   )}
                 </button>
                 {writerVerified && (
-                  <div className="flex items-center gap-2 text-green-600">
-                    <CheckCircle className="w-5 h-5" />
-                    <span className="font-medium">Writer verified successfully</span>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-2 text-green-600">
+                      <CheckCircle className="w-5 h-5" />
+                      <span className="font-medium">Writer verified successfully</span>
+                    </div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={formData.showWriterImage}
+                          onChange={(e) => setFormData(prev => ({ ...prev, showWriterImage: e.target.checked }))}
+                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">Show writer image on article detail page</span>
+                      </label>
+                      {/* Preview of the writer image */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={
+                          writerImage
+                            ? (writerImage.startsWith('http') || writerImage.startsWith('/'))
+                              ? writerImage
+                              : `/img/profile_images/${writerImage}`
+                            : '/img/placeholder.png'
+                        }
+                        alt="Writer"
+                        className="w-12 h-12 rounded-full object-cover border-2 border-gray-200"
+                        onError={(e) => { (e.target as HTMLImageElement).src = '/img/placeholder.png'; }}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -1857,62 +1896,139 @@ export default function AddNewsPage() {
               <div className="space-y-4">
                 <h3 className="font-semibold text-gray-900">Related Articles</h3>
                 {availableArticles.length > 0 ? (
-                  <div className="border border-gray-300 rounded-lg overflow-hidden max-h-96 overflow-y-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          <th className="px-4 py-2 text-left">
-                            <input
-                              type="checkbox"
-                              checked={availableArticles.every(a => relatedArticles.some(ra => ra.id === a.id))}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setRelatedArticles([...availableArticles]);
-                                } else {
-                                  setRelatedArticles([]);
-                                }
-                              }}
-                              className="w-4 h-4"
-                            />
-                          </th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Title</th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Category</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {availableArticles.map((article) => {
-                          const isSelected = relatedArticles.some(ra => ra.id === article.id);
-                          return (
-                            <tr
-                              key={article.id}
-                              className={`border-t border-gray-200 hover:bg-gray-50 ${isSelected ? 'bg-yellow-50' : ''}`}
-                            >
-                              <td className="px-4 py-2">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    if (e.target.checked) {
-                                      if (!relatedArticles.some(ra => ra.id === article.id)) {
-                                        setRelatedArticles(prev => [...prev, article]);
-                                      }
-                                    } else {
-                                      setRelatedArticles(prev => prev.filter(a => a.id !== article.id));
-                                    }
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="w-4 h-4"
-                                />
-                              </td>
-                              <td className="px-4 py-2 text-sm text-gray-900">{article.title}</td>
-                              <td className="px-4 py-2 text-sm text-gray-700">{article.categoryName}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                  <>
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600">Show</span>
+                        <select
+                          value={relatedPerPage}
+                          onChange={(e) => {
+                            setRelatedPerPage(Number(e.target.value));
+                            setRelatedPage(1);
+                          }}
+                          className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 bg-white"
+                        >
+                          {[5, 10, 15, 20].map(n => (
+                            <option key={n} value={n}>{n}</option>
+                          ))}
+                        </select>
+                        <span className="text-sm text-gray-600">per page</span>
+                      </div>
+                      <span className="text-sm text-gray-500">
+                        {availableArticles.length} total · {relatedArticles.length} selected
+                      </span>
+                    </div>
+
+                    <div className="border border-gray-300 rounded-lg overflow-hidden overflow-y-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-2 text-left">
+                              <input
+                                type="checkbox"
+                                checked={availableArticles.every(a => relatedArticles.some(ra => ra.id === a.id))}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setRelatedArticles([...availableArticles]);
+                                  } else {
+                                    setRelatedArticles([]);
+                                  }
+                                }}
+                                className="w-4 h-4"
+                              />
+                            </th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Title</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Category</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {availableArticles
+                            .slice((relatedPage - 1) * relatedPerPage, relatedPage * relatedPerPage)
+                            .map((article) => {
+                              const isSelected = relatedArticles.some(ra => ra.id === article.id);
+                              return (
+                                <tr
+                                  key={article.id}
+                                  className={`border-t border-gray-200 hover:bg-gray-50 ${isSelected ? 'bg-yellow-50' : ''}`}
+                                >
+                                  <td className="px-4 py-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={(e) => {
+                                        e.stopPropagation();
+                                        if (e.target.checked) {
+                                          if (!relatedArticles.some(ra => ra.id === article.id)) {
+                                            setRelatedArticles(prev => [...prev, article]);
+                                          }
+                                        } else {
+                                          setRelatedArticles(prev => prev.filter(a => a.id !== article.id));
+                                        }
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-4 h-4"
+                                    />
+                                  </td>
+                                  <td className="px-4 py-2 text-sm text-gray-900">{article.title}</td>
+                                  <td className="px-4 py-2 text-sm text-gray-700">{article.categoryName}</td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {(() => {
+                      const totalPages = Math.ceil(availableArticles.length / relatedPerPage);
+                      if (totalPages <= 1) return null;
+                      const pages: (number | '…')[] = [];
+                      for (let i = 1; i <= totalPages; i++) {
+                        if (i === 1 || i === totalPages || (i >= relatedPage - 1 && i <= relatedPage + 1)) {
+                          pages.push(i);
+                        } else if (pages[pages.length - 1] !== '…') {
+                          pages.push('…');
+                        }
+                      }
+                      return (
+                        <div className="flex items-center justify-center gap-1 flex-wrap">
+                          <button
+                            type="button"
+                            disabled={relatedPage === 1}
+                            onClick={() => setRelatedPage(p => p - 1)}
+                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            ‹
+                          </button>
+                          {pages.map((p, idx) =>
+                            p === '…' ? (
+                              <span key={`ellipsis-${idx}`} className="px-2 py-1 text-sm text-gray-400">…</span>
+                            ) : (
+                              <button
+                                key={p}
+                                type="button"
+                                onClick={() => setRelatedPage(p)}
+                                className={`px-3 py-1 text-sm border rounded ${
+                                  p === relatedPage
+                                    ? 'bg-blue-600 text-white border-blue-600'
+                                    : 'border-gray-300 hover:bg-gray-100 text-gray-700'
+                                }`}
+                              >
+                                {p}
+                              </button>
+                            )
+                          )}
+                          <button
+                            type="button"
+                            disabled={relatedPage === totalPages}
+                            onClick={() => setRelatedPage(p => p + 1)}
+                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            ›
+                          </button>
+                        </div>
+                      );
+                    })()}
+                  </>
                 ) : (
                   <p className="text-sm text-gray-500">No articles available</p>
                 )}
