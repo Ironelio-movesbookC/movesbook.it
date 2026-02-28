@@ -529,6 +529,8 @@ export interface LanguageStrings {
         'news_read_more_text': 'Read more',
         'news_no_date': 'No date',
         'news_original_author': 'Original Author',
+        'news_disclaimer_title': 'Disclaimer of liability',
+        'news_disclaimer_body': 'The information contained on this site is presented for informational purposes only; under no circumstances does Movesbook assume any liability for the content of the articles. Medical articles cannot constitute a diagnosis or the prescription of treatment, and are not intended to and should not in any way replace a direct doctor-patient relationship or a visit to a specialist.',
         'news_anonymous': 'Anonymous',
         'news_comments': 'Comments',
         'news_add_comment': 'Add Comment',

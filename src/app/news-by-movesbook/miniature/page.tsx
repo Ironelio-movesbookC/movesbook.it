@@ -60,7 +60,6 @@ export default function MiniatureModePage() {
   const [sports, setSports] = useState<Sport[]>([]);
   const [languages, setLanguages] = useState<Language[]>([]);
   const [news, setNews] = useState<NewsArticle[]>([]);
-  const [popularPosts, setPopularPosts] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [hideShowStatus, setHideShowStatus] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -126,9 +125,6 @@ export default function MiniatureModePage() {
           setNews(data.news || []);
           setPagination(prev => data.pagination || prev);
           
-          if (data.news && data.news.length > 0) {
-            setPopularPosts(data.news.slice(0, 4));
-          }
         }
       } catch (error) {
         console.error('Error fetching news:', error);
@@ -240,7 +236,7 @@ export default function MiniatureModePage() {
           
           {!hideShowStatus && (
             <div className="lg:col-span-1">
-              <GetSocialBlock popularPosts={popularPosts} />
+              <GetSocialBlock />
             </div>
           )}
         </div>
