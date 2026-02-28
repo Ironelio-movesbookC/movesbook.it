@@ -58,6 +58,7 @@ import FavouritesSettings from '@/components/settings/FavouritesSettings';
 import MyBestSettings from '@/components/settings/MyBestSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
 import NewsOGPPanel from '@/components/news/NewsOGPPanel';
+import PostsPanel from '@/components/posts/PostsPanel';
 
 // 2026-01-22 13:30 UTC - Placeholder component for avatar images (replaces Unsplash timeout issues)
 const AvatarPlaceholder = ({ size = 'w-10 h-10' }: { size?: string }) => (
@@ -73,7 +74,7 @@ function AthleteDashboardContent() {
   const { t } = useLanguage();
   
   // All hooks must be called before any conditional returns
-  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'progress' | 'settings' | 'personal-settings' | 'chat' | 'news'>('overview');
+  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'progress' | 'settings' | 'personal-settings' | 'chat' | 'news' | 'posts'>('overview');
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -615,6 +616,10 @@ function AthleteDashboardContent() {
                   setActiveTab('my-page');
                   setActiveSection('overview');
                 }}
+                onPostsClick={() => {
+                  setActiveTab('my-page');
+                  setActiveSection('posts');
+                }}
                 onMyClubClick={() => setActiveTab('my-entity')}
               />
             </div>
@@ -647,6 +652,14 @@ function AthleteDashboardContent() {
                       embedded
                       isExpanded={newsExpanded}
                       onExpandReduce={() => setNewsExpanded((prev) => !prev)}
+                    />
+                  </div>
+                )}
+                {activeSection === 'posts' && (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <PostsPanel
+                      onClose={() => setActiveSection('overview')}
+                      embedded
                     />
                   </div>
                 )}
