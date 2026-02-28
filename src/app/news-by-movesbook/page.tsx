@@ -92,7 +92,6 @@ function PublicNewsListPageContent() {
   });
   
   const hasFetchedDropdownDataRef = useRef(false);
-  const fetchingNewsRef = useRef(false);
   const hasFetchedPopularPostsRef = useRef(false);
 
   useEffect(() => {
@@ -172,10 +171,7 @@ function PublicNewsListPageContent() {
   }, []);
 
   useEffect(() => {
-    if (fetchingNewsRef.current) return;
-    
     const fetchNews = async () => {
-      fetchingNewsRef.current = true;
       setLoading(true);
       try {
         const params = new URLSearchParams();
@@ -186,7 +182,10 @@ function PublicNewsListPageContent() {
         params.append('page', pagination.page.toString());
         params.append('limit', pagination.limit.toString());
 
-        const res = await fetch(`/api/public/news?${params.toString()}`);
+        const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+        const res = await fetch(`/api/public/news?${params.toString()}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         if (res.ok) {
           const data = await res.json();
           setNews(data.news || []);
@@ -196,7 +195,6 @@ function PublicNewsListPageContent() {
         console.error('Error fetching news:', error);
       } finally {
         setLoading(false);
-        fetchingNewsRef.current = false;
       }
     };
 

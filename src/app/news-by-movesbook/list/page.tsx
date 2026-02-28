@@ -130,7 +130,10 @@ export default function ListModePage() {
         params.append('page', pagination.page.toString());
         params.append('limit', pagination.limit.toString());
 
-        const res = await fetch(`/api/public/news?${params.toString()}`);
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        const res = await fetch(`/api/public/news?${params.toString()}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         if (res.ok) {
           const data = await res.json();
           setNews(data.news || []);

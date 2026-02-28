@@ -31,8 +31,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'No image URL provided' }, { status: 400 });
       }
 
-      if (!type || (type !== 'picture' && type !== 'banner')) {
-        return NextResponse.json({ error: 'Invalid type. Must be "picture" or "banner"' }, { status: 400 });
+      if (!type || (type !== 'picture' && type !== 'banner' && type !== 'content')) {
+        return NextResponse.json({ error: 'Invalid type. Must be "picture", "banner", or "content"' }, { status: 400 });
       }
 
       try {
@@ -79,8 +79,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'No file provided' }, { status: 400 });
       }
 
-      if (!type || (type !== 'picture' && type !== 'banner')) {
-        return NextResponse.json({ error: 'Invalid type. Must be "picture" or "banner"' }, { status: 400 });
+      if (!type || (type !== 'picture' && type !== 'banner' && type !== 'content')) {
+        return NextResponse.json({ error: 'Invalid type. Must be "picture", "banner", or "content"' }, { status: 400 });
       }
 
       const maxSize = 5 * 1024 * 1024;

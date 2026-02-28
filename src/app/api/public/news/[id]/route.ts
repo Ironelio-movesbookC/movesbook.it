@@ -27,7 +27,8 @@ export async function GET(
           },
         },
         languageTitles: {
-          include: {
+          select: {
+            title: true,
             language: {
               select: {
                 id: true,
@@ -41,6 +42,7 @@ export async function GET(
           select: {
             id: true,
             functions: true,
+            reshare: true,
             sports: {
               select: {
                 sport: true,
@@ -49,7 +51,7 @@ export async function GET(
           },
         },
         relatedArticles: {
-          include: {
+          select: {
             article: {
               select: {
                 id: true,
@@ -66,6 +68,26 @@ export async function GET(
 
     if (!news) {
       return NextResponse.json({ error: 'News not found' }, { status: 404 });
+    }
+
+    let writerImageUrl: string | null = null;
+    if ((news as any).showWriterImage && news.writerUsername) {
+      try {
+        const writerUsername = news.writerUsername.toLowerCase();
+        const rows = await prisma.$queryRawUnsafe<Array<{ image: string | null }>>(
+          `SELECT image FROM users_new WHERE username = ? OR email = ? LIMIT 1`,
+          writerUsername,
+          writerUsername
+        );
+        if (rows && rows.length > 0 && rows[0].image) {
+          const rawImage = rows[0].image;
+          writerImageUrl = (rawImage.startsWith('http') || rawImage.startsWith('/'))
+            ? rawImage
+            : `/img/profile_images/${rawImage}`;
+        }
+      } catch {
+        writerImageUrl = null;
+      }
     }
 
     const formattedNews = {
@@ -86,6 +108,8 @@ export async function GET(
       visualizeInReadingPageAuthorName: news.visualizeInReadingPageAuthorName || 'N',
       visualizeInReadingPageActualAuthorName: news.visualizeInReadingPageActualAuthorName || 'N',
       checkedBanner: news.checkedBanner || 'N',
+      showWriterImage: (news as any).showWriterImage || false,
+      writerImage: writerImageUrl,
       category: news.category ? {
         id: news.category.id,
         categoryName: news.category.categoryName,
@@ -104,12 +128,13 @@ export async function GET(
         },
       })),
       settings: news.settings.map((setting) => {
-        const functions = setting.functions ? (typeof setting.functions === 'string' ? JSON.parse(setting.functions) : setting.functions) : {};
+        const functions = setting.functions
+          ? (typeof setting.functions === 'string' ? JSON.parse(setting.functions) : setting.functions)
+          : {};
         return {
-          sports: setting.sports.map((sport) => ({
-            sport: sport.sport,
-          })),
-          functions: functions,
+          reshare: setting.reshare === 'Y',
+          sports: setting.sports.map((sport) => ({ sport: sport.sport })),
+          functions,
         };
       }),
       relatedArticles: news.relatedArticles.map((ra) => ({

@@ -139,6 +139,7 @@ export async function PUT(
       briefDesc,
       writerUsername,
       writerVerified,
+      showWriterImage,
       languageTitles,
       settings,
       relatedArticleIds,
@@ -218,6 +219,7 @@ export async function PUT(
     if (briefDesc !== undefined) updateData.briefDesc = briefDesc;
     if (writerUsername !== undefined) updateData.writerUsername = writerUsername;
     if (writerVerified !== undefined) updateData.writerVerified = writerVerified;
+    if (showWriterImage !== undefined) updateData.showWriterImage = showWriterImage === true;
 
     const news = await prisma.news.update({
       where: { id },

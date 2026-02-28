@@ -34,6 +34,8 @@ interface NewsData {
   visualizeInReadingPageAuthorName: string;
   visualizeInReadingPageActualAuthorName: string;
   checkedBanner: string;
+  showWriterImage: boolean;
+  writerImage: string | null;
   category: {
     id: string;
     categoryName: string;
@@ -52,6 +54,7 @@ interface NewsData {
     };
   }>;
   settings: Array<{
+    reshare: boolean;
     sports: Array<{
       sport: string;
     }>;
@@ -303,14 +306,16 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
               </div>
             )}
 
-            <button
-              onClick={() => setShareModalOpen(true)}
-              className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors w-full sm:w-auto"
-              aria-label="Share this article"
-            >
-              <Share2 className="w-4 h-4" />
-              <span>{t('news_share_article')}</span>
-            </button>
+            {news.settings[0]?.reshare && (
+              <button
+                onClick={() => setShareModalOpen(true)}
+                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors w-full sm:w-auto"
+                aria-label="Share this article"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>{t('news_share_article')}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -355,7 +360,17 @@ export default function NewsDetail({ newsId }: NewsDetailProps) {
               <span>{t('news_posted')}: {formatDate(news.createdAt)}</span>
             </div>
             <div className="flex items-center gap-2">
-              <User className="w-4 h-4" />
+              {news.showWriterImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={news.writerImage || '/img/placeholder.png'}
+                  alt="Writer"
+                  className="w-6 h-6 rounded-full object-cover border border-gray-300"
+                  onError={(e) => { (e.target as HTMLImageElement).src = '/img/placeholder.png'; }}
+                />
+              ) : (
+                <User className="w-4 h-4" />
+              )}
               <span>{t('news_by')} {authorName}</span>
             </div>
             {news.author && (

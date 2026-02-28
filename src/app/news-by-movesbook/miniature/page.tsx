@@ -7,6 +7,22 @@ import NewsList from '@/components/news/NewsList';
 import GetSocialBlock from '@/components/news/GetSocialBlock';
 import NewsToolbox from '@/components/news/NewsToolbox';
 
+interface Category {
+  id: string;
+  categoryName: string;
+}
+
+interface Sport {
+  id: string;
+  name: string;
+}
+
+interface Language {
+  id: string;
+  code: string;
+  name: string;
+}
+
 interface NewsArticle {
   id: string;
   title: string;
@@ -40,6 +56,9 @@ interface NewsArticle {
 
 export default function MiniatureModePage() {
   const router = useRouter();
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [sports, setSports] = useState<Sport[]>([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
   const [news, setNews] = useState<NewsArticle[]>([]);
   const [popularPosts, setPopularPosts] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,6 +88,24 @@ export default function MiniatureModePage() {
   }, []);
 
   useEffect(() => {
+    const fetchDropdownData = async () => {
+      try {
+        const [categoriesRes, sportsRes, languagesRes] = await Promise.all([
+          fetch('/api/public/news/categories'),
+          fetch('/api/public/news/sports'),
+          fetch('/api/public/news/languages'),
+        ]);
+        if (categoriesRes.ok) setCategories(await categoriesRes.json());
+        if (sportsRes.ok) setSports(await sportsRes.json());
+        if (languagesRes.ok) setLanguages(await languagesRes.json());
+      } catch (error) {
+        console.error('Error fetching dropdown data:', error);
+      }
+    };
+    fetchDropdownData();
+  }, []);
+
+  useEffect(() => {
     const fetchNews = async () => {
       setLoading(true);
       try {
@@ -80,7 +117,10 @@ export default function MiniatureModePage() {
         params.append('page', pagination.page.toString());
         params.append('limit', pagination.limit.toString());
 
-        const res = await fetch(`/api/public/news?${params.toString()}`);
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        const res = await fetch(`/api/public/news?${params.toString()}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         if (res.ok) {
           const data = await res.json();
           setNews(data.news || []);
@@ -160,6 +200,9 @@ export default function MiniatureModePage() {
         selectedLanguage={selectedLanguage}
         setSelectedLanguage={setSelectedLanguage}
         onShow={handleShow}
+        categories={categories}
+        sports={sports}
+        languages={languages}
       />
 
       <div className="p-6">
