@@ -132,10 +132,10 @@ export default function NewsTopicBar({
             ? 'bg-gray-800 text-white'
             : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
         }`}
-        title={t('news_all')}
-        aria-label={t('news_all')}
+        title={t('news_all_ogp')}
+        aria-label={t('news_all_ogp')}
       >
-        {t('news_all')}
+        {t('news_all_ogp')}
       </button>
 
       {/* Left arrow - scroll left */}

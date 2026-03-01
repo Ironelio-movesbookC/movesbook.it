@@ -280,7 +280,7 @@ export default function NewsArticlesList({
             <Search className="w-4 h-4 text-gray-400 ml-2 flex-shrink-0" />
             <input
               type="text"
-              placeholder={t('news_search_placeholder')}
+              placeholder={t('news_search_placeholder_ogp')}
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -310,7 +310,7 @@ export default function NewsArticlesList({
             disabled={currentPage >= totalPages}
             className="px-3 py-1.5 bg-white text-gray-800 rounded text-sm font-medium hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {t('news_next')}
+            {t('news_next_ogp')}
           </button>
           <button
             type="button"
@@ -343,7 +343,7 @@ export default function NewsArticlesList({
               setCurrentPage(1);
             }}
             className="px-3 py-1.5 bg-white text-gray-800 rounded text-sm border border-gray-300"
-            aria-label={t('news_language')}
+            aria-label={t('news_language_ogp')}
           >
             <option value="">{t('news_language')}</option>
             {sortedLanguages.map((lang) => (
@@ -411,7 +411,7 @@ export default function NewsArticlesList({
             className="px-3 py-1.5 bg-amber-100 text-amber-900 rounded text-sm font-medium hover:bg-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label={t('btn_next')}
           >
-            {t('news_next')}
+            {t('news_next_ogp')}
           </button>
           {/* Add article "+" at right end of pagination row */}
           {onAddClick != null && (
@@ -437,7 +437,7 @@ export default function NewsArticlesList({
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden max-h-[100vh]">
         <div className="bg-gray-800 text-white px-4 py-2 flex items-center justify-between gap-2">
           <span className="font-semibold">
-            {activeTopic === ALL_TOPICS ? t('news_all') : (activeTopic ? translateTopic(activeTopic) : '')}
+            {activeTopic === ALL_TOPICS ? t('news_all_ogp') : (activeTopic ? translateTopic(activeTopic) : '')}
           </span>
           <div className="flex items-center gap-1">
             <button
