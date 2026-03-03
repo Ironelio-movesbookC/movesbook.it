@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
-import { ALL_TOPICS, NEWS_TOPIC_KEYS } from './NewsTopicBar';
+import { ALL_TOPICS, ALL_USER_SECTORS, NEWS_TOPIC_KEYS, NEWS_TOPICS } from './NewsTopicBar';
 import { ALL_LANGUAGES } from '@/constants/language.constants';
 import NewsSettingModal, { type OgpVisibilitySettings, defaultSettings } from './NewsSettingModal';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -22,6 +22,8 @@ export type ArticlePasted = OGPData & {
   deletedByName?: string;
   /** Visibility settings for News Setting modal (creator / admin / super admin only). */
   visibility?: OgpVisibilitySettings;
+  /** When true, article was created by the current super admin (enables Pencil/settings as creator). */
+  createdByCurrentUser?: boolean;
 };
 export type ArticleTyped = { id: string; description: string };
 
@@ -83,6 +85,8 @@ interface NewsArticlesListProps {
   onUpdatePastedTopic?: (id: string, topic: string, customDescription?: string) => void | Promise<void>;
   /** When true, use adminToken for API calls (e.g. creator fetch) so super admin can use User button. */
   adminContext?: boolean;
+  /** When activeTopic is ALL_USER_SECTORS, filter to articles whose topic is in this list (super admin). */
+  topicNamesCreatedByNormalUsers?: string[];
 }
 
 export default function NewsArticlesList({
@@ -97,9 +101,36 @@ export default function NewsArticlesList({
   topics: topicsProp = [],
   onUpdatePastedTopic,
   adminContext = false,
+  topicNamesCreatedByNormalUsers = [],
 }: NewsArticlesListProps) {
   const { t } = useLanguage();
   const topicsList = topicsProp.length > 0 ? topicsProp : ['News', 'Sport', 'Events', 'Nutrition', 'Training', 'Medicine', 'Equipments', 'Lounge music'];
+  const canEditAsCreator = (a: ArticlePasted) => a.userId === currentUserId || a.createdByCurrentUser === true;
+
+  const hasAnyVisibilitySettings = (a: ArticlePasted): boolean => {
+    const v = a.visibility;
+    if (!v) return false;
+    const hasSelections =
+      (v.userTypes?.length ?? 0) > 0 ||
+      (v.countries?.length ?? 0) > 0 ||
+      (v.languages?.length ?? 0) > 0 ||
+      (v.sports?.length ?? 0) > 0;
+    const hasDuration =
+      v.expiresAt != null &&
+      String(v.expiresAt).trim() !== '';
+    return hasSelections || hasDuration;
+  };
+
+  /** True if the OGP has no expiry or expiry is in the future (respects News Setting duration in All/default topics). */
+  const isNotExpired = (a: ArticlePasted): boolean => {
+    const exp = a.visibility?.expiresAt;
+    if (exp == null || String(exp).trim() === '') return true;
+    try {
+      return new Date(exp).getTime() >= Date.now();
+    } catch {
+      return true;
+    }
+  };
 
   const translateTopic = useCallback((topic: string) => {
     const key = NEWS_TOPIC_KEYS[topic];
@@ -213,9 +244,33 @@ export default function NewsArticlesList({
   }, [activeTopic]);
 
   const byTopic = useMemo(() => {
-    if (!activeTopic || activeTopic === ALL_TOPICS) return pasted;
-    return pasted.filter((a) => (a.topic ?? 'News') === activeTopic);
-  }, [pasted, activeTopic]);
+    let base: ArticlePasted[];
+    if (!activeTopic || activeTopic === ALL_TOPICS) {
+      base = pasted;
+    } else if (activeTopic === ALL_USER_SECTORS && topicNamesCreatedByNormalUsers.length > 0) {
+      base = pasted.filter((a) => topicNamesCreatedByNormalUsers.includes(a.topic ?? ''));
+    } else {
+      base = pasted.filter((a) => (a.topic ?? 'News') === activeTopic);
+    }
+
+    const isAllOrDefaultTopic =
+      !activeTopic ||
+      activeTopic === ALL_TOPICS ||
+      (NEWS_TOPICS as readonly string[]).includes(activeTopic);
+
+    // In "All" and 7 default topics: hide OGPs with no News Setting for everyone (including super admin and OGP creator).
+    // Also hide expired OGPs (Duration in the past) so the list respects the creator's News Setting (e.g. OGP creator no longer sees their own expired OGPs here).
+    if (isAllOrDefaultTopic) {
+      return base.filter((a) => hasAnyVisibilitySettings(a) && isNotExpired(a));
+    }
+
+    // For other topics (e.g. custom): normal users only see OGPs with settings or their own; admin/creator see all.
+    if (!adminContext && !canDeleteOgp) {
+      return base.filter((a) => canEditAsCreator(a) || hasAnyVisibilitySettings(a));
+    }
+
+    return base;
+  }, [pasted, activeTopic, topicNamesCreatedByNormalUsers, adminContext, canDeleteOgp]);
 
   const filtered = useMemo(() => {
     let list = byTopic;
@@ -280,7 +335,7 @@ export default function NewsArticlesList({
             <Search className="w-4 h-4 text-gray-400 ml-2 flex-shrink-0" />
             <input
               type="text"
-              placeholder={t('news_search_placeholder')}
+              placeholder={t('news_search_placeholder_ogp')}
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -310,7 +365,7 @@ export default function NewsArticlesList({
             disabled={currentPage >= totalPages}
             className="px-3 py-1.5 bg-white text-gray-800 rounded text-sm font-medium hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {t('news_next')}
+            {t('news_next_ogp')}
           </button>
           <button
             type="button"
@@ -343,7 +398,7 @@ export default function NewsArticlesList({
               setCurrentPage(1);
             }}
             className="px-3 py-1.5 bg-white text-gray-800 rounded text-sm border border-gray-300"
-            aria-label={t('news_language')}
+            aria-label={t('news_language_ogp')}
           >
             <option value="">{t('news_language')}</option>
             {sortedLanguages.map((lang) => (
@@ -411,7 +466,7 @@ export default function NewsArticlesList({
             className="px-3 py-1.5 bg-amber-100 text-amber-900 rounded text-sm font-medium hover:bg-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label={t('btn_next')}
           >
-            {t('news_next')}
+            {t('news_next_ogp')}
           </button>
           {/* Add article "+" at right end of pagination row */}
           {onAddClick != null && (
@@ -434,10 +489,16 @@ export default function NewsArticlesList({
       </div>
 
       {/* Pasted - OGP cards in a grid (multiple per row) */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden max-h-[100vh]">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden max-h-[102vh]">
         <div className="bg-gray-800 text-white px-4 py-2 flex items-center justify-between gap-2">
           <span className="font-semibold">
-            {activeTopic === ALL_TOPICS ? t('news_all') : (activeTopic ? translateTopic(activeTopic) : '')}
+            {activeTopic === ALL_TOPICS
+              ? t('news_all_ogp')
+              : activeTopic === ALL_USER_SECTORS
+                ? "All users' sectors"
+                : activeTopic
+                  ? translateTopic(activeTopic)
+                  : ''}
           </span>
           <div className="flex items-center gap-1">
             <button
@@ -473,12 +534,14 @@ export default function NewsArticlesList({
             <p className="text-sm text-gray-500">
               {activeTopic === ALL_TOPICS
                 ? t('news_no_articles_all')
-                : activeTopic
-                  ? t('news_no_articles_for_topic').replace('{topic}', translateTopic(activeTopic))
-                  : t('news_no_articles_default')}
+                : activeTopic === ALL_USER_SECTORS
+                  ? "No articles in users' sectors."
+                  : activeTopic
+                    ? t('news_no_articles_for_topic').replace('{topic}', translateTopic(activeTopic))
+                    : t('news_no_articles_default')}
             </p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 max-h-[500px] overflow-y-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 max-h-[94vh] overflow-y-auto">
               {paginated.map((a) => (
                 <article
                   key={a.id}
@@ -561,11 +624,11 @@ export default function NewsArticlesList({
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (a.userId === currentUserId) setEditTopicArticleId(a.id);
+                          if (canEditAsCreator(a)) setEditTopicArticleId(a.id);
                         }}
-                        disabled={!onUpdatePastedTopic || a.userId !== currentUserId}
+                        disabled={!onUpdatePastedTopic || !canEditAsCreator(a)}
                         className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
-                        title={a.userId === currentUserId ? 'Change topic (creator only)' : 'Only the creator can change this article\'s topic'}
+                        title={canEditAsCreator(a) ? 'Change topic (creator only)' : 'Only the creator can change this article\'s topic'}
                         aria-label="Change topic"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -609,7 +672,11 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           setCreatorModalArticleId(a.id);
                         }}
-                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        className={`flex items-center justify-center w-6 h-6 min-w-[24px] rounded border transition-colors shrink-0 ${
+                          currentUserId != null && !canEditAsCreator(a)
+                            ? 'border-amber-200 bg-amber-200 text-gray-600 hover:bg-amber-400 hover:border-amber-300'
+                            : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
+                        }`}
                         title="View creator of this article"
                         aria-label="View creator"
                       >
@@ -620,11 +687,11 @@ export default function NewsArticlesList({
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (canDeleteOgp || a.userId === currentUserId) setSettingsArticleId(a.id);
+                          if (canDeleteOgp || canEditAsCreator(a)) setSettingsArticleId(a.id);
                         }}
-                        disabled={!onUpdatePastedSettings || (!canDeleteOgp && a.userId !== currentUserId)}
+                        disabled={!onUpdatePastedSettings || (!canDeleteOgp && !canEditAsCreator(a))}
                         className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
-                        title={canDeleteOgp || a.userId === currentUserId ? 'News settings (visibility)' : 'Only creator, admin, or super admin can edit settings'}
+                        title={canDeleteOgp || canEditAsCreator(a) ? 'News settings (visibility)' : 'Only creator, admin, or super admin can edit settings'}
                         aria-label="News settings"
                       >
                         <Settings className="w-3.5 h-3.5" />
@@ -634,11 +701,11 @@ export default function NewsArticlesList({
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        if (canDeleteOgp || a.userId === currentUserId) setRemoveConfirmArticleId(a.id);
+                        if (canDeleteOgp || canEditAsCreator(a)) setRemoveConfirmArticleId(a.id);
                       }}
-                      disabled={!onRemovePasted || (!canDeleteOgp && a.userId !== currentUserId)}
+                      disabled={!onRemovePasted || (!canDeleteOgp && !canEditAsCreator(a))}
                       className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 hover:text-red-600 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:text-gray-600"
-                      title={canDeleteOgp || a.userId === currentUserId ? 'Delete' : 'Only super admin, admin, or creator can delete'}
+                      title={canDeleteOgp || canEditAsCreator(a) ? 'Delete' : 'Only super admin, admin, or creator can delete'}
                       aria-label="Delete article"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -757,11 +824,11 @@ export default function NewsArticlesList({
                         creatorInfo.image && creatorInfo.image.trim() !== ''
                           ? creatorInfo.image
                           : creatorInfo.gender?.toLowerCase() === 'female'
-                            ? '/default-avatar-female.svg'
-                            : '/default-avatar-male.svg'
+                            ? '/female_default.jpg'
+                            : '/male_default.jpg'
                       }
                       alt=""
-                      className="w-24 h-24 rounded-full object-cover bg-gray-200 border border-gray-300"
+                      className="w-24 h-24 object-cover bg-gray-200 border border-gray-300"
                     />
                   </div>
                 </div>
@@ -801,11 +868,27 @@ export default function NewsArticlesList({
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto">
                 {article.image && (
-                  <img
-                    src={article.image}
-                    alt=""
-                    className="w-full max-h-64 object-cover"
-                  />
+                  article.url ? (
+                    <a
+                      href={article.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-full focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-inset cursor-pointer"
+                      aria-label={`Open article: ${article.title || article.url}`}
+                    >
+                      <img
+                        src={article.image}
+                        alt=""
+                        className="w-full max-h-64 object-cover"
+                      />
+                    </a>
+                  ) : (
+                    <img
+                      src={article.image}
+                      alt=""
+                      className="w-full max-h-64 object-cover"
+                    />
+                  )
                 )}
                 <div className="p-4">
                   <h3 className="text-lg font-bold text-gray-900">

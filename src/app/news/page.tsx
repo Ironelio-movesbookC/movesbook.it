@@ -10,7 +10,7 @@ import PersonalBanner from '@/app/my-page/components/PersonalBanner';
 import SimpleFooter from '@/components/SimpleFooter';
 import { useAuth } from '@/hooks/useAuth';
 import { useNewsData } from '@/hooks/useNewsData';
-import NewsTopicBar, { type NewsTopic, ALL_TOPICS } from './components/NewsTopicBar';
+import NewsTopicBar, { type NewsTopic, ALL_TOPICS, isDefaultTopic } from './components/NewsTopicBar';
 import NewTopicModal from './components/NewTopicModal';
 import NewsTopicSortModal from './components/NewsTopicSortModal';
 import OGPForm from './components/OGPForm';
@@ -22,6 +22,7 @@ export default function NewsPage() {
   const {
     topics,
     customTopics,
+    topicNamesCreatedBySuperAdmin,
     pastedArticles,
     typedArticles,
     loading,
@@ -62,6 +63,7 @@ export default function NewsPage() {
   }, [loading, topics]);
 
   const handleOpenTopicModal = useCallback(() => {
+    if (isDefaultTopic(activeTopic)) return;
     setTopicModalEditing(activeTopic ?? null);
     setTopicModalEditingId(customTopics.find((c) => c.name === (activeTopic ?? ''))?.id ?? null);
     setShowNewTopicModal(true);
@@ -233,6 +235,7 @@ export default function NewsPage() {
             isExpanded={isExpanded}
             onExpandReduce={() => setIsExpanded((e) => !e)}
             onOpenTopicSort={() => setShowTopicSortModal(true)}
+            topicNamesCreatedBySuperAdmin={topicNamesCreatedBySuperAdmin}
           />
 
           <NewTopicModal

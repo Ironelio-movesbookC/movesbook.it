@@ -23,10 +23,20 @@ export async function PATCH(
     if (!existing) {
       return NextResponse.json({ error: 'Topic not found' }, { status: 404 });
     }
-    const updated = await prisma.userNewsTopic.update({
-      where: { id },
-      data: { name },
-    });
+    const oldName = existing.name;
+    if (oldName === name) {
+      return NextResponse.json(existing);
+    }
+    const [updated] = await prisma.$transaction([
+      prisma.userNewsTopic.update({
+        where: { id },
+        data: { name },
+      }),
+      prisma.ogpArticle.updateMany({
+        where: { userId: existing.userId, topic: oldName },
+        data: { topic: name },
+      }),
+    ]);
     return NextResponse.json(updated);
   } catch (e: any) {
     if (e?.code === 'P2002') {

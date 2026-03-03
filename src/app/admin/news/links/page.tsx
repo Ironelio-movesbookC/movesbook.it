@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
 import { useNewsData } from '@/hooks/useNewsData';
-import NewsTopicBar, { type NewsTopic, ALL_TOPICS } from '@/app/news/components/NewsTopicBar';
+import NewsTopicBar, { type NewsTopic, ALL_TOPICS, ALL_USER_SECTORS } from '@/app/news/components/NewsTopicBar';
 import NewTopicModal from '@/app/news/components/NewTopicModal';
 import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
 import OGPForm from '@/app/news/components/OGPForm';
@@ -18,6 +18,7 @@ export default function AdminNewsLinksPage() {
   const {
     topics,
     customTopics,
+    topicNamesCreatedByNormalUsers,
     pastedArticles,
     typedArticles,
     loading,
@@ -232,6 +233,7 @@ export default function AdminNewsLinksPage() {
             isExpanded={isExpanded}
             onExpandReduce={() => setIsExpanded((e) => !e)}
             onOpenTopicSort={() => setShowTopicSortModal(true)}
+            topicNamesCreatedByNormalUsers={topicNamesCreatedByNormalUsers}
           />
 
           <NewTopicModal
@@ -305,8 +307,9 @@ export default function AdminNewsLinksPage() {
             onUpdatePastedSettings={handleUpdatePastedSettings}
             onUpdatePastedTopic={handleUpdatePastedTopic}
             onAddClick={() => setShowOgpForm((prev) => !prev)}
-            addButtonDisabled={activeTopic === ALL_TOPICS}
+            addButtonDisabled={activeTopic === ALL_TOPICS || activeTopic === ALL_USER_SECTORS}
             adminContext={true}
+            topicNamesCreatedByNormalUsers={topicNamesCreatedByNormalUsers}
           />
         </div>
       </div>

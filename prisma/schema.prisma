@@ -49,6 +49,7 @@ model User {
   telegramChatId           String?   // Telegram chat id for sending/receiving via bot
   lastSeenAt               DateTime? // For chat online/offline status
   image                    String?   // Profile/avatar image URL or path (users_new table)
+  superAdminId             String?   @unique // When set, this User mirrors a super_admin for news/OGP attribution
   conversationsStarted    ChatConversation[] @relation("ConversationStarter")
   conversationsReceived   ChatConversation[] @relation("ConversationReceiver")
   chatMessagesSent         ChatMessage[]     @relation("MessageSender")

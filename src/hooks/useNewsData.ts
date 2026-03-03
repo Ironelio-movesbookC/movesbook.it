@@ -21,6 +21,10 @@ export interface CustomTopic {
 export interface UseNewsDataResult {
   topics: string[];
   customTopics: CustomTopic[];
+  /** Topic names created by super admin (normal users cannot edit these); empty when admin/super-admin. */
+  topicNamesCreatedBySuperAdmin: string[];
+  /** Topic names created by normal users (super admin sees these in dropdown only); empty when not super-admin. */
+  topicNamesCreatedByNormalUsers: string[];
   pastedArticles: ArticlePasted[];
   typedArticles: ArticleTyped[];
   loading: boolean;
@@ -49,6 +53,8 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   const [adminUserId, setAdminUserId] = useState<string | null>(null);
   const [topics, setTopics] = useState<string[]>(() => [...NEWS_TOPICS]);
   const [customTopics, setCustomTopics] = useState<CustomTopic[]>([]);
+  const [topicNamesCreatedBySuperAdmin, setTopicNamesCreatedBySuperAdmin] = useState<string[]>([]);
+  const [topicNamesCreatedByNormalUsers, setTopicNamesCreatedByNormalUsers] = useState<string[]>([]);
   const [pastedArticles, setPastedArticles] = useState<ArticlePasted[]>([]);
   const [typedArticles, setTypedArticles] = useState<ArticleTyped[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,6 +80,8 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     if (!effectiveUserId) {
       setTopics([...NEWS_TOPICS]);
       setCustomTopics([]);
+      setTopicNamesCreatedBySuperAdmin([]);
+      setTopicNamesCreatedByNormalUsers([]);
       setPastedArticles([]);
       setTypedArticles([]);
       setLoading(false);
@@ -103,6 +111,8 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
 
       const custom = topicsData.customTopics ?? [];
       setCustomTopics(custom);
+      setTopicNamesCreatedBySuperAdmin(topicsData.topicNamesCreatedBySuperAdmin ?? []);
+      setTopicNamesCreatedByNormalUsers(topicsData.topicNamesCreatedByNormalUsers ?? []);
       const rawTopics = [...(topicsData.defaultTopicNames ?? NEWS_TOPICS), ...custom.map((t: CustomTopic) => t.name)];
       const order: string[] = orderData?.order ?? [];
       const sorted =
@@ -118,6 +128,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         (ogpData ?? []).map((a: any) => ({
           id: a.id,
           userId: a.userId,
+          createdByCurrentUser: a.createdByCurrentUser === true,
           title: a.title,
           image: a.image,
           description: a.description,
@@ -152,6 +163,8 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       setError(e instanceof Error ? e.message : 'Failed to load');
       setTopics([...NEWS_TOPICS]);
       setCustomTopics([]);
+      setTopicNamesCreatedBySuperAdmin([]);
+      setTopicNamesCreatedByNormalUsers([]);
       setPastedArticles([]);
       setTypedArticles([]);
     } finally {
@@ -201,6 +214,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   const updateTopic = useCallback(
     async (id: string, name: string) => {
       if (!effectiveUserId) return;
+      const oldName = customTopics.find((c) => c.id === id)?.name ?? '';
       const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch(`/api/news/topics/${id}`, {
         method: 'PATCH',
@@ -213,7 +227,10 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       }
       const updated = await res.json();
       setCustomTopics((prev) => prev.map((t) => (t.id === id ? { id, name: updated.name } : t)));
-      setTopics((prev) => prev.map((t) => (t === (customTopics.find((c) => c.id === id)?.name ?? '') ? updated.name : t)));
+      setTopics((prev) => prev.map((t) => (t === oldName ? updated.name : t)));
+      setPastedArticles((prev) =>
+        prev.map((a) => (a.topic === oldName ? { ...a, topic: updated.name } : a))
+      );
     },
     [effectiveUserId, customTopics, getHeaders]
   );
@@ -389,6 +406,8 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   return {
     topics,
     customTopics,
+    topicNamesCreatedBySuperAdmin,
+    topicNamesCreatedByNormalUsers,
     pastedArticles,
     typedArticles,
     loading,

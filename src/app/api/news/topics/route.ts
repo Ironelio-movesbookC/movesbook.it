@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuthForNews } from '../auth';
+import { requireAuthForNews, requireAuthWithUser, getSuperAdminUserIds } from '../auth';
 
 const DEFAULT_TOPIC_NAMES = [
   'Events',
@@ -14,25 +14,44 @@ const DEFAULT_TOPIC_NAMES = [
 ];
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAuthForNews(request);
+  const auth = await requireAuthWithUser(request);
   if (auth instanceof NextResponse) return auth;
+  const { userId, isSuperAdmin } = auth;
 
   try {
-    // Return all custom topics from all users so everyone sees the same topic list (SuperAdmin + athletes)
+    // Super admin: show all custom topics. Normal user: default + topics by super admins + topics by self.
+    const superAdminIds = await getSuperAdminUserIds();
+    const allowedUserIds = isSuperAdmin ? undefined : [...superAdminIds, userId];
     const allCustom = await prisma.userNewsTopic.findMany({
+      where: isSuperAdmin ? undefined : { userId: { in: allowedUserIds } },
       orderBy: [{ name: 'asc' }, { displayOrder: 'asc' }],
-      select: { id: true, name: true, displayOrder: true },
+      select: { id: true, name: true, displayOrder: true, userId: true },
     });
-    // Distinct by name; keep one id per name (first occurrence for edit/delete)
+    // Distinct by name; keep one id per name (first occurrence for edit/delete).
+    // Mark topic names as super-admin-created if ANY topic with that name is from a super admin (so we disable pencil even when user has same-named topic).
+    const topicNamesCreatedBySuperAdminSet = new Set<string>();
+    for (const t of allCustom) {
+      if (!isSuperAdmin && superAdminIds.includes(t.userId)) topicNamesCreatedBySuperAdminSet.add(t.name);
+    }
+    const topicNamesCreatedBySuperAdmin = Array.from(topicNamesCreatedBySuperAdminSet);
+    /** For super admin only: topic names created by normal users (to show in dropdown, not in bar). */
+    const topicNamesCreatedByNormalUsers: string[] = [];
+    if (isSuperAdmin) {
+      for (const t of allCustom) {
+        if (!superAdminIds.includes(t.userId)) topicNamesCreatedByNormalUsers.push(t.name);
+      }
+    }
     const seen = new Set<string>();
     const custom = allCustom.filter((t) => {
       if (seen.has(t.name)) return false;
       seen.add(t.name);
       return true;
-    });
+    }).map(({ userId: _u, ...rest }) => rest);
     return NextResponse.json({
       defaultTopicNames: DEFAULT_TOPIC_NAMES,
       customTopics: custom,
+      topicNamesCreatedBySuperAdmin: isSuperAdmin ? [] : topicNamesCreatedBySuperAdmin,
+      topicNamesCreatedByNormalUsers: isSuperAdmin ? Array.from(new Set(topicNamesCreatedByNormalUsers)) : [],
     });
   } catch (e) {
     console.error('GET /api/news/topics', e);
