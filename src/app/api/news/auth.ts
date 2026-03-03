@@ -31,6 +31,71 @@ export async function getOrCreateNewsSystemUser(): Promise<string> {
   return user.id;
 }
 
+/** User IDs in users_new that represent super admins (for filtering topics/OGP for normal users). */
+export async function getSuperAdminUserIds(): Promise<string[]> {
+  const users = await prisma.user.findMany({
+    where: { superAdminId: { not: null } },
+    select: { id: true },
+  });
+  const ids = users.map((u) => u.id);
+  const systemUserId = await getOrCreateNewsSystemUser();
+  if (!ids.includes(systemUserId)) ids.push(systemUserId);
+  return ids;
+}
+
+/** Get or create a User in users_new for the given SuperAdmin so topics/OGP are attributed to the super admin. */
+export async function getOrCreateUserForSuperAdmin(superAdminId: string): Promise<string> {
+  const existing = await prisma.user.findUnique({
+    where: { superAdminId },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+
+  const superAdmin = await prisma.superAdmin.findUnique({
+    where: { id: superAdminId },
+    select: { id: true, name: true, username: true, email: true },
+  });
+  if (!superAdmin) {
+    throw new Error('Super admin not found');
+  }
+
+  const name = superAdmin.name?.trim() || superAdmin.username;
+  const email = superAdmin.email.trim();
+  const username = superAdmin.username.trim();
+  const hashedPassword = await hashPassword('no-login-superadmin-' + superAdminId);
+
+  try {
+    const user = await prisma.user.create({
+      data: {
+        superAdminId: superAdmin.id,
+        name,
+        username,
+        email,
+        password: hashedPassword,
+        userType: 'ADMIN',
+      },
+      select: { id: true },
+    });
+    return user.id;
+  } catch (e: any) {
+    if (e?.code === 'P2002') {
+      const user = await prisma.user.create({
+        data: {
+          superAdminId: superAdmin.id,
+          name,
+          username: `sa-${superAdmin.id}`,
+          email: `sa-${superAdmin.id}@movesbook.internal`,
+          password: hashedPassword,
+          userType: 'ADMIN',
+        },
+        select: { id: true },
+      });
+      return user.id;
+    }
+    throw e;
+  }
+}
+
 export function getUserIdFromRequest(request: NextRequest): string | null {
   const authHeader = request.headers.get('authorization');
   if (!authHeader?.startsWith('Bearer ')) return null;
@@ -88,15 +153,15 @@ export async function requireAuthWithUser(request: NextRequest): Promise<
   }
 }
 
-/** Use for news routes that read/write by userId. Returns effective userId (User table id); for SuperAdmin uses news system user. */
+/** Use for news routes that read/write by userId. Returns effective userId (User table id); for SuperAdmin creates/uses a User in users_new with super admin info. */
 export async function requireAuthForNews(request: NextRequest): Promise<
   { userId: string; userType: string; country: string | null; isAdmin: boolean; isSuperAdmin: boolean } | NextResponse
 > {
   const auth = await requireAuthWithUser(request);
   if (auth instanceof NextResponse) return auth;
   if (auth.isSuperAdmin) {
-    const systemUserId = await getOrCreateNewsSystemUser();
-    return { ...auth, userId: systemUserId };
+    const userId = await getOrCreateUserForSuperAdmin(auth.userId);
+    return { ...auth, userId };
   }
   return auth;
 }

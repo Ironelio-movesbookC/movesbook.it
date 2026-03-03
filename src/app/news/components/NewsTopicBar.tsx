@@ -9,6 +9,9 @@ const SCROLL_STEP = 220;
 /** Special topic: show all articles sorted by date (most recent); "+" is disabled when this is selected */
 export const ALL_TOPICS = 'All';
 
+/** Special value when "All users' sectors" is selected in the user-sectors dropdown (super admin). */
+export const ALL_USER_SECTORS = '__all_user_sectors__';
+
 export const NEWS_TOPICS = [
   'Events',
   'Nutrition',
@@ -34,6 +37,11 @@ export const NEWS_TOPIC_KEYS: Record<string, string> = {
 
 export type NewsTopic = (typeof NEWS_TOPICS)[number] | string;
 
+/** Returns true if the topic is one of the built-in default topics (cannot be deleted). */
+export function isDefaultTopic(topic: string | null): topic is (typeof NEWS_TOPICS)[number] {
+  return topic != null && (NEWS_TOPICS as readonly string[]).includes(topic);
+}
+
 interface NewsTopicBarProps {
   /** List of topic labels; can include default + user-added topics */
   topics: string[];
@@ -47,6 +55,10 @@ interface NewsTopicBarProps {
   onExpandReduce: () => void;
   /** Called when the gear (topic sort) button is clicked */
   onOpenTopicSort?: () => void;
+  /** Topic names created by super admin; when selected, pencil is disabled for normal users */
+  topicNamesCreatedBySuperAdmin?: string[];
+  /** Topic names created by normal users; when non-empty (super admin), these go in a dropdown, not in the bar */
+  topicNamesCreatedByNormalUsers?: string[];
 }
 
 export default function NewsTopicBar({
@@ -58,7 +70,13 @@ export default function NewsTopicBar({
   isExpanded,
   onExpandReduce,
   onOpenTopicSort,
+  topicNamesCreatedBySuperAdmin = [],
+  topicNamesCreatedByNormalUsers = [],
 }: NewsTopicBarProps) {
+  /** Topics to show as buttons (exclude normal-user-created when dropdown is used) */
+  const topicsForBar = topicNamesCreatedByNormalUsers.length > 0
+    ? topics.filter((t) => !topicNamesCreatedByNormalUsers.includes(t))
+    : topics;
   const { t } = useLanguage();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -87,7 +105,7 @@ export default function NewsTopicBar({
       el.removeEventListener('scroll', updateScrollState);
       ro.disconnect();
     };
-  }, [updateScrollState, topics.length]);
+  }, [updateScrollState, topicsForBar.length]);
 
   const scrollLeft = useCallback(() => {
     scrollRef.current?.scrollBy({ left: -SCROLL_STEP, behavior: 'smooth' });
@@ -96,6 +114,12 @@ export default function NewsTopicBar({
   const scrollRight = useCallback(() => {
     scrollRef.current?.scrollBy({ left: SCROLL_STEP, behavior: 'smooth' });
   }, []);
+
+  /** Default topics (Nutrition, Sport, etc.) cannot be deleted; disable Pencil when one is selected. Also disable when "All" is selected or when a topic created by super admin is selected (normal users cannot edit those). */
+  const isDefaultTopicSelected = activeTopic != null && activeTopic !== ALL_TOPICS && isDefaultTopic(activeTopic);
+  const isAllSelected = activeTopic === ALL_TOPICS;
+  const isSuperAdminTopicSelected = activeTopic != null && topicNamesCreatedBySuperAdmin.includes(activeTopic);
+  const isPencilDisabled = isAllSelected || isDefaultTopicSelected || isSuperAdminTopicSelected;
 
   return (
     <div className="flex items-center gap-2 mb-4 flex-nowrap overflow-hidden">
@@ -112,13 +136,18 @@ export default function NewsTopicBar({
         </button>
       )}
 
-      {/* Edit topic button (pencil) */}
+      {/* Edit topic button (pencil) - disabled when "All" or a default topic is selected */}
       <button
         type="button"
         onClick={onAddNewTopic}
-        className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg border-2 border-amber-400 bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors"
-        title="Edit topic"
-        aria-label="Edit topic"
+        disabled={isPencilDisabled}
+        className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg border-2 transition-colors ${
+          isPencilDisabled
+            ? 'border-amber-200 bg-amber-50/50 text-amber-400 cursor-not-allowed'
+            : 'border-amber-400 bg-amber-50 text-amber-600 hover:bg-amber-100'
+        }`}
+        title={isPencilDisabled ? (isAllSelected ? 'Select a topic to edit' : isSuperAdminTopicSelected ? 'Cannot edit topic created by admin' : 'Cannot edit default topic') : 'Edit topic'}
+        aria-label={isPencilDisabled ? (isAllSelected ? 'Select a topic to edit' : isSuperAdminTopicSelected ? 'Cannot edit topic created by admin' : 'Cannot edit default topic') : 'Edit topic'}
       >
         <Pencil className="w-5 h-5" />
       </button>
@@ -154,14 +183,14 @@ export default function NewsTopicBar({
         <ChevronLeft className="w-5 h-5" />
       </button>
 
-      {/* Topic buttons - scrollable container */}
+      {/* Topic buttons - scrollable container (excludes user-created when dropdown is shown) */}
       <div
         ref={scrollRef}
         className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden scroll-smooth [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         <div className="flex items-center gap-2 flex-nowrap w-max py-1 pr-1">
-          {topics.map((topic) => (
+          {topicsForBar.map((topic) => (
             <button
               key={topic}
               type="button"
@@ -193,6 +222,32 @@ export default function NewsTopicBar({
       >
         <ChevronRight className="w-5 h-5" />
       </button>
+
+      {/* Sectors inserted by users (super admin only) */}
+      {topicNamesCreatedByNormalUsers.length > 0 && (
+        <div className="flex-shrink-0 flex flex-col gap-1 ml-2">
+          <label htmlFor="user-sectors-select" className="text-xs font-medium text-gray-600 whitespace-nowrap">
+            Topics inserted by users
+          </label>
+          <select
+            id="user-sectors-select"
+            value={activeTopic === ALL_USER_SECTORS || (activeTopic != null && topicNamesCreatedByNormalUsers.includes(activeTopic)) ? activeTopic : ''}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v) onTopicSelect(v);
+            }}
+            className="px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 text-sm font-medium min-w-[160px] focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+          >
+            <option value="">Select topic</option>
+            <option value={ALL_USER_SECTORS}>All users&apos; topics</option>
+            {topicNamesCreatedByNormalUsers.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Expand / Reduce button */}
       <button

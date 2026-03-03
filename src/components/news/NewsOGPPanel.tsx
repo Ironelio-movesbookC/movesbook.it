@@ -21,6 +21,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
   const {
     topics,
     customTopics,
+    topicNamesCreatedBySuperAdmin,
     pastedArticles,
     typedArticles,
     loading,
@@ -177,7 +178,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
   return (
     <div
       className={`flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden ${
-        embedded ? 'flex-1 min-h-0 max-h-[98vh]' : ''
+        embedded ? 'flex-1 min-h-0 max-h-[133vh]' : ''
       }`}
     >
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50">
@@ -192,7 +193,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 p-4">
         {loading && (
           <p className="text-sm text-gray-500 mb-4">Loading news...</p>
         )}
@@ -208,6 +209,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           isExpanded={isExpanded}
           onExpandReduce={onExpandReduce ?? (() => {})}
           onOpenTopicSort={() => setShowTopicSortModal(true)}
+          topicNamesCreatedBySuperAdmin={topicNamesCreatedBySuperAdmin}
         />
 
         <NewTopicModal

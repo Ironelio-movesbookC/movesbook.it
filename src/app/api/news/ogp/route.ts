@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuthWithUser, requireAuthForNews } from '../auth';
+import { requireAuthWithUser, requireAuthForNews, getSuperAdminUserIds, getOrCreateUserForSuperAdmin } from '../auth';
 
 function parseJsonArray(str: string | null | undefined): string[] {
   if (str == null || str === '') return [];
@@ -16,12 +16,23 @@ export async function GET(request: NextRequest) {
   const auth = await requireAuthWithUser(request);
   if (auth instanceof NextResponse) return auth;
   const { userId, userType, country, isAdmin } = auth;
+  // Super admin (super_admins table) and userType ADMIN are excepted from News Setting visibility: they see all articles.
   const { searchParams } = new URL(request.url);
   const topic = searchParams.get('topic');
 
+  // When super admin, resolve their users_new id so we can mark articles they created as createdByCurrentUser.
+  let superAdminEffectiveUserId: string | null = null;
+  if (auth.isSuperAdmin) {
+    superAdminEffectiveUserId = await getOrCreateUserForSuperAdmin(auth.userId);
+  }
+
   try {
-    const where: { topic?: string; deletedAt?: null } = isAdmin ? {} : { deletedAt: null };
+    const where: { topic?: string; deletedAt?: null; userId?: { in: string[] } } = isAdmin ? {} : { deletedAt: null };
     if (topic != null && topic !== '') where.topic = topic;
+    if (!isAdmin) {
+      const superAdminIds = await getSuperAdminUserIds();
+      where.userId = { in: [...superAdminIds, userId] };
+    }
 
     const list = (await prisma.ogpArticle.findMany({
       where,
@@ -79,6 +90,8 @@ export async function GET(request: NextRequest) {
     const articles = filtered.map((a) => ({
       id: a.id,
       userId: a.userId,
+      /** When true, article was created by the current super admin (so Pencil/settings/delete show as creator). */
+      ...(superAdminEffectiveUserId != null && { createdByCurrentUser: a.userId === superAdminEffectiveUserId }),
       title: a.title,
       image: a.image,
       description: a.description,

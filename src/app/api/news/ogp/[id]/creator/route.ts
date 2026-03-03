@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '../../../auth';
+import { requireAuthWithUser } from '../../../auth';
 
-/** Any authenticated user can view the creator (poster) of an OGP article. */
+const NEWS_SYSTEM_USERNAME = 'movesbook-news-system';
+
+/** Any authenticated user can view the creator (poster) of an OGP article. When the article was created by the news system user (super admin in admin panel), returns the super admin's info from super_admins. */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireAuth(request);
+  const auth = await requireAuthWithUser(request);
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
 
@@ -18,6 +20,31 @@ export async function GET(
     });
     if (!article) {
       return NextResponse.json({ error: 'Article not found' }, { status: 404 });
+    }
+
+    const newsSystemUser = await prisma.user.findFirst({
+      where: { username: NEWS_SYSTEM_USERNAME },
+      select: { id: true },
+    });
+    const isNewsSystemCreator = newsSystemUser && article.userId === newsSystemUser.id;
+
+    if (isNewsSystemCreator && auth.isSuperAdmin) {
+      const superAdmin = await prisma.superAdmin.findUnique({
+        where: { id: auth.userId },
+        select: { name: true, username: true, email: true },
+      });
+      if (!superAdmin) {
+        return NextResponse.json({ error: 'Creator not found' }, { status: 404 });
+      }
+      return NextResponse.json({
+        name: superAdmin.name ?? null,
+        email: superAdmin.email ?? null,
+        username: superAdmin.username ?? null,
+        gender: null,
+        country: null,
+        telegramAccount: null,
+        image: null,
+      });
     }
 
     const creator = await prisma.user.findUnique({
