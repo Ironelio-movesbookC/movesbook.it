@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuthWithUser, requireAuthForNews, getSuperAdminUserIds, getOrCreateUserForSuperAdmin } from '../auth';
+import { requireAuthWithUser, requireAuthForNews, getOrCreateUserForSuperAdmin } from '../auth';
 
 function parseJsonArray(str: string | null | undefined): string[] {
   if (str == null || str === '') return [];
@@ -29,10 +29,9 @@ export async function GET(request: NextRequest) {
   try {
     const where: { topic?: string; deletedAt?: null; userId?: { in: string[] } } = isAdmin ? {} : { deletedAt: null };
     if (topic != null && topic !== '') where.topic = topic;
-    if (!isAdmin) {
-      const superAdminIds = await getSuperAdminUserIds();
-      where.userId = { in: [...superAdminIds, userId] };
-    }
+    // For non-admin: do NOT restrict by creator. Load all non-deleted OGPs so that when User B selects "All"
+    // topic, they see every OGP whose News Setting matches their profile (sports, user type, language, country).
+    // Visibility filtering below will restrict to matching articles; creator's own articles are always shown.
 
     const list = (await prisma.ogpArticle.findMany({
       where,

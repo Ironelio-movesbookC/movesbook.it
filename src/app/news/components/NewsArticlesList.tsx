@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
-import { ALL_TOPICS, ALL_USER_SECTORS, NEWS_TOPIC_KEYS } from './NewsTopicBar';
+import { ALL_TOPICS, ALL_USER_SECTORS, NEWS_TOPIC_KEYS, NEWS_TOPICS } from './NewsTopicBar';
 import { ALL_LANGUAGES } from '@/constants/language.constants';
 import NewsSettingModal, { type OgpVisibilitySettings, defaultSettings } from './NewsSettingModal';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -106,6 +106,31 @@ export default function NewsArticlesList({
   const { t } = useLanguage();
   const topicsList = topicsProp.length > 0 ? topicsProp : ['News', 'Sport', 'Events', 'Nutrition', 'Training', 'Medicine', 'Equipments', 'Lounge music'];
   const canEditAsCreator = (a: ArticlePasted) => a.userId === currentUserId || a.createdByCurrentUser === true;
+
+  const hasAnyVisibilitySettings = (a: ArticlePasted): boolean => {
+    const v = a.visibility;
+    if (!v) return false;
+    const hasSelections =
+      (v.userTypes?.length ?? 0) > 0 ||
+      (v.countries?.length ?? 0) > 0 ||
+      (v.languages?.length ?? 0) > 0 ||
+      (v.sports?.length ?? 0) > 0;
+    const hasDuration =
+      v.expiresAt != null &&
+      String(v.expiresAt).trim() !== '';
+    return hasSelections || hasDuration;
+  };
+
+  /** True if the OGP has no expiry or expiry is in the future (respects News Setting duration in All/default topics). */
+  const isNotExpired = (a: ArticlePasted): boolean => {
+    const exp = a.visibility?.expiresAt;
+    if (exp == null || String(exp).trim() === '') return true;
+    try {
+      return new Date(exp).getTime() >= Date.now();
+    } catch {
+      return true;
+    }
+  };
 
   const translateTopic = useCallback((topic: string) => {
     const key = NEWS_TOPIC_KEYS[topic];
@@ -219,12 +244,33 @@ export default function NewsArticlesList({
   }, [activeTopic]);
 
   const byTopic = useMemo(() => {
-    if (!activeTopic || activeTopic === ALL_TOPICS) return pasted;
-    if (activeTopic === ALL_USER_SECTORS && topicNamesCreatedByNormalUsers.length > 0) {
-      return pasted.filter((a) => topicNamesCreatedByNormalUsers.includes(a.topic ?? ''));
+    let base: ArticlePasted[];
+    if (!activeTopic || activeTopic === ALL_TOPICS) {
+      base = pasted;
+    } else if (activeTopic === ALL_USER_SECTORS && topicNamesCreatedByNormalUsers.length > 0) {
+      base = pasted.filter((a) => topicNamesCreatedByNormalUsers.includes(a.topic ?? ''));
+    } else {
+      base = pasted.filter((a) => (a.topic ?? 'News') === activeTopic);
     }
-    return pasted.filter((a) => (a.topic ?? 'News') === activeTopic);
-  }, [pasted, activeTopic, topicNamesCreatedByNormalUsers]);
+
+    const isAllOrDefaultTopic =
+      !activeTopic ||
+      activeTopic === ALL_TOPICS ||
+      (NEWS_TOPICS as readonly string[]).includes(activeTopic);
+
+    // In "All" and 7 default topics: hide OGPs with no News Setting for everyone (including super admin and OGP creator).
+    // Also hide expired OGPs (Duration in the past) so the list respects the creator's News Setting (e.g. OGP creator no longer sees their own expired OGPs here).
+    if (isAllOrDefaultTopic) {
+      return base.filter((a) => hasAnyVisibilitySettings(a) && isNotExpired(a));
+    }
+
+    // For other topics (e.g. custom): normal users only see OGPs with settings or their own; admin/creator see all.
+    if (!adminContext && !canDeleteOgp) {
+      return base.filter((a) => canEditAsCreator(a) || hasAnyVisibilitySettings(a));
+    }
+
+    return base;
+  }, [pasted, activeTopic, topicNamesCreatedByNormalUsers, adminContext, canDeleteOgp]);
 
   const filtered = useMemo(() => {
     let list = byTopic;
