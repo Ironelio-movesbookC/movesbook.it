@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     for (const t of allCustom) {
       if (!isSuperAdmin && superAdminIds.includes(t.userId)) topicNamesCreatedBySuperAdminSet.add(t.name);
     }
-    const topicNamesCreatedBySuperAdmin = [...topicNamesCreatedBySuperAdminSet];
+    const topicNamesCreatedBySuperAdmin = Array.from(topicNamesCreatedBySuperAdminSet);
     /** For super admin only: topic names created by normal users (to show in dropdown, not in bar). */
     const topicNamesCreatedByNormalUsers: string[] = [];
     if (isSuperAdmin) {
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
       defaultTopicNames: DEFAULT_TOPIC_NAMES,
       customTopics: custom,
       topicNamesCreatedBySuperAdmin: isSuperAdmin ? [] : topicNamesCreatedBySuperAdmin,
-      topicNamesCreatedByNormalUsers: isSuperAdmin ? [...new Set(topicNamesCreatedByNormalUsers)] : [],
+      topicNamesCreatedByNormalUsers: isSuperAdmin ? Array.from(new Set(topicNamesCreatedByNormalUsers)) : [],
     });
   } catch (e) {
     console.error('GET /api/news/topics', e);
