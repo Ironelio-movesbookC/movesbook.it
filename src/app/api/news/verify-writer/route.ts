@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
           id: superAdmin.id,
           username: superAdmin.username,
           type: 'Admin',
+          image: null,
         };
       }
     }
@@ -82,10 +83,24 @@ export async function POST(request: NextRequest) {
               break;
           }
 
+          let userImage: string | null = null;
+          try {
+            const rows = await prisma.$queryRawUnsafe<Array<{ image: string | null }>>(
+              `SELECT image FROM users_new WHERE id = ? LIMIT 1`,
+              user.id
+            );
+            if (rows && rows.length > 0) {
+              userImage = rows[0].image || null;
+            }
+          } catch {
+            userImage = null;
+          }
+
           verifiedUser = {
             id: user.id,
             username: user.username,
             type: userType,
+            image: userImage,
           };
         }
       }

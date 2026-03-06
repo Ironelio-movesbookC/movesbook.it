@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { verifyToken } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +10,13 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+
+    let viewerUserId: string | null = null;
+    const authHeader = request.headers.get('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      const decoded = verifyToken(authHeader.split(' ')[1]);
+      if (decoded?.userId) viewerUserId = decoded.userId;
+    }
 
     const news = await prisma.news.findUnique({
       where: { id },
@@ -27,7 +35,8 @@ export async function GET(
           },
         },
         languageTitles: {
-          include: {
+          select: {
+            title: true,
             language: {
               select: {
                 id: true,
@@ -41,6 +50,7 @@ export async function GET(
           select: {
             id: true,
             functions: true,
+            reshare: true,
             sports: {
               select: {
                 sport: true,
@@ -49,7 +59,7 @@ export async function GET(
           },
         },
         relatedArticles: {
-          include: {
+          select: {
             article: {
               select: {
                 id: true,
@@ -66,6 +76,65 @@ export async function GET(
 
     if (!news) {
       return NextResponse.json({ error: 'News not found' }, { status: 404 });
+    }
+
+    let writerImageUrl: string | null = null;
+    if ((news as any).showWriterImage && news.writerUsername) {
+      try {
+        const writerUsername = news.writerUsername.toLowerCase();
+        const rows = await prisma.$queryRawUnsafe<Array<{ image: string | null }>>(
+          `SELECT image FROM users_new WHERE username = ? OR email = ? LIMIT 1`,
+          writerUsername,
+          writerUsername
+        );
+        if (rows && rows.length > 0 && rows[0].image) {
+          const rawImage = rows[0].image;
+          writerImageUrl = (rawImage.startsWith('http') || rawImage.startsWith('/'))
+            ? rawImage
+            : `/img/profile_images/${rawImage}`;
+        }
+      } catch {
+        writerImageUrl = null;
+      }
+    }
+
+    let reshareDisabled = false;
+    if (viewerUserId) {
+      try {
+        const friends = await prisma.user.findMany({
+          where: {
+            OR: [
+              { conversationsStarted: { some: { user2Id: viewerUserId } } },
+              { conversationsReceived: { some: { user1Id: viewerUserId } } },
+            ],
+            id: { not: viewerUserId },
+          },
+          select: { id: true },
+          take: 200,
+        });
+        const friendIds = friends.map((f) => f.id);
+
+        const directBlock = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
+          `SELECT COUNT(*) AS cnt FROM news_share_post
+           WHERE news_id = ? AND friends_user_id = ? AND is_reshare_disabled = 1`,
+          id, viewerUserId
+        );
+
+        let friendBlock = false;
+        if (friendIds.length > 0) {
+          const ph = friendIds.map(() => '?').join(',');
+          const rows = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
+            `SELECT COUNT(*) AS cnt FROM news_share_post
+             WHERE news_id = ? AND share_option = 2 AND user_id IN (${ph}) AND is_reshare_disabled = 1`,
+            id, ...friendIds
+          );
+          friendBlock = Number(rows[0]?.cnt ?? 0) > 0;
+        }
+
+        reshareDisabled = Number(directBlock[0]?.cnt ?? 0) > 0 || friendBlock;
+      } catch {
+        reshareDisabled = false;
+      }
     }
 
     const formattedNews = {
@@ -86,6 +155,9 @@ export async function GET(
       visualizeInReadingPageAuthorName: news.visualizeInReadingPageAuthorName || 'N',
       visualizeInReadingPageActualAuthorName: news.visualizeInReadingPageActualAuthorName || 'N',
       checkedBanner: news.checkedBanner || 'N',
+      showWriterImage: (news as any).showWriterImage || false,
+      writerImage: writerImageUrl,
+      reshareDisabled,
       category: news.category ? {
         id: news.category.id,
         categoryName: news.category.categoryName,
@@ -104,12 +176,13 @@ export async function GET(
         },
       })),
       settings: news.settings.map((setting) => {
-        const functions = setting.functions ? (typeof setting.functions === 'string' ? JSON.parse(setting.functions) : setting.functions) : {};
+        const functions = setting.functions
+          ? (typeof setting.functions === 'string' ? JSON.parse(setting.functions) : setting.functions)
+          : {};
         return {
-          sports: setting.sports.map((sport) => ({
-            sport: sport.sport,
-          })),
-          functions: functions,
+          reshare: setting.reshare === 'Y',
+          sports: setting.sports.map((sport) => ({ sport: sport.sport })),
+          functions,
         };
       }),
       relatedArticles: news.relatedArticles.map((ra) => ({

@@ -1,7 +1,8 @@
 'use client';
 
-import { Search, Filter, X } from 'lucide-react';
-import { useState, Dispatch, SetStateAction } from 'react';
+import { Search, Filter, X, Globe, ChevronDown } from 'lucide-react';
+import { useState, useRef, useEffect, Dispatch, SetStateAction } from 'react';
+import Image from 'next/image';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface Category {
@@ -36,6 +37,24 @@ interface NewsToolboxProps {
   languages?: Language[];
 }
 
+const getFlagFileName = (code: string): string => {
+  const flagMap: Record<string, string> = {
+    'en': 'en.png',
+    'fr': 'fr.png',
+    'de': 'de.png',
+    'it': 'it.png',
+    'es': 'es.png',
+    'pt': 'por.png',
+    'ru': 'rus.png',
+    'hi': 'ind.png',
+    'zh': 'chin.png',
+    'ar': 'arab.png',
+    'ja': 'jap.png',
+    'id': 'id.png',
+  };
+  return flagMap[code] || 'en.png';
+};
+
 export default function NewsToolbox({
   searchQuery,
   setSearchQuery,
@@ -52,15 +71,27 @@ export default function NewsToolbox({
 }: NewsToolboxProps) {
   const { t } = useLanguage();
   const [showFilters, setShowFilters] = useState(false);
+  const [showLangDropdown, setShowLangDropdown] = useState(false);
+  const langDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (langDropdownRef.current && !langDropdownRef.current.contains(event.target as Node)) {
+        setShowLangDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const hasActiveFilters = selectedCategory || selectedSport || selectedLanguage || searchQuery;
+  const selectedLang = languages.find(l => l.id === selectedLanguage);
 
   const clearFilters = () => {
     setSelectedCategory('');
     setSelectedSport('');
     setSelectedLanguage('');
     setSearchQuery('');
-    onShow();
   };
 
   return (
@@ -109,10 +140,7 @@ export default function NewsToolbox({
               </label>
               <select
                 value={selectedCategory}
-                onChange={(e) => {
-                  setSelectedCategory(e.target.value);
-                  onShow();
-                }}
+                onChange={(e) => setSelectedCategory(e.target.value)}
                 className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
               >
                 <option value="" className="text-gray-900">{t('news_all_categories')}</option>
@@ -130,10 +158,7 @@ export default function NewsToolbox({
               </label>
               <select
                 value={selectedSport}
-                onChange={(e) => {
-                  setSelectedSport(e.target.value);
-                  onShow();
-                }}
+                onChange={(e) => setSelectedSport(e.target.value)}
                 className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
               >
                 <option value="" className="text-gray-900">{t('news_all')} {t('news_sport')}s</option>
@@ -149,21 +174,68 @@ export default function NewsToolbox({
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 {t('news_language')}
               </label>
-              <select
-                value={selectedLanguage}
-                onChange={(e) => {
-                  setSelectedLanguage(e.target.value);
-                  onShow();
-                }}
-                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-              >
-                <option value="" className="text-gray-900">{t('news_all')} {t('news_language')}s</option>
-                {languages.map((lang) => (
-                  <option key={lang.id} value={lang.id} className="text-gray-900">
-                    {lang.name}
-                  </option>
-                ))}
-              </select>
+              <div className="relative" ref={langDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowLangDropdown(!showLangDropdown)}
+                  className="w-full flex items-center gap-2 px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {selectedLang ? (
+                    <>
+                      <div className="w-5 h-5 rounded overflow-hidden flex-shrink-0 relative">
+                        <Image
+                          src={`/flags/${getFlagFileName(selectedLang.code)}`}
+                          alt={selectedLang.name}
+                          fill
+                          sizes="20px"
+                          className="object-cover"
+                        />
+                      </div>
+                      <span className="flex-1 text-left text-sm">{selectedLang.name}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      <span className="flex-1 text-left text-sm text-gray-500">{t('news_all')} {t('news_language')}s</span>
+                    </>
+                  )}
+                  <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                </button>
+
+                {showLangDropdown && (
+                  <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedLanguage(''); setShowLangDropdown(false); }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors ${selectedLanguage === '' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                    >
+                      <Globe className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      <span className="text-sm font-medium flex-1 text-left">{t('news_all')} {t('news_language')}s</span>
+                      {selectedLanguage === '' && <span className="text-blue-600 text-xs">✓</span>}
+                    </button>
+                    {languages.map((lang) => (
+                      <button
+                        key={lang.id}
+                        type="button"
+                        onClick={() => { setSelectedLanguage(lang.id); setShowLangDropdown(false); }}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors ${selectedLanguage === lang.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                      >
+                        <div className="w-5 h-5 rounded overflow-hidden flex-shrink-0 relative">
+                          <Image
+                            src={`/flags/${getFlagFileName(lang.code)}`}
+                            alt={lang.name}
+                            fill
+                            sizes="20px"
+                            className="object-cover"
+                          />
+                        </div>
+                        <span className="text-sm font-medium flex-1 text-left">{lang.name}</span>
+                        {selectedLanguage === lang.id && <span className="text-blue-600 text-xs">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

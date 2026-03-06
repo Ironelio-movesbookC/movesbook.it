@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     const where: any = {};
 
     if (section) {
-      where.section = { contains: section, mode: 'insensitive' };
+      where.section = { contains: section };
     }
 
     if (documentType) {
@@ -66,10 +66,11 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { section: { contains: search, mode: 'insensitive' } },
-        { author: { contains: search, mode: 'insensitive' } },
-        { originalAuthor: { contains: search, mode: 'insensitive' } },
+        { title: { contains: search } },
+        { section: { contains: search } },
+        { author: { contains: search } },
+        { originalAuthor: { contains: search } },
+        { searchingKeywords: { contains: search } },
       ];
     }
 
@@ -160,6 +161,7 @@ export async function POST(request: NextRequest) {
       briefDesc,
       writerUsername,
       writerPassword,
+      showWriterImage,
       languageTitles,
       settings,
       relatedArticleIds,
@@ -266,6 +268,7 @@ export async function POST(request: NextRequest) {
         briefDesc: briefDesc || null,
         writerUsername: writerUsername || null,
         writerVerified: true,
+        showWriterImage: showWriterImage === true,
       },
     });
 

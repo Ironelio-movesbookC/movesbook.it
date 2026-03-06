@@ -66,29 +66,13 @@ export async function GET(
             firstname: string | null;
             surname: string | null;
           }>>(
-            `SELECT id, username, image, firstname, surname FROM users_new WHERE id IN (${placeholders})`,
+            `SELECT id, username, firstname, surname FROM users_new WHERE id IN (${placeholders})`,
             ...userIdsArray
           );
-        } catch (imageError: any) {
-          if (imageError?.meta?.code === '1054' || imageError?.message?.includes('Unknown column')) {
-            try {
-              const fallbackData = await prisma.$queryRawUnsafe<Array<{
-                id: string;
-                username: string;
-                firstname: string | null;
-                surname: string | null;
-              }>>(
-                `SELECT id, username, firstname, surname FROM users_new WHERE id IN (${placeholders})`,
-                ...userIdsArray
-              );
-              userData = fallbackData.map(u => ({ ...u, image: null }));
-            } catch (fallbackError) {
-              console.error('Error fetching users (fallback):', fallbackError);
-              userData = [];
-            }
-          } else {
-            throw imageError;
-          }
+          userData = userData.map(u => ({ ...u, image: null }));
+        } catch (err) {
+          console.error('Error fetching users:', err);
+          userData = [];
         }
 
         userData.forEach((user) => {
@@ -380,28 +364,12 @@ export async function POST(
             firstname: string | null;
             surname: string | null;
           }>>(
-            `SELECT id, username, image, firstname, surname FROM users_new WHERE id = ? LIMIT 1`,
+            `SELECT id, username, firstname, surname FROM users_new WHERE id = ? LIMIT 1`,
             createdComment.userId
           );
-        } catch (imageError: any) {
-          if (imageError?.meta?.code === '1054' || imageError?.message?.includes('Unknown column')) {
-            try {
-              userResult = await prisma.$queryRawUnsafe<Array<{
-                id: string;
-                username: string;
-                firstname: string | null;
-                surname: string | null;
-              }>>(
-                `SELECT id, username, firstname, surname FROM users_new WHERE id = ? LIMIT 1`,
-                createdComment.userId
-              );
-              userResult = userResult.map(u => ({ ...u, image: null }));
-            } catch (fallbackError) {
-              console.error('Error fetching user (fallback):', fallbackError);
-            }
-          } else {
-            throw imageError;
-          }
+          userResult = userResult.map(u => ({ ...u, image: null }));
+        } catch (err) {
+          console.error('Error fetching user:', err);
         }
 
         if (userResult && userResult.length > 0) {
