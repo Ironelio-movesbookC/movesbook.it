@@ -43,6 +43,17 @@ export async function getSuperAdminUserIds(): Promise<string[]> {
   return ids;
 }
 
+/** All IDs that indicate "created by Super Admin": User ids (linked + news system) + raw super_admins table ids. Use for MB badge. */
+export async function getSuperAdminCreatorIds(): Promise<string[]> {
+  const [userIds, superAdmins] = await Promise.all([
+    getSuperAdminUserIds(),
+    prisma.superAdmin.findMany({ where: { isActive: true }, select: { id: true } }),
+  ]);
+  const superAdminTableIds = superAdmins.map((s) => s.id);
+  const set = new Set<string>([...userIds, ...superAdminTableIds]);
+  return Array.from(set);
+}
+
 /** Get or create a User in users_new for the given SuperAdmin so topics/OGP are attributed to the super admin. */
 export async function getOrCreateUserForSuperAdmin(superAdminId: string): Promise<string> {
   const existing = await prisma.user.findUnique({

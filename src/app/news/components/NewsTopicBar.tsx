@@ -59,6 +59,8 @@ interface NewsTopicBarProps {
   topicNamesCreatedBySuperAdmin?: string[];
   /** Topic names created by normal users; when non-empty (super admin), these go in a dropdown, not in the bar */
   topicNamesCreatedByNormalUsers?: string[];
+  /** When set (e.g. super admin), overrides the "All" button label (e.g. "All defaults") */
+  allTopicLabel?: string;
 }
 
 export default function NewsTopicBar({
@@ -72,6 +74,7 @@ export default function NewsTopicBar({
   onOpenTopicSort,
   topicNamesCreatedBySuperAdmin = [],
   topicNamesCreatedByNormalUsers = [],
+  allTopicLabel,
 }: NewsTopicBarProps) {
   /** Topics to show as buttons (exclude normal-user-created when dropdown is used) */
   const topicsForBar = topicNamesCreatedByNormalUsers.length > 0
@@ -152,7 +155,7 @@ export default function NewsTopicBar({
         <Pencil className="w-5 h-5" />
       </button>
 
-      {/* "All" - show all articles by date; when selected, "+" is disabled */}
+      {/* "All" - show all articles by date; when selected, "+" is disabled. Label can be overridden (e.g. "All defaults" for super admin). */}
       <button
         type="button"
         onClick={() => onTopicSelect(ALL_TOPICS)}
@@ -161,10 +164,10 @@ export default function NewsTopicBar({
             ? 'bg-gray-800 text-white'
             : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
         }`}
-        title={t('news_all_ogp')}
-        aria-label={t('news_all_ogp')}
+        title={allTopicLabel ?? t('news_all_ogp')}
+        aria-label={allTopicLabel ?? t('news_all_ogp')}
       >
-        {t('news_all_ogp')}
+        {allTopicLabel ?? t('news_all_ogp')}
       </button>
 
       {/* Left arrow - scroll left */}
@@ -190,20 +193,27 @@ export default function NewsTopicBar({
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         <div className="flex items-center gap-2 flex-nowrap w-max py-1 pr-1">
-          {topicsForBar.map((topic) => (
-            <button
-              key={topic}
-              type="button"
-              onClick={() => onTopicSelect(topic)}
-              className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeTopic === topic
-                  ? 'bg-gray-800 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {translateTopic(topic)}
-            </button>
-          ))}
+          {topicsForBar.map((topic) => {
+            const isActive = activeTopic === topic;
+            const isOgpTopicByCurrentUser =
+              !isDefaultTopic(topic) && !topicNamesCreatedBySuperAdmin.includes(topic);
+            return (
+              <button
+                key={topic}
+                type="button"
+                onClick={() => onTopicSelect(topic)}
+                className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-gray-800 text-white'
+                    : isOgpTopicByCurrentUser
+                      ? 'bg-[#A0EEFF] text-gray-800 hover:bg-[#8AE5F7] border border-gray-200'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                {translateTopic(topic)}
+              </button>
+            );
+          })}
         </div>
       </div>
 

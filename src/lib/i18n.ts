@@ -143,6 +143,7 @@ export interface LanguageStrings {
         'news_select': 'Select',
         'news_language_ogp': 'Language',
         'news_show': 'Show',
+        'news_show_only_my_ogp': 'Show only OG News posted by me',
         'news_rows': 'rows',
         'news_no_articles_all': 'No articles yet. Select a topic and add one.',
         'news_no_articles_for_topic': 'No articles for {topic} yet. Paste a URL or switch topic.',

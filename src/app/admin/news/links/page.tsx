@@ -234,6 +234,7 @@ export default function AdminNewsLinksPage() {
             onExpandReduce={() => setIsExpanded((e) => !e)}
             onOpenTopicSort={() => setShowTopicSortModal(true)}
             topicNamesCreatedByNormalUsers={topicNamesCreatedByNormalUsers}
+            allTopicLabel="All defaults"
           />
 
           <NewTopicModal

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuthWithUser, requireAuthForNews, getOrCreateUserForSuperAdmin } from '../auth';
+import { requireAuthWithUser, requireAuthForNews, getOrCreateUserForSuperAdmin, getSuperAdminCreatorIds } from '../auth';
 
 function parseJsonArray(str: string | null | undefined): string[] {
   if (str == null || str === '') return [];
@@ -56,6 +56,7 @@ export async function GET(request: NextRequest) {
     }
 
     const now = new Date();
+    const superAdminCreatorIds = await getSuperAdminCreatorIds();
     const filtered = list.filter((a) => {
       if (a.deletedAt) {
         if (isAdmin) return true;
@@ -91,6 +92,8 @@ export async function GET(request: NextRequest) {
       userId: a.userId,
       /** When true, article was created by the current super admin (so Pencil/settings/delete show as creator). */
       ...(superAdminEffectiveUserId != null && { createdByCurrentUser: a.userId === superAdminEffectiveUserId }),
+      /** When true, article was posted by a Super Admin account (show MB badge instead of trash). */
+      createdBySuperAdmin: superAdminCreatorIds.includes(a.userId),
       title: a.title,
       image: a.image,
       description: a.description,
