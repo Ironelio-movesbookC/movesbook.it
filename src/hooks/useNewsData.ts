@@ -129,6 +129,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           id: a.id,
           userId: a.userId,
           createdByCurrentUser: a.createdByCurrentUser === true,
+          createdBySuperAdmin: a.createdBySuperAdmin === true,
           title: a.title,
           image: a.image,
           description: a.description,
@@ -282,6 +283,8 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         ...prev,
         {
           id: created.id,
+          userId: effectiveUserId ?? undefined,
+          createdByCurrentUser: true,
           title: created.title,
           image: created.image,
           description: created.description,
@@ -292,6 +295,13 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           topic: created.topic,
           languageCode: created.languageCode ?? undefined,
           savedAt: created.savedAt,
+          visibility: {
+            userTypes: vis?.userTypes ?? [],
+            countries: vis?.countries ?? [],
+            languages: vis?.languages ?? [],
+            sports: vis?.sports ?? [],
+            expiresAt: vis?.expiresAt ?? null,
+          },
         },
       ]);
     },
