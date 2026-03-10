@@ -1027,7 +1027,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
             </div>
 
             {/* Blue Tabs */}
-            <Link href="/admin/profile" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
+            <Link href="/settings/admin-management" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
               <div className="w-9 h-9 relative border border-gray-400 flex-shrink-0">
                  <Image src="/assets/admin.png" alt="Admin" fill sizes="36px" className="object-cover" />
               </div>
@@ -1037,7 +1037,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
               <div className="font-bold text-white">Movesbook Admin</div>
             </Link>
             
-            <Link href="/admin/co-admins" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
+            <Link href="/operators/usersAssignedStaff" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
               <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
                   <ShieldCheck className="w-8 h-8 text-white" strokeWidth={1.5} />
               </div>
@@ -1050,7 +1050,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
             {/* Breakline */}
             <div className="h-1 bg-[#2b2b2b]"></div>
             
-            <Link href="/admin/operators" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
+            <Link href="/operators" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
               <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
                    <Users className="w-8 h-8 text-white" strokeWidth={1.5} />
               </div>
