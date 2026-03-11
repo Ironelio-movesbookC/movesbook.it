@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuthForNews } from '../../../auth';
+import { requireAuthForNews } from '../../auth';
 
 export async function DELETE(
   request: NextRequest,
