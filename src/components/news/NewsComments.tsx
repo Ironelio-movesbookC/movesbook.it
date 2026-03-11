@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { Send } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -58,6 +58,8 @@ export default function NewsComments({ newsId, enabled }: NewsCommentsProps) {
     }
   }, [newsId, enabled, fetchComments]);
 
+  const commentFormRef = useRef<HTMLFormElement>(null);
+
   const handleVerifyEntity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!entityUsername.trim() || !entityPassword.trim()) {
@@ -69,10 +71,12 @@ export default function NewsComments({ newsId, enabled }: NewsCommentsProps) {
     setEntityError('');
 
     try {
+      const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
       const res = await fetch('/api/news/verify-writer', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           username: entityUsername,
@@ -175,7 +179,7 @@ export default function NewsComments({ newsId, enabled }: NewsCommentsProps) {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="mb-6 bg-gray-50 rounded-lg p-4 border border-gray-200">
+        <form ref={commentFormRef} onSubmit={handleSubmit} className="mb-6 bg-gray-50 rounded-lg p-4 border border-gray-200">
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Post as
@@ -295,8 +299,14 @@ export default function NewsComments({ newsId, enabled }: NewsCommentsProps) {
               <textarea
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && e.shiftKey) {
+                    e.preventDefault();
+                    commentFormRef.current?.requestSubmit();
+                  }
+                }}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-sans text-base text-gray-900 bg-white"
-                placeholder="Write your comment here..."
+                placeholder="Write your comment here... (Shift+Enter to submit)"
                 rows={4}
                 required
               />
@@ -426,6 +436,7 @@ function CommentItem({ comment, newsId, onReply }: { comment: Comment; newsId: s
   const [entityVerified, setEntityVerified] = useState(false);
   const [verifyingEntity, setVerifyingEntity] = useState(false);
   const [entityError, setEntityError] = useState('');
+  const replyFormRef = useRef<HTMLFormElement>(null);
 
   const handleVerifyEntity = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -438,10 +449,12 @@ function CommentItem({ comment, newsId, onReply }: { comment: Comment; newsId: s
     setEntityError('');
 
     try {
+      const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
       const res = await fetch('/api/news/verify-writer', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           username: entityUsername,
@@ -552,7 +565,7 @@ function CommentItem({ comment, newsId, onReply }: { comment: Comment; newsId: s
           </button>
 
           {showReplyForm && (
-            <form onSubmit={handleReply} className="mt-4 bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <form ref={replyFormRef} onSubmit={handleReply} className="mt-4 bg-gray-50 rounded-lg p-4 border border-gray-200">
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Post as
@@ -672,8 +685,14 @@ function CommentItem({ comment, newsId, onReply }: { comment: Comment; newsId: s
                   <textarea
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && e.shiftKey) {
+                        e.preventDefault();
+                        replyFormRef.current?.requestSubmit();
+                      }
+                    }}
                     className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white text-sm"
-                    placeholder="Write your reply here..."
+                    placeholder="Write your reply here... (Shift+Enter to submit)"
                     rows={3}
                     required
                   />
@@ -713,7 +732,8 @@ function CommentItem({ comment, newsId, onReply }: { comment: Comment; newsId: s
           {comment.replies.map((reply) => (
             <div
               key={reply.id}
-              className="bg-gray-50 rounded-lg border border-gray-200 p-3"
+              className="rounded-lg border border-gray-200 p-3"
+              style={{ backgroundColor: 'rgb(235, 255, 246)' }}
             >
               <div className="flex items-start gap-3">
                 <CommentAvatar user={reply.user} size="sm" />

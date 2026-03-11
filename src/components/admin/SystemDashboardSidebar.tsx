@@ -152,9 +152,9 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
       id: 'staff',
       label: 'Staff enabled',
       items: [
-        { label: 'Super Admin', icon: User },
-        { label: 'Co-administrators', icon: Users },
-        { label: 'Operators', icon: Headphones }
+        { label: 'Super Admin', icon: User, href: '/settings/admin-management' },
+        { label: 'Co-administrators', icon: Users, href: '/operators/usersAssignedStaff' },
+        { label: 'Operators', icon: Headphones, href: '/operators' }
       ]
     },
     {

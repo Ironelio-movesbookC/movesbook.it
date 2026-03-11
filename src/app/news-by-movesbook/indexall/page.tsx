@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Search, Plus, Edit, Trash2 } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Globe, ChevronDown, Eye } from 'lucide-react';
+import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { DOCUMENT_TYPES } from '@/lib/news/mappings';
@@ -34,8 +35,27 @@ interface Category {
 
 interface Language {
   id: string;
+  code: string;
   name: string;
 }
+
+const getFlagFileName = (code: string): string => {
+  const flagMap: Record<string, string> = {
+    'en': 'en.png',
+    'fr': 'fr.png',
+    'de': 'de.png',
+    'it': 'it.png',
+    'es': 'es.png',
+    'pt': 'por.png',
+    'ru': 'rus.png',
+    'hi': 'ind.png',
+    'zh': 'chin.png',
+    'ar': 'arab.png',
+    'ja': 'jap.png',
+    'id': 'id.png',
+  };
+  return flagMap[code] || 'en.png';
+};
 
 export default function NewsIndexAllPage() {
   const router = useRouter();
@@ -52,13 +72,18 @@ export default function NewsIndexAllPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [languages, setLanguages] = useState<Language[]>([]);
   const [sections, setSections] = useState<string[]>([]);
-  
+  const [showLangDropdown, setShowLangDropdown] = useState(false);
+  const langDropdownRef = useRef<HTMLDivElement>(null);
+
   const getDocumentTypeLabel = (value: string | null): string => {
     if (!value) return '-';
     const type = DOCUMENT_TYPES.find(t => t.value === value);
     return type ? type.label : value;
   };
-  
+
+  const [searchInput, setSearchInput] = useState('');
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [filters, setFilters] = useState({
     search: '',
     section: '',
@@ -69,6 +94,24 @@ export default function NewsIndexAllPage() {
     method: '',
     categoryId: '',
   });
+
+  const handleSearchChange = (value: string) => {
+    setSearchInput(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setFilters(prev => ({ ...prev, search: value }));
+    }, 500);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (langDropdownRef.current && !langDropdownRef.current.contains(event.target as Node)) {
+        setShowLangDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const checkAdminAuth = () => {
@@ -84,7 +127,6 @@ export default function NewsIndexAllPage() {
         setAuthLoading(false);
       }
     };
-
     checkAdminAuth();
   }, []);
 
@@ -103,16 +145,8 @@ export default function NewsIndexAllPage() {
         fetch('/api/public/news/categories'),
         fetch('/api/public/news/languages'),
       ]);
-
-      if (categoriesRes.ok) {
-        const data = await categoriesRes.json();
-        setCategories(data || []);
-      }
-
-      if (languagesRes.ok) {
-        const data = await languagesRes.json();
-        setLanguages(data || []);
-      }
+      if (categoriesRes.ok) setCategories((await categoriesRes.json()) || []);
+      if (languagesRes.ok) setLanguages((await languagesRes.json()) || []);
     } catch (error) {
       console.error('Error fetching data:', error);
     }
@@ -137,9 +171,7 @@ export default function NewsIndexAllPage() {
       if (filters.categoryId) params.append('categoryId', filters.categoryId);
 
       const res = await fetch(`/api/news?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
       });
 
       if (!res.ok) throw new Error('Failed to fetch news');
@@ -148,10 +180,7 @@ export default function NewsIndexAllPage() {
       setNews(data.news || []);
       setFilteredNews(data.news || []);
       setTotalPages(data.pagination?.totalPages || 1);
-      
-      if (data.pagination) {
-        setPaginationData(data.pagination);
-      }
+      if (data.pagination) setPaginationData(data.pagination);
 
       const uniqueSections = Array.from(new Set<string>(
         (data.news || []).map((item: NewsItem) => item.section).filter((s: string | null): s is string => s !== null)
@@ -166,39 +195,28 @@ export default function NewsIndexAllPage() {
 
   useEffect(() => {
     const isAdmin = (user && user.userType === 'ADMIN') || (adminUser && adminUser.userType === 'ADMIN');
-    if (isAdmin && !authLoading) {
-      fetchData();
-    }
+    if (isAdmin && !authLoading) fetchData();
   }, [user, adminUser, authLoading]);
 
   useEffect(() => {
     const isAdmin = (user && user.userType === 'ADMIN') || (adminUser && adminUser.userType === 'ADMIN');
-    if (isAdmin && !authLoading) {
-      setPage(1);
-    }
+    if (isAdmin && !authLoading) setPage(1);
   }, [filters, user, adminUser, authLoading]);
 
   useEffect(() => {
     const isAdmin = (user && user.userType === 'ADMIN') || (adminUser && adminUser.userType === 'ADMIN');
-    if (isAdmin && !authLoading) {
-      fetchNews();
-    }
+    if (isAdmin && !authLoading) fetchNews();
   }, [page, filters, user, adminUser, authLoading, fetchNews]);
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this news article?')) return;
-
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
       const res = await fetch(`/api/news/${id}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
       });
-
       if (!res.ok) throw new Error('Failed to delete news');
-
       fetchNews();
     } catch (error) {
       console.error('Error deleting news:', error);
@@ -206,13 +224,15 @@ export default function NewsIndexAllPage() {
     }
   };
 
-  if (loading || authLoading || isLoading) {
+  if (loading || authLoading) {
     return (
       <div className="p-6 bg-gray-50 min-h-full flex items-center justify-center">
         <div className="text-gray-600">Loading...</div>
       </div>
     );
   }
+
+  const selectedLang = languages.find(l => l.id === filters.language);
 
   return (
     <div className="p-6 bg-gray-50 min-h-full">
@@ -230,6 +250,8 @@ export default function NewsIndexAllPage() {
 
         <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+
+            {/* Search */}
             <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-2">{t('btn_search')}</label>
               <div className="relative">
@@ -237,50 +259,49 @@ export default function NewsIndexAllPage() {
                 <input
                   type="text"
                   placeholder={t('news_search_placeholder')}
-                  value={filters.search}
-                  onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                  value={searchInput}
+                  onChange={(e) => handleSearchChange(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
 
+            {/* Section */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">{t('news_section')}</label>
               <select
                 value={filters.section}
-                onChange={(e) => setFilters({ ...filters, section: e.target.value })}
+                onChange={(e) => setFilters(prev => ({ ...prev, section: e.target.value }))}
                 className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="" className="text-gray-900">{t('news_all')} {t('news_section')}s</option>
                 {sections.map((section) => (
-                  <option key={section} value={section} className="text-gray-900">
-                    {section}
-                  </option>
+                  <option key={section} value={section} className="text-gray-900">{section}</option>
                 ))}
               </select>
             </div>
 
+            {/* Document Type */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">{t('news_document_type')}</label>
               <select
                 value={filters.documentType}
-                onChange={(e) => setFilters({ ...filters, documentType: e.target.value })}
+                onChange={(e) => setFilters(prev => ({ ...prev, documentType: e.target.value }))}
                 className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="" className="text-gray-900">{t('news_all')} {t('news_document_type')}s</option>
                 {DOCUMENT_TYPES.map((type) => (
-                  <option key={type.value} value={type.value} className="text-gray-900">
-                    {type.label}
-                  </option>
+                  <option key={type.value} value={type.value} className="text-gray-900">{type.label}</option>
                 ))}
               </select>
             </div>
 
+            {/* Method */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">{t('news_method')}</label>
               <select
                 value={filters.method}
-                onChange={(e) => setFilters({ ...filters, method: e.target.value })}
+                onChange={(e) => setFilters(prev => ({ ...prev, method: e.target.value }))}
                 className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="" className="text-gray-900">{t('news_all')} {t('news_method')}s</option>
@@ -290,54 +311,106 @@ export default function NewsIndexAllPage() {
               </select>
             </div>
 
+            {/* From Date */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">{t('news_from_date')}</label>
               <input
                 type="date"
                 value={filters.fromDate}
-                onChange={(e) => setFilters({ ...filters, fromDate: e.target.value })}
+                onChange={(e) => setFilters(prev => ({ ...prev, fromDate: e.target.value }))}
                 className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
+            {/* To Date */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">{t('news_to_date')}</label>
               <input
                 type="date"
                 value={filters.toDate}
-                onChange={(e) => setFilters({ ...filters, toDate: e.target.value })}
+                onChange={(e) => setFilters(prev => ({ ...prev, toDate: e.target.value }))}
                 className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
+            {/* Language — flag picker */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">{t('news_language')}</label>
-              <select
-                value={filters.language}
-                onChange={(e) => setFilters({ ...filters, language: e.target.value })}
-                className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="" className="text-gray-900">{t('news_all')} {t('news_language')}s</option>
-                {languages.map((lang) => (
-                  <option key={lang.id} value={lang.id} className="text-gray-900">
-                    {lang.name}
-                  </option>
-                ))}
-              </select>
+              <div className="relative" ref={langDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowLangDropdown(!showLangDropdown)}
+                  className="w-full flex items-center gap-2 px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {selectedLang ? (
+                    <>
+                      <div className="w-5 h-5 rounded overflow-hidden flex-shrink-0 relative">
+                        <Image
+                          src={`/flags/${getFlagFileName(selectedLang.code)}`}
+                          alt={selectedLang.name}
+                          fill
+                          sizes="20px"
+                          className="object-cover"
+                        />
+                      </div>
+                      <span className="flex-1 text-left text-sm">{selectedLang.name}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      <span className="flex-1 text-left text-sm text-gray-500">{t('news_all')} {t('news_language')}s</span>
+                    </>
+                  )}
+                  <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                </button>
+
+                {showLangDropdown && (
+                  <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => { setFilters(prev => ({ ...prev, language: '' })); setShowLangDropdown(false); }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors ${filters.language === '' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                    >
+                      <Globe className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      <span className="text-sm font-medium flex-1 text-left">{t('news_all')} {t('news_language')}s</span>
+                      {filters.language === '' && <span className="text-blue-600 text-xs">✓</span>}
+                    </button>
+                    {languages.map((lang) => (
+                      <button
+                        key={lang.id}
+                        type="button"
+                        onClick={() => { setFilters(prev => ({ ...prev, language: lang.id })); setShowLangDropdown(false); }}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors ${filters.language === lang.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                      >
+                        <div className="w-5 h-5 rounded overflow-hidden flex-shrink-0 relative">
+                          <Image
+                            src={`/flags/${getFlagFileName(lang.code)}`}
+                            alt={lang.name}
+                            fill
+                            sizes="20px"
+                            className="object-cover"
+                          />
+                        </div>
+                        <span className="text-sm font-medium flex-1 text-left">{lang.name}</span>
+                        {filters.language === lang.id && <span className="text-blue-600 text-xs">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
+            {/* Category */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('news_category')}</label>
               <select
                 value={filters.categoryId}
-                onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })}
+                onChange={(e) => setFilters(prev => ({ ...prev, categoryId: e.target.value }))}
                 className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="" className="text-gray-900">All Categories</option>
+                <option value="" className="text-gray-900">{t('news_all_categories')}</option>
                 {categories.map((category) => (
-                  <option key={category.id} value={category.id} className="text-gray-900">
-                    {category.categoryName}
-                  </option>
+                  <option key={category.id} value={category.id} className="text-gray-900">{category.categoryName}</option>
                 ))}
               </select>
             </div>
@@ -361,7 +434,13 @@ export default function NewsIndexAllPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredNews.length === 0 ? (
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
+                      Loading...
+                    </td>
+                  </tr>
+                ) : filteredNews.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
                       No news articles found
@@ -369,7 +448,11 @@ export default function NewsIndexAllPage() {
                   </tr>
                 ) : (
                   filteredNews.map((item) => (
-                    <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                    <tr
+                      key={item.id}
+                      className="hover:bg-gray-50 transition-colors cursor-pointer"
+                      onDoubleClick={() => router.push(`/news-by-movesbook/${item.id}`)}
+                    >
                       <td className="px-6 py-4 text-sm text-gray-900">{item.section || '-'}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">{item.title || '-'}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{item.category?.categoryName || '-'}</td>
@@ -378,8 +461,15 @@ export default function NewsIndexAllPage() {
                       <td className="px-6 py-4 text-sm text-gray-600">{item.originalLanguage?.name || '-'}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{item.author || item.originalAuthor || '-'}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{item.method || '-'}</td>
-                      <td className="px-6 py-4 text-sm">
+                      <td className="px-6 py-4 text-sm" onDoubleClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-2">
+                          <Link
+                            href={`/news-by-movesbook/${item.id}`}
+                            className="text-gray-500 hover:text-gray-800 transition-colors"
+                            title="View"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Link>
                           <Link
                             href={`/news-by-movesbook/edit/${item.id}`}
                             className="text-blue-600 hover:text-blue-800 transition-colors"
@@ -425,21 +515,16 @@ export default function NewsIndexAllPage() {
                   >
                     Previous
                   </button>
-                  
+
                   <div className="flex items-center gap-1">
                     {(() => {
                       const pages: (number | string)[] = [];
                       const adjacents = 2;
-                      
                       if (totalPages <= 7 + (adjacents * 2)) {
-                        for (let i = 1; i <= totalPages; i++) {
-                          pages.push(i);
-                        }
+                        for (let i = 1; i <= totalPages; i++) pages.push(i);
                       } else {
                         if (page < 1 + (adjacents * 2)) {
-                          for (let i = 1; i < 4 + (adjacents * 2); i++) {
-                            pages.push(i);
-                          }
+                          for (let i = 1; i < 4 + (adjacents * 2); i++) pages.push(i);
                           pages.push('...');
                           pages.push(totalPages - 1);
                           pages.push(totalPages);
@@ -447,9 +532,7 @@ export default function NewsIndexAllPage() {
                           pages.push(1);
                           pages.push(2);
                           pages.push('...');
-                          for (let i = page - adjacents; i <= page + adjacents; i++) {
-                            pages.push(i);
-                          }
+                          for (let i = page - adjacents; i <= page + adjacents; i++) pages.push(i);
                           pages.push('...');
                           pages.push(totalPages - 1);
                           pages.push(totalPages);
@@ -457,19 +540,12 @@ export default function NewsIndexAllPage() {
                           pages.push(1);
                           pages.push(2);
                           pages.push('...');
-                          for (let i = totalPages - (2 + (adjacents * 2)); i <= totalPages; i++) {
-                            pages.push(i);
-                          }
+                          for (let i = totalPages - (2 + (adjacents * 2)); i <= totalPages; i++) pages.push(i);
                         }
                       }
-                      
                       return pages.map((p, idx) => {
                         if (p === '...') {
-                          return (
-                            <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">
-                              ...
-                            </span>
-                          );
+                          return <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>;
                         }
                         const pageNum = p as number;
                         return (
@@ -488,7 +564,7 @@ export default function NewsIndexAllPage() {
                       });
                     })()}
                   </div>
-                  
+
                   <button
                     onClick={() => setPage(Math.min(totalPages, page + 1))}
                     disabled={page === totalPages}

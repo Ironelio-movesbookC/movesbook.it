@@ -11,6 +11,51 @@ interface CKEditorComponentProps {
   id?: string;
 }
 
+class NewsImageUploadAdapter {
+  private loader: any;
+  private token: string;
+
+  constructor(loader: any, token: string) {
+    this.loader = loader;
+    this.token = token;
+  }
+
+  upload(): Promise<{ default: string }> {
+    return this.loader.file.then((file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', 'content');
+
+      return fetch('/api/news/upload-image', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+        },
+        body: formData,
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.path) {
+            return { default: data.path };
+          }
+          throw new Error(data.error || 'Image upload failed');
+        });
+    });
+  }
+
+  abort() {}
+}
+
+function NewsImageUploadAdapterPlugin(editor: any) {
+  editor.plugins.get('FileRepository').createUploadAdapter = (loader: any) => {
+    const token =
+      (typeof window !== 'undefined' &&
+        (localStorage.getItem('token') || localStorage.getItem('adminToken'))) ||
+      '';
+    return new NewsImageUploadAdapter(loader, token);
+  };
+}
+
 export default function CKEditorComponent({ 
   value, 
   onChange, 
@@ -87,6 +132,7 @@ export default function CKEditorComponent({
         data={value || ''}
         config={{
           placeholder,
+              extraPlugins: [NewsImageUploadAdapterPlugin],
           toolbar: [
             'heading', '|',
             'bold', 'italic', 'link', '|',

@@ -895,6 +895,7 @@ model News {
   writerUsername                            String?               // Writer username (for verification)
   writerClubTeamName                        String?               // Club/Team name (for Team/Club writers)
   writerVerified                            Boolean               @default(false)
+  showWriterImage                           Boolean               @default(false) // Show writer profile image on detail page
   createdAt                                DateTime              @default(now())
   updatedAt                                DateTime              @updatedAt
 
@@ -1057,4 +1058,21 @@ model NewsComment {
   @@index([newsId])
   @@index([parentId])
   @@map("news_comments")
+}
+
+model NewsSharePost {
+  id                 String   @id @default(uuid())
+  userId             String
+  newsId             String
+  shareOption        Int      @default(1) // 1 = my page, 2 = friends, 3 = specific friends
+  friendsUserId      String?  // populated when shareOption = 3
+  isReshareDisabled  Int      @default(0)
+  isCommentsEnabled  Int      @default(1)
+  created            DateTime @default(now())
+
+  @@index([userId])
+  @@index([newsId])
+  @@index([friendsUserId])
+  @@index([shareOption])
+  @@map("news_share_post")
 }

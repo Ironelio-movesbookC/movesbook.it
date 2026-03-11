@@ -25,7 +25,8 @@ import {
   Newspaper,
   Link as LinkIcon,
   BookOpen,
-  SlidersHorizontal
+  SlidersHorizontal,
+  PenSquare
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
@@ -41,6 +42,7 @@ interface DarkSidebarProps {
   onMyTeamClick?: () => void;
   onMyGroupClick?: () => void;
   onMyCoachingGroupClick?: () => void;
+  onPostsClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
 }
@@ -55,6 +57,7 @@ export default function DarkSidebar({
   onMyTeamClick,
   onMyGroupClick,
   onMyCoachingGroupClick,
+  onPostsClick,
   activeTab = 'my-page',
   onTabChange
 }: DarkSidebarProps) {
@@ -66,7 +69,7 @@ export default function DarkSidebar({
     myClubs: false,
     notifications: false,
     messages: false,
-    bookings: false
+    bookings: false,
   });
   const [allowVisiting, setAllowVisiting] = useState(true);
   const [internalActiveTab, setInternalActiveTab] = useState<'my-page' | 'my-entity'>(activeTab);
@@ -477,6 +480,17 @@ export default function DarkSidebar({
           <div className="flex items-center gap-3">
             <Newspaper className="w-5 h-5" />
             <span>{t('sidebar_news')}</span>
+          </div>
+        </button>
+
+        {/* Posts */}
+        <button
+          onClick={() => onPostsClick && onPostsClick()}
+          className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700"
+        >
+          <div className="flex items-center gap-3">
+            <PenSquare className="w-5 h-5" />
+            <span>Posts</span>
           </div>
         </button>
 

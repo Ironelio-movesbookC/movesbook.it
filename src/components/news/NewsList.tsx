@@ -2,14 +2,17 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Calendar } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import { deserializeMultiLanguageContent } from '@/lib/news/contentParser';
 import { LANGUAGE_ID_MAP, LANGUAGE_CODE_TO_ID_MAP } from '@/lib/news/mappings';
 import { useLanguage } from '@/contexts/LanguageContext';
 import NewsCarousel from './NewsCarousel';
 
 const newsListStyles = `
+  .section-slider::-webkit-scrollbar {
+    display: none;
+  }
   .description {
     color: #000 !important;
     font-size: 14px;
@@ -82,8 +85,28 @@ interface NewsListProps {
 export default function NewsList({ news, mode = 'default', currentLanguage: propCurrentLanguage = 'en', onModeChange, hideShowStatus = false, onHideShowChange }: NewsListProps) {
   const { t, currentLanguage: contextCurrentLanguage } = useLanguage();
   const [selectedLanguages, setSelectedLanguages] = useState<Record<string, string>>({});
-  
+  const sliderRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [sliderCanScroll, setSliderCanScroll] = useState<Record<string, { left: boolean; right: boolean }>>({});
+
   const currentLanguage = propCurrentLanguage || contextCurrentLanguage || 'en';
+
+  const handleSliderScroll = (categoryId: string) => {
+    const el = sliderRefs.current.get(categoryId);
+    if (!el) return;
+    setSliderCanScroll(prev => ({
+      ...prev,
+      [categoryId]: {
+        left: el.scrollLeft > 4,
+        right: el.scrollLeft < el.scrollWidth - el.clientWidth - 4,
+      },
+    }));
+  };
+
+  const scrollSlider = (categoryId: string, dir: 'left' | 'right') => {
+    const el = sliderRefs.current.get(categoryId);
+    if (!el) return;
+    el.scrollBy({ left: dir === 'left' ? -el.clientWidth : el.clientWidth, behavior: 'smooth' });
+  };
 
   useEffect(() => {
     const styleId = 'news-list-styles';
@@ -94,6 +117,17 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
       document.head.appendChild(style);
     }
   }, []);
+
+  useEffect(() => {
+    if (mode !== 'section') return;
+    const grouped: Record<string, NewsItem[]> = {};
+    news.forEach(item => {
+      const categoryId = item.category?.id || 'uncategorized';
+      if (!grouped[categoryId]) grouped[categoryId] = [];
+      grouped[categoryId].push(item);
+    });
+    Object.keys(grouped).forEach((categoryId) => handleSliderScroll(categoryId));
+  }, [mode, news]);
 
   const getNewsTitle = (item: NewsItem, langCode?: string) => {
     const lang = langCode || currentLanguage || 'en';
@@ -268,7 +302,7 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
         {news.map((item) => (
           <Link
             key={item.id}
-            href={`/news/${item.id}`}
+            href={`/news-by-movesbook/${item.id}`}
             className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
           >
             <div className="relative h-48">
@@ -330,7 +364,7 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
           return (
             <Link
               key={item.id}
-              href={`/news/${item.id}`}
+              href={`/news-by-movesbook/${item.id}`}
               className="block bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
             >
               <div className="flex flex-col md:flex-row">
@@ -428,7 +462,7 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
         {news.map((item) => (
           <Link
             key={item.id}
-            href={`/news/${item.id}`}
+            href={`/news-by-movesbook/${item.id}`}
             className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
           >
             <div className="relative h-40">
@@ -486,7 +520,7 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
                 return (
                   <Link
                     key={item.id}
-                    href={`/news/${item.id}`}
+                    href={`/news-by-movesbook/${item.id}`}
                     className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
                   >
                     <div className="relative h-40">
@@ -531,7 +565,7 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
                 return (
                   <Link
                     key={item.id}
-                    href={`/news/${item.id}`}
+                    href={`/news-by-movesbook/${item.id}`}
                     className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
                   >
                     <div className="relative h-48">
@@ -591,62 +625,99 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
     const groupedByCategory: Record<string, NewsItem[]> = {};
     news.forEach(item => {
       const categoryId = item.category?.id || 'uncategorized';
-      const categoryName = item.category?.categoryName || 'Uncategorized';
       if (!groupedByCategory[categoryId]) {
         groupedByCategory[categoryId] = [];
       }
       groupedByCategory[categoryId].push(item);
     });
 
-    return (
-      <div className="space-y-8">
-        {Object.entries(groupedByCategory).map(([categoryId, categoryNews]) => (
-          <div key={categoryId}>
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                {categoryNews[0]?.category?.categoryName || 'Uncategorized'}
-              </h2>
-              <div className="h-1 w-20 bg-blue-600 rounded"></div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {categoryNews.map(item => (
-                <Link
-                  key={item.id}
-                  href={`/news/${item.id}`}
-                  className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
+
+        return (
+      <div className="space-y-10">
+        {Object.entries(groupedByCategory).map(([categoryId, categoryNews]) => {
+          
+          const canLeft = sliderCanScroll[categoryId]?.left ?? false;
+          const canRight = sliderCanScroll[categoryId]?.right ?? categoryNews.length > 3;
+
+          return (
+            <div key={categoryId}>
+              <div className="mb-4">
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  {categoryNews[0]?.category?.categoryName || 'Uncategorized'}
+                </h2>
+                <div className="h-1 w-20 bg-blue-600 rounded"></div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => scrollSlider(categoryId, 'left')}
+                  className={`flex-shrink-0 w-10 h-10 bg-white border border-gray-200 rounded-full shadow-md flex items-center justify-center text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-all ${
+                    canLeft ? 'opacity-100 cursor-pointer' : 'opacity-25 cursor-default pointer-events-none'
+                  }`}
                 >
-                  <div className="relative h-48">
-                    {item.image ? (
-                  <Image
-                    src={item.image || ''}
-                    alt={getNewsTitle(item)}
-                    fill
-                        className="object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gray-300"></div>
-                    )}
-                  </div>
-                  <div className="p-5">
-                    <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors line-clamp-2">
-                      {getNewsTitle(item)}
-                    </h3>
-                    <div className="flex items-center justify-between text-sm text-gray-500">
-                      <div className="flex items-center gap-2">
-                        {item.user && <AuthorAvatar item={item} size="sm" />}
-                        <span>{t('news_by')} {item.user?.username || item.author || item.originalAuthor || 'private'}</span>
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+
+                <div
+                  ref={(el) => {
+                    if (el) sliderRefs.current.set(categoryId, el);
+                    else sliderRefs.current.delete(categoryId);
+                  }}
+                  onScroll={() => handleSliderScroll(categoryId)}
+                  className="section-slider flex-1 flex gap-5 overflow-x-auto scroll-smooth pb-2"
+                  style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                >
+                  {categoryNews.map(item => (
+                    <Link
+                      key={item.id}
+                      href={`/news-by-movesbook/${item.id}`}
+                      className="flex-shrink-0 w-72 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
+                    >
+                      <div className="relative h-48">
+                        {item.image ? (
+                          <Image
+                            src={item.image || ''}
+                            alt={getNewsTitle(item)}
+                            fill
+                            className="object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gray-300"></div>
+                        )}
                       </div>
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-4 h-4" />
-                        {formatDate(item.createdAt)}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              ))}
+                      <div className="p-4">
+                        <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors line-clamp-2">
+                          {getNewsTitle(item)}
+                        </h3>
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {item.user && <AuthorAvatar item={item} size="sm" />}
+                            <span className="truncate">{t('news_by')} {item.user?.username || item.author || item.originalAuthor || 'private'}</span>
+                          </div>
+                          <span className="flex items-center gap-1 flex-shrink-0 ml-2">
+                            <Calendar className="w-3 h-3" />
+                            {formatDate(item.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => scrollSlider(categoryId, 'right')}
+                  className={`flex-shrink-0 w-10 h-10 bg-white border border-gray-200 rounded-full shadow-md flex items-center justify-center text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-all ${
+                    canRight ? 'opacity-100 cursor-pointer' : 'opacity-25 cursor-default pointer-events-none'
+                  }`}
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   }
@@ -661,7 +732,7 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
           return (
             <Link
               key={item.id}
-              href={`/news/${item.id}`}
+              href={`/news-by-movesbook/${item.id}`}
               className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
             >
               {item.image && (
@@ -717,7 +788,7 @@ export default function NewsList({ news, mode = 'default', currentLanguage: prop
         return (
           <Link
             key={item.id}
-            href={`/news/${item.id}`}
+            href={`/news-by-movesbook/${item.id}`}
             className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow group"
           >
             {item.image && (

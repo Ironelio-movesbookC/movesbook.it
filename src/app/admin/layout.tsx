@@ -6,6 +6,7 @@ import AdminNavbar from '@/components/AdminNavbar';
 import AdminLeftSidebar from '@/components/admin/AdminLeftSidebar';
 import AdminRightSidebar from '@/components/admin/AdminRightSidebar';
 import SystemDashboardSidebar from '@/components/admin/SystemDashboardSidebar';
+import ModernFooter from '@/components/ModernFooter';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -27,7 +28,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         onToggleRight={() => setRightOpen(!rightOpen)} 
       />
       
-      <div className="flex flex-1 max-w-[1920px] mx-auto w-full overflow-hidden h-[calc(100vh-64px)]">
+      <div className="flex-1 flex min-h-0 max-w-[1920px] mx-auto w-full">
         {isGlobalSettings ? (
           <SystemDashboardSidebar isOpen={leftOpen} onToggle={() => setLeftOpen(!leftOpen)} />
         ) : (
@@ -40,6 +41,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         <AdminRightSidebar isOpen={rightOpen} onToggle={() => setRightOpen(!rightOpen)} />
       </div>
+      <ModernFooter />
     </div>
   );
 }

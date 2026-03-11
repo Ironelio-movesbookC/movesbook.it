@@ -7,6 +7,22 @@ import NewsList from '@/components/news/NewsList';
 import GetSocialBlock from '@/components/news/GetSocialBlock';
 import NewsToolbox from '@/components/news/NewsToolbox';
 
+interface Category {
+  id: string;
+  categoryName: string;
+}
+
+interface Sport {
+  id: string;
+  name: string;
+}
+
+interface Language {
+  id: string;
+  code: string;
+  name: string;
+}
+
 interface NewsArticle {
   id: string;
   title: string;
@@ -40,8 +56,10 @@ interface NewsArticle {
 
 export default function BrowserModePage() {
   const router = useRouter();
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [sports, setSports] = useState<Sport[]>([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
   const [news, setNews] = useState<NewsArticle[]>([]);
-  const [popularPosts, setPopularPosts] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [hideShowStatus, setHideShowStatus] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -69,6 +87,24 @@ export default function BrowserModePage() {
   }, []);
 
   useEffect(() => {
+    const fetchDropdownData = async () => {
+      try {
+        const [categoriesRes, sportsRes, languagesRes] = await Promise.all([
+          fetch('/api/public/news/categories'),
+          fetch('/api/public/news/sports'),
+          fetch('/api/public/news/languages'),
+        ]);
+        if (categoriesRes.ok) setCategories(await categoriesRes.json());
+        if (sportsRes.ok) setSports(await sportsRes.json());
+        if (languagesRes.ok) setLanguages(await languagesRes.json());
+      } catch (error) {
+        console.error('Error fetching dropdown data:', error);
+      }
+    };
+    fetchDropdownData();
+  }, []);
+
+  useEffect(() => {
     const fetchNews = async () => {
       setLoading(true);
       try {
@@ -80,15 +116,14 @@ export default function BrowserModePage() {
         params.append('page', pagination.page.toString());
         params.append('limit', pagination.limit.toString());
 
-        const res = await fetch(`/api/public/news?${params.toString()}`);
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        const res = await fetch(`/api/public/news?${params.toString()}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         if (res.ok) {
           const data = await res.json();
           setNews(data.news || []);
           setPagination(prev => data.pagination || prev);
-          
-          if (data.news && data.news.length > 0) {
-            setPopularPosts(data.news.slice(0, 4));
-          }
         }
       } catch (error) {
         console.error('Error fetching news:', error);
@@ -160,6 +195,9 @@ export default function BrowserModePage() {
         selectedLanguage={selectedLanguage}
         setSelectedLanguage={setSelectedLanguage}
         onShow={handleShow}
+        categories={categories}
+        sports={sports}
+        languages={languages}
       />
 
       <div className="p-6">
@@ -197,7 +235,7 @@ export default function BrowserModePage() {
           
           {!hideShowStatus && (
             <div className="lg:col-span-1">
-              <GetSocialBlock popularPosts={popularPosts} />
+              <GetSocialBlock />
             </div>
           )}
         </div>
