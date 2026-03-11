@@ -151,7 +151,22 @@ export default function NewsSettingModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Duration */}
+
           <p className="text-sm font-medium text-gray-700">Who can see it?</p>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Duration (expiration date)</label>
+            <input
+              type="date"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              After this date the article is hidden from users. Super admin and admin still see it.
+            </p>
+          </div>
 
           {options && (
             <>
@@ -275,18 +290,6 @@ export default function NewsSettingModal({
               </div>
             </>
           )}
-
-          {/* Duration */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Duration (expiration date)</label>
-            <input
-              type="date"
-              value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">After this date the article is hidden from users. Super admin and admin still see it.</p>
-          </div>
         </div>
 
         <div className="flex gap-2 p-4 border-t border-gray-200">

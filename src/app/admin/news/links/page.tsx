@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
 import { useNewsData } from '@/hooks/useNewsData';
-import NewsTopicBar, { type NewsTopic, ALL_TOPICS, ALL_USER_SECTORS } from '@/app/news/components/NewsTopicBar';
+import NewsTopicBar, { type NewsTopic, ALL_TOPICS, ALL_USER_SECTORS, ALL_SUPER_ADMIN } from '@/app/news/components/NewsTopicBar';
 import NewTopicModal from '@/app/news/components/NewTopicModal';
 import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
 import OGPForm from '@/app/news/components/OGPForm';
@@ -13,6 +13,7 @@ import NewsArticlesList from '@/app/news/components/NewsArticlesList';
 export default function AdminNewsLinksPage() {
   const router = useRouter();
   const [adminUser, setAdminUser] = useState<{ id: string; name?: string } | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
 
   const {
@@ -53,6 +54,15 @@ export default function AdminNewsLinksPage() {
         const u = JSON.parse(raw);
         setAdminUser(u?.id ? { id: u.id, name: u.name } : null);
         if (!u?.id) router.replace('/admin/dashboard');
+        else {
+          const superRaw = localStorage.getItem('superAdminUser');
+          if (superRaw) {
+            try {
+              const su = JSON.parse(superRaw);
+              if (su?.id === u.id) setIsSuperAdmin(true);
+            } catch { /* ignore */ }
+          }
+        }
       } catch {
         router.replace('/admin/dashboard');
       }
@@ -65,6 +75,7 @@ export default function AdminNewsLinksPage() {
             const u = { id: su.id, name: su.name ?? su.username };
             localStorage.setItem('adminUser', JSON.stringify(u));
             setAdminUser(u);
+            setIsSuperAdmin(true);
           } else {
             router.replace('/admin/dashboard');
           }
@@ -181,7 +192,11 @@ export default function AdminNewsLinksPage() {
   const handlePastedArticle = useCallback(
     async (data: Parameters<Parameters<typeof OGPForm>[0]['onPastedArticle']>[0]) => {
       try {
-        await addPastedArticle(data, activeTopic === ALL_TOPICS ? 'News' : (activeTopic ?? 'News'));
+        const targetTopic =
+          activeTopic === ALL_TOPICS || activeTopic === ALL_USER_SECTORS || activeTopic === ALL_SUPER_ADMIN
+            ? 'News'
+            : (activeTopic ?? 'News');
+        await addPastedArticle(data, targetTopic);
         setShowOgpForm(false);
       } catch (e) {
         console.error(e);
@@ -235,6 +250,7 @@ export default function AdminNewsLinksPage() {
             onOpenTopicSort={() => setShowTopicSortModal(true)}
             topicNamesCreatedByNormalUsers={topicNamesCreatedByNormalUsers}
             allTopicLabel="All defaults"
+            showSuperAdminAllButton={isSuperAdmin}
           />
 
           <NewTopicModal
@@ -308,8 +324,11 @@ export default function AdminNewsLinksPage() {
             onUpdatePastedSettings={handleUpdatePastedSettings}
             onUpdatePastedTopic={handleUpdatePastedTopic}
             onAddClick={() => setShowOgpForm((prev) => !prev)}
-            addButtonDisabled={activeTopic === ALL_TOPICS || activeTopic === ALL_USER_SECTORS}
+            addButtonDisabled={
+              activeTopic === ALL_TOPICS || activeTopic === ALL_USER_SECTORS || activeTopic === ALL_SUPER_ADMIN
+            }
             adminContext={true}
+            isSuperAdmin={isSuperAdmin}
             topicNamesCreatedByNormalUsers={topicNamesCreatedByNormalUsers}
           />
         </div>
