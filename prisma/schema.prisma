@@ -56,6 +56,7 @@ model User {
   newsTopics               UserNewsTopic[]
   ogpArticles              OgpArticle[]
   ogpArticlesDeleted       OgpArticle[]       @relation("OgpDeletedBy")
+  ogpArticleLikes          OgpArticleLike[]
   newsTypedArticles       NewsTypedArticle[]
 
   @@map("users_new")
@@ -96,11 +97,26 @@ model OgpArticle {
   visibilitySports      String?   @db.Text // JSON array of SportType e.g. ["RUN","SWIM"]
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   deletedBy             User?     @relation("OgpDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
+  likes                 OgpArticleLike[]
 
   @@index([userId])
   @@index([userId, topic])
   @@index([deletedAt])
   @@map("ogp_articles")
+}
+
+model OgpArticleLike {
+  id            String      @id @default(cuid())
+  ogpArticleId  String
+  userId        String
+  createdAt     DateTime    @default(now())
+  ogpArticle    OgpArticle   @relation(fields: [ogpArticleId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ogpArticleId, userId])
+  @@index([ogpArticleId])
+  @@index([userId])
+  @@map("ogp_article_likes")
 }
 
 model NewsTypedArticle {

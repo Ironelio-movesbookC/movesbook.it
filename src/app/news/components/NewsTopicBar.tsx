@@ -12,6 +12,9 @@ export const ALL_TOPICS = 'All';
 /** Special value when "All users' sectors" is selected in the user-sectors dropdown (super admin). */
 export const ALL_USER_SECTORS = '__all_user_sectors__';
 
+/** Special topic used only in admin view: show only OGPs created by super admin (labelled "All"). */
+export const ALL_SUPER_ADMIN = '__all_super_admin__';
+
 export const NEWS_TOPICS = [
   'Events',
   'Nutrition',
@@ -61,6 +64,8 @@ interface NewsTopicBarProps {
   topicNamesCreatedByNormalUsers?: string[];
   /** When set (e.g. super admin), overrides the "All" button label (e.g. "All defaults") */
   allTopicLabel?: string;
+  /** When true (super admin), show the extra "All" button that filters to super-admin-created OGPs. */
+  showSuperAdminAllButton?: boolean;
 }
 
 export default function NewsTopicBar({
@@ -75,6 +80,7 @@ export default function NewsTopicBar({
   topicNamesCreatedBySuperAdmin = [],
   topicNamesCreatedByNormalUsers = [],
   allTopicLabel,
+  showSuperAdminAllButton = false,
 }: NewsTopicBarProps) {
   /** Topics to show as buttons (exclude normal-user-created when dropdown is used) */
   const topicsForBar = topicNamesCreatedByNormalUsers.length > 0
@@ -120,7 +126,7 @@ export default function NewsTopicBar({
 
   /** Default topics (Nutrition, Sport, etc.) cannot be deleted; disable Pencil when one is selected. Also disable when "All" is selected or when a topic created by super admin is selected (normal users cannot edit those). */
   const isDefaultTopicSelected = activeTopic != null && activeTopic !== ALL_TOPICS && isDefaultTopic(activeTopic);
-  const isAllSelected = activeTopic === ALL_TOPICS;
+  const isAllSelected = activeTopic === ALL_TOPICS || activeTopic === ALL_SUPER_ADMIN;
   const isSuperAdminTopicSelected = activeTopic != null && topicNamesCreatedBySuperAdmin.includes(activeTopic);
   const isPencilDisabled = isAllSelected || isDefaultTopicSelected || isSuperAdminTopicSelected;
 
@@ -155,12 +161,13 @@ export default function NewsTopicBar({
         <Pencil className="w-5 h-5" />
       </button>
 
-      {/* "All" - show all articles by date; when selected, "+" is disabled. Label can be overridden (e.g. "All defaults" for super admin). */}
+      {/* First button: when super-admin extra button is shown, this is "All defaults" (super-admin filter);
+          otherwise it is the regular "All" button. */}
       <button
         type="button"
-        onClick={() => onTopicSelect(ALL_TOPICS)}
+        onClick={() => onTopicSelect(showSuperAdminAllButton ? ALL_SUPER_ADMIN : ALL_TOPICS)}
         className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-          activeTopic === ALL_TOPICS
+          activeTopic === (showSuperAdminAllButton ? ALL_SUPER_ADMIN : ALL_TOPICS)
             ? 'bg-gray-800 text-white'
             : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
         }`}
@@ -169,6 +176,23 @@ export default function NewsTopicBar({
       >
         {allTopicLabel ?? t('news_all_ogp')}
       </button>
+
+      {/* Second button (only for super admin): "All" – regular all-topics view */}
+      {showSuperAdminAllButton && (
+        <button
+          type="button"
+          onClick={() => onTopicSelect(ALL_TOPICS)}
+          className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTopic === ALL_TOPICS
+              ? 'bg-gray-900 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+          }`}
+          title="All"
+          aria-label="All"
+        >
+          All
+        </button>
+      )}
 
       {/* Left arrow - scroll left */}
       <button

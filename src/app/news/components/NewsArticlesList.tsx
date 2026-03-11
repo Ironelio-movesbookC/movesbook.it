@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag } from 'lucide-react';
+import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag, ThumbsUp, Share2 } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
-import { ALL_TOPICS, ALL_USER_SECTORS, NEWS_TOPIC_KEYS, NEWS_TOPICS } from './NewsTopicBar';
+import { ALL_TOPICS, ALL_USER_SECTORS, ALL_SUPER_ADMIN, NEWS_TOPIC_KEYS, NEWS_TOPICS } from './NewsTopicBar';
 import { ALL_LANGUAGES } from '@/constants/language.constants';
 import NewsSettingModal, { type OgpVisibilitySettings, defaultSettings } from './NewsSettingModal';
+import OgpShareModal from './OgpShareModal';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 export type ArticlePasted = OGPData & {
@@ -24,7 +25,7 @@ export type ArticlePasted = OGPData & {
   visibility?: OgpVisibilitySettings;
   /** When true, article was created by the current super admin (enables Pencil/settings as creator). */
   createdByCurrentUser?: boolean;
-  /** When true, article was posted by a Super Admin account (show MB badge instead of trash). */
+  /** When true, article was posted by a Super Admin account (used for filtering; action icon is always trash). */
   createdBySuperAdmin?: boolean;
 };
 export type ArticleTyped = { id: string; description: string };
@@ -87,6 +88,8 @@ interface NewsArticlesListProps {
   onUpdatePastedTopic?: (id: string, topic: string, customDescription?: string) => void | Promise<void>;
   /** When true, use adminToken for API calls (e.g. creator fetch) so super admin can use User button. */
   adminContext?: boolean;
+  /** When true (super admin), show all OGPs for the selected topic including expired, no News Setting, and deleted. */
+  isSuperAdmin?: boolean;
   /** When activeTopic is ALL_USER_SECTORS, filter to articles whose topic is in this list (super admin). */
   topicNamesCreatedByNormalUsers?: string[];
   /** When set (e.g. super admin), overrides the "All" topic display name (e.g. "All defaults") */
@@ -105,6 +108,7 @@ export default function NewsArticlesList({
   topics: topicsProp = [],
   onUpdatePastedTopic,
   adminContext = false,
+  isSuperAdmin = false,
   topicNamesCreatedByNormalUsers = [],
   allTopicLabel,
 }: NewsArticlesListProps) {
@@ -137,6 +141,17 @@ export default function NewsArticlesList({
     }
   };
 
+  /** True if the OGP is expired OR expiry is not set (blank). Used for super-admin visual highlighting. */
+  const isExpiredOrNoExpiry = (a: ArticlePasted): boolean => {
+    const exp = a.visibility?.expiresAt;
+    if (exp == null || String(exp).trim() === '') return true;
+    try {
+      return new Date(exp).getTime() < Date.now();
+    } catch {
+      return true;
+    }
+  };
+
   const translateTopic = useCallback((topic: string) => {
     const key = NEWS_TOPIC_KEYS[topic];
     return key ? t(key) : topic;
@@ -146,6 +161,8 @@ export default function NewsArticlesList({
   const [search, setSearch] = useState('');
   const [highlightMatches, setHighlightMatches] = useState(false);
   const [showOnlyMyOgNews, setShowOnlyMyOgNews] = useState(false);
+  const [showExpired, setShowExpired] = useState(false);
+  const [showDeletedTemporarily, setShowDeletedTemporarily] = useState(false);
   const [selectedSport, setSelectedSport] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -178,6 +195,9 @@ export default function NewsArticlesList({
   const [expandedArticleIds, setExpandedArticleIds] = useState<Set<string>>(new Set());
   const [removeConfirmArticleId, setRemoveConfirmArticleId] = useState<string | null>(null);
   const [previewArticleId, setPreviewArticleId] = useState<string | null>(null);
+  const [likesMap, setLikesMap] = useState<Record<string, { count: number; likedByMe: boolean }>>({});
+  const [likeLoadingId, setLikeLoadingId] = useState<string | null>(null);
+  const [shareModalArticle, setShareModalArticle] = useState<ArticlePasted | null>(null);
 
   const toggleArticleExpanded = useCallback((articleId: string) => {
     setExpandedArticleIds((prev) => {
@@ -252,7 +272,10 @@ export default function NewsArticlesList({
 
   const byTopic = useMemo(() => {
     let base: ArticlePasted[];
-    if (!activeTopic || activeTopic === ALL_TOPICS) {
+    if (activeTopic === ALL_SUPER_ADMIN) {
+      // Super admin "All" – show only OGPs created by super admin across all topics.
+      base = pasted.filter((a) => a.createdBySuperAdmin);
+    } else if (!activeTopic || activeTopic === ALL_TOPICS) {
       base = pasted;
     } else if (activeTopic === ALL_USER_SECTORS && topicNamesCreatedByNormalUsers.length > 0) {
       base = pasted.filter((a) => topicNamesCreatedByNormalUsers.includes(a.topic ?? ''));
@@ -265,10 +288,15 @@ export default function NewsArticlesList({
       activeTopic === ALL_TOPICS ||
       (NEWS_TOPICS as readonly string[]).includes(activeTopic);
 
-    // In "All" and 7 default topics: hide OGPs with no News Setting for everyone (including super admin and OGP creator).
-    // Also hide expired OGPs (Duration in the past) so the list respects the creator's News Setting (e.g. OGP creator no longer sees their own expired OGPs here).
-    if (isAllOrDefaultTopic) {
-      return base.filter((a) => hasAnyVisibilitySettings(a) && isNotExpired(a));
+    // In "All" and 7 default topics:
+    // - For the current creator (canEditAsCreator): always show all their own OGPs (including expired / no settings / deleted).
+    // - For other users' OGPs: hide those with no News Setting and hide expired ones.
+    // - Exception: when isSuperAdmin, show all OGPs (expired, no settings, deleted) for the selected topic.
+    if (isAllOrDefaultTopic && !isSuperAdmin) {
+      return base.filter((a) => {
+        if (canEditAsCreator(a)) return true;
+        return hasAnyVisibilitySettings(a) && isNotExpired(a);
+      });
     }
 
     // For other topics (e.g. custom): normal users only see OGPs with settings or their own; admin/creator see all.
@@ -277,18 +305,34 @@ export default function NewsArticlesList({
     }
 
     return base;
-  }, [pasted, activeTopic, topicNamesCreatedByNormalUsers, adminContext, canDeleteOgp]);
+  }, [pasted, activeTopic, topicNamesCreatedByNormalUsers, adminContext, canDeleteOgp, isSuperAdmin]);
 
-  /** True when active topic is "All" or one of the 8 OGP default topics (show "Show only my OG News" checkbox). */
-  const isAllOrDefaultTopic =
-    !activeTopic ||
-    activeTopic === ALL_TOPICS ||
-    (NEWS_TOPICS as readonly string[]).includes(activeTopic);
+  /**
+   * True when the current UI should allow filtering to "my" OGPs.
+   * Previously this was limited to "All" and the default topics; now we allow it
+   * for any topic whenever we know the current user id.
+   */
+  const canFilterByMyOgNews = !!currentUserId;
 
   const filtered = useMemo(() => {
     let list = byTopic;
-    if (showOnlyMyOgNews && isAllOrDefaultTopic) {
+    // When checkbox is checked, filter TO that subset; when unchecked, don't apply (show all).
+    if (showOnlyMyOgNews && canFilterByMyOgNews) {
       list = list.filter(canEditAsCreator);
+    }
+    if (showExpired) {
+      // Only expired / no-expiry OGPs
+      list = list.filter(isExpiredOrNoExpiry);
+      // When \"Show expired\" is ON but \"Show deleted temporarily\" is OFF,
+      // hide deleted items so this view shows only expired (non-deleted) OGPs.
+      if (!showDeletedTemporarily) {
+        list = list.filter((a) => !a.deletedAt);
+      }
+    }
+    if (showDeletedTemporarily) {
+      // When \"Show deleted temporarily\" is ON, restrict to deleted OGPs (any expiry state).
+      // If \"Show expired\" is also ON, the combination results in deleted + expired/no-expiry only.
+      list = list.filter((a) => !!a.deletedAt);
     }
     if (selectedSport) {
       list = list.filter((a) => (a.topic ?? '').toLowerCase() === selectedSport.toLowerCase());
@@ -305,7 +349,16 @@ export default function NewsArticlesList({
         (a.url || '').toLowerCase().includes(q) ||
         (a.customDescription || '').toLowerCase().includes(q)
     );
-  }, [byTopic, search, selectedSport, selectedLanguage, showOnlyMyOgNews, isAllOrDefaultTopic, currentUserId]);
+  }, [
+    byTopic,
+    search,
+    selectedSport,
+    selectedLanguage,
+    showOnlyMyOgNews,
+    showExpired,
+    showDeletedTemporarily,
+    canFilterByMyOgNews,
+  ]);
 
   const sorted = useMemo(() => {
     const list = [...filtered];
@@ -340,6 +393,45 @@ export default function NewsArticlesList({
     if (to - from + 1 < MAX_PAGE_BUTTONS) from = Math.max(1, to - MAX_PAGE_BUTTONS + 1);
     return Array.from({ length: to - from + 1 }, (_, i) => from + i);
   }, [currentPage, totalPages]);
+
+  const paginatedIds = useMemo(() => paginated.map((a) => a.id), [paginated]);
+
+  useEffect(() => {
+    if (paginatedIds.length === 0) {
+      setLikesMap({});
+      return;
+    }
+    const token = typeof window !== 'undefined'
+      ? (adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token'))
+      : null;
+    const headers: HeadersInit = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    fetch(`/api/news/ogp/likes?ids=${paginatedIds.join(',')}`, { headers })
+      .then((r) => r.json())
+      .then((data) => setLikesMap(data ?? {}))
+      .catch(() => setLikesMap({}));
+  }, [paginatedIds.join(','), adminContext]);
+
+  const handleLikeClick = useCallback(async (articleId: string) => {
+    const token = typeof window !== 'undefined'
+      ? (adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token'))
+      : null;
+    if (!token) return;
+    setLikeLoadingId(articleId);
+    try {
+      const headers: HeadersInit = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      const res = await fetch(`/api/news/ogp/${articleId}/like`, { method: 'POST', headers });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update like');
+      setLikesMap((prev) => ({
+        ...prev,
+        [articleId]: { count: data.count ?? 0, likedByMe: data.liked ?? false },
+      }));
+    } catch {
+      // keep previous state on error
+    } finally {
+      setLikeLoadingId(null);
+    }
+  }, [adminContext]);
 
   return (
     <div className="mt-6">
@@ -431,23 +523,6 @@ export default function NewsArticlesList({
           >
             {t('news_show')}
           </button>
-          {isAllOrDefaultTopic && (
-            <label className="flex items-center gap-2 ml-10 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={showOnlyMyOgNews}
-                onChange={(e) => {
-                  setShowOnlyMyOgNews(e.target.checked);
-                  setCurrentPage(1);
-                }}
-                className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                aria-label={t('news_show_only_my_ogp')}
-              />
-              <span className="text-yellow-300 text-sm font-medium whitespace-nowrap">
-                {t('news_show_only_my_ogp')}
-              </span>
-            </label>
-          )}
         </div>
         {/* Row 2: Rows per page dropdown (each row = 6 OGPs), Prev, page numbers, Next */}
         <div className="bg-gray-100 flex flex-wrap items-center gap-2 p-3 border-t border-gray-200">
@@ -508,9 +583,11 @@ export default function NewsArticlesList({
                 ? (allTopicLabel ?? t('news_all_ogp'))
                 : activeTopic === ALL_USER_SECTORS
                   ? "All users' topics"
-                  : activeTopic
-                    ? translateTopic(activeTopic)
-                    : ''}
+                  : activeTopic === ALL_SUPER_ADMIN
+                    ? 'All'
+                    : activeTopic
+                      ? translateTopic(activeTopic)
+                      : ''}
             </span>
           </div>
           {/* Add article "+" at right end of pagination row */}
@@ -541,11 +618,61 @@ export default function NewsArticlesList({
               ? (allTopicLabel ?? t('news_all_ogp'))
               : activeTopic === ALL_USER_SECTORS
                 ? "All users' topics"
-                : activeTopic
-                  ? translateTopic(activeTopic)
-                  : ''}
+                : activeTopic === ALL_SUPER_ADMIN
+                  ? 'All'
+                  : activeTopic
+                    ? translateTopic(activeTopic)
+                    : ''}
           </span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-4">
+            {canFilterByMyOgNews && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showOnlyMyOgNews}
+                  onChange={(e) => {
+                    setShowOnlyMyOgNews(e.target.checked);
+                    setCurrentPage(1);
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                  aria-label={t('news_show_only_my_ogp')}
+                />
+                <span className="text-yellow-300 text-sm font-medium whitespace-nowrap">
+                  {t('news_show_only_my_ogp')}
+                </span>
+              </label>
+            )}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showExpired}
+                onChange={(e) => {
+                  setShowExpired(e.target.checked);
+                  setCurrentPage(1);
+                }}
+                className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                aria-label="Show expired"
+              />
+              <span className="text-yellow-300 text-sm font-medium whitespace-nowrap">
+                Show expired
+              </span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showDeletedTemporarily}
+                onChange={(e) => {
+                  setShowDeletedTemporarily(e.target.checked);
+                  setCurrentPage(1);
+                }}
+                className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                aria-label="Show deleted temporarily"
+              />
+              <span className="text-yellow-300 text-sm font-medium whitespace-nowrap">
+                Show deleted temporarily
+              </span>
+            </label>
+            <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setSortOrder((s) => (s === 'alpha-asc' ? 'alpha-desc' : 'alpha-asc'))}
@@ -572,6 +699,7 @@ export default function NewsArticlesList({
             >
               <Clock className="w-5 h-5" />
             </button>
+            </div>
           </div>
         </div>
         <div className="p-4">
@@ -581,9 +709,11 @@ export default function NewsArticlesList({
                 ? t('news_no_articles_all')
                 : activeTopic === ALL_USER_SECTORS
                   ? "No articles in users' sectors."
-                  : activeTopic
-                    ? t('news_no_articles_for_topic').replace('{topic}', translateTopic(activeTopic))
-                    : t('news_no_articles_default')}
+                  : activeTopic === ALL_SUPER_ADMIN
+                    ? 'No articles created by super admin.'
+                    : activeTopic
+                      ? t('news_no_articles_for_topic').replace('{topic}', translateTopic(activeTopic))
+                      : t('news_no_articles_default')}
             </p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 max-h-[94vh] overflow-y-auto">
@@ -593,6 +723,8 @@ export default function NewsArticlesList({
                   className={`border rounded-lg p-3 group flex flex-col min-w-0 relative h-full min-h-0 ${
                     a.deletedAt
                       ? 'border-amber-200 bg-amber-50/50 hover:bg-amber-50/70'
+                      : isExpiredOrNoExpiry(a)
+                        ? 'border-[rgb(255,38,0)] bg-[rgb(255,38,0)]/10 hover:bg-[rgb(255,38,0)]/15'
                       : 'border-gray-200 hover:bg-gray-50'
                   }`}
                 >
@@ -665,6 +797,43 @@ export default function NewsArticlesList({
                         {formatDate(a.savedAt ?? new Date().toISOString())}
                       </p>
                     </button>
+                    {/* I likes section: like button, count, share (copy link) - like the red marked area in reference */}
+                    <div className="relative z-10 flex items-center gap-2 mt-2 flex-shrink-0 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleLikeClick(a.id);
+                        }}
+                        disabled={!!likeLoadingId || (typeof window !== 'undefined' && !(adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token')))}
+                        className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+                          likesMap[a.id]?.likedByMe
+                            ? 'border-cyan-500 bg-cyan-50 text-cyan-700 hover:bg-cyan-100'
+                            : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
+                        }`}
+                        title={likesMap[a.id]?.likedByMe ? 'Unlike' : 'Like'}
+                        aria-label={likesMap[a.id]?.likedByMe ? 'Unlike' : 'Like'}
+                      >
+                        <ThumbsUp className={`w-3.5 h-3.5 ${likesMap[a.id]?.likedByMe ? 'fill-current' : ''}`} />
+                        <span className="min-w-[1.5rem] text-right tabular-nums">
+                          {likesMap[a.id]?.count ?? 0}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShareModalArticle(a);
+                        }}
+                        className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        title="Share"
+                        aria-label="Share"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                     {a.deletedAt && (
                       <p className="relative z-10 pointer-events-none text-xs text-amber-800 mt-1 font-medium">
                         Deleted on {formatDate(a.deletedAt)}
@@ -751,7 +920,7 @@ export default function NewsArticlesList({
                       >
                         <Settings className="w-3.5 h-3.5" />
                       </button>
-                      {!a.createdBySuperAdmin ? (
+                      {
                       <button
                         type="button"
                         onClick={(e) => {
@@ -766,23 +935,7 @@ export default function NewsArticlesList({
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (canDeleteOgp || canEditAsCreator(a)) setRemoveConfirmArticleId(a.id);
-                        }}
-                        disabled={!onRemovePasted || (!canDeleteOgp && !canEditAsCreator(a))}
-                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded bg-red-600 text-white text-[10px] font-bold shrink-0 hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-600"
-                        style={{ fontFamily: '"Comic Sans MS", "Comic Sans", cursive' }}
-                        title={canDeleteOgp || canEditAsCreator(a) ? 'Delete (posted by Super Admin)' : 'Only super admin, admin, or creator can delete'}
-                        aria-label="Delete article"
-                      >
-                        MB
-                      </button>
-                    )}
+                      }
                   </div>
                 </article>
               ))}
@@ -808,6 +961,13 @@ export default function NewsArticlesList({
           options={settingsOptions}
         />
       )}
+
+      <OgpShareModal
+        isOpen={shareModalArticle != null}
+        onClose={() => setShareModalArticle(null)}
+        article={shareModalArticle ? { url: shareModalArticle.url, title: shareModalArticle.title } : null}
+        onCopyLink={() => shareModalArticle && setCopiedArticleId(shareModalArticle.id)}
+      />
 
       {creatorModalArticleId != null && (
         <div

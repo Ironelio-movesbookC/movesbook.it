@@ -27,11 +27,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const where: { topic?: string; deletedAt?: null; userId?: { in: string[] } } = isAdmin ? {} : { deletedAt: null };
-    if (topic != null && topic !== '') where.topic = topic;
-    // For non-admin: do NOT restrict by creator. Load all non-deleted OGPs so that when User B selects "All"
-    // topic, they see every OGP whose News Setting matches their profile (sports, user type, language, country).
-    // Visibility filtering below will restrict to matching articles; creator's own articles are always shown.
+    const where = isAdmin
+      ? // Admin / super admin: load all OGPs (topic filter applied below).
+        ({} as any)
+      : // Normal users: load all non-deleted OGPs PLUS all OGPs they created (even if deleted),
+        // so creators can always see their own OGPs (including expired / deleted).
+        ({
+          OR: [{ deletedAt: null }, { userId }],
+        } as any);
+    if (topic != null && topic !== '') (where as any).topic = topic;
 
     const list = (await prisma.ogpArticle.findMany({
       where,
@@ -58,12 +62,17 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const superAdminCreatorIds = await getSuperAdminCreatorIds();
     const filtered = list.filter((a) => {
-      if (a.deletedAt) {
-        if (isAdmin) return true;
-        return false;
-      }
+      const isCreator = a.userId === userId;
+
+      // Admin / super admin: see everything (including deleted and expired).
       if (isAdmin) return true;
-      if (a.userId === userId) return true;
+
+      // Normal user (creator): always see own OGPs, including deleted / expired / without settings.
+      if (isCreator) return true;
+
+      // Non-admin viewing others' OGPs:
+      // - Hide deleted
+      if (a.deletedAt) return false;
       if (a.expiresAt && a.expiresAt < now) return false;
       const vUserTypes = parseJsonArray(a.visibilityUserTypes);
       const vCountries = parseJsonArray(a.visibilityCountries);
