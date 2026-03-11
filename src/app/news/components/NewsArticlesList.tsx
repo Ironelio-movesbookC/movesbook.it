@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag } from 'lucide-react';
+import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag, ThumbsUp, Share2 } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
 import { ALL_TOPICS, ALL_USER_SECTORS, ALL_SUPER_ADMIN, NEWS_TOPIC_KEYS, NEWS_TOPICS } from './NewsTopicBar';
 import { ALL_LANGUAGES } from '@/constants/language.constants';
 import NewsSettingModal, { type OgpVisibilitySettings, defaultSettings } from './NewsSettingModal';
+import OgpShareModal from './OgpShareModal';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 export type ArticlePasted = OGPData & {
@@ -194,6 +195,9 @@ export default function NewsArticlesList({
   const [expandedArticleIds, setExpandedArticleIds] = useState<Set<string>>(new Set());
   const [removeConfirmArticleId, setRemoveConfirmArticleId] = useState<string | null>(null);
   const [previewArticleId, setPreviewArticleId] = useState<string | null>(null);
+  const [likesMap, setLikesMap] = useState<Record<string, { count: number; likedByMe: boolean }>>({});
+  const [likeLoadingId, setLikeLoadingId] = useState<string | null>(null);
+  const [shareModalArticle, setShareModalArticle] = useState<ArticlePasted | null>(null);
 
   const toggleArticleExpanded = useCallback((articleId: string) => {
     setExpandedArticleIds((prev) => {
@@ -389,6 +393,45 @@ export default function NewsArticlesList({
     if (to - from + 1 < MAX_PAGE_BUTTONS) from = Math.max(1, to - MAX_PAGE_BUTTONS + 1);
     return Array.from({ length: to - from + 1 }, (_, i) => from + i);
   }, [currentPage, totalPages]);
+
+  const paginatedIds = useMemo(() => paginated.map((a) => a.id), [paginated]);
+
+  useEffect(() => {
+    if (paginatedIds.length === 0) {
+      setLikesMap({});
+      return;
+    }
+    const token = typeof window !== 'undefined'
+      ? (adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token'))
+      : null;
+    const headers: HeadersInit = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    fetch(`/api/news/ogp/likes?ids=${paginatedIds.join(',')}`, { headers })
+      .then((r) => r.json())
+      .then((data) => setLikesMap(data ?? {}))
+      .catch(() => setLikesMap({}));
+  }, [paginatedIds.join(','), adminContext]);
+
+  const handleLikeClick = useCallback(async (articleId: string) => {
+    const token = typeof window !== 'undefined'
+      ? (adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token'))
+      : null;
+    if (!token) return;
+    setLikeLoadingId(articleId);
+    try {
+      const headers: HeadersInit = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      const res = await fetch(`/api/news/ogp/${articleId}/like`, { method: 'POST', headers });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update like');
+      setLikesMap((prev) => ({
+        ...prev,
+        [articleId]: { count: data.count ?? 0, likedByMe: data.liked ?? false },
+      }));
+    } catch {
+      // keep previous state on error
+    } finally {
+      setLikeLoadingId(null);
+    }
+  }, [adminContext]);
 
   return (
     <div className="mt-6">
@@ -754,6 +797,43 @@ export default function NewsArticlesList({
                         {formatDate(a.savedAt ?? new Date().toISOString())}
                       </p>
                     </button>
+                    {/* I likes section: like button, count, share (copy link) - like the red marked area in reference */}
+                    <div className="relative z-10 flex items-center gap-2 mt-2 flex-shrink-0 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleLikeClick(a.id);
+                        }}
+                        disabled={!!likeLoadingId || (typeof window !== 'undefined' && !(adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token')))}
+                        className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+                          likesMap[a.id]?.likedByMe
+                            ? 'border-cyan-500 bg-cyan-50 text-cyan-700 hover:bg-cyan-100'
+                            : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
+                        }`}
+                        title={likesMap[a.id]?.likedByMe ? 'Unlike' : 'Like'}
+                        aria-label={likesMap[a.id]?.likedByMe ? 'Unlike' : 'Like'}
+                      >
+                        <ThumbsUp className={`w-3.5 h-3.5 ${likesMap[a.id]?.likedByMe ? 'fill-current' : ''}`} />
+                        <span className="min-w-[1.5rem] text-right tabular-nums">
+                          {likesMap[a.id]?.count ?? 0}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShareModalArticle(a);
+                        }}
+                        className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        title="Share"
+                        aria-label="Share"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                     {a.deletedAt && (
                       <p className="relative z-10 pointer-events-none text-xs text-amber-800 mt-1 font-medium">
                         Deleted on {formatDate(a.deletedAt)}
@@ -881,6 +961,13 @@ export default function NewsArticlesList({
           options={settingsOptions}
         />
       )}
+
+      <OgpShareModal
+        isOpen={shareModalArticle != null}
+        onClose={() => setShareModalArticle(null)}
+        article={shareModalArticle ? { url: shareModalArticle.url, title: shareModalArticle.title } : null}
+        onCopyLink={() => shareModalArticle && setCopiedArticleId(shareModalArticle.id)}
+      />
 
       {creatorModalArticleId != null && (
         <div

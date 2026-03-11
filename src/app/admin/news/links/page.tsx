@@ -24,10 +24,11 @@ export default function AdminNewsLinksPage() {
     typedArticles,
     loading,
     error,
+    refresh,
+    saveTopicOrder,
     addTopic,
     updateTopic,
     deleteTopic,
-    saveTopicOrder,
     addPastedArticle,
     removePastedArticle,
     updatePastedArticleSettings,
@@ -273,6 +274,8 @@ export default function AdminNewsLinksPage() {
             onSave={async (ordered) => {
               await saveTopicOrder(ordered);
             }}
+            isSuperAdmin={isSuperAdmin}
+            onAfterDeleteOgNews={refresh}
           />
 
           {showOgpForm && (
