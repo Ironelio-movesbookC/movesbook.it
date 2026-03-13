@@ -23,7 +23,6 @@ import { GripVertical } from 'lucide-react';
 
 interface AutoDeleteConfig {
   olderThanDays: number;
-  delayDays: number;
   lastDeletion?: string;
   nextDeletion?: string;
 }
@@ -111,7 +110,6 @@ export default function NewsTopicSortModal({
   const [isDeletingOg, setIsDeletingOg] = useState(false);
   const [showAutoDeleteModal, setShowAutoDeleteModal] = useState(false);
   const [olderThanDays, setOlderThanDays] = useState('180');
-  const [delayDays, setDelayDays] = useState('30');
   const [lastDeletion, setLastDeletion] = useState('');
   const [nextDeletion, setNextDeletion] = useState('');
   const [autoDeleteConfig, setAutoDeleteConfig] = useState<AutoDeleteConfig | null>(null);
@@ -179,12 +177,11 @@ export default function NewsTopicSortModal({
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-      if (config.lastDeletion || config.nextDeletion) {
-        const baseStr = config.nextDeletion || config.lastDeletion!;
-        const baseDate = parseYmd(baseStr) ?? today;
-        const triggerDate = addDays(baseDate, config.delayDays);
-        if (today < triggerDate) {
-          // Not yet time to run the automatic deletion – treat as success with no-op
+      // Run only when nextDeletion is set and today >= nextDeletion
+      if (config.nextDeletion) {
+        const nextDate = parseYmd(config.nextDeletion);
+        if (nextDate && today < nextDate) {
+          // Not yet time to run – treat as success with no-op
           return true;
         }
       }
@@ -213,6 +210,10 @@ export default function NewsTopicSortModal({
         return false;
       }
 
+      // After successful run, update Last deletion to the Next deletion date (no longer user-editable)
+      if (config.nextDeletion) {
+        setLastDeletion(config.nextDeletion);
+      }
       await onAfterDeleteOgNews?.();
       return true;
     } catch {
@@ -277,16 +278,14 @@ export default function NewsTopicSortModal({
 
   const handleApplyAutoDelete = () => {
     const older = Number(olderThanDays);
-    const delay = Number(delayDays);
 
-    if (!Number.isFinite(older) || older <= 0 || !Number.isFinite(delay) || delay < 0) {
+    if (!Number.isFinite(older) || older <= 0) {
       setDeleteWarning('Please enter valid automatic deletion values.');
       return;
     }
 
     setAutoDeleteConfig({
       olderThanDays: Math.round(older),
-      delayDays: Math.round(delay),
       lastDeletion: lastDeletion.trim() || undefined,
       nextDeletion: nextDeletion.trim() || undefined,
     });
@@ -444,35 +443,19 @@ export default function NewsTopicSortModal({
                 Automatic deletion of OGPs
               </h3>
               <p className="mb-4 text-gray-800">
-                <div>
-                  Remove all the OGPs posted from more than{' '}
-                  <select
-                    value={olderThanDays}
-                    onChange={(e) => setOlderThanDays(e.target.value)}
-                    className="mx-1 w-24 px-1 py-0.5 border border-gray-300 rounded text-sm bg-white"
-                  >
-                    <option value="30">30</option>
-                    <option value="60">60</option>
-                    <option value="90">90</option>
-                    <option value="180">180</option>
-                    <option value="360">360</option>
-                  </select>{' '}days
-                </div>
-                <div>
-                  after{' '}
-                  <select
-                    value={delayDays}
-                    onChange={(e) => setDelayDays(e.target.value)}
-                    className="mx-1 w-24 px-1 py-0.5 border border-gray-300 rounded text-sm bg-white"
-                  >
-                    <option value="30">30</option>
-                    <option value="60">60</option>
-                    <option value="90">90</option>
-                    <option value="180">180</option>
-                    <option value="360">360</option>
-                  </select>{' '}
-                  days from the last deletion
-                </div>
+                Remove all the OGPs posted from more than{' '}
+                <select
+                  value={olderThanDays}
+                  onChange={(e) => setOlderThanDays(e.target.value)}
+                  className="mx-1 w-24 px-1 py-0.5 border border-gray-300 rounded text-sm bg-white"
+                >
+                  <option value="30">30</option>
+                  <option value="60">60</option>
+                  <option value="90">90</option>
+                  <option value="180">180</option>
+                  <option value="360">360</option>
+                </select>{' '}
+                days.
               </p>
               <div className="space-y-2 mb-4">
                 <div className="flex items-center gap-2">
@@ -480,8 +463,9 @@ export default function NewsTopicSortModal({
                   <input
                     type="date"
                     value={lastDeletion}
-                    onChange={(e) => setLastDeletion(e.target.value)}
-                    className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm min-w-0"
+                    readOnly
+                    className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm min-w-0 bg-gray-100 text-gray-600"
+                    aria-label="Last deletion (auto-updated, read-only)"
                   />
                 </div>
                 <div className="flex items-center gap-2">

@@ -14,6 +14,8 @@ export type ArticlePasted = OGPData & {
   customDescription?: string;
   id: string;
   userId?: string;
+  /** Username of the creator (for inline "by <username>" display on cards). */
+  creatorUsername?: string | null;
   savedAt?: string;
   topic?: NewsTopic;
   languageCode?: string | null;
@@ -163,6 +165,7 @@ export default function NewsArticlesList({
   const [showOnlyMyOgNews, setShowOnlyMyOgNews] = useState(false);
   const [showExpired, setShowExpired] = useState(false);
   const [showDeletedTemporarily, setShowDeletedTemporarily] = useState(false);
+  const [showOnlyLiked, setShowOnlyLiked] = useState(false);
   const [selectedSport, setSelectedSport] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -195,6 +198,8 @@ export default function NewsArticlesList({
   const [expandedArticleIds, setExpandedArticleIds] = useState<Set<string>>(new Set());
   const [removeConfirmArticleId, setRemoveConfirmArticleId] = useState<string | null>(null);
   const [previewArticleId, setPreviewArticleId] = useState<string | null>(null);
+  /** Creator username for the article currently shown in the preview modal ("by <username>"). */
+  const [previewCreatorUsername, setPreviewCreatorUsername] = useState<string | null>(null);
   const [likesMap, setLikesMap] = useState<Record<string, { count: number; likedByMe: boolean }>>({});
   const [likeLoadingId, setLikeLoadingId] = useState<string | null>(null);
   const [shareModalArticle, setShareModalArticle] = useState<ArticlePasted | null>(null);
@@ -256,6 +261,34 @@ export default function NewsArticlesList({
     }
   }, [creatorModalArticleId, fetchCreator]);
 
+  // When preview modal opens, fetch creator username for "by <username>" display.
+  useEffect(() => {
+    if (previewArticleId == null) {
+      setPreviewCreatorUsername(null);
+      return;
+    }
+    const token = typeof window !== 'undefined'
+      ? (adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token'))
+      : null;
+    const headers: HeadersInit = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    fetch(`/api/news/ogp/${previewArticleId}/creator`, { headers })
+      .then((res) => {
+        if (!res.ok) {
+          setPreviewCreatorUsername(null);
+          return;
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (data && data.username != null && data.username !== '') {
+          setPreviewCreatorUsername(data.username);
+        } else {
+          setPreviewCreatorUsername(null);
+        }
+      })
+      .catch(() => setPreviewCreatorUsername(null));
+  }, [previewArticleId, adminContext]);
+
   useEffect(() => {
     if (settingsArticleId != null && !settingsOptions) {
       fetch('/api/news/ogp-settings-options')
@@ -316,23 +349,36 @@ export default function NewsArticlesList({
 
   const filtered = useMemo(() => {
     let list = byTopic;
-    // When checkbox is checked, filter TO that subset; when unchecked, don't apply (show all).
+    // When checkbox is checked, filter TO that subset; when unchecked, exclude those OGPs.
     if (showOnlyMyOgNews && canFilterByMyOgNews) {
       list = list.filter(canEditAsCreator);
     }
-    if (showExpired) {
-      // Only expired / no-expiry OGPs
-      list = list.filter(isExpiredOrNoExpiry);
-      // When \"Show expired\" is ON but \"Show deleted temporarily\" is OFF,
-      // hide deleted items so this view shows only expired (non-deleted) OGPs.
-      if (!showDeletedTemporarily) {
-        list = list.filter((a) => !a.deletedAt);
+    // Expired and deleted visibility.
+    if (isSuperAdmin) {
+      // Super admin: old logic — when checkboxes are OFF, show all; when ON, filter TO that subset.
+      if (showExpired) {
+        list = list.filter(isExpiredOrNoExpiry);
+        if (!showDeletedTemporarily) {
+          list = list.filter((a) => !a.deletedAt);
+        }
+      }
+      if (showDeletedTemporarily) {
+        list = list.filter((a) => !!a.deletedAt);
+      }
+    } else {
+      // Normal user: when OFF exclude expired/deleted; when ON show only those.
+      if (!showExpired && !showDeletedTemporarily) {
+        list = list.filter((a) => isNotExpired(a) && !a.deletedAt);
+      } else if (showExpired && !showDeletedTemporarily) {
+        list = list.filter((a) => isExpiredOrNoExpiry(a) && !a.deletedAt);
+      } else if (!showExpired && showDeletedTemporarily) {
+        list = list.filter((a) => !!a.deletedAt);
+      } else {
+        list = list.filter((a) => isExpiredOrNoExpiry(a) || !!a.deletedAt);
       }
     }
-    if (showDeletedTemporarily) {
-      // When \"Show deleted temporarily\" is ON, restrict to deleted OGPs (any expiry state).
-      // If \"Show expired\" is also ON, the combination results in deleted + expired/no-expiry only.
-      list = list.filter((a) => !!a.deletedAt);
+    if (showOnlyLiked) {
+      list = list.filter((a) => (likesMap[a.id]?.count ?? 0) >= 1);
     }
     if (selectedSport) {
       list = list.filter((a) => (a.topic ?? '').toLowerCase() === selectedSport.toLowerCase());
@@ -358,11 +404,17 @@ export default function NewsArticlesList({
     showExpired,
     showDeletedTemporarily,
     canFilterByMyOgNews,
+    showOnlyLiked,
+    likesMap,
+    isSuperAdmin,
   ]);
 
   const sorted = useMemo(() => {
     const list = [...filtered];
-    if (sortOrder === 'date-desc') {
+    if (showOnlyLiked) {
+      // "I like" mode: sort by like count descending (most liked first)
+      list.sort((a, b) => (likesMap[b.id]?.count ?? 0) - (likesMap[a.id]?.count ?? 0));
+    } else if (sortOrder === 'date-desc') {
       list.sort((a, b) => new Date(b.savedAt ?? 0).getTime() - new Date(a.savedAt ?? 0).getTime());
     } else if (sortOrder === 'date-asc') {
       list.sort((a, b) => new Date(a.savedAt ?? 0).getTime() - new Date(b.savedAt ?? 0).getTime());
@@ -372,7 +424,7 @@ export default function NewsArticlesList({
       list.sort((a, b) => (b.title || b.url || '').localeCompare(a.title || a.url || '', undefined, { sensitivity: 'base' }));
     }
     return list;
-  }, [filtered, sortOrder]);
+  }, [filtered, sortOrder, showOnlyLiked, likesMap]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / itemsPerPage));
   const start = (currentPage - 1) * itemsPerPage;
@@ -394,10 +446,10 @@ export default function NewsArticlesList({
     return Array.from({ length: to - from + 1 }, (_, i) => from + i);
   }, [currentPage, totalPages]);
 
-  const paginatedIds = useMemo(() => paginated.map((a) => a.id), [paginated]);
+  const allArticleIds = useMemo(() => byTopic.map((a) => a.id), [byTopic]);
 
   useEffect(() => {
-    if (paginatedIds.length === 0) {
+    if (allArticleIds.length === 0) {
       setLikesMap({});
       return;
     }
@@ -405,11 +457,11 @@ export default function NewsArticlesList({
       ? (adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token'))
       : null;
     const headers: HeadersInit = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-    fetch(`/api/news/ogp/likes?ids=${paginatedIds.join(',')}`, { headers })
+    fetch(`/api/news/ogp/likes?ids=${allArticleIds.join(',')}`, { headers })
       .then((r) => r.json())
       .then((data) => setLikesMap(data ?? {}))
       .catch(() => setLikesMap({}));
-  }, [paginatedIds.join(','), adminContext]);
+  }, [allArticleIds.join(','), adminContext]);
 
   const handleLikeClick = useCallback(async (articleId: string) => {
     const token = typeof window !== 'undefined'
@@ -611,7 +663,7 @@ export default function NewsArticlesList({
       </div>
 
       {/* Pasted - OGP cards in a grid (multiple per row) */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden max-h-[102vh]">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden max-h-[126vh]">
         <div className="bg-gray-800 text-white px-4 py-2 flex items-center justify-between gap-2">
           <span className="font-semibold">
             {activeTopic === ALL_TOPICS
@@ -637,7 +689,7 @@ export default function NewsArticlesList({
                   className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                   aria-label={t('news_show_only_my_ogp')}
                 />
-                <span className="text-yellow-300 text-sm font-medium whitespace-nowrap">
+                <span className="text-yellow-300 text-sm whitespace-nowrap">
                   {t('news_show_only_my_ogp')}
                 </span>
               </label>
@@ -653,7 +705,7 @@ export default function NewsArticlesList({
                 className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                 aria-label="Show expired"
               />
-              <span className="text-yellow-300 text-sm font-medium whitespace-nowrap">
+              <span className="text-yellow-300 text-sm whitespace-nowrap">
                 Show expired
               </span>
             </label>
@@ -668,7 +720,7 @@ export default function NewsArticlesList({
                 className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                 aria-label="Show deleted temporarily"
               />
-              <span className="text-yellow-300 text-sm font-medium whitespace-nowrap">
+              <span className="text-yellow-300 text-sm whitespace-nowrap">
                 Show deleted temporarily
               </span>
             </label>
@@ -699,6 +751,23 @@ export default function NewsArticlesList({
             >
               <Clock className="w-5 h-5" />
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowOnlyLiked((v) => !v);
+                setCurrentPage(1);
+              }}
+              className={`p-2 rounded-lg transition-colors ${
+                showOnlyLiked
+                  ? 'bg-amber-500 text-amber-900'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+              title={showOnlyLiked ? 'Show all articles' : 'Show only OGPs with ≥1 like, sorted most liked first'}
+              aria-pressed={showOnlyLiked}
+              aria-label="Show only OGPs with at least one like, sorted by most liked"
+            >
+              <ThumbsUp className="w-5 h-5" />
+            </button>
             </div>
           </div>
         </div>
@@ -716,7 +785,7 @@ export default function NewsArticlesList({
                       : t('news_no_articles_default')}
             </p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 max-h-[94vh] overflow-y-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 max-h-[117vh] overflow-y-auto">
               {paginated.map((a) => (
                 <article
                   key={a.id}
@@ -745,7 +814,7 @@ export default function NewsArticlesList({
                         />
                       </a>
                     )}
-                    {/* OGP topic name - identifies which topic this article belongs to (especially when viewing "All") */}
+                    {/* OGP topic name + creator username - identifies which topic this article belongs to and who posted it */}
                     <div className="flex items-center gap-1 mb-1.5 flex-shrink-0">
                       <span
                         className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200"
@@ -754,6 +823,11 @@ export default function NewsArticlesList({
                         <Tag className="w-3 h-3 shrink-0" aria-hidden />
                         {translateTopic(a.topic ?? 'News')}
                       </span>
+                      {a.creatorUsername && (
+                        <span className="ml-auto text-[11px] text-blue-600 whitespace-nowrap">
+                          by {a.creatorUsername}
+                        </span>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -1127,9 +1201,12 @@ export default function NewsArticlesList({
                   <h3 className="text-lg font-bold text-gray-900">
                     {article.title || article.url}
                   </h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {formatDate(article.savedAt ?? new Date().toISOString())}
-                  </p>
+                  <div className="text-sm text-gray-500 mt-1 w-full flex items-center justify-between gap-2 flex-nowrap">
+                    <span className="flex-shrink-0">{formatDate(article.savedAt ?? new Date().toISOString())}</span>
+                    {previewCreatorUsername && (
+                      <span className="text-blue-600 flex-shrink-0 ml-auto">by {previewCreatorUsername}</span>
+                    )}
+                  </div>
                   <div className="mt-3 text-sm text-gray-700 max-h-60 overflow-y-auto overflow-x-hidden pr-2 border border-gray-200 rounded-lg p-3">
                     {article.customDescription || article.description || article.url}
                   </div>

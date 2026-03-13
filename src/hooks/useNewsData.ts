@@ -128,6 +128,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         (ogpData ?? []).map((a: any) => ({
           id: a.id,
           userId: a.userId,
+          creatorUsername: a.creatorUsername ?? null,
           createdByCurrentUser: a.createdByCurrentUser === true,
           createdBySuperAdmin: a.createdBySuperAdmin === true,
           title: a.title,

@@ -131,7 +131,7 @@ export default function NewsTopicBar({
   const isPencilDisabled = isAllSelected || isDefaultTopicSelected || isSuperAdminTopicSelected;
 
   return (
-    <div className="flex items-center gap-2 mb-4 flex-nowrap overflow-hidden">
+    <div className="flex items-end gap-2 mb-4 flex-nowrap overflow-hidden">
       {/* Add new topic button */}
       {onAddTopic && (
         <button
@@ -213,10 +213,10 @@ export default function NewsTopicBar({
       {/* Topic buttons - scrollable container (excludes user-created when dropdown is shown) */}
       <div
         ref={scrollRef}
-        className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden scroll-smooth [&::-webkit-scrollbar]:hidden"
+        className="flex-1 min-w-0 h-10 overflow-x-auto overflow-y-hidden scroll-smooth [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        <div className="flex items-center gap-2 flex-nowrap w-max py-1 pr-1">
+        <div className="flex items-end gap-2 flex-nowrap w-max min-h-full pr-1">
           {topicsForBar.map((topic) => {
             const isActive = activeTopic === topic;
             const isOgpTopicByCurrentUser =
@@ -259,7 +259,7 @@ export default function NewsTopicBar({
 
       {/* Sectors inserted by users (super admin only) */}
       {topicNamesCreatedByNormalUsers.length > 0 && (
-        <div className="flex-shrink-0 flex flex-col gap-1 ml-2">
+        <div className="flex-shrink-0 flex flex-col justify-end gap-1 ml-2">
           <label htmlFor="user-sectors-select" className="text-xs font-medium text-gray-600 whitespace-nowrap">
             Topics inserted by users
           </label>
@@ -270,7 +270,7 @@ export default function NewsTopicBar({
               const v = e.target.value;
               if (v) onTopicSelect(v);
             }}
-            className="px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 text-sm font-medium min-w-[160px] focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+            className="h-10 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 text-sm font-medium min-w-[160px] focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
           >
             <option value="">Select topic</option>
             <option value={ALL_USER_SECTORS}>All users&apos; topics</option>
