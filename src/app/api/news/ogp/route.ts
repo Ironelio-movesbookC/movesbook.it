@@ -42,11 +42,13 @@ export async function GET(request: NextRequest) {
       orderBy: { savedAt: 'desc' },
       include: {
         deletedBy: { select: { name: true, username: true } },
+        user: { select: { username: true } },
       } as never,
     })) as Array<
       Awaited<ReturnType<typeof prisma.ogpArticle.findMany>>[number] & {
         deletedByUserId: string | null;
         deletedBy: { name: string | null; username: string } | null;
+        user: { username: string } | null;
       }
     >;
 
@@ -99,6 +101,7 @@ export async function GET(request: NextRequest) {
     const articles = filtered.map((a) => ({
       id: a.id,
       userId: a.userId,
+      creatorUsername: a.user?.username ?? null,
       /** When true, article was created by the current super admin (so Pencil/settings/delete show as creator). */
       ...(superAdminEffectiveUserId != null && { createdByCurrentUser: a.userId === superAdminEffectiveUserId }),
       /** When true, article was posted by a Super Admin account (show MB badge instead of trash). */

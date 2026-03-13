@@ -178,7 +178,7 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
   return (
     <div
       className={`flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden ${
-        embedded ? 'flex-1 min-h-0 max-h-[133vh]' : ''
+        embedded ? 'flex-1 min-h-0 max-h-[158vh]' : ''
       }`}
     >
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50">

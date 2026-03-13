@@ -270,7 +270,11 @@ export default function AdminNewsLinksPage() {
           <NewsTopicSortModal
             isOpen={showTopicSortModal}
             onClose={() => setShowTopicSortModal(false)}
-            topics={topics}
+            topics={
+              isSuperAdmin && topicNamesCreatedByNormalUsers.length > 0
+                ? topics.filter((t) => !topicNamesCreatedByNormalUsers.includes(t))
+                : topics
+            }
             onSave={async (ordered) => {
               await saveTopicOrder(ordered);
             }}
