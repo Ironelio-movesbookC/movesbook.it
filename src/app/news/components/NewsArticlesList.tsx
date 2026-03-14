@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag, ThumbsUp, Share2 } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
@@ -203,6 +203,8 @@ export default function NewsArticlesList({
   const [likesMap, setLikesMap] = useState<Record<string, { count: number; likedByMe: boolean }>>({});
   const [likeLoadingId, setLikeLoadingId] = useState<string | null>(null);
   const [shareModalArticle, setShareModalArticle] = useState<ArticlePasted | null>(null);
+  const ogpGridRef = useRef<HTMLDivElement>(null);
+  const [ogpListMaxHeight, setOgpListMaxHeight] = useState<number | null>(null);
 
   const toggleArticleExpanded = useCallback((articleId: string) => {
     setExpandedArticleIds((prev) => {
@@ -366,9 +368,11 @@ export default function NewsArticlesList({
         list = list.filter((a) => !!a.deletedAt);
       }
     } else {
-      // Normal user: when OFF exclude expired/deleted; when ON show only those.
+      // Normal user: when OFF exclude expired/deleted and OGPs with no News Setting; when ON show only those.
       if (!showExpired && !showDeletedTemporarily) {
-        list = list.filter((a) => isNotExpired(a) && !a.deletedAt);
+        list = list.filter(
+          (a) => isNotExpired(a) && !a.deletedAt && hasAnyVisibilitySettings(a)
+        );
       } else if (showExpired && !showDeletedTemporarily) {
         list = list.filter((a) => isExpiredOrNoExpiry(a) && !a.deletedAt);
       } else if (!showExpired && showDeletedTemporarily) {
@@ -438,6 +442,42 @@ export default function NewsArticlesList({
     () => sorted.slice(start, start + itemsPerPage),
     [sorted, start, itemsPerPage]
   );
+
+  // OGP list height = row1 + row2 + row3 (measure first element of row 4)
+  const updateOgpListMaxHeight = useCallback(() => {
+    const grid = ogpGridRef.current;
+    if (!grid || typeof document === 'undefined') return;
+    const count = grid.children.length;
+    if (count === 0) {
+      setOgpListMaxHeight(null);
+      return;
+    }
+    const computed = getComputedStyle(grid);
+    const colCount = computed.gridTemplateColumns.split(' ').filter(Boolean).length || 1;
+    const firstOfRow4Index = colCount * 3;
+    if (count <= firstOfRow4Index) {
+      setOgpListMaxHeight(null);
+      return;
+    }
+    const firstOfRow4 = grid.children[firstOfRow4Index];
+    if (firstOfRow4 && firstOfRow4 instanceof HTMLElement) {
+      setOgpListMaxHeight(firstOfRow4.offsetTop);
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    updateOgpListMaxHeight();
+  }, [paginated.length, updateOgpListMaxHeight]);
+
+  useEffect(() => {
+    const grid = ogpGridRef.current;
+    if (!grid) return;
+    const ro = new ResizeObserver(updateOgpListMaxHeight);
+    ro.observe(grid);
+    // When card content (e.g. images) loads, row heights can change; observe first child to re-measure
+    if (grid.firstElementChild) ro.observe(grid.firstElementChild);
+    return () => ro.disconnect();
+  }, [updateOgpListMaxHeight]);
 
   const pageNumbers = useMemo(() => {
     let from = Math.max(1, currentPage - Math.floor(MAX_PAGE_BUTTONS / 2));
@@ -662,8 +702,8 @@ export default function NewsArticlesList({
         </div>
       </div>
 
-      {/* Pasted - OGP cards in a grid (multiple per row) */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden max-h-[126vh]">
+      {/* Pasted - OGP cards in a grid (multiple per row); max 3 rows visible, scroll when more */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="bg-gray-800 text-white px-4 py-2 flex items-center justify-between gap-2">
           <span className="font-semibold">
             {activeTopic === ALL_TOPICS
@@ -729,7 +769,7 @@ export default function NewsArticlesList({
               type="button"
               onClick={() => setSortOrder((s) => (s === 'alpha-asc' ? 'alpha-desc' : 'alpha-asc'))}
               className={`p-2 rounded-lg transition-colors ${
-                sortOrder === 'alpha-asc' || sortOrder === 'alpha-desc'
+                !showOnlyLiked && (sortOrder === 'alpha-asc' || sortOrder === 'alpha-desc')
                   ? 'bg-amber-500 text-amber-900'
                   : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
               }`}
@@ -742,7 +782,7 @@ export default function NewsArticlesList({
               type="button"
               onClick={() => setSortOrder((s) => (s === 'date-desc' ? 'date-asc' : 'date-desc'))}
               className={`p-2 rounded-lg transition-colors ${
-                sortOrder === 'date-desc' || sortOrder === 'date-asc'
+                !showOnlyLiked && (sortOrder === 'date-desc' || sortOrder === 'date-asc')
                   ? 'bg-amber-500 text-amber-900'
                   : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
               }`}
@@ -785,7 +825,11 @@ export default function NewsArticlesList({
                       : t('news_no_articles_default')}
             </p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 max-h-[117vh] overflow-y-auto">
+            <div
+              ref={ogpGridRef}
+              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 overflow-y-auto"
+              style={ogpListMaxHeight != null ? { maxHeight: ogpListMaxHeight } : undefined}
+            >
               {paginated.map((a) => (
                 <article
                   key={a.id}
