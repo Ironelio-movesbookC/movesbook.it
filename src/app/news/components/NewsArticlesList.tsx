@@ -154,6 +154,12 @@ export default function NewsArticlesList({
     }
   };
 
+  /** True if the OGP has an expiration date set in News Setting (non-blank). When false, treat as "expired" for default filtering. */
+  const hasExpirationDateSet = (a: ArticlePasted): boolean => {
+    const exp = a.visibility?.expiresAt;
+    return exp != null && String(exp).trim() !== '';
+  };
+
   const translateTopic = useCallback((topic: string) => {
     const key = NEWS_TOPIC_KEYS[topic];
     return key ? t(key) : topic;
@@ -368,10 +374,14 @@ export default function NewsArticlesList({
         list = list.filter((a) => !!a.deletedAt);
       }
     } else {
-      // Normal user: when OFF exclude expired/deleted and OGPs with no News Setting; when ON show only those.
+      // Normal user: when OFF exclude expired, no expiration date, and deleted; when ON show expired / no-expiry only.
       if (!showExpired && !showDeletedTemporarily) {
         list = list.filter(
-          (a) => isNotExpired(a) && !a.deletedAt && hasAnyVisibilitySettings(a)
+          (a) =>
+            hasExpirationDateSet(a) &&
+            isNotExpired(a) &&
+            !a.deletedAt &&
+            hasAnyVisibilitySettings(a)
         );
       } else if (showExpired && !showDeletedTemporarily) {
         list = list.filter((a) => isExpiredOrNoExpiry(a) && !a.deletedAt);
