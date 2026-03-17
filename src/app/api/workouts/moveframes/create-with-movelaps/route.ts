@@ -157,11 +157,30 @@ export async function POST(request: NextRequest) {
         ? await Promise.all(
             movelaps.map((movelap: any) => {
               // If appliedTechnique exists, append it to the movelap notes
-              let movelapNotes = movelap.notes || '';
+              const rawNotes = typeof movelap?.notes === 'string' ? movelap.notes : '';
+              let movelapNotes = rawNotes;
               if (appliedTechnique) {
                 movelapNotes = movelapNotes 
                   ? `${movelapNotes}\n\nTechnique: ${appliedTechnique}`
                   : `Technique: ${appliedTechnique}`;
+              }
+              const hasCircuitMeta =
+                movelap?.circuitLetter ||
+                movelap?.circuitIndex != null ||
+                movelap?.stationNumber != null ||
+                movelap?.localSeriesNumber != null ||
+                movelap?.seriesNumber != null;
+              if (hasCircuitMeta) {
+                const cleanedNotes = movelapNotes.replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '').trim();
+                const circuitMeta = {
+                  circuitLetter: movelap?.circuitLetter ?? null,
+                  circuitIndex: movelap?.circuitIndex ?? null,
+                  seriesNumber: movelap?.seriesNumber ?? null,
+                  localSeriesNumber: movelap?.localSeriesNumber ?? movelap?.seriesNumber ?? null,
+                  stationNumber: movelap?.stationNumber ?? null
+                };
+                const metaString = `[CIRCUIT_META]${JSON.stringify(circuitMeta)}[/CIRCUIT_META]`;
+                movelapNotes = cleanedNotes ? `${cleanedNotes}\n\n${metaString}` : metaString;
               }
               
               return tx.movelap.create({

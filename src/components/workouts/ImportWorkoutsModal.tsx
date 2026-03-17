@@ -58,11 +58,11 @@ export default function ImportWorkoutsModal({ targetSection, onClose, onImport }
       console.error('Error loading workouts:', error);
     }
     setIsLoading(false);
-  }, [sourceType, selectedSource]);
+  }, [selectedSource, sourceType]);
 
   useEffect(() => {
     loadSources();
-  }, [sourceType, loadSources]);
+  }, [loadSources]);
 
   useEffect(() => {
     if (selectedSource) {
@@ -253,4 +253,3 @@ export default function ImportWorkoutsModal({ targetSection, onClose, onImport }
     </div>
   );
 }
-

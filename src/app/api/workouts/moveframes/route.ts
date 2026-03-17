@@ -200,15 +200,19 @@ export async function POST(request: NextRequest) {
         pauseValue = `${minutes}'${seconds.toString().padStart(2, '0')}"`;
       }
       
+      const repsParsed = lap.reps != null && lap.reps !== '' ? parseInt(String(lap.reps), 10) : null;
+      const repsValid = repsParsed != null && !Number.isNaN(repsParsed) ? repsParsed : null;
+      const distanceParsed = lap.distance != null && lap.distance !== '' ? parseInt(String(lap.distance), 10) : null;
+      const distanceValid = distanceParsed != null && !Number.isNaN(distanceParsed) ? distanceParsed : null;
       return {
         repetitionNumber: lap.repetitionNumber || (index + 1),
-        distance: lap.distance ? parseInt(lap.distance) : null,
-        speed: lap.reps ? String(lap.reps) : (lap.speed || null), // 2026-01-22 14:20 UTC - Use reps for circuits, speed for regular
+        distance: distanceValid,
+        speed: (lap.circuitLetter && lap.reps != null && lap.reps !== '') ? String(lap.reps) : (lap.speed || null), // 2026-01-22 14:20 UTC - Use reps for circuits only; for bodybuilding use speed (tempo)
         style: lap.sector || lap.style || null, // 2026-01-22 14:20 UTC - Use sector for circuits, style for regular
         pace: lap.pace || null,
         time: lap.time || null,
-        reps: lap.reps ? parseInt(lap.reps) : null,
-        weight: lap.weight || null,
+        reps: repsValid,
+        weight: lap.weight != null && lap.weight !== '' ? String(lap.weight) : null,
         tools: lap.tools || null,
         r1: lap.r1 || null,
         r2: lap.r2 || null,
@@ -218,7 +222,11 @@ export async function POST(request: NextRequest) {
         restType: convertRestTypeToEnum(lap.restType),
         pause: pauseValue,
         macroFinal: lap.macroFinal || null,
-        alarm: lap.alarm ? parseInt(lap.alarm) : null,
+        alarm: (() => {
+          if (lap.alarm == null || lap.alarm === '') return null;
+          const n = parseInt(String(lap.alarm), 10);
+          return Number.isNaN(n) ? null : n;
+        })(),
         sound: lap.sound || null,
         notes: movelapNotes || null,
         status: (lap.status || 'PENDING') as any,

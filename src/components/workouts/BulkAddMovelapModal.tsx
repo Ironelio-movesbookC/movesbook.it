@@ -83,13 +83,13 @@ function BulkAddMovelapModal({
     }
 
     setPreview(movelaps);
-  }, [moveframe.movelaps, count, baseDistance, baseSpeed, basePause, baseReps, variation, variationAmount, isBodyBuilding]);
+  }, [baseDistance, basePause, baseReps, baseSpeed, count, isBodyBuilding, moveframe.movelaps, variation, variationAmount]);
 
   useEffect(() => {
     if (isOpen) {
       generateMovelaps();
     }
-  }, [isOpen, generateMovelaps]);
+  }, [generateMovelaps, isOpen]);
 
   const handleSave = () => {
     onSave(preview);

@@ -353,7 +353,7 @@ export default function DayRowTable({
         {sportSummaries[0] ? (
           <div className="flex items-center justify-start gap-2">
             {useImageIcons ? (
-              <Image src={sportSummaries[0].icon} alt={sportSummaries[0].sport} width={40} height={40} className="w-10 h-10 object-cover rounded flex-shrink-0" unoptimized />
+              <Image src={sportSummaries[0].icon} alt={sportSummaries[0].sport} width={40} height={40} className="object-cover rounded flex-shrink-0" unoptimized />
             ) : (
               <span className="text-2xl flex-shrink-0">{sportSummaries[0].icon}</span>
             )}
@@ -411,7 +411,7 @@ export default function DayRowTable({
         {sportSummaries[1] ? (
           <div className="flex items-center justify-start gap-2">
             {useImageIcons ? (
-              <Image src={sportSummaries[1].icon} alt={sportSummaries[1].sport} width={40} height={40} className="w-10 h-10 object-cover rounded flex-shrink-0" unoptimized />
+              <Image src={sportSummaries[1].icon} alt={sportSummaries[1].sport} width={40} height={40} className="object-cover rounded flex-shrink-0" unoptimized />
             ) : (
               <span className="text-2xl flex-shrink-0">{sportSummaries[1].icon}</span>
             )}
@@ -469,7 +469,7 @@ export default function DayRowTable({
         {sportSummaries[2] ? (
           <div className="flex items-center justify-start gap-2">
             {useImageIcons ? (
-              <Image src={sportSummaries[2].icon} alt={sportSummaries[2].sport} width={40} height={40} className="w-10 h-10 object-cover rounded flex-shrink-0" unoptimized />
+              <Image src={sportSummaries[2].icon} alt={sportSummaries[2].sport} width={40} height={40} className="object-cover rounded flex-shrink-0" unoptimized />
             ) : (
               <span className="text-2xl flex-shrink-0">{sportSummaries[2].icon}</span>
             )}
@@ -527,7 +527,7 @@ export default function DayRowTable({
         {sportSummaries[3] ? (
           <div className="flex items-center justify-start gap-2">
             {useImageIcons ? (
-              <Image src={sportSummaries[3].icon} alt={sportSummaries[3].sport} width={40} height={40} className="w-10 h-10 object-cover rounded flex-shrink-0" unoptimized />
+              <Image src={sportSummaries[3].icon} alt={sportSummaries[3].sport} width={40} height={40} className="object-cover rounded flex-shrink-0" unoptimized />
             ) : (
               <span className="text-2xl flex-shrink-0">{sportSummaries[3].icon}</span>
             )}
@@ -905,7 +905,6 @@ export default function DayRowTable({
     </React.Fragment>
   );
 }
-
 
 
 

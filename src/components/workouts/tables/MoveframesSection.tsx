@@ -500,8 +500,8 @@ export default function MoveframesSection({
             if (onAddMovelap) onAddMovelap(selectedMoveframe);
           }}
           onBulkAddMovelaps={() => {
-            alert('Bulk Add Movelaps feature - integration in progress');
             setShowInfoPanel(false);
+            alert('Bulk Add Movelaps is planned. For now, use "Add Movelap" to add movelaps one at a time.');
           }}
           onEditMovelap={(movelap) => {
             setShowInfoPanel(false);

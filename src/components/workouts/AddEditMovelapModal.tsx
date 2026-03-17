@@ -20,6 +20,10 @@ interface AddEditMovelapModalProps {
   mode: 'add' | 'edit';
   moveframe: any;
   existingMovelap?: any;
+  /** When adding via "Add movelap" from Options - the exercise to inherit data from */
+  sourceMovelapForAdd?: any;
+  /** When adding via "Add movelap" from Options - insert after this index (0-based) */
+  movelapInsertIndex?: number | null;
 }
 
 // Sport-specific configurations
@@ -88,7 +92,9 @@ export default function AddEditMovelapModal({
   onCopyToAll,
   mode,
   moveframe,
-  existingMovelap
+  existingMovelap,
+  sourceMovelapForAdd,
+  movelapInsertIndex
 }: AddEditMovelapModalProps) {
   const sport = moveframe.sport || 'SWIM';
   const config = SPORT_CONFIGS[sport as keyof typeof SPORT_CONFIGS] || SPORT_CONFIGS.SWIM;
@@ -305,40 +311,64 @@ export default function AddEditMovelapModal({
       setRestType(existingMovelap.restType || '');
       setR1(existingMovelap.r1 || '');
       setR2(existingMovelap.r2 || '');
+    } else if (mode === 'add' && sourceMovelapForAdd && movelapInsertIndex != null) {
+      // ADD MODE (from "Add movelap" on a row): Pre-fill with that exercise's data; insert after it
+      const src = sourceMovelapForAdd;
+      const insertPosition = movelapInsertIndex + 1; // 1-based "insert after position N"
+      setSequence(insertPosition);
+      setDistance(src.distance?.toString() || '');
+      setSpeed(src.speed || src._fastPlannerRipTime || '');
+      setStyle(src.style || '');
+      setPause(typeof src.pause === 'string' ? src.pause : (src._fastPlannerBreak || src.pause?.toString() || ''));
+      setPace(src.pace || '');
+      setTime(src.time || '');
+      setNotes('');
+      setAlarm(src.alarm?.toString() || '');
+      setSound(src.sound || 'Beep');
+      setMacroFinal(src.macroFinal || "0'");
+      setReps(src.reps?.toString() || '');
+      setWeight(src.weight || '');
+      setTools(src.tools || '');
+      setMuscularSector(src.muscularSector || '');
+      setExercise(src.exercise || '');
+      setRestType(src.restType || '');
+      setR1(src.r1 || '');
+      setR2(src.r2 || '');
     } else {
-      // ADD MODE: Pre-fill with the LAST movelap's data (for faster input)
+      // ADD MODE: Pre-fill from source movelap (when "Add movelap" from Options) or last movelap
       const movelaps = moveframe.movelaps || [];
-      const nextSequence = movelaps.length + 1;
-      const lastMovelap = movelaps[movelaps.length - 1]; // Get the last movelap
+      const sourceMovelap = sourceMovelapForAdd ?? movelaps[movelaps.length - 1];
+      // When adding via "Add movelap" from Options: insert after movelapInsertIndex → repetitionNumber = movelapInsertIndex + 2
+      const nextSequence = typeof movelapInsertIndex === 'number' ? movelapInsertIndex + 2 : movelaps.length + 1;
       
       setSequence(nextSequence);
       
-      // If there's a previous movelap, inherit its data for faster data entry
-      if (lastMovelap) {
-        setDistance(lastMovelap.distance?.toString() || '');
-        setSpeed(lastMovelap.speed || '');
-        setStyle(lastMovelap.style || '');
-        setPause(lastMovelap.pause || '');
-        setPace('');  // Clear pace/time for new lap
-        setTime('');
-        setNotes('');  // Clear notes for new lap
-        setAlarm(lastMovelap.alarm?.toString() || '');
-        setSound(lastMovelap.sound || 'Beep');
-        setMacroFinal(lastMovelap.macroFinal || "0'");
-        setReps(lastMovelap.reps?.toString() || '');
-        setWeight(lastMovelap.weight || '');
-        setTools(lastMovelap.tools || '');
-        setMuscularSector(lastMovelap.muscularSector || '');
-        setExercise(lastMovelap.exercise || '');
-        setRestType(lastMovelap.restType || '');
-        setR1(lastMovelap.r1 || '');
-        setR2(lastMovelap.r2 || '');
+      if (sourceMovelap) {
+        // Pre-fill with the selected exercise's data (when adding via Options) or last movelap
+        setDistance(sourceMovelap.distance?.toString() || '');
+        setSpeed(sourceMovelap.speed || '');
+        setStyle(sourceMovelap.style || '');
+        setPause(sourceMovelap.pause || (sport === 'BODY_BUILDING' ? "1'30\"" : ''));
+        setPace(sourceMovelapForAdd ? '' : (sourceMovelap.pace || ''));
+        setTime(sourceMovelapForAdd ? '' : (sourceMovelap.time || ''));
+        setNotes('');
+        setAlarm(sourceMovelap.alarm?.toString() || '');
+        setSound(sourceMovelap.sound || 'Beep');
+        setMacroFinal(sourceMovelap.macroFinal || "0'");
+        setReps(sourceMovelap.reps?.toString() || '');
+        setWeight(sourceMovelap.weight || '');
+        setTools(sourceMovelap.tools || '');
+        setMuscularSector(sourceMovelap.muscularSector || '');
+        setExercise(sourceMovelap.exercise || '');
+        setRestType(sourceMovelap.restType || '');
+        setR1(sourceMovelap.r1 || '');
+        setR2(sourceMovelap.r2 || '');
       } else {
-        // No previous movelap, inherit from moveframe
+        // No source movelap, inherit from moveframe
         setDistance(moveframe.distance?.toString() || '');
         setSpeed(moveframe.speed || '');
         setStyle(moveframe.style || '');
-        setPause(moveframe.pause || '');
+        setPause(moveframe.pause || (sport === 'BODY_BUILDING' ? "1'30\"" : ''));
         setPace('');
         setTime('');
         setNotes('');
@@ -355,7 +385,7 @@ export default function AddEditMovelapModal({
         setR2('');
       }
     }
-  }, [mode, existingMovelap, moveframe, isOpen]);
+  }, [mode, existingMovelap, moveframe, sourceMovelapForAdd, movelapInsertIndex, isOpen]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -417,7 +447,8 @@ export default function AddEditMovelapModal({
         style,
         pace,
         time,
-        pause,
+        // BODY_BUILDING: default pause to 1'30" when adding if not set (fixes "Pause will not be put in the cell")
+        pause: sport === 'BODY_BUILDING' && !pause ? "1'30\"" : pause,
         macroFinal,
         alarm: alarm ? parseInt(alarm) : null,
         sound,

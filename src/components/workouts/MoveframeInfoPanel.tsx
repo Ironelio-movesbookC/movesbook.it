@@ -14,8 +14,30 @@ const stripCircuitTags = (content: string | null | undefined): string => {
   return content
     .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
     .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+    .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
+    .replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '')
     .trim();
 };
+
+/** Build "distances only" line (e.g. 100\\A2+50\\A1+200\\B1) from movelaps; second return is typed description from notes. */
+function getDistancesAndTypedDescription(moveframe: any): { distancesLine: string; typedDescription: string } {
+  const movelaps = moveframe.movelaps || [];
+  const distancesLine = movelaps.length > 0
+    ? movelaps
+        .map((lap: any) => {
+          const val = lap.distance ?? lap.reps ?? lap.weight ?? '';
+          const sp = lap.speed ?? lap.pace ?? '';
+          const v = val !== '' && val != null ? String(val) : '?';
+          const s = sp !== '' && sp != null ? String(sp) : '?';
+          return `${v}\\${s}`;
+        })
+        .join('+')
+    : '';
+  const typedDescription = typeof moveframe.notes === 'string'
+    ? stripCircuitTags(moveframe.notes)
+    : '';
+  return { distancesLine, typedDescription };
+}
 
 const extractCircuitDataFromNotes = (notes: unknown) => {
   if (typeof notes !== 'string') return null;
@@ -505,23 +527,121 @@ export default function MoveframeInfoPanel({
                   moveframe.manualMode ? 'max-h-[500px]' : 'max-h-[300px]'
                 }`}>
                   {(() => {
-                    // For manual mode, use notes (full content) instead of description (truncated)
-                    // 2026-01-22 14:45 UTC - Strip circuit tags from all content
-                    const rawContent = moveframe.manualMode 
-                      ? (moveframe.notes || moveframe.description)
-                      : moveframe.description;
-                    const content = stripCircuitTags(rawContent);
-                    
-                    return content ? (
-                      <div 
-                        className={`text-gray-700 max-w-none ${
-                          moveframe.manualMode ? 'prose prose-lg' : 'prose prose-sm'
-                        }`}
-                        style={moveframe.manualMode ? {
-                          fontSize: '16px',
-                          lineHeight: '1.8'
-                        } : undefined}
-                        dangerouslySetInnerHTML={{ __html: content }}
+                    if (moveframe.manualMode) {
+                      const rawContent = (moveframe.notes || moveframe.description) || '';
+                      const content = stripCircuitTags(rawContent);
+                      return content ? (
+                        <div
+                          className="text-gray-700 max-w-none prose prose-lg"
+                          style={{ fontSize: '16px', lineHeight: '1.8' }}
+                          dangerouslySetInnerHTML={{ __html: content }}
+                        />
+                      ) : (
+                        <p className="text-gray-700">No description provided</p>
+                      );
+                    }
+                    // Non-manual: show ONLY distances (e.g. 100\A2+50\A1+200\B1) on first row, typed description on second row if exists
+                    const distanceBasedSports = ['SWIM', 'BIKE', 'MTB', 'SPINNING', 'RUN', 'ROWING', 'CANOEING', 'SKATE', 'SKI', 'SNOWBOARD', 'HIKING', 'WALKING'];
+                    const isDistanceBased = distanceBasedSports.includes(moveframe.sport);
+                    const hasMovelaps = movelaps && movelaps.length > 0;
+                    const distancesOnlyParts: string[] = [];
+                    if (hasMovelaps && isDistanceBased) {
+                      for (const ml of movelaps) {
+                        const distRaw = ml.distance != null ? String(ml.distance).replace(/\s*m$/, '').trim() : '';
+                        const distNum = distRaw ? distRaw.replace(/\D/g, '') || distRaw : '';
+                        const speed = (ml.speed != null ? String(ml.speed).trim() : '') || '';
+                        if (distNum || distRaw) {
+                          const d = distNum || distRaw;
+                          distancesOnlyParts.push(speed ? `${d}\\${speed}` : d);
+                        }
+                      }
+                    } else if (isDistanceBased && fastPlannerPayload?.plannerType === 'aerobic' && Array.isArray(fastPlannerPayload.rows) && (fastPlannerPayload.rows as any[]).length > 0) {
+                      for (const r of fastPlannerPayload.rows as any[]) {
+                        const distRaw = r.distance != null ? String(r.distance).replace(/\s*m$/, '').trim() : '';
+                        const distNum = distRaw ? distRaw.replace(/\D/g, '') || distRaw : '';
+                        const speed = (r.speed != null ? String(r.speed).trim() : '') || '';
+                        if (distNum || distRaw) {
+                          const d = distNum || distRaw;
+                          distancesOnlyParts.push(speed ? `${d}\\${speed}` : d);
+                        }
+                      }
+                    }
+                    const distancesOnlyLine = distancesOnlyParts.length > 0 ? distancesOnlyParts.join('+') : '';
+                    let typedDescriptionLine = '';
+                    if (fastPlannerPayload && typeof (fastPlannerPayload as any).descriptionInstructions === 'string') {
+                      typedDescriptionLine = ((fastPlannerPayload as any).descriptionInstructions as string).trim();
+                    }
+                    if (!typedDescriptionLine && moveframe.description) {
+                      const stripped = stripCircuitTags(moveframe.description);
+                      const brIndex = stripped.indexOf('<br/>');
+                      const nlIndex = stripped.indexOf('\n');
+                      const splitAt = brIndex >= 0 ? brIndex : (nlIndex >= 0 ? nlIndex : -1);
+                      if (splitAt > 0) {
+                        const after = stripped.slice(splitAt).replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim();
+                        if (after) typedDescriptionLine = after;
+                      }
+                    }
+                    if (distancesOnlyLine || typedDescriptionLine) {
+                      return (
+                        <div className="text-gray-700 text-sm space-y-2">
+                          {distancesOnlyLine && (
+                            <p className="font-medium text-gray-900 whitespace-pre-wrap">{distancesOnlyLine}</p>
+                          )}
+                          {typedDescriptionLine && (
+                            <div
+                              className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap"
+                              dangerouslySetInnerHTML={{ __html: typedDescriptionLine.replace(/\n/g, '<br/>') }}
+                            />
+                          )}
+                        </div>
+                      );
+                    }
+                    // Parse pipe-separated format (e.g. "100m | Track | Speed A1 | Strokes 60 | ...") to extract distances only
+                    const fallbackContent = stripCircuitTags(moveframe.description || '');
+                    if (fallbackContent && fallbackContent.includes(' | ') && fallbackContent.includes('Speed ')) {
+                      const parsedParts: string[] = [];
+                      const lines = fallbackContent.split(/\r?\n/);
+                      for (const line of lines) {
+                        const parts = line.split(/\s*\|\s*/).map((p) => p.trim());
+                        if (parts.length >= 1) {
+                          const firstPart = (parts[0] || '').replace(/\s*m$/i, '').trim();
+                          const distNum = firstPart.replace(/\D/g, '') || firstPart;
+                          const speedPart = parts.find((p) => p.startsWith('Speed '));
+                          const speed = speedPart ? speedPart.replace(/^Speed\s+/i, '').trim() : '';
+                          if (distNum) {
+                            parsedParts.push(speed ? `${distNum}\\${speed}` : distNum);
+                          }
+                        }
+                      }
+                      const parsedDistancesOnly = parsedParts.join('+');
+                      if (parsedDistancesOnly) {
+                        // Typed description from notes (user part outside metadata tags) if not already set
+                        let parsedTypedDesc = typedDescriptionLine;
+                        if (!parsedTypedDesc && typeof moveframe.notes === 'string') {
+                          const userPart = stripCircuitTags(
+                            moveframe.notes
+                              .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
+                              .trim()
+                          );
+                          if (userPart) parsedTypedDesc = userPart;
+                        }
+                        return (
+                          <div className="text-gray-700 text-sm space-y-2">
+                            <p className="font-medium text-gray-900 whitespace-pre-wrap">{parsedDistancesOnly}</p>
+                            {parsedTypedDesc && (
+                              <div
+                                className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap"
+                                dangerouslySetInnerHTML={{ __html: parsedTypedDesc.replace(/\n/g, '<br/>') }}
+                              />
+                            )}
+                          </div>
+                        );
+                      }
+                    }
+                    return fallbackContent ? (
+                      <div
+                        className="text-gray-700 max-w-none prose prose-sm"
+                        dangerouslySetInnerHTML={{ __html: fallbackContent }}
                       />
                     ) : (
                       <p className="text-gray-700">No description provided</p>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import CircuitPreferencesModal from './CircuitPreferencesModal';
 
@@ -97,6 +97,9 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
 
   // State for selected cell (for keyboard-like input)
   const [selectedCell, setSelectedCell] = useState<{ rowId: number; field: string } | null>(null);
+  // Ref to remember last selected row for toolbar quick-fill (so value goes to correct row even when focus moves to toolbar)
+  const lastSelectedRowIdRef = React.useRef<number | null>(null);
+  const exerciseListScrollRef = React.useRef<HTMLDivElement>(null);
 
   // State for exercise rows
   const [rows, setRows] = useState<FastPlannerRow[]>([
@@ -109,6 +112,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   // Selected muscle group for filtering exercises
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<string>('all');
   const ZOOM = 0.55;
+  /** Larger scale for sector (muscle group) icons – increased for easier tap/visibility */
+  const SECTOR_ZOOM = 1.25;
   const [showSubExercises, setShowSubExercises] = useState<boolean>(false);
 
   // State for which exercise toolbar button is active (speed, series, etc.)
@@ -135,6 +140,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   const [planPause, setPlanPause] = useState<string>("1'30\"");
   const [planCandidate, setPlanCandidate] = useState<any>(null);
   const [planExerciseSearch, setPlanExerciseSearch] = useState<string>('');
+  const [userDescription, setUserDescription] = useState<string>('');
   const loadedMoveframeIdRef = React.useRef<string | null>(null);
   const planListRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -359,10 +365,10 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     }))
   ).sort((a, b) => a.name.localeCompare(b.name));
 
-  const getSectorForExercise = (exerciseName: string): string | null => {
+  const getSectorForExercise = React.useCallback((exerciseName: string): string | null => {
     const ex = mockExercises.find(e => e.name === exerciseName);
     return ex?.sector || null;
-  };
+  }, [mockExercises]);
 
   const buildMovelapsFromRows = (filledRows: FastPlannerRow[]) => {
     return filledRows.map((row, index) => {
@@ -397,17 +403,105 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     });
   };
 
-  const buildFastPlannerDescription = (filledRows: FastPlannerRow[]) => {
-    const sectors = Array.from(
-      new Set(
-        filledRows
-          .map(r => (r.exercise ? getSectorForExercise(r.exercise) : null))
-          .filter((s): s is string => typeof s === 'string' && s.trim() !== '')
-      )
-    );
-    const base = `Fast planner - ${filledRows.length} exercises`;
-    return sectors.length > 0 ? `${base} - ${sectors.join(' - ')}` : base;
+  /** Build distances-only line (e.g. 10\\A1+8\\B2+12\\A2) for moveframe description row 1 */
+  const buildFastPlannerDistancesOnly = (filledRows: FastPlannerRow[]) => {
+    const parts = filledRows
+      .map(r => {
+        const series = (r.series || '').trim();
+        const speed = (r.speed || '').trim();
+        if (!series && !speed) return '';
+        return `${series || '0'}\\${speed || '-'}`;
+      })
+      .filter(Boolean);
+    return parts.join('+');
   };
+
+  const buildFastPlannerDescription = (filledRows: FastPlannerRow[]) => {
+    const distancesOnly = buildFastPlannerDistancesOnly(filledRows);
+    const userDesc = (userDescription || '').trim();
+    if (!distancesOnly && !userDesc) return `Fast planner - ${filledRows.length} exercises`;
+    if (!userDesc) return distancesOnly;
+    return distancesOnly ? `${distancesOnly}\n${userDesc}` : userDesc;
+  };
+
+  /** Parse pause string (e.g. "1'30\"", "2'", "45\"") to total seconds */
+  const parsePauseToSeconds = (s: string): number => {
+    if (!s || typeof s !== 'string') return 0;
+    const trimmed = s.trim();
+    let seconds = 0;
+    const minMatch = trimmed.match(/(\d+)\s*'/);
+    if (minMatch) seconds += parseInt(minMatch[1], 10) * 60;
+    const secMatch = trimmed.match(/(\d+)\s*"?\s*"?$/);
+    if (secMatch) seconds += parseInt(secMatch[1], 10);
+    else if (!minMatch && /^\d+$/.test(trimmed)) seconds += parseInt(trimmed, 10);
+    return seconds;
+  };
+
+  /** Format seconds to M'SS" */
+  const formatPauseFromSeconds = (totalSeconds: number): string => {
+    if (totalSeconds <= 0) return "0'00\"";
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}'${String(s).padStart(2, '0')}"`;
+  };
+
+  const buildSummaryFromRows = (filledRows: FastPlannerRow[]): string => {
+    const sectors = new Set<string>();
+    for (const r of filledRows) {
+      if (r.exercise) {
+        const sector = getSectorForExercise(r.exercise);
+        if (sector) sectors.add(sector);
+        else sectors.add(r.exercise.split(/\s/)[0] || 'Other');
+      }
+    }
+    const X = sectors.size;
+    const Y1 = filledRows.reduce((sum, r) => sum + (parseInt(String(r.series || '0'), 10) || 0), 0);
+    const W1 = filledRows.length;
+    const avgSeriesPerSector = X > 0 ? (Y1 / X).toFixed(1) : '0';
+    const avgExercisesPerSector = X > 0 ? (W1 / X).toFixed(1) : '0';
+
+    let Z = 0;
+    let kgTot = 0;
+    const pauseSeconds: number[] = [];
+    for (const r of filledRows) {
+      const series = parseInt(String(r.series || '0'), 10) || 0;
+      const repsPerSet = parseInt(String(r.ripTime || '0'), 10) || 0;
+      const reps = series * repsPerSet;
+      Z += reps;
+      const weightKg = parseFloat(String(r.weight || '0').replace(',', '.')) || 0;
+      kgTot += weightKg * reps;
+      const sec = parsePauseToSeconds(r.break || '');
+      if (sec > 0 || r.break?.trim()) pauseSeconds.push(sec);
+    }
+    const avgPauseSeconds = pauseSeconds.length > 0
+      ? pauseSeconds.reduce((a, b) => a + b, 0) / pauseSeconds.length
+      : 0;
+    const avgPauseStr = formatPauseFromSeconds(Math.round(avgPauseSeconds));
+
+    const lines = [
+      'Summary (here in automatic):',
+      `No. sectors (X) ${X}`,
+      `No. Total series (Y1) ${Y1}`,
+      `Average series/sector (Y2) ${avgSeriesPerSector}`,
+      `No. Total exercises (W1) ${W1}`,
+      `Average exercises/sector (W2) ${avgExercisesPerSector}`,
+      `No. Total Repetitions (Z) ${Z}`,
+      `Kg Tot. (kg x no.reps) ${kgTot.toFixed(1)}`,
+      `Average Pause ${avgPauseStr}`,
+      '',
+      'User can edit here (but not the Summary).'
+    ];
+    return lines.join('\n');
+  };
+
+  const filledRowsForSummary = useMemo(
+    () => rows.map(r => ({ ...r, exercise: (r.exercise || '').trim() })).filter(r => r.exercise !== ''),
+    [rows]
+  );
+  const summaryText = useMemo(
+    () => (filledRowsForSummary.length > 0 ? buildSummaryFromRows(filledRowsForSummary) : ''),
+    [filledRowsForSummary]
+  );
 
   useEffect(() => {
     if (mode !== 'edit') return;
@@ -415,6 +509,10 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     if (loadedMoveframeIdRef.current === existingMoveframe.id) return;
 
     loadedMoveframeIdRef.current = existingMoveframe.id;
+
+    const notesStr = typeof existingMoveframe.notes === 'string' ? existingMoveframe.notes : '';
+    const userPart = notesStr.replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '').trim();
+    setUserDescription(userPart);
 
     const parsed = parseFastPlannerDataFromNotes(existingMoveframe.notes);
     if (parsed) {
@@ -429,6 +527,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       if (Array.isArray(parsed.rows) && parsed.rows.length > 0) setRows(parsed.rows);
       if (parsed.preferences != null) setPreferences(parsed.preferences);
       setSelectedCell(null);
+      lastSelectedRowIdRef.current = null;
       setShowSubExercises(false);
       setShowExercisePopup(false);
       return;
@@ -458,6 +557,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
 
       setRows(rebuilt.length > 0 ? rebuilt : [{ id: 1, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '' }]);
       setSelectedCell(null);
+      lastSelectedRowIdRef.current = null;
       setShowSubExercises(false);
       setShowExercisePopup(false);
     }
@@ -481,9 +581,13 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
 
   const getTargetRowId = () => {
     if (selectedCell?.rowId != null) return selectedCell.rowId;
+    const firstWithExercise = rows.find(r => r.exercise?.trim());
+    if (firstWithExercise) return firstWithExercise.id;
     return rows.length > 0 ? rows[rows.length - 1].id : null;
   };
 
+  // Apply toolbar value to the active exercise's cell for the given field (e.g. Series, Speed)
+  // independently of which cell is currently focused (e.g. if Speed is focused, clicking 5 on Series still updates Series)
   const applyValueToRow = (field: string, value: string) => {
     const targetRowId = getTargetRowId();
     if (targetRowId == null) return;
@@ -495,17 +599,69 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     }));
   };
 
+  const setExecutionValueForField = (field: string, value: string) => {
+    if (field === 'speed') {
+      setExecSpeed(value);
+      return;
+    }
+    if (field === 'series') {
+      setExecSeries(value);
+      return;
+    }
+    if (field === 'ripTime') {
+      setExecRipTime(value);
+      return;
+    }
+    if (field === 'weight') {
+      setExecWeight(value);
+      return;
+    }
+    if (field === 'break') {
+      setExecBreak(value);
+      return;
+    }
+    if (field === 'mode') {
+      setExecMode(value);
+    }
+  };
+
+  const getExecutionValueForField = (field: string): string => {
+    if (field === 'speed') return execSpeed;
+    if (field === 'series') return execSeries;
+    if (field === 'ripTime') return execRipTime;
+    if (field === 'weight') return execWeight;
+    if (field === 'break') return execBreak;
+    if (field === 'mode') return execMode;
+    return '';
+  };
+
+  const applyExecutionValue = (field: string, value: string) => {
+    setExecutionValueForField(field, value);
+    applyValueToRow(field, value);
+  };
+
   // Handle quick value selection from execution toolbar (keyboard-like input)
   const handleQuickFill = (field: string, value: string) => {
-    applyValueToRow(field, value);
+    const normalizedField = field === 'riptime' ? 'ripTime' : field;
+    applyExecutionValue(normalizedField, value);
   };
 
   // Handle cell click (select cell for quick input)
   const handleCellClick = (rowId: number, field: string) => {
     setSelectedCell({ rowId, field });
+    lastSelectedRowIdRef.current = rowId;
     const row = rows.find(r => r.id === rowId);
     const sectorSelected = !!selectedMuscleGroup;
     const exerciseSelected = !!row?.exercise;
+
+    if (field !== 'exercise') {
+      const executionValue = getExecutionValueForField(field);
+      if (executionValue.trim() !== '') {
+        setRows(prevRows =>
+          prevRows.map(r => (r.id === rowId ? { ...r, [field]: executionValue } : r))
+        );
+      }
+    }
 
     if (field === 'exercise') {
       setActiveExerciseButton(null);
@@ -561,18 +717,26 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     appendNextRowFromIndex(pickActiveRowIndex(rows));
   };
 
-  // Rescan: choose another exercise of the same sector/type
+  // Rescan: choose another exercise of the same sector/type (when row has an exercise)
   const handleRescanExercise = (rowId: number) => {
     const row = rows.find(r => r.id === rowId);
     if (!row) return;
 
     let sector: string | null = null;
-    if (row.exercise) {
+    if (row.exercise && row.exercise.trim() !== '') {
       const current = mockExercises.find(ex => ex.name === row.exercise);
       sector = current?.sector || null;
-    } else if (selectedMuscleGroup) {
-      const group = MUSCLE_GROUPS.find(g => g.id === selectedMuscleGroup);
-      sector = group?.sector || null;
+    } else {
+      // Blank exercise: choose from the sector of the previous exercise (previous row)
+      const prevRow = findPreviousFilledRow(rows, rowId);
+      if (prevRow?.exercise) {
+        const prevEx = mockExercises.find(ex => ex.name === prevRow.exercise);
+        sector = prevEx?.sector || null;
+      }
+      if (!sector && selectedMuscleGroup && selectedMuscleGroup !== 'all') {
+        const group = MUSCLE_GROUPS.find(g => g.id === selectedMuscleGroup);
+        sector = group?.sector || null;
+      }
     }
 
     let candidates = mockExercises;
@@ -580,8 +744,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       candidates = mockExercises.filter(ex => ex.sector === sector);
     }
 
-    // Exclude current exercise from candidates
-    if (row.exercise) {
+    // Exclude current exercise from candidates when row has one
+    if (row.exercise && row.exercise.trim() !== '') {
       candidates = candidates.filter(ex => ex.name !== row.exercise);
     }
 
@@ -591,6 +755,26 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     setRows(prevRows =>
       prevRows.map(r => (r.id === rowId ? { ...r, exercise: pick.name } : r))
     );
+  };
+
+  // Reload (blank row): open exercise picker filtered by the sector of the previous filled exercise
+  const handleReloadBlankExercise = (rowId: number) => {
+    const index = rows.findIndex(r => r.id === rowId);
+    if (index < 0) return;
+    setSelectedCell({ rowId, field: 'exercise' });
+    let prevRow: FastPlannerRow | null = null;
+    for (let i = index - 1; i >= 0; i--) {
+      const r = rows[i];
+      if (typeof r?.exercise === 'string' && r.exercise.trim() !== '') {
+        prevRow = r;
+        break;
+      }
+    }
+    const sector = prevRow?.exercise ? getSectorForExercise(prevRow.exercise) : null;
+    const group = sector ? MUSCLE_GROUPS.find(g => g.sector === sector) : null;
+    setSelectedMuscleGroup(group?.id ?? 'all');
+    setSectorMode('exercises');
+    setShowSubExercises(true);
   };
 
   const applyRowDefaults = (current: FastPlannerRow, previous: FastPlannerRow | null): FastPlannerRow => {
@@ -638,6 +822,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return Math.max(0, list.length - 1);
   };
 
+  // Duplicate/triplicate always append at the bottom (used by Double-click on exercise cell and by Duplicate/Triplicate buttons)
   const appendRowCopiesById = (rowId: number, copies: number) => {
     setRows(prev => {
       if (prev.length === 0) return prev;
@@ -757,13 +942,40 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       { id: 1, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '' }
     ]);
     setSelectedCell(null);
+    lastSelectedRowIdRef.current = null;
+  };
+
+  // Validate: every row with mode Superset must have at least one adjacent row also Superset (no Superset alone)
+  const validateSupersetNotAlone = (list: FastPlannerRow[]): { valid: boolean; message?: string } => {
+    for (let i = 0; i < list.length; i++) {
+      const mode = (list[i].mode || '').trim();
+      if (mode !== 'Superset') continue;
+      const prevSuperset = i > 0 && (list[i - 1].mode || '').trim() === 'Superset';
+      const nextSuperset = i < list.length - 1 && (list[i + 1].mode || '').trim() === 'Superset';
+      if (!prevSuperset && !nextSuperset) {
+        return {
+          valid: false,
+          message: 'Every exercise with Break mode "Superset" must be grouped with at least one other Superset exercise. Please add another Superset next to it or change its mode.'
+        };
+      }
+    }
+    return { valid: true };
   };
 
   // Save moveframe
   const handleSaveMoveframe = () => {
+    if (!canSaveWithSuperset) {
+      alert('Cannot save: every Superset exercise must be grouped with at least one other Superset (adjacent row). Fix the "not ok" Superset rows.');
+      return;
+    }
     const filledRows = rows
       .map(r => ({ ...r, exercise: (r.exercise || '').trim() }))
       .filter(r => r.exercise !== '');
+    const validation = validateSupersetNotAlone(filledRows);
+    if (!validation.valid) {
+      alert(validation.message);
+      return;
+    }
     const payload = {
       sectorMode,
       execSpeed,
@@ -776,7 +988,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       rows: filledRows,
       preferences
     };
-    const notes = upsertFastPlannerDataInNotes(existingMoveframe?.notes, payload);
+    const notes = upsertFastPlannerDataInNotes(userDescription, payload);
     const movelaps = buildMovelapsFromRows(filledRows);
     const description = buildFastPlannerDescription(filledRows);
 
@@ -795,9 +1007,18 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     onSave(moveframeData);
   };
   const handleSaveMoveframeAndMovelaps = () => {
+    if (!canSaveWithSuperset) {
+      alert('Cannot save: every Superset exercise must be grouped with at least one other Superset (adjacent row). Fix the "not ok" Superset rows.');
+      return;
+    }
     const filledRows = rows
       .map(r => ({ ...r, exercise: (r.exercise || '').trim() }))
       .filter(r => r.exercise !== '');
+    const validation = validateSupersetNotAlone(filledRows);
+    if (!validation.valid) {
+      alert(validation.message);
+      return;
+    }
     const payload = {
       sectorMode,
       execSpeed,
@@ -810,7 +1031,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       rows: filledRows,
       preferences
     };
-    const notes = upsertFastPlannerDataInNotes(existingMoveframe?.notes, payload);
+    const notes = upsertFastPlannerDataInNotes(userDescription, payload);
     const movelaps = buildMovelapsFromRows(filledRows);
     const description = buildFastPlannerDescription(filledRows);
 
@@ -921,6 +1142,24 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     }
   }, [planCandidate]);
 
+  // Keyboard Left/Right to change exercise in series plan modal
+  React.useEffect(() => {
+    if (!showSeriesPlanModal || planCandidates.length === 0) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        pickPlanCandidateByOffset(-1);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        pickPlanCandidateByOffset(1);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showSeriesPlanModal, planCandidates.length, pickPlanCandidateByOffset]);
+
   // Drag & reorder rows
   const [draggingRowId, setDraggingRowId] = useState<number | null>(null);
   const handleRowDragStart = (rowId: number, e: React.DragEvent) => {
@@ -951,53 +1190,49 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     appendNextRowFromIndex(rowIndex);
   };
 
-  const showAllButton = selectedMuscleGroup !== 'all';
+  // ALL button visible only when Sector or Exercise is selected (per requirement)
+  const hasSelectedSector = selectedMuscleGroup !== 'all';
+  const hasSelectedExercise = rows.some(r => typeof r.exercise === 'string' && r.exercise.trim() !== '');
+  const showAllButton = hasSelectedSector || hasSelectedExercise;
+
+  // Superset validation: each Superset must be grouped with at least one other Superset (prev or next row)
+  const supersetValidation = useMemo(() => {
+    const isSupersetAlone = (index: number): boolean => {
+      if (rows[index]?.mode !== 'Superset') return false;
+      const prev = index > 0 && rows[index - 1]?.mode === 'Superset';
+      const next = index < rows.length - 1 && rows[index + 1]?.mode === 'Superset';
+      return !prev && !next;
+    };
+    const invalid = rows.map((_, i) => isSupersetAlone(i));
+    const canSave = !invalid.some(Boolean);
+    return { invalid, canSave };
+  }, [rows]);
+  const canSaveWithSuperset = supersetValidation.canSave;
 
   return (
-    <div className="space-y-4">
-      {!fullView && (
-      <div className="sticky top-0 z-20 bg-white pb-4">
-        <div className="space-y-4">
-          {/* Removed zoom control; fixed scale at 55% */}
-          {/* Top Row: Execution, Intensity of work, Break between series */}
-          <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 2fr 1fr' }}>
-            {/* Execution Box */}
-            <div className="bg-amber-50 border border-amber-300 rounded-lg px-2 py-1 text-center">
+    <div className={`flex flex-col flex-1 min-h-0 ${!fullView ? '' : ''}`}>
+      {!fullView && <>
+      <div className="flex-shrink-0 z-20 bg-white pb-2 shadow-[0_1px_3px_0_rgba(0,0,0,0.08)]">
+        <div className="space-y-1.5">
+          {/* Compact Top Row: Execution | Sector | Name | Intensity | Break */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="bg-amber-50 border border-amber-300 rounded px-2 py-0.5 text-center shrink-0">
               {selectedCell ? (
-                <div className="text-xs text-blue-600 font-medium whitespace-nowrap">
-                  <span className="text-gray-700 font-bold">Execution:</span> ✓ Row {rows.findIndex(r => r.id === selectedCell.rowId) + 1}, {selectedCell.field}
-                </div>
+                <span className="text-[10px] text-blue-600 font-medium whitespace-nowrap">
+                  Execution ✓ Row {rows.findIndex(r => r.id === selectedCell.rowId) + 1}, {selectedCell.field}
+                </span>
               ) : (
-                <div className="text-xs text-gray-700 font-bold">Execution</div>
+                <span className="text-[10px] text-gray-700 font-bold">Execution</span>
               )}
             </div>
-
-            {/* Intensity of Work Box */}
-            <div className="bg-blue-50 border border-blue-300 rounded-lg px-2 py-1 text-center">
-              <div className="text-xs font-bold text-gray-700 whitespace-nowrap">Intensity of work</div>
-            </div>
-
-            {/* Break between series Box */}
-            <div className="bg-green-50 border border-green-300 rounded-lg px-2 py-1 text-center">
-              <div className="text-xs font-bold text-gray-700 whitespace-nowrap">Break between series</div>
-            </div>
-          </div>
-
-          {/* Controls Row: Sector + Search + grouped buttons by column width; radios below */}
-          <div className="space-y-2">
-            <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 2fr 1fr' }}>
-          {/* Left column: Sector + Search */}
-          <div className="flex items-center gap-2">
             <button
               onClick={() => {
                 setActiveExerciseButton(null);
                 setShowSubExercises(false);
                 setSelectedMuscleGroup('all');
               }}
-              className={`px-3 py-2 text-sm font-bold border rounded whitespace-nowrap ${
-                activeExerciseButton === null
-                  ? 'bg-yellow-50 text-black border-yellow-400'
-                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
+              className={`px-2 py-1 text-xs font-bold border rounded whitespace-nowrap ${
+                activeExerciseButton === null ? 'bg-yellow-50 text-black border-yellow-400' : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
               }`}
             >
               Sector
@@ -1007,113 +1242,56 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
               value={exerciseSearch}
               onChange={(e) => setExerciseSearch(e.target.value)}
               placeholder="Name exercise"
-              className="w-64 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-44 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-          </div>
-
-          {/* Middle column: 4 buttons fill Intensity width */}
-          <div className="grid grid-cols-4 gap-2">
-            <button
-              onClick={() => setActiveExerciseButton(activeExerciseButton === 'speed' ? null : 'speed')}
-              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${
-                activeExerciseButton === 'speed'
-                  ? 'bg-yellow-50 text-black border-yellow-400'
-                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
-              }`}
-            >
-              Speed
-            </button>
-            <button
-              onClick={() => setActiveExerciseButton(activeExerciseButton === 'series' ? null : 'series')}
-              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${
-                activeExerciseButton === 'series'
-                  ? 'bg-yellow-50 text-black border-yellow-400'
-                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
-              }`}
-            >
-              Series
-            </button>
-            <button
-              onClick={() => setActiveExerciseButton(activeExerciseButton === 'riptime' ? null : 'riptime')}
-              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${
-                activeExerciseButton === 'riptime'
-                  ? 'bg-yellow-50 text-black border-yellow-400'
-                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
-              }`}
-            >
-              Rip\Time
-            </button>
-            <button
-              onClick={() => setActiveExerciseButton(activeExerciseButton === 'weight' ? null : 'weight')}
-              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${
-                activeExerciseButton === 'weight'
-                  ? 'bg-yellow-50 text-black border-yellow-400'
-                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
-              }`}
-            >
-              Weight
-            </button>
-          </div>
-
-          {/* Right column: 2 buttons fill Break width */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => setActiveExerciseButton(activeExerciseButton === 'break' ? null : 'break')}
-              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${
-                activeExerciseButton === 'break'
-                  ? 'bg-yellow-50 text-black border-yellow-400'
-                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
-              }`}
-            >
-              Break
-            </button>
-            <button
-              onClick={() => setActiveExerciseButton(activeExerciseButton === 'mode' ? null : 'mode')}
-              className={`w-full px-3 py-2 text-sm font-medium border rounded whitespace-nowrap ${
-                activeExerciseButton === 'mode'
-                  ? 'bg-yellow-50 text-black border-yellow-400'
-                  : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
-              }`}
-            >
-              Mode
-            </button>
+            <span className="text-[10px] font-bold text-gray-600 mx-0.5">Intensity:</span>
+            {(['speed', 'series', 'riptime', 'weight', 'break', 'mode'] as const).map((key) => (
+              <button
+                key={key}
+                onClick={() => setActiveExerciseButton(activeExerciseButton === key ? null : key)}
+                className={`px-2 py-1 text-xs font-medium border rounded whitespace-nowrap ${
+                  activeExerciseButton === key ? 'bg-yellow-50 text-black border-yellow-400' : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
+                }`}
+              >
+                {key === 'riptime' ? 'Rip\\Time' : key === 'break' ? 'Break' : key.charAt(0).toUpperCase() + key.slice(1)}
+              </button>
+            ))}
           </div>
         </div>
-        <div className="flex gap-2 px-1 py-1">
-          <label className="flex items-center cursor-pointer whitespace-nowrap">
-            <input
-              type="radio"
-              name="sectorMode"
-              value="exercises"
-              checked={sectorMode === 'exercises'}
-              onChange={() => setSectorMode('exercises')}
-              className="mr-1.5"
-            />
-            <span className="text-xs text-gray-700">Select exercises</span>
-          </label>
-          <label className="flex items-center cursor-pointer whitespace-nowrap">
-            <input
-              type="radio"
-              name="sectorMode"
-              value="series"
-              checked={sectorMode === 'series'}
-              onChange={() => {
-                setSectorMode('series');
-                setActiveExerciseButton(null);
-                setShowSubExercises(false);
-                setSelectedMuscleGroup('all');
-              }}
-              className="mr-1.5"
-            />
-            <span className="text-xs text-gray-700">Plan series\exercise</span>
-          </label>
-        </div>
-          </div>
-        </div>
+      </div>
 
         {/* Muscle Groups - Always visible */}
-        <div className="bg-slate-900 border border-slate-700 rounded-lg p-2">
-          <div className="flex items-center pb-2 gap-2" style={{ overflowX: 'hidden', flexWrap: 'nowrap' }}>
+        <div className="bg-slate-900 border border-slate-700 rounded-lg p-2 mt-2">
+          <div className="flex items-center gap-3 pb-2">
+            <label className="flex items-center cursor-pointer whitespace-nowrap text-white">
+              <input
+                type="radio"
+                name="sectorMode"
+                value="exercises"
+                checked={sectorMode === 'exercises'}
+                onChange={() => setSectorMode('exercises')}
+                className="mr-1.5"
+              />
+              <span className="text-xs">Select exercises</span>
+            </label>
+            <label className="flex items-center cursor-pointer whitespace-nowrap text-white">
+              <input
+                type="radio"
+                name="sectorMode"
+                value="series"
+                checked={sectorMode === 'series'}
+                onChange={() => {
+                  setSectorMode('series');
+                  setActiveExerciseButton(null);
+                  setShowSubExercises(false);
+                  setSelectedMuscleGroup('all');
+                }}
+                className="mr-1.5"
+              />
+              <span className="text-xs">Plan series\exercise</span>
+            </label>
+          </div>
+          <div className="flex items-center pb-2 gap-2" style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
             {showAllButton && (
               <div className="flex-shrink-0">
                 <button
@@ -1123,12 +1301,12 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                   }}
                   className="flex flex-col items-center justify-center"
                 >
-                  <div className="mb-2 flex items-center justify-center" style={{ width: `${96 * ZOOM}px`, height: `${96 * ZOOM}px` }}>
+                  <div className="mb-2 flex items-center justify-center" style={{ width: `${96 * SECTOR_ZOOM}px`, height: `${96 * SECTOR_ZOOM}px` }}>
                     <Image
                       src="/all.png"
                       alt="All"
-                      width={Math.round(96 * ZOOM)}
-                      height={Math.round(96 * ZOOM)}
+                      width={Math.round(96 * SECTOR_ZOOM)}
+                      height={Math.round(96 * SECTOR_ZOOM)}
                       className="object-contain"
                       unoptimized
                     />
@@ -1138,19 +1316,53 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
               </div>
             )}
 
+            {/* Repetitions/Time radios - nearest to ALL button when Rip\Time is active */}
+            {activeExerciseButton === 'riptime' && (
+              <div className="flex-shrink-0 flex flex-col gap-2 justify-center pl-1 pr-2 py-2 bg-yellow-50 border border-yellow-200 rounded-lg border-l-0">
+                <label className="flex items-center cursor-pointer whitespace-nowrap">
+                  <input
+                    type="radio"
+                    name="ripTimeMode"
+                    value="reps"
+                    checked={ripTimeMode === 'reps'}
+                    onChange={() => {
+                      setRipTimeMode('reps');
+                      setRipTimeValue('');
+                    }}
+                    className="w-6 h-6 mr-2"
+                  />
+                  <span className="text-sm text-black">Repetitions</span>
+                </label>
+                <label className="flex items-center cursor-pointer whitespace-nowrap">
+                  <input
+                    type="radio"
+                    name="ripTimeMode"
+                    value="time"
+                    checked={ripTimeMode === 'time'}
+                    onChange={() => {
+                      setRipTimeMode('time');
+                      setRipTimeValue('');
+                    }}
+                    className="w-6 h-6 mr-2"
+                  />
+                  <span className="text-sm text-black">Time</span>
+                </label>
+              </div>
+            )}
+
             {/* Content area: show options or muscle groups within the same box */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex-1 h-[165px] overflow-y-hidden text-black">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex-1 min-h-[140px] max-h-[200px] overflow-y-hidden text-black shrink-0">
               {activeExerciseButton ? (
                 <div className="space-y-3">
                 {activeExerciseButton === 'speed' && (
                   <div>
-                    <p className="text-sm font-bold text-black mb-3">Select Speed of Execution</p>
-                    <div className="flex gap-3 overflow-x-auto pb-2">
+                    <p className="text-xs font-bold text-black mb-1.5">Select Speed of Execution</p>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
                       {SPEED_OPTIONS.map((speed) => (
                         <button
                           key={speed}
                           onClick={() => handleQuickFill('speed', speed)}
-                          className="flex-shrink-0 px-6 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:shadow-md transition-all font-medium text-base whitespace-nowrap"
+                          className="flex-shrink-0 px-4 py-2 text-sm bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:shadow-md transition-all font-medium whitespace-nowrap"
                         >
                           {speed}
                         </button>
@@ -1161,13 +1373,13 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
 
                 {activeExerciseButton === 'series' && (
                   <div>
-                    <p className="text-sm font-bold text-black mb-3">Select Number of Series</p>
-                    <div className="flex gap-3 overflow-x-auto pb-2">
+                    <p className="text-xs font-bold text-black mb-1.5">Select Number of Series</p>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20].map((num) => (
                         <button
                           key={num}
                           onClick={() => handleQuickFill('series', num.toString())}
-                          className="flex-shrink-0 px-6 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:shadow-md transition-all font-medium text-base"
+                          className="flex-shrink-0 px-4 py-2 text-sm bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:shadow-md transition-all font-medium"
                         >
                           {num}
                         </button>
@@ -1178,8 +1390,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
 
                 {activeExerciseButton === 'riptime' && (
                   <div className="min-h-[120px] flex items-center justify-center">
-                    <div className="flex gap-1 justify-center items-center">
-                      <div className="w-44 flex flex-col gap-2 items-start pl-2">
+                    <div className="flex gap-4 justify-center items-center flex-wrap">
+                      <div className="flex gap-4 items-center">
                         <label className="flex items-center cursor-pointer whitespace-nowrap">
                           <input
                             type="radio"
@@ -1219,7 +1431,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                               if (currentValue > 1) {
                                 const newValue = (currentValue - 1).toString();
                                 setRipTimeValue(newValue);
-                                applyValueToRow('ripTime', newValue);
+                                applyExecutionValue('ripTime', newValue);
                               }
                             }}
                           className="w-10 h-10 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center text-xl font-bold"
@@ -1236,7 +1448,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                             }}
                             onBlur={(e) => {
                               const value = e.target.value;
-                            applyValueToRow('ripTime', value);
+                            applyExecutionValue('ripTime', value);
                             }}
                             placeholder="0"
                             min="1"
@@ -1250,7 +1462,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                               if (currentValue < 99) {
                                 const newValue = (currentValue + 1).toString();
                                 setRipTimeValue(newValue);
-                                applyValueToRow('ripTime', newValue);
+                                applyExecutionValue('ripTime', newValue);
                               }
                             }}
                           className="w-10 h-10 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center text-xl font-bold"
@@ -1277,7 +1489,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                                   setRipTimeValue('');
                                 }
 
-                                applyValueToRow('ripTime', ripTimeValue ? formatRipTime(ripTimeValue, true) : '');
+                                applyExecutionValue('ripTime', ripTimeValue ? formatRipTime(ripTimeValue, true) : '');
                               }}
                               placeholder="MM'SS&quot;"
                               className="w-48 h-16 text-center text-3xl font-bold border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1292,7 +1504,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 {activeExerciseButton === 'weight' && (
                   <div className="min-h-[120px] flex items-center justify-center">
                     <div className="flex gap-10 justify-center items-center">
-                      <div className="w-44 flex flex-col gap-2 items-start pl-2">
+                      <div className="w-fit flex flex-col gap-2 items-start pl-2">
                         <label className="flex items-center cursor-pointer whitespace-nowrap">
                           <input
                             type="radio"
@@ -1324,7 +1536,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                           if (currentValue > 0) {
                             const newValue = Math.max(0, currentValue - 0.5).toString();
                             setWeightValue(newValue);
-                            applyValueToRow('weight', `${newValue} ${weightUnit}`);
+                            applyExecutionValue('weight', `${newValue} ${weightUnit}`);
                           }
                         }}
                           className="w-10 h-10 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center text-xl font-bold"
@@ -1341,7 +1553,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                         }}
                         onBlur={(e) => {
                           const value = e.target.value;
-                          applyValueToRow('weight', `${value} ${weightUnit}`);
+                          applyExecutionValue('weight', `${value} ${weightUnit}`);
                         }}
                         placeholder="0"
                         min="0"
@@ -1356,7 +1568,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                           if (currentValue < 9999) {
                             const newValue = Math.min(9999, currentValue + 0.5).toString();
                             setWeightValue(newValue);
-                            applyValueToRow('weight', `${newValue} ${weightUnit}`);
+                            applyExecutionValue('weight', `${newValue} ${weightUnit}`);
                           }
                         }}
                           className="w-10 h-10 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center text-xl font-bold"
@@ -1371,7 +1583,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 {activeExerciseButton === 'break' && (
                   <div className="min-h-[120px] flex items-center justify-center">
                     <div className="flex gap-10 justify-center items-center">
-                      <div className="w-44 flex flex-col gap-2 items-start pl-2">
+                      <div className="w-fit flex flex-col gap-2 items-start pl-2">
                         <label className="flex items-center cursor-pointer whitespace-nowrap">
                           <input
                             type="radio"
@@ -1410,7 +1622,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                             {BREAK_OPTIONS.slice(0, Math.ceil(BREAK_OPTIONS.length / 2)).map((breakTime) => (
                               <button
                                 key={breakTime}
-                                onClick={() => applyValueToRow('break', breakTime)}
+                                onClick={() => applyExecutionValue('break', breakTime)}
                                 className="flex-shrink-0 px-5 py-2 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:shadow-md transition-all font-medium text-sm whitespace-nowrap"
                               >
                                 {breakTime}
@@ -1421,7 +1633,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                             {BREAK_OPTIONS.slice(Math.ceil(BREAK_OPTIONS.length / 2)).map((breakTime) => (
                               <button
                                 key={breakTime}
-                                onClick={() => applyValueToRow('break', breakTime)}
+                                onClick={() => applyExecutionValue('break', breakTime)}
                                 className="flex-shrink-0 px-5 py-2 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:shadow-md transition-all font-medium text-sm whitespace-nowrap"
                               >
                                 {breakTime}
@@ -1440,7 +1652,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                                 if (currentValue > 60) {
                                   const newValue = Math.max(60, currentValue - 1).toString();
                                   setCardioValue(newValue);
-                                  applyValueToRow('break', `${newValue} bpm`);
+                                  applyExecutionValue('break', `${newValue} bpm`);
                                 }
                               }}
                               className="w-10 h-10 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center text-xl font-bold"
@@ -1460,7 +1672,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                                 const numValue = parseInt(value);
                                 if (numValue >= 60 && numValue <= 200) {
                                   setCardioValue(value);
-                                  applyValueToRow('break', `${value} bpm`);
+                                  applyExecutionValue('break', `${value} bpm`);
                                 } else {
                                   setCardioValue('120');
                                 }
@@ -1477,7 +1689,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                                 if (currentValue < 200) {
                                   const newValue = Math.min(200, currentValue + 1).toString();
                                   setCardioValue(newValue);
-                                  applyValueToRow('break', `${newValue} bpm`);
+                                  applyExecutionValue('break', `${newValue} bpm`);
                                 }
                               }}
                               className="w-10 h-10 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center text-xl font-bold"
@@ -1500,7 +1712,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       {MODE_OPTIONS.map((mode) => (
                         <button
                           key={mode.id}
-                          onClick={() => applyValueToRow('mode', mode.label)}
+                          onClick={() => applyExecutionValue('mode', mode.label)}
                           className="w-56 px-5 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:shadow-md transition-all font-bold text-base"
                         >
                           {mode.label}
@@ -1513,7 +1725,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
             ) : (
               <>
                 {!showSubExercises ? (
-                  <div className="flex" style={{ gap: `${Math.max(4, 14 * ZOOM)}px` }}>
+                  <div className="flex" style={{ gap: `${Math.max(6, 14 * SECTOR_ZOOM)}px` }}>
                     {MUSCLE_GROUPS.map((group) => (
                       <button
                         key={group.id}
@@ -1526,71 +1738,109 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                             setShowSubExercises(true);
                           }
                         }}
-                        className={`flex flex-col items-center justify-center px-4 py-4 rounded-lg transition-all flex-shrink-0 border-2 ${selectedMuscleGroup === group.id
+                        className={`flex flex-col items-center justify-center px-3 py-3 rounded-lg transition-all flex-shrink-0 border-2 ${selectedMuscleGroup === group.id
                           ? 'bg-white text-black border-blue-600 ring-2 ring-blue-200'
                           : 'bg-white text-black border-gray-300 hover:border-blue-500 hover:shadow-md'
                           }`}
                       >
-                        <div className="mb-2 flex items-center justify-center relative" style={{ width: `${112 * ZOOM}px`, height: `${112 * ZOOM}px` }}>
+                        <div className="mb-2 flex items-center justify-center relative" style={{ width: `${112 * SECTOR_ZOOM}px`, height: `${112 * SECTOR_ZOOM}px` }}>
                           <Image
                             src={group.image}
                             alt={group.label}
-                            width={Math.round(112 * ZOOM)}
-                            height={Math.round(112 * ZOOM)}
+                            width={Math.round(112 * SECTOR_ZOOM)}
+                            height={Math.round(112 * SECTOR_ZOOM)}
                             className="object-contain"
                             unoptimized
                           />
                         </div>
-                        <span className="font-medium text-black" style={{ fontSize: `${Math.max(10, 16 * ZOOM)}px` }}>{group.label}</span>
+                        <span className="font-medium text-black" style={{ fontSize: `${Math.max(11, 16 * SECTOR_ZOOM)}px` }}>{group.label}</span>
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <div className="flex gap-2 pb-2">
-                      {mockExercises
-                        .filter(exercise => {
-                          if (selectedMuscleGroup !== 'all' && !exercise.id.startsWith(selectedMuscleGroup)) return false;
-                          if (exerciseSearch && !exercise.name.toLowerCase().includes(exerciseSearch.toLowerCase())) return false;
-                          return true;
-                        })
-                        .sort((a, b) => a.name.localeCompare(b.name))
-                        .map((exercise) => {
-                          const indicatorColor = getExerciseIndicatorColor(exercise.name);
-                          return (
-                            <div
-                              key={exercise.id}
-                              className="flex-shrink-0 w-28 bg-white border-2 border-gray-300 rounded-lg p-1 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all relative"
-                              onClick={() => {
-                                if (selectedCell) {
-                                  setRows(prevRows =>
-                                    prevRows.map(row => (row.id === selectedCell.rowId ? { ...row, exercise: exercise.name } : row))
-                                  );
-                                  setExerciseSearch('');
-                                }
-                              }}
-                            >
-                              {indicatorColor && (
-                                <div className={`absolute top-1 left-1 w-3 h-3 rounded-full border-2 border-white ${indicatorColor === 'green' ? 'bg-green-500' : 'bg-blue-500'
-                                  }`} />
-                              )}
-                              <div className="aspect-square bg-gray-100 rounded mb-1 relative overflow-hidden">
-                                <Image
-                                  src={exercise.image}
-                                  alt={exercise.name}
-                                  fill
-                                  className="object-contain"
-                                  sizes="112px"
-                                  unoptimized
-                                />
+                  <div className="relative flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const el = exerciseListScrollRef.current;
+                        if (el) el.scrollBy({ left: -280, behavior: 'smooth' });
+                      }}
+                      className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-700 text-white hover:bg-slate-600 flex items-center justify-center shadow-md"
+                      title="Scroll exercises left"
+                      aria-label="Scroll exercises left"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                    </button>
+                    <div
+                      ref={exerciseListScrollRef}
+                      className="overflow-x-auto overflow-y-hidden flex-1 min-w-0 scroll-smooth"
+                      style={{ scrollbarGutter: 'stable' }}
+                      title="Scroll horizontally: use arrows, mouse wheel (Shift+wheel), or drag the scrollbar"
+                      onWheel={(e) => {
+                        if (e.shiftKey) {
+                          e.preventDefault();
+                          const el = exerciseListScrollRef.current;
+                          if (el) el.scrollLeft += e.deltaY;
+                        }
+                      }}
+                    >
+                      <div className="flex gap-2 pb-2">
+                        {mockExercises
+                          .filter(exercise => {
+                            if (selectedMuscleGroup !== 'all' && !exercise.id.startsWith(selectedMuscleGroup)) return false;
+                            if (exerciseSearch && !exercise.name.toLowerCase().includes(exerciseSearch.toLowerCase())) return false;
+                            return true;
+                          })
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((exercise) => {
+                            const indicatorColor = getExerciseIndicatorColor(exercise.name);
+                            return (
+                              <div
+                                key={exercise.id}
+                                className="flex-shrink-0 w-28 bg-white border-2 border-gray-300 rounded-lg p-1 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all relative"
+                                onClick={() => {
+                                  if (selectedCell) {
+                                    setRows(prevRows =>
+                                      prevRows.map(row => (row.id === selectedCell.rowId ? { ...row, exercise: exercise.name } : row))
+                                    );
+                                    setExerciseSearch('');
+                                  }
+                                }}
+                              >
+                                {indicatorColor && (
+                                  <div className={`absolute top-1 left-1 w-3 h-3 rounded-full border-2 border-white ${indicatorColor === 'green' ? 'bg-green-500' : 'bg-blue-500'
+                                    }`} />
+                                )}
+                                <div className="aspect-square bg-gray-100 rounded mb-1 relative overflow-hidden">
+                                  <Image
+                                    src={exercise.image}
+                                    alt={exercise.name}
+                                    fill
+                                    className="object-contain"
+                                    sizes="112px"
+                                    unoptimized
+                                  />
+                                </div>
+                                <p className="text-[10px] text-center text-black font-medium" title={exercise.name}>
+                                  {exercise.name}
+                                </p>
                               </div>
-                              <p className="text-[10px] text-center text-black font-medium" title={exercise.name}>
-                                {exercise.name}
-                              </p>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const el = exerciseListScrollRef.current;
+                        if (el) el.scrollBy({ left: 280, behavior: 'smooth' });
+                      }}
+                      className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-700 text-white hover:bg-slate-600 flex items-center justify-center shadow-md"
+                      title="Scroll exercises right"
+                      aria-label="Scroll exercises right"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
+                    </button>
                   </div>
                 )}
               </>
@@ -1598,70 +1848,45 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
           </div>
         </div>
       </div>
-      </div>
-      )}
+      </>}
 
-      {/* Exercise Table */}
-      <div className="bg-white border border-gray-300 rounded-lg overflow-hidden relative z-0">
-        <div className={fullView ? 'overflow-x-auto overflow-y-visible' : 'overflow-x-auto overflow-y-auto max-h-[45vh]'}>
-          <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
-            <div className="h-12 flex items-center gap-2 px-2 overflow-x-auto whitespace-nowrap">
-              <button
-                onClick={handleGoNext}
-                className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900"
-              >
-                Go next
-              </button>
-              <button
-                onClick={handleDuplicate}
-                className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900"
-              >
-                Duplicate
-              </button>
-              <button
-                onClick={handleTriplicate}
-                className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900"
-              >
-                Triplicate
-              </button>
-              <button
-                onClick={handleRemove}
-                className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900"
-              >
-                Remove
-              </button>
-              <button
-                onClick={handleResetRow}
-                className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900"
-              >
-                Reset row
-              </button>
-              <button
-                onClick={handleResetAll}
-                className="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700"
-              >
-                Reset all
-              </button>
-              <button
-                onClick={handleSaveMoveframe}
-                className="ml-auto px-4 py-1.5 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700"
-              >
-                Save moveframe
-              </button>
-            </div>
+      {/* Exercise Table – action buttons + headers sticky, only the list scrolls */}
+      <div className={`bg-white border border-gray-300 rounded-lg overflow-hidden relative z-0 flex-1 min-h-[220px] flex flex-col ${!fullView ? 'border-t-0 rounded-t-none' : ''}`}>
+        <div className={fullView ? 'overflow-auto flex-1 min-h-[180px]' : 'overflow-auto flex-1 min-h-[180px]'}>
+          {/* Control buttons – always visible; sticky in both modes; centered in fullView */}
+          <div className={`sticky top-0 z-20 flex-shrink-0 px-2 py-1.5 bg-gray-50 border-b border-gray-200 flex items-center gap-2 flex-wrap shadow-[0_1px_3px_0_rgba(0,0,0,0.08)] ${fullView ? 'justify-center' : ''}`}>
+            <span className="text-[10px] text-gray-500 italic mr-1">SECTION ALWAYS ON SCREEN – ONLY THE LIST WILL MOVE</span>
+            <button onClick={handleGoNext} className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Go next</button>
+            <button onClick={handleDuplicate} title="Duplicate selected row (appended at the bottom). Or double-click the exercise cell to duplicate." className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Duplicate</button>
+            <button onClick={handleTriplicate} title="Add two copies of selected row (appended at the bottom)." className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Triplicate</button>
+            <button onClick={handleRemove} className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Remove</button>
+            <button onClick={handleResetRow} className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Reset row</button>
+            <button onClick={handleResetAll} className="px-2 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700">Reset all</button>
+            <button onClick={handleSaveMoveframe} disabled={!canSaveWithSuperset} className="ml-auto px-3 py-1 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed" title={!canSaveWithSuperset ? 'Fix Superset: each Superset exercise must be grouped with at least one other Superset' : undefined}>Save moveframe</button>
           </div>
-          <table className="w-full">
-            <thead className="bg-gray-100 sticky top-12 z-10">
+          <table className="w-full border-collapse table-fixed">
+            <colgroup>
+              <col className="w-12" />
+              <col style={{ minWidth: '250px' }} />
+              <col />
+              <col />
+              <col />
+              <col />
+              <col />
+              <col style={{ width: '140px' }} />
+              <col className="w-14" />
+            </colgroup>
+            <thead className="bg-gray-100 sticky z-10 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]" style={{ top: '2.75rem' }}>
               <tr>
-                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 border-r w-12">#</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 border-r" style={{ minWidth: '250px' }}>Exercise</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 border-r">Speed</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 border-r">Series</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 border-r">Rip\Time</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 border-r">Weight</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 border-r">Break</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 border-r" style={{ width: '140px' }}>Mode</th>
-                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 w-14">Actions</th>
+                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r w-12">#</th>
+                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r" style={{ minWidth: '250px' }}>Exercise</th>
+                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Speed</th>
+                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Series</th>
+                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Rip\Time</th>
+                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Weight</th>
+                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Break</th>
+                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r" style={{ width: '140px' }}>Mode</th>
+                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 w-14">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1694,25 +1919,41 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                     <div
                       onClick={() => handleCellClick(row.id, 'exercise')}
                       onDoubleClick={(e) => {
+                        e.preventDefault();
                         e.stopPropagation();
                         appendRowCopiesById(row.id, 1);
                       }}
+                      title="Click to select. Double-click to duplicate this exercise (duplicate is appended at the bottom)."
                       className={`relative cursor-pointer border-2 rounded overflow-hidden ${selectedCell?.rowId === row.id && selectedCell?.field === 'exercise'
                         ? 'border-blue-500 ring-2 ring-blue-200'
                         : 'border-gray-200'
                         }`}
                     >
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRescanExercise(row.id);
-                        }}
-                        className="absolute top-1 right-1 p-1 bg-white/90 border border-gray-300 rounded hover:border-blue-500 hover:shadow-sm"
-                        aria-label="Rescan exercise"
-                        title="Rescan exercise"
-                      >
-                        <Image src="/rescan.png" alt="Rescan" width={16} height={16} className="object-contain" unoptimized />
-                      </button>
+                      {row.exercise ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRescanExercise(row.id);
+                          }}
+                          className="absolute top-1 right-1 p-1 bg-white/90 border border-gray-300 rounded hover:border-blue-500 hover:shadow-sm"
+                          aria-label="Rescan exercise"
+                          title="Rescan exercise"
+                        >
+                          <Image src="/rescan.png" alt="Rescan" width={16} height={16} className="object-contain" unoptimized />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleReloadBlankExercise(row.id);
+                          }}
+                          className="absolute top-1 right-1 p-1 bg-white/90 border border-gray-300 rounded hover:border-blue-500 hover:shadow-sm"
+                          aria-label="Reload – choose from sector of previous exercise"
+                          title="Reload – choose from sector of previous exercise"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /></svg>
+                        </button>
+                      )}
                       {row.exercise ? (
                         <div className="flex items-center gap-3 p-2">
                           <div className="rounded flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ width: `${92 * ZOOM}px`, height: `${92 * ZOOM}px` }}>
@@ -1811,23 +2052,27 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       style={{ width: '140px' }}
                     >
                       {row.mode ? (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           {(() => {
                             const modeOption = MODE_OPTIONS.find(m => m.label === row.mode);
-                            return modeOption ? (
+                            const isSuperset = row.mode === 'Superset';
+                            const isAlone = isSuperset && supersetValidation.invalid[rows.findIndex(r => r.id === row.id)];
+                            return (
                               <>
-                                <Image
-                                  src={modeOption.icon}
-                                  alt={row.mode}
-                                  width={24}
-                                  height={24}
-                                  className="object-contain"
-                                  unoptimized
-                                />
-                                <span className="text-xs">{row.mode}</span>
+                                {modeOption ? (
+                                  <>
+                                    <Image src={modeOption.icon} alt={row.mode} width={24} height={24} className="object-contain" unoptimized />
+                                    <span className="text-xs">{row.mode}</span>
+                                  </>
+                                ) : (
+                                  <span className="text-xs text-gray-700">{row.mode}</span>
+                                )}
+                                {isSuperset && (
+                                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${isAlone ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800'}`}>
+                                    {isAlone ? 'not ok' : 'ok'}
+                                  </span>
+                                )}
                               </>
-                            ) : (
-                              <span className="text-xs text-gray-700">{row.mode}</span>
                             );
                           })()}
                         </div>
@@ -1873,11 +2118,18 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       </div>
 
       {!fullView && (
-      <div className="bg-green-50 border border-green-300 rounded-lg p-3">
-        <label className="block text-sm font-bold text-gray-700 mb-2">Descriptions & istructions</label>
+      <div className="bg-green-50 border border-green-300 rounded-lg p-3 space-y-2 flex-shrink-0 max-h-[140px] overflow-y-auto">
+        <label className="block text-sm font-bold text-gray-700 mb-2">Descriptions & Instructions</label>
+        {summaryText ? (
+          <pre className="w-full px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded text-gray-700 whitespace-pre-wrap font-sans resize-none mb-2 max-h-16 overflow-y-auto" aria-readonly>
+            {summaryText}
+          </pre>
+        ) : null}
         <textarea
+          value={userDescription}
+          onChange={(e) => setUserDescription(e.target.value)}
           className="w-full px-3 py-2 text-sm border border-gray-300 rounded resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
-          rows={3}
+          rows={2}
           placeholder="Add descriptions or instructions here..."
         />
       </div>
@@ -1986,53 +2238,60 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       )}
       {showSeriesPlanModal && planSectorId && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-yellow-100 rounded-lg shadow-xl w-[90%] max-w-md p-4">
+          <div className="bg-amber-50 rounded-lg shadow-xl w-[90%] max-w-2xl p-5 border-2 border-amber-200">
             <div className="mb-3">
-              <div className="text-base font-bold text-gray-900">Plan series\exercise</div>
+              <div className="text-lg font-bold text-gray-900">Plan series / exercise</div>
             </div>
-            <div className="mb-3 flex items-center gap-3">
-              {(() => {
-                const sector = MUSCLE_GROUPS.find(g => g.id === planSectorId);
-                return sector ? (
-                  <>
-                    <div className="w-16 h-16 bg-white border rounded flex items-center justify-center">
-                      <Image src={sector.image} alt={sector.label} width={56} height={56} className="object-contain" unoptimized />
-                    </div>
-                    <div className="text-base font-semibold text-gray-800">{sector.label}</div>
-                  </>
-                ) : null;
-              })()}
+            {/* Sector: name and picture - prominent white area */}
+            <div className="mb-4 p-4 rounded-lg bg-white border-2 border-amber-200 shadow-sm">
+              <div className="flex items-center gap-4">
+                {(() => {
+                  const sector = MUSCLE_GROUPS.find(g => g.id === planSectorId);
+                  return sector ? (
+                    <>
+                      <div className="w-24 h-24 bg-amber-50 border-2 border-amber-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Image src={sector.image} alt={sector.label} width={88} height={88} className="object-contain" unoptimized />
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-0.5">Sector</div>
+                        <div className="text-2xl font-bold text-gray-900">{sector.label}</div>
+                      </div>
+                    </>
+                  ) : null;
+                })()}
+              </div>
             </div>
-            <div className="mb-3">
-              <table className="w-full border-collapse text-sm bg-white">
+            {/* WORK / PAUSE table - yellow background */}
+            <div className="mb-4 p-3 rounded-lg bg-amber-100/80 border-2 border-amber-200">
+              <table className="w-full border-collapse text-sm bg-white rounded overflow-hidden border border-amber-200">
                 <thead>
                   <tr>
-                    <th className="border px-2 py-1 w-10 text-center">#</th>
-                    <th className="border px-2 py-1 text-center" colSpan={2}>WORK</th>
-                    <th className="border px-2 py-1 text-center">PAUSE</th>
+                    <th className="border border-amber-200 px-2 py-1.5 w-10 text-center bg-amber-50 font-semibold">#</th>
+                    <th className="border border-amber-200 px-2 py-1.5 text-center bg-amber-50 font-semibold" colSpan={2}>WORK</th>
+                    <th className="border border-amber-200 px-2 py-1.5 text-center bg-amber-50 font-semibold">PAUSE</th>
                   </tr>
-                  <tr className="bg-green-50">
-                    <th className="border px-2 py-1 text-center"></th>
-                    <th className="border px-2 py-1 text-center">Series</th>
-                    <th className="border px-2 py-1 text-center">Reps</th>
-                    <th className="border px-2 py-1 text-center">Pause</th>
+                  <tr className="bg-amber-50">
+                    <th className="border border-amber-200 px-2 py-1 text-center text-xs"></th>
+                    <th className="border border-amber-200 px-2 py-1 text-center text-xs">Series</th>
+                    <th className="border border-amber-200 px-2 py-1 text-center text-xs">Reps</th>
+                    <th className="border border-amber-200 px-2 py-1 text-center text-xs">Pause</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="border px-2 py-1 text-center">{planExerciseNumber}</td>
-                    <td className="border px-2 py-1 text-center">
-                      <select value={planSeries} onChange={(e) => setPlanSeries(e.target.value)} className="px-2 py-1 border rounded text-sm">
+                    <td className="border border-amber-200 px-2 py-1.5 text-center">{planExerciseNumber}</td>
+                    <td className="border border-amber-200 px-2 py-1.5 text-center">
+                      <select value={planSeries} onChange={(e) => setPlanSeries(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm bg-white">
                         {[1,2,3,4,5,6,7,8,9,10,12,15,20].map(n => (<option key={n} value={n.toString()}>{n}</option>))}
                       </select>
                     </td>
-                    <td className="border px-2 py-1 text-center">
-                      <select value={planReps} onChange={(e) => setPlanReps(e.target.value)} className="px-2 py-1 border rounded text-sm">
+                    <td className="border border-amber-200 px-2 py-1.5 text-center">
+                      <select value={planReps} onChange={(e) => setPlanReps(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm bg-white">
                         {[4,6,8,10,12,15,20,25,30].map(n => (<option key={n} value={n.toString()}>{n}</option>))}
                       </select>
                     </td>
-                    <td className="border px-2 py-1 text-center">
-                      <select value={planPause} onChange={(e) => setPlanPause(e.target.value)} className="px-2 py-1 border rounded text-sm">
+                    <td className="border border-amber-200 px-2 py-1.5 text-center">
+                      <select value={planPause} onChange={(e) => setPlanPause(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm bg-white">
                         {BREAK_OPTIONS.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
                       </select>
                     </td>
@@ -2040,28 +2299,31 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 </tbody>
               </table>
             </div>
-            <div className="mb-3">
-              <button onClick={proceedScanExercise} className="w-full px-4 py-2 bg-red-600 text-white rounded font-bold">Proceed scan exercises</button>
+            <div className="mb-4">
+              <button onClick={proceedScanExercise} className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-base shadow-md">Proceed scan exercises</button>
             </div>
-            <div className="mb-3">
-              <div className="text-xs font-semibold text-gray-700 mb-1">Search exercise</div>
+            {/* Search: Name exercise input */}
+            <div className="mb-4">
               <input
                 type="text"
                 value={planExerciseSearch}
                 onChange={(e) => setPlanExerciseSearch(e.target.value)}
-                placeholder="Name exercise"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded"
+                placeholder="Name exercise (search)"
+                className="w-full px-4 py-2.5 text-base border-2 border-amber-300 rounded-lg bg-white placeholder-gray-500 focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+                aria-label="Search exercises by name"
               />
             </div>
-            <div className="h-40 bg-white border rounded flex items-center justify-center mb-2 relative">
+            {/* Exercise area - bigger for 2 pictures per exercise, with scroll arrows */}
+            <div className="min-h-[280px] h-72 bg-amber-100/60 border-2 border-amber-200 rounded-lg flex items-center justify-center mb-4 relative">
               <button
                 onClick={() => pickPlanCandidateByOffset(-1)}
-                className="absolute left-2 w-7 h-7 flex items-center justify-center border rounded bg-white hover:border-orange-400"
-                aria-label="Previous exercise"
+                className="absolute left-2 z-10 w-12 h-12 flex items-center justify-center rounded-lg bg-orange-400 hover:bg-orange-500 text-white shadow-md transition-colors"
+                aria-label="Previous exercise (or press Left arrow)"
+                title="Previous exercise (← Left arrow)"
               >
-                ‹
+                <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
               </button>
-              <div ref={planListRef} className="flex gap-3 px-10 overflow-x-auto w-full h-full items-center">
+              <div ref={planListRef} className="flex gap-4 px-16 overflow-x-auto w-full h-full items-center scroll-smooth" style={{ scrollbarGutter: 'stable' }}>
                 {planCandidates.length > 0 ? (
                   planCandidates.map((candidate) => (
                     <button
@@ -2071,34 +2333,34 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                         setPlanCandidate(candidate);
                         setSectorMode('exercises');
                       }}
-                      className={`flex-shrink-0 w-28 h-28 border rounded bg-white flex items-center justify-center ${
-                        planCandidate?.id === candidate.id ? 'border-orange-400' : 'border-gray-200'
+                      className={`flex-shrink-0 w-40 h-40 border-2 rounded-lg bg-white flex items-center justify-center transition-colors ${
+                        planCandidate?.id === candidate.id ? 'border-orange-500 ring-2 ring-orange-300' : 'border-amber-200 hover:border-amber-400'
                       }`}
                       aria-label={candidate.name}
                     >
-                      <Image src={candidate.image} alt={candidate.name} width={100} height={100} className="object-contain" unoptimized />
+                      <Image src={candidate.image} alt={candidate.name} width={152} height={152} className="object-contain" unoptimized />
                     </button>
                   ))
                 ) : (
-                  <span className="text-xs text-gray-500">No exercise selected</span>
+                  <span className="text-base text-amber-800">No exercise selected</span>
                 )}
               </div>
               <button
                 onClick={() => pickPlanCandidateByOffset(1)}
-                className="absolute right-2 w-7 h-7 flex items-center justify-center border rounded bg-white hover:border-orange-400"
-                aria-label="Next exercise"
+                className="absolute right-2 z-10 w-12 h-12 flex items-center justify-center rounded-lg bg-orange-400 hover:bg-orange-500 text-white shadow-md transition-colors"
+                aria-label="Next exercise (or press Right arrow)"
+                title="Next exercise (→ Right arrow)"
               >
-                ›
+                <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
               </button>
             </div>
-            <div className="bg-white border rounded px-3 py-2 mb-3 text-center">
-              <div className="text-xs font-semibold text-gray-600">Name exercise</div>
-              <div className="text-lg font-semibold text-gray-900">{planCandidate?.name || 'No exercise selected'}</div>
+            <div className="bg-amber-100/60 border-2 border-amber-200 rounded-lg px-5 py-4 mb-4 text-center">
+              <div className="text-sm font-semibold text-amber-800 mb-1">Selected exercise</div>
+              <div className="text-2xl md:text-3xl font-bold text-gray-900">{planCandidate?.name || 'No exercise selected'}</div>
             </div>
-            <div className="flex items-center justify-between">
-              <button onClick={addPlannedExercise} className="px-4 py-2 bg-gray-300 text-black rounded">Add exercise</button>
-              <span className="text-xs text-gray-700"></span>
-              <button onClick={endSeriesPlan} className="px-4 py-2 bg-black text-white rounded">End the plan</button>
+            <div className="flex items-center justify-between gap-2">
+              <button onClick={addPlannedExercise} className="px-6 py-2.5 bg-gray-300 hover:bg-gray-400 text-black rounded-lg font-semibold">Add exercise</button>
+              <button onClick={endSeriesPlan} className="px-6 py-2.5 bg-black hover:bg-gray-800 text-white rounded-lg font-semibold">End the plan</button>
             </div>
           </div>
         </div>
