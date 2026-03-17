@@ -1072,7 +1072,7 @@ export default function WorkoutTable({
                   const words = sportName.split(' ');
                   const isOneWord = words.length === 1;
                   const icon = sports[3].icon && (useImageIcons ? 
-                    <Image src={sports[3].icon} alt={sportName} width={40} height={40} className="object-cover rounded flex-shrink-0" style={{ filter: 'grayscale(100%)' }} unoptimized /> :
+                    <Image src={sports[3].icon} alt={sportName} width={40} height={40} className="object-cover rounded flex-shrink-0" style={{ filter: 'grayscale(100%)' }} unoptimized /> : 
                     <span className="text-base flex-shrink-0">{sports[3].icon}</span>
                   );
                   

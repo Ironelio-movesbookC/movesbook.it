@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import React from 'react';
 
 // Drag and Drop
 import {
@@ -80,6 +81,11 @@ import ShareDayModal from '@/components/workouts/modals/ShareDayModal';
 import WeekTotalsModal from '@/components/workouts/modals/WeekTotalsModal';
 import WeeklyInfoModal from '@/components/workouts/WeeklyInfoModal';
 import CopyWeekModal from '@/components/workouts/modals/CopyWeekModal';
+import PlanGymWeekModal, { type PlanGymWeekAnswers, type GoalId } from '@/components/workouts/modals/PlanGymWeekModal';
+import PlanGymWeekManualModal, { type PlanGymWeekManualResult } from '@/components/workouts/modals/PlanGymWeekManualModal';
+import PlanGymWeekFastPlanModal from '@/components/workouts/modals/PlanGymWeekFastPlanModal';
+import PlanGymWeekWizard, { type LastWorkoutBySector, type PlanGymWeekResult } from '@/components/workouts/PlanGymWeekWizard';
+import { buildHelpedRoutines } from '@/utils/planGymWeekLogic';
 import DayOverviewModal from '@/components/workouts/DayOverviewModal';
 import WorkoutOverviewModal from '@/components/workouts/WorkoutOverviewModal';
 import ExportSharePrint from '@/components/workouts/ExportSharePrint';
@@ -88,6 +94,53 @@ import DragDropConfirmModal, { DragAction, DropPosition } from '@/components/wor
 
 // Icons
 import { X, Download, Plus, Table, Calendar } from 'lucide-react';
+
+/** Build last-workout stats per sector from plan (last previous moveframe with that sector). */
+function computeLastWorkoutBySector(plan: any): Record<string, LastWorkoutBySector> {
+  const out: Record<string, LastWorkoutBySector> = {};
+  if (!plan?.weeks) return out;
+  const entries: { date: Date; sector: string; laps: any[] }[] = [];
+  for (const week of plan.weeks) {
+    for (const day of week.days || []) {
+      const dayDate = day.date ? new Date(day.date) : null;
+      if (!dayDate) continue;
+      for (const workout of day.workouts || []) {
+        for (const mf of workout.moveframes || []) {
+          const movelaps = mf.movelaps || [];
+          const bySector = new Map<string, any[]>();
+          for (const lap of movelaps) {
+            const sector = (lap.muscularSector || lap.sector || '').trim();
+            if (!sector) continue;
+            if (!bySector.has(sector)) bySector.set(sector, []);
+            bySector.get(sector)!.push(lap);
+          }
+          bySector.forEach((laps, sector) => {
+            entries.push({ date: dayDate, sector, laps });
+          });
+        }
+      }
+    }
+  }
+  entries.sort((a, b) => b.date.getTime() - a.date.getTime());
+  const seen = new Set<string>();
+  for (const { date, sector, laps } of entries) {
+    if (seen.has(sector)) continue;
+    seen.add(sector);
+    const totalReps = laps.reduce((s, l) => s + (parseInt(String(l.reps), 10) || 0), 0);
+    const count = laps.length;
+    const series = count;
+    const aveRepPerSet = series > 0 ? Math.round((totalReps / series) * 10) / 10 : 0;
+    const pause = (laps[0]?.pause != null && laps[0].pause !== '') ? String(laps[0].pause) : "—";
+    out[sector] = {
+      date: date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+      series,
+      aveRepPerSet,
+      totalReps,
+      pause
+    };
+  }
+  return out;
+}
 
 // Extracted Handlers
 import * as workoutHandlers from './handlers/workoutHandlers';
@@ -183,6 +236,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
     feedbackMessage,
     showMessage
   } = useWorkoutData({ initialSection: activeSection });
+
+  const lastWorkoutBySector = React.useMemo(() => computeLastWorkoutBySector(workoutPlan), [workoutPlan]);
   
   // Reload data when subsection changes (for Section A only)
   useEffect(() => {
@@ -258,6 +313,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [activeMoveframe, setActiveMoveframe] = useState<Moveframe | null>(null);
   const [activeMovelap, setActiveMovelap] = useState<any>(null);
   const [movelapInsertIndex, setMovelapInsertIndex] = useState<number | null>(null);
+  const [sourceMovelapForAdd, setSourceMovelapForAdd] = useState<any>(null); // When adding via "Add movelap" from Options, the exercise to inherit from
   
   // Editing states
   const [addWorkoutDay, setAddWorkoutDay] = useState<WorkoutDay | null>(null);
@@ -267,10 +323,18 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [editingMovelap, setEditingMovelap] = useState<any>(null);
   const [editingFromMovelap, setEditingFromMovelap] = useState(false);
   const [startInCircuitGrid, setStartInCircuitGrid] = useState(false);
+  /** When editing a moveframe, open the same form used to create it: 'circuits' = Circuit Planner, 'fast' = Fast Planner */
+  const [openMoveframeInBatterySubmenu, setOpenMoveframeInBatterySubmenu] = useState<'circuits' | 'fast' | null>(null);
   const [editingCircuitStation, setEditingCircuitStation] = useState<{ circuitLetter?: string; circuitIndex?: number; localSeriesNumber?: number; stationNumber?: number } | null>(null);
   
   // ==================== UI STATE ====================
   const [excludeStretchingFromTotals, setExcludeStretchingFromTotals] = useState(false);
+  const [showPlanGymWeekModal, setShowPlanGymWeekModal] = useState(false);
+  const [showPlanGymWeekManualForm, setShowPlanGymWeekManualForm] = useState(false);
+  const [planGymWeekManualDaysCount, setPlanGymWeekManualDaysCount] = useState(3);
+  const [planGymWeekInitialPlan, setPlanGymWeekInitialPlan] = useState<PlanGymWeekManualResult | null>(null);
+  const [planGymWeekGoals, setPlanGymWeekGoals] = useState<GoalId[]>([]);
+  const [planGymWeekCreatedPlan, setPlanGymWeekCreatedPlan] = useState<PlanGymWeekManualResult | null>(null);
 
   // ==================== EXPANSION STATE (Using Custom Hook) ====================
   const {
@@ -475,6 +539,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
   const [showMoveWeekModal, setShowMoveWeekModal] = useState(false);
   const [showWeekTotalsModal, setShowWeekTotalsModal] = useState(false);
+  const [showPlanGymWeekWizard, setShowPlanGymWeekWizard] = useState(false);
+  const [planJustCreated, setPlanJustCreated] = useState<PlanGymWeekResult | null>(null);
   const [isWeeklyInfoModalOpen, setIsWeeklyInfoModalOpen] = useState(false);
   const [currentWeek, setCurrentWeek] = useState<any>(null);
   const [autoPrintWeek, setAutoPrintWeek] = useState(false);
@@ -1549,6 +1615,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setShowWeekTotalsModal(true);
           }
         }}
+        onPlanGymWeek={() => setShowPlanGymWeekModal(true)}
         excludeStretchingCheckbox={
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
@@ -1938,6 +2005,25 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                />
             ) : (
               <>
+                {planJustCreated && (
+                  <div className="mx-2 mb-3 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-semibold text-amber-900">
+                        Plan created: {planJustCreated.numDays} day(s), {planJustCreated.helped ? 'guided' : 'manual'} selection.
+                      </p>
+                      <p className="text-sm text-amber-800 mt-1">
+                        To add and see your routines: in the table below, pick a <strong>week</strong> and a <strong>day</strong>, then click <strong>Add workout</strong> (or the + on a day). Choose <strong>Fast Plan</strong> or <strong>Battery</strong> to fill exercises, then save to Archive or Yearly Plan.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPlanJustCreated(null)}
+                      className="flex-shrink-0 px-3 py-1.5 text-sm font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 rounded border border-amber-300"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
                 <StyledTableWrapper>
                 <DayTableView
                  excludeStretchingCheckbox={
@@ -2129,6 +2215,9 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 onAddMoveframeAfter={handleAddMoveframeAfter}
                 onEditMoveframe={(moveframe, workout, day) => {
                   const notes = typeof moveframe?.notes === 'string' ? moveframe.notes : '';
+                  const description = typeof moveframe?.description === 'string' ? moveframe.description : '';
+                  const isLegacyCircuitDescription =
+                    /circuit/i.test(description) && /(station|series|pause)/i.test(description);
                   const hasCircuitMovelapMeta = (moveframe?.movelaps || []).some((movelap: any) => {
                     if (!movelap) return false;
                     if (movelap.circuitIndex != null || movelap.circuitLetter || movelap.stationNumber != null) return true;
@@ -2140,7 +2229,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                     hasCircuitMovelapMeta ||
                     !!moveframe?.circuitConfig ||
                     Array.isArray(moveframe?.circuits) ||
-                    Array.isArray(moveframe?.rows);
+                    Array.isArray(moveframe?.rows) ||
+                    isLegacyCircuitDescription;
                    setStartInCircuitGrid(isCircuitMoveframe);
                    setEditingFromMovelap(false);
                    setEditingCircuitStation(null);
@@ -2174,16 +2264,18 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
 
                   const isCircuitMovelap = !!(circuitTarget.circuitLetter || circuitTarget.circuitIndex || moveframe?.isCircuitBased);
 
+                  // Always use AddEditMovelapModal for editing a single movelap - never open Circuit Planner
+                  // Opening Circuit Planner can overwrite/transform the circuit scheme when saving
                   if (isCircuitMovelap && moveframe) {
-                    setEditingMoveframe(moveframe);
+                    setEditingMovelap(movelap);
                     setActiveDay(day);
                     setActiveWorkout(workout);
                     setActiveMoveframe(moveframe);
                     setActiveMovelap(movelap);
                     setMoveframeModalMode('edit');
-                    setEditingFromMovelap(false);
+                    setEditingFromMovelap(true);
                     setStartInCircuitGrid(true);
-                    setEditingCircuitStation(null);
+                    setEditingCircuitStation(circuitTarget);
                     modalActions.setShowAddMoveframeModal(true);
                     return;
                   }
@@ -2194,6 +2286,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   setActiveMoveframe(moveframe);
                   setActiveMovelap(movelap);
                   setMovelapInsertIndex(null);
+                  setSourceMovelapForAdd(null);
                   setEditingCircuitStation(null);
                   modalActions.setMovelapModalMode('edit');
                   modalActions.setShowAddEditMovelapModal(true);
@@ -2203,7 +2296,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   setActiveWorkout(workout);
                   setActiveDay(day);
                   setEditingMovelap(null);
-                  setMovelapInsertIndex(null); // Clear insert index for regular add
+                  setMovelapInsertIndex(null);
+                  setSourceMovelapForAdd(null);
                   modalActions.setMovelapModalMode('add');
                   modalActions.setShowAddEditMovelapModal(true);
                 }}
@@ -2212,7 +2306,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   setActiveWorkout(workout);
                   setActiveDay(day);
                   setEditingMovelap(null);
-                  setMovelapInsertIndex(index); // Store the position where to insert (after this index)
+                  setMovelapInsertIndex(index); // Insert after this index
+                  setSourceMovelapForAdd(movelap); // Pre-fill form with this exercise's data
                   modalActions.setMovelapModalMode('add');
                   modalActions.setShowAddEditMovelapModal(true);
                 }}
@@ -2371,6 +2466,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   modalActions.setShowColumnSettingsModal(true);
                 }}
                  columnSettings={columnSettings}
+                 onPlanGymWeek={() => setShowPlanGymWeekWizard(true)}
                  reloadWorkouts={async () => {
                    await loadWorkoutData(activeSection);
                  }}
@@ -2542,6 +2638,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             editingMovelapTarget={editingCircuitStation}
             targetMovelap={activeMovelap}
             startInSecondView={startInCircuitGrid}
+            openInBatterySubmenu={openMoveframeInBatterySubmenu}
             onClose={() => {
               modalActions.setShowAddMoveframeModal(false);
             setActiveWorkout(null);
@@ -2553,6 +2650,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setMoveframeInsertIndex(null); // Reset insert index
             setEditingFromMovelap(false);
             setStartInCircuitGrid(false);
+            setOpenMoveframeInBatterySubmenu(null);
             setEditingCircuitStation(null);
             }}
             onSave={async (moveframeData) => {
@@ -2935,6 +3033,12 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
 
                   const movelaps = generateMovelaps(moveframeData);
 
+                  // Require at least one movelap for non-ANNOTATION types (e.g. Fast Planner / BATTERY)
+                  if (moveframeData.type !== 'ANNOTATION' && !moveframeData.manualMode && (!movelaps || movelaps.length === 0)) {
+                    showMessage('error', 'Add at least one exercise before saving.');
+                    return;
+                  }
+
                   console.log('📤 Generated movelaps (count):', movelaps.length);
                   console.log('📤 Generated movelaps (detailed):');
                   movelaps.forEach((lap, index) => {
@@ -3117,6 +3221,70 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
         />
        )}
        
+      {showPlanGymWeekModal && (
+        <PlanGymWeekModal
+          isOpen={showPlanGymWeekModal}
+          onClose={() => setShowPlanGymWeekModal(false)}
+          questionImages={{
+            q1: '/plan-gym-week/q1.jpg',
+            q2: '/plan-gym-week/q2.jpg',
+            q3: '/plan-gym-week/q3.jpg',
+            q4: '/plan-gym-week/q4.jpg'
+          }}
+          onProceed={(answers: PlanGymWeekAnswers) => {
+            setShowPlanGymWeekModal(false);
+            setPlanGymWeekGoals(answers.goals ?? []);
+            if (answers.sectorSelectionMode === 'manual') {
+              setPlanGymWeekManualDaysCount(answers.daysCount);
+              setPlanGymWeekInitialPlan(null);
+              setShowPlanGymWeekManualForm(true);
+            } else {
+              const plan = buildHelpedRoutines({
+                daysCount: answers.daysCount,
+                timesPerSector: answers.timesPerSector,
+                distributionType: answers.distributionType,
+                constantSectors: answers.constantSectors
+              });
+              setPlanGymWeekInitialPlan(plan);
+              setPlanGymWeekManualDaysCount(plan.daysCount);
+              setShowPlanGymWeekManualForm(true);
+            }
+          }}
+        />
+      )}
+
+      {showPlanGymWeekManualForm && (
+        <PlanGymWeekManualModal
+          isOpen={showPlanGymWeekManualForm}
+          initialDaysCount={planGymWeekManualDaysCount}
+          initialPlan={planGymWeekInitialPlan}
+          goals={planGymWeekGoals}
+          workoutPlan={workoutPlan as any}
+          onClose={() => {
+            setShowPlanGymWeekManualForm(false);
+            setPlanGymWeekInitialPlan(null);
+          }}
+          onCreateRoutines={(result: PlanGymWeekManualResult) => {
+            setShowPlanGymWeekManualForm(false);
+            setPlanGymWeekInitialPlan(null);
+            setPlanGymWeekCreatedPlan(result);
+          }}
+        />
+      )}
+
+      {planGymWeekCreatedPlan && (
+        <PlanGymWeekFastPlanModal
+          isOpen={!!planGymWeekCreatedPlan}
+          plan={planGymWeekCreatedPlan}
+          goals={planGymWeekGoals}
+          onClose={() => setPlanGymWeekCreatedPlan(null)}
+          onSave={(plan) => {
+            // TODO: Save to Archive or Yearly Plan
+            showMessage('info', `Plan: ${plan.daysCount} day(s). Save to Archive or Yearly Plan when implemented.`);
+          }}
+        />
+      )}
+
       {modals.showImportModal && (activeSection === 'A' || activeSection === 'B') && (
         <ImportWorkoutsModal
           targetSection={activeSection}
@@ -3459,11 +3627,14 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           mode={modes.movelapModalMode}
           moveframe={activeMoveframe}
           existingMovelap={editingMovelap}
+          sourceMovelapForAdd={sourceMovelapForAdd}
+          movelapInsertIndex={movelapInsertIndex}
           onClose={() => {
             modalActions.setShowAddEditMovelapModal(false);
             setEditingMovelap(null);
             setActiveMoveframe(null);
-            setMovelapInsertIndex(null); // Clear insert index on close
+            setMovelapInsertIndex(null);
+            setSourceMovelapForAdd(null);
           }}
           onCopyToAll={async (fieldName: string, fieldValue: any) => {
             try {
@@ -3645,8 +3816,9 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                     }
                   }
                   
-                  // Reset insert index
+                  // Reset insert index and source movelap
                   setMovelapInsertIndex(null);
+                  setSourceMovelapForAdd(null);
                 }
               }
 
@@ -3666,6 +3838,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
               setEditingMovelap(null);
               setActiveMoveframe(null);
               setMovelapInsertIndex(null);
+              setSourceMovelapForAdd(null);
               
               // Refresh workout data to show changes
               await loadWorkoutData(activeSection);
@@ -4139,6 +4312,19 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           activeSection={activeSection}
         />
       )}
+
+      {/* Plan gym week wizard – plan routine (save to Archive or Yearly Plan) */}
+      <PlanGymWeekWizard
+        isOpen={showPlanGymWeekWizard}
+        onClose={() => setShowPlanGymWeekWizard(false)}
+        lastWorkoutBySector={lastWorkoutBySector}
+        onComplete={(result) => {
+          setShowPlanGymWeekWizard(false);
+          setViewMode('table');
+          setPlanJustCreated(result);
+          showMessage('success', `Plan created: ${result.numDays} day(s). Use the table below to add workouts and fill exercises (see the hint bar).`);
+        }}
+      />
 
       {/* Weekly Info Modal (Edit Week Description & Period) */}
       {isWeeklyInfoModalOpen && currentWeek && (

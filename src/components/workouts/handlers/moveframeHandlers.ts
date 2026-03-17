@@ -33,12 +33,11 @@ export async function createMoveframe(
   });
   
   if (!response.ok) {
-    const error = await response.json();
+    const error = await response.json().catch(() => ({}));
+    const message = error?.error || 'Failed to create moveframe';
+    const details = error?.details ? `: ${error.details}` : '';
     console.error('❌ API Error Response:', error);
-    console.error('❌ Error details:', error.error);
-    console.error('❌ Error code:', error.code);
-    console.error('❌ Error name:', error.name);
-    throw new Error(error.error || 'Failed to create moveframe');
+    throw new Error(message + details);
   }
   
   const data = await response.json();

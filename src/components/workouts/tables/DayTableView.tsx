@@ -68,6 +68,7 @@ interface DayTableViewProps {
   onCopyMoveframe?: (moveframe: any, workout: any, day: any) => void;
   onMoveMoveframe?: (moveframe: any, workout: any, day: any) => void;
   onOpenColumnSettings?: (tableType: 'day' | 'workout' | 'moveframe' | 'movelap') => void;
+  onPlanGymWeek?: () => void; // Plan gym week – opens questions for Fast Plan (Archive / Yearly Plan)
   columnSettings?: any;
   reloadWorkouts?: () => Promise<void>; // Added for reloading after copy/move
 }
@@ -142,6 +143,7 @@ export default function DayTableView({
   onCopyMoveframe,
   onMoveMoveframe,
   onOpenColumnSettings,
+  onPlanGymWeek,
   columnSettings
 }: DayTableViewProps) {
   const { colors } = useColorSettings();
@@ -1387,6 +1389,20 @@ export default function DayTableView({
                       </svg>
                       Save
                     </button>
+                    
+                    {/* Plan gym week - plan a routine (save to Archive or Yearly Plan) */}
+                    {onPlanGymWeek && (
+                      <button
+                        onClick={onPlanGymWeek}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-md"
+                        title="Plan a routine (save to Archive or Yearly Plan)"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        Plan gym week
+                      </button>
+                    )}
                     
                     {/* Print Button - Single week only */}
                     <button

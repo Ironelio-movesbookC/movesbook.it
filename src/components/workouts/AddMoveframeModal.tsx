@@ -4264,7 +4264,7 @@ export default function AddEditMoveframeModal({
                     (typeof existingMoveframe.notes === 'string' && existingMoveframe.notes.includes('[CIRCUIT_DATA]'))))
               }
               editingMovelapTarget={editingMovelapTarget}
-              onCreateCircuit={(circuitData) => {
+              onCreateCircuit={async (circuitData) => {
                 // 2026-01-21 20:00 UTC - Handle circuit creation
                 // 2026-01-22 10:20 UTC - Include description in moveframe data
                 // 2026-01-22 10:30 UTC - Include movelaps in moveframe data
@@ -4296,9 +4296,13 @@ export default function AddEditMoveframeModal({
                 
                 console.log('✅ [AddEditMoveframeModal] Final moveframe data:', finalData);
                 console.log('✅ [AddEditMoveframeModal] Final description:', finalData.description);
-                onSave(finalData);
-                // 2026-01-22 14:40 UTC - Close modal after saving circuit
-                onClose();
+                try {
+                  await onSave(finalData);
+                  onClose();
+                } catch (error) {
+                  console.error('❌ [AddEditMoveframeModal] Circuit save failed:', error);
+                  alert('Failed to save moveframe: ' + (error instanceof Error ? error.message : String(error)));
+                }
               }}
               onCancel={onClose}
             />
