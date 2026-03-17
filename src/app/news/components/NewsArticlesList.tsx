@@ -160,6 +160,10 @@ export default function NewsArticlesList({
     return exp != null && String(exp).trim() !== '';
   };
 
+  /** Base "active" condition for normal users (non-expired, non-deleted, has settings, and has an explicit expiry). */
+  const isActiveForNormalUser = (a: ArticlePasted): boolean =>
+    hasExpirationDateSet(a) && isNotExpired(a) && !a.deletedAt && hasAnyVisibilitySettings(a);
+
   const translateTopic = useCallback((topic: string) => {
     const key = NEWS_TOPIC_KEYS[topic];
     return key ? t(key) : topic;
@@ -176,6 +180,9 @@ export default function NewsArticlesList({
   const [selectedLanguage, setSelectedLanguage] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(5);
+  // Items per page follow the selector (rows × OGPS_PER_ROW).
+  // The visual height of the list is still limited to 3 rows using `ogpListMaxHeight`,
+  // so when rowsPerPage > 3 the extra rows are reachable via scrolling.
   const itemsPerPage = rowsPerPage * OGPS_PER_ROW;
   const [sortOrder, setSortOrder] = useState<SortOrder>('date-desc');
   const [settingsArticleId, setSettingsArticleId] = useState<string | null>(null);
@@ -374,22 +381,16 @@ export default function NewsArticlesList({
         list = list.filter((a) => !!a.deletedAt);
       }
     } else {
-      // Normal user: when OFF exclude expired, no expiration date, and deleted; when ON show expired / no-expiry only.
-      if (!showExpired && !showDeletedTemporarily) {
-        list = list.filter(
-          (a) =>
-            hasExpirationDateSet(a) &&
-            isNotExpired(a) &&
-            !a.deletedAt &&
-            hasAnyVisibilitySettings(a)
-        );
-      } else if (showExpired && !showDeletedTemporarily) {
-        list = list.filter((a) => isExpiredOrNoExpiry(a) && !a.deletedAt);
-      } else if (!showExpired && showDeletedTemporarily) {
-        list = list.filter((a) => !!a.deletedAt);
-      } else {
-        list = list.filter((a) => isExpiredOrNoExpiry(a) || !!a.deletedAt);
-      }
+      // Normal user:
+      // - Always include active OGPs (non-expired, non-deleted, with settings and explicit expiry).
+      // - When "Show also expired" is ON, additionally include expired / no-expiry OGPs (excluding deleted).
+      // - When "Show also deleted temporarily" is ON, additionally include deleted OGPs.
+      list = list.filter((a) => {
+        const isActive = isActiveForNormalUser(a);
+        const includeExpired = showExpired && isExpiredOrNoExpiry(a) && !a.deletedAt;
+        const includeDeleted = showDeletedTemporarily && !!a.deletedAt;
+        return isActive || includeExpired || includeDeleted;
+      });
     }
     if (showOnlyLiked) {
       list = list.filter((a) => (likesMap[a.id]?.count ?? 0) >= 1);
@@ -453,7 +454,7 @@ export default function NewsArticlesList({
     [sorted, start, itemsPerPage]
   );
 
-  // OGP list height = row1 + row2 + row3 (measure first element of row 4)
+  // OGP list height = row1 + row2 + row3 (measure first element of row 4 relative to grid)
   const updateOgpListMaxHeight = useCallback(() => {
     const grid = ogpGridRef.current;
     if (!grid || typeof document === 'undefined') return;
@@ -471,7 +472,11 @@ export default function NewsArticlesList({
     }
     const firstOfRow4 = grid.children[firstOfRow4Index];
     if (firstOfRow4 && firstOfRow4 instanceof HTMLElement) {
-      setOgpListMaxHeight(firstOfRow4.offsetTop);
+      // Measure relative to the grid so we get true "height of 3 rows" regardless of offsetParent
+      const gridRect = grid.getBoundingClientRect();
+      const row4Rect = firstOfRow4.getBoundingClientRect();
+      const heightOfThreeRows = row4Rect.top - gridRect.top;
+      setOgpListMaxHeight(Math.max(1, heightOfThreeRows));
     }
   }, []);
 
@@ -753,10 +758,10 @@ export default function NewsArticlesList({
                   setCurrentPage(1);
                 }}
                 className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                aria-label="Show expired"
+                aria-label={isSuperAdmin ? 'Show expired' : 'Show also expired'}
               />
               <span className="text-yellow-300 text-sm whitespace-nowrap">
-                Show expired
+                {isSuperAdmin ? 'Show expired' : 'Show also expired'}
               </span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -768,10 +773,10 @@ export default function NewsArticlesList({
                   setCurrentPage(1);
                 }}
                 className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                aria-label="Show deleted temporarily"
+                aria-label={isSuperAdmin ? 'Show deleted temporarily' : 'Show also deleted temporarily'}
               />
               <span className="text-yellow-300 text-sm whitespace-nowrap">
-                Show deleted temporarily
+                {isSuperAdmin ? 'Show deleted temporarily' : 'Show also deleted temporarily'}
               </span>
             </label>
             <div className="flex items-center gap-1">
@@ -821,7 +826,7 @@ export default function NewsArticlesList({
             </div>
           </div>
         </div>
-        <div className="p-4">
+        <div className="p-4 min-h-0 flex flex-col">
           {filtered.length === 0 ? (
             <p className="text-sm text-gray-500">
               {activeTopic === ALL_TOPICS
@@ -836,11 +841,16 @@ export default function NewsArticlesList({
             </p>
           ) : (
             <div
-              ref={ogpGridRef}
-              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 overflow-y-auto"
-              style={ogpListMaxHeight != null ? { maxHeight: ogpListMaxHeight } : undefined}
+              className="min-h-0 overflow-y-auto overscroll-contain"
+              style={ogpListMaxHeight != null ? { height: ogpListMaxHeight, maxHeight: ogpListMaxHeight, minHeight: ogpListMaxHeight } : undefined}
+              role="region"
+              aria-label="OGP articles list"
             >
-              {paginated.map((a) => (
+              <div
+                ref={ogpGridRef}
+                className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 w-full min-h-min"
+              >
+                {paginated.map((a) => (
                 <article
                   key={a.id}
                   className={`border rounded-lg p-3 group flex flex-col min-w-0 relative h-full min-h-0 ${
@@ -1067,6 +1077,7 @@ export default function NewsArticlesList({
                   </div>
                 </article>
               ))}
+              </div>
             </div>
           )}
         </div>
