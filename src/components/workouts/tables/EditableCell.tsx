@@ -36,14 +36,14 @@ export default function EditableCell({
     }
   }, [isEditing]);
 
+  // Handle click outside to save
   const handleSave = useCallback(() => {
     if (editValue !== value) {
       onSave(editValue);
     }
     setIsEditing(false);
-  }, [editValue, value, onSave]);
+  }, [editValue, onSave, value]);
 
-  // Handle click outside to save
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (cellRef.current && !cellRef.current.contains(event.target as Node)) {
@@ -136,4 +136,3 @@ export default function EditableCell({
     </div>
   );
 }
-

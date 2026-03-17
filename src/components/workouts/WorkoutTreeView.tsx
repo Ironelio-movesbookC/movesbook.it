@@ -353,7 +353,7 @@ export default function WorkoutTreeView({
                                                 }}
                                               >
                                                 {useImageIcons ? (
-                                                  <Image src={sportIcon} alt={sport} width={48} height={48} className="w-12 h-12 object-cover rounded" unoptimized />
+                                                  <Image src={sportIcon} alt={sport} width={48} height={48} className="object-cover rounded" unoptimized />
                                                 ) : (
                                                   <span className="text-5xl">{sportIcon}</span>
                                                 )}
@@ -558,7 +558,7 @@ export default function WorkoutTreeView({
                                                   <ChevronRight className="w-3 h-3 flex-shrink-0" />
                                                 )}
                                                 {useImageIcons ? (
-                                                  <Image src={sportIcon} alt={moveframe.sport} width={48} height={48} className="w-12 h-12 object-cover rounded" unoptimized />
+                                                  <Image src={sportIcon} alt={moveframe.sport} width={48} height={48} className="object-cover rounded" unoptimized />
                                                 ) : (
                                                   <span className="text-4xl">{sportIcon}</span>
                                                 )}
@@ -681,4 +681,3 @@ export default function WorkoutTreeView({
     </div>
   );
 }
-

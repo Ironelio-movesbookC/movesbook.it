@@ -234,6 +234,20 @@ export default function SortableMoveframeRow({
     return Number.isFinite(asNumber) ? asNumber : null;
   };
 
+  /** Parse macroFinal (e.g. "1'30"", "2'15"") to seconds */
+  const parseMacroToSeconds = (s: string | null | undefined): number | null => {
+    if (!s || typeof s !== 'string') return null;
+    return parseTimeToSeconds(s);
+  };
+
+  /** Macro column: display average of all typed macroFinal values */
+  const macroSecondsFromLaps = (moveframe.movelaps || [])
+    .map((lap: any) => parseMacroToSeconds(lap.macroFinal))
+    .filter((v: number | null | undefined): v is number => v != null && v > 0);
+  const avgMacroSeconds = macroSecondsFromLaps.length > 0
+    ? macroSecondsFromLaps.reduce((a: number, b: number) => a + b, 0) / macroSecondsFromLaps.length
+    : null;
+
   const macroTime = (moveframe.movelaps || []).reduce((sum: number, lap: any) => {
     const direct = parseTimeToSeconds(lap.estimatedTime ?? lap.time);
     if (direct != null) return sum + direct;
@@ -575,6 +589,29 @@ export default function SortableMoveframeRow({
         }
         
         const hasHtmlContent = manualContent && (manualContent.includes('<') || manualContent.includes('\n'));
+
+        const isFastPlanMoveframe = moveframe.type === 'BATTERY' && !moveframe.isCircuitBased &&
+          (typeof moveframe.description === 'string' && moveframe.description.toLowerCase().startsWith('fast planner') ||
+            (typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]')));
+        const fastPlanDistancesLine = isFastPlanMoveframe && Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0
+          ? moveframe.movelaps
+              .map((lap: any) => {
+                const val = lap.reps ?? lap.distance ?? lap.weight ?? '';
+                const sp = lap.speed ?? lap.pace ?? '';
+                const v = val !== '' && val != null ? String(val) : '?';
+                const s = sp !== '' && sp != null ? String(sp) : '?';
+                return `${v}\\${s}`;
+              })
+              .join('+')
+          : '';
+        const fastPlanUserNoteLine = isFastPlanMoveframe && typeof moveframe.notes === 'string'
+          ? stripCircuitTags(
+              moveframe.notes
+                .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
+                .replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '')
+                .trim()
+            )
+          : '';
         
         return (
           <td 
@@ -610,7 +647,13 @@ export default function SortableMoveframeRow({
             }}
            title={isManualMode && hasManualPriority && manualContent ? "Click to view full content" : ""}
           >
-           {isManualMode && hasManualPriority && manualContent ? (
+           {isFastPlanMoveframe ? (
+              <div className="text-left text-sm overflow-hidden break-words">
+                {fastPlanDistancesLine ? <div className="font-medium text-gray-900">{fastPlanDistancesLine}</div> : null}
+                {fastPlanUserNoteLine ? <div className="text-gray-600 mt-0.5">{fastPlanUserNoteLine}</div> : null}
+                {!fastPlanDistancesLine && !fastPlanUserNoteLine ? 'No description' : null}
+              </div>
+            ) : isManualMode && hasManualPriority && manualContent ? (
               <div 
                 className="text-left text-sm overflow-hidden manual-content-preview break-words"
                 dangerouslySetInnerHTML={{ __html: manualContent }}
@@ -631,13 +674,25 @@ export default function SortableMoveframeRow({
                     console.log(`📄 [SortableMoveframeRow] Manual mode without priority for ${moveframe.letter}: showing BLANK`);
                     return ''; // Return empty string for blank cell
                   }
-                  // For circuit-based moveframes, show description or "No description"
+                  // For circuit-based moveframes, show description or "No circuit description"
                   if (moveframe.isCircuitBased) {
                     const displayText = manualContent || 'No circuit description';
                     console.log(`🔄 [SortableMoveframeRow] Circuit display for ${moveframe.letter}:`, displayText);
                     return displayText;
                   }
                   const displayText = manualContent || moveframe.annotationText || 'No description';
+                  // Fast Plan: row 1 = distances only, row 2 = typed description (format "dist\\speed+...\nuserDesc")
+                  const isFastPlan = typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]');
+                  if (isFastPlan && displayText.includes('\n')) {
+                    const [row1, ...rest] = displayText.split('\n');
+                    const row2 = rest.join('\n').trim();
+                    return (
+                      <div className="text-left space-y-0.5">
+                        <div className="font-medium">{row1 || '—'}</div>
+                        {row2 ? <div className="text-gray-600 text-xs">{row2}</div> : null}
+                      </div>
+                    );
+                  }
                   return displayText;
                 })()}
               </div>
@@ -827,7 +882,7 @@ export default function SortableMoveframeRow({
                  : { width: '32px' }
             }
           >
-            {moveframe.type === 'ANNOTATION' ? '—' : (isManualModeMacro ? '—' : (moveframe.macroFinal || formatMacroTime(macroTime)))}
+            {moveframe.type === 'ANNOTATION' ? '—' : (isManualModeMacro ? '—' : (avgMacroSeconds != null ? formatMacroTime(Math.round(avgMacroSeconds)) : (moveframe.macroFinal || formatMacroTime(macroTime))))}
           </td>
         );
       
