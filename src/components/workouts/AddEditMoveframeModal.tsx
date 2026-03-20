@@ -356,6 +356,9 @@ export default function AddEditMoveframeModal({
     })();
   const canUseCircuitPlanner =
     isCircuitFeatureSport(sport) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap;
+  /** Show Fast plannings options for both circuit sports and aerobic sports */
+  const canUseFastPlanners =
+    canUseCircuitPlanner || AEROBIC_SPORTS.includes(sport as any);
 
   // When editing a circuit moveframe, treat as BATTERY immediately so we show Circuit Planner (Part 1+2)
   // instead of STANDARD form (Workout Section, DISTANCE & REPETITIONS) on first render
@@ -1153,7 +1156,7 @@ export default function AddEditMoveframeModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4 animate-fadeIn">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-[75vw] h-[92vh] overflow-hidden flex flex-col animate-slideUp">
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-[75vw] h-[92vh] flex flex-col animate-slideUp">
         {/* Header - hidden in Full page mode */}
         {!isFastPlannerFullViewActive && (
         <div className="bg-gradient-to-r from-cyan-500 to-cyan-600 text-white px-4 py-2.5 flex items-center justify-between flex-shrink-0">
@@ -1636,12 +1639,12 @@ export default function AddEditMoveframeModal({
 
           {/* Fast plannings Submenu Selection - 2026-01-22 14:30 UTC */}
           {/* 2026-01-29 - Moved below Workout Section Selection */}
-          {effectiveType === 'BATTERY' && canUseCircuitPlanner && (
+          {effectiveType === 'BATTERY' && canUseFastPlanners && (
             <div className="mb-3">
               <label className="block text-xs font-bold text-gray-700 mb-1.5">
                 Fast plannings Mode
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2 mb-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -1665,23 +1668,6 @@ export default function AddEditMoveframeModal({
                     if (!isCircuitFeatureSport(sport)) {
                       return;
                     }
-                    setBatterySubmenu('fast');
-                  }}
-                  disabled={!isCircuitFeatureSport(sport) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap}
-                  className={`px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
-                    batterySubmenu === 'fast'
-                      ? 'bg-blue-50 border-blue-500 text-blue-700'
-                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                  } ${!isCircuitFeatureSport(sport) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap ? 'cursor-not-allowed opacity-50' : ''}`}
-                >
-                  Fast planner of Moveframes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isCircuitFeatureSport(sport)) {
-                      return;
-                    }
                     setBatterySubmenu('ai');
                   }}
                   disabled={!isCircuitFeatureSport(sport) || isEditingCircuitFromMovelap || isEditingCircuitMoveframe}
@@ -1693,6 +1679,40 @@ export default function AddEditMoveframeModal({
                 >
                   Plan of Moveframes with AI
                 </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border-2 transition-colors ${
+                  batterySubmenu === 'fast' && AEROBIC_SPORTS.includes(sport as any)
+                    ? 'bg-blue-50 border-blue-500'
+                    : 'border-gray-300 hover:bg-gray-50'
+                } ${!AEROBIC_SPORTS.includes(sport as any) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap ? 'cursor-not-allowed opacity-50' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={batterySubmenu === 'fast' && AEROBIC_SPORTS.includes(sport as any)}
+                    onChange={() => setBatterySubmenu('fast')}
+                    disabled={!AEROBIC_SPORTS.includes(sport as any) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap}
+                    className="w-4 h-4 rounded border-gray-300"
+                  />
+                  <span className="text-sm font-medium">
+                    FAST Plan of Aerobic mframe
+                  </span>
+                </label>
+                <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border-2 transition-colors ${
+                  batterySubmenu === 'fast' && !AEROBIC_SPORTS.includes(sport as any)
+                    ? 'bg-blue-50 border-blue-500'
+                    : 'border-gray-300 hover:bg-gray-50'
+                } ${AEROBIC_SPORTS.includes(sport as any) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap ? 'cursor-not-allowed opacity-50' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={batterySubmenu === 'fast' && !AEROBIC_SPORTS.includes(sport as any)}
+                    onChange={() => setBatterySubmenu('fast')}
+                    disabled={AEROBIC_SPORTS.includes(sport as any) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap}
+                    className="w-4 h-4 rounded border-gray-300"
+                  />
+                  <span className="text-sm font-medium">
+                    FAST Plan of Not Aerobic mframe
+                  </span>
+                </label>
               </div>
             </div>
           )}
@@ -3192,7 +3212,7 @@ export default function AddEditMoveframeModal({
                     </div>
                     
                     {/* Scrollable table - 6 rows visible */}
-                    <div className="border border-gray-300 rounded overflow-hidden bg-white">
+                    <div className="border border-gray-300 rounded bg-white">
                       <div className="overflow-y-auto overflow-x-auto" style={{ maxHeight: '300px' }}>
                         <table className="w-full text-xs">
                           <thead className="bg-gray-200 sticky top-0 z-10">
@@ -3436,7 +3456,7 @@ export default function AddEditMoveframeModal({
                     </h3>
                     
                     {/* Scrollable table - 6 rows visible */}
-                    <div className="border border-gray-300 rounded overflow-hidden bg-white">
+                    <div className="border border-gray-300 rounded bg-white">
                       <div className="overflow-y-auto overflow-x-auto" style={{ maxHeight: '300px' }}>
                         <table className="w-full text-xs table-fixed">
                           <colgroup>
@@ -3841,7 +3861,7 @@ export default function AddEditMoveframeModal({
                       </h3>
                       
                       {/* Scrollable table - 6 rows visible */}
-                      <div className="border border-gray-300 rounded overflow-hidden bg-white">
+                      <div className="border border-gray-300 rounded bg-white">
                         <div className="overflow-y-auto overflow-x-auto" style={{ maxHeight: '300px' }}>
                           <table className="w-full text-xs table-fixed">
                             <colgroup>
@@ -4497,7 +4517,7 @@ export default function AddEditMoveframeModal({
 
           {/* Battery Mode - Fast Planner - Fills viewport so sector+buttons+headers stay on screen */}
           {effectiveType === 'BATTERY' && isCircuitFeatureSport(sport) && batterySubmenu === 'fast' && (
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <div className="flex-1 min-h-0 flex flex-col">
             <FastPlannerOfMoveframes
               ref={fastPlannerRef}
               sport={sport}
@@ -4531,7 +4551,7 @@ export default function AddEditMoveframeModal({
           )}
 
           {effectiveType === 'BATTERY' && AEROBIC_SPORTS.includes(sport as any) && batterySubmenu === 'fast' && (
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <div className="flex-1 min-h-0 flex flex-col">
             <AerobicFastPlannerOfMoveframes
               ref={fastPlannerRef}
               sport={sport}
@@ -4556,7 +4576,7 @@ export default function AddEditMoveframeModal({
           )}
 
           {effectiveType === 'BATTERY' && !isCircuitFeatureSport(sport) && !AEROBIC_SPORTS.includes(sport as any) && batterySubmenu === 'fast' && (
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <div className="flex-1 min-h-0 flex flex-col">
             <FastPlannerOfMoveframes
               ref={fastPlannerRef}
               sport={sport}

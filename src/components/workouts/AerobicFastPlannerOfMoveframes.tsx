@@ -1116,7 +1116,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
 
     return (
       <>
-      <div className={`p-4 bg-gray-50 border border-gray-200 rounded-lg flex flex-col flex-1 min-h-0 overflow-hidden`}>
+      <div className={`p-4 bg-gray-50 border border-gray-200 rounded-lg flex flex-col flex-1 min-h-0`}>
         {fullView && <div className="sticky top-0 z-10 flex-shrink-0 mb-2 px-2 py-2 bg-gray-50 border border-gray-200 rounded shadow-sm">{rowActionButtons}</div>}
         {!fullView && <p className="text-[10px] text-amber-700 mb-1 font-medium">Section below stays on screen during scroll – only the table rows move.</p>}
         <div className={`flex-1 min-h-0 overflow-x-auto border border-gray-200 rounded bg-white ${fullView ? 'overflow-y-visible' : 'overflow-y-auto'}`}>
