@@ -1351,7 +1351,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
             )}
 
             {/* Content area: show options or muscle groups within the same box */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex-1 min-h-[140px] max-h-[200px] overflow-y-hidden text-black shrink-0">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex-1 min-h-[140px] max-h-[280px] overflow-y-auto overflow-x-auto text-black shrink-0">
               {activeExerciseButton ? (
                 <div className="space-y-3">
                 {activeExerciseButton === 'speed' && (
