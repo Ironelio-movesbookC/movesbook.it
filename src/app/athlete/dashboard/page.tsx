@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
-import Image from 'next/image';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 
 // Force dynamic rendering for authenticated pages
 export const dynamic = 'force-dynamic';
@@ -59,6 +58,22 @@ import MyBestSettings from '@/components/settings/MyBestSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
 import NewsOGPPanel from '@/components/news/NewsOGPPanel';
 import PostsPanel from '@/components/posts/PostsPanel';
+import AthleteLegacyBanner, {
+  type AthleteLegacyBannerProfile,
+} from '@/components/athlete/AthleteLegacyBanner';
+import ChangeBannerModal, {
+  type BannerAlignment,
+} from '@/components/athlete/ChangeBannerModal';
+import { parseBannerSequenceJson } from '@/lib/profileBannerSequence';
+
+function heroBannerStripBgUrl(p: AthleteLegacyBannerProfile | null): string {
+  if (!p) return '/images/banner.jpg';
+  const seq = parseBannerSequenceJson(p.profileBannerSequence);
+  const raw = (seq[0] ?? p.profileBanner)?.trim();
+  if (!raw) return '/images/banner.jpg';
+  if (raw.startsWith('/') || raw.startsWith('http')) return raw;
+  return `/img/profile_images/${raw}`;
+}
 
 // 2026-01-22 13:30 UTC - Placeholder component for avatar images (replaces Unsplash timeout issues)
 const AvatarPlaceholder = ({ size = 'w-10 h-10' }: { size?: string }) => (
@@ -95,7 +110,32 @@ function AthleteDashboardContent() {
   const [myTeams, setMyTeams] = useState<any[]>([]);
   const [myClubs, setMyClubs] = useState<any[]>([]);
   const [myGroups, setMyGroups] = useState<any[]>([]);
-  
+  const [bannerProfile, setBannerProfile] = useState<AthleteLegacyBannerProfile | null>(null);
+  const [showChangeBannerModal, setShowChangeBannerModal] = useState(false);
+
+  const loadBannerProfile = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/user/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBannerProfile({
+          image: data.image,
+          profileBanner: data.profileBanner,
+          profileBannerAlignment: data.profileBannerAlignment,
+          profileBannerSequence: data.profileBannerSequence,
+          name: data.name,
+          firstName: data.firstName,
+          surname: data.surname,
+        });
+      }
+    } catch (e) {
+      console.error('Error loading profile for banner:', e);
+    }
+  }, []);
+
   // Current period and week data
   const [currentPeriod, setCurrentPeriod] = useState<{ name: string; color: string } | null>(null);
   const [currentWeek, setCurrentWeek] = useState<number>(1);
@@ -124,15 +164,16 @@ function AthleteDashboardContent() {
 
   // Load entities the athlete belongs to
   useEffect(() => {
-    if (user && user.userType === 'ATHLETE') {
+    if (user && ['ATHLETE', 'ADMIN'].includes(user.userType)) {
       loadMyCoaches();
       loadMyTeams();
       loadMyClubs();
       loadMyGroups();
       loadCurrentWeekAndPeriod();
       loadTelegramAccount();
+      loadBannerProfile();
     }
-  }, [user]);
+  }, [user, loadBannerProfile]);
 
   const loadTelegramAccount = async () => {
     try {
@@ -446,64 +487,15 @@ function AthleteDashboardContent() {
           </div>
         )}
 
-        {/* Video/Image Banner with Info Cards */}
-        {showPersonalBanner && (
-          <div className="flex-shrink-0">
-            <div className="relative overflow-hidden shadow-lg" style={{ height: '300px' }}>
-              <Image 
-                src="/images/banner.jpg" 
-                alt="Athlete Background"
-                fill
-                sizes="100vw"
-                className="object-cover opacity-60"
-              />
-              <div className="absolute inset-0 bg-gradient-to-br from-gray-900/60 to-gray-800/60" />
-
-              <div className="absolute top-4 right-4 flex gap-3">
-                <div className="bg-gray-800/90 backdrop-blur-sm rounded-lg p-3 text-white min-w-[120px]">
-                  <p className="text-xs text-gray-400 uppercase mb-1">Active Season</p>
-                  <p className="font-semibold">2025 Indoor</p>
-                  <p className="text-sm">Championship</p>
-                </div>
-                <div 
-                  className="backdrop-blur-sm rounded-lg p-3 text-white min-w-[120px]"
-                  style={{ backgroundColor: currentPeriod?.color ? `${currentPeriod.color}e6` : '#14b8a6e6' }}
-                >
-                  <p className="text-xs text-gray-200 uppercase mb-1">Period</p>
-                  <p className="font-semibold">{currentPeriod?.name || 'Base'}</p>
-                  <p className="text-sm">Conditioning</p>
-                </div>
-                <div className="bg-blue-600/90 backdrop-blur-sm rounded-lg p-3 text-white min-w-[100px]">
-                  <p className="text-xs text-gray-200 uppercase mb-1">Week</p>
-                  <p className="text-2xl font-bold">{currentWeek}</p>
-                </div>
-                <div className="bg-green-700/90 backdrop-blur-sm rounded-lg p-3 text-white min-w-[140px]">
-                  <p className="text-xs text-gray-200 uppercase mb-1">Next Event</p>
-                  <p className="font-semibold">Continental Cup 21 Jul</p>
-                </div>
-              </div>
-
-              <div className="absolute bottom-4 left-4 flex gap-3">
-                <button
-                  onClick={() => {
-                    setActiveTab('my-page');
-                    setActiveSection('overview');
-                  }}
-                  className="bg-blue-800/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700/90 transition-colors cursor-pointer"
-                >
-                  Activity Overview
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('my-page');
-                    setActiveSection('workouts');
-                  }}
-                  className="bg-blue-800/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700/90 transition-colors cursor-pointer"
-                >
-                  My Workouts
-                </button>
-              </div>
-            </div>
+        {/* Legacy-style athlete banner (cover + avatar + club + sponsored) */}
+        {showPersonalBanner && ['ATHLETE', 'ADMIN'].includes(user.userType) && (
+          <div className="flex-shrink-0 px-0">
+            <AthleteLegacyBanner
+              profile={bannerProfile}
+              primaryClubName={myClubs[0]?.name}
+              onCoverCameraClick={() => setShowChangeBannerModal(true)}
+              t={t}
+            />
           </div>
         )}
 
@@ -511,13 +503,14 @@ function AthleteDashboardContent() {
         {showPersonalBanner && (
           <div className="flex-shrink-0">
             <div className="bg-gray-800 overflow-hidden shadow-lg relative" style={{ height: '52px' }}>
-              {/* Background image with subtle overlay */}
+              {/* Background image with subtle overlay (matches legacy: same cover as main banner when set) */}
               <div 
-                className="absolute inset-0 bg-cover bg-center opacity-20"
+                className="absolute inset-0 bg-cover opacity-20"
                 style={{
-                  backgroundImage: 'url(/images/banner.jpg)',
+                  backgroundImage: `url(${heroBannerStripBgUrl(bannerProfile)})`,
                   backgroundSize: 'cover',
-                  backgroundPosition: 'center'
+                  backgroundPosition:
+                    bannerProfile?.profileBannerAlignment === 'center' ? 'center center' : 'center top',
                 }}
               ></div>
               
@@ -553,7 +546,25 @@ function AthleteDashboardContent() {
 
                 {/* Right side - Action buttons (only for My Page) */}
                 {activeTab === 'my-page' && (
-                  <div className="flex items-center gap-3 ml-4">
+                  <div className="flex items-center gap-3 ml-4 flex-wrap">
+                    <button
+                      onClick={() => {
+                        setActiveTab('my-page');
+                        setActiveSection('overview');
+                      }}
+                      className="bg-blue-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700/90 transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      Activity Overview
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveTab('my-page');
+                        setActiveSection('workouts');
+                      }}
+                      className="bg-blue-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700/90 transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      My Workouts
+                    </button>
                     <button
                       onClick={handleChatPanelClick}
                       className="bg-white hover:bg-gray-100 text-gray-800 px-4 py-2 rounded transition-colors whitespace-nowrap text-sm font-medium flex items-center gap-2 border border-gray-300"
@@ -561,11 +572,17 @@ function AthleteDashboardContent() {
                       <MessageSquare className="w-4 h-4" />
                       Chat panel
                     </button>
-                    <button className="bg-white hover:bg-gray-100 text-gray-800 px-4 py-2 rounded transition-colors whitespace-nowrap text-sm font-medium">
-                      Upgrade informations
+                    <button
+                      type="button"
+                      className="bg-white hover:bg-gray-100 text-gray-800 px-4 py-2 rounded transition-colors whitespace-nowrap text-sm font-medium border border-gray-300"
+                    >
+                      {t('athlete_banner_upgrade_info')}
                     </button>
-                    <button className="bg-white hover:bg-gray-100 text-gray-800 px-4 py-2 rounded transition-colors whitespace-nowrap text-sm font-medium">
-                      Logger of activities
+                    <button
+                      type="button"
+                      className="bg-white hover:bg-gray-100 text-gray-800 px-4 py-2 rounded transition-colors whitespace-nowrap text-sm font-medium border border-gray-300"
+                    >
+                      {t('athlete_banner_logger')}
                     </button>
                   </div>
                 )}
@@ -629,7 +646,13 @@ function AthleteDashboardContent() {
           <div className={`flex-1 min-w-0 flex flex-col ${activeTab === 'my-page' && activeSection === 'personal-settings' ? '' : 'px-4'}`}>
             {activeTab === 'my-page' && (
               <div className="flex-1 flex flex-col min-h-0">
-                {activeSection === 'overview' && <AthleteOverview t={t} />}
+                {activeSection === 'overview' && (
+                  <AthleteOverview
+                    t={t}
+                    currentPeriod={currentPeriod}
+                    currentWeek={currentWeek}
+                  />
+                )}
                 {activeSection === 'workouts' && <WorkoutSection onClose={() => setActiveSection('overview')} />}
                 {activeSection === 'progress' && <AthleteProgress t={t} />}
                 {activeSection === 'settings' && <AthleteSettings t={t} />}
@@ -925,6 +948,30 @@ function AthleteDashboardContent() {
         <SimpleFooter />
       </div>
 
+      <ChangeBannerModal
+        isOpen={showChangeBannerModal}
+        onClose={() => setShowChangeBannerModal(false)}
+        onSaved={(patch) => {
+          setBannerProfile((prev) => {
+            const next = { ...(prev ?? {}) };
+            if (patch.profileBanner !== undefined) next.profileBanner = patch.profileBanner;
+            if (patch.profileBannerAlignment !== undefined) {
+              next.profileBannerAlignment = patch.profileBannerAlignment;
+            }
+            if (patch.profileBannerSequence !== undefined) {
+              next.profileBannerSequence = patch.profileBannerSequence;
+            }
+            return next;
+          });
+        }}
+        currentBannerPath={bannerProfile?.profileBanner}
+        currentAlignment={
+          (bannerProfile?.profileBannerAlignment as BannerAlignment | null | undefined) ?? 'default'
+        }
+        currentBannerSequenceJson={bannerProfile?.profileBannerSequence}
+        t={t}
+      />
+
       {/* Join Chat Modal */}
       {showJoinModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -999,7 +1046,15 @@ function AthleteDashboardContent() {
   );
 }
 
-function AthleteOverview({ t }: { t: (key: string) => string }) {
+function AthleteOverview({
+  t,
+  currentPeriod,
+  currentWeek,
+}: {
+  t: (key: string) => string;
+  currentPeriod: { name: string; color: string } | null;
+  currentWeek: number;
+}) {
   const [stats, setStats] = useState({
     thisWeekWorkouts: 0,
     thisMonthWorkouts: 0,
@@ -1094,8 +1149,37 @@ function AthleteOverview({ t }: { t: (key: string) => string }) {
       </div>
 
       {/* Screen Header */}
-      <div className="flex items-center justify-between mb-6 print:hidden">
-        <h2 className="text-2xl font-bold text-gray-900">{t('dashboard_activity_overview')}</h2>
+      <div className="flex items-center justify-between mb-6 print:hidden gap-4">
+        <h2 className="text-2xl font-bold text-gray-900 whitespace-nowrap">
+          {t('dashboard_activity_overview')}
+        </h2>
+
+        {/* Period/Week/Next event summary (matches banner cards) */}
+        <div className="flex flex-wrap gap-3 items-start justify-end">
+          <div className="h-[84px] bg-gray-800/90 backdrop-blur-sm rounded-lg p-3 text-white min-w-[120px] flex flex-col justify-between">
+            <p className="text-xs text-gray-400 uppercase leading-none">Active Season</p>
+            <p className="font-semibold leading-tight">2025 Indoor</p>
+            <p className="text-sm leading-tight whitespace-nowrap">Championship</p>
+          </div>
+          <div
+            className="h-[84px] backdrop-blur-sm rounded-lg p-3 text-white min-w-[120px] flex flex-col justify-between"
+            style={{
+              backgroundColor: currentPeriod?.color ? `${currentPeriod.color}e6` : '#14b8a6e6',
+            }}
+          >
+            <p className="text-xs text-gray-200 uppercase leading-none">Period</p>
+            <p className="font-semibold leading-tight">{currentPeriod?.name || 'Base'}</p>
+            <p className="text-sm leading-tight whitespace-nowrap">Conditioning</p>
+          </div>
+          <div className="h-[84px] bg-blue-600/90 backdrop-blur-sm rounded-lg p-3 text-white min-w-[100px] flex flex-col justify-between">
+            <p className="text-xs text-gray-200 uppercase leading-none">Week</p>
+            <p className="text-2xl font-bold leading-none">{currentWeek}</p>
+          </div>
+          <div className="h-[84px] bg-green-700/90 backdrop-blur-sm rounded-lg p-3 text-white min-w-[140px] flex flex-col justify-between">
+            <p className="text-xs text-gray-200 uppercase leading-none">Next Event</p>
+            <p className="font-semibold leading-tight whitespace-nowrap">Continental Cup 21 Jul</p>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-6 mb-8 page-break-avoid">
