@@ -18,6 +18,7 @@ import Image from 'next/image';
 import BatteryCircuitPlanner from './BatteryCircuitPlanner_REDESIGNED';
 // 2026-01-29 - Fast Planner of Moveframes component
 import FastPlannerOfMoveframes from './FastPlannerOfMoveframes';
+import AerobicFastPlannerOfMoveframes from './AerobicFastPlannerOfMoveframes';
 
 interface AddEditMoveframeModalProps {
   isOpen: boolean;
@@ -318,6 +319,9 @@ export default function AddEditMoveframeModal({
       }));
   const canUseCircuitPlanner =
     isCircuitFeatureSport(sport) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap;
+  /** Show Fast plannings options for both circuit sports and aerobic sports */
+  const canUseFastPlanners =
+    canUseCircuitPlanner || AEROBIC_SPORTS.includes(sport as any);
 
   // Filter techniques - ONLY for BODY_BUILDING sport
   const availableTechniques = React.useMemo(() => {
@@ -1442,12 +1446,12 @@ export default function AddEditMoveframeModal({
 
           {/* Fast plannings Submenu Selection - 2026-01-22 14:30 UTC */}
           {/* 2026-01-29 - Moved below Workout Section Selection */}
-          {type === 'BATTERY' && (
+          {type === 'BATTERY' && canUseFastPlanners && (
             <div className="mb-3">
               <label className="block text-xs font-bold text-gray-700 mb-1.5">
                 Fast plannings Mode
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2 mb-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -1471,23 +1475,6 @@ export default function AddEditMoveframeModal({
                     if (!isCircuitFeatureSport(sport)) {
                       return;
                     }
-                    setBatterySubmenu('fast');
-                  }}
-                  disabled={!isCircuitFeatureSport(sport) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap}
-                  className={`px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
-                    batterySubmenu === 'fast'
-                      ? 'bg-blue-50 border-blue-500 text-blue-700'
-                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                  } ${!isCircuitFeatureSport(sport) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap ? 'cursor-not-allowed opacity-50' : ''}`}
-                >
-                  Fast planner of Moveframes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isCircuitFeatureSport(sport)) {
-                      return;
-                    }
                     setBatterySubmenu('ai');
                   }}
                   disabled={!isCircuitFeatureSport(sport) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap}
@@ -1500,11 +1487,40 @@ export default function AddEditMoveframeModal({
                   Plan of Moveframes with AI
                 </button>
               </div>
-              {!isCircuitFeatureSport(sport) && (
-                <p className="mt-2 text-xs text-orange-600">
-                  ℹ️ <strong>Note:</strong> Fast plannings mode (all features) is only available for non-aerobic sports with exercise catalogs (e.g., Body Building, Calisthenics, CrossFit, Gymnastic, etc.)
-                </p>
-              )}
+              <div className="grid grid-cols-2 gap-2">
+                <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border-2 transition-colors ${
+                  batterySubmenu === 'fast' && AEROBIC_SPORTS.includes(sport as any)
+                    ? 'bg-blue-50 border-blue-500'
+                    : 'border-gray-300 hover:bg-gray-50'
+                } ${!AEROBIC_SPORTS.includes(sport as any) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap ? 'cursor-not-allowed opacity-50' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={batterySubmenu === 'fast' && AEROBIC_SPORTS.includes(sport as any)}
+                    onChange={() => setBatterySubmenu('fast')}
+                    disabled={!AEROBIC_SPORTS.includes(sport as any) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap}
+                    className="w-4 h-4 rounded border-gray-300"
+                  />
+                  <span className="text-sm font-medium">
+                    FAST Plan of Aerobic mframe
+                  </span>
+                </label>
+                <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border-2 transition-colors ${
+                  batterySubmenu === 'fast' && !AEROBIC_SPORTS.includes(sport as any)
+                    ? 'bg-blue-50 border-blue-500'
+                    : 'border-gray-300 hover:bg-gray-50'
+                } ${AEROBIC_SPORTS.includes(sport as any) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap ? 'cursor-not-allowed opacity-50' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={batterySubmenu === 'fast' && !AEROBIC_SPORTS.includes(sport as any)}
+                    onChange={() => setBatterySubmenu('fast')}
+                    disabled={AEROBIC_SPORTS.includes(sport as any) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap}
+                    className="w-4 h-4 rounded border-gray-300"
+                  />
+                  <span className="text-sm font-medium">
+                    FAST Plan of Not Aerobic mframe
+                  </span>
+                </label>
+              </div>
             </div>
           )}
           
@@ -4308,9 +4324,25 @@ export default function AddEditMoveframeModal({
             />
           )}
 
-          {/* Battery Mode - Fast Planner */}
-          {/* 2026-01-29 - Fast planner of Moveframes - Custom keyboard for quick value selection */}
-          {type === 'BATTERY' && batterySubmenu === 'fast' && (
+          {/* Battery Mode - Fast Planner (Aerobic) */}
+          {type === 'BATTERY' && AEROBIC_SPORTS.includes(sport as any) && batterySubmenu === 'fast' && (
+            <AerobicFastPlannerOfMoveframes
+              sport={sport}
+              sectionId={sectionId}
+              workout={workout}
+              day={day}
+              mode={mode}
+              existingMoveframe={existingMoveframe}
+              onSave={(moveframeData: any) => {
+                onSave(moveframeData);
+                onClose();
+              }}
+              onCancel={onClose}
+            />
+          )}
+
+          {/* Battery Mode - Fast Planner (Not Aerobic) */}
+          {type === 'BATTERY' && !AEROBIC_SPORTS.includes(sport as any) && batterySubmenu === 'fast' && (
             <FastPlannerOfMoveframes
               sport={sport}
               sectionId={sectionId}
