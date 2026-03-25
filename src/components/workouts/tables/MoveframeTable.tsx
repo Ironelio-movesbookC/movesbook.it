@@ -14,7 +14,19 @@ const stripCircuitTags = (content: string | null | undefined): string => {
   return content
     .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
     .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+    .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
     .trim();
+};
+
+const extractFastPlannerDataFromNotes = (notes: unknown): any | null => {
+  if (typeof notes !== 'string') return null;
+  const match = notes.match(/\[FAST_PLANNER_DATA\]([\s\S]*?)\[\/FAST_PLANNER_DATA\]/);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
 };
 
 interface MoveframeTableProps {
@@ -145,6 +157,53 @@ export default function MoveframeTable({
       case 'sport':
         return moveframe.sport || 'Swim';
       case 'description':
+        {
+        const fastPlannerPayload = extractFastPlannerDataFromNotes(moveframe.notes) ?? moveframe.fastPlannerData ?? null;
+        const isFastPlanMoveframe =
+          moveframe.type === 'BATTERY' &&
+          !moveframe.isCircuitBased &&
+          ((typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]')) ||
+            !!fastPlannerPayload);
+        if (isFastPlanMoveframe) {
+          const isAerobic = fastPlannerPayload?.plannerType === 'aerobic';
+          const line1 = isAerobic && Array.isArray(fastPlannerPayload?.rows)
+            ? fastPlannerPayload.rows
+                .map((r: any) => {
+                  const distance = typeof r?.distance === 'string' ? r.distance.trim() : '';
+                  if (!distance) return '';
+                  const style = typeof r?.style === 'string' ? r.style.trim() : '';
+                  return style ? `${distance}\\${style}` : distance;
+                })
+                .filter(Boolean)
+                .join('+')
+            : (moveframe.movelaps || [])
+                .map((lap: any) => {
+                  const val = lap.reps ?? lap.distance ?? lap.weight ?? '';
+                  const sp = lap.speed ?? lap.pace ?? '';
+                  if (val === '' && sp === '') return '';
+                  return `${String(val || '?')}\\${String(sp || '?')}`;
+                })
+                .filter(Boolean)
+                .join('+');
+          const line2 =
+            (typeof fastPlannerPayload?.descriptionInstructions === 'string'
+              ? fastPlannerPayload.descriptionInstructions.trim()
+              : '') ||
+            stripCircuitTags(
+              typeof moveframe.notes === 'string'
+                ? moveframe.notes
+                    .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
+                    .replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '')
+                : ''
+            );
+          return (
+            <div className="text-left text-sm">
+              {line1 ? <div className="font-medium">{line1}</div> : null}
+              {line2 ? <div className="text-gray-600">{line2}</div> : null}
+              {!line1 && !line2 ? 'No description' : null}
+            </div>
+          );
+        }
         // For manual mode with priority, show full content from notes
         // For manual mode WITHOUT priority, show blank (user wants to hide content)
         // Otherwise show description
@@ -167,6 +226,7 @@ export default function MoveframeTable({
           willShowBlank: moveframe.manualMode && !moveframe.manualPriority
         });
         return content;
+        }
       case 'repetitions':
         // For manual mode moveframes in series-based sports, show moveframe.repetitions
         // For normal moveframes, show movelaps count

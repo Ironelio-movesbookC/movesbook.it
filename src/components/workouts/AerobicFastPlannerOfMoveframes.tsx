@@ -382,9 +382,14 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
     // Apply value to the CELL OF THE TOOLBAR PARAMETER (e.g. Watts column), NOT the currently focused cell
     const applyChipToSelection = (value: string) => {
       const fallbackRowId = selectedCell?.rowId ?? rows[0]?.id;
-      if (!fallbackRowId) return;
       const param = activeFieldRef.current; // Always use toolbar parameter, never selectedCell.field
       const targetField = param === 'rest' ? 'rest' : param === 'break' ? 'break' : param;
+      if (!fallbackRowId) {
+        const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
+        setRows([{ ...defaultRow(1), style: defaultStyle, [targetField]: value } as AerobicPlannerRow]);
+        setSelectedCell({ rowId: 1, field: targetField as keyof AerobicPlannerRow });
+        return;
+      }
       setRowField(fallbackRowId, targetField as keyof AerobicPlannerRow, value);
       setSelectedCell({ rowId: fallbackRowId, field: targetField as keyof AerobicPlannerRow });
     };
@@ -452,9 +457,14 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
     // Apply value to the CELL OF THE TOOLBAR PARAMETER, NOT the currently focused cell
     const applyInputToSelection = (value: string) => {
       const fallbackRowId = selectedCell?.rowId ?? rows[0]?.id;
-      if (!fallbackRowId) return;
       const param = activeFieldRef.current; // Always use toolbar parameter, never selectedCell.field
       const targetField = param === 'rest' ? 'rest' : param === 'break' ? 'break' : param;
+      if (!fallbackRowId) {
+        const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
+        setRows([{ ...defaultRow(1), style: defaultStyle, [targetField]: value } as AerobicPlannerRow]);
+        setSelectedCell({ rowId: 1, field: targetField as keyof AerobicPlannerRow });
+        return;
+      }
       setRowField(fallbackRowId, targetField as keyof AerobicPlannerRow, value);
       setSelectedCell({ rowId: fallbackRowId, field: targetField as keyof AerobicPlannerRow });
     };
@@ -521,13 +531,12 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
 
     const isRowFilled = (r: AerobicPlannerRow) =>
       (r.distance || '').trim() !== '' ||
-      (r.style || '').trim() !== '' ||
       (r.speed || '').trim() !== '' ||
       (r.strokes || '').trim() !== '' ||
       (r.watts || '').trim() !== '' ||
       (r.time || '').trim() !== '' ||
       (r.rest || '').trim() !== '' ||
-      (r.break || '').trim() !== '' ||
+      ((r.break || '').trim() !== '' && (r.break || '').trim().toLowerCase() !== 'stopped') ||
       (r.note || '').trim() !== '';
 
     const buildAerobicSummaryFromRows = (allRows: AerobicPlannerRow[]): string => {
@@ -687,13 +696,12 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
         }))
         .filter((r) =>
           r.distance !== '' ||
-          r.style !== '' ||
           r.speed !== '' ||
           r.strokes !== '' ||
           r.watts !== '' ||
           r.time !== '' ||
           r.rest !== '' ||
-          r.break !== '' ||
+          (r.break !== '' && r.break.toLowerCase() !== 'stopped') ||
           r.note !== ''
         )
         .map((r) => {
@@ -751,9 +759,19 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
     }));
 
     const ensureRow = () => {
-      const nextId = Math.max(0, ...rows.map((r) => r.id)) + 1;
+      let addedRowId = 1;
       const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
-      setRows((prev) => [...prev, { ...defaultRow(nextId), style: defaultStyle }]);
+      setRows((prev) => {
+        const numericIds = prev
+          .map((r) => r.id)
+          .filter((id): id is number => Number.isFinite(id));
+        addedRowId = (numericIds.length > 0 ? Math.max(...numericIds) : 0) + 1;
+
+        return [...prev, { ...defaultRow(addedRowId), style: defaultStyle }];
+      });
+      // Make the newly-added row immediately active so the user sees the action took effect.
+      setSelectedCell({ rowId: addedRowId, field: 'distance' });
+      setActiveFieldAndRef('distance');
     };
 
     const deleteRow = (rowId: number) => {
@@ -764,13 +782,12 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
 
     const rowHasData = (r: AerobicPlannerRow) =>
       (r.distance || '').trim() !== '' ||
-      (r.style || '').trim() !== '' ||
       (r.speed || '').trim() !== '' ||
       (r.strokes || '').trim() !== '' ||
       (r.watts || '').trim() !== '' ||
       (r.time || '').trim() !== '' ||
       (r.rest || '').trim() !== '' ||
-      (r.break || '').trim() !== '' ||
+      ((r.break || '').trim() !== '' && (r.break || '').trim().toLowerCase() !== 'stopped') ||
       (r.note || '').trim() !== '';
 
     const duplicateCurrentRow = (count: number) => {
@@ -835,6 +852,24 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       setRestartTimeValidationError(false);
     };
 
+    // Safety net: if rows become empty for any reason, restore a default row so the table remains usable.
+    useEffect(() => {
+      if (rows.length > 0) return;
+      console.log('[AerobicFastPlanner] rows empty -> restoring default row');
+      const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
+      setRows([{ ...defaultRow(1), style: defaultStyle }]);
+      setSelectedCell({ rowId: 1, field: 'distance' });
+      setActiveFieldAndRef('distance');
+    }, [rows, styleChoices, setActiveFieldAndRef]);
+
+    useEffect(() => {
+      console.log('[AerobicFastPlanner] rows changed', {
+        rowsCount: rows.length,
+        rowIds: rows.map((r) => r.id),
+        selectedCell
+      });
+    }, [rows, selectedCell]);
+
     const onCellClick = (rowId: number, field: keyof AerobicPlannerRow) => {
       lastSelectedRowIdRef.current = rowId;
       const row = rows.find((r) => r.id === rowId);
@@ -870,21 +905,35 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
     const setToolbarRestChoice = (choice: RestChoice) => {
       setRestChoice(choice);
       setActiveFieldAndRef('rest');
-      if (!selectedCell) return;
-      setRows((prev) => prev.map((r) => (r.id === selectedCell.rowId ? { ...r, restChoice: choice } : r)));
+      const targetRowId = selectedCell?.rowId ?? rows[0]?.id;
+      if (!targetRowId) {
+        const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
+        setRows([{ ...defaultRow(1), style: defaultStyle, restChoice: choice }]);
+        setSelectedCell({ rowId: 1, field: 'rest' });
+        return;
+      }
+      setRows((prev) => prev.map((r) => (r.id === targetRowId ? { ...r, restChoice: choice } : r)));
+      setSelectedCell({ rowId: targetRowId, field: 'rest' });
     };
 
     const setToolbarBreakChoice = (choice: BreakChoice) => {
       setBreakChoice(choice);
       setActiveFieldAndRef('break');
-      if (!selectedCell) return;
+      const targetRowId = selectedCell?.rowId ?? rows[0]?.id;
+      if (!targetRowId) {
+        const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
+        setRows([{ ...defaultRow(1), style: defaultStyle, breakChoice: choice, break: choice === 'stopped' ? 'Stopped' : '' }]);
+        setSelectedCell({ rowId: 1, field: 'break' });
+        return;
+      }
       setRows((prev) =>
         prev.map((r) => {
-          if (r.id !== selectedCell.rowId) return r;
+          if (r.id !== targetRowId) return r;
           if (choice === 'stopped') return { ...r, breakChoice: 'stopped', break: 'Stopped' };
           return { ...r, breakChoice: choice };
         })
       );
+      setSelectedCell({ rowId: targetRowId, field: 'break' });
     };
 
     const restChoiceLabel = (choice: RestChoice) => {
@@ -1119,9 +1168,9 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       <div className={`p-4 bg-gray-50 border border-gray-200 rounded-lg flex flex-col flex-1 min-h-0`}>
         {fullView && <div className="sticky top-0 z-10 flex-shrink-0 mb-2 px-2 py-2 bg-gray-50 border border-gray-200 rounded shadow-sm">{rowActionButtons}</div>}
         {!fullView && <p className="text-[10px] text-amber-700 mb-1 font-medium">Section below stays on screen during scroll – only the table rows move.</p>}
-        <div className={`flex-1 min-h-0 overflow-x-auto border border-gray-200 rounded bg-white ${fullView ? 'overflow-y-visible' : 'overflow-y-auto'}`}>
+        <div className={`min-h-[360px] overflow-x-hidden border border-gray-200 rounded bg-white ${fullView ? 'overflow-y-visible' : 'overflow-y-auto'}`}>
           {!fullView && (
-          <div className="sticky top-0 z-10 bg-gray-50 pt-1 pb-2 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+          <div className="relative z-10 bg-gray-50 pt-1 pb-2 border-b border-gray-200">
         <div className="mb-3">
           <div className="grid grid-cols-1 lg:grid-cols-7 gap-2">
             <div className={`border rounded ${durationTheme.box} lg:col-span-1`}>
@@ -1280,53 +1329,8 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
           </div>
         )}
 
-        <div className="border border-gray-300 bg-white rounded overflow-hidden border-t-0 rounded-t-none">
+        <div className="mt-3 border border-gray-300 bg-white rounded overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-[11px] table-fixed min-w-[1200px]">
-              <colgroup>
-                <col className="w-[56px]" />
-                <col className="w-[70px]" />
-                <col className="w-[110px]" />
-                <col className="w-[100px]" />
-                <col className="w-[80px]" />
-                <col className="w-[80px]" />
-                <col className="w-[110px]" />
-                <col className="w-[110px]" />
-                <col className="w-[110px]" />
-                <col className="w-[110px]" />
-                <col className="w-[110px]" />
-                <col className="w-[280px]" />
-              </colgroup>
-              <thead className="sticky z-[9] bg-gray-100 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]" style={{ top: '14rem' }}>
-                <tr>
-                  <th rowSpan={2} className="border-b border-r border-gray-300 px-1.5 py-1.5 text-center bg-gray-100">#</th>
-                  <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${durationTheme.header}`}>Duration &amp; Mode</th>
-                  <th colSpan={4} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${intensityTheme.header}`}>Intensity of work</th>
-                  <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${breakTheme.header}`}>Break between rehearsals</th>
-                  <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${breakTypeTheme.header}`}>Break type between rehearsals</th>
-                  <th rowSpan={2} className="border-b border-gray-300 px-2 py-2 text-center bg-amber-200 border-2 border-amber-400 text-amber-900 font-bold text-[13px]">Note</th>
-                </tr>
-                <tr>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${durationTheme.header}`}>Distance</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${durationTheme.header}`}>Style</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Speed</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Strokes</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Watts</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Time</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTheme.header}`}>Rest Type</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTheme.header}`}>Rest</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTypeTheme.header}`}>Break type</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTypeTheme.header}`}>Break</th>
-                </tr>
-              </thead>
-            </table>
-          </div>
-        </div>
-        </div>
-
-        <div className="border border-gray-300 bg-white rounded overflow-hidden border-t-0 rounded-t-none -mt-px">
-          <div className="overflow-x-auto">
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <table className="w-full text-[11px] table-fixed min-w-[1200px]">
                 <colgroup>
                   <col className="w-[56px]" />
@@ -1342,7 +1346,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
                   <col className="w-[110px]" />
                   <col className="w-[280px]" />
                 </colgroup>
-                <thead className="sticky z-[9] bg-gray-100 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]" style={{ top: '14rem' }}>
+                <thead className="bg-gray-100">
                   <tr>
                     <th rowSpan={2} className="border-b border-r border-gray-300 px-1.5 py-1.5 text-center bg-gray-100">#</th>
                     <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${durationTheme.header}`}>Duration &amp; Mode</th>
@@ -1365,14 +1369,26 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
                   </tr>
                 </thead>
                 <tbody>
-                  <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
-                    {rows.map((r, rowIndex) => (
+                  {rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={12} className="border-t border-gray-200 px-3 py-4 text-center text-sm text-gray-600">
+                        No rows available.
+                        <button
+                          type="button"
+                          onClick={ensureRow}
+                          className="ml-3 px-3 py-1.5 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50"
+                        >
+                          Create first row
+                        </button>
+                      </td>
+                    </tr>
+                  ) : (
+                    rows.map((r, rowIndex) => (
                       <SortableRow key={r.id} row={r} rowIndex={rowIndex} />
-                    ))}
-                  </SortableContext>
+                    ))
+                  )}
                 </tbody>
               </table>
-            </DndContext>
           </div>
         </div>
 
@@ -1407,6 +1423,8 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
         )}
 
         </div>
+
+      </div>
 
         {showPreferences && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

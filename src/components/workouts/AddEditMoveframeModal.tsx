@@ -5052,14 +5052,6 @@ export default function AddEditMoveframeModal({
         {type === 'BATTERY' && (AEROBIC_SPORTS.includes(sport as any) || !isCircuitFeatureSport(sport)) && (
           <div className={`flex-shrink-0 border-t bg-white px-4 py-3 flex items-center gap-3 ${isFastPlannerFullView ? 'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg shadow-xl border-2 border-gray-200' : 'justify-between'}`}>
             <button onClick={handleClose} className="px-6 py-2 bg-gray-600 text-white font-medium rounded hover:bg-gray-700">Cancel</button>
-            {!isCircuitFeatureSport(sport) && !AEROBIC_SPORTS.includes(sport as any) && (
-              <button onClick={() => setIsFastPlannerFullView(prev => !prev)} className="px-6 py-2 bg-white text-black border-2 border-gray-300 rounded hover:border-blue-500">{isFastPlannerFullView ? 'Back to edit' : 'Show full page'}</button>
-            )}
-            <button onClick={() => fastPlannerRef.current?.saveMoveframeAndMovelaps()} className="px-6 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700">Save moveframe and its movelaps</button>
-            <button onClick={() => fastPlannerRef.current?.openPreferences()} className="px-6 py-2 bg-white text-black border-2 border-gray-300 rounded hover:border-blue-500 flex items-center justify-center" title="Open preferences">
-              <Image src="/preference.png" alt="Preferences" width={20} height={20} className="mr-2 object-contain" unoptimized />
-              Preferences
-            </button>
             <div className="flex items-center">
               {isFastPlannerShown && (
                 <button
