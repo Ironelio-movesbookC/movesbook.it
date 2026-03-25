@@ -49,6 +49,9 @@ model User {
   telegramChatId           String?   // Telegram chat id for sending/receiving via bot
   lastSeenAt               DateTime? // For chat online/offline status
   image                    String?   // Profile/avatar image URL or path (users_new table)
+  profileBanner            String?   // Cover/banner image path (legacy single-user banner background)
+  profileBannerAlignment   String?   // "center" | "default" — object-position for cover (legacy)
+  profileBannerSequence    String?   @db.Text // JSON string[] of public image paths for rotating banner
   superAdminId             String?   @unique // When set, this User mirrors a super_admin for news/OGP attribution
   conversationsStarted    ChatConversation[] @relation("ConversationStarter")
   conversationsReceived   ChatConversation[] @relation("ConversationReceiver")
