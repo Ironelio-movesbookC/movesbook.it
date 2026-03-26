@@ -81,8 +81,15 @@ import ShareDayModal from '@/components/workouts/modals/ShareDayModal';
 import WeekTotalsModal from '@/components/workouts/modals/WeekTotalsModal';
 import WeeklyInfoModal from '@/components/workouts/WeeklyInfoModal';
 import CopyWeekModal from '@/components/workouts/modals/CopyWeekModal';
-import PlanGymWeekModal, { type PlanGymWeekAnswers, type GoalId } from '@/components/workouts/modals/PlanGymWeekModal';
-import PlanGymWeekManualModal, { type PlanGymWeekManualResult } from '@/components/workouts/modals/PlanGymWeekManualModal';
+import PlanGymWeekModal, {
+  type PlanGymWeekAnswers,
+  type GoalId,
+  type TrainingLevel
+} from '@/components/workouts/modals/PlanGymWeekModal';
+import PlanGymWeekManualModal, {
+  type PlanGymWeekManualResult,
+  type PlanGymWeekRescanParams
+} from '@/components/workouts/modals/PlanGymWeekManualModal';
 import PlanGymWeekFastPlanModal from '@/components/workouts/modals/PlanGymWeekFastPlanModal';
 import PlanGymWeekWizard, { type LastWorkoutBySector, type PlanGymWeekResult } from '@/components/workouts/PlanGymWeekWizard';
 import { buildHelpedRoutines } from '@/utils/planGymWeekLogic';
@@ -335,6 +342,9 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [planGymWeekInitialPlan, setPlanGymWeekInitialPlan] = useState<PlanGymWeekManualResult | null>(null);
   const [planGymWeekGoals, setPlanGymWeekGoals] = useState<GoalId[]>([]);
   const [planGymWeekCreatedPlan, setPlanGymWeekCreatedPlan] = useState<PlanGymWeekManualResult | null>(null);
+  const [planGymWeekRescanParams, setPlanGymWeekRescanParams] = useState<PlanGymWeekRescanParams | null>(null);
+  const [planGymWeekTrainingLevel, setPlanGymWeekTrainingLevel] = useState<TrainingLevel | null>(null);
+  const [planGymWeekWizardInitialStep, setPlanGymWeekWizardInitialStep] = useState<1 | 2>(1);
 
   // ==================== EXPANSION STATE (Using Custom Hook) ====================
   const {
@@ -1615,7 +1625,10 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setShowWeekTotalsModal(true);
           }
         }}
-        onPlanGymWeek={() => setShowPlanGymWeekModal(true)}
+        onPlanGymWeek={() => {
+          setPlanGymWeekWizardInitialStep(1);
+          setShowPlanGymWeekModal(true);
+        }}
         excludeStretchingCheckbox={
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
@@ -3224,37 +3237,48 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
         />
        )}
        
-      {showPlanGymWeekModal && (
-        <PlanGymWeekModal
-          isOpen={showPlanGymWeekModal}
-          onClose={() => setShowPlanGymWeekModal(false)}
-          questionImages={{
-            q1: '/plan-gym-week/q1.jpg',
-            q2: '/plan-gym-week/q2.jpg',
-            q3: '/plan-gym-week/q3.jpg',
-            q4: '/plan-gym-week/q4.jpg'
-          }}
-          onProceed={(answers: PlanGymWeekAnswers) => {
-            setShowPlanGymWeekModal(false);
-            setPlanGymWeekGoals(answers.goals ?? []);
-            if (answers.sectorSelectionMode === 'manual') {
-              setPlanGymWeekManualDaysCount(answers.daysCount);
-              setPlanGymWeekInitialPlan(null);
-              setShowPlanGymWeekManualForm(true);
-            } else {
-              const plan = buildHelpedRoutines({
-                daysCount: answers.daysCount,
-                timesPerSector: answers.timesPerSector,
-                distributionType: answers.distributionType,
-                constantSectors: answers.constantSectors
-              });
-              setPlanGymWeekInitialPlan(plan);
-              setPlanGymWeekManualDaysCount(plan.daysCount);
-              setShowPlanGymWeekManualForm(true);
-            }
-          }}
-        />
-      )}
+      <PlanGymWeekModal
+        isOpen={showPlanGymWeekModal}
+        initialStepOnOpen={planGymWeekWizardInitialStep}
+        onClose={() => {
+          setShowPlanGymWeekModal(false);
+          setPlanGymWeekWizardInitialStep(1);
+        }}
+        questionImages={{
+          q1: '/plan-gym-week/q1.jpg',
+          q2: '/plan-gym-week/q2.jpg',
+          q3: '/plan-gym-week/q3.jpg',
+          q4: '/plan-gym-week/q4.jpg'
+        }}
+        onProceed={(answers: PlanGymWeekAnswers) => {
+          setShowPlanGymWeekModal(false);
+          setPlanGymWeekWizardInitialStep(1);
+          setPlanGymWeekTrainingLevel(answers.trainingLevel);
+          setPlanGymWeekGoals(answers.goals ?? []);
+          if (answers.sectorSelectionMode === 'manual') {
+            setPlanGymWeekManualDaysCount(answers.daysCount);
+            setPlanGymWeekInitialPlan(null);
+            setPlanGymWeekRescanParams(null);
+            setShowPlanGymWeekManualForm(true);
+          } else {
+            setPlanGymWeekRescanParams({
+              daysCount: answers.daysCount,
+              timesPerSector: answers.timesPerSector,
+              distributionType: answers.distributionType,
+              constantSectors: answers.constantSectors
+            });
+            const plan = buildHelpedRoutines({
+              daysCount: answers.daysCount,
+              timesPerSector: answers.timesPerSector,
+              distributionType: answers.distributionType,
+              constantSectors: answers.constantSectors
+            });
+            setPlanGymWeekInitialPlan(plan);
+            setPlanGymWeekManualDaysCount(plan.daysCount);
+            setShowPlanGymWeekManualForm(true);
+          }
+        }}
+      />
 
       {showPlanGymWeekManualForm && (
         <PlanGymWeekManualModal
@@ -3263,13 +3287,24 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           initialPlan={planGymWeekInitialPlan}
           goals={planGymWeekGoals}
           workoutPlan={workoutPlan as any}
+          rescanParams={planGymWeekRescanParams}
+          trainingLevel={planGymWeekTrainingLevel}
+          onBack={() => {
+            setPlanGymWeekWizardInitialStep(2);
+            setShowPlanGymWeekManualForm(false);
+            setShowPlanGymWeekModal(true);
+          }}
           onClose={() => {
             setShowPlanGymWeekManualForm(false);
             setPlanGymWeekInitialPlan(null);
+            setPlanGymWeekRescanParams(null);
+            setPlanGymWeekTrainingLevel(null);
           }}
           onCreateRoutines={(result: PlanGymWeekManualResult) => {
             setShowPlanGymWeekManualForm(false);
             setPlanGymWeekInitialPlan(null);
+            setPlanGymWeekRescanParams(null);
+            setPlanGymWeekTrainingLevel(null);
             setPlanGymWeekCreatedPlan(result);
           }}
         />

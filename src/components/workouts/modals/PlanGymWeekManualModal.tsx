@@ -1,9 +1,21 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Image from 'next/image';
-import { X, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
-import { GOAL_OPTIONS, type GoalId } from './PlanGymWeekModal';
+import { X, ChevronUp, ChevronDown, ChevronsDown, Trash2 } from 'lucide-react';
+import {
+  GOAL_OPTIONS,
+  type GoalId,
+  type TrainingLevel,
+  getPlanGymWeekTrainingLevelImageSrc,
+  getPlanGymWeekTrainingLevelLabel
+} from './PlanGymWeekModal';
+import { buildHelpedRoutines, type BuildHelpedRoutinesParams } from '@/utils/planGymWeekLogic';
+import {
+  computePyramidalRepsSeries,
+  formatPercentLoad1MR,
+  type PyramidalMode
+} from '@/utils/pyramidalReps';
 
 /** Muscular sectors with images (aligned with FastPlannerOfMoveframes) */
 const MUSCLE_GROUPS = [
@@ -23,16 +35,29 @@ const MUSCLE_GROUPS = [
 
 const PAUSE_OPTIONS = ['0', '30"', "1'", "1'30\"", "2'", "2'30\"", "3'", "4'", "5'"];
 
+const PYRAMIDAL_OPTIONS: { value: PyramidalMode; label: string }[] = [
+  { value: 'flat', label: 'Flat' },
+  { value: 'ascending', label: 'Ascending' },
+  { value: 'descending', label: 'Descending' },
+  { value: 'mix', label: 'Mix' }
+];
+
 export interface ManualDaySector {
   sectorId: string;
   sectorLabel: string;
   image: string;
   exercises: number;
   series: number;
+  /** Target reps for series 1; drives pyramid when Pyramidal ≠ Flat */
   reps: number;
   pause: string;
   macroExercise: string;
   macroEndOfSector: string;
+  /** Default Flat — same as Add/Edit moveframe body-building planning */
+  pyramidal: PyramidalMode;
+  /** One entry per series (length === series) */
+  seriesReps: number[];
+  seriesWeights: string[];
 }
 
 export interface ManualDayPlan {
@@ -43,6 +68,92 @@ export interface ManualDayPlan {
 export interface PlanGymWeekManualResult {
   daysCount: number;
   days: ManualDayPlan[];
+}
+
+function resizeSeriesWeights(w: string[] | undefined, len: number): string[] {
+  const out = [...(w ?? [])];
+  while (out.length < len) out.push('0');
+  out.length = len;
+  return out;
+}
+
+/** Normalize sector after load from saved plan or older JSON (missing pyramidal / series arrays). */
+export function ensureManualSectorShape(sec: ManualDaySector): ManualDaySector {
+  const series = Math.max(1, Math.min(20, sec.series));
+  const reps = Math.max(1, Math.min(99, sec.reps || 12));
+  const pyramidal = (sec.pyramidal ?? 'flat') as PyramidalMode;
+  let seriesReps = sec.seriesReps;
+  if (!Array.isArray(seriesReps) || seriesReps.length !== series) {
+    seriesReps = computePyramidalRepsSeries(reps, series, pyramidal);
+  }
+  let seriesWeights = sec.seriesWeights;
+  if (!Array.isArray(seriesWeights) || seriesWeights.length !== series) {
+    seriesWeights = Array.from({ length: series }, (_, i) =>
+      sec.seriesWeights?.[i] != null ? String(sec.seriesWeights[i]) : '0'
+    );
+  }
+  return {
+    ...sec,
+    exercises: Math.max(1, Math.min(20, sec.exercises)),
+    series,
+    reps,
+    pyramidal,
+    seriesReps,
+    seriesWeights
+  };
+}
+
+function ensureManualDayPlan(day: ManualDayPlan): ManualDayPlan {
+  return {
+    ...day,
+    sectors: day.sectors.map(ensureManualSectorShape)
+  };
+}
+
+type SectorScalarField =
+  | 'exercises'
+  | 'series'
+  | 'reps'
+  | 'pause'
+  | 'macroExercise'
+  | 'macroEndOfSector'
+  | 'pyramidal';
+
+function applySectorScalarUpdate(sec: ManualDaySector, field: SectorScalarField, value: number | string): ManualDaySector {
+  if (field === 'exercises') {
+    const exercises = Math.max(1, Math.min(20, parseInt(String(value), 10) || 1));
+    return { ...sec, exercises };
+  }
+  if (field === 'series') {
+    const series = Math.max(1, Math.min(20, parseInt(String(value), 10) || 1));
+    const seriesReps = computePyramidalRepsSeries(sec.reps, series, sec.pyramidal);
+    return { ...sec, series, seriesReps, seriesWeights: resizeSeriesWeights(sec.seriesWeights, series) };
+  }
+  if (field === 'reps') {
+    const reps = Math.max(1, Math.min(99, parseInt(String(value), 10) || 1));
+    const seriesReps = computePyramidalRepsSeries(reps, sec.series, sec.pyramidal);
+    return {
+      ...sec,
+      reps,
+      seriesReps,
+      seriesWeights: resizeSeriesWeights(sec.seriesWeights, sec.series)
+    };
+  }
+  if (field === 'pyramidal') {
+    const pyramidal = String(value) as PyramidalMode;
+    const base = sec.reps > 0 ? sec.reps : 12;
+    const seriesReps = computePyramidalRepsSeries(base, sec.series, pyramidal);
+    return {
+      ...sec,
+      pyramidal,
+      seriesReps,
+      seriesWeights: resizeSeriesWeights(sec.seriesWeights, sec.series)
+    };
+  }
+  if (field === 'pause' || field === 'macroExercise' || field === 'macroEndOfSector') {
+    return { ...sec, [field]: String(value) };
+  }
+  return sec;
 }
 
 /** Summary of the last planned workout for a given sector (from workout plan) */
@@ -140,8 +251,15 @@ interface PlanGymWeekManualModalProps {
   goals?: GoalId[];
   /** Optional workout plan to show "Last workout" summary per sector */
   workoutPlan?: WorkoutPlanForLast;
-  /** Optional image URL for the header (e.g. AI-generated) */
+  /** Optional image URL when no training level is set (e.g. AI-generated) */
   headerImage?: string;
+  /** When set (helped wizard flow), “Rescan sectors” rebuilds system assignment with A/B/C alternation + new shuffle */
+  rescanParams?: PlanGymWeekRescanParams | null;
+  /** From Plan Gym Week step 1; shows photo and label in the top panel */
+  trainingLevel?: TrainingLevel | null;
+  trainingLevelImages?: Partial<Record<TrainingLevel, string>>;
+  /** Return to the Plan Gym Week questions (step 2 if user had already advanced) */
+  onBack?: () => void;
 }
 
 function buildInitialDays(daysCount: number): ManualDayPlan[] {
@@ -167,6 +285,25 @@ function getGoalLabel(goalId: GoalId | undefined): string {
   return opt ? opt.label : goalId;
 }
 
+export type PlanGymWeekRescanParams = Omit<BuildHelpedRoutinesParams, 'constantSectorsAtBeginning'>;
+
+/** Move sectors that match wizard “train constantly” to the start or end of each day, preserving relative order within each block. */
+function reorderDaysConstantPlacement(
+  dayPlans: ManualDayPlan[],
+  constantIds: Set<string>,
+  atBeginning: boolean
+): ManualDayPlan[] {
+  if (constantIds.size === 0) return dayPlans;
+  return dayPlans.map((day) => {
+    const constantSecs = day.sectors.filter((s) => constantIds.has(s.sectorId));
+    const otherSecs = day.sectors.filter((s) => !constantIds.has(s.sectorId));
+    return {
+      ...day,
+      sectors: atBeginning ? [...constantSecs, ...otherSecs] : [...otherSecs, ...constantSecs]
+    };
+  });
+}
+
 export default function PlanGymWeekManualModal({
   isOpen,
   initialDaysCount,
@@ -175,7 +312,11 @@ export default function PlanGymWeekManualModal({
   initialPlan,
   goals = [],
   workoutPlan,
-  headerImage
+  headerImage,
+  rescanParams = null,
+  trainingLevel = null,
+  trainingLevelImages,
+  onBack
 }: PlanGymWeekManualModalProps) {
   const [daysCount, setDaysCount] = useState<number>(Math.min(6, Math.max(1, initialDaysCount)));
   const [activeDayIndex, setActiveDayIndex] = useState(0);
@@ -183,6 +324,14 @@ export default function PlanGymWeekManualModal({
   const [editingRoutineName, setEditingRoutineName] = useState<string | null>(null);
   const [draftRoutineName, setDraftRoutineName] = useState('');
   const [viewMode, setViewMode] = useState<'edit' | 'fullOverview'>('edit');
+  const [constantSectorsAtBeginning, setConstantSectorsAtBeginning] = useState(false);
+  /** 0-based source day index (only days before the current day). Default index = max(0, activeDayIndex - 2) → “day before previous”. */
+  const [loadFromSourceIndex, setLoadFromSourceIndex] = useState(0);
+
+  const constantSectorIdSet = useMemo(() => {
+    const ids = rescanParams?.constantSectors?.filter(Boolean) ?? [];
+    return new Set(ids);
+  }, [rescanParams]);
 
   // Reset form when modal opens: use initialPlan if provided (helped flow), else empty by initialDaysCount
   useEffect(() => {
@@ -190,7 +339,7 @@ export default function PlanGymWeekManualModal({
       if (initialPlan?.days?.length) {
         setDaysCount(initialPlan.daysCount);
         setActiveDayIndex(0);
-        setDays(initialPlan.days);
+        setDays(initialPlan.days.map(ensureManualDayPlan));
       } else {
         const initial = Math.min(6, Math.max(1, initialDaysCount));
         setDaysCount(initial);
@@ -199,8 +348,57 @@ export default function PlanGymWeekManualModal({
       }
       setEditingRoutineName(null);
       setViewMode('edit');
+      setConstantSectorsAtBeginning(false);
+      setLoadFromSourceIndex(0);
     }
   }, [isOpen, initialDaysCount, initialPlan]);
+
+  useEffect(() => {
+    if (activeDayIndex < 1) return;
+    const maxSrc = activeDayIndex - 1;
+    const defaultIdx = Math.max(0, activeDayIndex - 2);
+    setLoadFromSourceIndex(Math.min(defaultIdx, maxSrc));
+  }, [activeDayIndex]);
+
+  const handleProceedLoadFromDay = () => {
+    if (activeDayIndex < 1) return;
+    const srcIdx = loadFromSourceIndex;
+    if (srcIdx < 0 || srcIdx >= activeDayIndex) return;
+    const sourceDay = stableDays[srcIdx];
+    if (!sourceDay) return;
+    setDays((prev) => {
+      const next = [...prev];
+      const cur = next[activeDayIndex];
+      if (!cur) return prev;
+      next[activeDayIndex] = {
+        ...cur,
+        routineName: sourceDay.routineName,
+        sectors: sourceDay.sectors.map((s) => ensureManualSectorShape({ ...s }))
+      };
+      return next;
+    });
+    setEditingRoutineName(null);
+  };
+
+  const handleRescanSectors = useCallback(() => {
+    if (!rescanParams) return;
+    const n = Math.min(6, Math.max(1, daysCount));
+    const plan = buildHelpedRoutines({
+      ...rescanParams,
+      daysCount: n,
+      constantSectorsAtBeginning
+    });
+    setDaysCount(plan.daysCount);
+    setDays(plan.days);
+    setActiveDayIndex((i) => Math.min(i, Math.max(0, plan.days.length - 1)));
+    setEditingRoutineName(null);
+  }, [rescanParams, daysCount, constantSectorsAtBeginning]);
+
+  const onToggleConstantPlacement = (checked: boolean) => {
+    setConstantSectorsAtBeginning(checked);
+    if (constantSectorIdSet.size === 0) return;
+    setDays((prev) => reorderDaysConstantPlacement(prev, constantSectorIdSet, checked));
+  };
 
   // When daysCount changes, resize days array (keep or trim)
   const stableDays = useMemo(() => {
@@ -255,16 +453,21 @@ export default function PlanGymWeekManualModal({
     setStableDays((prev) => {
       const next = [...prev];
       const day = { ...next[activeDayIndex], sectors: [...next[activeDayIndex].sectors] };
+      const series = 4;
+      const reps = 12;
       day.sectors.push({
         sectorId: group.id,
         sectorLabel: group.label,
         image: group.image,
         exercises: 3,
-        series: 4,
-        reps: 12,
+        series,
+        reps,
         pause: "1'30\"",
         macroExercise: "1'",
-        macroEndOfSector: "2'"
+        macroEndOfSector: "2'",
+        pyramidal: 'flat',
+        seriesReps: computePyramidalRepsSeries(reps, series, 'flat'),
+        seriesWeights: Array.from({ length: series }, () => '0')
       });
       next[activeDayIndex] = day;
       return next;
@@ -292,16 +495,73 @@ export default function PlanGymWeekManualModal({
     });
   };
 
-  const updateSector = (
-    dayIdx: number,
-    sectorIndex: number,
-    field: keyof ManualDaySector,
-    value: number | string
-  ) => {
+  const updateSector = (dayIdx: number, sectorIndex: number, field: SectorScalarField, value: number | string) => {
     setStableDays((prev) => {
       const next = [...prev];
       const sectors = [...next[dayIdx].sectors];
-      sectors[sectorIndex] = { ...sectors[sectorIndex], [field]: value };
+      sectors[sectorIndex] = applySectorScalarUpdate(sectors[sectorIndex], field, value);
+      next[dayIdx] = { ...next[dayIdx], sectors };
+      return next;
+    });
+  };
+
+  const updateSeriesRepAt = (dayIdx: number, secIdx: number, rowIdx: number, raw: string) => {
+    const parsed = parseInt(raw, 10);
+    if (Number.isNaN(parsed)) return;
+    const v = Math.max(1, Math.min(99, parsed));
+    setStableDays((prev) => {
+      const next = [...prev];
+      const sectors = [...next[dayIdx].sectors];
+      const sec = { ...sectors[secIdx] };
+      const n = sec.series;
+      if (sec.pyramidal === 'flat') {
+        sec.reps = v;
+        sec.seriesReps = Array.from({ length: n }, () => v);
+      } else if (rowIdx === 0) {
+        sec.reps = v;
+        sec.seriesReps = computePyramidalRepsSeries(v, n, sec.pyramidal);
+      } else {
+        const seriesReps = [...sec.seriesReps];
+        seriesReps[rowIdx] = v;
+        sec.seriesReps = seriesReps;
+      }
+      sectors[secIdx] = sec;
+      next[dayIdx] = { ...next[dayIdx], sectors };
+      return next;
+    });
+  };
+
+  const updateSeriesWeightAt = (dayIdx: number, secIdx: number, rowIdx: number, w: string) => {
+    const digits = w.replace(/\D/g, '').slice(0, 4);
+    setStableDays((prev) => {
+      const next = [...prev];
+      const sectors = [...next[dayIdx].sectors];
+      const sec = { ...sectors[secIdx] };
+      const seriesWeights = [...sec.seriesWeights];
+      seriesWeights[rowIdx] = digits;
+      sec.seriesWeights = seriesWeights;
+      sectors[secIdx] = sec;
+      next[dayIdx] = { ...next[dayIdx], sectors };
+      return next;
+    });
+  };
+
+  const copySeriesRowsDown = (dayIdx: number, secIdx: number, fromRow: number) => {
+    setStableDays((prev) => {
+      const next = [...prev];
+      const sectors = [...next[dayIdx].sectors];
+      const sec = { ...sectors[secIdx] };
+      const seriesReps = [...sec.seriesReps];
+      const seriesWeights = [...sec.seriesWeights];
+      const r = seriesReps[fromRow];
+      const w = seriesWeights[fromRow];
+      for (let i = fromRow + 1; i < sec.series; i++) {
+        seriesReps[i] = r;
+        seriesWeights[i] = w;
+      }
+      sec.seriesReps = seriesReps;
+      sec.seriesWeights = seriesWeights;
+      sectors[secIdx] = sec;
       next[dayIdx] = { ...next[dayIdx], sectors };
       return next;
     });
@@ -341,6 +601,11 @@ export default function PlanGymWeekManualModal({
     }
   };
 
+  const trainingLevelPhotoSrc =
+    trainingLevel != null ? getPlanGymWeekTrainingLevelImageSrc(trainingLevel, trainingLevelImages) : headerImage ?? null;
+  const trainingLevelDetail =
+    trainingLevel != null ? getPlanGymWeekTrainingLevelLabel(trainingLevel) : null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
@@ -364,55 +629,101 @@ export default function PlanGymWeekManualModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Top: days count + image placeholder + actions */}
+          {/* Top: training level photo + detail + days + rescan + back + constant-muscle checkbox */}
           <div className="border border-amber-200 rounded-lg p-4 bg-amber-50/50 flex flex-wrap items-start gap-4">
-            <div className="flex-shrink-0 w-32 h-24 bg-amber-100 border border-amber-200 rounded flex items-center justify-center text-amber-700 text-xs overflow-hidden">
-              {headerImage ? (
-                <img src={headerImage} alt="" className="w-full h-full object-contain" />
+            <div className="flex-shrink-0 w-28 h-28 sm:w-32 sm:h-32 bg-amber-100 border border-amber-200 rounded-lg overflow-hidden relative">
+              {trainingLevelPhotoSrc ? (
+                <Image
+                  src={trainingLevelPhotoSrc}
+                  alt={trainingLevelDetail ? `Training level ${trainingLevelDetail}` : 'Training level'}
+                  fill
+                  className="object-cover"
+                  unoptimized
+                />
               ) : (
-                'Image placeholder'
+                <div className="w-full h-full flex items-center justify-center text-amber-700 text-xs text-center px-1">
+                  Image placeholder
+                </div>
               )}
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold text-gray-900 mb-2">Select the number of days of workout in gym</div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  max={6}
-                  value={daysCount}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value, 10);
-                    if (!Number.isNaN(v) && v >= 1 && v <= 6) setDaysCount(v);
-                  }}
-                  className="w-16 px-2 py-1.5 border border-gray-300 rounded-lg text-center"
-                />
-                <button
-                  type="button"
-                  onClick={() => setDaysCount((c) => (c < 6 ? c + 1 : c))}
-                  className="p-1.5 rounded border border-gray-300 hover:bg-gray-100"
-                  aria-label="Increase days"
-                >
-                  <ChevronUp className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDaysCount((c) => (c > 1 ? c - 1 : c))}
-                  className="p-1.5 rounded border border-gray-300 hover:bg-gray-100"
-                  aria-label="Decrease days"
-                >
-                  <ChevronDown className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDaysCount(initialDaysCount)}
-                  className="p-1.5 rounded border border-gray-300 hover:bg-gray-100 text-gray-500"
-                  title="Reset to initial value"
-                  aria-label="Reset days"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+            <div className="flex-1 min-w-[min(100%,220px)] flex flex-col gap-2">
+              {trainingLevelDetail ? (
+                <div className="text-base">
+                  <span className="text-sky-600 font-semibold">Training level</span>{' '}
+                  <span className="text-gray-900 font-semibold">{trainingLevelDetail}</span>
+                </div>
+              ) : null}
+              <div className="font-semibold text-gray-900">Select the number of days of workout in gym</div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-2 justify-between">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    type="number"
+                    min={1}
+                    max={6}
+                    value={daysCount}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (!Number.isNaN(v) && v >= 1 && v <= 6) setDaysCount(v);
+                    }}
+                    className="w-16 px-2 py-1.5 border border-gray-300 rounded-lg text-center"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setDaysCount((c) => (c < 6 ? c + 1 : c))}
+                    className="p-1.5 rounded border border-gray-300 hover:bg-gray-100"
+                    aria-label="Increase days"
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDaysCount((c) => (c > 1 ? c - 1 : c))}
+                    className="p-1.5 rounded border border-gray-300 hover:bg-gray-100"
+                    aria-label="Decrease days"
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDaysCount(initialDaysCount)}
+                    className="p-1.5 rounded border border-gray-300 hover:bg-gray-100 text-gray-500"
+                    title="Reset to initial value"
+                    aria-label="Reset days"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  {rescanParams ? (
+                    <button
+                      type="button"
+                      onClick={handleRescanSectors}
+                      className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium text-sm"
+                      title="Rebuild suggested sectors using the same wizard rules (A/B/C alternation) with a new random order"
+                    >
+                      Rescan sectors
+                    </button>
+                  ) : null}
+                </div>
+                {onBack ? (
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium text-sm"
+                  >
+                    Back
+                  </button>
+                ) : null}
               </div>
+              {rescanParams && constantSectorIdSet.size > 0 ? (
+                <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={constantSectorsAtBeginning}
+                    onChange={(e) => onToggleConstantPlacement(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  <span>Put at the beginning of the routine</span>
+                </label>
+              ) : null}
             </div>
           </div>
 
@@ -475,7 +786,8 @@ export default function PlanGymWeekManualModal({
                             </div>
                             <span className="font-medium text-gray-900 min-w-[100px]">{sec.sectorLabel}</span>
                             <span className="text-gray-600">
-                              {sec.exercises} ex · {sec.series} series · {sec.reps} reps · Pause {sec.pause}
+                              {sec.exercises} ex · {sec.series} series · reps {sec.seriesReps?.join('/') ?? sec.reps} · Pyramidal{' '}
+                              {sec.pyramidal ?? 'flat'} · Pause {sec.pause}
                             </span>
                             <span className="text-gray-500 text-xs">
                               Macro ex {sec.macroExercise} · Macro end sector {sec.macroEndOfSector}
@@ -562,6 +874,36 @@ export default function PlanGymWeekManualModal({
               Select the muscular area you want to train in this day ({activeDayIndex + 1}/{daysCount})
             </div>
 
+            {activeDayIndex >= 1 ? (
+              <div className="flex flex-wrap items-end gap-2 rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-2">
+                <div className="flex flex-col gap-0.5">
+                  <label htmlFor="load-from-day-select" className="text-xs font-semibold text-gray-700">
+                    Load from
+                  </label>
+                  <select
+                    id="load-from-day-select"
+                    value={loadFromSourceIndex}
+                    onChange={(e) => setLoadFromSourceIndex(parseInt(e.target.value, 10))}
+                    className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm font-medium text-gray-900 min-w-[7rem]"
+                    aria-label="Copy routine from which day"
+                  >
+                    {Array.from({ length: activeDayIndex }, (_, i) => (
+                      <option key={i} value={i}>
+                        Day {i + 1}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleProceedLoadFromDay}
+                  className="rounded-lg bg-gray-700 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+                >
+                  Proceed
+                </button>
+              </div>
+            ) : null}
+
             {/* List of selected sectors for this day – each shows last previous workout for same sector */}
             <div className="space-y-2">
               {activeDay.sectors.length === 0 ? (
@@ -572,29 +914,59 @@ export default function PlanGymWeekManualModal({
                   return (
                   <div
                     key={`${sec.sectorId}-${secIdx}`}
-                    className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg flex-wrap"
+                    className="flex flex-col gap-2 p-3 bg-white border border-gray-200 rounded-lg w-full"
                   >
-                    <span className="text-sm font-medium text-gray-500 w-6">#{secIdx + 1}</span>
-                    <div className="flex items-center gap-2 w-28 flex-shrink-0">
-                      <div className="relative w-12 h-12">
-                        <Image src={sec.image} alt={sec.sectorLabel} fill className="object-contain" unoptimized />
+                    <div className="flex flex-wrap items-start gap-3 w-full">
+                      <span className="text-sm font-medium text-gray-500 w-6 pt-1">#{secIdx + 1}</span>
+                      <div className="flex items-center gap-2 w-28 flex-shrink-0">
+                        <div className="relative w-12 h-12">
+                          <Image src={sec.image} alt={sec.sectorLabel} fill className="object-contain" unoptimized />
+                        </div>
+                        <span className="font-medium text-gray-900 text-sm">{sec.sectorLabel}</span>
                       </div>
-                      <span className="font-medium text-gray-900 text-sm">{sec.sectorLabel}</span>
+                      <div className="flex flex-col text-xs bg-amber-50/80 border border-amber-200 rounded-lg px-3 py-2 flex-shrink-0 min-w-[140px]">
+                        {lastWorkout ? (
+                          <>
+                            <span className="font-semibold text-amber-900">Last workout {formatLastWorkoutDate(lastWorkout.date)}</span>
+                            <span className="text-gray-700">{lastWorkout.totalSeries} series</span>
+                            <span className="text-gray-700">AveRep/set {lastWorkout.aveRepsPerSet}</span>
+                            <span className="text-gray-700">Total Reps {lastWorkout.totalReps}</span>
+                            {lastWorkout.pause ? <span className="text-gray-700">Pause {lastWorkout.pause}</span> : null}
+                          </>
+                        ) : (
+                          <span className="text-gray-500 italic">No previous workout for this sector</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 ml-auto flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => moveSector(activeDayIndex, secIdx, 'up')}
+                          disabled={secIdx === 0}
+                          className="p-1 rounded hover:bg-gray-100 disabled:opacity-40"
+                          aria-label="Move up"
+                        >
+                          <ChevronUp className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveSector(activeDayIndex, secIdx, 'down')}
+                          disabled={secIdx === activeDay.sectors.length - 1}
+                          className="p-1 rounded hover:bg-gray-100 disabled:opacity-40"
+                          aria-label="Move down"
+                        >
+                          <ChevronDown className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeSector(activeDayIndex, secIdx)}
+                          className="p-1 rounded hover:bg-red-100 text-red-600"
+                          aria-label="Remove"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    {/* Last previous moveframe with same sector – work planned for this sector in last workout */}
-                    <div className="flex flex-col text-xs bg-amber-50/80 border border-amber-200 rounded-lg px-3 py-2 flex-shrink-0 min-w-[140px]">
-                      {lastWorkout ? (
-                        <>
-                          <span className="font-semibold text-amber-900">Last workout {formatLastWorkoutDate(lastWorkout.date)}</span>
-                          <span className="text-gray-700">{lastWorkout.totalSeries} series</span>
-                          <span className="text-gray-700">AveRep/set {lastWorkout.aveRepsPerSet}</span>
-                          <span className="text-gray-700">Total Reps {lastWorkout.totalReps}</span>
-                          {lastWorkout.pause ? <span className="text-gray-700">Pause {lastWorkout.pause}</span> : null}
-                        </>
-                      ) : (
-                        <span className="text-gray-500 italic">No previous workout for this sector</span>
-                      )}
-                    </div>
+
                     <div className="flex items-center gap-2 flex-wrap">
                       <label className="text-xs text-gray-600 flex items-center gap-1">
                         Exercises
@@ -618,7 +990,7 @@ export default function PlanGymWeekManualModal({
                           className="w-14 px-1 py-0.5 border border-gray-300 rounded text-sm"
                         />
                       </label>
-                      <label className="text-xs text-gray-600 flex items-center gap-1">
+                      <label className="text-xs text-gray-600 flex items-center gap-1" title="Reps for series 1 (start of pyramid)">
                         Reps
                         <input
                           type="number"
@@ -628,6 +1000,21 @@ export default function PlanGymWeekManualModal({
                           onChange={(e) => updateSector(activeDayIndex, secIdx, 'reps', parseInt(e.target.value, 10) || 1)}
                           className="w-14 px-1 py-0.5 border border-gray-300 rounded text-sm"
                         />
+                      </label>
+                      <label className="text-xs text-gray-600 flex items-center gap-1">
+                        Pyramidal
+                        <select
+                          value={sec.pyramidal}
+                          onChange={(e) => updateSector(activeDayIndex, secIdx, 'pyramidal', e.target.value)}
+                          className="border border-gray-300 rounded text-sm py-0.5 min-w-[7rem]"
+                          aria-label="Pyramidal load pattern"
+                        >
+                          {PYRAMIDAL_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
                       </label>
                       <label className="text-xs text-gray-600 flex items-center gap-1">
                         Pause
@@ -666,33 +1053,75 @@ export default function PlanGymWeekManualModal({
                         </select>
                       </label>
                     </div>
-                    <div className="flex items-center gap-1 ml-auto">
-                      <button
-                        type="button"
-                        onClick={() => moveSector(activeDayIndex, secIdx, 'up')}
-                        disabled={secIdx === 0}
-                        className="p-1 rounded hover:bg-gray-100 disabled:opacity-40"
-                        aria-label="Move up"
-                      >
-                        <ChevronUp className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => moveSector(activeDayIndex, secIdx, 'down')}
-                        disabled={secIdx === activeDay.sectors.length - 1}
-                        className="p-1 rounded hover:bg-gray-100 disabled:opacity-40"
-                        aria-label="Move down"
-                      >
-                        <ChevronDown className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeSector(activeDayIndex, secIdx)}
-                        className="p-1 rounded hover:bg-red-100 text-red-600"
-                        aria-label="Remove"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+
+                    <div className="w-full rounded-lg border border-blue-200 bg-blue-50/40 overflow-hidden">
+                      <div className="px-2 py-1.5 text-xs font-bold text-gray-800 bg-blue-100/80 border-b border-blue-200">
+                        REPS &amp; WEIGHTS PLANNING · {sec.series} series
+                      </div>
+                      <div className="overflow-x-auto max-h-[260px] overflow-y-auto bg-white">
+                        <table className="w-full text-xs border-collapse">
+                          <thead className="bg-gray-100 sticky top-0 z-[1]">
+                            <tr>
+                              <th className="border border-gray-300 px-2 py-1.5 text-center w-10">#</th>
+                              <th className="border border-gray-300 px-2 py-1.5 text-center">Reps</th>
+                              <th className="border border-gray-300 px-1 py-1.5 text-center whitespace-nowrap">% on 1 MR</th>
+                              <th className="border border-gray-300 px-2 py-1.5 text-center">Weights</th>
+                              <th className="border border-gray-300 px-2 py-1.5 text-center">Pause</th>
+                              <th className="border border-gray-300 px-1 py-1.5 w-16" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Array.from({ length: sec.series }, (_, rowIdx) => (
+                              <tr key={rowIdx} className="hover:bg-blue-50/50">
+                                <td className="border border-gray-300 px-2 py-1 text-center font-semibold bg-gray-50">{rowIdx + 1}</td>
+                                <td className="border border-gray-300 px-1 py-1">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={99}
+                                    value={sec.seriesReps[rowIdx] ?? ''}
+                                    onChange={(e) => updateSeriesRepAt(activeDayIndex, secIdx, rowIdx, e.target.value)}
+                                    className="w-full min-w-[2.5rem] px-1 py-0.5 border border-gray-300 rounded text-center"
+                                  />
+                                </td>
+                                <td className="border border-gray-300 px-1 py-1 text-center text-[11px] font-medium text-gray-700 bg-gray-50 tabular-nums">
+                                  {formatPercentLoad1MR(String(sec.seriesReps[rowIdx] ?? ''))}
+                                </td>
+                                <td className="border border-gray-300 px-1 py-1">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={9999}
+                                    value={sec.seriesWeights[rowIdx] ?? ''}
+                                    onChange={(e) => updateSeriesWeightAt(activeDayIndex, secIdx, rowIdx, e.target.value)}
+                                    className="w-full min-w-[2.5rem] px-1 py-0.5 border border-gray-300 rounded text-center"
+                                  />
+                                </td>
+                                <td className="border border-gray-300 px-2 py-1 text-center text-gray-700">{sec.pause}</td>
+                                <td className="border border-gray-300 px-1 py-1 text-center">
+                                  {sec.series > 1 && rowIdx > 0 && rowIdx < sec.series - 1 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => copySeriesRowsDown(activeDayIndex, secIdx, rowIdx)}
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-500 text-white rounded text-[10px] font-semibold hover:bg-blue-600 whitespace-nowrap"
+                                      title="Copy this row to all rows below"
+                                    >
+                                      <ChevronsDown className="w-3 h-3" />
+                                      Copy
+                                    </button>
+                                  ) : null}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-[10px] text-blue-600 px-2 py-1 flex items-center gap-1 bg-blue-50/80">
+                        <span>ℹ️</span>
+                        <span>
+                          Scroll to view all {sec.series} series. Each can have unique reps, weights, and pause values.
+                        </span>
+                      </p>
                     </div>
                   </div>
                   );

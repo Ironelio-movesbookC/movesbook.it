@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import Image from 'next/image';
 import { X } from 'lucide-react';
 import type { PlanGymWeekManualResult, ManualDaySector } from './PlanGymWeekManualModal';
+import { ensureManualSectorShape } from './PlanGymWeekManualModal';
+import { formatPercentLoad1MR } from '@/utils/pyramidalReps';
 import { getGoalLabel, type GoalId } from './PlanGymWeekModal';
 
 /**
@@ -177,27 +179,30 @@ export default function PlanGymWeekFastPlanModal({
   );
 }
 
-/** Render table rows for a sector: sector header with macro fields + placeholder exercise rows (image 4) */
+/** Render table rows for a sector: sector header + REPS & WEIGHTS (pyramidal / % 1 MR) + placeholder exercise rows */
 function renderSectorRows(sec: ManualDaySector, secIdx: number) {
+  const s = ensureManualSectorShape(sec);
   const rows: React.ReactNode[] = [];
 
-  // Sector header with macro fields (at top of each sector – image 4)
   rows.push(
-    <tr key={`sector-${sec.sectorId}`} className="bg-gray-100 border-b-2 border-gray-300">
+    <tr key={`sector-${s.sectorId}`} className="bg-gray-100 border-b-2 border-gray-300">
       <td colSpan={8} className="px-3 py-2">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative w-10 h-10 flex-shrink-0">
-            <Image src={sec.image} alt={sec.sectorLabel} fill className="object-contain" unoptimized />
+            <Image src={s.image} alt={s.sectorLabel} fill className="object-contain" unoptimized />
           </div>
-          <span className="font-bold text-gray-900">{sec.sectorLabel}</span>
-          <div className="flex gap-4 text-xs text-amber-800 ml-4">
+          <span className="font-bold text-gray-900">{s.sectorLabel}</span>
+          <span className="text-xs font-semibold text-gray-700">
+            Pyramidal: <span className="capitalize text-amber-900">{s.pyramidal}</span>
+          </span>
+          <div className="flex flex-wrap gap-4 text-xs text-amber-800">
             <span>
               <span className="font-medium">Macropause at end of all series of each exercise:</span>{' '}
-              {sec.macroExercise || "—"}
+              {s.macroExercise || "—"}
             </span>
             <span>
               <span className="font-medium">Macropause at end of all exercises of the sector:</span>{' '}
-              {sec.macroEndOfSector || '—'}
+              {s.macroEndOfSector || '—'}
             </span>
           </div>
         </div>
@@ -205,21 +210,58 @@ function renderSectorRows(sec: ManualDaySector, secIdx: number) {
     </tr>
   );
 
-  // Placeholder exercise rows (one per exercise count)
-  for (let ex = 0; ex < sec.exercises; ex++) {
+  rows.push(
+    <tr key={`sector-${s.sectorId}-reps-weights`} className="border-b-2 border-blue-200 bg-blue-50/40">
+      <td colSpan={8} className="p-0 align-top">
+        <div className="px-3 py-1.5 text-xs font-bold text-gray-800 bg-blue-100/90 border-b border-blue-200">
+          REPS &amp; WEIGHTS · {s.series} series (start reps serie 1: {s.reps})
+        </div>
+        <div className="overflow-x-auto p-2">
+          <table className="w-full text-xs border-collapse bg-white rounded border border-gray-200">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border border-gray-300 px-2 py-1 text-center">#</th>
+                <th className="border border-gray-300 px-2 py-1 text-center">Reps</th>
+                <th className="border border-gray-300 px-2 py-1 text-center">% on 1 MR</th>
+                <th className="border border-gray-300 px-2 py-1 text-center">Weights</th>
+                <th className="border border-gray-300 px-2 py-1 text-center">Pause</th>
+              </tr>
+            </thead>
+            <tbody>
+              {s.seriesReps.map((r, i) => (
+                <tr key={i}>
+                  <td className="border border-gray-300 px-2 py-1 text-center font-medium">{i + 1}</td>
+                  <td className="border border-gray-300 px-2 py-1 text-center">{r}</td>
+                  <td className="border border-gray-300 px-2 py-1 text-center tabular-nums text-gray-800">
+                    {formatPercentLoad1MR(String(r))}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-1 text-center">{s.seriesWeights[i] ?? '0'}</td>
+                  <td className="border border-gray-300 px-2 py-1 text-center">{s.pause}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </td>
+    </tr>
+  );
+
+  for (let ex = 0; ex < s.exercises; ex++) {
     rows.push(
-      <tr key={`${sec.sectorId}-ex-${ex}`} className="border-b border-gray-100 hover:bg-gray-50/50">
+      <tr key={`${s.sectorId}-ex-${ex}`} className="border-b border-gray-100 hover:bg-gray-50/50">
         <td className="px-3 py-2 text-gray-500 font-medium">{ex + 1}</td>
         <td className="px-3 py-2">
           <span className="text-gray-500 italic">
-            {sec.sectorLabel} Exercise {ex + 1}
+            {s.sectorLabel} Exercise {ex + 1}
           </span>
         </td>
         <td className="px-3 py-2 text-gray-600">Normal</td>
-        <td className="px-3 py-2 text-gray-700">{sec.series}</td>
-        <td className="px-3 py-2 text-gray-700">{sec.reps}</td>
+        <td className="px-3 py-2 text-gray-700">{s.series}</td>
+        <td className="px-3 py-2 text-gray-700" title="Per series (see table above)">
+          {s.seriesReps.join('/')}
+        </td>
         <td className="px-3 py-2 text-gray-500">—</td>
-        <td className="px-3 py-2 text-gray-700">{sec.pause}</td>
+        <td className="px-3 py-2 text-gray-700">{s.pause}</td>
         <td className="px-3 py-2 text-gray-600">Stopped</td>
       </tr>
     );
