@@ -3315,10 +3315,20 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           isOpen={!!planGymWeekCreatedPlan}
           plan={planGymWeekCreatedPlan}
           goals={planGymWeekGoals}
-          onClose={() => setPlanGymWeekCreatedPlan(null)}
+          trainingLevel={planGymWeekTrainingLevel}
+          onClose={() => {
+            setPlanGymWeekCreatedPlan(null);
+            // After creation, switch to table view so the user can see their workout schedule
+            setViewMode('table');
+          }}
           onSave={(plan) => {
-            // TODO: Save to Archive or Yearly Plan
-            showMessage('info', `Plan: ${plan.daysCount} day(s). Save to Archive or Yearly Plan when implemented.`);
+            const totalSeries = plan.days.reduce(
+              (sum, d) => sum + d.sectors.reduce((s, sec) => s + (sec.series ?? 0), 0), 0
+            );
+            showMessage(
+              'success',
+              `✅ GYM WEEKLY PLAN created: ${plan.daysCount} day(s), ${totalSeries} total series. Saved as template — apply it to your weekly calendar.`
+            );
           }}
         />
       )}

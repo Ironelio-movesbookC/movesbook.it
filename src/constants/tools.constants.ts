@@ -4,7 +4,20 @@
  */
 
 export type IconType = 'emoji' | 'bw_icons';
-export type ToolsTab = 'periods' | 'sections' | 'sports' | 'equipment' | 'equipmentFactories' | 'muscles' | 'sportsEquipment' | 'exercises' | 'myLibrary' | 'devices' | 'executionTechniques' | 'bodyBuildingTechniques';
+export type ToolsTab =
+  | 'periods'
+  | 'sections'
+  | 'sports'
+  | 'equipment'
+  | 'equipmentFactories'
+  | 'muscles'
+  | 'sportsEquipment'
+  | 'exercises'
+  | 'myLibrary'
+  | 'devices'
+  | 'executionTechniques'
+  | 'bodyBuildingTechniques'
+  | 'commonDailyActions';
 
 export interface Period {
   id: string;
@@ -21,6 +34,8 @@ export interface WorkoutSection {
   title: string;
   description: string;
   color: string;
+  code?: string;
+  picture?: string;
   order: number;
   userId?: string; // Track ownership
   isUserCreated?: boolean; // Distinguish user-created from admin defaults

@@ -147,7 +147,7 @@ export default function PlanGymWeekModal({
       }
       return prev.slice(0, daysCount);
     });
-  }, [daysCount]);
+  }, [daysCount, applyGoalToAll]);
 
   const setGoalForDay = (dayIndex: number, value: GoalId) => {
     setGoals((prev) => {
@@ -198,12 +198,15 @@ export default function PlanGymWeekModal({
     <div className="flex gap-4 items-start border border-amber-200 rounded-lg p-4 bg-amber-50/50">
       <div className="flex-shrink-0 w-32 h-24 bg-amber-100 border border-amber-200 rounded flex items-center justify-center text-amber-700 text-xs text-center overflow-hidden">
         {questionImages[qKey] ? (
-          <img
+          <Image
             src={questionImages[qKey]}
             alt=""
+            width={128}
+            height={96}
+            unoptimized
             className="max-w-full max-h-full object-contain rounded"
             onError={(e) => {
-              const el = e.target as HTMLImageElement;
+              const el = e.currentTarget as HTMLImageElement;
               el.style.display = 'none';
               const fallback = el.nextElementSibling as HTMLElement;
               if (fallback) fallback.classList.remove('hidden');

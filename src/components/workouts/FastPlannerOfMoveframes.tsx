@@ -578,7 +578,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   };
 
   /** Parse pause string (e.g. "1'30\"", "2'", "45\"") to total seconds */
-  const parsePauseToSeconds = (s: string): number => {
+  const parsePauseToSeconds = React.useCallback((s: string): number => {
     if (!s || typeof s !== 'string') return 0;
     const trimmed = s.trim();
     let seconds = 0;
@@ -588,17 +588,17 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     if (secMatch) seconds += parseInt(secMatch[1], 10);
     else if (!minMatch && /^\d+$/.test(trimmed)) seconds += parseInt(trimmed, 10);
     return seconds;
-  };
+  }, []);
 
   /** Format seconds to M'SS" */
-  const formatPauseFromSeconds = (totalSeconds: number): string => {
+  const formatPauseFromSeconds = React.useCallback((totalSeconds: number): string => {
     if (totalSeconds <= 0) return "0'00\"";
     const m = Math.floor(totalSeconds / 60);
     const s = totalSeconds % 60;
     return `${m}'${String(s).padStart(2, '0')}"`;
-  };
+  }, []);
 
-  const buildSummaryFromRows = (filledRows: FastPlannerRow[]): string => {
+  const buildSummaryFromRows = React.useCallback((filledRows: FastPlannerRow[]): string => {
     const sectors = new Set<string>();
     for (const r of filledRows) {
       if (r.exercise) {
@@ -645,7 +645,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       'User can edit here (but not the Summary).'
     ];
     return lines.join('\n');
-  };
+  }, [getSectorForExercise, parsePauseToSeconds, formatPauseFromSeconds]);
 
   const filledRowsForSummary = useMemo(
     () => rows.map(r => ({ ...r, exercise: (r.exercise || '').trim() })).filter(r => r.exercise !== ''),
@@ -653,7 +653,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   );
   const summaryText = useMemo(
     () => (filledRowsForSummary.length > 0 ? buildSummaryFromRows(filledRowsForSummary) : ''),
-    [filledRowsForSummary]
+    [filledRowsForSummary, buildSummaryFromRows]
   );
 
   useEffect(() => {
