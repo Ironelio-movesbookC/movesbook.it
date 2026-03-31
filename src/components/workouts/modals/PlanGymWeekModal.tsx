@@ -28,6 +28,18 @@ const TRAINING_LEVEL_FALLBACK_IMAGE = MASK_IMAGE;
 
 export type TrainingLevel = (typeof TRAINING_LEVELS)[number]['value'];
 
+export function getPlanGymWeekTrainingLevelLabel(level: TrainingLevel): string {
+  const row = TRAINING_LEVELS.find((l) => l.value === level);
+  return row?.label ?? level;
+}
+
+export function getPlanGymWeekTrainingLevelImageSrc(
+  level: TrainingLevel,
+  overrides?: Partial<Record<TrainingLevel, string>>
+): string {
+  return overrides?.[level] ?? TRAINING_LEVEL_IMAGE_PATHS[level] ?? TRAINING_LEVEL_FALLBACK_IMAGE;
+}
+
 export const GOAL_OPTIONS = [
   { value: 'max_strength', label: 'Maximum strength (e.g., powerlifting, weightlifting)' },
   { value: 'hypertrophy', label: 'Muscle hypertrophy (increase in muscle mass)' },
@@ -76,6 +88,8 @@ interface PlanGymWeekModalProps {
   onProceed: (answers: PlanGymWeekAnswers) => void;
   questionImages?: Partial<Record<'q1' | 'q2' | 'q3' | 'q4', string>>;
   trainingLevelImages?: Partial<Record<TrainingLevel, string>>;
+  /** When the modal opens, land on this step (e.g. 2 after “Back” from manual sector screen). Default 1. */
+  initialStepOnOpen?: 1 | 2;
 }
 
 export default function PlanGymWeekModal({
@@ -83,7 +97,8 @@ export default function PlanGymWeekModal({
   onClose,
   onProceed,
   questionImages = {},
-  trainingLevelImages = {}
+  trainingLevelImages = {},
+  initialStepOnOpen = 1
 }: PlanGymWeekModalProps) {
   const [trainingLevel, setTrainingLevel] = useState<TrainingLevel>('intermediate');
   const [daysCount, setDaysCount] = useState<number>(3);
@@ -95,10 +110,14 @@ export default function PlanGymWeekModal({
   const [constantSectors, setConstantSectors] = useState<string[]>([]);
   const [maskImageError, setMaskImageError] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
+  const wasOpenRef = React.useRef(false);
   React.useEffect(() => setMaskImageError(false), [trainingLevel]);
   React.useEffect(() => {
-    if (isOpen) setStep(1);
-  }, [isOpen]);
+    if (isOpen && !wasOpenRef.current) {
+      setStep(initialStepOnOpen);
+    }
+    wasOpenRef.current = isOpen;
+  }, [isOpen, initialStepOnOpen]);
 
   const timesPerSectorOptions = React.useMemo(() => {
     const opts: { value: 'once' | '2' | '3' | 'all'; label: string }[] = [
@@ -128,7 +147,7 @@ export default function PlanGymWeekModal({
       }
       return prev.slice(0, daysCount);
     });
-  }, [daysCount]);
+  }, [daysCount, applyGoalToAll]);
 
   const setGoalForDay = (dayIndex: number, value: GoalId) => {
     setGoals((prev) => {
@@ -179,12 +198,15 @@ export default function PlanGymWeekModal({
     <div className="flex gap-4 items-start border border-amber-200 rounded-lg p-4 bg-amber-50/50">
       <div className="flex-shrink-0 w-32 h-24 bg-amber-100 border border-amber-200 rounded flex items-center justify-center text-amber-700 text-xs text-center overflow-hidden">
         {questionImages[qKey] ? (
-          <img
+          <Image
             src={questionImages[qKey]}
             alt=""
+            width={128}
+            height={96}
+            unoptimized
             className="max-w-full max-h-full object-contain rounded"
             onError={(e) => {
-              const el = e.target as HTMLImageElement;
+              const el = e.currentTarget as HTMLImageElement;
               el.style.display = 'none';
               const fallback = el.nextElementSibling as HTMLElement;
               if (fallback) fallback.classList.remove('hidden');

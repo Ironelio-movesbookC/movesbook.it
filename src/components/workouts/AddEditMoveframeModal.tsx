@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Star, ChevronsDown, ChevronUp } from 'lucide-react';
 import { SPORTS_LIST, MACRO_FINAL_OPTIONS, MUSCULAR_SECTORS, getPaceLabel, shouldShowPaceField, getSportConfig, getPauseOptions, REST_TYPES, REPS_TYPES, hasRepsTypeSelection, getSportDisplayName, DISTANCE_BASED_SPORTS, sportNeedsExerciseName, AEROBIC_SPORTS, isCircuitFeatureSport } from '@/constants/moveframe.constants';
 import { useMoveframeForm } from '@/hooks/useMoveframeForm';
+import { formatPercentLoad1MR, type PyramidalMode } from '@/utils/pyramidalReps';
 import { getSportIcon } from '@/utils/sportIcons';
 import { useFavoriteSports } from '@/hooks/useFavoriteSports';
 import { useToolsData } from '@/hooks/useToolsData';
@@ -142,7 +143,8 @@ export default function AddEditMoveframeModal({
     buildMoveframeData,
     generateDescription,
     initializeIndividualPlans,
-    updateIndividualPlan
+    updateIndividualPlan,
+    applyGlobalRepsBodyBuildingIndividualPlans
   } = useMoveframeForm({
     mode,
     existingMoveframe,
@@ -232,7 +234,8 @@ export default function AddEditMoveframeModal({
     annotationBold,
     batteryCount,
     batterySequence,
-    manualContent
+    manualContent,
+    pyramidalMode
   } = formData;
 
   const {
@@ -244,6 +247,7 @@ export default function AddEditMoveframeModal({
     setSectionId, // Workout section setter for ALL sports
     setPlanningMode, // Planning mode setter
     setIndividualPlans, // Individual plans setter
+    setPyramidalMode,
     setDistance,
     setCustomDistance,
     setRepetitions,
@@ -2044,9 +2048,12 @@ export default function AddEditMoveframeModal({
                                 type="button"
                                 onClick={() => {
                                   if (reps !== '' && parseInt(reps) >= 0) {
-                                    // Apply reps value to all rows in individualPlans
-                                    for (let i = 0; i < individualPlans.length; i++) {
-                                      updateIndividualPlan(i, 'reps', reps);
+                                    if (sport === 'BODY_BUILDING') {
+                                      applyGlobalRepsBodyBuildingIndividualPlans(reps);
+                                    } else {
+                                      for (let i = 0; i < individualPlans.length; i++) {
+                                        updateIndividualPlan(i, 'reps', reps);
+                                      }
                                     }
                                   }
                                 }}
@@ -3454,6 +3461,22 @@ export default function AddEditMoveframeModal({
                         {individualPlans.length} series
                       </span>
                     </h3>
+
+                    {sport === 'BODY_BUILDING' && repsType === 'Reps' && (
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <label className="text-xs font-medium text-gray-700 whitespace-nowrap">Pyramidal</label>
+                        <select
+                          value={pyramidalMode}
+                          onChange={(e) => setPyramidalMode(e.target.value as PyramidalMode)}
+                          className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:ring-2 focus:ring-cyan-500 min-w-[9rem]"
+                        >
+                          <option value="flat">Flat</option>
+                          <option value="ascending">Ascending</option>
+                          <option value="descending">Descending</option>
+                          <option value="mix">Mix</option>
+                        </select>
+                      </div>
+                    )}
                     
                     {/* Scrollable table - 6 rows visible */}
                     <div className="border border-gray-300 rounded bg-white">
@@ -3461,15 +3484,19 @@ export default function AddEditMoveframeModal({
                         <table className="w-full text-xs table-fixed">
                           <colgroup>
                             <col className="w-12" />
-                            <col className="w-1/3" />
-                            <col className="w-1/3" />
+                            <col className={sport === 'BODY_BUILDING' && repsType === 'Reps' ? 'w-[4.5rem]' : 'w-1/3'} />
+                            {sport === 'BODY_BUILDING' && repsType === 'Reps' && <col className="w-[4.25rem]" />}
+                            <col className={sport === 'BODY_BUILDING' && repsType === 'Reps' ? 'w-1/4' : 'w-1/3'} />
                             <col className="w-1/4" />
                             <col className="w-20" />
                           </colgroup>
                           <thead className="bg-gray-200 sticky top-0 z-10">
                             <tr>
                               <th className="border border-gray-300 px-2 py-2 text-center">#</th>
-                              <th className="border border-gray-300 px-2 py-2 text-center" colSpan={2}>
+                              <th
+                                className="border border-gray-300 px-2 py-2 text-center"
+                                colSpan={sport === 'BODY_BUILDING' && repsType === 'Reps' ? 3 : 2}
+                              >
                                 {repsType === 'Time' ? 'TIME & WEIGHTS' : 'REPS & WEIGHTS'}
                               </th>
                               <th className="border border-gray-300 px-2 py-2 text-center">REST & ALERTS</th>
@@ -3480,6 +3507,11 @@ export default function AddEditMoveframeModal({
                               <th className="border border-gray-300 px-2 py-1.5 text-center bg-gray-100">
                                 <span className="font-semibold">{repsType === 'Time' ? 'Minutes' : 'Reps'}</span>
                               </th>
+                              {sport === 'BODY_BUILDING' && repsType === 'Reps' && (
+                                <th className="border border-gray-300 px-1 py-1.5 text-center bg-gray-100">
+                                  <span className="font-semibold leading-tight block">% on 1 MR</span>
+                                </th>
+                              )}
                               <th className="border border-gray-300 px-2 py-1.5 text-center bg-gray-100">
                                 <span className="font-semibold">Weights</span>
                               </th>
@@ -3506,7 +3538,10 @@ export default function AddEditMoveframeModal({
                                   {/* Group Header */}
                                   {AEROBIC_SPORTS.includes(sport as any) && aerobicSeriesNum > 1 && isFirstInGroup && (
                                     <tr>
-                                      <td colSpan={5} className="border border-gray-400 bg-rose-100 px-3 py-2 text-sm font-bold text-rose-900 text-center">
+                                      <td
+                                        colSpan={sport === 'BODY_BUILDING' && repsType === 'Reps' ? 6 : 5}
+                                        className="border border-gray-400 bg-rose-100 px-3 py-2 text-sm font-bold text-rose-900 text-center"
+                                      >
                                         Serie\Group {currentGroup}
                                       </td>
                                     </tr>
@@ -3598,6 +3633,11 @@ export default function AddEditMoveframeModal({
                                   />
                                   )}
                                 </td>
+                                {sport === 'BODY_BUILDING' && repsType === 'Reps' && (
+                                  <td className="border border-gray-300 px-1 py-1.5 text-center text-[11px] font-medium text-gray-700 bg-gray-50 tabular-nums">
+                                    {formatPercentLoad1MR(plan.reps)}
+                                  </td>
+                                )}
                                 <td className="border border-gray-300 px-2 py-1.5">
                                   <input
                                     type="number"
@@ -5052,14 +5092,6 @@ export default function AddEditMoveframeModal({
         {type === 'BATTERY' && (AEROBIC_SPORTS.includes(sport as any) || !isCircuitFeatureSport(sport)) && (
           <div className={`flex-shrink-0 border-t bg-white px-4 py-3 flex items-center gap-3 ${isFastPlannerFullView ? 'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg shadow-xl border-2 border-gray-200' : 'justify-between'}`}>
             <button onClick={handleClose} className="px-6 py-2 bg-gray-600 text-white font-medium rounded hover:bg-gray-700">Cancel</button>
-            {!isCircuitFeatureSport(sport) && !AEROBIC_SPORTS.includes(sport as any) && (
-              <button onClick={() => setIsFastPlannerFullView(prev => !prev)} className="px-6 py-2 bg-white text-black border-2 border-gray-300 rounded hover:border-blue-500">{isFastPlannerFullView ? 'Back to edit' : 'Show full page'}</button>
-            )}
-            <button onClick={() => fastPlannerRef.current?.saveMoveframeAndMovelaps()} className="px-6 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700">Save moveframe and its movelaps</button>
-            <button onClick={() => fastPlannerRef.current?.openPreferences()} className="px-6 py-2 bg-white text-black border-2 border-gray-300 rounded hover:border-blue-500 flex items-center justify-center" title="Open preferences">
-              <Image src="/preference.png" alt="Preferences" width={20} height={20} className="mr-2 object-contain" unoptimized />
-              Preferences
-            </button>
             <div className="flex items-center">
               {isFastPlannerShown && (
                 <button

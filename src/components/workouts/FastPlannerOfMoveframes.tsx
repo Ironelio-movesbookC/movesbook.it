@@ -13,6 +13,8 @@ interface FastPlannerRow {
   weight: string;
   break: string;
   mode: string;
+  /** Load scheme when adding from Plan series/exercise: flat | ascending | descending | mix */
+  pyramidal?: string;
 }
 
 interface FastPlannerProps {
@@ -50,6 +52,88 @@ const upsertFastPlannerDataInNotes = (notes: unknown, data: any): string => {
   const tag = `[FAST_PLANNER_DATA]${JSON.stringify(data)}[/FAST_PLANNER_DATA]`;
   return stripped ? `${stripped}\n\n${tag}` : tag;
 };
+
+/** Target total series dropdown: 1–20 (lookup uses table row at or below this value). */
+const PLAN_TARGET_TOTAL_SERIES_OPTIONS: number[] = Array.from({ length: 20 }, (_, i) => i + 1);
+
+type PlanTargetLevelBand = 'lev12' | 'lev34' | 'lev5';
+
+const PLAN_TARGET_LEVEL_OPTIONS: { id: PlanTargetLevelBand; label: string }[] = [
+  { id: 'lev12', label: 'Lev 1–2' },
+  { id: 'lev34', label: 'Lev 3–4' },
+  { id: 'lev5', label: 'Lev 5' }
+];
+
+/**
+ * Official table: total series planned → [Lev 1–2, Lev 3–4, Lev 5] suggested exercise counts.
+ * Rows 8 and 11 are not listed; lookup uses the highest defined row at or below target (e.g. 8→7, 11→10). Above 20 uses row 20.
+ */
+const SERIES_TO_EXE_BY_LEVEL: Record<number, readonly [number, number, number]> = {
+  1: [1, 1, 1],
+  2: [1, 1, 1],
+  3: [1, 1, 1],
+  4: [2, 1, 1],
+  5: [2, 2, 1],
+  6: [3, 2, 2],
+  7: [3, 2, 2],
+  9: [3, 3, 2],
+  10: [4, 3, 2],
+  12: [4, 3, 3],
+  13: [5, 4, 3],
+  14: [5, 4, 3],
+  15: [5, 4, 3],
+  16: [5, 4, 3],
+  17: [5, 4, 3],
+  18: [6, 5, 3],
+  19: [6, 5, 4],
+  20: [6, 5, 4]
+};
+
+const SERIES_PLANNING_TABLE_KEYS: number[] = Object.keys(SERIES_TO_EXE_BY_LEVEL)
+  .map(Number)
+  .sort((a, b) => a - b);
+
+function resolveSeriesPlanningTableKey(totalSeries: number): number {
+  if (!Number.isFinite(totalSeries) || totalSeries < 1) return SERIES_PLANNING_TABLE_KEYS[0];
+  const maxK = SERIES_PLANNING_TABLE_KEYS[SERIES_PLANNING_TABLE_KEYS.length - 1];
+  if (totalSeries >= maxK) return maxK;
+  let best = SERIES_PLANNING_TABLE_KEYS[0];
+  for (const k of SERIES_PLANNING_TABLE_KEYS) {
+    if (k <= totalSeries) best = k;
+    else break;
+  }
+  return best;
+}
+
+function suggestedExeFromSeriesAndLevel(totalSeries: number, level: PlanTargetLevelBand): number {
+  const key = resolveSeriesPlanningTableKey(totalSeries);
+  const row = SERIES_TO_EXE_BY_LEVEL[key];
+  if (!row) return 1;
+  const idx = level === 'lev12' ? 0 : level === 'lev34' ? 1 : 2;
+  const v = row[idx];
+  return v >= 1 ? v : 1;
+}
+
+function parsePauseToSeconds(p: string): number | null {
+  if (!p || p === '0') return 0;
+  const s = p.trim();
+  const minOnly = s.match(/^(\d+)'$/);
+  if (minOnly) return parseInt(minOnly[1], 10) * 60;
+  const minSec = s.match(/^(\d+)'(\d+)"$/);
+  if (minSec) return parseInt(minSec[1], 10) * 60 + parseInt(minSec[2], 10);
+  const secQ = s.match(/^(\d+)"$/);
+  if (secQ) return parseInt(secQ[1], 10);
+  const n = parseInt(s, 10);
+  return Number.isNaN(n) ? null : n;
+}
+
+function formatAvgPauseFromSeconds(sec: number): string {
+  if (sec < 60) return `Average ${Math.round(sec)}"`;
+  const m = Math.floor(sec / 60);
+  const r = Math.round(sec - m * 60);
+  if (r === 0) return `Average ${m}'`;
+  return `Average ${m}'${r}"`;
+}
 
 // Muscle groups for the body diagram - all available muscles from /public/muscular/
 const MUSCLE_GROUPS = [
@@ -134,12 +218,18 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   const [preferences, setPreferences] = useState<any>(null);
   const [showSeriesPlanModal, setShowSeriesPlanModal] = useState<boolean>(false);
   const [planSectorId, setPlanSectorId] = useState<string | null>(null);
-  const [planExerciseNumber, setPlanExerciseNumber] = useState<number>(1);
   const [planSeries, setPlanSeries] = useState<string>('3');
   const [planReps, setPlanReps] = useState<string>('12');
   const [planPause, setPlanPause] = useState<string>("1'30\"");
+  const [planPyramidal, setPlanPyramidal] = useState<string>('flat');
   const [planCandidate, setPlanCandidate] = useState<any>(null);
   const [planExerciseSearch, setPlanExerciseSearch] = useState<string>('');
+  /** Target totals for the whole muscle area (planning support table). */
+  const [planTargetTotalSeries, setPlanTargetTotalSeries] = useState<string>('12');
+  const [planTargetLevel, setPlanTargetLevel] = useState<PlanTargetLevelBand>('lev34');
+  const [planTargetReps, setPlanTargetReps] = useState<string>('15');
+  const [planTargetPause, setPlanTargetPause] = useState<string>("2'");
+  const [planExerciseDetailTab, setPlanExerciseDetailTab] = useState<'execution' | 'points' | 'video' | 'other'>('execution');
   const [userDescription, setUserDescription] = useState<string>('');
   const loadedMoveframeIdRef = React.useRef<string | null>(null);
   const planListRef = React.useRef<HTMLDivElement | null>(null);
@@ -149,6 +239,19 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
 
   // Break/Pause options
   const BREAK_OPTIONS = ['0', '0"', '5"', '10"', '15"', '20"', '30"', '45"', "1'", "1'15\"", "1'30\"", "2'", "2'30\"", "3'", "4'", "5'", "6'", "7'"];
+
+  const PLAN_PYRAMIDAL_OPTIONS = [
+    { value: 'flat', label: 'Flat' },
+    { value: 'ascending', label: 'Ascending' },
+    { value: 'descending', label: 'Descending' },
+    { value: 'mix', label: 'Mix' }
+  ] as const;
+
+  const planPyramidalLabel = (v: string | undefined): string => {
+    if (!v || !v.trim()) return '—';
+    const opt = PLAN_PYRAMIDAL_OPTIONS.find((o) => o.value === v);
+    return opt ? opt.label.replace(' (default)', '') : v;
+  };
 
   // Mode options - Breaking modality among series
   const MODE_OPTIONS = [
@@ -370,6 +473,56 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return ex?.sector || null;
   }, [mockExercises]);
 
+  const planTargetResolvedSeriesKey = React.useMemo(() => {
+    const t = parseInt(planTargetTotalSeries, 10);
+    const total = Number.isNaN(t) || t < 1 ? 1 : t;
+    return resolveSeriesPlanningTableKey(total);
+  }, [planTargetTotalSeries]);
+
+  const planTargetExeCount = React.useMemo(() => {
+    const t = parseInt(planTargetTotalSeries, 10);
+    const total = Number.isNaN(t) || t < 1 ? 1 : t;
+    return suggestedExeFromSeriesAndLevel(total, planTargetLevel);
+  }, [planTargetTotalSeries, planTargetLevel]);
+
+  /** All planner rows whose exercise maps to this muscle sector (any row order in the table). */
+  const planSectorPlanningStats = React.useMemo(() => {
+    if (!planSectorId) {
+      return {
+        seriesSum: 0,
+        exerciseCount: 0,
+        avgReps: null as number | null,
+        avgPauseSec: null as number | null,
+        lastRow: null as FastPlannerRow | null
+      };
+    }
+    const sectorLabel = MUSCLE_GROUPS.find(g => g.id === planSectorId)?.sector ?? null;
+    if (!sectorLabel) {
+      return {
+        seriesSum: 0,
+        exerciseCount: 0,
+        avgReps: null as number | null,
+        avgPauseSec: null as number | null,
+        lastRow: null as FastPlannerRow | null
+      };
+    }
+    const sectorRows = rows.filter(r => {
+      const name = r.exercise?.trim();
+      if (!name) return false;
+      return getSectorForExercise(name) === sectorLabel;
+    });
+    const seriesSum = sectorRows.reduce((s, r) => s + (parseInt(String(r.series), 10) || 0), 0);
+    const exerciseCount = sectorRows.length;
+    const repsVals = sectorRows.map(r => parseInt(String(r.ripTime), 10)).filter(n => !Number.isNaN(n) && n > 0);
+    const avgReps = repsVals.length ? Math.round(repsVals.reduce((a, b) => a + b, 0) / repsVals.length) : null;
+    const pauseSecs = sectorRows
+      .map(r => parsePauseToSeconds(String(r.break || '')))
+      .filter((x): x is number => x !== null);
+    const avgPauseSec = pauseSecs.length ? pauseSecs.reduce((a, b) => a + b, 0) / pauseSecs.length : null;
+    const lastRow = sectorRows.length ? sectorRows[sectorRows.length - 1] : null;
+    return { seriesSum, exerciseCount, avgReps, avgPauseSec, lastRow };
+  }, [rows, planSectorId, getSectorForExercise]);
+
   const buildMovelapsFromRows = (filledRows: FastPlannerRow[]) => {
     return filledRows.map((row, index) => {
       const sector = row.exercise ? getSectorForExercise(row.exercise) : null;
@@ -425,7 +578,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   };
 
   /** Parse pause string (e.g. "1'30\"", "2'", "45\"") to total seconds */
-  const parsePauseToSeconds = (s: string): number => {
+  const parsePauseToSeconds = React.useCallback((s: string): number => {
     if (!s || typeof s !== 'string') return 0;
     const trimmed = s.trim();
     let seconds = 0;
@@ -435,17 +588,17 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     if (secMatch) seconds += parseInt(secMatch[1], 10);
     else if (!minMatch && /^\d+$/.test(trimmed)) seconds += parseInt(trimmed, 10);
     return seconds;
-  };
+  }, []);
 
   /** Format seconds to M'SS" */
-  const formatPauseFromSeconds = (totalSeconds: number): string => {
+  const formatPauseFromSeconds = React.useCallback((totalSeconds: number): string => {
     if (totalSeconds <= 0) return "0'00\"";
     const m = Math.floor(totalSeconds / 60);
     const s = totalSeconds % 60;
     return `${m}'${String(s).padStart(2, '0')}"`;
-  };
+  }, []);
 
-  const buildSummaryFromRows = (filledRows: FastPlannerRow[]): string => {
+  const buildSummaryFromRows = React.useCallback((filledRows: FastPlannerRow[]): string => {
     const sectors = new Set<string>();
     for (const r of filledRows) {
       if (r.exercise) {
@@ -492,7 +645,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       'User can edit here (but not the Summary).'
     ];
     return lines.join('\n');
-  };
+  }, [getSectorForExercise, parsePauseToSeconds, formatPauseFromSeconds]);
 
   const filledRowsForSummary = useMemo(
     () => rows.map(r => ({ ...r, exercise: (r.exercise || '').trim() })).filter(r => r.exercise !== ''),
@@ -500,7 +653,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   );
   const summaryText = useMemo(
     () => (filledRowsForSummary.length > 0 ? buildSummaryFromRows(filledRowsForSummary) : ''),
-    [filledRowsForSummary]
+    [filledRowsForSummary, buildSummaryFromRows]
   );
 
   useEffect(() => {
@@ -799,6 +952,9 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     if (!next.mode || next.mode.trim() === '') {
       next.mode = previous?.mode || 'Stopped';
     }
+    if (!next.pyramidal || next.pyramidal.trim() === '') {
+      next.pyramidal = previous?.pyramidal || 'flat';
+    }
 
     return next;
   };
@@ -889,7 +1045,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         ripTime: template.ripTime,
         weight: template.weight,
         break: template.break,
-        mode: template.mode
+        mode: template.mode,
+        pyramidal: template.pyramidal || 'flat'
       };
 
       return [...copy, nextRow];
@@ -928,7 +1085,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     if (!selectedCell) return;
     setRows(prevRows => prevRows.map(row => {
       if (row.id === selectedCell.rowId) {
-        return { ...row, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '' };
+        return { ...row, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '', pyramidal: '' };
       }
       return row;
     }));
@@ -1056,10 +1213,15 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   }));
   const openSeriesPlan = (sectorId: string) => {
     setPlanSectorId(sectorId);
-    setPlanExerciseNumber(1);
+    setPlanTargetTotalSeries('12');
+    setPlanTargetLevel('lev34');
+    setPlanTargetReps('15');
+    setPlanTargetPause("2'");
     setPlanSeries('3');
-    setPlanReps('12');
-    setPlanPause("1'30\"");
+    setPlanReps('15');
+    setPlanPause("2'");
+    setPlanPyramidal('flat');
+    setPlanExerciseDetailTab('execution');
     setPlanCandidate(null);
     setPlanExerciseSearch('');
     setShowSeriesPlanModal(true);
@@ -1111,29 +1273,15 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       break: planPause,
       speed: r.speed || 'Normal',
       weight: r.weight || 'nc',
-      mode: r.mode || 'Stopped'
+      mode: r.mode || 'Stopped',
+      pyramidal: planPyramidal
     } : r);
     setRows(newRows);
-    setPlanExerciseNumber(n => n + 1);
     setPlanCandidate(null);
   };
   const endSeriesPlan = () => {
     setShowSeriesPlanModal(false);
   };
-  React.useEffect(() => {
-    if (!showSeriesPlanModal) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        pickPlanCandidateByOffset(-1);
-      } else if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        pickPlanCandidateByOffset(1);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [pickPlanCandidateByOffset, showSeriesPlanModal]);
   React.useEffect(() => {
     if (!planCandidate || !planListRef.current) return;
     const card = planListRef.current.querySelector(`[data-exercise-id="${planCandidate.id}"]`) as HTMLElement | null;
@@ -2237,11 +2385,19 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         </div>
       )}
       {showSeriesPlanModal && planSectorId && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-amber-50 rounded-lg shadow-xl w-[90%] max-w-2xl p-5 border-2 border-amber-200">
-            <div className="mb-3">
-              <div className="text-lg font-bold text-gray-900">Plan series / exercise</div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
+          <div
+            className="my-auto flex max-h-[min(100dvh-2rem,920px)] w-[90%] max-w-2xl flex-col overflow-hidden rounded-lg border-2 border-amber-200 bg-amber-50 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="series-plan-modal-title"
+          >
+            <div className="flex-shrink-0 border-b border-amber-200/60 px-4 pb-3 pt-4 sm:px-5">
+              <div id="series-plan-modal-title" className="text-lg font-bold text-gray-900">
+                Plan series / exercise
+              </div>
             </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-3 sm:px-5">
             {/* Sector: name and picture - prominent white area */}
             <div className="mb-4 p-4 rounded-lg bg-white border-2 border-amber-200 shadow-sm">
               <div className="flex items-center gap-4">
@@ -2261,60 +2417,398 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 })()}
               </div>
             </div>
-            {/* WORK / PAUSE table - yellow background */}
-            <div className="mb-4 p-3 rounded-lg bg-amber-100/80 border-2 border-amber-200">
-              <table className="w-full border-collapse text-sm bg-white rounded overflow-hidden border border-amber-200">
-                <thead>
-                  <tr>
-                    <th className="border border-amber-200 px-2 py-1.5 w-10 text-center bg-amber-50 font-semibold">#</th>
-                    <th className="border border-amber-200 px-2 py-1.5 text-center bg-amber-50 font-semibold" colSpan={2}>WORK</th>
-                    <th className="border border-amber-200 px-2 py-1.5 text-center bg-amber-50 font-semibold">PAUSE</th>
-                  </tr>
-                  <tr className="bg-amber-50">
-                    <th className="border border-amber-200 px-2 py-1 text-center text-xs"></th>
-                    <th className="border border-amber-200 px-2 py-1 text-center text-xs">Series</th>
-                    <th className="border border-amber-200 px-2 py-1 text-center text-xs">Reps</th>
-                    <th className="border border-amber-200 px-2 py-1 text-center text-xs">Pause</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="border border-amber-200 px-2 py-1.5 text-center">{planExerciseNumber}</td>
-                    <td className="border border-amber-200 px-2 py-1.5 text-center">
-                      <select value={planSeries} onChange={(e) => setPlanSeries(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm bg-white">
-                        {[1,2,3,4,5,6,7,8,9,10,12,15,20].map(n => (<option key={n} value={n.toString()}>{n}</option>))}
-                      </select>
-                    </td>
-                    <td className="border border-amber-200 px-2 py-1.5 text-center">
-                      <select value={planReps} onChange={(e) => setPlanReps(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm bg-white">
-                        {[4,6,8,10,12,15,20,25,30].map(n => (<option key={n} value={n.toString()}>{n}</option>))}
-                      </select>
-                    </td>
-                    <td className="border border-amber-200 px-2 py-1.5 text-center">
-                      <select value={planPause} onChange={(e) => setPlanPause(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm bg-white">
-                        {BREAK_OPTIONS.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
-                      </select>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            {/* Planning support — user targets (reference) vs planned progress */}
+            <div className="mb-4 rounded-lg border-2 border-sky-300 bg-sky-50 shadow-sm overflow-hidden">
+              <div className="bg-sky-600 px-3 py-2 text-sm font-bold text-white">Planning support — plan total series of area</div>
+              <div className="p-3">
+                <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded border border-sky-200 bg-white px-3 py-2 text-xs text-sky-900">
+                  <span className="font-semibold text-sky-900">Training level</span>
+                  {PLAN_TARGET_LEVEL_OPTIONS.map(opt => (
+                    <label key={opt.id} className="inline-flex cursor-pointer items-center gap-1.5">
+                      <input
+                        type="radio"
+                        name="planTargetLevel"
+                        checked={planTargetLevel === opt.id}
+                        onChange={() => setPlanTargetLevel(opt.id)}
+                        className="text-sky-600"
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+                <details className="mb-3 rounded border border-sky-200 bg-white px-2 py-1.5 text-xs text-sky-900">
+                  <summary className="cursor-pointer font-semibold text-sky-800">Reference table</summary>
+                  <table className="mt-2 w-full border-collapse text-center text-[11px]">
+                    <thead>
+                      <tr className="bg-sky-50">
+                        <th className="border border-sky-200 px-1 py-0.5">Total series</th>
+                        <th className="border border-sky-200 px-1 py-0.5">Lev 1–2</th>
+                        <th className="border border-sky-200 px-1 py-0.5">Lev 3–4</th>
+                        <th className="border border-sky-200 px-1 py-0.5">Lev 5</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {SERIES_PLANNING_TABLE_KEYS.map(series => {
+                        const row = SERIES_TO_EXE_BY_LEVEL[series];
+                        return (
+                          <tr key={series}>
+                            <td className="border border-sky-200 px-1 py-0.5">{series}</td>
+                            <td className="border border-sky-200 px-1 py-0.5">{row[0]}</td>
+                            <td className="border border-sky-200 px-1 py-0.5">{row[1]}</td>
+                            <td className="border border-sky-200 px-1 py-0.5">{row[2]}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <p className="mt-1 text-[10px] text-sky-700/90">
+                    If your target is not a listed row (e.g. 8 or 11), the app uses the nearest row <strong>at or below</strong> it (8→7, 11→10). Targets above 20 use the row for 20. Table:{' '}
+                    <code className="rounded bg-sky-100 px-0.5">SERIES_TO_EXE_BY_LEVEL</code>.
+                  </p>
+                </details>
+                <table className="w-full border-collapse text-sm bg-white rounded border border-sky-200">
+                  <thead>
+                    <tr className="bg-sky-100">
+                      <th className="border border-sky-200 px-2 py-1 text-left text-xs font-semibold text-sky-900" />
+                      <th className="border border-sky-200 px-2 py-1 text-center text-xs font-semibold text-sky-900">Series</th>
+                      <th className="border border-sky-200 px-2 py-1 text-center text-xs font-semibold text-sky-900">Exe</th>
+                      <th className="border border-sky-200 px-2 py-1 text-center text-xs font-semibold text-sky-900">Reps</th>
+                      <th className="border border-sky-200 px-2 py-1 text-center text-xs font-semibold text-sky-900">Pause</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="border border-sky-200 px-2 py-1.5 text-xs font-semibold text-sky-800 whitespace-nowrap">Target</td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planTargetTotalSeries}
+                          onChange={(e) => setPlanTargetTotalSeries(e.target.value)}
+                          className="max-w-full rounded border border-sky-300 bg-white px-1 py-1 text-sm"
+                          aria-label="Target total series for this muscle area"
+                        >
+                          {PLAN_TARGET_TOTAL_SERIES_OPTIONS.map(n => (
+                            <option key={n} value={String(n)}>{n}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td
+                        className="border border-sky-200 bg-sky-50/80 px-2 py-1.5 text-center text-base font-bold text-sky-950"
+                        title={`Suggested exercises for ${planTargetTotalSeries} planned series, ${PLAN_TARGET_LEVEL_OPTIONS.find(o => o.id === planTargetLevel)?.label ?? planTargetLevel} (table row ${planTargetResolvedSeriesKey}, not editable)`}
+                      >
+                        <span role="status">{planTargetExeCount}</span>
+                      </td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planTargetReps}
+                          onChange={(e) => {
+                            setPlanTargetReps(e.target.value);
+                            setPlanReps(e.target.value);
+                          }}
+                          className="max-w-full rounded border border-sky-300 bg-white px-1 py-1 text-sm"
+                          aria-label="Target average reps (reference)"
+                        >
+                          {Array.from({ length: 99 }, (_, i) => i + 1).map(n => (
+                            <option key={n} value={String(n)}>{n}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planTargetPause}
+                          onChange={(e) => {
+                            setPlanTargetPause(e.target.value);
+                            setPlanPause(e.target.value);
+                          }}
+                          className="max-w-full rounded border border-sky-300 bg-white px-1 py-1 text-sm"
+                          aria-label="Target average pause (reference)"
+                        >
+                          {BREAK_OPTIONS.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-sky-200 px-2 py-1.5 text-xs font-semibold text-sky-800 whitespace-nowrap">Planned</td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center font-bold text-orange-600">{planSectorPlanningStats.seriesSum}</td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center font-semibold">{planSectorPlanningStats.exerciseCount}</td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center text-xs">
+                        {planSectorPlanningStats.avgReps != null ? `Average ${planSectorPlanningStats.avgReps}` : '—'}
+                      </td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center text-xs">
+                        {planSectorPlanningStats.avgPauseSec != null
+                          ? formatAvgPauseFromSeconds(planSectorPlanningStats.avgPauseSec)
+                          : '—'}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <div className="mb-4">
-              <button onClick={proceedScanExercise} className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-base shadow-md">Proceed scan exercises</button>
+
+            {/* Current moveframe — previous slot summary + next exercise load */}
+            <div className="mb-4 rounded-lg border-2 border-violet-300 bg-violet-50 shadow-sm">
+              <div className="rounded-t-lg bg-violet-600 px-3 py-2 text-sm font-bold text-white">Current moveframe load values</div>
+              <div className="overflow-x-auto p-3">
+                <table className="w-full border-collapse text-sm bg-white rounded border border-violet-200">
+                  <thead>
+                    <tr>
+                      <th className="border border-violet-200 bg-violet-100 px-2 py-1.5 text-center text-xs font-semibold text-violet-900">#</th>
+                      <th className="border border-violet-200 bg-violet-100 px-2 py-1.5 text-center text-xs font-semibold text-violet-900" colSpan={3}>WORK</th>
+                      <th className="border border-violet-200 bg-violet-100 px-2 py-1.5 text-center text-xs font-semibold text-violet-900">PAUSE</th>
+                    </tr>
+                    <tr className="bg-violet-50">
+                      <th className="border border-violet-200 px-2 py-1 text-center text-[10px] font-normal text-violet-800">Added / next</th>
+                      <th className="border border-violet-200 px-2 py-1 text-center text-xs">Series</th>
+                      <th className="border border-violet-200 px-2 py-1 text-center text-xs">Reps</th>
+                      <th className="border border-violet-200 px-2 py-1 text-center text-xs">Pyramidal</th>
+                      <th className="border border-violet-200 px-2 py-1 text-center text-xs">Pause</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td
+                        className="border border-violet-200 px-2 py-1.5 text-center text-xs font-semibold text-violet-900"
+                        title="Moveframe rows in this plan for this sector (any position in the table)"
+                      >
+                        {planSectorPlanningStats.exerciseCount}
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center text-sm text-gray-700">
+                        {planSectorPlanningStats.lastRow?.series || '—'}
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center text-sm text-gray-700">
+                        {planSectorPlanningStats.lastRow?.ripTime || '—'}
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center text-sm text-gray-700">
+                        {planPyramidalLabel(planSectorPlanningStats.lastRow?.pyramidal)}
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center text-sm text-gray-700">
+                        {planSectorPlanningStats.lastRow?.break || '—'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td
+                        className="border border-violet-200 px-2 py-1.5 text-center font-semibold text-violet-900"
+                        title="Index of the next exercise line for this sector"
+                      >
+                        {planSectorPlanningStats.exerciseCount + 1}
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planSeries}
+                          onChange={(e) => setPlanSeries(e.target.value)}
+                          className="rounded border border-violet-300 bg-white px-2 py-1 text-sm"
+                        >
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20].map(n => (
+                            <option key={n} value={n.toString()}>{n}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planReps}
+                          onChange={(e) => setPlanReps(e.target.value)}
+                          className="mx-auto block min-w-[3.5rem] rounded border border-violet-300 bg-white px-2 py-1 text-sm"
+                          aria-label="Repetitions 1–99"
+                        >
+                          {Array.from({ length: 99 }, (_, i) => i + 1).map((n) => (
+                            <option key={n} value={String(n)}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planPyramidal}
+                          onChange={(e) => setPlanPyramidal(e.target.value)}
+                          className={`max-w-[11rem] rounded border border-violet-300 bg-white px-2 py-1 text-sm ${
+                            planPyramidal === 'flat' ? 'text-red-700 font-medium' : 'text-gray-900'
+                          }`}
+                          aria-label="Pyramidal load"
+                        >
+                          {PLAN_PYRAMIDAL_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planPause}
+                          onChange={(e) => setPlanPause(e.target.value)}
+                          className="rounded border border-violet-300 bg-white px-2 py-1 text-sm"
+                        >
+                          {BREAK_OPTIONS.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-            {/* Search: Name exercise input */}
+
             <div className="mb-4">
+              <button
+                type="button"
+                onClick={proceedScanExercise}
+                className="w-full rounded-lg bg-red-600 px-4 py-3 text-base font-bold text-white shadow-md hover:bg-red-700"
+              >
+                Proceed scan exercises
+              </button>
+            </div>
+            <div className="mb-2">
+              <label htmlFor="plan-exercise-search" className="mb-1 block text-sm font-semibold text-gray-800">
+                Search exercise
+              </label>
               <input
+                id="plan-exercise-search"
                 type="text"
                 value={planExerciseSearch}
                 onChange={(e) => setPlanExerciseSearch(e.target.value)}
-                placeholder="Name exercise (search)"
-                className="w-full px-4 py-2.5 text-base border-2 border-amber-300 rounded-lg bg-white placeholder-gray-500 focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+                placeholder="Name exercise"
+                className="w-full rounded-lg border-2 border-amber-300 bg-white px-4 py-2.5 text-base placeholder-gray-500 focus:border-orange-400 focus:ring-2 focus:ring-orange-400"
                 aria-label="Search exercises by name"
               />
             </div>
-            {/* Exercise area - bigger for 2 pictures per exercise, with scroll arrows */}
-            <div className="min-h-[280px] h-72 bg-amber-100/60 border-2 border-amber-200 rounded-lg flex items-center justify-center mb-4 relative">
+            <div className="mb-0 flex overflow-hidden rounded-t-lg bg-slate-800 shadow-sm" role="tablist" aria-label="Exercise detail">
+              {(
+                [
+                  { id: 'execution' as const, label: 'Execution' },
+                  { id: 'points' as const, label: 'Start-end points' },
+                  { id: 'video' as const, label: 'Video' },
+                  { id: 'other' as const, label: 'Other info' }
+                ]
+              ).map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={planExerciseDetailTab === tab.id}
+                  onClick={() => setPlanExerciseDetailTab(tab.id)}
+                  className={`min-w-0 flex-1 px-1.5 py-2.5 text-center text-[11px] font-semibold text-white sm:px-2 sm:text-sm ${
+                    planExerciseDetailTab === tab.id
+                      ? 'bg-slate-900 ring-2 ring-inset ring-amber-400'
+                      : 'bg-slate-800 hover:bg-slate-700'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div
+              className={`mb-4 rounded-b-lg border border-t-0 border-amber-200 bg-white px-3 py-2 text-sm text-gray-700 ${
+                planExerciseDetailTab === 'points'
+                  ? 'min-h-[11rem]'
+                  : planExerciseDetailTab === 'video'
+                    ? 'min-h-[11rem]'
+                    : 'min-h-[6.5rem]'
+              }`}
+              role="tabpanel"
+            >
+              {planExerciseDetailTab === 'execution' && (
+                <div className="min-h-[5.5rem] py-2" aria-label="Execution">
+                  {planCandidate ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">How to perform</p>
+                      <p className="text-sm leading-relaxed text-gray-800">
+                        <span className="font-medium text-gray-900">{planCandidate.name}</span>
+                        {' — '}
+                        Full step-by-step instructions will appear here when this exercise is linked to your database (setup,
+                        range of motion, tempo, breathing).
+                      </p>
+                      <ul className="list-disc space-y-1 pl-4 text-xs text-gray-600">
+                        <li>Keep stable posture and a controlled lowering phase.</li>
+                        <li>Align effort with the planned reps and pauses above.</li>
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="py-3 text-center text-sm text-gray-500">Select an exercise below to see execution notes.</p>
+                  )}
+                </div>
+              )}
+              {planExerciseDetailTab === 'points' &&
+                (planCandidate ? (
+                  <div className="flex flex-wrap items-start justify-center gap-6 py-2">
+                    {(
+                      [
+                        { key: 'a', title: 'Picture A', altSuffix: 'picture A' },
+                        { key: 'b', title: 'Picture B', altSuffix: 'picture B' }
+                      ] as const
+                    ).map(({ key, title, altSuffix }) => (
+                      <div key={key} className="flex flex-col items-center gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">{title}</span>
+                        <div className="flex h-44 w-44 items-center justify-center rounded-lg border-2 border-amber-200 bg-amber-50/50">
+                          <Image
+                            src={planCandidate.image}
+                            alt={`${planCandidate.name} — ${altSuffix}`}
+                            width={168}
+                            height={168}
+                            className="object-contain"
+                            unoptimized
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="py-4 text-center text-sm text-gray-500">Select an exercise below to see picture A and picture B.</p>
+                ))}
+              {planExerciseDetailTab === 'video' && (
+                <div className="flex min-h-[9rem] flex-col items-center justify-center gap-3 py-3" aria-label="Video">
+                  {planCandidate ? (
+                    <>
+                      <div className="relative flex h-36 w-full max-w-md items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50">
+                        <span
+                          className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600 text-white shadow-md"
+                          aria-hidden
+                        >
+                          <svg className="ml-1 h-7 w-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </span>
+                      </div>
+                      <p className="max-w-md text-center text-xs text-gray-500">
+                        Placeholder player for <span className="font-medium text-gray-700">{planCandidate.name}</span>. Attach a
+                        video URL in your exercise library to enable playback here.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500">Select an exercise to preview its video.</p>
+                  )}
+                </div>
+              )}
+              {planExerciseDetailTab === 'other' && (
+                <div className="min-h-[5.5rem] space-y-2 py-2" aria-label="Other info">
+                  {planCandidate ? (
+                    <>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Reference</p>
+                      <dl className="grid grid-cols-1 gap-2 text-xs text-gray-700 sm:grid-cols-2">
+                        <div>
+                          <dt className="font-medium text-gray-900">Muscular sector</dt>
+                          <dd className="mt-0.5">{planCandidate.sector ?? '—'}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-medium text-gray-900">Safety / cues</dt>
+                          <dd className="mt-0.5">Neutral alignment, full comfortable range, stop if sharp pain.</dd>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <dt className="font-medium text-gray-900">Equipment & substitutions</dt>
+                          <dd className="mt-0.5">Will be filled from your exercise library when available.</dd>
+                        </div>
+                      </dl>
+                    </>
+                  ) : (
+                    <p className="py-3 text-center text-sm text-gray-500">Select an exercise for tips and reference info.</p>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Exercise area — capped height so modal fits viewport */}
+            <div className="relative mb-4 flex h-48 min-h-[11rem] max-h-[32vh] items-center justify-center rounded-lg border-2 border-amber-200 bg-amber-100/60 sm:h-64 sm:max-h-[38vh] md:h-72 md:max-h-none">
               <button
                 onClick={() => pickPlanCandidateByOffset(-1)}
                 className="absolute left-2 z-10 w-12 h-12 flex items-center justify-center rounded-lg bg-orange-400 hover:bg-orange-500 text-white shadow-md transition-colors"
@@ -2354,13 +2848,14 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
               </button>
             </div>
-            <div className="bg-amber-100/60 border-2 border-amber-200 rounded-lg px-5 py-4 mb-4 text-center">
-              <div className="text-sm font-semibold text-amber-800 mb-1">Selected exercise</div>
-              <div className="text-2xl md:text-3xl font-bold text-gray-900">{planCandidate?.name || 'No exercise selected'}</div>
+            <div className="mb-1 rounded-lg border-2 border-amber-200 bg-amber-100/60 px-4 py-3 text-center sm:px-5 sm:py-4">
+              <div className="mb-1 text-sm font-semibold text-amber-800">Name exercise</div>
+              <div className="text-xl font-bold text-gray-900 sm:text-2xl md:text-3xl">{planCandidate?.name || 'No exercise selected'}</div>
             </div>
-            <div className="flex items-center justify-between gap-2">
-              <button onClick={addPlannedExercise} className="px-6 py-2.5 bg-gray-300 hover:bg-gray-400 text-black rounded-lg font-semibold">Add exercise</button>
-              <button onClick={endSeriesPlan} className="px-6 py-2.5 bg-black hover:bg-gray-800 text-white rounded-lg font-semibold">End the plan</button>
+            </div>
+            <div className="flex flex-shrink-0 items-center justify-between gap-2 border-t border-amber-200/60 bg-amber-50 px-4 py-3 sm:px-5">
+              <button type="button" onClick={addPlannedExercise} className="rounded-lg bg-gray-300 px-4 py-2.5 font-semibold text-black hover:bg-gray-400 sm:px-6">Add exercise</button>
+              <button type="button" onClick={endSeriesPlan} className="rounded-lg bg-black px-4 py-2.5 font-semibold text-white hover:bg-gray-800 sm:px-6">End the plan</button>
             </div>
           </div>
         </div>

@@ -26,9 +26,28 @@ import { SPORTS_LIST, getSportDisplayName } from '@/constants/moveframe.constant
 interface ToolsSettingsProps {
   isAdmin?: boolean;
   userType?: string;
+  mode?: 'tools' | 'technical';
+  initialTab?: ToolsTab;
 }
 
-export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }: ToolsSettingsProps = {}) {
+function getAllowedTabs(isAdmin: boolean, mode: 'tools' | 'technical'): ToolsTab[] {
+  if (mode === 'technical') {
+    return ['equipmentFactories', 'muscles', 'sportsEquipment', 'exercises', 'myLibrary', 'devices'];
+  }
+  if (isAdmin) {
+    return ['periods', 'sections', 'bodyBuildingTechniques', 'commonDailyActions', 'sports', 'equipment'];
+  }
+  // Personal Settings (all users): keep official user tabs only
+  // and exclude technical/admin tabs (factories, muscles, sports-equipment).
+  return ['periods', 'sections', 'bodyBuildingTechniques', 'equipment', 'exercises', 'myLibrary', 'devices'];
+}
+
+export default function ToolsSettings({
+  isAdmin = false,
+  userType = 'ATHLETE',
+  mode = 'tools',
+  initialTab
+}: ToolsSettingsProps = {}) {
   const { t, currentLanguage } = useLanguage();
   
   // Use custom hook for data management
@@ -59,11 +78,20 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
     saveToDatabase
   } = useToolsData();
   
-  const [activeTab, setActiveTab] = useState<ToolsTab>('periods');
+  const [activeTab, setActiveTab] = useState<ToolsTab>(
+    mode === 'technical' ? 'equipmentFactories' : 'periods'
+  );
   const [editingItem, setEditingItem] = useState<Period | WorkoutSection | null>(null);
   const [editItemTranslations, setEditItemTranslations] = useState<Record<string, { title: string; description: string }>>({});
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [newItem, setNewItem] = useState({ title: '', code: '', description: '', color: '#3b82f6', sports: [] as string[] });
+  const [newItem, setNewItem] = useState({
+    title: '',
+    code: '',
+    description: '',
+    color: '#3b82f6',
+    sports: [] as string[],
+    picture: ''
+  });
   const [newItemTranslations, setNewItemTranslations] = useState<Record<string, { title: string; description: string }>>({});
   const [activeInputLanguage, setActiveInputLanguage] = useState('en');
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
@@ -90,6 +118,20 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [superAdminPassword, setSuperAdminPassword] = useState('');
   const [showLoadDialog, setShowLoadDialog] = useState(false);
+  const allowedTabs = getAllowedTabs(isAdmin, mode);
+
+  useEffect(() => {
+    if (!allowedTabs.includes(activeTab)) {
+      setActiveTab(allowedTabs[0]);
+    }
+  }, [activeTab, allowedTabs]);
+
+  useEffect(() => {
+    if (!initialTab) return;
+    if (allowedTabs.includes(initialTab)) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, allowedTabs]);
   
   // Get current user ID for ownership checking
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -274,6 +316,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
   const getActiveItems = () => {
     if (activeTab === 'periods') return periods;
     if (activeTab === 'sections') return sections;
+    if (activeTab === 'commonDailyActions') return sections;
     if (activeTab === 'bodyBuildingTechniques') return bodyBuildingTechniques;
     return sections;
   };
@@ -281,7 +324,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
   const setActiveItems = (items: Period[] | WorkoutSection[] | BodyBuildingTechnique[]) => {
     if (activeTab === 'periods') {
       setPeriods(items as Period[]);
-    } else if (activeTab === 'sections') {
+    } else if (activeTab === 'sections' || activeTab === 'commonDailyActions') {
       setSections(items as WorkoutSection[]);
     } else if (activeTab === 'bodyBuildingTechniques') {
       setBodyBuildingTechniques(items as BodyBuildingTechnique[]);
@@ -343,6 +386,10 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
       order: items.length,
       isUserCreated: !isAdmin, // Tag user-created items
       ...(activeTab === 'sections' && { code: newItem.code || '' }), // Add code field for sections
+      ...(activeTab === 'commonDailyActions' && {
+        code: newItem.code || '',
+        picture: newItem.picture || ''
+      }),
       ...(activeTab === 'bodyBuildingTechniques' && { sports: newItem.sports || [] }) // Add sports field for execution techniques
     };
 
@@ -367,6 +414,10 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
             color: newItem.color,
             order: items.length,
             isUserCreated: false,
+            ...(activeTab === 'commonDailyActions' && {
+              code: newItem.code || '',
+              picture: newItem.picture || ''
+            }),
           };
           
           existingData.push(langEntry);
@@ -386,6 +437,10 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
         color: newItem.color,
         order: items.length,
         isUserCreated: true,
+        ...(activeTab === 'commonDailyActions' && {
+          code: newItem.code || '',
+          picture: newItem.picture || ''
+        }),
       };
       
       existingData.push(langEntry);
@@ -393,7 +448,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
     }
 
     setActiveItems([...items, newEntry]);
-    setNewItem({ title: '', code: '', description: '', color: '#3b82f6', sports: [] as string[] });
+    setNewItem({ title: '', code: '', description: '', color: '#3b82f6', sports: [] as string[], picture: '' });
     setNewItemTranslations({});
     setActiveInputLanguage('en');
     setShowAddDialog(false);
@@ -527,7 +582,11 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
               title: langData.title || '',
               description: langData.description || '',
               color: editingItem.color,
-              ...(activeTab === 'sections' && { code: (editingItem as any).code || '' })
+              ...(activeTab === 'sections' && { code: (editingItem as any).code || '' }),
+              ...(activeTab === 'commonDailyActions' && {
+                code: (editingItem as any).code || '',
+                picture: (editingItem as any).picture || ''
+              })
             };
           } else {
             // Add if doesn't exist
@@ -537,7 +596,11 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
               description: langData.description || '',
               color: editingItem.color,
               order: existingData.length,
-            ...(activeTab === 'sections' && { code: (editingItem as any).code || '' })
+            ...(activeTab === 'sections' && { code: (editingItem as any).code || '' }),
+            ...(activeTab === 'commonDailyActions' && {
+              code: (editingItem as any).code || '',
+              picture: (editingItem as any).picture || ''
+            })
           });
         }
         
@@ -557,7 +620,11 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
           title: editingItem.title,
           description: editingItem.description,
           color: editingItem.color,
-          ...(activeTab === 'sections' && { code: (editingItem as any).code || '' })
+          ...(activeTab === 'sections' && { code: (editingItem as any).code || '' }),
+          ...(activeTab === 'commonDailyActions' && {
+            code: (editingItem as any).code || '',
+            picture: (editingItem as any).picture || ''
+          })
         };
       } else {
         // Add if doesn't exist
@@ -568,7 +635,11 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
           color: editingItem.color,
           order: existingData.length,
           isUserCreated: true,
-          ...(activeTab === 'sections' && { code: (editingItem as any).code || '' })
+          ...(activeTab === 'sections' && { code: (editingItem as any).code || '' }),
+          ...(activeTab === 'commonDailyActions' && {
+            code: (editingItem as any).code || '',
+            picture: (editingItem as any).picture || ''
+          })
         });
       }
       
@@ -846,7 +917,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
     }
     
     // Fallback to English
-    const storageKeyEn = activeTab === 'periods' ? 'tools_periods_en' : activeTab === 'sections' ? 'tools_sections_en' : null;
+    const storageKeyEn = activeTab === 'periods' ? 'tools_periods_en' : (activeTab === 'sections' || activeTab === 'commonDailyActions') ? 'tools_sections_en' : null;
     if (storageKeyEn) {
       const enData = localStorage.getItem(storageKeyEn);
       if (enData) {
@@ -861,7 +932,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
     }
     
     // Fallback to Italian
-    const storageKeyIt = activeTab === 'periods' ? 'tools_periods_it' : activeTab === 'sections' ? 'tools_sections_it' : null;
+    const storageKeyIt = activeTab === 'periods' ? 'tools_periods_it' : (activeTab === 'sections' || activeTab === 'commonDailyActions') ? 'tools_sections_it' : null;
     if (storageKeyIt) {
       const itData = localStorage.getItem(storageKeyIt);
       if (itData) {
@@ -1144,44 +1215,70 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-3xl font-bold text-gray-900">Tools Settings</h2>
-        <p className="text-gray-600 mt-1">Manage your workout periods, sections, sports, and equipment</p>
+        <h2 className="text-3xl font-bold text-gray-900">{mode === 'technical' ? 'Technical Settings' : 'Tools Settings'}</h2>
+        <p className="text-gray-600 mt-1">
+          {mode === 'technical'
+            ? 'Manage factories, muscles, equipment, exercises, libraries, and devices'
+            : 'Manage your workout periods, sections, sports, and equipment'}
+        </p>
+        {!isAdmin && mode === 'tools' && (
+          <p className="mt-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2.5 py-1.5 inline-block">
+            Admin creates language defaults. Choose your display language and load that template as your personal starting point.
+          </p>
+        )}
       </div>
 
       {/* Tabs */}
       <div className="flex gap-2 border-b border-gray-200">
-        <button
-          onClick={() => setActiveTab('periods')}
-          className={`px-6 py-3 font-semibold transition ${
-            activeTab === 'periods'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Periods
-        </button>
-        <button
-          onClick={() => setActiveTab('sections')}
-          className={`px-6 py-3 font-semibold transition ${
-            activeTab === 'sections'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Workout Sections
-        </button>
-        <button
-          onClick={() => setActiveTab('bodyBuildingTechniques')}
-          className={`px-6 py-3 font-semibold transition ${
-            activeTab === 'bodyBuildingTechniques'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Execution Techniques
-        </button>
-        {/* Main Sports tab - only for Admin */}
-        {isAdmin && (
+        {allowedTabs.includes('periods') && (
+          <button
+            onClick={() => setActiveTab('periods')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'periods'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Periods
+          </button>
+        )}
+        {allowedTabs.includes('sections') && (
+          <button
+            onClick={() => setActiveTab('sections')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'sections'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Workout Sections
+          </button>
+        )}
+        {allowedTabs.includes('bodyBuildingTechniques') && (
+          <button
+            onClick={() => setActiveTab('bodyBuildingTechniques')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'bodyBuildingTechniques'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Execution Techniques
+          </button>
+        )}
+        {allowedTabs.includes('commonDailyActions') && (
+          <button
+            onClick={() => setActiveTab('commonDailyActions')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'commonDailyActions'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Common daily actions
+          </button>
+        )}
+        {allowedTabs.includes('sports') && (
           <button
             onClick={() => setActiveTab('sports')}
             className={`px-6 py-3 font-semibold transition ${
@@ -1193,76 +1290,100 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
             Main Sports
           </button>
         )}
-        <button
-          onClick={() => setActiveTab('equipment')}
-          className={`px-6 py-3 font-semibold transition ${
-            activeTab === 'equipment'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Personal Equipment
-        </button>
-        <button
-          onClick={() => setActiveTab('equipmentFactories')}
-          className={`px-6 py-3 font-semibold transition ${
-            activeTab === 'equipmentFactories'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Sports Equipment Factories
-        </button>
-        <button
-          onClick={() => setActiveTab('muscles')}
-          className={`px-6 py-3 font-semibold transition ${
-            activeTab === 'muscles'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Muscles Settings
-        </button>
-        <button
-          onClick={() => setActiveTab('sportsEquipment')}
-          className={`px-6 py-3 font-semibold transition ${
-            activeTab === 'sportsEquipment'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Sports Equipment
-        </button>
-        <button
-          onClick={() => setActiveTab('exercises')}
-          className={`px-6 py-3 font-semibold transition ${
-            activeTab === 'exercises'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Exercise Bank
-        </button>
-        <button
-          onClick={() => setActiveTab('myLibrary')}
-          className={`px-6 py-3 font-semibold transition ${
-            activeTab === 'myLibrary'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          My Library of Exercises
-        </button>
-        <button
-          onClick={() => setActiveTab('devices')}
-          className={`px-6 py-3 font-semibold transition ${
-            activeTab === 'devices'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Device Enabled
-        </button>
+        {allowedTabs.includes('equipment') && (
+          <button
+            onClick={() => setActiveTab('equipment')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'equipment'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Personal Equipment
+          </button>
+        )}
+        {allowedTabs.includes('equipmentFactories') && (
+          <button
+            onClick={() => setActiveTab('equipmentFactories')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'equipmentFactories'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Sports Equipment Factories
+          </button>
+        )}
+        {allowedTabs.includes('muscles') && (
+          <button
+            onClick={() => setActiveTab('muscles')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'muscles'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Muscles Settings
+          </button>
+        )}
+        {allowedTabs.includes('sportsEquipment') && (
+          <button
+            onClick={() => setActiveTab('sportsEquipment')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'sportsEquipment'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Sports Equipment
+          </button>
+        )}
+        {allowedTabs.includes('exercises') && (
+          <button
+            onClick={() => setActiveTab('exercises')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'exercises'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Exercise Bank
+          </button>
+        )}
+        {allowedTabs.includes('myLibrary') && (
+          <button
+            onClick={() => setActiveTab('myLibrary')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'myLibrary'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <span className="flex flex-col items-center leading-tight">
+              <span>My Library of Exercises</span>
+              {!isAdmin && mode === 'tools' && (
+                <span className="text-[10px] font-normal text-gray-500 mt-0.5">only in user language</span>
+              )}
+            </span>
+          </button>
+        )}
+        {allowedTabs.includes('devices') && (
+          <button
+            onClick={() => setActiveTab('devices')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'devices'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <span className="flex flex-col items-center leading-tight">
+              <span>Device Enabled</span>
+              {!isAdmin && mode === 'tools' && (
+                <span className="text-[10px] font-normal text-gray-500 mt-0.5">only in user language</span>
+              )}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Language Defaults - Admin Only */}
@@ -1335,15 +1456,20 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
               Load Admin Defaults
             </button>
           )}
-          
-          <div className="text-xs text-gray-600 flex-1">
-            <span className="font-semibold">ℹ️ Note:</span> Terms without translation will appear in <span className="text-red-600 font-bold">RED</span> (English or Italian fallback)
-          </div>
+
+          {!isAdmin && (
+            <div className="ml-auto text-[11px] leading-relaxed text-gray-600 max-w-[420px]">
+              <p className="font-semibold text-gray-700">Display in language selected</p>
+              <p>Load all items of Tools Settings in the selected language after pressing "Load Admin Defaults".</p>
+              <p className="text-gray-500">If a translation is missing, fallback appears in red (English/Italian).</p>
+            </div>
+          )}
+
         </div>
       </div>
 
       {/* Periods, Sections & Execution Techniques Tab Content */}
-      {(activeTab === 'periods' || activeTab === 'sections' || activeTab === 'bodyBuildingTechniques') && (
+      {(activeTab === 'periods' || activeTab === 'sections' || activeTab === 'commonDailyActions' || activeTab === 'bodyBuildingTechniques') && (
         <div className="space-y-6">
           {/* Action Bar */}
           <div className="flex justify-between items-center">
@@ -1397,6 +1523,18 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
                   <GripVertical className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
                   
                   <div className="flex-1 min-w-0">
+                    {activeTab === 'commonDailyActions' && (item as any).picture && (
+                      <div className="mb-2">
+                        <Image
+                          src={(item as any).picture}
+                          alt={item.title}
+                          width={48}
+                          height={48}
+                          className="w-12 h-12 object-cover rounded border border-gray-200"
+                          unoptimized
+                        />
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 mb-2">
                       <div
                         className="w-4 h-4 rounded-full flex-shrink-0"
@@ -2423,7 +2561,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-2xl font-bold mb-6">
-              Add New {activeTab === 'periods' ? 'Period' : activeTab === 'sections' ? 'Section' : 'Execution Technique'}
+              Add New {activeTab === 'periods' ? 'Period' : activeTab === 'sections' ? 'Section' : activeTab === 'commonDailyActions' ? 'Common Daily Action' : 'Execution Technique'}
             </h3>
             
             {/* Info Banner */}
@@ -2438,7 +2576,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
             
             {/* Global Fields (Code & Color) */}
             <div className="space-y-4 mb-6">
-              {activeTab === 'sections' && (
+              {(activeTab === 'sections' || activeTab === 'commonDailyActions') && (
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Code <span className="text-gray-500">(max 5 characters, same for all languages)</span>
@@ -2456,6 +2594,40 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
                   />
                   <div className="text-xs text-gray-500 mt-1">
                     {(newItem.code || '').length}/5 - Short code for compact display
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'commonDailyActions' && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Picture <span className="text-gray-500">(same for all languages)</span>
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setNewItem({ ...newItem, picture: (reader.result as string) || '' });
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                    />
+                    {newItem.picture && (
+                      <Image
+                        src={newItem.picture}
+                        alt="Preview"
+                        width={56}
+                        height={56}
+                        className="w-14 h-14 object-cover rounded-lg border border-gray-200"
+                        unoptimized
+                      />
+                    )}
                   </div>
                 </div>
               )}
@@ -2606,7 +2778,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
               <button
                 onClick={() => {
                   setShowAddDialog(false);
-                  setNewItem({ title: '', code: '', description: '', color: '#3b82f6', sports: [] as string[] });
+                  setNewItem({ title: '', code: '', description: '', color: '#3b82f6', sports: [] as string[], picture: '' });
                   setNewItemTranslations({});
                   setActiveInputLanguage('en');
                 }}
@@ -2624,7 +2796,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-2xl font-bold mb-6">
-              Edit {activeTab === 'periods' ? 'Period' : activeTab === 'sections' ? 'Section' : 'Execution Technique'}
+              Edit {activeTab === 'periods' ? 'Period' : activeTab === 'sections' ? 'Section' : activeTab === 'commonDailyActions' ? 'Common Daily Action' : 'Execution Technique'}
             </h3>
             
             {/* Info Banner - Only for Admin */}
@@ -2641,7 +2813,7 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
 
             {/* Global Fields (Code & Color) */}
             <div className="space-y-4 mb-6">
-              {activeTab === 'sections' && (
+              {(activeTab === 'sections' || activeTab === 'commonDailyActions') && (
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Code <span className="text-gray-500">(max 5 characters, same for all languages)</span>
@@ -2659,6 +2831,40 @@ export default function ToolsSettings({ isAdmin = false, userType = 'ATHLETE' }:
                   />
                   <div className="text-xs text-gray-500 mt-1">
                     {((editingItem as any).code || '').length}/5 - Short code for compact display
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'commonDailyActions' && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Picture <span className="text-gray-500">(same for all languages)</span>
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file || !editingItem) return;
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setEditingItem({ ...editingItem, picture: (reader.result as string) || '' } as any);
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                    />
+                    {(editingItem as any).picture && (
+                      <Image
+                        src={(editingItem as any).picture}
+                        alt="Preview"
+                        width={56}
+                        height={56}
+                        className="w-14 h-14 object-cover rounded-lg border border-gray-200"
+                        unoptimized
+                      />
+                    )}
                   </div>
                 </div>
               )}

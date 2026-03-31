@@ -20,6 +20,17 @@ const stripCircuitTags = (content: string | null | undefined): string => {
     .trim();
 };
 
+const extractFastPlannerDataFromNotes = (notes: unknown): any | null => {
+  if (typeof notes !== 'string') return null;
+  const match = notes.match(/\[FAST_PLANNER_DATA\]([\s\S]*?)\[\/FAST_PLANNER_DATA\]/);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+};
+
 interface SortableMoveframeRowProps {
   moveframe: any;
   mfIndex: number;
@@ -590,27 +601,46 @@ export default function SortableMoveframeRow({
         
         const hasHtmlContent = manualContent && (manualContent.includes('<') || manualContent.includes('\n'));
 
+        const fastPlannerPayload = extractFastPlannerDataFromNotes(moveframe.notes) ?? moveframe.fastPlannerData ?? null;
+        const isAerobicFastPlan = fastPlannerPayload?.plannerType === 'aerobic';
         const isFastPlanMoveframe = moveframe.type === 'BATTERY' && !moveframe.isCircuitBased &&
           (typeof moveframe.description === 'string' && moveframe.description.toLowerCase().startsWith('fast planner') ||
             (typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]')));
-        const fastPlanDistancesLine = isFastPlanMoveframe && Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0
-          ? moveframe.movelaps
-              .map((lap: any) => {
-                const val = lap.reps ?? lap.distance ?? lap.weight ?? '';
-                const sp = lap.speed ?? lap.pace ?? '';
-                const v = val !== '' && val != null ? String(val) : '?';
-                const s = sp !== '' && sp != null ? String(sp) : '?';
-                return `${v}\\${s}`;
-              })
-              .join('+')
+        const fastPlanDistancesLine = isFastPlanMoveframe
+          ? isAerobicFastPlan && Array.isArray(fastPlannerPayload?.rows)
+            ? fastPlannerPayload.rows
+                .map((r: any) => {
+                  const d = typeof r?.distance === 'string' ? r.distance.trim() : '';
+                  if (!d) return '';
+                  const style = typeof r?.style === 'string' ? r.style.trim() : '';
+                  return style ? `${d}\\${style}` : d;
+                })
+                .filter(Boolean)
+                .join('+')
+            : Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0
+            ? moveframe.movelaps
+                .map((lap: any) => {
+                  const val = lap.reps ?? lap.distance ?? lap.weight ?? '';
+                  const sp = lap.speed ?? lap.pace ?? '';
+                  const v = val !== '' && val != null ? String(val) : '?';
+                  const s = sp !== '' && sp != null ? String(sp) : '?';
+                  return `${v}\\${s}`;
+                })
+                .join('+')
+            : ''
           : '';
-        const fastPlanUserNoteLine = isFastPlanMoveframe && typeof moveframe.notes === 'string'
-          ? stripCircuitTags(
-              moveframe.notes
-                .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
-                .replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '')
-                .trim()
-            )
+        const fastPlanUserNoteLine = isFastPlanMoveframe
+          ? (typeof fastPlannerPayload?.descriptionInstructions === 'string'
+              ? fastPlannerPayload.descriptionInstructions.trim()
+              : '') ||
+            (typeof moveframe.notes === 'string'
+              ? stripCircuitTags(
+                  moveframe.notes
+                    .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
+                    .replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '')
+                    .trim()
+                )
+              : '')
           : '';
         
         return (
