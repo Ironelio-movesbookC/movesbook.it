@@ -83,6 +83,28 @@ const extractCircuitMeta = (notes: unknown) => {
   }
 };
 
+/**
+ * REDESIGNED stores Pause\circuits / Pause\series (count) as whole minutes 1–10.
+ * CircuitPlanner_OLD expects seconds (60–600). Saved data from OLD uses seconds already.
+ */
+const betweenCircuitsToPlannerSeconds = (n: number, fallbackSec = 120): number => {
+  if (!Number.isFinite(n)) return fallbackSec;
+  const v = Math.round(n);
+  if (v >= 60 && v <= 600) return v;
+  if (v >= 1 && v <= 10) return v * 60;
+  if (v === 0) return fallbackSec;
+  return Math.min(600, Math.max(60, v));
+};
+
+/** Count mode: series gap default from config — minutes 1–10 vs seconds from OLD saves. */
+const countSeriesPauseToPlannerSeconds = (n: number, fallbackSec = 120): number => {
+  if (!Number.isFinite(n)) return fallbackSec;
+  const v = Math.round(n);
+  if (v >= 60) return Math.min(600, v);
+  if (v >= 1 && v <= 10) return v * 60;
+  return v;
+};
+
 const buildCircuitsFromMovelaps = (movelaps: any[], fallbackConfig: any) => {
   if (!Array.isArray(movelaps) || movelaps.length === 0) return null;
   const perCircuit = new Map<string, Map<number, Map<number, any>>>();
@@ -126,8 +148,14 @@ const buildCircuitsFromMovelaps = (movelaps: any[], fallbackConfig: any) => {
 
   if (perCircuit.size === 0) return null;
   const circuitLetters = Array.from(perCircuit.keys()).sort((a, b) => CIRCUIT_LETTERS.indexOf(a) - CIRCUIT_LETTERS.indexOf(b));
-  const pauseSeries = fallbackConfig?.pauseSeries ?? fallbackConfig?.pauses?.series ?? 0;
-  const pauseCircuits = fallbackConfig?.pauseCircuits ?? fallbackConfig?.pauses?.circuits ?? 0;
+  const seriesModeFb = fallbackConfig?.seriesMode ?? 'count';
+  const pauseSeriesRaw = Number(fallbackConfig?.pauseSeries ?? fallbackConfig?.pauses?.series ?? 0) || 0;
+  const pauseCircuitsRaw = Number(fallbackConfig?.pauseCircuits ?? fallbackConfig?.pauses?.circuits ?? 0) || 0;
+  const pauseCircuitsSec = betweenCircuitsToPlannerSeconds(pauseCircuitsRaw, 120);
+  const pauseSeriesSec =
+    seriesModeFb === 'time' ? pauseSeriesRaw : countSeriesPauseToPlannerSeconds(pauseSeriesRaw, 120);
+  const pauseSeries = pauseSeriesRaw;
+  const pauseCircuits = pauseCircuitsRaw;
 
   const circuits = circuitLetters.map((letter) => {
     const seriesCount = seriesCountByCircuit.get(letter) ?? 1;
@@ -156,8 +184,8 @@ const buildCircuitsFromMovelaps = (movelaps: any[], fallbackConfig: any) => {
       letter,
       stationsBySeries,
       series: seriesCount,
-      pauseBetweenSeries: pauseSeries,
-      pauseAfterCircuit: pauseCircuits
+      pauseBetweenSeries: pauseSeriesSec,
+      pauseAfterCircuit: pauseCircuitsSec
     };
   });
 
@@ -282,7 +310,7 @@ export default function BatteryCircuitPlanner({
   const [seriesMode, setSeriesMode] = useState<'series' | 'time'>(
     config?.seriesMode === 'time' ? 'time' : 'series'
   );
-  const [seriesPerCircuit, setSeriesPerCircuit] = useState(config?.seriesCount || 3);
+  const [seriesPerCircuit, setSeriesPerCircuit] = useState(config?.seriesCount ?? 1);
   const [timePerCircuit, setTimePerCircuit] = useState(config?.seriesTime || 5); // in minutes
   // Support both flat structure (pauseSeries) and nested (pauses.series in seconds)
   const [pauseSeries, setPauseSeries] = useState(() => {
@@ -388,6 +416,21 @@ export default function BatteryCircuitPlanner({
     setShowOldCircuitPlanner(true);
   };
 
+  /** Seconds between stations in OLD planner: horizontal + Set series uses Pause\series (minutes → sec). */
+  const pauseStationsForOldPlanner =
+    executionOrder === 'horizontal' && seriesMode === 'series'
+      ? pauseSeries * 60
+      : pauseStations;
+
+  const stationPauseSelectOptions = React.useMemo(() => {
+    const base = [5, 10, 15, 20, 25, 30, 40, 50, 60];
+    const sec = pauseStationsForOldPlanner;
+    if (!base.includes(sec)) {
+      return [...base, sec].sort((a, b) => a - b);
+    }
+    return base;
+  }, [pauseStationsForOldPlanner]);
+
   // If showing old circuit planner, render it instead of the first view
   if (showOldCircuitPlanner) {
     return (
@@ -399,7 +442,7 @@ export default function BatteryCircuitPlanner({
           seriesMode: seriesMode === 'series' ? 'count' : 'time',
           seriesCount: seriesPerCircuit,
           seriesTime: timePerCircuit,
-          pauseStations,
+          pauseStations: pauseStationsForOldPlanner,
           pauseCircuits,
           pauseSeries,
           loadOfWork: undefined,
@@ -587,14 +630,28 @@ export default function BatteryCircuitPlanner({
                 ))}
               </div>
               <div className="flex items-center justify-end gap-2 mt-4">
-                <label className="text-sm font-medium text-gray-700">Pause\stations</label>
-                <select 
-                  value={pauseStations} 
-                  onChange={(e) => setPauseStations(parseInt(e.target.value))}
-                  className="w-20 px-2 py-1.5 border border-gray-400 rounded text-center focus:ring-2 focus:ring-blue-500 text-sm font-semibold"
+                <label
+                  className={`text-sm font-medium ${
+                    executionOrder === 'horizontal' && seriesMode === 'series' ? 'text-gray-400' : 'text-gray-700'
+                  }`}
                 >
-                  {[5,10,15,20,25,30,40,50,60].map(n => (
-                    <option key={n} value={n}>{n}"</option>
+                  Pause\stations
+                </label>
+                <select
+                  value={pauseStationsForOldPlanner}
+                  onChange={(e) => setPauseStations(parseInt(e.target.value, 10))}
+                  disabled={executionOrder === 'horizontal' && seriesMode === 'series'}
+                  title={
+                    executionOrder === 'horizontal' && seriesMode === 'series'
+                      ? 'Set series\\circuit: pause between stations matches Pause\\series (minutes → seconds). Edit Pause\\series.'
+                      : undefined
+                  }
+                  className="w-20 px-2 py-1.5 border border-gray-400 rounded text-center focus:ring-2 focus:ring-blue-500 text-sm font-semibold disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                >
+                  {stationPauseSelectOptions.map((n) => (
+                    <option key={n} value={n}>
+                      {n}"
+                    </option>
                   ))}
                 </select>
                 <button type="button" className="w-6 h-6 rounded-full bg-gray-300 hover:bg-gray-400 flex items-center justify-center text-gray-700 text-lg font-bold">×</button>
@@ -664,19 +721,17 @@ export default function BatteryCircuitPlanner({
                     />
                     <span className="text-sm font-medium text-gray-700">Set series\circuit</span>
                   </label>
-                  <select 
-                    value={seriesMode === 'series' ? seriesPerCircuit : ''}
-                    onChange={(e) => setSeriesPerCircuit(parseInt(e.target.value) || 1)}
-                    disabled={seriesMode !== 'series'}
-                    className="w-16 px-2 py-1 border border-gray-400 rounded text-center focus:ring-2 focus:ring-blue-500 text-base font-bold disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-300"
+                  <select
+                    value={seriesPerCircuit}
+                    onChange={(e) => setSeriesPerCircuit(parseInt(e.target.value, 10) || 1)}
+                    className="w-16 px-2 py-1 border border-gray-400 rounded text-center focus:ring-2 focus:ring-blue-500 text-base font-bold"
+                    title="Number of series (editable in both Set series and Set time per circuit)"
                   >
-                    {seriesMode === 'time' ? (
-                      <option value=""> </option>
-                    ) : (
-                      [1,2,3,4,5,6,7,8,9,10].map(n => (
-                        <option key={n} value={n}>{n}</option>
-                      ))
-                    )}
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="flex items-center gap-2 bg-white border border-gray-300 rounded px-2 py-1">

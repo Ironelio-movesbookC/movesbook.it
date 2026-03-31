@@ -52,6 +52,13 @@ export const GOAL_OPTIONS = [
 
 export type GoalId = (typeof GOAL_OPTIONS)[number]['value'];
 
+/** Gym week step-1 day count: always 1–6, never NaN (safe for array lengths and slices). */
+export function clampWeeklyPlanDayCount(n: unknown): number {
+  const x = typeof n === 'number' ? n : parseInt(String(n ?? ''), 10);
+  if (!Number.isFinite(x)) return 1;
+  return Math.min(6, Math.max(1, Math.floor(x)));
+}
+
 export function getGoalLabel(goalId: GoalId): string {
   const opt = GOAL_OPTIONS.find((o) => o.value === goalId);
   return opt?.label ?? goalId;
@@ -189,31 +196,65 @@ export default function PlanGymWeekModal({
     onClose();
   };
 
-  /** Each question has space for an AI-generated image (left box). */
+  /** Each question has space for an AI-generated image (left box). Q2/Q4 use a tall column so images fill the row height. */
   const questionBlock = (
     qKey: 'q1' | 'q2' | 'q3' | 'q4',
     title: string,
-    children: React.ReactNode
+    children: React.ReactNode,
+    stretchImage = false
   ) => (
-    <div className="flex gap-4 items-start border border-amber-200 rounded-lg p-4 bg-amber-50/50">
-      <div className="flex-shrink-0 w-32 h-24 bg-amber-100 border border-amber-200 rounded flex items-center justify-center text-amber-700 text-xs text-center overflow-hidden">
+    <div
+      className={`flex gap-4 border border-amber-200 rounded-lg p-4 bg-amber-50/50 ${
+        stretchImage ? 'items-stretch' : 'items-start'
+      }`}
+    >
+      <div
+        className={`flex-shrink-0 w-32 bg-amber-100 border border-amber-200 rounded overflow-hidden relative ${
+          stretchImage ? 'self-stretch min-h-24' : 'h-24 flex items-center justify-center text-amber-700 text-xs text-center'
+        }`}
+      >
         {questionImages[qKey] ? (
-          <Image
-            src={questionImages[qKey]}
-            alt=""
-            width={128}
-            height={96}
-            unoptimized
-            className="max-w-full max-h-full object-contain rounded"
-            onError={(e) => {
-              const el = e.currentTarget as HTMLImageElement;
-              el.style.display = 'none';
-              const fallback = el.nextElementSibling as HTMLElement;
-              if (fallback) fallback.classList.remove('hidden');
-            }}
-          />
+          stretchImage ? (
+            <Image
+              src={questionImages[qKey]}
+              alt=""
+              fill
+              unoptimized
+              className="object-cover object-center"
+              sizes="128px"
+              onError={(e) => {
+                const el = e.currentTarget as HTMLImageElement;
+                el.style.display = 'none';
+                const fallback = el.nextElementSibling as HTMLElement;
+                if (fallback) fallback.classList.remove('hidden');
+              }}
+            />
+          ) : (
+            <Image
+              src={questionImages[qKey]}
+              alt=""
+              width={128}
+              height={96}
+              unoptimized
+              className="max-w-full max-h-full object-contain rounded"
+              onError={(e) => {
+                const el = e.currentTarget as HTMLImageElement;
+                el.style.display = 'none';
+                const fallback = el.nextElementSibling as HTMLElement;
+                if (fallback) fallback.classList.remove('hidden');
+              }}
+            />
+          )
         ) : null}
-        <span className={!questionImages[qKey] ? '' : 'hidden'}>Space for AI image</span>
+        <span
+          className={`${!questionImages[qKey] ? '' : 'hidden'} ${
+            stretchImage
+              ? 'absolute inset-0 flex items-center justify-center text-amber-700 text-xs text-center p-2'
+              : ''
+          }`}
+        >
+          Space for AI image
+        </span>
       </div>
       <div className="flex-1 min-w-0">
         <div className="font-semibold text-gray-900 mb-2">{title}</div>
@@ -300,17 +341,22 @@ export default function PlanGymWeekModal({
                       type="number"
                       min={1}
                       max={6}
+                      step={1}
                       value={daysCount}
                       onChange={(e) => {
                         const v = parseInt(e.target.value, 10);
-                        if (!Number.isNaN(v) && v >= 1 && v <= 6) setDaysCount(v);
+                        setDaysCount((prev) =>
+                          Number.isNaN(v) ? prev : clampWeeklyPlanDayCount(v)
+                        );
                       }}
                       className="w-14 px-2 py-2 border border-gray-300 rounded-lg text-center font-semibold text-gray-900"
                       aria-label="Number of days"
                     />
                     <button
                       type="button"
-                      onClick={() => setDaysCount((c) => (c < 6 ? c + 1 : c))}
+                      onClick={() =>
+                        setDaysCount((c) => Math.min(6, clampWeeklyPlanDayCount(c) + 1))
+                      }
                       className="p-1.5 rounded border border-gray-300 hover:bg-gray-100 text-gray-600"
                       aria-label="Increase days"
                     >
@@ -318,7 +364,9 @@ export default function PlanGymWeekModal({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setDaysCount((c) => (c > 1 ? c - 1 : c))}
+                      onClick={() =>
+                        setDaysCount((c) => Math.max(1, clampWeeklyPlanDayCount(c) - 1))
+                      }
                       className="p-1.5 rounded border border-gray-300 hover:bg-gray-100 text-gray-600"
                       aria-label="Decrease days"
                     >
@@ -328,8 +376,8 @@ export default function PlanGymWeekModal({
                       type="button"
                       onClick={() => setDaysCount(1)}
                       className="p-1.5 rounded border border-gray-300 hover:bg-gray-100 text-gray-500"
-                      title="Clear selection"
-                      aria-label="Clear"
+                      title="Reset to 1 day"
+                      aria-label="Reset to one day"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -367,39 +415,49 @@ export default function PlanGymWeekModal({
                 <p className="text-xs text-gray-600 mb-3">For each day you have planned you can select a goal. Level and Goals will be used for automatic planning of the routine.</p>
                 <div className="space-y-2">
                   {Array.from({ length: daysCount }, (_, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="inline-flex items-center justify-center min-w-[2rem] h-8 px-2 rounded bg-amber-100 border border-amber-300 text-amber-900 font-semibold text-sm">
-                        {i + 1}
-                      </span>
-                      <select
-                        value={goals[i] ?? 'hypertrophy'}
-                        onChange={(e) => setGoalForDay(i, e.target.value as GoalId)}
-                        className="flex-1 border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-900 text-sm"
-                        aria-label={`Goal for workout ${i + 1}`}
-                      >
-                        {GOAL_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <React.Fragment key={i}>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center justify-center min-w-[2rem] h-8 px-2 rounded bg-amber-100 border border-amber-300 text-amber-900 font-semibold text-sm">
+                          {i + 1}
+                        </span>
+                        <select
+                          value={goals[i] ?? 'hypertrophy'}
+                          onChange={(e) => setGoalForDay(i, e.target.value as GoalId)}
+                          className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                          aria-label={`Goal for workout ${i + 1}`}
+                        >
+                          {GOAL_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {i === 0 ? (
+                        <label
+                          className="ml-[2.6rem] inline-flex cursor-pointer items-center gap-2 rounded-md border border-transparent px-0.5 py-0.5 hover:bg-amber-50/80"
+                          title="Put this goal for all the workouts"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={applyGoalToAll}
+                            onChange={(e) => {
+                              setApplyGoalToAll(e.target.checked);
+                              if (e.target.checked && goals.length > 0) {
+                                setGoals(Array(daysCount).fill(goals[0]));
+                              }
+                            }}
+                            className="h-4 w-4 shrink-0 rounded text-amber-600"
+                            aria-label="Put this goal for all the workouts"
+                          />
+                          <span className="text-xs leading-tight text-gray-700 sm:text-sm">
+                            Put this goal for all the workouts
+                          </span>
+                        </label>
+                      ) : null}
+                    </React.Fragment>
                   ))}
                 </div>
-                <label className="mt-3 flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={applyGoalToAll}
-                    onChange={(e) => {
-                      setApplyGoalToAll(e.target.checked);
-                      if (e.target.checked && goals.length > 0) {
-                        setGoals(Array(daysCount).fill(goals[0]));
-                      }
-                    }}
-                    className="w-4 h-4 text-amber-600 rounded"
-                  />
-                  <span className="text-sm text-gray-700">Put this goal for all the workouts</span>
-                </label>
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
@@ -475,7 +533,8 @@ export default function PlanGymWeekModal({
                       </label>
                     ))}
                   </div>
-                </>
+                </>,
+                true
               )}
 
               {/* QUESTION #3 – Image: anterior + posterior anatomy with muscles highlighted (e.g. pushing/pulling or large/small) */}
@@ -530,7 +589,8 @@ export default function PlanGymWeekModal({
                         Please select at least {requiredConstantSectors} sector(s).
                       </p>
                     )}
-                  </>
+                  </>,
+                  true
                 )}
                 </>
               )}
