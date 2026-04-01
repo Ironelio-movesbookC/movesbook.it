@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma, prismaConnect } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 
 // Disable caching for this API route
@@ -68,6 +68,8 @@ export async function GET(request: NextRequest) {
     if (!decoded || !decoded.userId) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
+
+    await prismaConnect();
 
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') || 'TEMPLATE_WEEKS';
@@ -695,6 +697,8 @@ export async function POST(request: NextRequest) {
     if (!decoded || !decoded.userId) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
+
+    await prismaConnect();
 
     console.log('POST /api/workouts/plan - Request received');
     

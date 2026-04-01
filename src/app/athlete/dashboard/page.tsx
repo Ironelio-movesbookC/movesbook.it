@@ -39,8 +39,28 @@ import {
   Grid,
   Download,
   MessageSquare,
-  Loader2
+  Loader2,
+  Bell,
+  Twitter,
+  Facebook
 } from 'lucide-react';
+
+/** Static barbell / split icon (legacy toolbar, matches design reference). */
+function BannerBarbellIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 12"
+      className={className}
+      width={20}
+      height={12}
+      aria-hidden
+    >
+      <rect x="1" y="2" width="4" height="8" rx="0.5" fill="currentColor" />
+      <rect x="19" y="2" width="4" height="8" rx="0.5" fill="currentColor" />
+      <rect x="6" y="5" width="12" height="2" rx="0.5" fill="currentColor" />
+    </svg>
+  );
+}
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
@@ -64,10 +84,14 @@ import AthleteLegacyBanner, {
 import ChangeBannerModal, {
   type BannerAlignment,
 } from '@/components/athlete/ChangeBannerModal';
+import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { parseBannerSequenceJson } from '@/lib/profileBannerSequence';
 
 function heroBannerStripBgUrl(p: AthleteLegacyBannerProfile | null): string {
   if (!p) return '/images/banner.jpg';
+  if (p.profileBannerVideo?.trim()) {
+    return '/images/banner.jpg';
+  }
   const seq = parseBannerSequenceJson(p.profileBannerSequence);
   const raw = (seq[0] ?? p.profileBanner)?.trim();
   if (!raw) return '/images/banner.jpg';
@@ -81,6 +105,262 @@ const AvatarPlaceholder = ({ size = 'w-10 h-10' }: { size?: string }) => (
     <User size={size.includes('12') ? 24 : 20} />
   </div>
 );
+
+function MarqueeText({
+  text,
+  speedSeconds = 26,
+}: {
+  text: string;
+  speedSeconds?: number;
+}) {
+  const scrollAmount = Math.max(1, Math.round(120 / speedSeconds));
+  const Marquee = 'marquee' as any;
+  return (
+    <div className="overflow-hidden whitespace-nowrap">
+      {/* eslint-disable-next-line jsx-a11y/no-distracting-elements */}
+      <Marquee
+        direction="left"
+        behavior="scroll"
+        scrollAmount={scrollAmount}
+        className="block"
+      >
+        {text}
+      </Marquee>
+    </div>
+  );
+}
+
+function RightSidebarMyPageExtraBlocks() {
+  return (
+    <div className="mt-4">
+      <div className="bg-gray-900 text-white px-3 py-2 text-xs font-bold tracking-wide">
+        NEXT EVENTS
+      </div>
+
+      <div className="bg-gray-200 text-red-600 px-3 py-2 text-xs border-b border-gray-300">
+        Events of my sports
+      </div>
+      <div className="h-20 bg-white border-b border-gray-300" />
+
+      <div className="bg-gray-200 text-red-600 px-3 py-2 text-xs border-b border-gray-300">
+        My friends events
+      </div>
+      <div className="h-20 bg-white border-b border-gray-300" />
+
+      <div className="bg-gray-200 text-red-600 px-3 py-2 text-xs border-b border-gray-300">
+        Event of other sport
+      </div>
+      <div className="h-28 bg-white border-b border-gray-300" />
+
+      <div className="bg-gray-900 text-white px-3 py-2 text-xs font-bold tracking-wide mt-4">
+        NEWS BY MY FRIENDS
+      </div>
+      <div className="h-44 bg-white border-b border-gray-300" />
+
+      <button
+        type="button"
+        className="w-full bg-white text-left px-3 py-1.5 text-[11px] font-semibold text-red-600 border-b border-gray-300"
+      >
+        + More
+      </button>
+      <div className="bg-gray-900 text-white px-3 py-2 text-xs font-bold tracking-wide mt-4">
+        NEWEST MEMBERS
+      </div>
+      <button
+        type="button"
+        className="w-full bg-teal-600 hover:bg-teal-700 text-white py-2 px-3 text-xs font-semibold transition-colors border-b border-gray-300"
+      >
+        Filter option
+      </button>
+      <div className="h-44 bg-white border-b border-gray-300" />
+
+      <div className="bg-gray-900 text-white px-3 py-2 text-xs font-bold tracking-wide mt-4">
+        MEMBERS LAST LOGGED IN
+      </div>
+      <button
+        type="button"
+        className="w-full bg-teal-600 hover:bg-teal-700 text-white py-2 px-3 text-xs font-semibold transition-colors border-b border-gray-300"
+      >
+        Filter option
+      </button>
+      <div className="h-44 bg-white border-b border-gray-300" />
+
+      <div className="bg-gray-900 text-white px-3 py-2 text-xs font-bold tracking-wide mt-4">
+        BUTTON FOR YOUR WEBSITE
+      </div>
+      <div className="bg-white border-b border-gray-300 px-3 py-4 text-center">
+        <div className="text-xs text-gray-700">
+          Promote this on your site just
+          <br />
+          click the button
+        </div>
+        <div className="mt-4 text-[10px] font-bold text-gray-700 tracking-wide">
+          FOLLOW MY MOVES AT
+        </div>
+        <button
+          type="button"
+          className="mt-2 w-full bg-red-600 hover:bg-red-700 text-white py-2 text-xs font-bold transition-colors"
+        >
+          MOVESBOOK
+        </button>
+      </div>
+
+      <div className="bg-gray-900 text-white px-3 py-2 text-xs font-bold tracking-wide mt-4">
+        SHARE THIS PAGE
+      </div>
+      <div className="bg-white border-b border-gray-300 px-3 py-4">
+        <div className="flex items-center justify-center gap-3 w-full">
+          <button
+            type="button"
+            className="inline-flex items-center justify-center h-7 px-4 rounded-full bg-black text-white text-[11px] font-semibold"
+          >
+            <Twitter className="w-3.5 h-3.5 mr-1.5" />
+            Post
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center h-7 px-4 rounded bg-blue-600 text-white text-[11px] font-semibold"
+          >
+            <Facebook className="w-3.5 h-3.5 mr-1.5" />
+            Share
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RightSidebarClubSocialBlocks() {
+  return (
+    <div className="mt-4">
+      {/* RECENT POST */}
+      <div className="bg-gray-900 text-white px-3 py-2 text-[11px] font-bold tracking-wide flex items-center justify-between border-t border-gray-300">
+        <span>RECENT POST</span>
+        <button
+          type="button"
+          className="text-[10px] font-semibold text-gray-300 underline cursor-pointer"
+        >
+          Shared Clubs
+        </button>
+      </div>
+      <div className="bg-white border-b border-gray-300">
+        {[
+          {
+            title: 'Trail Running',
+            date: '27.4.2010',
+            body: "For all the runners who just love to run where there is no path...",
+            meta: '1392 Members, 250549 Movers',
+            thumb: 'IMG',
+          },
+          {
+            title: 'Where is the limit',
+            date: '18.5.2010',
+            body: "We don't know where the limit is, but we know where it's not!!",
+            meta: '1017 Members, 138718 Movers',
+            thumb: 'IMG',
+          },
+          {
+            title: 'Run for Japan',
+            date: '18.3.2011',
+            body: 'Now, if even, every Move counts with a death toll in the thousands...',
+            meta: '90 Members, 24258 Movers',
+            thumb: 'IMG',
+          },
+        ].map((p, idx) => (
+          <div key={`${p.title}-${idx}`} className="border-b border-gray-300 px-3 py-3">
+            <div className="flex gap-3">
+              <div className="w-11 h-11 bg-gray-200 border border-gray-400 flex items-center justify-center text-[10px] text-gray-500 shrink-0">
+                {p.thumb}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="text-red-600 text-[11px] font-semibold truncate">{p.title}</div>
+                  <div className="text-[10px] text-gray-500 shrink-0">{p.date}</div>
+                </div>
+                <div className="text-[10px] text-gray-600 leading-snug mt-1">{p.body}</div>
+                <div className="text-[10px] text-gray-500 mt-1">{p.meta}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+        <div className="px-3 py-2">
+          <button type="button" className="text-[11px] font-semibold text-red-600">
+            + More
+          </button>
+        </div>
+      </div>
+
+      {/* RECOMMENDED PAGES */}
+      <div className="bg-gray-900 text-white px-3 py-2 text-[11px] font-bold tracking-wide flex items-center justify-between mt-3 border-t border-gray-300">
+        <span>RECOMMENDED PAGES</span>
+        <button
+          type="button"
+          className="text-[10px] font-semibold text-gray-300 underline cursor-pointer"
+        >
+          See All
+        </button>
+      </div>
+      <button
+        type="button"
+        className="w-full bg-teal-600 hover:bg-teal-700 text-white py-2 px-3 text-xs font-semibold transition-colors border-b border-gray-300"
+      >
+        Filter option
+      </button>
+      <div className="bg-white border-b border-gray-300">
+        {[
+          {
+            name: 'Correre',
+            line1: 'Piace a Giusi Circi e ad altri 36 amici.',
+            line2: 'Mi piace',
+          },
+          {
+            name: 'Papa Benedetto XVI',
+            line1: 'Piace a Chiara Di Palma',
+            line2: 'Mi piace',
+          },
+          {
+            name: 'Il Mattino',
+            line1: 'Piace a Fabio Manzi e ad altri 27 amici.',
+            line2: 'Mi piace',
+          },
+          {
+            name: 'Luca senza sonno',
+            line1: 'Piace a Luca Borsacchi.',
+            line2: 'Mi piace',
+          },
+        ].map((p, idx) => (
+          <div key={`${p.name}-${idx}`} className="border-b border-gray-300 px-3 py-3">
+            <div className="flex gap-3">
+              <div className="w-11 h-11 bg-gray-200 border border-gray-400 flex items-center justify-center text-[10px] text-gray-500 shrink-0">
+                IMG
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-semibold text-gray-800">{p.name}</div>
+                <div className="text-[10px] text-gray-600 mt-0.5">{p.line1}</div>
+                <div className="text-[10px] text-gray-600 mt-1 flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 bg-gray-300 border border-gray-400" />
+                  <span>{p.line2}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* POPULAR CLUBS */}
+      <div className="bg-gray-900 text-white px-3 py-2 text-[11px] font-bold tracking-wide flex items-center justify-between mt-3 border-t border-gray-300">
+        <span>POPULAR CLUBS</span>
+        <button
+          type="button"
+          className="text-[10px] font-semibold text-gray-300 underline cursor-pointer"
+        >
+          Others
+        </button>
+      </div>
+      <div className="h-28 bg-white border-b border-gray-300" />
+    </div>
+  );
+}
 
 function AthleteDashboardContent() {
   const router = useRouter();
@@ -112,6 +392,7 @@ function AthleteDashboardContent() {
   const [myGroups, setMyGroups] = useState<any[]>([]);
   const [bannerProfile, setBannerProfile] = useState<AthleteLegacyBannerProfile | null>(null);
   const [showChangeBannerModal, setShowChangeBannerModal] = useState(false);
+  const [showChangeProfilePhotoModal, setShowChangeProfilePhotoModal] = useState(false);
 
   const loadBannerProfile = useCallback(async () => {
     try {
@@ -126,6 +407,7 @@ function AthleteDashboardContent() {
           profileBanner: data.profileBanner,
           profileBannerAlignment: data.profileBannerAlignment,
           profileBannerSequence: data.profileBannerSequence,
+          profileBannerVideo: data.profileBannerVideo,
           name: data.name,
           firstName: data.firstName,
           surname: data.surname,
@@ -494,6 +776,7 @@ function AthleteDashboardContent() {
               profile={bannerProfile}
               primaryClubName={myClubs[0]?.name}
               onCoverCameraClick={() => setShowChangeBannerModal(true)}
+              onAvatarCameraClick={() => setShowChangeProfilePhotoModal(true)}
               t={t}
             />
           </div>
@@ -514,39 +797,69 @@ function AthleteDashboardContent() {
                 }}
               ></div>
               
-              <div className="flex items-center justify-between px-4 text-sm h-full relative z-10">
-                {/* Left side - Navigation items */}
-                <div className="flex items-center gap-4 overflow-x-auto">
-                  <button className="text-gray-300 hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap">
-                    <Home className="w-4 h-4" />
+              <div className="flex items-center justify-between px-4 text-sm h-full relative z-10 gap-3">
+                {/* Legacy-style strip (static controls; logic wired later) */}
+                <div className="flex items-center gap-4 min-w-0 overflow-x-hidden">
+                  <button
+                    type="button"
+                    className="bg-transparent border-0 text-sm font-sans text-gray-300 hover:text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                  >
+                    <Home className="w-4 h-4 shrink-0" />
                     <span>Home</span>
                   </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>FAQ</span>
+                  <button
+                    type="button"
+                    aria-label="Barbell tools"
+                    className="bg-transparent border-0 text-sm font-sans text-gray-300 hover:text-white shrink-0 inline-flex items-center justify-center cursor-pointer rounded p-0.5 -mx-0.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                  >
+                    <BannerBarbellIcon className="text-current" />
                   </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>My Clubs</span>
+                  <button
+                    type="button"
+                    className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                  >
+                    FAQ
                   </button>
-                  <button className="text-lime-400 hover:text-lime-300 transition-colors whitespace-nowrap font-semibold">
-                    <span>Club Magiw Avellino</span>
+                  <button
+                    type="button"
+                    className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                  >
+                    Suggest Movesbook
                   </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>FunClub</span>
-                  </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>My Shared Clubs</span>
-                  </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>Other Clubs</span>
-                  </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>Populars</span>
+                  <button
+                    type="button"
+                    className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                  >
+                    Most used buttons
                   </button>
                 </div>
 
+                <div className="flex items-center gap-2 sm:gap-3 ml-auto flex-wrap shrink-0">
+                  <button
+                    type="button"
+                    className="p-1.5 text-gray-400 hover:text-gray-200 transition-colors rounded"
+                    aria-label="Settings"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="p-1.5 text-gray-400 hover:text-gray-200 transition-colors rounded"
+                    aria-label="Notifications"
+                  >
+                    <Bell className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="p-1.5 text-gray-400 hover:text-gray-200 transition-colors rounded"
+                    aria-label="Messages"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                  </button>
+
                 {/* Right side - Action buttons (only for My Page) */}
                 {activeTab === 'my-page' && (
-                  <div className="flex items-center gap-3 ml-4 flex-wrap">
+                  <div className="flex items-center gap-3 flex-wrap border-l border-gray-600/60 pl-3 sm:pl-4">
                     <button
                       onClick={() => {
                         setActiveTab('my-page');
@@ -586,6 +899,7 @@ function AthleteDashboardContent() {
                     </button>
                   </div>
                 )}
+                </div>
               </div>
             </div>
           </div>
@@ -702,242 +1016,125 @@ function AthleteDashboardContent() {
           {/* Right Sidebar - Hidden when Personal Settings or News Expand is on */}
           {!(activeTab === 'my-page' && activeSection === 'personal-settings') && showRightSidebar && !newsExpanded && (
             <div className="w-80 flex-shrink-0 print:hidden">
-              <div className="bg-white rounded-lg shadow-sm border p-4 h-full flex flex-col overflow-y-auto">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('sidebar_quick_actions')}</h3>
-                <div className="space-y-2">
-                  {/* Personal Settings Button - FIRST button in Quick Actions */}
-                  <button
-                    onClick={() => setActiveSection('personal-settings')}
-                    className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group"
-                  >
-                    <Settings className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">Personal settings</span>
-                  </button>
-                  
-                  {/* Quick Actions for My Page (Athlete) */}
-                  <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
-                    <Calendar className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_plan_new_workout')}</span>
-                  </button>
-                  
-                  <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
-                    <CalendarDays className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_plan_3_weeks')}</span>
-                  </button>
-                  
-                  <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
-                    <CalendarCheck className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_plan_of_year')}</span>
-                  </button>
-                  
-                  <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
-                    <CheckSquare className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_log_completed')}</span>
-                  </button>
-                  
-                  <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
-                    <Save className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_save_session')}</span>
-                  </button>
-                </div>
-
-                {/* Next Event Section - For "My Page" */}
-                <div className="mt-6 border-t pt-4">
-                  <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg flex items-center justify-between">
-                    <h4 className="text-sm font-semibold">{t('sidebar_next_event')}</h4>
-                    <button className="text-xs text-gray-300 hover:text-white">{t('sidebar_see_all')}</button>
-                  </div>
-                  
-                  <div className="bg-gray-100 px-3 py-2 space-y-2">
-                    <button className="w-full text-left text-xs text-gray-700 hover:text-gray-900 py-1">
-                      {t('sidebar_events_my_sports')}
-                    </button>
-                    <button className="w-full text-left text-xs text-gray-700 hover:text-gray-900 py-1">
-                      {t('sidebar_my_friends_events')}
-                    </button>
-                    <button className="w-full text-left text-xs text-gray-700 hover:text-gray-900 py-1">
-                      {t('sidebar_event_other_sport')}
-                    </button>
-                  </div>
-                </div>
-
-                {/* News by My Friends Section - For "My Page" */}
-                <div className="mt-6 border-t pt-4">
-                  <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg flex items-center justify-between">
-                    <h4 className="text-sm font-semibold">{t('sidebar_news_my_friends')}</h4>
-                    <button className="text-xs text-gray-300 hover:text-white">{t('sidebar_see_all')}</button>
-                  </div>
-                  
-                  <div className="mt-2 space-y-3 px-3">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="flex items-start gap-2 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                        <AvatarPlaceholder size="w-10 h-10" />
-                        <div className="flex-1">
-                          <p className="text-xs font-medium text-gray-800">Friend {i}</p>
-                          <p className="text-xs text-gray-600 line-clamp-2">
-                            Lorem ipsum dolor sit amet...
-                          </p>
+              <div className="bg-white shadow-sm border h-full flex flex-col overflow-y-auto">
+                {activeTab === 'my-entity' ? (
+                  <div className="flex flex-col">
+                    {/* SPONSORED */}
+                    <div className="bg-gray-900 text-white px-3 py-2 text-xs font-bold tracking-wide border-b border-gray-300">
+                      SPONSORED
+                    </div>
+                    <div className="bg-gray-100 border-b border-gray-300">
+                      <div className="px-3 py-3">
+                        <div className="flex gap-3">
+                          <div className="w-12 h-12 bg-gray-200 border border-gray-400 flex items-center justify-center text-[10px] text-gray-500 shrink-0">
+                            IMG
+                          </div>
+                          <div className="text-[11px] text-gray-700 leading-snug">
+                            Lorem Ipsum has been the industry's standard dummy text of the printing and typesetting industry.
+                          </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Newest Members Section - For "My Page" */}
-                <div className="mt-6 border-t pt-4">
-                  <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg">
-                    <h4 className="text-sm font-semibold">{t('sidebar_newest_members')}</h4>
-                  </div>
-                  
-                  {/* Filter Button */}
-                  <button className="w-full bg-teal-600 hover:bg-teal-700 text-white py-2 px-3 text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                    <Filter className="w-4 h-4" />
-                    {t('sidebar_filter_option')}
-                  </button>
-                  
-                  {/* Members List - 3 members */}
-                  <div className="mt-3 space-y-2 px-3">
-                    {[
-                      { name: 'John Smith', img: 'photo-1500648767791-00dcc994a43e' },
-                      { name: 'Sarah Johnson', img: 'photo-1494790108377-be9c29b29330' },
-                      { name: 'Mike Davis', img: 'photo-1507003211169-0a1dd7228f2d' }
-                    ].map((member, i) => (
-                      <div key={i} className="flex items-start gap-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                        <AvatarPlaceholder size="w-12 h-12" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-800">{member.name}</p>
-                          <button className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 mt-1">
-                            <Mail className="w-3 h-3" />
-                            {t('sidebar_send_message')}
-                          </button>
-                        </div>
+                      <div className="px-3 py-2 text-[11px] text-gray-700 leading-snug border-t border-gray-300">
+                        <MarqueeText text="Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum is simply dummy text of the printing and typesetting industry." />
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    </div>
 
-                {/* Members Last Logged In Section - For "My Page" */}
-                <div className="mt-6 border-t pt-4">
-                  <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg flex items-center justify-between">
-                    <h4 className="text-sm font-semibold">{t('sidebar_members_last_logged')}</h4>
-                    <button className="text-xs text-gray-300 hover:text-white">{t('sidebar_see_all')}</button>
-                  </div>
-                  
-                  {/* Filter Button */}
-                  <button className="w-full bg-teal-600 hover:bg-teal-700 text-white py-2 px-3 text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                    <Filter className="w-4 h-4" />
-                    {t('sidebar_filter_option')}
-                  </button>
-                  
-                  {/* Members List - 3 members */}
-                  <div className="mt-3 space-y-2 px-3">
-                    {[
-                      { name: 'Freiwildplayer', img: 'photo-1566492031773-4f4e44671857' },
-                      { name: 'Alex Runner', img: 'photo-1534528741775-53994a69daeb' },
-                      { name: 'Emma Swift', img: 'photo-1438761681033-6461ffad8d80' }
-                    ].map((member, i) => (
-                      <div key={i} className="flex items-start gap-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                        <AvatarPlaceholder size="w-12 h-12" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-800">{member.name}</p>
-                          <button className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 mt-1">
-                            <Mail className="w-3 h-3" />
-                            {t('sidebar_send_message')}
-                          </button>
-                        </div>
+                    {/* EVENTS */}
+                    <div className="bg-gray-900 text-white px-3 py-2 text-xs font-bold tracking-wide border-b border-gray-300">
+                      EVENTS
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="bg-gray-100 border-b border-gray-300 px-2 py-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="px-2.5 py-1.5 text-[11px] font-semibold border border-gray-400 bg-gray-500 text-white"
+                        >
+                          Events
+                        </button>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    </div>
 
-                {/* Actions Planner and Chat Panel Tabs */}
-                <div className="mt-6">
-                  <div className="flex border-b border-gray-200 mb-4">
-                    <button
-                      onClick={() => setActiveRightTab('actions-planner')}
-                      className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
-                        activeRightTab === 'actions-planner'
-                          ? 'bg-gray-100 text-gray-900 border-b-2 border-blue-600'
-                          : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                    >
-                      Actions planner
-                    </button>
-                    <button
-                      onClick={() => {
-                        setActiveRightTab('chat-panel');
-                        handleChatPanelClick();
-                      }}
-                      className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
-                        activeRightTab === 'chat-panel'
-                          ? 'bg-gray-100 text-gray-900 border-b-2 border-blue-600'
-                          : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                    >
-                      Chat panel
-                    </button>
-                  </div>
+                    {/* Tab content */}
+                    <div className="bg-white">
+                      <div>
+                        {[
+                          'Today is the birthday of',
+                          "Events about club's member",
+                          'Events about this club',
+                          'Events about shared club',
+                        ].map((label) => (
+                          <div key={label} className="border-b border-gray-300">
+                            <div className="flex items-start justify-between px-3 py-4 min-h-16 text-[11px] text-gray-700">
+                              <span className="pt-0.5">{label}</span>
+                              <span className="text-[10px] text-gray-600 whitespace-nowrap">Month ▾</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
 
-                  {/* Actions Planner Content */}
-                  {activeRightTab === 'actions-planner' && (
-                    <div className="space-y-1">
-                      <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                        <span>Timeline of all users</span>
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                      </button>
-                      <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                        <span>Timeline of an user</span>
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                      </button>
-                      <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                        <span>Actions planned</span>
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                      </button>
-                      <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                        <span>Users of the action planner</span>
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                      </button>
-                      <button 
-                        onClick={() => setExpandedActionsPlanner(!expandedActionsPlanner)}
-                        className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                    <RightSidebarMyPageExtraBlocks />
+                    <RightSidebarClubSocialBlocks />
+                  </div>
+                ) : (
+                  <div className="p-4 flex flex-col">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('sidebar_quick_actions')}</h3>
+                    <div className="space-y-2">
+                      {/* Personal Settings Button - FIRST button in Quick Actions */}
+                      <button
+                        onClick={() => setActiveSection('personal-settings')}
+                        className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group"
                       >
-                        <span>Settings</span>
-                        {expandedActionsPlanner ? (
-                          <ChevronDown className="w-4 h-4 text-gray-400" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                        )}
+                        <Settings className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">
+                          Personal settings
+                        </span>
                       </button>
-                      {expandedActionsPlanner && (
-                        <div className="ml-4 space-y-1">
-                          <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors">
-                            <span>Preset timelines</span>
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
-                          </button>
-                          <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors">
-                            <span>Actions settings</span>
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
-                          </button>
-                          <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors">
-                            <span>Action settings by MB</span>
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
 
-                  {/* Chat Panel Content */}
-                  {activeRightTab === 'chat-panel' && (
-                    <div className="text-sm text-gray-600 py-4">
-                      {activeSection === 'chat' ? (
-                        <p>Chat is open in the main area. Use the close (×) button in the chat header to return.</p>
-                      ) : (
-                        <p>Click &quot;Chat panel&quot; in the header to open the chat.</p>
-                      )}
+                      {/* Quick Actions for My Page (Athlete) */}
+                      <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
+                        <Calendar className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">
+                          {t('sidebar_plan_new_workout')}
+                        </span>
+                      </button>
+
+                      <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
+                        <CalendarDays className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">
+                          {t('sidebar_plan_3_weeks')}
+                        </span>
+                      </button>
+
+                      <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
+                        <CalendarCheck className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">
+                          {t('sidebar_plan_of_year')}
+                        </span>
+                      </button>
+
+                      <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
+                        <CheckSquare className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">
+                          {t('sidebar_log_completed')}
+                        </span>
+                      </button>
+
+                      <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
+                        <Save className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">
+                          {t('sidebar_save_session')}
+                        </span>
+                      </button>
                     </div>
-                  )}
-                </div>
+
+                    {activeTab === 'my-page' ? (
+                      <RightSidebarMyPageExtraBlocks />
+                    ) : null}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -961,6 +1158,9 @@ function AthleteDashboardContent() {
             if (patch.profileBannerSequence !== undefined) {
               next.profileBannerSequence = patch.profileBannerSequence;
             }
+            if (patch.profileBannerVideo !== undefined) {
+              next.profileBannerVideo = patch.profileBannerVideo;
+            }
             return next;
           });
         }}
@@ -969,6 +1169,21 @@ function AthleteDashboardContent() {
           (bannerProfile?.profileBannerAlignment as BannerAlignment | null | undefined) ?? 'default'
         }
         currentBannerSequenceJson={bannerProfile?.profileBannerSequence}
+        currentBannerVideoPath={bannerProfile?.profileBannerVideo}
+        t={t}
+      />
+
+      <ChangeProfilePhotoModal
+        isOpen={showChangeProfilePhotoModal}
+        onClose={() => setShowChangeProfilePhotoModal(false)}
+        onSaved={(patch) => {
+          setBannerProfile((prev) => {
+            const next = { ...(prev ?? {}) };
+            if (patch.image !== undefined) next.image = patch.image;
+            return next;
+          });
+        }}
+        currentImagePath={bannerProfile?.image}
         t={t}
       />
 
@@ -1042,6 +1257,7 @@ function AthleteDashboardContent() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

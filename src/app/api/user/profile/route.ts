@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
 import { verifyToken } from '@/lib/auth';
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest) {
         profileBanner: true,
         profileBannerAlignment: true,
         profileBannerSequence: true,
+        profileBannerVideo: true,
         userType: true,
         createdAt: true,
         telegramAccount: true,
@@ -100,7 +102,7 @@ export async function GET(request: NextRequest) {
             clubMemberships: true
           }
         }
-      }
+      } as Prisma.UserSelect
     });
 
     if (!user) {
@@ -112,8 +114,6 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching user profile:', error);
     return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -130,16 +130,20 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { profileBanner, profileBannerAlignment, profileBannerSequence } = body as {
+    const { profileBanner, profileBannerAlignment, profileBannerSequence, profileBannerVideo, image } = body as {
       profileBanner?: string | null;
       profileBannerAlignment?: string | null;
       profileBannerSequence?: string | null | unknown[];
+      profileBannerVideo?: string | null;
+      image?: string | null;
     };
 
     const data: {
       profileBanner?: string | null;
       profileBannerAlignment?: string | null;
       profileBannerSequence?: string | null;
+      profileBannerVideo?: string | null;
+      image?: string | null;
     } = {};
 
     if (profileBanner !== undefined) {
@@ -182,6 +186,17 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    if (profileBannerVideo !== undefined) {
+      data.profileBannerVideo =
+        profileBannerVideo === null || profileBannerVideo === ''
+          ? null
+          : String(profileBannerVideo).trim().slice(0, 512);
+    }
+
+    if (image !== undefined) {
+      data.image = image === null || image === '' ? null : String(image).trim().slice(0, 512);
+    }
+
     if (Object.keys(data).length > 0) {
       await prisma.user.update({
         where: { id: decoded.userId },
@@ -202,16 +217,15 @@ export async function PATCH(request: NextRequest) {
         profileBanner: true,
         profileBannerAlignment: true,
         profileBannerSequence: true,
+        profileBannerVideo: true,
         userType: true,
-      },
+      } as Prisma.UserSelect,
     });
 
     return NextResponse.json({ success: true, user });
   } catch (error) {
     console.error('Error updating user profile:', error);
     return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
