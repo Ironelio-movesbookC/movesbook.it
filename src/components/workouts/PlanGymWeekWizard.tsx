@@ -453,31 +453,45 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                 <label className="block text-sm font-medium text-gray-700 mb-2">Select your goal (one per day — only the number of days selected above)</label>
                 <div className="space-y-2">
                   {Array.from({ length: numDays }, (_, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="w-6 text-sm font-medium text-gray-600">{i + 1}</span>
-                      <select
-                        value={putGoalForAll ? goals[0] : goals[i]}
-                        onChange={(e) => setGoalForDay(putGoalForAll ? 0 : i, e.target.value)}
-                        className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
-                      >
-                        {GOAL_OPTIONS.map((opt) => (
-                          <option key={opt.value || 'empty'} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </div>
+                    <React.Fragment key={i}>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex min-w-[1.75rem] items-center justify-center rounded border border-amber-200 bg-amber-50 px-1.5 py-1 text-sm font-semibold text-amber-900">
+                          {i + 1}
+                        </span>
+                        <select
+                          value={putGoalForAll ? goals[0] : goals[i]}
+                          onChange={(e) => setGoalForDay(putGoalForAll ? 0 : i, e.target.value)}
+                          className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                        >
+                          {GOAL_OPTIONS.map((opt) => (
+                            <option key={opt.value || 'empty'} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {i === 0 ? (
+                        <label
+                          className="ml-[2.35rem] inline-flex cursor-pointer items-center gap-2 rounded-md border border-transparent px-0.5 py-0.5 hover:bg-gray-50"
+                          title="Put this goal for all the workouts"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={putGoalForAll}
+                            onChange={(e) => {
+                              setPutGoalForAll(e.target.checked);
+                              if (e.target.checked) setGoals((prev) => Array(6).fill(prev[0] ?? ''));
+                            }}
+                            className="h-4 w-4 shrink-0 rounded border-gray-300"
+                            aria-label="Put this goal for all the workouts"
+                          />
+                          <span className="text-xs leading-tight text-gray-700 sm:text-sm">
+                            Put this goal for all the workouts
+                          </span>
+                        </label>
+                      ) : null}
+                    </React.Fragment>
                   ))}
-                  <label className="flex items-center gap-2 cursor-pointer mt-2">
-                    <input
-                      type="checkbox"
-                      checked={putGoalForAll}
-                      onChange={(e) => {
-                        setPutGoalForAll(e.target.checked);
-                        if (e.target.checked) setGoals(prev => Array(6).fill(prev[0] ?? ''));
-                      }}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-sm text-gray-700">Put this goal for all the workouts</span>
-                  </label>
                 </div>
               </div>
 
@@ -744,7 +758,21 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                           <span className="text-xs text-gray-500">Macro sector</span>
                           <input type="text" value={sec.macroEndOfSector} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'macroEndOfSector', e.target.value)} placeholder="e.g. 2'" className="w-14 text-xs border border-gray-300 rounded px-2 py-1" />
                         </div>
-                        <button type="button" onClick={() => removeSectorFromDay(activeDayIndex, secIdx)} className="ml-auto p-1 text-red-600 hover:bg-red-50 rounded" title="Remove">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const label = (sec.sectorLabel || 'this sector').trim() || 'this sector';
+                            if (
+                              typeof window !== 'undefined' &&
+                              !window.confirm(`Remove "${label}" from this day? This cannot be undone.`)
+                            ) {
+                              return;
+                            }
+                            removeSectorFromDay(activeDayIndex, secIdx);
+                          }}
+                          className="ml-auto p-1 text-red-600 hover:bg-red-50 rounded"
+                          title="Remove sector"
+                        >
                           <Trash2 size={18} />
                         </button>
                       </div>

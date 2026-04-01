@@ -142,11 +142,11 @@ export default function PersonalSettingsModal({
   };
 
   const settingsSections = [
+    { id: 'grid' as SettingsSection, label: 'Grid Display Mode', icon: Grid },
     { id: 'backgrounds' as SettingsSection, label: 'Backgrounds & Colors', icon: Palette },
     { id: 'tools' as SettingsSection, label: 'Tools', icon: SettingsIcon },
     { id: 'favourites' as SettingsSection, label: 'Favourites', icon: Star },
     { id: 'mybest' as SettingsSection, label: 'My Best', icon: Trophy },
-    { id: 'grid' as SettingsSection, label: 'Grid Display Mode', icon: Grid },
   ];
 
   return (

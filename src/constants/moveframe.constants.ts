@@ -8,6 +8,13 @@ export const MACRO_FINAL_OPTIONS = [
   "0'", "1'", "2'", "3'", "4'", "5'", "6'", "7'", "8'", "9'"
 ];
 
+/** Circuit planner "Macro" / Continuous Time digit (0–9) → moveframe `macroFinal` label */
+export function circuitLoadOfWorkToMacroFinal(load: unknown): string | null {
+  const s = String(load ?? '').trim();
+  if (!/^[0-9]$/.test(s)) return null;
+  return MACRO_FINAL_OPTIONS[parseInt(s, 10)] ?? null;
+}
+
 // Muscular sectors for BODY_BUILDING (WEIGHTS)
 export const MUSCULAR_SECTORS = [
   'Shoulders',
@@ -45,7 +52,7 @@ export const SPORT_CONFIGS = {
   SWIM: {
     meters: ['25', '33', '50', '66', '75', '100', '125', '150', '200', '250', '300', '400', '500', '800', '1000', '1200', '1500', 'input'],
     speeds: ['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'C1', 'C2'],
-    styles: ['Freestyle', 'Dolphin', 'Backstroke', 'Breaststroke', 'Sliding', 'Apnea'],
+    styles: ['Freestyle', 'Dolphin', 'Backstroke', 'Breaststroke', 'Mixed', 'Sliding', 'Apnea'],
     // Pace\100 applies for all meter values in swim
     pace100Meters: ['25', '33', '50', '66', '75', '100', '125', '150', '200', '250', '300', '400', '500', '800', '1000', '1200', '1500'],
     restTypes: [REST_TYPES.SET_TIME, REST_TYPES.RESTART_TIME, REST_TYPES.RESTART_PULSE],
@@ -882,6 +889,32 @@ export const AEROBIC_SPORTS = [
   'WALKING',
   'HIKING'
 ] as const;
+
+/** Category B: gym / strength-style sports that get Not Aerobic fast plan + Circuits (not in A). */
+export const NOT_AEROBIC_FAST_PLAN_SPORTS = [
+  'BODY_BUILDING',
+  'CALISTENIC',
+  'CROSSFIT',
+  'SPARTAN',
+  'STRETCHING',
+  'GYMNASTIC',
+  'PILATES',
+  'YOGA',
+] as const;
+
+/** Fast planning / BATTERY submenu: A = aerobic endurance, B = not aerobic gym, C = hide "Fast plannings" for new moves. */
+export type SportFastPlanningCategory = 'A' | 'B' | 'C';
+
+export const getSportFastPlanningCategory = (sport: string): SportFastPlanningCategory => {
+  if (AEROBIC_SPORTS.includes(sport as any)) return 'A';
+  if ((NOT_AEROBIC_FAST_PLAN_SPORTS as readonly string[]).includes(sport)) return 'B';
+  return 'C';
+};
+
+export const showFastPlanningsForSport = (sport: string): boolean => {
+  const c = getSportFastPlanningCategory(sport);
+  return c === 'A' || c === 'B';
+};
 
 // Helper function to check if a sport is aerobic
 export const isAerobicSport = (sport: string): boolean => {

@@ -94,6 +94,7 @@ export async function PATCH(
       manualInputType,   // For aerobic sports: 'meters' or 'time'
       favourite,
       manualRepetitions, // For storing on Moveframe model (manual mode only)
+      repetitions,       // Series / circuit slot count (non-manual)
       manualDistance,    // For storing on Moveframe model (manual mode only)
       appliedTechnique,  // Body Building technique
       aerobicSeries      // Series/Batteries/Groups for aerobic sports
@@ -169,7 +170,16 @@ export async function PATCH(
         manualPriority: manualPriority !== undefined ? manualPriority : undefined,
         manualInputType: manualInputType !== undefined ? manualInputType : undefined,
         favourite: favourite !== undefined ? favourite : undefined,
-        repetitions: manualRepetitions !== undefined && manualRepetitions !== null && manualRepetitions !== '' ? parseInt(manualRepetitions) : (manualRepetitions === null || manualRepetitions === '' ? null : undefined),
+        repetitions:
+          manualRepetitions !== undefined
+            ? manualRepetitions !== null && manualRepetitions !== ''
+              ? parseInt(String(manualRepetitions), 10)
+              : null
+            : repetitions !== undefined
+              ? repetitions !== null && repetitions !== ''
+                ? parseInt(String(repetitions), 10)
+                : null
+              : undefined,
         distance: manualDistance !== undefined && manualDistance !== null && manualDistance !== '' ? parseInt(manualDistance) : (manualDistance === null || manualDistance === '' ? null : undefined),
         appliedTechnique: appliedTechnique !== undefined ? appliedTechnique : undefined,
         aerobicSeries: aerobicSeries !== undefined && aerobicSeries !== null && aerobicSeries !== '' ? parseInt(aerobicSeries) : (aerobicSeries === null || aerobicSeries === '' ? null : undefined),

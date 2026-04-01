@@ -257,6 +257,10 @@ export default function MoveframeInfoPanel({
       circuitInfoByLetter.set(letter, { seriesCount, stationsPerSeries });
     });
   }
+  const lastCircuitLetter =
+    circuitRows.length > 0
+      ? String(circuitRows[circuitRows.length - 1]?.letter ?? '').trim().toUpperCase()
+      : '';
   const totalCircuitSeries = isCircuitBased ? totalMovelaps : 0;
   const completedCircuitSeries = isCircuitBased ? completedMovelaps : 0;
   const totalCircuitRepetitions = isCircuitBased
@@ -300,6 +304,7 @@ export default function MoveframeInfoPanel({
       (typeof meta?.circuitLetter === 'string' && meta.circuitLetter.trim() !== ''
         ? meta.circuitLetter.trim()
         : (typeof ml?.circuitLetter === 'string' ? ml.circuitLetter.trim() : '')) || '';
+    const normalizedCircuitLetter = circuitLetter.trim().toUpperCase();
     const localSeriesNumber =
       meta?.localSeriesNumber ?? meta?.seriesNumber ?? ml?.localSeriesNumber ?? ml?.seriesNumber ?? null;
     const stationNumber = meta?.stationNumber ?? ml?.stationNumber ?? null;
@@ -309,19 +314,28 @@ export default function MoveframeInfoPanel({
     const stationsPerSeries = circuitInfo?.stationsPerSeries ?? defaultStationsPerCircuit ?? 0;
     const isEndOfSeries = !!(stationsPerSeries && stationNumber && stationNumber === stationsPerSeries);
     const isEndOfCircuit = !!(isEndOfSeries && seriesCount && localSeriesNumber && localSeriesNumber === seriesCount);
+    const isWorkoutFinalRestRow =
+      isEndOfCircuit &&
+      !!lastCircuitLetter &&
+      !!normalizedCircuitLetter &&
+      normalizedCircuitLetter === lastCircuitLetter;
 
     const hasExplicitMacro = ml?.macroFinal != null && String(ml.macroFinal).trim() !== '';
     const shouldShowDerivedMacro =
-      (!hasExplicitMacro && ((isEndOfCircuit && pauseCircuitsSeconds != null) || (isEndOfSeries && pauseSeriesSeconds != null)));
+      !hasExplicitMacro &&
+      !isWorkoutFinalRestRow &&
+      ((isEndOfCircuit && pauseCircuitsSeconds != null) || (isEndOfSeries && pauseSeriesSeconds != null));
     const hasMacroDisplay = hasExplicitMacro || shouldShowDerivedMacro;
 
     const macroSeconds = hasExplicitMacro
       ? parsePauseToSeconds(ml.macroFinal)
-      : isEndOfCircuit && pauseCircuitsSeconds != null
-        ? pauseCircuitsSeconds
-        : isEndOfSeries && pauseSeriesSeconds != null
-          ? pauseSeriesSeconds
-          : 0;
+      : isWorkoutFinalRestRow
+        ? 0
+        : isEndOfCircuit && pauseCircuitsSeconds != null
+          ? pauseCircuitsSeconds
+          : isEndOfSeries && pauseSeriesSeconds != null
+            ? pauseSeriesSeconds
+            : 0;
     const pauseSeconds = hasMacroDisplay ? 0 : parsePauseToSeconds(ml.pause);
 
     return sum + ((timeSeconds + pauseSeconds + macroSeconds) / 60);

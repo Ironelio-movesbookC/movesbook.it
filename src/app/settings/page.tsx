@@ -85,7 +85,7 @@ export default function SettingsPage() {
     if (!queryParams) return;
     const sectionParam = queryParams.get('section');
     if (!sectionParam) return;
-    const allowedAdminSections: SettingsSection[] = ['backgrounds', 'tools', 'technical', 'workoutParameters', 'favourites', 'mybest', 'grid'];
+    const allowedAdminSections: SettingsSection[] = ['backgrounds', 'tools', 'technical', 'workoutParameters', 'favourites', 'grid'];
     const allowedUserSections: SettingsSection[] = ['backgrounds', 'tools', 'favourites', 'mybest', 'grid'];
     const allowed = isAdmin ? allowedAdminSections : allowedUserSections;
     if (allowed.includes(sectionParam as SettingsSection)) {
@@ -100,20 +100,19 @@ export default function SettingsPage() {
 
   const settingsSections = isAdmin
     ? [
+        { id: 'grid' as SettingsSection, label: t('settings_display_mode'), icon: Grid },
         { id: 'backgrounds' as SettingsSection, label: t('settings_backgrounds'), icon: Palette },
         { id: 'tools' as SettingsSection, label: 'Tools Settings', icon: SettingsIcon },
         { id: 'technical' as SettingsSection, label: 'Technical Settings', icon: Wrench },
         { id: 'workoutParameters' as SettingsSection, label: 'Workouts parameters settings', icon: SlidersHorizontal },
         { id: 'favourites' as SettingsSection, label: t('settings_favourites'), icon: Star },
-        { id: 'mybest' as SettingsSection, label: t('settings_my_best'), icon: Trophy },
-        { id: 'grid' as SettingsSection, label: t('settings_display_mode'), icon: Grid }
       ]
     : [
+        { id: 'grid' as SettingsSection, label: t('settings_display_mode'), icon: Grid },
         { id: 'backgrounds' as SettingsSection, label: t('settings_backgrounds'), icon: Palette },
         { id: 'tools' as SettingsSection, label: t('settings_tools'), icon: SettingsIcon },
         { id: 'favourites' as SettingsSection, label: t('settings_favourites'), icon: Star },
-        { id: 'mybest' as SettingsSection, label: t('settings_my_best'), icon: Trophy },
-        { id: 'grid' as SettingsSection, label: t('settings_display_mode'), icon: Grid }
+        { id: 'mybest' as SettingsSection, label: t('settings_my_best'), icon: Trophy }
       ];
 
   const requestedTab = queryParams?.get('tab') || undefined;

@@ -3,6 +3,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import CircuitPreferencesModal from './CircuitPreferencesModal';
+import { GOAL_OPTIONS, type GoalId } from './modals/PlanGymWeekModal';
+
+function parseStoredMoveframeGoal(v: unknown): GoalId {
+  if (typeof v === 'string' && GOAL_OPTIONS.some((o) => o.value === v)) return v as GoalId;
+  return 'hypertrophy';
+}
 
 interface FastPlannerRow {
   id: number;
@@ -24,6 +30,8 @@ interface FastPlannerProps {
   day: any;
   mode: 'add' | 'edit';
   existingMoveframe?: any;
+  /** Optional default when adding a moveframe (e.g. day goal from weekly plan). */
+  initialGoal?: GoalId;
   onSave: (moveframeData: any) => void;
   onCancel: () => void;
   fullView?: boolean;
@@ -33,6 +41,8 @@ export type FastPlannerHandle = {
   saveMoveframe: () => void;
   saveMoveframeAndMovelaps: () => void;
   openPreferences: () => void;
+  /** Anaerobic only: apply rest/macro to the last filled exercise row; default **5'** when selection empty. */
+  applyEndMacro?: (selectedMacro?: string) => void;
 };
 
 const parseFastPlannerDataFromNotes = (notes: unknown): any | null => {
@@ -158,10 +168,14 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   day,
   mode,
   existingMoveframe,
+  initialGoal,
   onSave,
   onCancel,
   fullView
 }: FastPlannerProps, ref) {
+  // Training goal for this moveframe (same taxonomy as Plan Gym Week)
+  const [moveframeGoal, setMoveframeGoal] = useState<GoalId>(() => parseStoredMoveframeGoal(initialGoal));
+
   // State for sector selection mode
   const [sectorMode, setSectorMode] = useState<'exercises' | 'series'>('exercises');
 
@@ -184,6 +198,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   // Ref to remember last selected row for toolbar quick-fill (so value goes to correct row even when focus moves to toolbar)
   const lastSelectedRowIdRef = React.useRef<number | null>(null);
   const exerciseListScrollRef = React.useRef<HTMLDivElement>(null);
+  const sectorListScrollRef = React.useRef<HTMLDivElement>(null);
 
   // State for exercise rows
   const [rows, setRows] = useState<FastPlannerRow[]>([
@@ -196,8 +211,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   // Selected muscle group for filtering exercises
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<string>('all');
   const ZOOM = 0.55;
-  /** Larger scale for sector (muscle group) icons – increased for easier tap/visibility */
-  const SECTOR_ZOOM = 1.25;
+  /** Sector strip: smaller cards so more muscles fit on screen; arrows handle scrolling */
+  const SECTOR_ZOOM = 0.82;
   const [showSubExercises, setShowSubExercises] = useState<boolean>(false);
 
   // State for which exercise toolbar button is active (speed, series, etc.)
@@ -529,6 +544,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       const repsValue = ripTimeMode === 'reps' ? (parseInt(row.ripTime || '', 10) || null) : null;
       const timeValue = ripTimeMode === 'time' ? (row.ripTime || null) : null;
 
+      const isLast = index === filledRows.length - 1;
+      const pauseVal = row.break && String(row.break).trim() !== '' ? String(row.break).trim() : null;
       return {
         repetitionNumber: index + 1,
         distance: null,
@@ -544,8 +561,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         muscularSector: sector,
         exercise: row.exercise || null,
         restType: null,
-        pause: row.break || null,
-        macroFinal: null,
+        pause: pauseVal,
+        macroFinal: isLast && pauseVal ? pauseVal : null,
         alarm: null,
         sound: null,
         notes: row.mode || null,
@@ -598,7 +615,27 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return `${m}'${String(s).padStart(2, '0')}"`;
   }, []);
 
-  const buildSummaryFromRows = React.useCallback((filledRows: FastPlannerRow[]): string => {
+  type FastPlannerSummaryStats = {
+    sectorCount: number;
+    totalSeries: number;
+    avgSeriesPerSector: string;
+    totalExercises: number;
+    avgExercisesPerSector: string;
+    totalReps: number;
+    kgTot: string;
+    avgPause: string;
+  };
+
+  const filledRowsForSummary = useMemo(
+    () => rows.map(r => ({ ...r, exercise: (r.exercise || '').trim() })).filter(r => r.exercise !== ''),
+    [rows]
+  );
+
+  const { summaryStats, summaryText } = useMemo(() => {
+    const filledRows = filledRowsForSummary;
+    if (filledRows.length === 0) {
+      return { summaryStats: null as FastPlannerSummaryStats | null, summaryText: '' };
+    }
     const sectors = new Set<string>();
     for (const r of filledRows) {
       if (r.exercise) {
@@ -631,6 +668,17 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       : 0;
     const avgPauseStr = formatPauseFromSeconds(Math.round(avgPauseSeconds));
 
+    const stats: FastPlannerSummaryStats = {
+      sectorCount: X,
+      totalSeries: Y1,
+      avgSeriesPerSector,
+      totalExercises: W1,
+      avgExercisesPerSector,
+      totalReps: Z,
+      kgTot: kgTot.toFixed(1),
+      avgPause: avgPauseStr,
+    };
+
     const lines = [
       'Summary (here in automatic):',
       `No. sectors (X) ${X}`,
@@ -644,17 +692,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       '',
       'User can edit here (but not the Summary).'
     ];
-    return lines.join('\n');
-  }, [getSectorForExercise, parsePauseToSeconds, formatPauseFromSeconds]);
-
-  const filledRowsForSummary = useMemo(
-    () => rows.map(r => ({ ...r, exercise: (r.exercise || '').trim() })).filter(r => r.exercise !== ''),
-    [rows]
-  );
-  const summaryText = useMemo(
-    () => (filledRowsForSummary.length > 0 ? buildSummaryFromRows(filledRowsForSummary) : ''),
-    [filledRowsForSummary, buildSummaryFromRows]
-  );
+    return { summaryStats: stats, summaryText: lines.join('\n') };
+  }, [filledRowsForSummary, getSectorForExercise, parsePauseToSeconds, formatPauseFromSeconds]);
 
   useEffect(() => {
     if (mode !== 'edit') return;
@@ -667,8 +706,13 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     const userPart = notesStr.replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '').trim();
     setUserDescription(userPart);
 
-    const parsed = parseFastPlannerDataFromNotes(existingMoveframe.notes);
+    const parsed =
+      parseFastPlannerDataFromNotes(existingMoveframe.notes) ||
+      (existingMoveframe.fastPlannerData && typeof existingMoveframe.fastPlannerData === 'object'
+        ? existingMoveframe.fastPlannerData
+        : null);
     if (parsed) {
+      setMoveframeGoal(parseStoredMoveframeGoal(parsed.goal));
       if (parsed.sectorMode === 'exercises' || parsed.sectorMode === 'series') setSectorMode(parsed.sectorMode);
       if (typeof parsed.execSpeed === 'string') setExecSpeed(parsed.execSpeed);
       if (typeof parsed.execSeries === 'string') setExecSeries(parsed.execSeries);
@@ -709,6 +753,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       });
 
       setRows(rebuilt.length > 0 ? rebuilt : [{ id: 1, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '' }]);
+      setMoveframeGoal('hypertrophy');
       setSelectedCell(null);
       lastSelectedRowIdRef.current = null;
       setShowSubExercises(false);
@@ -1135,6 +1180,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     }
     const payload = {
       sectorMode,
+      goal: moveframeGoal,
       execSpeed,
       execSeries,
       execRipTime,
@@ -1158,7 +1204,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       notes,
       fastPlannerData: payload,
       movelaps,
-      isFastPlannerBased: true
+      isFastPlannerBased: true,
+      goal: moveframeGoal
     };
 
     onSave(moveframeData);
@@ -1178,6 +1225,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     }
     const payload = {
       sectorMode,
+      goal: moveframeGoal,
       execSpeed,
       execSeries,
       execRipTime,
@@ -1201,15 +1249,37 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       notes,
       fastPlannerData: payload,
       movelaps,
-      isFastPlannerBased: true
+      isFastPlannerBased: true,
+      goal: moveframeGoal
     };
     onSave(moveframeData);
   };
 
+  const DEFAULT_END_MACRO = "5'";
+  const applyEndMacro = React.useCallback((selectedMacro?: string) => {
+    const trimmed = typeof selectedMacro === 'string' ? selectedMacro.trim() : '';
+    const value = trimmed || DEFAULT_END_MACRO;
+    setRows((prev) => {
+      let lastFilledId: number | null = null;
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if ((prev[i].exercise || '').trim() !== '') {
+          lastFilledId = prev[i].id;
+          break;
+        }
+      }
+      if (lastFilledId == null) {
+        if (typeof window !== 'undefined') window.alert('Add at least one exercise before applying Macro.');
+        return prev;
+      }
+      return prev.map((row) => (row.id === lastFilledId ? { ...row, break: value } : row));
+    });
+  }, []);
+
   React.useImperativeHandle(ref, () => ({
     saveMoveframe: handleSaveMoveframe,
     saveMoveframeAndMovelaps: handleSaveMoveframeAndMovelaps,
-    openPreferences: () => setShowPreferencesModal(true)
+    openPreferences: () => setShowPreferencesModal(true),
+    applyEndMacro
   }));
   const openSeriesPlan = (sectorId: string) => {
     setPlanSectorId(sectorId);
@@ -1358,19 +1428,21 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   const canSaveWithSuperset = supersetValidation.canSave;
 
   return (
-    <div className={`flex flex-col flex-1 min-h-0 ${!fullView ? '' : ''}`}>
+    <div
+      className={`flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain ${!fullView ? '' : ''}`}
+    >
       {!fullView && <>
       <div className="flex-shrink-0 z-20 bg-white pb-2 shadow-[0_1px_3px_0_rgba(0,0,0,0.08)]">
         <div className="space-y-1.5">
           {/* Compact Top Row: Execution | Sector | Name | Intensity | Break */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="bg-amber-50 border border-amber-300 rounded px-2 py-0.5 text-center shrink-0">
+          <div className="flex min-w-0 w-full flex-wrap items-center gap-2">
+            <div className="bg-amber-50 border border-amber-300 rounded px-2.5 py-1.5 text-center shrink-0">
               {selectedCell ? (
-                <span className="text-[10px] text-blue-600 font-medium whitespace-nowrap">
+                <span className="text-xs text-blue-600 font-medium whitespace-nowrap">
                   Execution ✓ Row {rows.findIndex(r => r.id === selectedCell.rowId) + 1}, {selectedCell.field}
                 </span>
               ) : (
-                <span className="text-[10px] text-gray-700 font-bold">Execution</span>
+                <span className="text-xs text-gray-700 font-bold">Execution</span>
               )}
             </div>
             <button
@@ -1379,7 +1451,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 setShowSubExercises(false);
                 setSelectedMuscleGroup('all');
               }}
-              className={`px-2 py-1 text-xs font-bold border rounded whitespace-nowrap ${
+              className={`px-3 py-2 text-sm font-bold border-2 rounded-md whitespace-nowrap ${
                 activeExerciseButton === null ? 'bg-yellow-50 text-black border-yellow-400' : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
               }`}
             >
@@ -1390,26 +1462,44 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
               value={exerciseSearch}
               onChange={(e) => setExerciseSearch(e.target.value)}
               placeholder="Name exercise"
-              className="w-44 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-48 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <span className="text-[10px] font-bold text-gray-600 mx-0.5">Intensity:</span>
+            <span className="text-xs font-bold text-gray-600 mx-0.5 shrink-0">Intensity:</span>
             {(['speed', 'series', 'riptime', 'weight', 'break', 'mode'] as const).map((key) => (
               <button
                 key={key}
                 onClick={() => setActiveExerciseButton(activeExerciseButton === key ? null : key)}
-                className={`px-2 py-1 text-xs font-medium border rounded whitespace-nowrap ${
+                className={`px-3 py-2 text-sm font-semibold border-2 rounded-md whitespace-nowrap ${
                   activeExerciseButton === key ? 'bg-yellow-50 text-black border-yellow-400' : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
                 }`}
               >
                 {key === 'riptime' ? 'Rip\\Time' : key === 'break' ? 'Break' : key.charAt(0).toUpperCase() + key.slice(1)}
               </button>
             ))}
+            <div className="ml-auto flex min-w-0 max-w-full flex-[1_1_220px] flex-wrap items-center gap-1.5 sm:flex-nowrap">
+              <label htmlFor="fast-planner-moveframe-goal" className="text-xs font-bold text-gray-800 whitespace-nowrap shrink-0">
+                Goal of this moveframe
+              </label>
+              <select
+                id="fast-planner-moveframe-goal"
+                value={moveframeGoal}
+                onChange={(e) => setMoveframeGoal(e.target.value as GoalId)}
+                className="min-w-0 flex-1 rounded-md border-2 border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:min-w-[14rem] sm:max-w-md"
+                aria-label="Goal of this moveframe"
+              >
+                {GOAL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
 
         {/* Muscle Groups - Always visible */}
-        <div className="bg-slate-900 border border-slate-700 rounded-lg p-2 mt-2">
+        <div className="bg-slate-900 border border-slate-700 rounded-lg p-2 mt-2 min-w-0 max-w-full">
           <div className="flex items-center gap-3 pb-2">
             <label className="flex items-center cursor-pointer whitespace-nowrap text-white">
               <input
@@ -1439,7 +1529,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
               <span className="text-xs">Plan series\exercise</span>
             </label>
           </div>
-          <div className="flex items-center pb-2 gap-2" style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
+          <div className="flex min-w-0 w-full flex-nowrap items-center gap-2 overflow-x-auto pb-2">
             {showAllButton && (
               <div className="flex-shrink-0">
                 <button
@@ -1499,7 +1589,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
             )}
 
             {/* Content area: show options or muscle groups within the same box */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex-1 min-h-[140px] max-h-[280px] overflow-y-auto overflow-x-auto text-black shrink-0">
+            <div className="min-h-[140px] max-h-[280px] min-w-0 flex-1 overflow-y-auto overflow-x-auto rounded-lg border border-yellow-200 bg-yellow-50 p-2 text-black">
               {activeExerciseButton ? (
                 <div className="space-y-3">
                 {activeExerciseButton === 'speed' && (
@@ -1873,37 +1963,79 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
             ) : (
               <>
                 {!showSubExercises ? (
-                  <div className="flex" style={{ gap: `${Math.max(6, 14 * SECTOR_ZOOM)}px` }}>
-                    {MUSCLE_GROUPS.map((group) => (
-                      <button
-                        key={group.id}
-                        onClick={() => {
-                          setSelectedMuscleGroup(group.id);
-                          if (sectorMode === 'series') {
-                            setShowSubExercises(false);
-                            openSeriesPlan(group.id);
-                          } else {
-                            setShowSubExercises(true);
-                          }
-                        }}
-                        className={`flex flex-col items-center justify-center px-3 py-3 rounded-lg transition-all flex-shrink-0 border-2 ${selectedMuscleGroup === group.id
-                          ? 'bg-white text-black border-blue-600 ring-2 ring-blue-200'
-                          : 'bg-white text-black border-gray-300 hover:border-blue-500 hover:shadow-md'
-                          }`}
-                      >
-                        <div className="mb-2 flex items-center justify-center relative" style={{ width: `${112 * SECTOR_ZOOM}px`, height: `${112 * SECTOR_ZOOM}px` }}>
-                          <Image
-                            src={group.image}
-                            alt={group.label}
-                            width={Math.round(112 * SECTOR_ZOOM)}
-                            height={Math.round(112 * SECTOR_ZOOM)}
-                            className="object-contain"
-                            unoptimized
-                          />
-                        </div>
-                        <span className="font-medium text-black" style={{ fontSize: `${Math.max(11, 16 * SECTOR_ZOOM)}px` }}>{group.label}</span>
-                      </button>
-                    ))}
+                  <div className="flex min-w-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const el = sectorListScrollRef.current;
+                        if (el) el.scrollBy({ left: -200, behavior: 'smooth' });
+                      }}
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-700 text-white shadow-md hover:bg-slate-600"
+                      title="Scroll muscle groups left"
+                      aria-label="Scroll muscle groups left"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                    </button>
+                    <div
+                      ref={sectorListScrollRef}
+                      className="max-w-full min-w-0 flex-1 overflow-x-auto overflow-y-hidden scroll-smooth pb-1 [scrollbar-gutter:stable]"
+                      title="Scroll horizontally: arrows, scrollbar, trackpad, or wheel"
+                      onWheel={(e) => {
+                        const el = e.currentTarget;
+                        if (el.scrollWidth <= el.clientWidth) return;
+                        e.preventDefault();
+                        el.scrollLeft += e.deltaY;
+                      }}
+                    >
+                      <div className="flex w-max" style={{ gap: `${Math.max(4, 10 * SECTOR_ZOOM)}px` }}>
+                        {MUSCLE_GROUPS.map((group) => (
+                          <button
+                            key={group.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedMuscleGroup(group.id);
+                              if (sectorMode === 'series') {
+                                setShowSubExercises(false);
+                                openSeriesPlan(group.id);
+                              } else {
+                                setShowSubExercises(true);
+                              }
+                            }}
+                            className={`flex flex-shrink-0 flex-col items-center justify-center rounded-lg border-2 px-2 py-2 transition-all ${selectedMuscleGroup === group.id
+                              ? 'border-blue-600 bg-white text-black ring-2 ring-inset ring-blue-300/80'
+                              : 'border-gray-300 bg-white text-black hover:border-blue-500 hover:shadow-md'
+                              }`}
+                          >
+                            <div
+                              className="relative mb-1 flex items-center justify-center"
+                              style={{ width: `${112 * SECTOR_ZOOM}px`, height: `${112 * SECTOR_ZOOM}px` }}
+                            >
+                              <Image
+                                src={group.image}
+                                alt={group.label}
+                                width={Math.round(112 * SECTOR_ZOOM)}
+                                height={Math.round(112 * SECTOR_ZOOM)}
+                                className="object-contain"
+                                unoptimized
+                              />
+                            </div>
+                            <span className="font-medium text-black leading-tight" style={{ fontSize: `${Math.max(9, 13 * SECTOR_ZOOM)}px` }}>{group.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const el = sectorListScrollRef.current;
+                        if (el) el.scrollBy({ left: 200, behavior: 'smooth' });
+                      }}
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-700 text-white shadow-md hover:bg-slate-600"
+                      title="Scroll muscle groups right"
+                      aria-label="Scroll muscle groups right"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
+                    </button>
                   </div>
                 ) : (
                   <div className="relative flex items-center gap-1">
@@ -2000,52 +2132,74 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
 
       {/* Exercise Table – action buttons + headers sticky, only the list scrolls */}
       <div className={`bg-white border border-gray-300 rounded-lg overflow-hidden relative z-0 flex-1 min-h-[220px] flex flex-col ${!fullView ? 'border-t-0 rounded-t-none' : ''}`}>
-        <div className={fullView ? 'overflow-auto flex-1 min-h-[180px]' : 'overflow-auto flex-1 min-h-[180px]'}>
+        <div
+          className={`overflow-auto flex-1 ${fullView ? 'min-h-[min(52vh,420px)]' : 'min-h-[252px]'}`}
+        >
           {/* Control buttons – always visible; sticky in both modes; centered in fullView */}
-          <div className={`sticky top-0 z-20 flex-shrink-0 px-2 py-1.5 bg-gray-50 border-b border-gray-200 flex items-center gap-2 flex-wrap shadow-[0_1px_3px_0_rgba(0,0,0,0.08)] ${fullView ? 'justify-center' : ''}`}>
-            <span className="text-[10px] text-gray-500 italic mr-1">SECTION ALWAYS ON SCREEN – ONLY THE LIST WILL MOVE</span>
-            <button onClick={handleGoNext} className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Go next</button>
-            <button onClick={handleDuplicate} title="Duplicate selected row (appended at the bottom). Or double-click the exercise cell to duplicate." className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Duplicate</button>
-            <button onClick={handleTriplicate} title="Add two copies of selected row (appended at the bottom)." className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Triplicate</button>
-            <button onClick={handleRemove} className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Remove</button>
-            <button onClick={handleResetRow} className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Reset row</button>
-            <button onClick={handleResetAll} className="px-2 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700">Reset all</button>
-            <button onClick={handleSaveMoveframe} disabled={!canSaveWithSuperset} className="ml-auto px-3 py-1 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed" title={!canSaveWithSuperset ? 'Fix Superset: each Superset exercise must be grouped with at least one other Superset' : undefined}>Save moveframe</button>
+          <div className={`sticky top-0 z-30 flex-shrink-0 px-2 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2 flex-wrap shadow-[0_1px_3px_0_rgba(0,0,0,0.08)] ${fullView ? 'justify-center' : ''}`}>
+            <span className="text-[10px] text-gray-500 italic mr-1 sm:text-xs">SECTION ALWAYS ON SCREEN – ONLY THE LIST WILL MOVE</span>
+            {fullView && (
+              <div className="flex min-w-0 max-w-full shrink-0 items-center gap-1.5 border-r border-gray-200 pr-2 mr-1">
+                <label htmlFor="fast-planner-moveframe-goal-full" className="text-[10px] font-bold text-gray-700 whitespace-nowrap">
+                  Goal
+                </label>
+                <select
+                  id="fast-planner-moveframe-goal-full"
+                  value={moveframeGoal}
+                  onChange={(e) => setMoveframeGoal(e.target.value as GoalId)}
+                  className="max-w-[min(20rem,70vw)] rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[10px] text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  aria-label="Goal of this moveframe"
+                >
+                  {GOAL_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <button onClick={handleGoNext} className="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900">Go next</button>
+            <button onClick={handleDuplicate} title="Duplicate selected row (appended at the bottom). Or double-click the exercise cell to duplicate." className="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900">Duplicate</button>
+            <button onClick={handleTriplicate} title="Add two copies of selected row (appended at the bottom)." className="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900">Triplicate</button>
+            <button onClick={handleRemove} className="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900">Remove</button>
+            <button onClick={handleResetRow} className="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900">Reset row</button>
+            <button onClick={handleResetAll} className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700">Reset all</button>
+            <button onClick={handleSaveMoveframe} disabled={!canSaveWithSuperset} className="ml-auto rounded-md bg-red-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50" title={!canSaveWithSuperset ? 'Fix Superset: each Superset exercise must be grouped with at least one other Superset' : undefined}>Save moveframe</button>
           </div>
           <table className="w-full border-collapse table-fixed">
             <colgroup>
               <col className="w-12" />
-              <col style={{ minWidth: '250px' }} />
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
-              <col style={{ width: '140px' }} />
-              <col className="w-14" />
+              <col style={{ minWidth: '220px', width: '26%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '7rem' }} />
+              <col style={{ width: '4.5rem' }} />
             </colgroup>
-            <thead className="bg-gray-100 sticky z-10 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]" style={{ top: '2.75rem' }}>
+            <thead className="sticky z-20 bg-gray-100 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]" style={{ top: '4rem' }}>
               <tr>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r w-12">#</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r" style={{ minWidth: '250px' }}>Exercise</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Speed</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Series</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Rip\Time</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Weight</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Break</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r" style={{ width: '140px' }}>Mode</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 w-14">Actions</th>
+                <th className="sticky left-0 z-30 w-12 border-b border-r border-gray-300 bg-gray-100 px-2 py-1.5 text-left text-xs font-bold text-gray-700">#</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700" style={{ minWidth: '220px' }}>Exercise</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700">Speed</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700">Series</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700">Rip\Time</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700">Weight</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700">Break</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700">Mode</th>
+                <th className="border-b border-gray-300 px-1 py-1.5 text-center text-xs font-bold text-gray-700">Actions</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row, index) => (
                 <tr
                   key={row.id}
-                  className="border-t hover:bg-gray-50"
+                  className="group border-t hover:bg-gray-50"
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={() => handleRowDrop(index)}
                 >
-                  <td className="px-1 py-1 text-sm text-gray-600 border-r w-12">
+                  <td className="sticky left-0 z-[5] w-12 border-r border-gray-300 bg-white px-1 py-1 text-sm text-gray-600 shadow-[2px_0_6px_-4px_rgba(0,0,0,0.2)] group-hover:bg-gray-50">
                     <div className="flex items-center gap-1">
                       <button
                         draggable
@@ -2073,7 +2227,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       }}
                       title="Click to select. Double-click to duplicate this exercise (duplicate is appended at the bottom)."
                       className={`relative cursor-pointer border-2 rounded overflow-hidden ${selectedCell?.rowId === row.id && selectedCell?.field === 'exercise'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-gray-200'
                         }`}
                     >
@@ -2137,7 +2291,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, speed: e.target.value } : r))}
                       onClick={() => handleCellClick(row.id, 'speed')}
                       className={`w-full px-2 py-1 text-sm border rounded ${selectedCell?.rowId === row.id && selectedCell?.field === 'speed'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-gray-200'
                         }`}
                     />
@@ -2149,7 +2303,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, series: e.target.value } : r))}
                       onClick={() => handleCellClick(row.id, 'series')}
                       className={`w-full px-2 py-1 text-sm border rounded bg-green-50 ${selectedCell?.rowId === row.id && selectedCell?.field === 'series'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-green-200'
                         }`}
                     />
@@ -2161,7 +2315,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, ripTime: e.target.value } : r))}
                       onClick={() => handleCellClick(row.id, 'ripTime')}
                       className={`w-full px-2 py-1 text-sm border rounded bg-green-50 ${selectedCell?.rowId === row.id && selectedCell?.field === 'ripTime'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-green-200'
                         }`}
                     />
@@ -2173,7 +2327,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, weight: e.target.value } : r))}
                       onClick={() => handleCellClick(row.id, 'weight')}
                       className={`w-full px-2 py-1 text-sm border rounded ${selectedCell?.rowId === row.id && selectedCell?.field === 'weight'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-gray-200'
                         }`}
                     />
@@ -2185,22 +2339,21 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, break: e.target.value } : r))}
                       onClick={() => handleCellClick(row.id, 'break')}
                       className={`w-full px-2 py-1 text-sm border rounded bg-yellow-50 ${selectedCell?.rowId === row.id && selectedCell?.field === 'break'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-yellow-200'
                         }`}
                     />
                   </td>
-                  <td className="px-1 py-1 bg-yellow-50">
+                  <td className="min-w-0 max-w-[7rem] border-r border-gray-300 bg-yellow-50 px-0.5 py-1">
                     <div
                       onClick={() => handleCellClick(row.id, 'mode')}
-                      className={`cursor-pointer border-2 rounded p-2 bg-yellow-50 min-h-[40px] flex items-center justify-center ${selectedCell?.rowId === row.id && selectedCell?.field === 'mode'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                      className={`flex min-h-[40px] min-w-0 max-w-full cursor-pointer items-center justify-center rounded border-2 bg-yellow-50 p-1 ${selectedCell?.rowId === row.id && selectedCell?.field === 'mode'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-yellow-200'
                         }`}
-                      style={{ width: '140px' }}
                     >
                       {row.mode ? (
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex min-w-0 max-w-full items-center gap-1">
                           {(() => {
                             const modeOption = MODE_OPTIONS.find(m => m.label === row.mode);
                             const isSuperset = row.mode === 'Superset';
@@ -2209,15 +2362,15 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                               <>
                                 {modeOption ? (
                                   <>
-                                    <Image src={modeOption.icon} alt={row.mode} width={24} height={24} className="object-contain" unoptimized />
-                                    <span className="text-xs">{row.mode}</span>
+                                    <Image src={modeOption.icon} alt={row.mode} width={20} height={20} className="h-5 w-5 flex-shrink-0 object-contain" unoptimized />
+                                    <span className="truncate text-[11px] font-medium leading-tight">{row.mode}</span>
                                   </>
                                 ) : (
-                                  <span className="text-xs text-gray-700">{row.mode}</span>
+                                  <span className="truncate text-[11px] text-gray-700">{row.mode}</span>
                                 )}
                                 {isSuperset && (
-                                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${isAlone ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800'}`}>
-                                    {isAlone ? 'not ok' : 'ok'}
+                                  <span className={`flex-shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold leading-none ${isAlone ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800'}`}>
+                                    {isAlone ? 'no' : 'ok'}
                                   </span>
                                 )}
                               </>
@@ -2225,11 +2378,11 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                           })()}
                         </div>
                       ) : (
-                        <span className="text-xs text-gray-400">Click to select</span>
+                        <span className="px-1 text-center text-[10px] text-gray-400">Tap</span>
                       )}
                     </div>
                   </td>
-                  <td className="px-1 py-1 text-center w-14">
+                  <td className="w-[4.5rem] min-w-[4.5rem] max-w-[4.5rem] px-0.5 py-1 text-center align-middle">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <button
                         onClick={() => handleDeleteRow(row.id)}
@@ -2255,33 +2408,65 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
           </table>
         </div>
 
-        {/* Scroll to view all repetitions note */}
+        {/* Scroll to view all repetitions note — modal mode only (full page shows this in summary panel) */}
         {!fullView && (
-          <div className="px-4 py-2 bg-blue-50 border-t border-blue-200">
-            <p className="text-xs text-blue-700">
+          <div className="border-t border-blue-200 bg-blue-50 px-4 py-2">
+            <p className="text-xs text-blue-800">
               ℹ️ Scroll to view all repetitions. Each can have unique speed, time, and pause values.
             </p>
           </div>
         )}
       </div>
 
-      {!fullView && (
-      <div className="bg-green-50 border border-green-300 rounded-lg p-3 space-y-2 flex-shrink-0 max-h-[140px] overflow-y-auto">
-        <label className="block text-sm font-bold text-gray-700 mb-2">Descriptions & Instructions</label>
-        {summaryText ? (
-          <pre className="w-full px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded text-gray-700 whitespace-pre-wrap font-sans resize-none mb-2 max-h-16 overflow-y-auto" aria-readonly>
-            {summaryText}
-          </pre>
+      <div
+        className={`mt-2 flex-shrink-0 space-y-2 rounded-lg bg-green-50 p-3 ${
+          fullView ? 'border-2 border-green-600' : 'max-h-[220px] overflow-y-auto border border-green-300'
+        }`}
+      >
+        {fullView && (
+          <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            ℹ️ Scroll to view all repetitions. Each can have unique speed, time, and pause values.
+          </div>
+        )}
+        <label className="mb-1 block text-sm font-bold text-gray-700">Descriptions & Instructions</label>
+        {summaryStats ? (
+          fullView ? (
+            <div className="flex flex-nowrap items-center gap-x-3 gap-y-1 overflow-x-auto whitespace-nowrap rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-xs font-medium text-gray-800">
+              <span className="shrink-0 font-bold text-green-800">Summary</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">No. sectors {summaryStats.sectorCount}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Total series {summaryStats.totalSeries}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Avg series/sector {summaryStats.avgSeriesPerSector}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Total exercises {summaryStats.totalExercises}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Avg ex./sector {summaryStats.avgExercisesPerSector}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Total reps {summaryStats.totalReps}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Kg tot. {summaryStats.kgTot}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Avg pause {summaryStats.avgPause}</span>
+            </div>
+          ) : (
+            <pre
+              className="mb-2 max-h-24 w-full overflow-y-auto whitespace-pre-wrap rounded border border-gray-300 bg-gray-100 px-3 py-2 font-sans text-xs text-gray-700"
+              aria-readonly
+            >
+              {summaryText}
+            </pre>
+          )
         ) : null}
         <textarea
           value={userDescription}
           onChange={(e) => setUserDescription(e.target.value)}
-          className="w-full px-3 py-2 text-sm border border-gray-300 rounded resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
-          rows={2}
+          className="w-full resize-none rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          rows={fullView ? 3 : 2}
           placeholder="Add descriptions or instructions here..."
         />
       </div>
-      )}
 
       {/* Exercise Selection Popup */}
       {showExercisePopup && selectedCell && (

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Star, ChevronsDown, ChevronUp } from 'lucide-react';
-import { SPORTS_LIST, MACRO_FINAL_OPTIONS, MUSCULAR_SECTORS, getPaceLabel, shouldShowPaceField, getSportConfig, getPauseOptions, REST_TYPES, REPS_TYPES, hasRepsTypeSelection, getSportDisplayName, DISTANCE_BASED_SPORTS, sportNeedsExerciseName, AEROBIC_SPORTS, isCircuitFeatureSport } from '@/constants/moveframe.constants';
+import { SPORTS_LIST, MACRO_FINAL_OPTIONS, MUSCULAR_SECTORS, getPaceLabel, shouldShowPaceField, getSportConfig, getPauseOptions, REST_TYPES, REPS_TYPES, hasRepsTypeSelection, getSportDisplayName, DISTANCE_BASED_SPORTS, sportNeedsExerciseName, AEROBIC_SPORTS, isCircuitFeatureSport, getSportFastPlanningCategory, showFastPlanningsForSport, circuitLoadOfWorkToMacroFinal } from '@/constants/moveframe.constants';
 import { useMoveframeForm } from '@/hooks/useMoveframeForm';
 import { formatPercentLoad1MR, type PyramidalMode } from '@/utils/pyramidalReps';
 import { getSportIcon } from '@/utils/sportIcons';
@@ -358,11 +358,13 @@ export default function AddEditMoveframeModal({
         isLegacyCircuitDescription
       );
     })();
+  const fpCategory = getSportFastPlanningCategory(sport);
   const canUseCircuitPlanner =
-    isCircuitFeatureSport(sport) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap;
-  /** Show Fast plannings options for both circuit sports and aerobic sports */
-  const canUseFastPlanners =
-    canUseCircuitPlanner || AEROBIC_SPORTS.includes(sport as any);
+    fpCategory === 'B' || isEditingCircuitMoveframe || isEditingCircuitFromMovelap;
+  const canUseFastPlanners = mode === 'edit' || showFastPlanningsForSport(sport);
+  const canUseAiMoveframePlan =
+    (fpCategory === 'A' || fpCategory === 'B') && !isEditingCircuitMoveframe && !isEditingCircuitFromMovelap;
+  const showFastPlanningsTypeButton = mode === 'edit' || showFastPlanningsForSport(sport);
 
   // When editing a circuit moveframe, treat as BATTERY immediately so we show Circuit Planner (Part 1+2)
   // instead of STANDARD form (Workout Section, DISTANCE & REPETITIONS) on first render
@@ -387,13 +389,21 @@ export default function AddEditMoveframeModal({
     if (
       type === 'BATTERY' &&
       batterySubmenu === 'circuits' &&
-      !isCircuitFeatureSport(sport) &&
+      getSportFastPlanningCategory(sport) !== 'B' &&
       !editingFromMovelap &&
       !hasCircuitMoveframe
     ) {
       setBatterySubmenu('fast');
     }
   }, [type, sport, batterySubmenu, editingFromMovelap, existingMoveframe?.isCircuitBased, existingMoveframe?.notes, existingMoveframe?.movelaps, existingMoveframe?.circuitConfig, existingMoveframe?.circuits, existingMoveframe?.rows, existingMoveframe?.description, setBatterySubmenu]);
+
+  useEffect(() => {
+    if (!isOpen || mode !== 'add') return;
+    if (getSportFastPlanningCategory(sport) === 'C' && type === 'BATTERY') {
+      setType('STANDARD');
+      setBatterySubmenu('fast');
+    }
+  }, [isOpen, mode, sport, type, setType, setBatterySubmenu]);
 
   // 2026-01-31 - Force BATTERY/circuits mode when editing from a circuit movelap
   useEffect(() => {
@@ -932,19 +942,7 @@ export default function AddEditMoveframeModal({
         manualDistance: moveframeData.manualDistance
       });
       
-      // CRITICAL DEBUG - Check manualInputType before sending
-      console.log('🚨🚨🚨 [MODAL] CRITICAL - manualInputType check:');
-      console.log('  Current form state manualInputType:', manualInputType);
-      console.log('  In buildMoveframeData result:', moveframeData.manualInputType);
-      console.log('  Are they equal?:', manualInputType === moveframeData.manualInputType);
-      console.log('  Type of form state:', typeof manualInputType);
-      console.log('  Type of data:', typeof moveframeData.manualInputType);
-      console.log('  Is data.manualInputType undefined?:', moveframeData.manualInputType === undefined);
-      
-      console.log('💾 [SAVE] Moveframe data being saved:', moveframeData);
-      console.log('🔹 [MODAL] Calling onSave prop...');
       await onSave(moveframeData);
-      console.log('✅ [MODAL] Save successful, closing modal');
       onClose();
       resetForm();
     } catch (error) {
@@ -961,8 +959,98 @@ export default function AddEditMoveframeModal({
   const editorRef = React.useRef<HTMLDivElement>(null);
   const bodyRef = React.useRef<HTMLDivElement>(null);
   const fastPlannerRef = React.useRef<FastPlannerHandle>(null);
+  const [fastPlannerEndMacro, setFastPlannerEndMacro] = React.useState("5'");
   const isFastPlannerShown = type === 'BATTERY' && batterySubmenu === 'fast';
   const isFastPlannerFullViewActive = isFastPlannerFullView && isFastPlannerShown;
+  const sportOptionsBySection = React.useMemo(() => {
+    const aerobicFixedOrder: string[] = [
+      'SWIM',
+      'BIKE',
+      'CYCLING_TOURISM',
+      'CYCLOCROSS',
+      'MTB',
+      'SPINNING',
+      'RUN',
+      'WALKING',
+      'ROWING',
+      'CANOEING',
+      'SKATE',
+      'SKI',
+      'SNOWBOARD',
+    ];
+    const nonAerobicSection: string[] = [
+      'BODY_BUILDING',
+      'CALISTENIC',
+      'CROSSFIT',
+      'FITNESS_OVERLOAD',
+      'GYMNASTIC',
+      'PILATES',
+      'SPARTAN',
+      'STRETCHING',
+      'YOGA',
+    ];
+    const allSports = SPORTS_LIST.filter(Boolean);
+    const aerobic = aerobicFixedOrder.filter((s) => allSports.includes(s as any));
+    const nonAerobic = nonAerobicSection
+      .filter((s) => allSports.includes(s as any))
+      .slice()
+      .sort((a, b) =>
+        getSportDisplayName(a).localeCompare(getSportDisplayName(b), undefined, { sensitivity: 'base' })
+      );
+    const used = new Set<string>([...aerobic, ...nonAerobic]);
+    const technical = allSports
+      .filter((s) => !used.has(s))
+      .slice()
+      .sort((a, b) =>
+        getSportDisplayName(a).localeCompare(getSportDisplayName(b), undefined, { sensitivity: 'base' })
+      );
+    return { aerobic, nonAerobic, technical };
+  }, []);
+  const getEmphasizedSportLabel = React.useCallback((sportCode: string) => {
+    const label = getSportDisplayName(sportCode);
+    return sportCode === 'FREE_MOVES' || sportCode === 'TECHNICAL_MOVES'
+      ? `★ ${label}`
+      : label;
+  }, []);
+  const renderAnaerobicFastPlannerMacroFooter = () => (
+    <div className="flex items-end gap-2 px-2.5 py-1.5 shadow-sm">
+      <div className="flex flex-row gap-0.5 items-center">
+        <span className="text-xs font-bold text-purple-800 mr-2">Macro</span>
+        <select
+          className="max-w-[10rem] rounded border bg-white px-2 py-1 text-sm text-gray-900"
+          value={fastPlannerEndMacro}
+          onChange={(e) => setFastPlannerEndMacro(e.target.value)}
+          aria-label="Macro at end of planned moveframe"
+        >
+          <option value="">Select...</option>
+          {MACRO_FINAL_OPTIONS.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </div>
+      <button
+        type="button"
+        onClick={() => fastPlannerRef.current?.applyEndMacro?.(fastPlannerEndMacro)}
+        className="mb-0.5 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700"
+      >
+        Apply
+      </button>
+    </div>
+  );
+  /** FAST Not Aerobic: hide favorites/sport/type/section; keep Fast plannings Mode so user can switch (add + edit). */
+  const hideTopChromeForNotAerobicFast =
+    effectiveType === 'BATTERY' &&
+    batterySubmenu === 'fast' &&
+    fpCategory === 'B';
+  const hideTopChromeForAerobicFastEdit =
+    mode === 'edit' &&
+    effectiveType === 'BATTERY' &&
+    batterySubmenu === 'fast' &&
+    fpCategory === 'A';
+  /** Let the fast planner be the scroll container so muscle strip and table are not covered by the footer. */
+  const compactFastPlannerModalBody = isFastPlannerShown && !isFastPlannerFullViewActive;
   
   // For manual mode moveframes, force manual tab and disable other tabs
   // Only restrict tabs if editing an EXISTING manual moveframe (not when creating new one)
@@ -1115,14 +1203,19 @@ export default function AddEditMoveframeModal({
                     console.log('✅ [AddEditMoveframeModal] Description length:', data.description?.length || 0);
 
                     const moveframeData = buildMoveframeData();
+                    const circuitMacro =
+                      circuitLoadOfWorkToMacroFinal(data.config?.loadOfWork ?? data.settings?.loadOfWork);
+                    const lapCount = (data.movelaps || []).length;
                     const finalData = {
                       ...moveframeData,
                       description: data.description || '',
-                      circuitConfig: data.settings,
+                      circuitConfig: data.settings ?? data.config,
                       circuits: data.circuits,
                       rows: data.rows,
                       movelaps: data.movelaps || [],
-                      isCircuitBased: true
+                      isCircuitBased: true,
+                      repetitions: lapCount > 0 ? lapCount : moveframeData.repetitions,
+                      macroFinal: circuitMacro ?? moveframeData.macroFinal ?? "0'"
                     };
 
                     console.log('✅ [AddEditMoveframeModal] Final moveframe data:', finalData);
@@ -1189,55 +1282,36 @@ export default function AddEditMoveframeModal({
         </div>
         )}
 
-        {/* Tabs - Hide in invisible mode and Full page */}
-        {effectiveType === 'STANDARD' && !hideUI && !isFastPlannerFullViewActive && (
-          <div className="flex border-b border-gray-300 bg-gray-50 flex-shrink-0">
-            {!isEditingManualMoveframe && (
-              <button
-                onClick={() => handleTabChange('edit')}
-                className={`flex-1 px-4 py-2 text-sm font-medium ${
-                  activeTab === 'edit'
-                    ? 'bg-white text-gray-900 border-b-2 border-gray-900'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                Edit Moveframe
-              </button>
-            )}
-            <button
-              onClick={() => handleTabChange('manual')}
-              className={`${isEditingManualMoveframe ? 'w-full' : 'flex-1'} px-4 py-2 text-sm font-medium ${
-                activeTab === 'manual'
-                  ? 'bg-white text-gray-900 border-b-2 border-gray-900'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              {isEditingManualMoveframe ? 'Edit Manual Moveframe' : 'Manual input'}
-            </button>
-            {!isEditingManualMoveframe && (
-              <button
-                onClick={() => handleTabChange('favorites')}
-                className={`flex-1 px-4 py-2 text-sm font-medium ${
-                  activeTab === 'favorites'
-                    ? 'bg-white text-gray-900 border-b-2 border-gray-900'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                Favourites moveframes
-              </button>
-            )}
-          </div>
-        )}
+        {/* Standard sub-views chosen from Type row (edit / manual / favourites) */}
 
-        {/* Body - No scroll when Fast Planner: sector + buttons + headers stay on screen, only rows scroll */}
+        {/* Body — fast planner in modal: flex-1 + hidden overflow so FastPlannerOfMoveframes can scroll internally */}
         <div
           ref={bodyRef}
-          className={`flex flex-col ${effectiveType === 'BATTERY' ? 'overflow-y-auto p-2 pb-2' : 'overflow-y-auto p-4 pb-64'}`}
-          style={{ height: effectiveType === 'STANDARD' ? 'calc(87vh - 140px)' : 'calc(87vh - 100px)' }}
+          className={`flex flex-col ${
+            compactFastPlannerModalBody
+              ? 'min-h-0 flex-1 overflow-scroll p-2 pb-0'
+              : effectiveType === 'BATTERY'
+                ? 'overflow-y-auto p-2 pb-2'
+                : 'overflow-y-auto p-4 pb-64'
+          }`}
+          style={
+            compactFastPlannerModalBody
+              ? undefined
+              : { height: effectiveType === 'STANDARD' ? 'calc(87vh - 140px)' : 'calc(87vh - 100px)' }
+          }
         >
           {/* Edit Moveframe Tab */}
           {(effectiveType !== 'STANDARD' || activeTab === 'edit') && (
-            <div key="edit-tab" className={effectiveType === 'BATTERY' ? 'flex flex-col flex-1 min-h-0 overflow-y-auto' : ''}>
+            <div
+              key="edit-tab"
+              className={
+                effectiveType === 'BATTERY'
+                  ? compactFastPlannerModalBody
+                    ? 'flex min-h-0 flex-1 flex-col overflow-y-auto'
+                    : 'flex min-h-0 flex-1 flex-col overflow-y-auto'
+                  : ''
+              }
+            >
           {/* Top form content - hidden in Full page mode */}
           {!isFastPlannerFullViewActive && (
           <>
@@ -1249,7 +1323,7 @@ export default function AddEditMoveframeModal({
               )}
 
               {/* Favorite Sports Quick Selection - hidden when editing circuit moveframe */}
-              {!isEditingCircuitMoveframe && loadingFavorites && (
+              {!hideTopChromeForNotAerobicFast && !isEditingCircuitMoveframe && loadingFavorites && (
                 <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-300">
                   <div className="text-xs text-gray-600 flex items-center gap-2">
                     <div className="animate-spin">⏳</div>
@@ -1258,7 +1332,7 @@ export default function AddEditMoveframeModal({
                 </div>
               )}
               
-              {!isEditingCircuitMoveframe && !loadingFavorites && favoriteSports.length === 0 && (
+              {!hideTopChromeForNotAerobicFast && !isEditingCircuitMoveframe && !loadingFavorites && favoriteSports.length === 0 && (
                 <div className="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
                   <div className="text-xs text-blue-700">
                     💡 <strong>No favorite sports set.</strong> Go to Personal Settings → Favorite Sports to select up to 5 favorite sports for quick access!
@@ -1266,7 +1340,7 @@ export default function AddEditMoveframeModal({
                 </div>
               )}
               
-              {!isEditingCircuitMoveframe && !loadingFavorites && favoriteSports.length > 0 && (
+              {!hideTopChromeForNotAerobicFast && !isEditingCircuitMoveframe && !loadingFavorites && favoriteSports.length > 0 && (
                 <div className={`mb-3 p-3 bg-gradient-to-r from-yellow-50 to-amber-50 rounded-lg border border-yellow-200 ${mode === 'edit' ? 'relative' : ''}`}>
                   {mode === 'edit' && (
                     <div 
@@ -1389,7 +1463,7 @@ export default function AddEditMoveframeModal({
           )}
 
           {/* Sport Selection - hidden when editing circuit moveframe (streamlined Part 1 view) */}
-          {!isEditingCircuitMoveframe && (
+          {!hideTopChromeForNotAerobicFast && !hideTopChromeForAerobicFastEdit && !isEditingCircuitMoveframe && (
           <div className={`mb-3 ${mode === 'edit' ? 'relative' : ''}`}>
             {mode === 'edit' && (
               <div 
@@ -1451,11 +1525,27 @@ export default function AddEditMoveframeModal({
                 }`}
                 style={mode === 'edit' ? { pointerEvents: 'none' } : undefined}
               >
-                {SPORTS_LIST.map((s) => (
-                  <option key={s} value={s}>
-                    {getSportDisplayName(s)}
-                  </option>
-                ))}
+                <optgroup label="Aerobic sports">
+                  {sportOptionsBySection.aerobic.map((s) => (
+                    <option key={s} value={s}>
+                      {getEmphasizedSportLabel(s)}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Not aerobic sports">
+                  {sportOptionsBySection.nonAerobic.map((s) => (
+                    <option key={s} value={s}>
+                      {getEmphasizedSportLabel(s)}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Others - technical moveframes">
+                  {sportOptionsBySection.technical.map((s) => (
+                    <option key={s} value={s}>
+                      {getEmphasizedSportLabel(s)}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
               {/* Sport Icon Display */}
               {sport && (() => {
@@ -1483,6 +1573,7 @@ export default function AddEditMoveframeModal({
           )}
 
           {/* Type Selection */}
+          {!hideTopChromeForNotAerobicFast && !hideTopChromeForAerobicFastEdit && (
           <div className={`mb-3 ${mode === 'edit' ? 'relative' : ''}`}>
             {mode === 'edit' && (
               <div 
@@ -1499,7 +1590,10 @@ export default function AddEditMoveframeModal({
               />
             )}
             <label className="block text-xs font-bold text-gray-700 mb-2">Type</label>
-            <div className="flex gap-2" style={mode === 'edit' ? { pointerEvents: 'none' } : undefined}>
+            <div
+              className="flex flex-wrap gap-2"
+              style={mode === 'edit' ? { pointerEvents: 'none' } : undefined}
+            >
               <button
                 type="button"
                 onClick={(e) => {
@@ -1509,16 +1603,39 @@ export default function AddEditMoveframeModal({
                     return;
                   }
                   setType('STANDARD');
+                  handleTabChange('edit');
+                  setManualMode(false);
                 }}
                 disabled={mode === 'edit'}
-                className={`flex-1 px-4 py-2 text-sm font-medium rounded border-2 transition-colors ${
-                  effectiveType === 'STANDARD'
-                    ? 'bg-blue-50 border-blue-500 text-blue-700'
+                className={`min-w-[8rem] flex-1 px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
+                  effectiveType === 'STANDARD' && activeTab === 'edit' && !manualMode
+                    ? 'bg-sky-100 border-sky-400 text-sky-950 shadow-sm'
                     : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
                 } ${mode === 'edit' ? 'cursor-not-allowed opacity-50 pointer-events-none' : ''}`}
               >
                 Standard Mode
               </button>
+              {showFastPlanningsTypeButton ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    if (mode === 'edit') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      return;
+                    }
+                    setType('BATTERY');
+                  }}
+                  disabled={mode === 'edit'}
+                  className={`min-w-[8rem] flex-1 px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
+                    effectiveType === 'BATTERY'
+                      ? 'bg-sky-100 border-sky-400 text-sky-950 shadow-sm'
+                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                  } ${mode === 'edit' ? 'cursor-not-allowed opacity-50 pointer-events-none' : ''}`}
+                >
+                  ⚡ Fast plannings
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={(e) => {
@@ -1527,16 +1644,17 @@ export default function AddEditMoveframeModal({
                     e.stopPropagation();
                     return;
                   }
-                  setType('BATTERY');
+                  setType('STANDARD');
+                  handleTabChange('manual');
                 }}
                 disabled={mode === 'edit'}
-                className={`flex-1 px-4 py-2 text-sm font-medium rounded border-2 transition-colors ${
-                  effectiveType === 'BATTERY'
-                    ? 'bg-blue-50 border-blue-500 text-blue-700'
+                className={`min-w-[8rem] flex-1 px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
+                  effectiveType === 'STANDARD' && activeTab === 'manual'
+                    ? 'bg-sky-100 border-sky-400 text-sky-950 shadow-sm'
                     : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
                 } ${mode === 'edit' ? 'cursor-not-allowed opacity-50 pointer-events-none' : ''}`}
               >
-                ⚡ Fast plannings
+                Manual input
               </button>
               <button
                 type="button"
@@ -1549,21 +1667,151 @@ export default function AddEditMoveframeModal({
                   setType('ANNOTATION');
                 }}
                 disabled={mode === 'edit'}
-                className={`flex-1 px-4 py-2 text-sm font-medium rounded border-2 transition-colors ${
+                className={`min-w-[8rem] flex-1 px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
                   effectiveType === 'ANNOTATION'
-                    ? 'bg-blue-50 border-blue-500 text-blue-700'
+                    ? 'bg-sky-100 border-sky-400 text-sky-950 shadow-sm'
                     : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
                 } ${mode === 'edit' ? 'cursor-not-allowed opacity-50 pointer-events-none' : ''}`}
               >
-                📝 Annotation
+                📝 Annotations
               </button>
+              {!isEditingManualMoveframe ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    if (mode === 'edit') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      return;
+                    }
+                    setType('STANDARD');
+                    setManualMode(false);
+                    handleTabChange('favorites');
+                  }}
+                  disabled={mode === 'edit'}
+                  className={`min-w-[8rem] flex-1 px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
+                    effectiveType === 'STANDARD' && activeTab === 'favorites'
+                      ? 'bg-sky-100 border-sky-400 text-sky-950 shadow-sm'
+                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                  } ${mode === 'edit' ? 'cursor-not-allowed opacity-50 pointer-events-none' : ''}`}
+                >
+                  Favourites moveframes
+                </button>
+              ) : null}
             </div>
           </div>
+          )}
+
+          {/* Fast plannings Mode — directly under Type; light blue = selected; grey = unavailable */}
+          {effectiveType === 'BATTERY' &&
+            !hideTopChromeForAerobicFastEdit &&
+            canUseFastPlanners &&
+            (fpCategory === 'A' ||
+              fpCategory === 'B' ||
+              isEditingCircuitMoveframe ||
+              isEditingCircuitFromMovelap) && (
+            <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50/80 p-3 shadow-sm">
+              <div className="mb-2 border-l-4 border-sky-400 pl-2 text-xs font-bold tracking-wide text-sky-950">
+                Fast plannings Mode
+              </div>
+              {(() => {
+                const aerobicFastEnabled =
+                  fpCategory === 'A' && !isEditingCircuitMoveframe && !isEditingCircuitFromMovelap;
+                const notAerobicFastEnabled =
+                  fpCategory === 'B' && !isEditingCircuitMoveframe && !isEditingCircuitFromMovelap;
+                const circuitsEnabled = canUseCircuitPlanner;
+                const aiEnabled = canUseAiMoveframePlan;
+                const optBase = 'min-h-[2.75rem] px-3 py-2 text-left text-sm font-medium rounded border-2 transition-colors';
+                const optOn =
+                  'bg-sky-100 border-sky-400 text-sky-950 shadow-sm';
+                const optIdle = 'border-gray-300 bg-white text-gray-800 hover:border-sky-200 hover:bg-sky-50/60';
+                const optDis =
+                  'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 opacity-80';
+                const aerobicSelected =
+                  batterySubmenu === 'fast' &&
+                  fpCategory === 'A' &&
+                  !isEditingCircuitMoveframe &&
+                  !isEditingCircuitFromMovelap;
+                const notAerobicSelected =
+                  batterySubmenu === 'fast' &&
+                  fpCategory === 'B' &&
+                  !isEditingCircuitMoveframe &&
+                  !isEditingCircuitFromMovelap;
+                return (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      disabled={!aerobicFastEnabled}
+                      title={
+                        aerobicFastEnabled
+                          ? undefined
+                          : 'Not available for this sport (not aerobic fast planning).'
+                      }
+                      onClick={() => aerobicFastEnabled && setBatterySubmenu('fast')}
+                      className={`${optBase} ${
+                        aerobicSelected ? optOn : aerobicFastEnabled ? optIdle : optDis
+                      }`}
+                    >
+                      Fast Plan of Aerobic sports
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!notAerobicFastEnabled}
+                      title={
+                        notAerobicFastEnabled
+                          ? undefined
+                          : 'Not available for this sport (aerobic / circuit-only context).'
+                      }
+                      onClick={() => notAerobicFastEnabled && setBatterySubmenu('fast')}
+                      className={`${optBase} ${
+                        notAerobicSelected ? optOn : notAerobicFastEnabled ? optIdle : optDis
+                      }`}
+                    >
+                      Fast Plan of Not Aerobic sports
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!circuitsEnabled}
+                      title={
+                        circuitsEnabled
+                          ? undefined
+                          : 'Circuits planner is only available for not-aerobic sports (or circuit edit).'
+                      }
+                      onClick={() => circuitsEnabled && setBatterySubmenu('circuits')}
+                      className={`${optBase} ${
+                        batterySubmenu === 'circuits'
+                          ? optOn
+                          : circuitsEnabled
+                            ? optIdle
+                            : optDis
+                      }`}
+                    >
+                      Circuits planner
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!aiEnabled}
+                      title={
+                        aiEnabled
+                          ? undefined
+                          : 'AI planning is not available for this sport or when editing circuits.'
+                      }
+                      onClick={() => aiEnabled && setBatterySubmenu('ai')}
+                      className={`${optBase} ${
+                        batterySubmenu === 'ai' ? optOn : aiEnabled ? optIdle : optDis
+                      }`}
+                    >
+                      Plan of Moveframes with AI
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
           {/* Workout Section Selection - Only for STANDARD and BATTERY modes */}
           {/* 2026-01-22 15:30 UTC - Reduced width to 50% and centered */}
-          {/* 2026-01-29 - Moved above Fast plannings Mode */}
-          {(effectiveType === 'STANDARD' || effectiveType === 'BATTERY') && (
+          {(effectiveType === 'STANDARD' || effectiveType === 'BATTERY') && !hideTopChromeForNotAerobicFast && !hideTopChromeForAerobicFastEdit && (
           <div className="mb-3 w-1/2 mx-auto">
               {mode === 'edit' && (
                 <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
@@ -1639,86 +1887,6 @@ export default function AddEditMoveframeModal({
                 </p>
               )}
           </div>
-          )}
-
-          {/* Fast plannings Submenu Selection - 2026-01-22 14:30 UTC */}
-          {/* 2026-01-29 - Moved below Workout Section Selection */}
-          {effectiveType === 'BATTERY' && canUseFastPlanners && (
-            <div className="mb-3">
-              <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                Fast plannings Mode
-              </label>
-              <div className="grid grid-cols-2 gap-2 mb-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!canUseCircuitPlanner) {
-                      return;
-                    }
-                    setBatterySubmenu('circuits');
-                  }}
-                  disabled={!canUseCircuitPlanner}
-                  className={`px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
-                    batterySubmenu === 'circuits'
-                      ? 'bg-blue-50 border-blue-500 text-blue-700'
-                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                  } ${!canUseCircuitPlanner ? 'cursor-not-allowed opacity-50' : ''}`}
-                >
-                  Circuits planner
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isCircuitFeatureSport(sport)) {
-                      return;
-                    }
-                    setBatterySubmenu('ai');
-                  }}
-                  disabled={!isCircuitFeatureSport(sport) || isEditingCircuitFromMovelap || isEditingCircuitMoveframe}
-                  className={`px-3 py-2 text-sm font-medium rounded border-2 transition-colors ${
-                    batterySubmenu === 'ai'
-                      ? 'bg-blue-50 border-blue-500 text-blue-700'
-                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                  } ${!isCircuitFeatureSport(sport) || isEditingCircuitFromMovelap || isEditingCircuitMoveframe ? 'cursor-not-allowed opacity-50' : ''}`}
-                >
-                  Plan of Moveframes with AI
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border-2 transition-colors ${
-                  batterySubmenu === 'fast' && AEROBIC_SPORTS.includes(sport as any)
-                    ? 'bg-blue-50 border-blue-500'
-                    : 'border-gray-300 hover:bg-gray-50'
-                } ${!AEROBIC_SPORTS.includes(sport as any) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap ? 'cursor-not-allowed opacity-50' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={batterySubmenu === 'fast' && AEROBIC_SPORTS.includes(sport as any)}
-                    onChange={() => setBatterySubmenu('fast')}
-                    disabled={!AEROBIC_SPORTS.includes(sport as any) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap}
-                    className="w-4 h-4 rounded border-gray-300"
-                  />
-                  <span className="text-sm font-medium">
-                    FAST Plan of Aerobic mframe
-                  </span>
-                </label>
-                <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border-2 transition-colors ${
-                  batterySubmenu === 'fast' && !AEROBIC_SPORTS.includes(sport as any)
-                    ? 'bg-blue-50 border-blue-500'
-                    : 'border-gray-300 hover:bg-gray-50'
-                } ${AEROBIC_SPORTS.includes(sport as any) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap ? 'cursor-not-allowed opacity-50' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={batterySubmenu === 'fast' && !AEROBIC_SPORTS.includes(sport as any)}
-                    onChange={() => setBatterySubmenu('fast')}
-                    disabled={AEROBIC_SPORTS.includes(sport as any) || isEditingCircuitMoveframe || isEditingCircuitFromMovelap}
-                    className="w-4 h-4 rounded border-gray-300"
-                  />
-                  <span className="text-sm font-medium">
-                    FAST Plan of Not Aerobic mframe
-                  </span>
-                </label>
-              </div>
-            </div>
           )}
           
           {/* Annotation Section - Show when type is ANNOTATION, or optional for other types */}
@@ -4525,20 +4693,25 @@ export default function AddEditMoveframeModal({
                 
                 // 2026-01-30 - Serialize circuit data into notes for future editing
                 const serializedCircuitData = JSON.stringify({
-                  config: circuitData.settings,
+                  config: circuitData.settings ?? circuitData.config,
                   circuits: circuitData.circuits
                 });
                 const notesWithCircuitData = `[CIRCUIT_DATA]${serializedCircuitData}[/CIRCUIT_DATA]`;
-                
+
+                const circuitMacro =
+                  circuitLoadOfWorkToMacroFinal(circuitData.config?.loadOfWork ?? circuitData.settings?.loadOfWork);
+                const lapCount = (circuitData.movelaps || []).length;
                 const finalData = {
                   ...moveframeData,
                   description: circuitData.description || '', // Use circuit description
                   notes: notesWithCircuitData, // Store circuit data in notes
-                  circuitConfig: circuitData.settings, // Circuit settings
+                  circuitConfig: circuitData.settings ?? circuitData.config, // Circuit settings
                   circuits: circuitData.circuits, // Active circuits
                   rows: circuitData.rows, // Circuit rows/stations
                   movelaps: circuitData.movelaps || [], // Include generated movelaps
-                  isCircuitBased: true // Flag to indicate this is a circuit-based moveframe
+                  isCircuitBased: true, // Flag to indicate this is a circuit-based moveframe
+                  repetitions: lapCount > 0 ? lapCount : moveframeData.repetitions,
+                  macroFinal: circuitMacro ?? moveframeData.macroFinal ?? "0'"
                 };
                 
                 console.log('✅ [AddEditMoveframeModal] Final moveframe data:', finalData);
@@ -4591,7 +4764,7 @@ export default function AddEditMoveframeModal({
           )}
 
           {effectiveType === 'BATTERY' && AEROBIC_SPORTS.includes(sport as any) && batterySubmenu === 'fast' && (
-            <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-[500px] flex flex-col">
             <AerobicFastPlannerOfMoveframes
               ref={fastPlannerRef}
               sport={sport}
@@ -5064,7 +5237,8 @@ export default function AddEditMoveframeModal({
               Cancel
             </button>
             )}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {renderAnaerobicFastPlannerMacroFooter()}
               <button
                 onClick={() => setIsFastPlannerFullView(prev => !prev)}
                 className="px-6 py-2 bg-white text-black border-2 border-gray-300 rounded hover:border-blue-500"
@@ -5092,7 +5266,8 @@ export default function AddEditMoveframeModal({
         {type === 'BATTERY' && (AEROBIC_SPORTS.includes(sport as any) || !isCircuitFeatureSport(sport)) && (
           <div className={`flex-shrink-0 border-t bg-white px-4 py-3 flex items-center gap-3 ${isFastPlannerFullView ? 'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg shadow-xl border-2 border-gray-200' : 'justify-between'}`}>
             <button onClick={handleClose} className="px-6 py-2 bg-gray-600 text-white font-medium rounded hover:bg-gray-700">Cancel</button>
-            <div className="flex items-center">
+            <div className="flex flex-wrap items-center gap-2">
+              {!AEROBIC_SPORTS.includes(sport as any) && isFastPlannerShown ? renderAnaerobicFastPlannerMacroFooter() : null}
               {isFastPlannerShown && (
                 <button
                   onClick={() => setIsFastPlannerFullView(prev => !prev)}
