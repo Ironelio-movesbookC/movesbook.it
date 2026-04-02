@@ -12,8 +12,6 @@ export async function GET() {
   } catch (error) {
     console.error('Error checking Super Admin password:', error);
     return NextResponse.json({ exists: false });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

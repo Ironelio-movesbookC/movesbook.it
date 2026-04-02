@@ -141,7 +141,7 @@ function MyClubContent() {
     if (!clubId) {
       // If no clubId selected, redirect to My Page to select a club
       // This ensures users must select a club from My Page first
-      if (user?.userType === 'CLUB_TRAINER') {
+      if (user?.userType === 'CLUB_TRAINER' || user?.userType === 'CLUB') {
         router.push('/my-page');
         return;
       }

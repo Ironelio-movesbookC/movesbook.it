@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
+import { prisma, prismaConnect, resetPrismaClient } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+
+function isPrismaEngineTransportError(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientUnknownRequestError)) return false;
+  const msg = error.message;
+  return msg.includes('Engine was empty') || msg.includes('Engine is not yet connected');
+}
 
 // Helper function to safely parse JSON with fallback
 function safeJsonParse(jsonString: string | null, defaultValue: any = {}) {
@@ -98,6 +105,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    await prismaConnect();
+
     // Verify user exists in database
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -115,17 +124,29 @@ export async function GET(request: NextRequest) {
         where: { userId }
       });
     } catch (dbError) {
-      console.error('❌ Database error reading settings (likely corrupted JSON), will recreate:', dbError);
-      // Delete corrupted settings
-      try {
-        await prisma.userSettings.deleteMany({
-          where: { userId }
-        });
-        console.log('🔧 Deleted corrupted settings');
-      } catch (deleteError) {
-        console.error('Error deleting corrupted settings:', deleteError);
+      if (isPrismaEngineTransportError(dbError)) {
+        console.warn('⚠️ Prisma engine failed while reading settings; resetting client and retrying once');
+        await resetPrismaClient();
+        await prismaConnect();
+        try {
+          settings = await prisma.userSettings.findUnique({
+            where: { userId }
+          });
+        } catch {
+          settings = null;
+        }
+      } else {
+        console.error('❌ Database error reading settings (will try to recreate):', dbError);
+        try {
+          await prisma.userSettings.deleteMany({
+            where: { userId }
+          });
+          console.log('🔧 Deleted settings row after read error');
+        } catch (deleteError) {
+          console.error('Error deleting settings:', deleteError);
+        }
+        settings = null;
       }
-      settings = null; // Will trigger recreation below
     }
 
     // If no settings exist, create default settings with admin defaults
@@ -255,6 +276,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    await prismaConnect();
+
     const body = await request.json();
     
     // Convert all JSON objects to strings for database storage
@@ -376,6 +399,8 @@ export async function PATCH(request: NextRequest) {
         message: 'Admin settings accepted (not persisted to database)'
       });
     }
+
+    await prismaConnect();
 
     // Verify user exists in database
     const user = await prisma.user.findUnique({

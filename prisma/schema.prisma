@@ -52,6 +52,7 @@ model User {
   profileBanner            String?   // Cover/banner image path (legacy single-user banner background)
   profileBannerAlignment   String?   // "center" | "default" — object-position for cover (legacy)
   profileBannerSequence    String?   @db.Text // JSON string[] of public image paths for rotating banner
+  profileBannerVideo       String?   // Uploaded cover video path (public URL under /uploads/...)
   superAdminId             String?   @unique // When set, this User mirrors a super_admin for news/OGP attribution
   conversationsStarted    ChatConversation[] @relation("ConversationStarter")
   conversationsReceived   ChatConversation[] @relation("ConversationReceiver")
