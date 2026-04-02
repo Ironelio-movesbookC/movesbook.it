@@ -39,8 +39,26 @@ import {
   Grid,
   Download,
   MessageSquare,
-  Loader2
+  Loader2,
+  Bell
 } from 'lucide-react';
+
+/** Static barbell / split icon (legacy toolbar, matches design reference). */
+function BannerBarbellIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 12"
+      className={className}
+      width={20}
+      height={12}
+      aria-hidden
+    >
+      <rect x="1" y="2" width="4" height="8" rx="0.5" fill="currentColor" />
+      <rect x="19" y="2" width="4" height="8" rx="0.5" fill="currentColor" />
+      <rect x="6" y="5" width="12" height="2" rx="0.5" fill="currentColor" />
+    </svg>
+  );
+}
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
@@ -64,15 +82,14 @@ import AthleteLegacyBanner, {
 import ChangeBannerModal, {
   type BannerAlignment,
 } from '@/components/athlete/ChangeBannerModal';
-import { parseBannerSequenceJson } from '@/lib/profileBannerSequence';
+import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
+import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
+import AthleteMyPageRightSidebarExtras from '@/components/dashboard/AthleteMyPageRightSidebarExtras';
+import AthleteMyClubRightSidebar from '@/components/dashboard/AthleteMyClubRightSidebar';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 function heroBannerStripBgUrl(p: AthleteLegacyBannerProfile | null): string {
-  if (!p) return '/images/banner.jpg';
-  const seq = parseBannerSequenceJson(p.profileBannerSequence);
-  const raw = (seq[0] ?? p.profileBanner)?.trim();
-  if (!raw) return '/images/banner.jpg';
-  if (raw.startsWith('/') || raw.startsWith('http')) return raw;
-  return `/img/profile_images/${raw}`;
+  return getHeroBannerDisplayUrl(p);
 }
 
 // 2026-01-22 13:30 UTC - Placeholder component for avatar images (replaces Unsplash timeout issues)
@@ -95,6 +112,8 @@ function AthleteDashboardContent() {
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
   const [newsExpanded, setNewsExpanded] = useState(false);
+  const [clubAddSongsOgpOpen, setClubAddSongsOgpOpen] = useState(false);
+  const [clubAddSongsOgpExpanded, setClubAddSongsOgpExpanded] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
   const showLegacyButtonBars = false;
   const [activeRightTab, setActiveRightTab] = useState<'actions-planner' | 'chat-panel'>('actions-planner');
@@ -112,6 +131,7 @@ function AthleteDashboardContent() {
   const [myGroups, setMyGroups] = useState<any[]>([]);
   const [bannerProfile, setBannerProfile] = useState<AthleteLegacyBannerProfile | null>(null);
   const [showChangeBannerModal, setShowChangeBannerModal] = useState(false);
+  const [showChangeProfilePhotoModal, setShowChangeProfilePhotoModal] = useState(false);
 
   const loadBannerProfile = useCallback(async () => {
     try {
@@ -126,6 +146,7 @@ function AthleteDashboardContent() {
           profileBanner: data.profileBanner,
           profileBannerAlignment: data.profileBannerAlignment,
           profileBannerSequence: data.profileBannerSequence,
+          profileBannerVideo: data.profileBannerVideo,
           name: data.name,
           firstName: data.firstName,
           surname: data.surname,
@@ -147,10 +168,15 @@ function AthleteDashboardContent() {
     }
   }, [user, loading, router]);
 
-  // Redirect if not athlete
+  // Redirect if not athlete: club accounts use /club/dashboard (e.g. News → ?open=news); others use legacy my-page.
   useEffect(() => {
     if (user && !['ATHLETE', 'ADMIN'].includes(user.userType)) {
-      router.push('/my-page');
+      if (isClubAccountUserType(user.userType)) {
+        const q = typeof window !== 'undefined' ? window.location.search.replace(/^\?/, '') : '';
+        router.replace(q ? `/club/dashboard?${q}` : '/club/dashboard');
+      } else {
+        router.push('/my-page');
+      }
     }
   }, [user, router]);
 
@@ -161,6 +187,13 @@ function AthleteDashboardContent() {
       router.replace('/athlete/dashboard', { scroll: false });
     }
   }, [searchParams, router]);
+
+  useEffect(() => {
+    if (activeTab !== 'my-entity') {
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+    }
+  }, [activeTab]);
 
   // Load entities the athlete belongs to
   useEffect(() => {
@@ -494,6 +527,7 @@ function AthleteDashboardContent() {
               profile={bannerProfile}
               primaryClubName={myClubs[0]?.name}
               onCoverCameraClick={() => setShowChangeBannerModal(true)}
+              onAvatarCameraClick={() => setShowChangeProfilePhotoModal(true)}
               t={t}
             />
           </div>
@@ -514,39 +548,69 @@ function AthleteDashboardContent() {
                 }}
               ></div>
               
-              <div className="flex items-center justify-between px-4 text-sm h-full relative z-10">
-                {/* Left side - Navigation items */}
-                <div className="flex items-center gap-4 overflow-x-auto">
-                  <button className="text-gray-300 hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap">
-                    <Home className="w-4 h-4" />
+              <div className="flex items-center justify-between px-4 text-sm h-full relative z-10 gap-3">
+                {/* Legacy-style strip (static controls; logic wired later) */}
+                <div className="flex items-center gap-4 min-w-0 overflow-x-hidden">
+                  <button
+                    type="button"
+                    className="bg-transparent border-0 text-sm font-sans text-gray-300 hover:text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                  >
+                    <Home className="w-4 h-4 shrink-0" />
                     <span>Home</span>
                   </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>FAQ</span>
+                  <button
+                    type="button"
+                    aria-label="Barbell tools"
+                    className="bg-transparent border-0 text-sm font-sans text-gray-300 hover:text-white shrink-0 inline-flex items-center justify-center cursor-pointer rounded p-0.5 -mx-0.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                  >
+                    <BannerBarbellIcon className="text-current" />
                   </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>My Clubs</span>
+                  <button
+                    type="button"
+                    className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                  >
+                    FAQ
                   </button>
-                  <button className="text-lime-400 hover:text-lime-300 transition-colors whitespace-nowrap font-semibold">
-                    <span>Club Magiw Avellino</span>
+                  <button
+                    type="button"
+                    className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                  >
+                    Suggest Movesbook
                   </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>FunClub</span>
-                  </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>My Shared Clubs</span>
-                  </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>Other Clubs</span>
-                  </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>Populars</span>
+                  <button
+                    type="button"
+                    className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
+                  >
+                    Most used buttons
                   </button>
                 </div>
 
+                <div className="flex items-center gap-2 sm:gap-3 ml-auto flex-wrap shrink-0">
+                  <button
+                    type="button"
+                    className="p-1.5 text-gray-400 hover:text-gray-200 transition-colors rounded"
+                    aria-label="Settings"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="p-1.5 text-gray-400 hover:text-gray-200 transition-colors rounded"
+                    aria-label="Notifications"
+                  >
+                    <Bell className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="p-1.5 text-gray-400 hover:text-gray-200 transition-colors rounded"
+                    aria-label="Messages"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                  </button>
+
                 {/* Right side - Action buttons (only for My Page) */}
                 {activeTab === 'my-page' && (
-                  <div className="flex items-center gap-3 ml-4 flex-wrap">
+                  <div className="flex items-center gap-3 flex-wrap border-l border-gray-600/60 pl-3 sm:pl-4">
                     <button
                       onClick={() => {
                         setActiveTab('my-page');
@@ -586,6 +650,7 @@ function AthleteDashboardContent() {
                     </button>
                   </div>
                 )}
+                </div>
               </div>
             </div>
           </div>
@@ -620,7 +685,7 @@ function AthleteDashboardContent() {
 
         <div className="flex-1 flex gap-0">
           {/* Left Sidebar - Hidden when News Expand is on */}
-          {showLeftSidebar && !newsExpanded && (
+          {showLeftSidebar && !newsExpanded && !clubAddSongsOgpExpanded && (
             <div className="w-80 flex-shrink-0 sticky top-0 self-start print:hidden">
               <DarkSidebar
                 userType={user?.userType || ''}
@@ -638,6 +703,10 @@ function AthleteDashboardContent() {
                   setActiveSection('posts');
                 }}
                 onMyClubClick={() => setActiveTab('my-entity')}
+                onClubAddSongsPlaylistsClick={() => {
+                  setActiveTab('my-entity');
+                  setClubAddSongsOgpOpen(true);
+                }}
               />
             </div>
           )}
@@ -689,255 +758,95 @@ function AthleteDashboardContent() {
               </div>
             )}
             
-            {activeTab === 'my-entity' && (
-              <div className="bg-white rounded-lg shadow-sm border p-8 pt-12 flex-1 flex items-start justify-center">
-                <div className="text-center">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-4">My Club Page</h2>
-                  <p className="text-gray-600 mb-6">Club-related content will be displayed here.</p>
+            {activeTab === 'my-entity' &&
+              (clubAddSongsOgpOpen ? (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <NewsOGPPanel
+                    onClose={() => {
+                      setClubAddSongsOgpOpen(false);
+                      setClubAddSongsOgpExpanded(false);
+                    }}
+                    embedded
+                    isExpanded={clubAddSongsOgpExpanded}
+                    onExpandReduce={() => setClubAddSongsOgpExpanded((prev) => !prev)}
+                  />
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="bg-white rounded-lg shadow-sm border p-8 pt-12 flex-1 flex items-start justify-center">
+                  <div className="text-center">
+                    <h2 className="text-2xl font-bold text-gray-900 mb-4">My Club Page</h2>
+                    <p className="text-gray-600 mb-6">Club-related content will be displayed here.</p>
+                  </div>
+                </div>
+              ))}
           </div>
 
           {/* Right Sidebar - Hidden when Personal Settings or News Expand is on */}
-          {!(activeTab === 'my-page' && activeSection === 'personal-settings') && showRightSidebar && !newsExpanded && (
+          {!(activeTab === 'my-page' && activeSection === 'personal-settings') &&
+            showRightSidebar &&
+            !newsExpanded &&
+            !clubAddSongsOgpExpanded && (
             <div className="w-80 flex-shrink-0 print:hidden">
-              <div className="bg-white rounded-lg shadow-sm border p-4 h-full flex flex-col overflow-y-auto">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('sidebar_quick_actions')}</h3>
-                <div className="space-y-2">
-                  {/* Personal Settings Button - FIRST button in Quick Actions */}
-                  <button
-                    onClick={() => setActiveSection('personal-settings')}
-                    className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group"
-                  >
-                    <Settings className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">Personal settings</span>
-                  </button>
-                  
-                  {/* Quick Actions for My Page (Athlete) */}
-                  <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
-                    <Calendar className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_plan_new_workout')}</span>
-                  </button>
-                  
-                  <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
-                    <CalendarDays className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_plan_3_weeks')}</span>
-                  </button>
-                  
-                  <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
-                    <CalendarCheck className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_plan_of_year')}</span>
-                  </button>
-                  
-                  <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
-                    <CheckSquare className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_log_completed')}</span>
-                  </button>
-                  
-                  <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
-                    <Save className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_save_session')}</span>
-                  </button>
-                </div>
-
-                {/* Next Event Section - For "My Page" */}
-                <div className="mt-6 border-t pt-4">
-                  <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg flex items-center justify-between">
-                    <h4 className="text-sm font-semibold">{t('sidebar_next_event')}</h4>
-                    <button className="text-xs text-gray-300 hover:text-white">{t('sidebar_see_all')}</button>
-                  </div>
-                  
-                  <div className="bg-gray-100 px-3 py-2 space-y-2">
-                    <button className="w-full text-left text-xs text-gray-700 hover:text-gray-900 py-1">
-                      {t('sidebar_events_my_sports')}
-                    </button>
-                    <button className="w-full text-left text-xs text-gray-700 hover:text-gray-900 py-1">
-                      {t('sidebar_my_friends_events')}
-                    </button>
-                    <button className="w-full text-left text-xs text-gray-700 hover:text-gray-900 py-1">
-                      {t('sidebar_event_other_sport')}
-                    </button>
-                  </div>
-                </div>
-
-                {/* News by My Friends Section - For "My Page" */}
-                <div className="mt-6 border-t pt-4">
-                  <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg flex items-center justify-between">
-                    <h4 className="text-sm font-semibold">{t('sidebar_news_my_friends')}</h4>
-                    <button className="text-xs text-gray-300 hover:text-white">{t('sidebar_see_all')}</button>
-                  </div>
-                  
-                  <div className="mt-2 space-y-3 px-3">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="flex items-start gap-2 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                        <AvatarPlaceholder size="w-10 h-10" />
-                        <div className="flex-1">
-                          <p className="text-xs font-medium text-gray-800">Friend {i}</p>
-                          <p className="text-xs text-gray-600 line-clamp-2">
-                            Lorem ipsum dolor sit amet...
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Newest Members Section - For "My Page" */}
-                <div className="mt-6 border-t pt-4">
-                  <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg">
-                    <h4 className="text-sm font-semibold">{t('sidebar_newest_members')}</h4>
-                  </div>
-                  
-                  {/* Filter Button */}
-                  <button className="w-full bg-teal-600 hover:bg-teal-700 text-white py-2 px-3 text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                    <Filter className="w-4 h-4" />
-                    {t('sidebar_filter_option')}
-                  </button>
-                  
-                  {/* Members List - 3 members */}
-                  <div className="mt-3 space-y-2 px-3">
-                    {[
-                      { name: 'John Smith', img: 'photo-1500648767791-00dcc994a43e' },
-                      { name: 'Sarah Johnson', img: 'photo-1494790108377-be9c29b29330' },
-                      { name: 'Mike Davis', img: 'photo-1507003211169-0a1dd7228f2d' }
-                    ].map((member, i) => (
-                      <div key={i} className="flex items-start gap-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                        <AvatarPlaceholder size="w-12 h-12" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-800">{member.name}</p>
-                          <button className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 mt-1">
-                            <Mail className="w-3 h-3" />
-                            {t('sidebar_send_message')}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Members Last Logged In Section - For "My Page" */}
-                <div className="mt-6 border-t pt-4">
-                  <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg flex items-center justify-between">
-                    <h4 className="text-sm font-semibold">{t('sidebar_members_last_logged')}</h4>
-                    <button className="text-xs text-gray-300 hover:text-white">{t('sidebar_see_all')}</button>
-                  </div>
-                  
-                  {/* Filter Button */}
-                  <button className="w-full bg-teal-600 hover:bg-teal-700 text-white py-2 px-3 text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                    <Filter className="w-4 h-4" />
-                    {t('sidebar_filter_option')}
-                  </button>
-                  
-                  {/* Members List - 3 members */}
-                  <div className="mt-3 space-y-2 px-3">
-                    {[
-                      { name: 'Freiwildplayer', img: 'photo-1566492031773-4f4e44671857' },
-                      { name: 'Alex Runner', img: 'photo-1534528741775-53994a69daeb' },
-                      { name: 'Emma Swift', img: 'photo-1438761681033-6461ffad8d80' }
-                    ].map((member, i) => (
-                      <div key={i} className="flex items-start gap-3 py-2 hover:bg-gray-50 rounded-lg transition-colors">
-                        <AvatarPlaceholder size="w-12 h-12" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-800">{member.name}</p>
-                          <button className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 mt-1">
-                            <Mail className="w-3 h-3" />
-                            {t('sidebar_send_message')}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Actions Planner and Chat Panel Tabs */}
-                <div className="mt-6">
-                  <div className="flex border-b border-gray-200 mb-4">
-                    <button
-                      onClick={() => setActiveRightTab('actions-planner')}
-                      className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
-                        activeRightTab === 'actions-planner'
-                          ? 'bg-gray-100 text-gray-900 border-b-2 border-blue-600'
-                          : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                    >
-                      Actions planner
-                    </button>
-                    <button
-                      onClick={() => {
-                        setActiveRightTab('chat-panel');
-                        handleChatPanelClick();
-                      }}
-                      className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
-                        activeRightTab === 'chat-panel'
-                          ? 'bg-gray-100 text-gray-900 border-b-2 border-blue-600'
-                          : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                    >
-                      Chat panel
-                    </button>
-                  </div>
-
-                  {/* Actions Planner Content */}
-                  {activeRightTab === 'actions-planner' && (
-                    <div className="space-y-1">
-                      <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                        <span>Timeline of all users</span>
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                      </button>
-                      <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                        <span>Timeline of an user</span>
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                      </button>
-                      <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                        <span>Actions planned</span>
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                      </button>
-                      <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-                        <span>Users of the action planner</span>
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                      </button>
-                      <button 
-                        onClick={() => setExpandedActionsPlanner(!expandedActionsPlanner)}
-                        className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+              <div className="bg-white shadow-sm border h-full flex flex-col overflow-y-auto">
+                {activeTab === 'my-entity' ? (
+                  <AthleteMyClubRightSidebar />
+                ) : (
+                  <div className="p-4 flex flex-col">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('sidebar_quick_actions')}</h3>
+                    <div className="space-y-2">
+                      {/* Personal Settings Button - FIRST button in Quick Actions */}
+                      <button
+                        onClick={() => setActiveSection('personal-settings')}
+                        className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group"
                       >
-                        <span>Settings</span>
-                        {expandedActionsPlanner ? (
-                          <ChevronDown className="w-4 h-4 text-gray-400" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                        )}
+                        <Settings className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">
+                          Personal settings
+                        </span>
                       </button>
-                      {expandedActionsPlanner && (
-                        <div className="ml-4 space-y-1">
-                          <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors">
-                            <span>Preset timelines</span>
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
-                          </button>
-                          <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors">
-                            <span>Actions settings</span>
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
-                          </button>
-                          <button className="w-full flex items-center justify-between py-2 px-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors">
-                            <span>Action settings by MB</span>
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
 
-                  {/* Chat Panel Content */}
-                  {activeRightTab === 'chat-panel' && (
-                    <div className="text-sm text-gray-600 py-4">
-                      {activeSection === 'chat' ? (
-                        <p>Chat is open in the main area. Use the close (×) button in the chat header to return.</p>
-                      ) : (
-                        <p>Click &quot;Chat panel&quot; in the header to open the chat.</p>
-                      )}
+                      {/* Quick Actions for My Page (Athlete) */}
+                      <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
+                        <Calendar className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">
+                          {t('sidebar_plan_new_workout')}
+                        </span>
+                      </button>
+
+                      <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
+                        <CalendarDays className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">
+                          {t('sidebar_plan_3_weeks')}
+                        </span>
+                      </button>
+
+                      <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
+                        <CalendarCheck className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">
+                          {t('sidebar_plan_of_year')}
+                        </span>
+                      </button>
+
+                      <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
+                        <CheckSquare className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">
+                          {t('sidebar_log_completed')}
+                        </span>
+                      </button>
+
+                      <button className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group">
+                        <Save className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">
+                          {t('sidebar_save_session')}
+                        </span>
+                      </button>
                     </div>
-                  )}
-                </div>
+
+                    {activeTab === 'my-page' ? (
+                      <AthleteMyPageRightSidebarExtras />
+                    ) : null}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -961,6 +870,9 @@ function AthleteDashboardContent() {
             if (patch.profileBannerSequence !== undefined) {
               next.profileBannerSequence = patch.profileBannerSequence;
             }
+            if (patch.profileBannerVideo !== undefined) {
+              next.profileBannerVideo = patch.profileBannerVideo;
+            }
             return next;
           });
         }}
@@ -969,6 +881,21 @@ function AthleteDashboardContent() {
           (bannerProfile?.profileBannerAlignment as BannerAlignment | null | undefined) ?? 'default'
         }
         currentBannerSequenceJson={bannerProfile?.profileBannerSequence}
+        currentBannerVideoPath={bannerProfile?.profileBannerVideo}
+        t={t}
+      />
+
+      <ChangeProfilePhotoModal
+        isOpen={showChangeProfilePhotoModal}
+        onClose={() => setShowChangeProfilePhotoModal(false)}
+        onSaved={(patch) => {
+          setBannerProfile((prev) => {
+            const next = { ...(prev ?? {}) };
+            if (patch.image !== undefined) next.image = patch.image;
+            return next;
+          });
+        }}
+        currentImagePath={bannerProfile?.image}
         t={t}
       />
 
@@ -1042,6 +969,7 @@ function AthleteDashboardContent() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

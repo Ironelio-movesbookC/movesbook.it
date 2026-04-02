@@ -20,6 +20,8 @@ export type AthleteLegacyBannerProfile = {
   profileBannerAlignment?: string | null;
   /** JSON string array of image paths for rotating cover */
   profileBannerSequence?: string | null;
+  /** Uploaded banner video path (takes precedence over images / sequence) */
+  profileBannerVideo?: string | null;
   name?: string | null;
   firstName?: string | null;
   surname?: string | null;
@@ -30,6 +32,8 @@ type AthleteLegacyBannerProps = {
   primaryClubName?: string | null;
   /** Opens "CHANGE THE BANNER" for the large cover (not avatar) */
   onCoverCameraClick?: () => void;
+  /** Opens profile photo upload (avatar badge camera) */
+  onAvatarCameraClick?: () => void;
   t: (key: string) => string;
 };
 
@@ -75,10 +79,15 @@ export default function AthleteLegacyBanner({
   profile,
   primaryClubName,
   onCoverCameraClick,
+  onAvatarCameraClick,
   t,
 }: AthleteLegacyBannerProps) {
   const sequencePaths = parseBannerSequenceJson(profile?.profileBannerSequence);
   const useSequence = sequencePaths.length > 0;
+
+  const videoSrc = profile?.profileBannerVideo?.trim()
+    ? resolvePublicImageUrl(profile.profileBannerVideo)
+    : null;
 
   const bannerSrc = profile?.profileBanner?.trim()
     ? resolvePublicImageUrl(profile.profileBanner) || DEFAULT_BANNER
@@ -96,7 +105,17 @@ export default function AthleteLegacyBanner({
     <div className="flex w-full flex-col sm:flex-row shadow-lg overflow-hidden bg-black min-h-[220px] max-h-[280px]">
       {/* Main banner (legacy ns-left) */}
       <div className="relative flex-1 min-h-[200px] sm:min-h-[220px]">
-        {useSequence ? (
+        {videoSrc ? (
+          <video
+            src={videoSrc}
+            className={`absolute inset-0 h-full w-full ${coverObjectClass} opacity-90`}
+            autoPlay
+            muted
+            loop
+            playsInline
+            aria-hidden
+          />
+        ) : useSequence ? (
           <SequenceCoverImages sequencePaths={sequencePaths} coverObjectClass={coverObjectClass} />
         ) : (
           <Image
@@ -147,14 +166,16 @@ export default function AthleteLegacyBanner({
                   </div>
                 )}
               </div>
-              {/* Profile camera (visual only; logic TBD) */}
-              <span
-                className="absolute -bottom-0.5 -right-0.5 w-7 h-7 rounded bg-black/70 text-white flex items-center justify-center text-[10px] pointer-events-none"
-                aria-hidden="true"
+              <button
+                type="button"
+                onClick={onAvatarCameraClick}
+                disabled={!onAvatarCameraClick}
+                className="absolute -bottom-0.5 -right-0.5 w-7 h-7 rounded bg-black/70 text-white flex items-center justify-center text-[10px] hover:bg-black/85 focus:outline-none focus:ring-2 focus:ring-white/70 disabled:pointer-events-none disabled:opacity-50 z-10"
                 title={t('athlete_banner_change_photo')}
+                aria-label={t('athlete_banner_change_photo')}
               >
                 <Camera className="w-3.5 h-3.5" />
-              </span>
+              </button>
             </div>
             <span className="mb-1 px-2 py-0.5 bg-blue-700 text-white text-xs font-semibold uppercase tracking-wide rounded shadow max-w-[12rem] truncate">
               {clubLabel}

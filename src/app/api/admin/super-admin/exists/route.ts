@@ -13,8 +13,6 @@ export async function GET() {
   } catch (error) {
     console.error('Error checking Super Admin existence:', error);
     return NextResponse.json({ exists: false, count: 0 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

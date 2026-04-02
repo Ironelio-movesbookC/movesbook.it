@@ -62,10 +62,16 @@ interface NewsTopicBarProps {
   topicNamesCreatedBySuperAdmin?: string[];
   /** Topic names created by normal users; when non-empty (super admin), these go in a dropdown, not in the bar */
   topicNamesCreatedByNormalUsers?: string[];
+  /** Super admin: same topics with creator username for dropdown labels (preferred over topicNamesCreatedByNormalUsers alone). */
+  userInsertedTopics?: { name: string; creatorUsername: string | null }[];
   /** When set (e.g. super admin), overrides the "All" button label (e.g. "All defaults") */
   allTopicLabel?: string;
   /** When true (super admin), show the extra "All" button that filters to super-admin-created OGPs. */
   showSuperAdminAllButton?: boolean;
+  /** When true, hide the “Topics inserted by users” dropdown (e.g. super admin “see as user” mode). */
+  hideUserInsertedDropdown?: boolean;
+  /** When true, disable Add topic, pencil, expand/reduce, and topic-sort gear (still visible where applicable). */
+  disableTopicManagement?: boolean;
 }
 
 export default function NewsTopicBar({
@@ -79,13 +85,23 @@ export default function NewsTopicBar({
   onOpenTopicSort,
   topicNamesCreatedBySuperAdmin = [],
   topicNamesCreatedByNormalUsers = [],
+  userInsertedTopics,
   allTopicLabel,
   showSuperAdminAllButton = false,
+  hideUserInsertedDropdown = false,
+  disableTopicManagement = false,
 }: NewsTopicBarProps) {
-  /** Topics to show as buttons (exclude normal-user-created when dropdown is used) */
-  const topicsForBar = topicNamesCreatedByNormalUsers.length > 0
-    ? topics.filter((t) => !topicNamesCreatedByNormalUsers.includes(t))
-    : topics;
+  const userTopicRows =
+    userInsertedTopics != null && userInsertedTopics.length > 0
+      ? userInsertedTopics
+      : topicNamesCreatedByNormalUsers.map((name) => ({ name, creatorUsername: null as string | null }));
+  const topicNamesFromUserInserted = userTopicRows.map((r) => r.name);
+
+  /** Topics to show as buttons (exclude normal-user-created when dropdown is used; “see as user” passes merged list and hides dropdown). */
+  const topicsForBar =
+    topicNamesFromUserInserted.length > 0 && !hideUserInsertedDropdown
+      ? topics.filter((t) => !topicNamesFromUserInserted.includes(t))
+      : topics;
   const { t } = useLanguage();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -128,7 +144,7 @@ export default function NewsTopicBar({
   const isDefaultTopicSelected = activeTopic != null && activeTopic !== ALL_TOPICS && isDefaultTopic(activeTopic);
   const isAllSelected = activeTopic === ALL_TOPICS || activeTopic === ALL_SUPER_ADMIN;
   const isSuperAdminTopicSelected = activeTopic != null && topicNamesCreatedBySuperAdmin.includes(activeTopic);
-  const isPencilDisabled = isAllSelected || isDefaultTopicSelected || isSuperAdminTopicSelected;
+  const isPencilDisabled = disableTopicManagement || isAllSelected || isDefaultTopicSelected || isSuperAdminTopicSelected;
 
   return (
     <div className="flex items-end gap-2 mb-4 flex-nowrap overflow-hidden">
@@ -137,7 +153,12 @@ export default function NewsTopicBar({
         <button
           type="button"
           onClick={onAddTopic}
-          className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium border-2 border-cyan-500 bg-cyan-50 text-cyan-700 hover:bg-cyan-100 transition-colors"
+          disabled={disableTopicManagement}
+          className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium border-2 transition-colors ${
+            disableTopicManagement
+              ? 'border-cyan-200 bg-cyan-50/50 text-cyan-400 cursor-not-allowed'
+              : 'border-cyan-500 bg-cyan-50 text-cyan-700 hover:bg-cyan-100'
+          }`}
           title={t('news_add_topic')}
           aria-label={t('news_add_topic')}
         >
@@ -258,14 +279,14 @@ export default function NewsTopicBar({
       </button>
 
       {/* Sectors inserted by users (super admin only) */}
-      {topicNamesCreatedByNormalUsers.length > 0 && (
+      {topicNamesFromUserInserted.length > 0 && !hideUserInsertedDropdown && (
         <div className="flex-shrink-0 flex flex-col justify-end gap-1 ml-2">
           <label htmlFor="user-sectors-select" className="text-xs font-medium text-gray-600 whitespace-nowrap">
             Topics inserted by users
           </label>
           <select
             id="user-sectors-select"
-            value={activeTopic === ALL_USER_SECTORS || (activeTopic != null && topicNamesCreatedByNormalUsers.includes(activeTopic)) ? activeTopic : ''}
+            value={activeTopic === ALL_USER_SECTORS || (activeTopic != null && topicNamesFromUserInserted.includes(activeTopic)) ? activeTopic : ''}
             onChange={(e) => {
               const v = e.target.value;
               if (v) onTopicSelect(v);
@@ -274,9 +295,9 @@ export default function NewsTopicBar({
           >
             <option value="">Select topic</option>
             <option value={ALL_USER_SECTORS}>All users&apos; topics</option>
-            {topicNamesCreatedByNormalUsers.map((name) => (
+            {userTopicRows.map(({ name, creatorUsername }) => (
               <option key={name} value={name}>
-                {name}
+                {creatorUsername != null && creatorUsername !== '' ? `${name} ( ${creatorUsername} )` : name}
               </option>
             ))}
           </select>
@@ -287,7 +308,12 @@ export default function NewsTopicBar({
       <button
         type="button"
         onClick={onExpandReduce}
-        className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 transition-colors ml-auto"
+        disabled={disableTopicManagement}
+        className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg border transition-colors ml-auto ${
+          disableTopicManagement
+            ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+            : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-100'
+        }`}
         title={isExpanded ? 'Reduce' : 'Expand'}
         aria-label={isExpanded ? 'Reduce view' : 'Expand to full page'}
       >
@@ -303,7 +329,12 @@ export default function NewsTopicBar({
         <button
           type="button"
           onClick={onOpenTopicSort}
-          className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 transition-colors"
+          disabled={disableTopicManagement}
+          className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg border transition-colors ${
+            disableTopicManagement
+              ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+              : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-100'
+          }`}
           title="Sort topics (your favorite order)"
           aria-label="Sort topics"
         >

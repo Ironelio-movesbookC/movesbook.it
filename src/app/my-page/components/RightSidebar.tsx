@@ -21,6 +21,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import Image from 'next/image';
 import { useState } from 'react';
 import PersonalSettingsModal from '@/components/workouts/PersonalSettingsModal';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 // 2026-01-22 13:30 UTC - Placeholder component for avatar images (replaces Unsplash timeout issues)
 const AvatarPlaceholder = ({ size = 'w-10 h-10', name = 'U' }: { size?: string, name?: string }) => (
@@ -42,7 +43,7 @@ export default function RightSidebar({ user, onAddMemberClick, activeTab = 'my-p
   const [showPersonalSettings, setShowPersonalSettings] = useState(false);
   
   const isAthlete = user?.userType === 'ATHLETE';
-  const isAdmin = user?.userType === 'CLUB_TRAINER' || user?.userType === 'TEAM_MANAGER' || user?.userType === 'GROUP_ADMIN' || user?.userType === 'COACH';
+  const isAdmin = isClubAccountUserType(user?.userType || '') || user?.userType === 'TEAM_MANAGER' || user?.userType === 'GROUP_ADMIN' || user?.userType === 'COACH';
   
   return (
     <div className="w-80 flex-shrink-0">

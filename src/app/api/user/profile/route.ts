@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
 import { verifyToken } from '@/lib/auth';
@@ -26,10 +27,12 @@ export async function GET(request: NextRequest) {
         name: true,
         firstName: true,
         surname: true,
+        country: true,
         image: true,
         profileBanner: true,
         profileBannerAlignment: true,
         profileBannerSequence: true,
+        profileBannerVideo: true,
         userType: true,
         createdAt: true,
         telegramAccount: true,
@@ -100,7 +103,7 @@ export async function GET(request: NextRequest) {
             clubMemberships: true
           }
         }
-      }
+      } as Prisma.UserSelect
     });
 
     if (!user) {
@@ -112,8 +115,6 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching user profile:', error);
     return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -130,17 +131,24 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { profileBanner, profileBannerAlignment, profileBannerSequence } = body as {
+    const { profileBanner, profileBannerAlignment, profileBannerSequence, profileBannerVideo, image } = body as {
       profileBanner?: string | null;
       profileBannerAlignment?: string | null;
       profileBannerSequence?: string | null | unknown[];
+<<<<<<< HEAD
       language?: string | null;
+=======
+      profileBannerVideo?: string | null;
+      image?: string | null;
+>>>>>>> main
     };
 
     const data: {
       profileBanner?: string | null;
       profileBannerAlignment?: string | null;
       profileBannerSequence?: string | null;
+      profileBannerVideo?: string | null;
+      image?: string | null;
     } = {};
 
     if (profileBanner !== undefined) {
@@ -183,6 +191,7 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+<<<<<<< HEAD
     const requestedLanguage = typeof body.language === 'string' ? body.language.trim().toLowerCase() : '';
     if (requestedLanguage) {
       await prisma.userSettings.upsert({
@@ -202,6 +211,17 @@ export async function PATCH(request: NextRequest) {
           notificationSettings: '{}'
         }
       });
+=======
+    if (profileBannerVideo !== undefined) {
+      data.profileBannerVideo =
+        profileBannerVideo === null || profileBannerVideo === ''
+          ? null
+          : String(profileBannerVideo).trim().slice(0, 512);
+    }
+
+    if (image !== undefined) {
+      data.image = image === null || image === '' ? null : String(image).trim().slice(0, 512);
+>>>>>>> main
     }
 
     if (Object.keys(data).length > 0) {
@@ -224,21 +244,24 @@ export async function PATCH(request: NextRequest) {
         profileBanner: true,
         profileBannerAlignment: true,
         profileBannerSequence: true,
+        profileBannerVideo: true,
         userType: true,
+<<<<<<< HEAD
         settings: {
           select: {
             language: true
           }
         }
       },
+=======
+      } as Prisma.UserSelect,
+>>>>>>> main
     });
 
     return NextResponse.json({ success: true, user, language: user?.settings?.language || 'en' });
   } catch (error) {
     console.error('Error updating user profile:', error);
     return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

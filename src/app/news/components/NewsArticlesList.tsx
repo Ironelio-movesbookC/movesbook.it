@@ -94,8 +94,20 @@ interface NewsArticlesListProps {
   isSuperAdmin?: boolean;
   /** When activeTopic is ALL_USER_SECTORS, filter to articles whose topic is in this list (super admin). */
   topicNamesCreatedByNormalUsers?: string[];
+  /** Super admin: user-inserted topics with creator username (shown next to topic title in headers). */
+  userInsertedTopics?: { name: string; creatorUsername: string | null }[];
   /** When set (e.g. super admin), overrides the "All" topic display name (e.g. "All defaults") */
   allTopicLabel?: string;
+  /** Super admin: clicking the pink creator username in the topic heading opens “see as user” mode. */
+  onSuperAdminViewAsUser?: (username: string) => void;
+  /** When true, topic heading omits “( username )” (e.g. “see as user” mode already shows name in page title). */
+  hideCreatorUsernameInHeading?: boolean;
+  /** When true, OGP card actions (edit, share, link, …) and the add (+) button are disabled. */
+  superAdminReadOnlyOgpActions?: boolean;
+  /** When set, checkbox reads “Show only OG News posted by {name}” instead of “posted by me”. */
+  showOnlyMyOgNewsLabelUsername?: string | null;
+  /** When true, `pasted` is already limited to what a viewer may see (e.g. super admin view-as-user API); do not apply extra client visibility filtering. */
+  viewerScopedOgpList?: boolean;
 }
 
 export default function NewsArticlesList({
@@ -112,7 +124,13 @@ export default function NewsArticlesList({
   adminContext = false,
   isSuperAdmin = false,
   topicNamesCreatedByNormalUsers = [],
+  userInsertedTopics,
   allTopicLabel,
+  onSuperAdminViewAsUser,
+  hideCreatorUsernameInHeading = false,
+  superAdminReadOnlyOgpActions = false,
+  showOnlyMyOgNewsLabelUsername = null,
+  viewerScopedOgpList = false,
 }: NewsArticlesListProps) {
   const { t } = useLanguage();
   const topicsList = topicsProp.length > 0 ? topicsProp : ['News', 'Sport', 'Events', 'Nutrition', 'Training', 'Medicine', 'Equipments', 'Lounge music'];
@@ -168,6 +186,71 @@ export default function NewsArticlesList({
     const key = NEWS_TOPIC_KEYS[topic];
     return key ? t(key) : topic;
   }, [t]);
+
+  const renderActiveTopicHeading = useCallback(
+    (variant: 'light' | 'dark') => {
+      const topicCls = variant === 'light' ? 'text-blue-700' : 'text-blue-300';
+      const userCls = variant === 'light' ? 'text-pink-600' : 'text-pink-300';
+
+      if (activeTopic === ALL_TOPICS) {
+        return <span className={topicCls}>{allTopicLabel ?? t('news_all_ogp')}</span>;
+      }
+      if (activeTopic === ALL_USER_SECTORS) {
+        return <span className={topicCls}>All users&apos; topics</span>;
+      }
+      if (activeTopic === ALL_SUPER_ADMIN) {
+        return <span className={topicCls}>All</span>;
+      }
+      if (!activeTopic) return null;
+      const translated = translateTopic(activeTopic);
+      const row =
+        userInsertedTopics?.find((x) => x.name === activeTopic) ??
+        userInsertedTopics?.find(
+          (x) => activeTopic != null && x.name.toLowerCase() === activeTopic.toLowerCase()
+        );
+      let un = row?.creatorUsername ?? null;
+      if ((un == null || un === '') && activeTopic != null && topicNamesCreatedByNormalUsers.includes(activeTopic)) {
+        const fromArticle = pasted.find((a) => (a.topic ?? 'News') === activeTopic);
+        un = fromArticle?.creatorUsername ?? null;
+      }
+      if (un != null && un !== '' && !hideCreatorUsernameInHeading) {
+        return (
+          <>
+            <span className={topicCls}>{translated}</span>
+            {onSuperAdminViewAsUser ? (
+              <a
+                href="#view-as-user"
+                className={`${userCls} underline cursor-pointer hover:opacity-80 mx-0.5 text-xl font-normal inline align-baseline relative z-[60] select-none`}
+                title={`View all OGPs visible to ${un}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSuperAdminViewAsUser(un);
+                }}
+              >
+                ( {un} )
+              </a>
+            ) : (
+              <span className={userCls}> ( {un} )</span>
+            )}
+          </>
+        );
+      }
+      return <span className={topicCls}>{translated}</span>;
+    },
+    [
+      activeTopic,
+      allTopicLabel,
+      t,
+      translateTopic,
+      userInsertedTopics,
+      topicNamesCreatedByNormalUsers,
+      pasted,
+      hideCreatorUsernameInHeading,
+      onSuperAdminViewAsUser,
+    ]
+  );
+
   const sortedTopics = useMemo(() => [...topicsList].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })), [topicsList]);
   const sortedLanguages = useMemo(() => [...ALL_LANGUAGES].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })), []);
   const [search, setSearch] = useState('');
@@ -336,6 +419,10 @@ export default function NewsArticlesList({
       activeTopic === ALL_TOPICS ||
       (NEWS_TOPICS as readonly string[]).includes(activeTopic);
 
+    if (viewerScopedOgpList) {
+      return base;
+    }
+
     // In "All" and 7 default topics:
     // - For the current creator (canEditAsCreator): always show all their own OGPs (including expired / no settings / deleted).
     // - For other users' OGPs: hide those with no News Setting and hide expired ones.
@@ -353,7 +440,7 @@ export default function NewsArticlesList({
     }
 
     return base;
-  }, [pasted, activeTopic, topicNamesCreatedByNormalUsers, adminContext, canDeleteOgp, isSuperAdmin]);
+  }, [pasted, activeTopic, topicNamesCreatedByNormalUsers, adminContext, canDeleteOgp, isSuperAdmin, viewerScopedOgpList]);
 
   /**
    * True when the current UI should allow filtering to "my" OGPs.
@@ -683,22 +770,14 @@ export default function NewsArticlesList({
           >
             {t('news_next_ogp')}
           </button>
-          {/* OGP topic name - centered in this row */}
-          <div className="flex-1 flex justify-center items-center min-w-0 px-2">
-            <span className="text-blue-700 font-normal text-xl text-center truncate">
-              {activeTopic === ALL_TOPICS
-                ? (allTopicLabel ?? t('news_all_ogp'))
-                : activeTopic === ALL_USER_SECTORS
-                  ? "All users' topics"
-                  : activeTopic === ALL_SUPER_ADMIN
-                    ? 'All'
-                    : activeTopic
-                      ? translateTopic(activeTopic)
-                      : ''}
-            </span>
+          {/* OGP topic name - centered; z-index + overflow so the username link stays above siblings and receives clicks */}
+          <div className="flex-1 flex justify-center items-center min-w-0 px-2 relative z-[1] overflow-visible">
+            <div className="font-normal text-xl text-center inline-flex flex-wrap items-baseline justify-center gap-x-0.5 min-w-0 max-w-full relative overflow-visible">
+              {renderActiveTopicHeading('light')}
+            </div>
           </div>
           {/* Add article "+" at right end of pagination row */}
-          {onAddClick != null && (
+          {onAddClick != null && !superAdminReadOnlyOgpActions && (
             <button
               type="button"
               onClick={onAddClick}
@@ -720,17 +799,9 @@ export default function NewsArticlesList({
       {/* Pasted - OGP cards in a grid (multiple per row); max 3 rows visible, scroll when more */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="bg-gray-800 text-white px-4 py-2 flex items-center justify-between gap-2">
-          <span className="font-semibold">
-            {activeTopic === ALL_TOPICS
-              ? (allTopicLabel ?? t('news_all_ogp'))
-              : activeTopic === ALL_USER_SECTORS
-                ? "All users' topics"
-                : activeTopic === ALL_SUPER_ADMIN
-                  ? 'All'
-                  : activeTopic
-                    ? translateTopic(activeTopic)
-                    : ''}
-          </span>
+          <div className="font-semibold inline-flex flex-wrap items-baseline gap-x-0.5 min-w-0">
+            {renderActiveTopicHeading('dark')}
+          </div>
           <div className="flex items-center gap-4">
             {canFilterByMyOgNews && (
               <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -742,10 +813,16 @@ export default function NewsArticlesList({
                     setCurrentPage(1);
                   }}
                   className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                  aria-label={t('news_show_only_my_ogp')}
+                  aria-label={
+                    showOnlyMyOgNewsLabelUsername
+                      ? `Show only OG News posted by ${showOnlyMyOgNewsLabelUsername}`
+                      : t('news_show_only_my_ogp')
+                  }
                 />
                 <span className="text-yellow-300 text-sm whitespace-nowrap">
-                  {t('news_show_only_my_ogp')}
+                  {showOnlyMyOgNewsLabelUsername
+                    ? `Show only OG News posted by ${showOnlyMyOgNewsLabelUsername}`
+                    : t('news_show_only_my_ogp')}
                 </span>
               </label>
             )}
@@ -944,7 +1021,11 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           handleLikeClick(a.id);
                         }}
-                        disabled={!!likeLoadingId || (typeof window !== 'undefined' && !(adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token')))}
+                        disabled={
+                          superAdminReadOnlyOgpActions ||
+                          !!likeLoadingId ||
+                          (typeof window !== 'undefined' && !(adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token')))
+                        }
                         className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
                           likesMap[a.id]?.likedByMe
                             ? 'border-cyan-500 bg-cyan-50 text-cyan-700 hover:bg-cyan-100'
@@ -965,7 +1046,8 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           setShareModalArticle(a);
                         }}
-                        className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        disabled={superAdminReadOnlyOgpActions}
+                        className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Share"
                         aria-label="Share"
                       >
@@ -988,7 +1070,7 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           if (canEditAsCreator(a)) setEditTopicArticleId(a.id);
                         }}
-                        disabled={!onUpdatePastedTopic || !canEditAsCreator(a)}
+                        disabled={superAdminReadOnlyOgpActions || !onUpdatePastedTopic || !canEditAsCreator(a)}
                         className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
                         title={canEditAsCreator(a) ? 'Change topic (creator only)' : 'Only the creator can change this article\'s topic'}
                         aria-label="Change topic"
@@ -1002,7 +1084,8 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           toggleArticleExpanded(a.id);
                         }}
-                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        disabled={superAdminReadOnlyOgpActions}
+                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                         title={expandedArticleIds.has(a.id) ? 'Show less (2 rows)' : 'Show full text'}
                         aria-label={expandedArticleIds.has(a.id) ? 'Collapse text' : 'Expand to full text'}
                       >
@@ -1021,7 +1104,8 @@ export default function NewsArticlesList({
                             navigator.clipboard?.writeText(a.url).then(() => setCopiedArticleId(a.id));
                           }
                         }}
-                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        disabled={superAdminReadOnlyOgpActions}
+                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                         title={copiedArticleId === a.id ? 'Copied!' : 'Copy OGP URL to clipboard'}
                         aria-label={copiedArticleId === a.id ? 'Copied!' : 'Copy link'}
                       >
@@ -1034,7 +1118,8 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           setCreatorModalArticleId(a.id);
                         }}
-                        className={`flex items-center justify-center w-6 h-6 min-w-[24px] rounded border transition-colors shrink-0 ${
+                        disabled={superAdminReadOnlyOgpActions}
+                        className={`flex items-center justify-center w-6 h-6 min-w-[24px] rounded border transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
                           currentUserId != null && !canEditAsCreator(a)
                             ? 'border-amber-200 bg-amber-200 text-gray-600 hover:bg-amber-400 hover:border-amber-300'
                             : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
@@ -1051,29 +1136,46 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           if (canDeleteOgp || canEditAsCreator(a)) setSettingsArticleId(a.id);
                         }}
-                        disabled={!onUpdatePastedSettings || (!canDeleteOgp && !canEditAsCreator(a))}
+                        disabled={
+                          superAdminReadOnlyOgpActions ||
+                          !onUpdatePastedSettings ||
+                          (!canDeleteOgp && !canEditAsCreator(a))
+                        }
                         className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
                         title={canDeleteOgp || canEditAsCreator(a) ? 'News settings (visibility)' : 'Only creator, admin, or super admin can edit settings'}
                         aria-label="News settings"
                       >
                         <Settings className="w-3.5 h-3.5" />
                       </button>
-                      {
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (canDeleteOgp || canEditAsCreator(a)) setRemoveConfirmArticleId(a.id);
-                        }}
-                        disabled={!onRemovePasted || (!canDeleteOgp && !canEditAsCreator(a))}
-                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 hover:text-red-600 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:text-gray-600"
-                        title={canDeleteOgp || canEditAsCreator(a) ? 'Delete' : 'Only super admin, admin, or creator can delete'}
-                        aria-label="Delete article"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                      }
+                      {a.createdBySuperAdmin && !canDeleteOgp && !canEditAsCreator(a) ? (
+                        <span
+                          className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded bg-red-600 text-white border border-yellow-300 shrink-0 select-none"
+                          style={{ fontFamily: "'Comic Sans MS', 'Comic Sans', cursive", fontSize: 11, fontWeight: 700, lineHeight: 1 }}
+                          title="Posted by Movesbook (Super Admin)"
+                          aria-label="Posted by Movesbook (Super Admin)"
+                        >
+                          MB
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (canDeleteOgp || canEditAsCreator(a)) setRemoveConfirmArticleId(a.id);
+                          }}
+                          disabled={
+                            superAdminReadOnlyOgpActions ||
+                            !onRemovePasted ||
+                            (!canDeleteOgp && !canEditAsCreator(a))
+                          }
+                          className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 hover:text-red-600 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:text-gray-600"
+                          title={canDeleteOgp || canEditAsCreator(a) ? 'Delete' : 'Only super admin, admin, or creator can delete'}
+                          aria-label="Delete article"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                   </div>
                 </article>
               ))}

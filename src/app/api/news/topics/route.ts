@@ -25,7 +25,13 @@ export async function GET(request: NextRequest) {
     const allCustom = await prisma.userNewsTopic.findMany({
       where: isSuperAdmin ? undefined : { userId: { in: allowedUserIds } },
       orderBy: [{ name: 'asc' }, { displayOrder: 'asc' }],
-      select: { id: true, name: true, displayOrder: true, userId: true },
+      select: {
+        id: true,
+        name: true,
+        displayOrder: true,
+        userId: true,
+        user: { select: { username: true } },
+      },
     });
     // Distinct by name; keep one id per name (first occurrence for edit/delete).
     // Mark topic names as super-admin-created if ANY topic with that name is from a super admin (so we disable pencil even when user has same-named topic).
@@ -34,24 +40,34 @@ export async function GET(request: NextRequest) {
       if (!isSuperAdmin && superAdminIds.includes(t.userId)) topicNamesCreatedBySuperAdminSet.add(t.name);
     }
     const topicNamesCreatedBySuperAdmin = Array.from(topicNamesCreatedBySuperAdminSet);
-    /** For super admin only: topic names created by normal users (to show in dropdown, not in bar). */
-    const topicNamesCreatedByNormalUsers: string[] = [];
+    /** For super admin only: user-inserted topics with creator username (dropdown + headers). */
+    const userInsertedTopics: { name: string; creatorUsername: string | null }[] = [];
     if (isSuperAdmin) {
+      const seenNames = new Set<string>();
       for (const t of allCustom) {
-        if (!superAdminIds.includes(t.userId)) topicNamesCreatedByNormalUsers.push(t.name);
+        if (superAdminIds.includes(t.userId)) continue;
+        if (seenNames.has(t.name)) continue;
+        seenNames.add(t.name);
+        userInsertedTopics.push({
+          name: t.name,
+          creatorUsername: t.user?.username?.trim() ? t.user.username.trim() : null,
+        });
       }
+      userInsertedTopics.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
     }
+    const topicNamesCreatedByNormalUsers = userInsertedTopics.map((x) => x.name);
     const seen = new Set<string>();
     const custom = allCustom.filter((t) => {
       if (seen.has(t.name)) return false;
       seen.add(t.name);
       return true;
-    }).map(({ userId: _u, ...rest }) => rest);
+    }).map(({ userId: _u, user: _user, ...rest }) => rest);
     return NextResponse.json({
       defaultTopicNames: DEFAULT_TOPIC_NAMES,
       customTopics: custom,
       topicNamesCreatedBySuperAdmin: isSuperAdmin ? [] : topicNamesCreatedBySuperAdmin,
-      topicNamesCreatedByNormalUsers: isSuperAdmin ? Array.from(new Set(topicNamesCreatedByNormalUsers)) : [],
+      topicNamesCreatedByNormalUsers: isSuperAdmin ? topicNamesCreatedByNormalUsers : [],
+      userInsertedTopics: isSuperAdmin ? userInsertedTopics : [],
     });
   } catch (e) {
     console.error('GET /api/news/topics', e);

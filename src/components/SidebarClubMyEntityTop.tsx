@@ -1,0 +1,199 @@
+'use client';
+
+import Image from 'next/image';
+import {
+  UserCircle,
+  BookOpen,
+  Bell,
+  Building2,
+  Eye,
+  LayoutDashboard,
+  ChevronDown,
+  Settings,
+} from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext';
+
+type ClubEntity = {
+  id?: string;
+  name?: string;
+  description?: string | null;
+  location?: string | null;
+  imageUrl?: string | null;
+};
+
+function parseLocalityAndCountry(location: string | null | undefined): {
+  locality: string;
+  country: string;
+} {
+  const raw = (location || '').trim();
+  if (!raw) return { locality: '—', country: '—' };
+  const parts = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length >= 2) {
+    return {
+      locality: parts[0],
+      country: parts.slice(1).join(', '),
+    };
+  }
+  return { locality: raw, country: '—' };
+}
+
+/**
+ * Replaces the legacy "My Page" profile strip when a club account selects "My Club":
+ * reference layout — header + logo/details, then primary accordion rows (no red bar).
+ */
+export default function SidebarClubMyEntityTop({
+  personName,
+  club,
+  userCountry,
+  userImageUrl,
+  onChangeLogo,
+}: {
+  personName: string;
+  club: ClubEntity | null;
+  userCountry?: string | null;
+  userImageUrl?: string | null;
+  onChangeLogo?: () => void;
+}) {
+  const { t } = useLanguage();
+  const { locality, country: fallbackCountry } = parseLocalityAndCountry(club?.location);
+  const clubType = club?.description?.trim() || '';
+  const logoUrl = userImageUrl ?? club?.imageUrl;
+  const country = userCountry ?? fallbackCountry;
+
+  return (
+    <div className="bg-[#252525] flex-shrink-0 border-b border-gray-700/80">
+      <div className="p-3 pb-0">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0 ring-1 ring-white/25">
+              <UserCircle className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-white text-sm font-bold truncate">{personName}</span>
+          </div>
+          <button
+            type="button"
+            className="shrink-0 rounded-md bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm hover:bg-gray-100 transition-colors"
+          >
+            Like
+          </button>
+        </div>
+
+        <div className="flex gap-3 mb-3">
+          <div className="flex flex-col items-stretch w-[5.5rem] flex-shrink-0">
+            <div className="relative w-20 h-20 bg-gray-700 rounded overflow-hidden border border-gray-600/80">
+              {logoUrl ? (
+                <Image
+                  src={logoUrl}
+                  alt=""
+                  fill
+                  className="object-cover"
+                  sizes="80px"
+                  unoptimized
+                />
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-br from-amber-200/90 via-sky-300/80 to-slate-700/90" />
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onChangeLogo}
+              className="mt-1 text-left text-[11px] text-white underline underline-offset-2 decoration-white/80 hover:text-white/90"
+            >
+              Change Logo
+            </button>
+          </div>
+
+          <div className="flex-1 min-w-0 space-y-2 text-xs leading-snug">
+            <div>
+              <div className="text-[#d4a017] font-medium">Club Type</div>
+              <div className="text-white mt-0.5 min-h-[1rem]">
+                {clubType || <span className="text-white/30"> </span>}
+              </div>
+            </div>
+            <div>
+              <div className="text-[#d4a017] font-medium">Country</div>
+              <div className="text-white mt-0.5">{country}</div>
+            </div>
+            <div>
+              <div className="text-[#d4a017] font-medium">Locality</div>
+              <div className="text-white mt-0.5 border-b border-white/70 inline-block pb-px">
+                {locality}
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* "Most used buttons" (reference red gradient row) */}
+        <button
+          type="button"
+          className="relative w-full border-y border-red-900/40 bg-gradient-to-b from-[#ff6a6a] to-[#c81414] mb-3 py-2.5 text-center text-xs font-bold text-white/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:from-[#ff7474] hover:to-[#b80f0f] transition-colors"
+        >
+          {t('sidebar_most_used_buttons')}
+          <Settings className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300" />
+        </button>
+
+      </div>
+
+      {/* Primary menus (same strip styles as sidebar below; replaces legacy red "Most used" bar) */}
+      <div className="border-t border-gray-700/60">
+        <div className="w-full bg-teal-800 text-white border-b border-teal-700">
+          <div className="flex items-center justify-between py-2.5 px-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <BookOpen className="w-5 h-5 shrink-0" />
+              <span className="font-semibold tracking-wide truncate">{t('sidebar_user_guides')}</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <ChevronDown className="w-4 h-4 opacity-90" />
+              <Settings className="w-4 h-4 opacity-90" />
+            </div>
+          </div>
+        </div>
+
+        <div className="w-full bg-[#7a0d1c] text-white border-b border-teal-700">
+          <div className="flex items-center justify-between py-2 px-3">
+            <div className="flex items-center gap-2.5">
+              <Bell className="w-5 h-5" />
+              <span className="font-bold tracking-wide text-sm">SOCIAL</span>
+            </div>
+            <ChevronDown className="w-4 h-4 opacity-90" />
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Building2 className="w-5 h-5 shrink-0" />
+            <span className="font-semibold tracking-wide truncate">Club Info</span>
+          </div>
+          <ChevronDown className="w-4 h-4 opacity-90" />
+        </button>
+
+        <button
+          type="button"
+          className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Eye className="w-5 h-5 shrink-0" />
+            <span className="font-semibold tracking-wide truncate">Club page for visitors</span>
+          </div>
+          <ChevronDown className="w-4 h-4 opacity-90" />
+        </button>
+
+        <button
+          type="button"
+          className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <LayoutDashboard className="w-5 h-5 shrink-0" />
+            <span className="font-semibold tracking-wide truncate">Dashboard for the members</span>
+          </div>
+          <ChevronDown className="w-4 h-4 opacity-90" />
+        </button>
+      </div>
+    </div>
+  );
+}

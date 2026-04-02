@@ -157,12 +157,24 @@ export default function NewsSettingModal({
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Duration (expiration date)</label>
-            <input
-              type="date"
-              value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+              />
+              <button
+                type="button"
+                onClick={() => setExpiresAt('2099-12-31')}
+                disabled={expiresAt === '2099-12-31'}
+                className="shrink-0 px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:hover:bg-red-600"
+                aria-label="No expiration"
+                title="No expiration"
+              >
+                No Expiration
+              </button>
+            </div>
             <p className="text-xs text-gray-500 mt-1">
               After this date the article is hidden from users. Super admin and admin still see it.
             </p>
@@ -176,7 +188,11 @@ export default function NewsSettingModal({
                   <input
                     type="checkbox"
                     checked={enableSports}
-                    onChange={(e) => setEnableSports(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setEnableSports(checked);
+                      if (checked) setSports(options.sports.map((s) => s.value));
+                    }}
                     className="rounded border-gray-300"
                   />
                   <span className="text-sm font-medium">Users Sports</span>
@@ -205,7 +221,11 @@ export default function NewsSettingModal({
                   <input
                     type="checkbox"
                     checked={enableUserTypes}
-                    onChange={(e) => setEnableUserTypes(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setEnableUserTypes(checked);
+                      if (checked) setUserTypes(options.userTypes.map((t) => t.value));
+                    }}
                     className="rounded border-gray-300"
                   />
                   <span className="text-sm font-medium">Users Type</span>
@@ -234,7 +254,11 @@ export default function NewsSettingModal({
                   <input
                     type="checkbox"
                     checked={enableLanguages}
-                    onChange={(e) => setEnableLanguages(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setEnableLanguages(checked);
+                      if (checked) setLanguages(options.languages.map((l) => l.value));
+                    }}
                     className="rounded border-gray-300"
                   />
                   <span className="text-sm font-medium">Language</span>
@@ -263,7 +287,11 @@ export default function NewsSettingModal({
                   <input
                     type="checkbox"
                     checked={enableCountries}
-                    onChange={(e) => setEnableCountries(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setEnableCountries(checked);
+                      if (checked) setCountries(options.countries.slice());
+                    }}
                     className="rounded border-gray-300"
                   />
                   <span className="text-sm font-medium">Country</span>

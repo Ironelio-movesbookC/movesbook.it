@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { useMyPageData } from './hooks/useMyPageData';
 import { useMyPageHandlers } from './hooks/useMyPageHandlers';
 import { getEntityType } from './utils/myPageUtils';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import WorkoutsSection from './components/WorkoutsSection';
 import ProgressSection from './components/ProgressSection';
 import SettingsSection from './components/SettingsSection';
@@ -99,19 +100,19 @@ export default function MyPage() {
               <DarkSidebar
                 userType={user?.userType || ''}
                 entities={
-                  user?.userType === 'CLUB_TRAINER' ? clubs :
+                  isClubAccountUserType(user?.userType || '') ? clubs :
                   user?.userType === 'TEAM_MANAGER' ? teams :
                   user?.userType === 'GROUP_ADMIN' ? groups :
                   user?.userType === 'COACH' ? coachingGroups : []
                 }
                 selectedEntityId={
-                  user?.userType === 'CLUB_TRAINER' ? selectedClub :
+                  isClubAccountUserType(user?.userType || '') ? selectedClub :
                   user?.userType === 'TEAM_MANAGER' ? null :
                   user?.userType === 'GROUP_ADMIN' ? null :
                   user?.userType === 'COACH' ? null : null
                 }
                 onEntitySelect={(id) => {
-                  if (user?.userType === 'CLUB_TRAINER') {
+                  if (isClubAccountUserType(user?.userType || '')) {
                     handleClubSelect(id);
                   } else if (user?.userType === 'TEAM_MANAGER') {
                     handleTeamSelect(id);

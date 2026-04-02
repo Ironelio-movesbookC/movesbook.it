@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Users, Shield, Activity, TrendingUp } from 'lucide-react';
+import AdminSuperAdminOGPNewsContent from '@/components/admin/AdminSuperAdminOGPNewsContent';
 
 interface AdminUser {
   id: string;
@@ -11,25 +12,30 @@ interface AdminUser {
   userType: string;
 }
 
-export default function AdminDashboard() {
+function AdminDashboardInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const panel = searchParams?.get('panel') ?? null;
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if admin is logged in
     const adminData = localStorage.getItem('adminUser');
     if (!adminData) {
       router.push('/');
       return;
     }
-    
+
     setAdminUser(JSON.parse(adminData));
     setLoading(false);
   }, [router]);
 
   if (loading || !adminUser) {
     return null;
+  }
+
+  if (panel === 'music-tracked') {
+    return <AdminSuperAdminOGPNewsContent closeHref="/admin/dashboard" />;
   }
 
   const stats = [
@@ -46,7 +52,6 @@ export default function AdminDashboard() {
         <p className="text-gray-600">Welcome back, {adminUser.name}!</p>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
@@ -67,7 +72,6 @@ export default function AdminDashboard() {
         })}
       </div>
 
-      {/* Recent Activity */}
       <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Activity</h2>
         <div className="space-y-4">
@@ -106,5 +110,13 @@ export default function AdminDashboard() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AdminDashboard() {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-500">Loading...</div>}>
+      <AdminDashboardInner />
+    </Suspense>
   );
 }

@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useRouter } from 'next/navigation';
+import AthleteMyPageRightSidebarExtras from '@/components/dashboard/AthleteMyPageRightSidebarExtras';
+import AthleteMyClubRightSidebar from '@/components/dashboard/AthleteMyClubRightSidebar';
 
 // 2026-01-22 13:30 UTC - Placeholder component for avatar images (replaces Unsplash timeout issues)
 const AvatarPlaceholder = ({ size = 'w-10 h-10', name = 'U' }: { size?: string, name?: string }) => (
@@ -36,6 +38,16 @@ interface RightSidebarProps {
   context?: 'my-page' | 'my-club';
   activeTab?: 'my-page' | 'my-entity';
   onNavigateToSettings?: () => void;
+  /**
+   * When true (e.g. CLUB account on My Page tab), match athlete dashboard right column:
+   * no Add Member, athlete-style NEXT EVENTS stack, no dashboard duplicate sections / Actions Planner tabs.
+   */
+  athleteMyPageRightSidebar?: boolean;
+  /**
+   * When true (e.g. CLUB account on My Club tab), match athlete dashboard My Club right column
+   * (SPONSORED, EVENTS, NEXT EVENTS stack, social blocks) instead of Quick Actions.
+   */
+  athleteMyClubRightSidebar?: boolean;
 }
 
 export default function RightSidebar({ 
@@ -44,7 +56,9 @@ export default function RightSidebar({
   onWorkoutPlan,
   context = 'my-page',
   activeTab,
-  onNavigateToSettings
+  onNavigateToSettings,
+  athleteMyPageRightSidebar = false,
+  athleteMyClubRightSidebar = false,
 }: RightSidebarProps) {
   const { t } = useLanguage();
   const router = useRouter();
@@ -53,20 +67,40 @@ export default function RightSidebar({
   
   // If activeTab is provided, use it; otherwise use context
   const currentContext = activeTab ? (activeTab === 'my-page' ? 'my-page' : 'my-club') : context;
+  const useAthleteMyPageLayout =
+    athleteMyPageRightSidebar && currentContext === 'my-page';
+  const useAthleteMyClubLayout =
+    athleteMyClubRightSidebar && currentContext === 'my-club';
+
+  if (useAthleteMyClubLayout) {
+    return (
+      <div className="w-80 flex-shrink-0 print:hidden">
+        <div className="bg-white shadow-sm border h-full min-h-0 flex flex-col overflow-y-auto rounded-lg">
+          <AthleteMyClubRightSidebar />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-80 flex-shrink-0">
-      <div className="bg-white rounded-lg shadow-sm border p-4 h-full flex flex-col">
+      <div
+        className={`bg-white rounded-lg shadow-sm border p-4 h-full flex flex-col min-h-0 ${
+          useAthleteMyPageLayout ? 'overflow-y-auto' : ''
+        }`}
+      >
         <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('sidebar_quick_actions')}</h3>
         <div className="space-y-2">
-          {/* Add Member Button */}
-          <button 
-            onClick={onAddMember}
-            className="w-full flex items-center gap-3 p-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group"
-          >
-            <Users className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
-            <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_add_member')}</span>
-          </button>
+          {/* Add Member — hidden when CLUB My Page matches athlete Quick Actions column */}
+          {!useAthleteMyPageLayout && (
+            <button 
+              onClick={onAddMember}
+              className="w-full flex items-center gap-3 p-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group"
+            >
+              <Users className="w-5 h-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+              <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-left">{t('sidebar_add_member')}</span>
+            </button>
+          )}
           
           {/* Quick Actions for My Page */}
           {currentContext === 'my-page' && (
@@ -147,8 +181,15 @@ export default function RightSidebar({
           )}
         </div>
 
-        {/* Next Event Section - Only for My Page */}
-        {currentContext === 'my-page' && (
+        {/* Athlete-style stack under Quick Actions (CLUB + My Page only) */}
+        {useAthleteMyPageLayout && (
+          <div className="mt-4 -mx-1 border-t border-gray-100 pt-4">
+            <AthleteMyPageRightSidebarExtras />
+          </div>
+        )}
+
+        {/* Next Event Section - Only for My Page (dashboard layout; not athlete-matched CLUB My Page) */}
+        {currentContext === 'my-page' && !useAthleteMyPageLayout && (
           <div className="mt-6 border-t pt-4">
             <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -199,7 +240,7 @@ export default function RightSidebar({
         )}
 
         {/* News by My Friends Section - Only for My Page */}
-        {currentContext === 'my-page' && (
+        {currentContext === 'my-page' && !useAthleteMyPageLayout && (
           <div className="mt-6 border-t pt-4">
             <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg">
               <h4 className="text-sm font-semibold">{t('sidebar_news_by_friends')}</h4>
@@ -249,7 +290,7 @@ export default function RightSidebar({
         )}
 
         {/* Newest Members Section - Only for My Page */}
-        {currentContext === 'my-page' && (
+        {currentContext === 'my-page' && !useAthleteMyPageLayout && (
           <div className="mt-6 border-t pt-4">
             <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg">
               <h4 className="text-sm font-semibold">{t('sidebar_newest_members')}</h4>
@@ -300,7 +341,7 @@ export default function RightSidebar({
         )}
 
         {/* Members Last Logged In Section - Only for My Page */}
-        {currentContext === 'my-page' && (
+        {currentContext === 'my-page' && !useAthleteMyPageLayout && (
           <div className="mt-6 border-t pt-4">
             <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg flex items-center justify-between">
               <h4 className="text-sm font-semibold">{t('sidebar_members_last_logged')}</h4>
@@ -638,7 +679,8 @@ export default function RightSidebar({
           </div>
         )}
 
-        {/* Actions Planner and Chat Panel Tabs */}
+        {/* Actions Planner and Chat Panel Tabs — omitted when matching athlete My Page column */}
+        {!useAthleteMyPageLayout && (
         <div className="mt-6">
           <div className="flex border-b border-gray-200 mb-4">
             <button
@@ -719,6 +761,7 @@ export default function RightSidebar({
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );
