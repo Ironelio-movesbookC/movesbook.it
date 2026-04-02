@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
       manualMode,
       manualPriority,    // Priority flag for manual mode display
       manualRepetitions, // For storing on Moveframe model (manual mode only)
+      repetitions,       // Series count from planner (e.g. circuit total station slots)
       manualDistance,    // For storing on Moveframe model (manual mode only)
       manualInputType,   // For aerobic sports: "meters" or "time"
       appliedTechnique,  // Execution technique for Body Building
@@ -136,6 +137,16 @@ export async function POST(request: NextRequest) {
     
     console.log('Creating moveframe - letter will be:', indexToLetter(existingCount));
     
+    const resolvedRepetitions = manualMode
+      ? manualRepetitions !== undefined && manualRepetitions !== null && manualRepetitions !== ''
+        ? parseInt(String(manualRepetitions), 10)
+        : null
+      : repetitions !== undefined && repetitions !== null && repetitions !== ''
+        ? parseInt(String(repetitions), 10)
+        : movelaps?.length
+          ? movelaps.length
+          : null;
+
     const moveframeData = {
       workoutSessionId,
       letter: indexToLetter(existingCount),
@@ -148,7 +159,7 @@ export async function POST(request: NextRequest) {
       alarm: alarm ? parseInt(alarm) : null,
       manualMode: manualMode || false,
       manualPriority: manualPriority || false,
-      repetitions: manualRepetitions !== undefined && manualRepetitions !== null && manualRepetitions !== '' ? parseInt(manualRepetitions) : null,
+      repetitions: resolvedRepetitions,
       distance: manualDistance !== undefined && manualDistance !== null && manualDistance !== '' ? parseInt(manualDistance) : null,
       manualInputType: manualInputType || 'meters', // For aerobic sports: "meters" or "time"
       appliedTechnique: appliedTechnique || null, // Execution technique for Body Building

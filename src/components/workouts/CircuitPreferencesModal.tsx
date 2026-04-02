@@ -3,6 +3,7 @@
 
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface CircuitPreferencesModalProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ export interface ExercisePreferences {
 }
 
 export default function CircuitPreferencesModal({ isOpen, onClose, onSave }: CircuitPreferencesModalProps) {
+  const { t } = useLanguage();
   // 2026-01-21 22:00 UTC - Preference state
   const [preferences, setPreferences] = useState<ExercisePreferences>({
     typeOfExercise: '',
@@ -66,11 +68,16 @@ export default function CircuitPreferencesModal({ isOpen, onClose, onSave }: Cir
               className="flex-1 px-3 py-2 border-2 border-blue-400 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
             >
               <option value="">Type of exercise</option>
-              {/* TODO: Populate from database */}
-              <option value="strength">Strength</option>
-              <option value="cardio">Cardio</option>
-              <option value="flexibility">Flexibility</option>
-              <option value="balance">Balance</option>
+              <option value="strength">{t('exercise_typology_strength')}</option>
+              <option value="isotonic">{t('exercise_typology_isotonic')}</option>
+              <option value="aerobic">{t('exercise_typology_aerobic')}</option>
+              <option value="stretching">{t('exercise_typology_stretching')}</option>
+              <option value="gymnic">{t('exercise_typology_gymnic')}</option>
+              <option value="pilates">{t('exercise_typology_pilates')}</option>
+              <option value="calistenic">{t('exercise_typology_calistenic')}</option>
+              <option value="spartan">{t('exercise_typology_spartan')}</option>
+              <option value="crossfit">{t('exercise_typology_crossfit')}</option>
+              <option value="technical_moves_for_sports">{t('exercise_typology_technical_moves_for_sports')}</option>
             </select>
             <button
               onClick={() => handleClear('typeOfExercise')}
@@ -89,11 +96,26 @@ export default function CircuitPreferencesModal({ isOpen, onClose, onSave }: Cir
               className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-400"
             >
               <option value="">Equipments</option>
-              {/* TODO: Populate from database */}
-              <option value="barbell">Barbell</option>
-              <option value="dumbbell">Dumbbell</option>
-              <option value="machine">Machine</option>
-              <option value="bodyweight">Bodyweight</option>
+              <option value="barbell">{t('equipment_category_barbell')}</option>
+              <option value="dumbbells">{t('equipment_category_dumbbells')}</option>
+              <option value="cables">{t('equipment_category_cables')}</option>
+              <option value="cable_machine">{t('equipment_category_cable_machine')}</option>
+              <option value="multi_gym">{t('equipment_category_multi_gym')}</option>
+              <option value="free_body">{t('equipment_category_free_body')}</option>
+              <option value="lever_machines">{t('equipment_category_lever_machines')}</option>
+              <option value="bands">{t('equipment_category_bands')}</option>
+              <option value="fitball">{t('equipment_category_fitball')}</option>
+              <option value="kettlebell">{t('equipment_category_kettlebell')}</option>
+              <option value="bench">{t('equipment_category_bench')}</option>
+              <option value="trx">{t('equipment_category_trx')}</option>
+              <option value="bar">{t('equipment_category_bar')}</option>
+              <option value="medicine_ball">{t('equipment_category_medicine_ball')}</option>
+              <option value="aerobic_machine">{t('equipment_category_aerobic_machine')}</option>
+              <option value="rope">{t('equipment_category_rope')}</option>
+              <option value="bosu">{t('equipment_category_bosu')}</option>
+              <option value="power_sled">{t('equipment_category_power_sled')}</option>
+              <option value="treadmill">{t('equipment_category_treadmill')}</option>
+              <option value="wall_bars">{t('equipment_category_wall_bars')}</option>
             </select>
             <button
               onClick={() => handleClear('equipments')}
@@ -134,12 +156,21 @@ export default function CircuitPreferencesModal({ isOpen, onClose, onSave }: Cir
               className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-400"
             >
               <option value="">Muscular area</option>
-              {/* TODO: Populate from database */}
-              <option value="chest">Chest</option>
-              <option value="back">Back</option>
-              <option value="legs">Legs</option>
-              <option value="shoulders">Shoulders</option>
-              <option value="arms">Arms</option>
+              <option value="shoulder">{t('muscular_group_shoulder')}</option>
+              <option value="trapezius">{t('muscular_group_trapezius')}</option>
+              <option value="chest">{t('muscular_group_chest')}</option>
+              <option value="biceps">{t('muscular_group_biceps')}</option>
+              <option value="triceps">{t('muscular_group_triceps')}</option>
+              <option value="forearm">{t('muscular_group_forearm')}</option>
+              <option value="abdominals">{t('muscular_group_abdominals')}</option>
+              <option value="obliques">{t('muscular_group_obliques')}</option>
+              <option value="gluteus">{t('muscular_group_gluteus')}</option>
+              <option value="front_leg">{t('muscular_group_front_leg')}</option>
+              <option value="rear_leg">{t('muscular_group_rear_leg')}</option>
+              <option value="calf">{t('muscular_group_calf')}</option>
+              <option value="tibial">{t('muscular_group_tibial')}</option>
+              <option value="all_body_superior">{t('muscular_group_all_body_superior')}</option>
+              <option value="all_body_inferior">{t('muscular_group_all_body_inferior')}</option>
             </select>
             <button
               onClick={() => handleClear('muscularArea')}

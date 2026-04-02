@@ -16,6 +16,7 @@
  */
 
 import type { ManualDayPlan, ManualDaySector } from '@/components/workouts/modals/PlanGymWeekManualModal';
+import { computePyramidalRepsSeries, type PyramidalMode } from '@/utils/pyramidalReps';
 
 export type TimesPerSector = 'once' | '2' | '3' | 'all';
 export type DistributionType = 'A' | 'B' | 'C' | 'D';
@@ -268,15 +269,23 @@ const DEFAULT_SECTOR_PARAMS = {
   reps: 12,
   pause: "1'30\"",
   macroExercise: "1'",
-  macroEndOfSector: "2'"
+  macroEndOfSector: "2'",
+  pyramidal: 'flat' as PyramidalMode
 };
 
 function toManualDaySector(sectorId: string): ManualDaySector {
+  const { pyramidal, series, reps, ...rest } = DEFAULT_SECTOR_PARAMS;
+  const seriesReps = computePyramidalRepsSeries(reps, series, pyramidal);
   return {
     sectorId,
     sectorLabel: SECTOR_LABELS[sectorId] ?? sectorId,
     image: SECTOR_IMAGES[sectorId] ?? '',
-    ...DEFAULT_SECTOR_PARAMS
+    ...rest,
+    series,
+    reps,
+    pyramidal,
+    seriesReps,
+    seriesWeights: Array.from({ length: series }, () => '0')
   };
 }
 
@@ -285,6 +294,11 @@ export interface BuildHelpedRoutinesParams {
   timesPerSector: TimesPerSector;
   distributionType: DistributionType;
   constantSectors: string[];
+  /**
+   * Where to place constant muscle sectors in each day’s list.
+   * false (default): at the end. true: at the beginning.
+   */
+  constantSectorsAtBeginning?: boolean;
 }
 
 /**
@@ -310,8 +324,20 @@ function getConstantsForDay(
  * Once: divide areas to distribute by N workouts (rounding); each day gets its share + 1 constant (or 2 for day 6 when 6 workouts).
  * Times 2/3: divide areas to distribute by 2; routine A and B get 5/6 each; pattern A,B,A,B… with 1st/2nd constant.
  */
+/** Merge system-chosen sectors with constant sectors; respects A/B/C/D alternation via getResidualOrderAlternating. */
+function attachConstantsToSectorIds(
+  systemSectors: string[],
+  constants: string[],
+  atBeginning: boolean
+): string[] {
+  const toAdd = constants.filter((c) => c && !systemSectors.includes(c));
+  if (atBeginning) return [...toAdd, ...systemSectors];
+  return [...systemSectors, ...toAdd];
+}
+
 export function buildHelpedRoutines(params: BuildHelpedRoutinesParams): { daysCount: number; days: ManualDayPlan[] } {
   const { daysCount, timesPerSector, distributionType, constantSectors } = params;
+  const constantSectorsAtBeginning = params.constantSectorsAtBeginning === true;
   const n = Math.min(6, Math.max(1, daysCount));
   const fullOrder = getSectorOrder(distributionType);
   const orderToDistribute = getOrderWithoutConstants(fullOrder, constantSectors, n);
@@ -339,10 +365,7 @@ export function buildHelpedRoutines(params: BuildHelpedRoutinesParams): { daysCo
       const letter = routineLetters[d];
       const systemSectors = d < groups.length ? groups[d] ?? [] : [];
       const constants = getConstantsForDay(d, n, constantSectors);
-      const sectorIds: string[] = [...systemSectors];
-      for (const c of constants) {
-        if (c && !sectorIds.includes(c)) sectorIds.push(c);
-      }
+      const sectorIds = attachConstantsToSectorIds(systemSectors, constants, constantSectorsAtBeginning);
       days.push({
         routineName: `Routine ${letter}`,
         sectors: sectorIds.map(toManualDaySector)
@@ -361,10 +384,7 @@ export function buildHelpedRoutines(params: BuildHelpedRoutinesParams): { daysCo
       const letter = routineLetters[letterIdx];
       const systemSectors = groups[letterIdx] ?? [];
       const constants = getConstantsForDay(d, n, constantSectors);
-      const sectorIds: string[] = [...systemSectors];
-      for (const c of constants) {
-        if (c && !sectorIds.includes(c)) sectorIds.push(c);
-      }
+      const sectorIds = attachConstantsToSectorIds(systemSectors, constants, constantSectorsAtBeginning);
       days.push({
         routineName: `Routine ${letter}`,
         sectors: sectorIds.map(toManualDaySector)

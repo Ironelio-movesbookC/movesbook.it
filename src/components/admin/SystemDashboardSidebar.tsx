@@ -400,10 +400,28 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
       id: 'technical',
       label: 'Technical settings',
       items: [
-        { label: 'Gym machines' },
-        { label: 'Sport devices enabled' },
-        { label: 'Clothes', icon: Shirt },
-        { label: 'Other settings' }
+        { label: 'Periods', href: '/settings?section=tools&tab=periods' },
+        { label: 'Workout Sections', href: '/settings?section=tools&tab=sections' },
+        { label: 'Execution techniques', href: '/settings?section=tools&tab=bodyBuildingTechniques' },
+        { label: 'Equipment factories', href: '/settings?section=technical&tab=equipmentFactories' },
+        { label: 'Muscle Settings', href: '/settings?section=technical&tab=muscles' },
+        { label: 'Gym machines', href: '/settings?section=technical&tab=sportsEquipment' },
+        { label: 'Exercise bank', href: '/settings?section=technical&tab=exercises' },
+        { label: 'My library of exercises', href: '/settings?section=technical&tab=myLibrary' },
+        { label: 'Sport devices enabled', href: '/settings?section=technical&tab=devices' },
+        {
+          label: 'Types of common daily settings',
+          href: '/settings?section=tools&tab=commonDailyActions'
+        },
+        {
+          label: 'Parameters for calc workouts',
+          hasSubmenu: true,
+          id: 'workout_calc_params',
+          subItems: [
+            { label: 'Changes in the volume series', href: '/settings?section=workoutParameters&workoutTab=changesVolumesSeries' },
+            { label: 'Parameters for each objective', href: '/settings?section=workoutParameters&workoutTab=parametersByObjective' }
+          ]
+        }
       ]
     },
     {
@@ -572,7 +590,10 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
           className={`relative block py-[10px] pr-0 border border-[#7f7f7f] text-white transition-colors ${bgClass}`}
           style={{ paddingLeft }}
         >
-          <div className="absolute top-[6px] w-[24px]" style={{ left: isLevel0 ? '8px' : '15px' }}>
+          <div
+            className="absolute top-1/2 -translate-y-1/2 w-[24px] flex items-center justify-center"
+            style={{ left: iconLeft }}
+          >
             <Icon className="w-5 h-5 text-white" />
           </div>
           <span className="text-[13px] font-bold text-white flex items-center gap-1">
@@ -580,7 +601,7 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
             {item.hasLock && <Lock className="w-3 h-3 text-white ml-1" />}
           </span>
           {hasSubmenu && (
-            <div className="absolute right-[13px] top-[8px]">
+            <div className="absolute right-[13px] top-1/2 -translate-y-1/2 flex items-center">
               <Triangle className={`w-3 h-3 text-white fill-white transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </div>
           )}

@@ -3,6 +3,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import CircuitPreferencesModal from './CircuitPreferencesModal';
+import { GOAL_OPTIONS, type GoalId } from './modals/PlanGymWeekModal';
+
+function parseStoredMoveframeGoal(v: unknown): GoalId {
+  if (typeof v === 'string' && GOAL_OPTIONS.some((o) => o.value === v)) return v as GoalId;
+  return 'hypertrophy';
+}
 
 interface FastPlannerRow {
   id: number;
@@ -13,6 +19,8 @@ interface FastPlannerRow {
   weight: string;
   break: string;
   mode: string;
+  /** Load scheme when adding from Plan series/exercise: flat | ascending | descending | mix */
+  pyramidal?: string;
 }
 
 interface FastPlannerProps {
@@ -22,6 +30,8 @@ interface FastPlannerProps {
   day: any;
   mode: 'add' | 'edit';
   existingMoveframe?: any;
+  /** Optional default when adding a moveframe (e.g. day goal from weekly plan). */
+  initialGoal?: GoalId;
   onSave: (moveframeData: any) => void;
   onCancel: () => void;
   fullView?: boolean;
@@ -31,6 +41,8 @@ export type FastPlannerHandle = {
   saveMoveframe: () => void;
   saveMoveframeAndMovelaps: () => void;
   openPreferences: () => void;
+  /** Anaerobic only: apply rest/macro to the last filled exercise row; default **5'** when selection empty. */
+  applyEndMacro?: (selectedMacro?: string) => void;
 };
 
 const parseFastPlannerDataFromNotes = (notes: unknown): any | null => {
@@ -50,6 +62,88 @@ const upsertFastPlannerDataInNotes = (notes: unknown, data: any): string => {
   const tag = `[FAST_PLANNER_DATA]${JSON.stringify(data)}[/FAST_PLANNER_DATA]`;
   return stripped ? `${stripped}\n\n${tag}` : tag;
 };
+
+/** Target total series dropdown: 1–20 (lookup uses table row at or below this value). */
+const PLAN_TARGET_TOTAL_SERIES_OPTIONS: number[] = Array.from({ length: 20 }, (_, i) => i + 1);
+
+type PlanTargetLevelBand = 'lev12' | 'lev34' | 'lev5';
+
+const PLAN_TARGET_LEVEL_OPTIONS: { id: PlanTargetLevelBand; label: string }[] = [
+  { id: 'lev12', label: 'Lev 1–2' },
+  { id: 'lev34', label: 'Lev 3–4' },
+  { id: 'lev5', label: 'Lev 5' }
+];
+
+/**
+ * Official table: total series planned → [Lev 1–2, Lev 3–4, Lev 5] suggested exercise counts.
+ * Rows 8 and 11 are not listed; lookup uses the highest defined row at or below target (e.g. 8→7, 11→10). Above 20 uses row 20.
+ */
+const SERIES_TO_EXE_BY_LEVEL: Record<number, readonly [number, number, number]> = {
+  1: [1, 1, 1],
+  2: [1, 1, 1],
+  3: [1, 1, 1],
+  4: [2, 1, 1],
+  5: [2, 2, 1],
+  6: [3, 2, 2],
+  7: [3, 2, 2],
+  9: [3, 3, 2],
+  10: [4, 3, 2],
+  12: [4, 3, 3],
+  13: [5, 4, 3],
+  14: [5, 4, 3],
+  15: [5, 4, 3],
+  16: [5, 4, 3],
+  17: [5, 4, 3],
+  18: [6, 5, 3],
+  19: [6, 5, 4],
+  20: [6, 5, 4]
+};
+
+const SERIES_PLANNING_TABLE_KEYS: number[] = Object.keys(SERIES_TO_EXE_BY_LEVEL)
+  .map(Number)
+  .sort((a, b) => a - b);
+
+function resolveSeriesPlanningTableKey(totalSeries: number): number {
+  if (!Number.isFinite(totalSeries) || totalSeries < 1) return SERIES_PLANNING_TABLE_KEYS[0];
+  const maxK = SERIES_PLANNING_TABLE_KEYS[SERIES_PLANNING_TABLE_KEYS.length - 1];
+  if (totalSeries >= maxK) return maxK;
+  let best = SERIES_PLANNING_TABLE_KEYS[0];
+  for (const k of SERIES_PLANNING_TABLE_KEYS) {
+    if (k <= totalSeries) best = k;
+    else break;
+  }
+  return best;
+}
+
+function suggestedExeFromSeriesAndLevel(totalSeries: number, level: PlanTargetLevelBand): number {
+  const key = resolveSeriesPlanningTableKey(totalSeries);
+  const row = SERIES_TO_EXE_BY_LEVEL[key];
+  if (!row) return 1;
+  const idx = level === 'lev12' ? 0 : level === 'lev34' ? 1 : 2;
+  const v = row[idx];
+  return v >= 1 ? v : 1;
+}
+
+function parsePauseToSeconds(p: string): number | null {
+  if (!p || p === '0') return 0;
+  const s = p.trim();
+  const minOnly = s.match(/^(\d+)'$/);
+  if (minOnly) return parseInt(minOnly[1], 10) * 60;
+  const minSec = s.match(/^(\d+)'(\d+)"$/);
+  if (minSec) return parseInt(minSec[1], 10) * 60 + parseInt(minSec[2], 10);
+  const secQ = s.match(/^(\d+)"$/);
+  if (secQ) return parseInt(secQ[1], 10);
+  const n = parseInt(s, 10);
+  return Number.isNaN(n) ? null : n;
+}
+
+function formatAvgPauseFromSeconds(sec: number): string {
+  if (sec < 60) return `Average ${Math.round(sec)}"`;
+  const m = Math.floor(sec / 60);
+  const r = Math.round(sec - m * 60);
+  if (r === 0) return `Average ${m}'`;
+  return `Average ${m}'${r}"`;
+}
 
 // Muscle groups for the body diagram - all available muscles from /public/muscular/
 const MUSCLE_GROUPS = [
@@ -74,10 +168,14 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   day,
   mode,
   existingMoveframe,
+  initialGoal,
   onSave,
   onCancel,
   fullView
 }: FastPlannerProps, ref) {
+  // Training goal for this moveframe (same taxonomy as Plan Gym Week)
+  const [moveframeGoal, setMoveframeGoal] = useState<GoalId>(() => parseStoredMoveframeGoal(initialGoal));
+
   // State for sector selection mode
   const [sectorMode, setSectorMode] = useState<'exercises' | 'series'>('exercises');
 
@@ -100,6 +198,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   // Ref to remember last selected row for toolbar quick-fill (so value goes to correct row even when focus moves to toolbar)
   const lastSelectedRowIdRef = React.useRef<number | null>(null);
   const exerciseListScrollRef = React.useRef<HTMLDivElement>(null);
+  const sectorListScrollRef = React.useRef<HTMLDivElement>(null);
 
   // State for exercise rows
   const [rows, setRows] = useState<FastPlannerRow[]>([
@@ -112,8 +211,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   // Selected muscle group for filtering exercises
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<string>('all');
   const ZOOM = 0.55;
-  /** Larger scale for sector (muscle group) icons – increased for easier tap/visibility */
-  const SECTOR_ZOOM = 1.25;
+  /** Sector strip: smaller cards so more muscles fit on screen; arrows handle scrolling */
+  const SECTOR_ZOOM = 0.82;
   const [showSubExercises, setShowSubExercises] = useState<boolean>(false);
 
   // State for which exercise toolbar button is active (speed, series, etc.)
@@ -134,12 +233,18 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   const [preferences, setPreferences] = useState<any>(null);
   const [showSeriesPlanModal, setShowSeriesPlanModal] = useState<boolean>(false);
   const [planSectorId, setPlanSectorId] = useState<string | null>(null);
-  const [planExerciseNumber, setPlanExerciseNumber] = useState<number>(1);
   const [planSeries, setPlanSeries] = useState<string>('3');
   const [planReps, setPlanReps] = useState<string>('12');
   const [planPause, setPlanPause] = useState<string>("1'30\"");
+  const [planPyramidal, setPlanPyramidal] = useState<string>('flat');
   const [planCandidate, setPlanCandidate] = useState<any>(null);
   const [planExerciseSearch, setPlanExerciseSearch] = useState<string>('');
+  /** Target totals for the whole muscle area (planning support table). */
+  const [planTargetTotalSeries, setPlanTargetTotalSeries] = useState<string>('12');
+  const [planTargetLevel, setPlanTargetLevel] = useState<PlanTargetLevelBand>('lev34');
+  const [planTargetReps, setPlanTargetReps] = useState<string>('15');
+  const [planTargetPause, setPlanTargetPause] = useState<string>("2'");
+  const [planExerciseDetailTab, setPlanExerciseDetailTab] = useState<'execution' | 'points' | 'video' | 'other'>('execution');
   const [userDescription, setUserDescription] = useState<string>('');
   const loadedMoveframeIdRef = React.useRef<string | null>(null);
   const planListRef = React.useRef<HTMLDivElement | null>(null);
@@ -149,6 +254,19 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
 
   // Break/Pause options
   const BREAK_OPTIONS = ['0', '0"', '5"', '10"', '15"', '20"', '30"', '45"', "1'", "1'15\"", "1'30\"", "2'", "2'30\"", "3'", "4'", "5'", "6'", "7'"];
+
+  const PLAN_PYRAMIDAL_OPTIONS = [
+    { value: 'flat', label: 'Flat' },
+    { value: 'ascending', label: 'Ascending' },
+    { value: 'descending', label: 'Descending' },
+    { value: 'mix', label: 'Mix' }
+  ] as const;
+
+  const planPyramidalLabel = (v: string | undefined): string => {
+    if (!v || !v.trim()) return '—';
+    const opt = PLAN_PYRAMIDAL_OPTIONS.find((o) => o.value === v);
+    return opt ? opt.label.replace(' (default)', '') : v;
+  };
 
   // Mode options - Breaking modality among series
   const MODE_OPTIONS = [
@@ -370,12 +488,64 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return ex?.sector || null;
   }, [mockExercises]);
 
+  const planTargetResolvedSeriesKey = React.useMemo(() => {
+    const t = parseInt(planTargetTotalSeries, 10);
+    const total = Number.isNaN(t) || t < 1 ? 1 : t;
+    return resolveSeriesPlanningTableKey(total);
+  }, [planTargetTotalSeries]);
+
+  const planTargetExeCount = React.useMemo(() => {
+    const t = parseInt(planTargetTotalSeries, 10);
+    const total = Number.isNaN(t) || t < 1 ? 1 : t;
+    return suggestedExeFromSeriesAndLevel(total, planTargetLevel);
+  }, [planTargetTotalSeries, planTargetLevel]);
+
+  /** All planner rows whose exercise maps to this muscle sector (any row order in the table). */
+  const planSectorPlanningStats = React.useMemo(() => {
+    if (!planSectorId) {
+      return {
+        seriesSum: 0,
+        exerciseCount: 0,
+        avgReps: null as number | null,
+        avgPauseSec: null as number | null,
+        lastRow: null as FastPlannerRow | null
+      };
+    }
+    const sectorLabel = MUSCLE_GROUPS.find(g => g.id === planSectorId)?.sector ?? null;
+    if (!sectorLabel) {
+      return {
+        seriesSum: 0,
+        exerciseCount: 0,
+        avgReps: null as number | null,
+        avgPauseSec: null as number | null,
+        lastRow: null as FastPlannerRow | null
+      };
+    }
+    const sectorRows = rows.filter(r => {
+      const name = r.exercise?.trim();
+      if (!name) return false;
+      return getSectorForExercise(name) === sectorLabel;
+    });
+    const seriesSum = sectorRows.reduce((s, r) => s + (parseInt(String(r.series), 10) || 0), 0);
+    const exerciseCount = sectorRows.length;
+    const repsVals = sectorRows.map(r => parseInt(String(r.ripTime), 10)).filter(n => !Number.isNaN(n) && n > 0);
+    const avgReps = repsVals.length ? Math.round(repsVals.reduce((a, b) => a + b, 0) / repsVals.length) : null;
+    const pauseSecs = sectorRows
+      .map(r => parsePauseToSeconds(String(r.break || '')))
+      .filter((x): x is number => x !== null);
+    const avgPauseSec = pauseSecs.length ? pauseSecs.reduce((a, b) => a + b, 0) / pauseSecs.length : null;
+    const lastRow = sectorRows.length ? sectorRows[sectorRows.length - 1] : null;
+    return { seriesSum, exerciseCount, avgReps, avgPauseSec, lastRow };
+  }, [rows, planSectorId, getSectorForExercise]);
+
   const buildMovelapsFromRows = (filledRows: FastPlannerRow[]) => {
     return filledRows.map((row, index) => {
       const sector = row.exercise ? getSectorForExercise(row.exercise) : null;
       const repsValue = ripTimeMode === 'reps' ? (parseInt(row.ripTime || '', 10) || null) : null;
       const timeValue = ripTimeMode === 'time' ? (row.ripTime || null) : null;
 
+      const isLast = index === filledRows.length - 1;
+      const pauseVal = row.break && String(row.break).trim() !== '' ? String(row.break).trim() : null;
       return {
         repetitionNumber: index + 1,
         distance: null,
@@ -391,8 +561,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         muscularSector: sector,
         exercise: row.exercise || null,
         restType: null,
-        pause: row.break || null,
-        macroFinal: null,
+        pause: pauseVal,
+        macroFinal: isLast && pauseVal ? pauseVal : null,
         alarm: null,
         sound: null,
         notes: row.mode || null,
@@ -425,7 +595,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   };
 
   /** Parse pause string (e.g. "1'30\"", "2'", "45\"") to total seconds */
-  const parsePauseToSeconds = (s: string): number => {
+  const parsePauseToSeconds = React.useCallback((s: string): number => {
     if (!s || typeof s !== 'string') return 0;
     const trimmed = s.trim();
     let seconds = 0;
@@ -435,17 +605,37 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     if (secMatch) seconds += parseInt(secMatch[1], 10);
     else if (!minMatch && /^\d+$/.test(trimmed)) seconds += parseInt(trimmed, 10);
     return seconds;
-  };
+  }, []);
 
   /** Format seconds to M'SS" */
-  const formatPauseFromSeconds = (totalSeconds: number): string => {
+  const formatPauseFromSeconds = React.useCallback((totalSeconds: number): string => {
     if (totalSeconds <= 0) return "0'00\"";
     const m = Math.floor(totalSeconds / 60);
     const s = totalSeconds % 60;
     return `${m}'${String(s).padStart(2, '0')}"`;
+  }, []);
+
+  type FastPlannerSummaryStats = {
+    sectorCount: number;
+    totalSeries: number;
+    avgSeriesPerSector: string;
+    totalExercises: number;
+    avgExercisesPerSector: string;
+    totalReps: number;
+    kgTot: string;
+    avgPause: string;
   };
 
-  const buildSummaryFromRows = (filledRows: FastPlannerRow[]): string => {
+  const filledRowsForSummary = useMemo(
+    () => rows.map(r => ({ ...r, exercise: (r.exercise || '').trim() })).filter(r => r.exercise !== ''),
+    [rows]
+  );
+
+  const { summaryStats, summaryText } = useMemo(() => {
+    const filledRows = filledRowsForSummary;
+    if (filledRows.length === 0) {
+      return { summaryStats: null as FastPlannerSummaryStats | null, summaryText: '' };
+    }
     const sectors = new Set<string>();
     for (const r of filledRows) {
       if (r.exercise) {
@@ -478,6 +668,17 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       : 0;
     const avgPauseStr = formatPauseFromSeconds(Math.round(avgPauseSeconds));
 
+    const stats: FastPlannerSummaryStats = {
+      sectorCount: X,
+      totalSeries: Y1,
+      avgSeriesPerSector,
+      totalExercises: W1,
+      avgExercisesPerSector,
+      totalReps: Z,
+      kgTot: kgTot.toFixed(1),
+      avgPause: avgPauseStr,
+    };
+
     const lines = [
       'Summary (here in automatic):',
       `No. sectors (X) ${X}`,
@@ -491,17 +692,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       '',
       'User can edit here (but not the Summary).'
     ];
-    return lines.join('\n');
-  };
-
-  const filledRowsForSummary = useMemo(
-    () => rows.map(r => ({ ...r, exercise: (r.exercise || '').trim() })).filter(r => r.exercise !== ''),
-    [rows]
-  );
-  const summaryText = useMemo(
-    () => (filledRowsForSummary.length > 0 ? buildSummaryFromRows(filledRowsForSummary) : ''),
-    [filledRowsForSummary]
-  );
+    return { summaryStats: stats, summaryText: lines.join('\n') };
+  }, [filledRowsForSummary, getSectorForExercise, parsePauseToSeconds, formatPauseFromSeconds]);
 
   useEffect(() => {
     if (mode !== 'edit') return;
@@ -514,8 +706,13 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     const userPart = notesStr.replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '').trim();
     setUserDescription(userPart);
 
-    const parsed = parseFastPlannerDataFromNotes(existingMoveframe.notes);
+    const parsed =
+      parseFastPlannerDataFromNotes(existingMoveframe.notes) ||
+      (existingMoveframe.fastPlannerData && typeof existingMoveframe.fastPlannerData === 'object'
+        ? existingMoveframe.fastPlannerData
+        : null);
     if (parsed) {
+      setMoveframeGoal(parseStoredMoveframeGoal(parsed.goal));
       if (parsed.sectorMode === 'exercises' || parsed.sectorMode === 'series') setSectorMode(parsed.sectorMode);
       if (typeof parsed.execSpeed === 'string') setExecSpeed(parsed.execSpeed);
       if (typeof parsed.execSeries === 'string') setExecSeries(parsed.execSeries);
@@ -556,6 +753,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       });
 
       setRows(rebuilt.length > 0 ? rebuilt : [{ id: 1, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '' }]);
+      setMoveframeGoal('hypertrophy');
       setSelectedCell(null);
       lastSelectedRowIdRef.current = null;
       setShowSubExercises(false);
@@ -799,6 +997,9 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     if (!next.mode || next.mode.trim() === '') {
       next.mode = previous?.mode || 'Stopped';
     }
+    if (!next.pyramidal || next.pyramidal.trim() === '') {
+      next.pyramidal = previous?.pyramidal || 'flat';
+    }
 
     return next;
   };
@@ -889,7 +1090,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         ripTime: template.ripTime,
         weight: template.weight,
         break: template.break,
-        mode: template.mode
+        mode: template.mode,
+        pyramidal: template.pyramidal || 'flat'
       };
 
       return [...copy, nextRow];
@@ -928,7 +1130,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     if (!selectedCell) return;
     setRows(prevRows => prevRows.map(row => {
       if (row.id === selectedCell.rowId) {
-        return { ...row, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '' };
+        return { ...row, exercise: '', speed: '', series: '', ripTime: '', weight: '', break: '', mode: '', pyramidal: '' };
       }
       return row;
     }));
@@ -978,6 +1180,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     }
     const payload = {
       sectorMode,
+      goal: moveframeGoal,
       execSpeed,
       execSeries,
       execRipTime,
@@ -1001,7 +1204,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       notes,
       fastPlannerData: payload,
       movelaps,
-      isFastPlannerBased: true
+      isFastPlannerBased: true,
+      goal: moveframeGoal
     };
 
     onSave(moveframeData);
@@ -1021,6 +1225,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     }
     const payload = {
       sectorMode,
+      goal: moveframeGoal,
       execSpeed,
       execSeries,
       execRipTime,
@@ -1044,22 +1249,49 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       notes,
       fastPlannerData: payload,
       movelaps,
-      isFastPlannerBased: true
+      isFastPlannerBased: true,
+      goal: moveframeGoal
     };
     onSave(moveframeData);
   };
 
+  const DEFAULT_END_MACRO = "5'";
+  const applyEndMacro = React.useCallback((selectedMacro?: string) => {
+    const trimmed = typeof selectedMacro === 'string' ? selectedMacro.trim() : '';
+    const value = trimmed || DEFAULT_END_MACRO;
+    setRows((prev) => {
+      let lastFilledId: number | null = null;
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if ((prev[i].exercise || '').trim() !== '') {
+          lastFilledId = prev[i].id;
+          break;
+        }
+      }
+      if (lastFilledId == null) {
+        if (typeof window !== 'undefined') window.alert('Add at least one exercise before applying Macro.');
+        return prev;
+      }
+      return prev.map((row) => (row.id === lastFilledId ? { ...row, break: value } : row));
+    });
+  }, []);
+
   React.useImperativeHandle(ref, () => ({
     saveMoveframe: handleSaveMoveframe,
     saveMoveframeAndMovelaps: handleSaveMoveframeAndMovelaps,
-    openPreferences: () => setShowPreferencesModal(true)
+    openPreferences: () => setShowPreferencesModal(true),
+    applyEndMacro
   }));
   const openSeriesPlan = (sectorId: string) => {
     setPlanSectorId(sectorId);
-    setPlanExerciseNumber(1);
+    setPlanTargetTotalSeries('12');
+    setPlanTargetLevel('lev34');
+    setPlanTargetReps('15');
+    setPlanTargetPause("2'");
     setPlanSeries('3');
-    setPlanReps('12');
-    setPlanPause("1'30\"");
+    setPlanReps('15');
+    setPlanPause("2'");
+    setPlanPyramidal('flat');
+    setPlanExerciseDetailTab('execution');
     setPlanCandidate(null);
     setPlanExerciseSearch('');
     setShowSeriesPlanModal(true);
@@ -1111,29 +1343,15 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       break: planPause,
       speed: r.speed || 'Normal',
       weight: r.weight || 'nc',
-      mode: r.mode || 'Stopped'
+      mode: r.mode || 'Stopped',
+      pyramidal: planPyramidal
     } : r);
     setRows(newRows);
-    setPlanExerciseNumber(n => n + 1);
     setPlanCandidate(null);
   };
   const endSeriesPlan = () => {
     setShowSeriesPlanModal(false);
   };
-  React.useEffect(() => {
-    if (!showSeriesPlanModal) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        pickPlanCandidateByOffset(-1);
-      } else if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        pickPlanCandidateByOffset(1);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [pickPlanCandidateByOffset, showSeriesPlanModal]);
   React.useEffect(() => {
     if (!planCandidate || !planListRef.current) return;
     const card = planListRef.current.querySelector(`[data-exercise-id="${planCandidate.id}"]`) as HTMLElement | null;
@@ -1210,19 +1428,21 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   const canSaveWithSuperset = supersetValidation.canSave;
 
   return (
-    <div className={`flex flex-col flex-1 min-h-0 ${!fullView ? '' : ''}`}>
+    <div
+      className={`flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain ${!fullView ? '' : ''}`}
+    >
       {!fullView && <>
       <div className="flex-shrink-0 z-20 bg-white pb-2 shadow-[0_1px_3px_0_rgba(0,0,0,0.08)]">
         <div className="space-y-1.5">
           {/* Compact Top Row: Execution | Sector | Name | Intensity | Break */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="bg-amber-50 border border-amber-300 rounded px-2 py-0.5 text-center shrink-0">
+          <div className="flex min-w-0 w-full flex-wrap items-center gap-2">
+            <div className="bg-amber-50 border border-amber-300 rounded px-2.5 py-1.5 text-center shrink-0">
               {selectedCell ? (
-                <span className="text-[10px] text-blue-600 font-medium whitespace-nowrap">
+                <span className="text-xs text-blue-600 font-medium whitespace-nowrap">
                   Execution ✓ Row {rows.findIndex(r => r.id === selectedCell.rowId) + 1}, {selectedCell.field}
                 </span>
               ) : (
-                <span className="text-[10px] text-gray-700 font-bold">Execution</span>
+                <span className="text-xs text-gray-700 font-bold">Execution</span>
               )}
             </div>
             <button
@@ -1231,7 +1451,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 setShowSubExercises(false);
                 setSelectedMuscleGroup('all');
               }}
-              className={`px-2 py-1 text-xs font-bold border rounded whitespace-nowrap ${
+              className={`px-3 py-2 text-sm font-bold border-2 rounded-md whitespace-nowrap ${
                 activeExerciseButton === null ? 'bg-yellow-50 text-black border-yellow-400' : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
               }`}
             >
@@ -1242,26 +1462,44 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
               value={exerciseSearch}
               onChange={(e) => setExerciseSearch(e.target.value)}
               placeholder="Name exercise"
-              className="w-44 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-48 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <span className="text-[10px] font-bold text-gray-600 mx-0.5">Intensity:</span>
+            <span className="text-xs font-bold text-gray-600 mx-0.5 shrink-0">Intensity:</span>
             {(['speed', 'series', 'riptime', 'weight', 'break', 'mode'] as const).map((key) => (
               <button
                 key={key}
                 onClick={() => setActiveExerciseButton(activeExerciseButton === key ? null : key)}
-                className={`px-2 py-1 text-xs font-medium border rounded whitespace-nowrap ${
+                className={`px-3 py-2 text-sm font-semibold border-2 rounded-md whitespace-nowrap ${
                   activeExerciseButton === key ? 'bg-yellow-50 text-black border-yellow-400' : 'bg-white text-black border-gray-300 hover:bg-yellow-50'
                 }`}
               >
                 {key === 'riptime' ? 'Rip\\Time' : key === 'break' ? 'Break' : key.charAt(0).toUpperCase() + key.slice(1)}
               </button>
             ))}
+            <div className="ml-auto flex min-w-0 max-w-full flex-[1_1_220px] flex-wrap items-center gap-1.5 sm:flex-nowrap">
+              <label htmlFor="fast-planner-moveframe-goal" className="text-xs font-bold text-gray-800 whitespace-nowrap shrink-0">
+                Goal of this moveframe
+              </label>
+              <select
+                id="fast-planner-moveframe-goal"
+                value={moveframeGoal}
+                onChange={(e) => setMoveframeGoal(e.target.value as GoalId)}
+                className="min-w-0 flex-1 rounded-md border-2 border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:min-w-[14rem] sm:max-w-md"
+                aria-label="Goal of this moveframe"
+              >
+                {GOAL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
 
         {/* Muscle Groups - Always visible */}
-        <div className="bg-slate-900 border border-slate-700 rounded-lg p-2 mt-2">
+        <div className="bg-slate-900 border border-slate-700 rounded-lg p-2 mt-2 min-w-0 max-w-full">
           <div className="flex items-center gap-3 pb-2">
             <label className="flex items-center cursor-pointer whitespace-nowrap text-white">
               <input
@@ -1291,7 +1529,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
               <span className="text-xs">Plan series\exercise</span>
             </label>
           </div>
-          <div className="flex items-center pb-2 gap-2" style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
+          <div className="flex min-w-0 w-full flex-nowrap items-center gap-2 overflow-x-auto pb-2">
             {showAllButton && (
               <div className="flex-shrink-0">
                 <button
@@ -1351,7 +1589,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
             )}
 
             {/* Content area: show options or muscle groups within the same box */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex-1 min-h-[140px] max-h-[280px] overflow-y-auto overflow-x-auto text-black shrink-0">
+            <div className="min-h-[140px] max-h-[280px] min-w-0 flex-1 overflow-y-auto overflow-x-auto rounded-lg border border-yellow-200 bg-yellow-50 p-2 text-black">
               {activeExerciseButton ? (
                 <div className="space-y-3">
                 {activeExerciseButton === 'speed' && (
@@ -1725,37 +1963,79 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
             ) : (
               <>
                 {!showSubExercises ? (
-                  <div className="flex" style={{ gap: `${Math.max(6, 14 * SECTOR_ZOOM)}px` }}>
-                    {MUSCLE_GROUPS.map((group) => (
-                      <button
-                        key={group.id}
-                        onClick={() => {
-                          setSelectedMuscleGroup(group.id);
-                          if (sectorMode === 'series') {
-                            setShowSubExercises(false);
-                            openSeriesPlan(group.id);
-                          } else {
-                            setShowSubExercises(true);
-                          }
-                        }}
-                        className={`flex flex-col items-center justify-center px-3 py-3 rounded-lg transition-all flex-shrink-0 border-2 ${selectedMuscleGroup === group.id
-                          ? 'bg-white text-black border-blue-600 ring-2 ring-blue-200'
-                          : 'bg-white text-black border-gray-300 hover:border-blue-500 hover:shadow-md'
-                          }`}
-                      >
-                        <div className="mb-2 flex items-center justify-center relative" style={{ width: `${112 * SECTOR_ZOOM}px`, height: `${112 * SECTOR_ZOOM}px` }}>
-                          <Image
-                            src={group.image}
-                            alt={group.label}
-                            width={Math.round(112 * SECTOR_ZOOM)}
-                            height={Math.round(112 * SECTOR_ZOOM)}
-                            className="object-contain"
-                            unoptimized
-                          />
-                        </div>
-                        <span className="font-medium text-black" style={{ fontSize: `${Math.max(11, 16 * SECTOR_ZOOM)}px` }}>{group.label}</span>
-                      </button>
-                    ))}
+                  <div className="flex min-w-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const el = sectorListScrollRef.current;
+                        if (el) el.scrollBy({ left: -200, behavior: 'smooth' });
+                      }}
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-700 text-white shadow-md hover:bg-slate-600"
+                      title="Scroll muscle groups left"
+                      aria-label="Scroll muscle groups left"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                    </button>
+                    <div
+                      ref={sectorListScrollRef}
+                      className="max-w-full min-w-0 flex-1 overflow-x-auto overflow-y-hidden scroll-smooth pb-1 [scrollbar-gutter:stable]"
+                      title="Scroll horizontally: arrows, scrollbar, trackpad, or wheel"
+                      onWheel={(e) => {
+                        const el = e.currentTarget;
+                        if (el.scrollWidth <= el.clientWidth) return;
+                        e.preventDefault();
+                        el.scrollLeft += e.deltaY;
+                      }}
+                    >
+                      <div className="flex w-max" style={{ gap: `${Math.max(4, 10 * SECTOR_ZOOM)}px` }}>
+                        {MUSCLE_GROUPS.map((group) => (
+                          <button
+                            key={group.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedMuscleGroup(group.id);
+                              if (sectorMode === 'series') {
+                                setShowSubExercises(false);
+                                openSeriesPlan(group.id);
+                              } else {
+                                setShowSubExercises(true);
+                              }
+                            }}
+                            className={`flex flex-shrink-0 flex-col items-center justify-center rounded-lg border-2 px-2 py-2 transition-all ${selectedMuscleGroup === group.id
+                              ? 'border-blue-600 bg-white text-black ring-2 ring-inset ring-blue-300/80'
+                              : 'border-gray-300 bg-white text-black hover:border-blue-500 hover:shadow-md'
+                              }`}
+                          >
+                            <div
+                              className="relative mb-1 flex items-center justify-center"
+                              style={{ width: `${112 * SECTOR_ZOOM}px`, height: `${112 * SECTOR_ZOOM}px` }}
+                            >
+                              <Image
+                                src={group.image}
+                                alt={group.label}
+                                width={Math.round(112 * SECTOR_ZOOM)}
+                                height={Math.round(112 * SECTOR_ZOOM)}
+                                className="object-contain"
+                                unoptimized
+                              />
+                            </div>
+                            <span className="font-medium text-black leading-tight" style={{ fontSize: `${Math.max(9, 13 * SECTOR_ZOOM)}px` }}>{group.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const el = sectorListScrollRef.current;
+                        if (el) el.scrollBy({ left: 200, behavior: 'smooth' });
+                      }}
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-700 text-white shadow-md hover:bg-slate-600"
+                      title="Scroll muscle groups right"
+                      aria-label="Scroll muscle groups right"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
+                    </button>
                   </div>
                 ) : (
                   <div className="relative flex items-center gap-1">
@@ -1852,52 +2132,74 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
 
       {/* Exercise Table – action buttons + headers sticky, only the list scrolls */}
       <div className={`bg-white border border-gray-300 rounded-lg overflow-hidden relative z-0 flex-1 min-h-[220px] flex flex-col ${!fullView ? 'border-t-0 rounded-t-none' : ''}`}>
-        <div className={fullView ? 'overflow-auto flex-1 min-h-[180px]' : 'overflow-auto flex-1 min-h-[180px]'}>
+        <div
+          className={`overflow-auto flex-1 ${fullView ? 'min-h-[min(52vh,420px)]' : 'min-h-[252px]'}`}
+        >
           {/* Control buttons – always visible; sticky in both modes; centered in fullView */}
-          <div className={`sticky top-0 z-20 flex-shrink-0 px-2 py-1.5 bg-gray-50 border-b border-gray-200 flex items-center gap-2 flex-wrap shadow-[0_1px_3px_0_rgba(0,0,0,0.08)] ${fullView ? 'justify-center' : ''}`}>
-            <span className="text-[10px] text-gray-500 italic mr-1">SECTION ALWAYS ON SCREEN – ONLY THE LIST WILL MOVE</span>
-            <button onClick={handleGoNext} className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Go next</button>
-            <button onClick={handleDuplicate} title="Duplicate selected row (appended at the bottom). Or double-click the exercise cell to duplicate." className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Duplicate</button>
-            <button onClick={handleTriplicate} title="Add two copies of selected row (appended at the bottom)." className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Triplicate</button>
-            <button onClick={handleRemove} className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Remove</button>
-            <button onClick={handleResetRow} className="px-2 py-1 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900">Reset row</button>
-            <button onClick={handleResetAll} className="px-2 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700">Reset all</button>
-            <button onClick={handleSaveMoveframe} disabled={!canSaveWithSuperset} className="ml-auto px-3 py-1 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed" title={!canSaveWithSuperset ? 'Fix Superset: each Superset exercise must be grouped with at least one other Superset' : undefined}>Save moveframe</button>
+          <div className={`sticky top-0 z-30 flex-shrink-0 px-2 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2 flex-wrap shadow-[0_1px_3px_0_rgba(0,0,0,0.08)] ${fullView ? 'justify-center' : ''}`}>
+            <span className="text-[10px] text-gray-500 italic mr-1 sm:text-xs">SECTION ALWAYS ON SCREEN – ONLY THE LIST WILL MOVE</span>
+            {fullView && (
+              <div className="flex min-w-0 max-w-full shrink-0 items-center gap-1.5 border-r border-gray-200 pr-2 mr-1">
+                <label htmlFor="fast-planner-moveframe-goal-full" className="text-[10px] font-bold text-gray-700 whitespace-nowrap">
+                  Goal
+                </label>
+                <select
+                  id="fast-planner-moveframe-goal-full"
+                  value={moveframeGoal}
+                  onChange={(e) => setMoveframeGoal(e.target.value as GoalId)}
+                  className="max-w-[min(20rem,70vw)] rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[10px] text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  aria-label="Goal of this moveframe"
+                >
+                  {GOAL_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <button onClick={handleGoNext} className="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900">Go next</button>
+            <button onClick={handleDuplicate} title="Duplicate selected row (appended at the bottom). Or double-click the exercise cell to duplicate." className="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900">Duplicate</button>
+            <button onClick={handleTriplicate} title="Add two copies of selected row (appended at the bottom)." className="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900">Triplicate</button>
+            <button onClick={handleRemove} className="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900">Remove</button>
+            <button onClick={handleResetRow} className="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900">Reset row</button>
+            <button onClick={handleResetAll} className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700">Reset all</button>
+            <button onClick={handleSaveMoveframe} disabled={!canSaveWithSuperset} className="ml-auto rounded-md bg-red-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50" title={!canSaveWithSuperset ? 'Fix Superset: each Superset exercise must be grouped with at least one other Superset' : undefined}>Save moveframe</button>
           </div>
           <table className="w-full border-collapse table-fixed">
             <colgroup>
               <col className="w-12" />
-              <col style={{ minWidth: '250px' }} />
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
-              <col style={{ width: '140px' }} />
-              <col className="w-14" />
+              <col style={{ minWidth: '220px', width: '26%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '7rem' }} />
+              <col style={{ width: '4.5rem' }} />
             </colgroup>
-            <thead className="bg-gray-100 sticky z-10 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]" style={{ top: '2.75rem' }}>
+            <thead className="sticky z-20 bg-gray-100 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]" style={{ top: '4rem' }}>
               <tr>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r w-12">#</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r" style={{ minWidth: '250px' }}>Exercise</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Speed</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Series</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Rip\Time</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Weight</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r">Break</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 border-r" style={{ width: '140px' }}>Mode</th>
-                <th className="px-2 py-1.5 text-left text-xs font-bold text-gray-700 w-14">Actions</th>
+                <th className="sticky left-0 z-30 w-12 border-b border-r border-gray-300 bg-gray-100 px-2 py-1.5 text-left text-xs font-bold text-gray-700">#</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700" style={{ minWidth: '220px' }}>Exercise</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700">Speed</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700">Series</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700">Rip\Time</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700">Weight</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700">Break</th>
+                <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700">Mode</th>
+                <th className="border-b border-gray-300 px-1 py-1.5 text-center text-xs font-bold text-gray-700">Actions</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row, index) => (
                 <tr
                   key={row.id}
-                  className="border-t hover:bg-gray-50"
+                  className="group border-t hover:bg-gray-50"
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={() => handleRowDrop(index)}
                 >
-                  <td className="px-1 py-1 text-sm text-gray-600 border-r w-12">
+                  <td className="sticky left-0 z-[5] w-12 border-r border-gray-300 bg-white px-1 py-1 text-sm text-gray-600 shadow-[2px_0_6px_-4px_rgba(0,0,0,0.2)] group-hover:bg-gray-50">
                     <div className="flex items-center gap-1">
                       <button
                         draggable
@@ -1925,7 +2227,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       }}
                       title="Click to select. Double-click to duplicate this exercise (duplicate is appended at the bottom)."
                       className={`relative cursor-pointer border-2 rounded overflow-hidden ${selectedCell?.rowId === row.id && selectedCell?.field === 'exercise'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-gray-200'
                         }`}
                     >
@@ -1989,7 +2291,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, speed: e.target.value } : r))}
                       onClick={() => handleCellClick(row.id, 'speed')}
                       className={`w-full px-2 py-1 text-sm border rounded ${selectedCell?.rowId === row.id && selectedCell?.field === 'speed'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-gray-200'
                         }`}
                     />
@@ -2001,7 +2303,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, series: e.target.value } : r))}
                       onClick={() => handleCellClick(row.id, 'series')}
                       className={`w-full px-2 py-1 text-sm border rounded bg-green-50 ${selectedCell?.rowId === row.id && selectedCell?.field === 'series'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-green-200'
                         }`}
                     />
@@ -2013,7 +2315,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, ripTime: e.target.value } : r))}
                       onClick={() => handleCellClick(row.id, 'ripTime')}
                       className={`w-full px-2 py-1 text-sm border rounded bg-green-50 ${selectedCell?.rowId === row.id && selectedCell?.field === 'ripTime'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-green-200'
                         }`}
                     />
@@ -2025,7 +2327,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, weight: e.target.value } : r))}
                       onClick={() => handleCellClick(row.id, 'weight')}
                       className={`w-full px-2 py-1 text-sm border rounded ${selectedCell?.rowId === row.id && selectedCell?.field === 'weight'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-gray-200'
                         }`}
                     />
@@ -2037,22 +2339,21 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, break: e.target.value } : r))}
                       onClick={() => handleCellClick(row.id, 'break')}
                       className={`w-full px-2 py-1 text-sm border rounded bg-yellow-50 ${selectedCell?.rowId === row.id && selectedCell?.field === 'break'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-yellow-200'
                         }`}
                     />
                   </td>
-                  <td className="px-1 py-1 bg-yellow-50">
+                  <td className="min-w-0 max-w-[7rem] border-r border-gray-300 bg-yellow-50 px-0.5 py-1">
                     <div
                       onClick={() => handleCellClick(row.id, 'mode')}
-                      className={`cursor-pointer border-2 rounded p-2 bg-yellow-50 min-h-[40px] flex items-center justify-center ${selectedCell?.rowId === row.id && selectedCell?.field === 'mode'
-                        ? 'border-blue-500 ring-2 ring-blue-200'
+                      className={`flex min-h-[40px] min-w-0 max-w-full cursor-pointer items-center justify-center rounded border-2 bg-yellow-50 p-1 ${selectedCell?.rowId === row.id && selectedCell?.field === 'mode'
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
                         : 'border-yellow-200'
                         }`}
-                      style={{ width: '140px' }}
                     >
                       {row.mode ? (
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex min-w-0 max-w-full items-center gap-1">
                           {(() => {
                             const modeOption = MODE_OPTIONS.find(m => m.label === row.mode);
                             const isSuperset = row.mode === 'Superset';
@@ -2061,15 +2362,15 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                               <>
                                 {modeOption ? (
                                   <>
-                                    <Image src={modeOption.icon} alt={row.mode} width={24} height={24} className="object-contain" unoptimized />
-                                    <span className="text-xs">{row.mode}</span>
+                                    <Image src={modeOption.icon} alt={row.mode} width={20} height={20} className="h-5 w-5 flex-shrink-0 object-contain" unoptimized />
+                                    <span className="truncate text-[11px] font-medium leading-tight">{row.mode}</span>
                                   </>
                                 ) : (
-                                  <span className="text-xs text-gray-700">{row.mode}</span>
+                                  <span className="truncate text-[11px] text-gray-700">{row.mode}</span>
                                 )}
                                 {isSuperset && (
-                                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${isAlone ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800'}`}>
-                                    {isAlone ? 'not ok' : 'ok'}
+                                  <span className={`flex-shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold leading-none ${isAlone ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800'}`}>
+                                    {isAlone ? 'no' : 'ok'}
                                   </span>
                                 )}
                               </>
@@ -2077,11 +2378,11 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                           })()}
                         </div>
                       ) : (
-                        <span className="text-xs text-gray-400">Click to select</span>
+                        <span className="px-1 text-center text-[10px] text-gray-400">Tap</span>
                       )}
                     </div>
                   </td>
-                  <td className="px-1 py-1 text-center w-14">
+                  <td className="w-[4.5rem] min-w-[4.5rem] max-w-[4.5rem] px-0.5 py-1 text-center align-middle">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <button
                         onClick={() => handleDeleteRow(row.id)}
@@ -2107,33 +2408,65 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
           </table>
         </div>
 
-        {/* Scroll to view all repetitions note */}
+        {/* Scroll to view all repetitions note — modal mode only (full page shows this in summary panel) */}
         {!fullView && (
-          <div className="px-4 py-2 bg-blue-50 border-t border-blue-200">
-            <p className="text-xs text-blue-700">
+          <div className="border-t border-blue-200 bg-blue-50 px-4 py-2">
+            <p className="text-xs text-blue-800">
               ℹ️ Scroll to view all repetitions. Each can have unique speed, time, and pause values.
             </p>
           </div>
         )}
       </div>
 
-      {!fullView && (
-      <div className="bg-green-50 border border-green-300 rounded-lg p-3 space-y-2 flex-shrink-0 max-h-[140px] overflow-y-auto">
-        <label className="block text-sm font-bold text-gray-700 mb-2">Descriptions & Instructions</label>
-        {summaryText ? (
-          <pre className="w-full px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded text-gray-700 whitespace-pre-wrap font-sans resize-none mb-2 max-h-16 overflow-y-auto" aria-readonly>
-            {summaryText}
-          </pre>
+      <div
+        className={`mt-2 flex-shrink-0 space-y-2 rounded-lg bg-green-50 p-3 ${
+          fullView ? 'border-2 border-green-600' : 'max-h-[220px] overflow-y-auto border border-green-300'
+        }`}
+      >
+        {fullView && (
+          <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            ℹ️ Scroll to view all repetitions. Each can have unique speed, time, and pause values.
+          </div>
+        )}
+        <label className="mb-1 block text-sm font-bold text-gray-700">Descriptions & Instructions</label>
+        {summaryStats ? (
+          fullView ? (
+            <div className="flex flex-nowrap items-center gap-x-3 gap-y-1 overflow-x-auto whitespace-nowrap rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-xs font-medium text-gray-800">
+              <span className="shrink-0 font-bold text-green-800">Summary</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">No. sectors {summaryStats.sectorCount}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Total series {summaryStats.totalSeries}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Avg series/sector {summaryStats.avgSeriesPerSector}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Total exercises {summaryStats.totalExercises}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Avg ex./sector {summaryStats.avgExercisesPerSector}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Total reps {summaryStats.totalReps}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Kg tot. {summaryStats.kgTot}</span>
+              <span className="text-gray-400">|</span>
+              <span className="shrink-0">Avg pause {summaryStats.avgPause}</span>
+            </div>
+          ) : (
+            <pre
+              className="mb-2 max-h-24 w-full overflow-y-auto whitespace-pre-wrap rounded border border-gray-300 bg-gray-100 px-3 py-2 font-sans text-xs text-gray-700"
+              aria-readonly
+            >
+              {summaryText}
+            </pre>
+          )
         ) : null}
         <textarea
           value={userDescription}
           onChange={(e) => setUserDescription(e.target.value)}
-          className="w-full px-3 py-2 text-sm border border-gray-300 rounded resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
-          rows={2}
+          className="w-full resize-none rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          rows={fullView ? 3 : 2}
           placeholder="Add descriptions or instructions here..."
         />
       </div>
-      )}
 
       {/* Exercise Selection Popup */}
       {showExercisePopup && selectedCell && (
@@ -2237,11 +2570,19 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         </div>
       )}
       {showSeriesPlanModal && planSectorId && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-amber-50 rounded-lg shadow-xl w-[90%] max-w-2xl p-5 border-2 border-amber-200">
-            <div className="mb-3">
-              <div className="text-lg font-bold text-gray-900">Plan series / exercise</div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
+          <div
+            className="my-auto flex max-h-[min(100dvh-2rem,920px)] w-[90%] max-w-2xl flex-col overflow-hidden rounded-lg border-2 border-amber-200 bg-amber-50 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="series-plan-modal-title"
+          >
+            <div className="flex-shrink-0 border-b border-amber-200/60 px-4 pb-3 pt-4 sm:px-5">
+              <div id="series-plan-modal-title" className="text-lg font-bold text-gray-900">
+                Plan series / exercise
+              </div>
             </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-3 sm:px-5">
             {/* Sector: name and picture - prominent white area */}
             <div className="mb-4 p-4 rounded-lg bg-white border-2 border-amber-200 shadow-sm">
               <div className="flex items-center gap-4">
@@ -2261,60 +2602,398 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 })()}
               </div>
             </div>
-            {/* WORK / PAUSE table - yellow background */}
-            <div className="mb-4 p-3 rounded-lg bg-amber-100/80 border-2 border-amber-200">
-              <table className="w-full border-collapse text-sm bg-white rounded overflow-hidden border border-amber-200">
-                <thead>
-                  <tr>
-                    <th className="border border-amber-200 px-2 py-1.5 w-10 text-center bg-amber-50 font-semibold">#</th>
-                    <th className="border border-amber-200 px-2 py-1.5 text-center bg-amber-50 font-semibold" colSpan={2}>WORK</th>
-                    <th className="border border-amber-200 px-2 py-1.5 text-center bg-amber-50 font-semibold">PAUSE</th>
-                  </tr>
-                  <tr className="bg-amber-50">
-                    <th className="border border-amber-200 px-2 py-1 text-center text-xs"></th>
-                    <th className="border border-amber-200 px-2 py-1 text-center text-xs">Series</th>
-                    <th className="border border-amber-200 px-2 py-1 text-center text-xs">Reps</th>
-                    <th className="border border-amber-200 px-2 py-1 text-center text-xs">Pause</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="border border-amber-200 px-2 py-1.5 text-center">{planExerciseNumber}</td>
-                    <td className="border border-amber-200 px-2 py-1.5 text-center">
-                      <select value={planSeries} onChange={(e) => setPlanSeries(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm bg-white">
-                        {[1,2,3,4,5,6,7,8,9,10,12,15,20].map(n => (<option key={n} value={n.toString()}>{n}</option>))}
-                      </select>
-                    </td>
-                    <td className="border border-amber-200 px-2 py-1.5 text-center">
-                      <select value={planReps} onChange={(e) => setPlanReps(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm bg-white">
-                        {[4,6,8,10,12,15,20,25,30].map(n => (<option key={n} value={n.toString()}>{n}</option>))}
-                      </select>
-                    </td>
-                    <td className="border border-amber-200 px-2 py-1.5 text-center">
-                      <select value={planPause} onChange={(e) => setPlanPause(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm bg-white">
-                        {BREAK_OPTIONS.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
-                      </select>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            {/* Planning support — user targets (reference) vs planned progress */}
+            <div className="mb-4 rounded-lg border-2 border-sky-300 bg-sky-50 shadow-sm overflow-hidden">
+              <div className="bg-sky-600 px-3 py-2 text-sm font-bold text-white">Planning support — plan total series of area</div>
+              <div className="p-3">
+                <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded border border-sky-200 bg-white px-3 py-2 text-xs text-sky-900">
+                  <span className="font-semibold text-sky-900">Training level</span>
+                  {PLAN_TARGET_LEVEL_OPTIONS.map(opt => (
+                    <label key={opt.id} className="inline-flex cursor-pointer items-center gap-1.5">
+                      <input
+                        type="radio"
+                        name="planTargetLevel"
+                        checked={planTargetLevel === opt.id}
+                        onChange={() => setPlanTargetLevel(opt.id)}
+                        className="text-sky-600"
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+                <details className="mb-3 rounded border border-sky-200 bg-white px-2 py-1.5 text-xs text-sky-900">
+                  <summary className="cursor-pointer font-semibold text-sky-800">Reference table</summary>
+                  <table className="mt-2 w-full border-collapse text-center text-[11px]">
+                    <thead>
+                      <tr className="bg-sky-50">
+                        <th className="border border-sky-200 px-1 py-0.5">Total series</th>
+                        <th className="border border-sky-200 px-1 py-0.5">Lev 1–2</th>
+                        <th className="border border-sky-200 px-1 py-0.5">Lev 3–4</th>
+                        <th className="border border-sky-200 px-1 py-0.5">Lev 5</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {SERIES_PLANNING_TABLE_KEYS.map(series => {
+                        const row = SERIES_TO_EXE_BY_LEVEL[series];
+                        return (
+                          <tr key={series}>
+                            <td className="border border-sky-200 px-1 py-0.5">{series}</td>
+                            <td className="border border-sky-200 px-1 py-0.5">{row[0]}</td>
+                            <td className="border border-sky-200 px-1 py-0.5">{row[1]}</td>
+                            <td className="border border-sky-200 px-1 py-0.5">{row[2]}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <p className="mt-1 text-[10px] text-sky-700/90">
+                    If your target is not a listed row (e.g. 8 or 11), the app uses the nearest row <strong>at or below</strong> it (8→7, 11→10). Targets above 20 use the row for 20. Table:{' '}
+                    <code className="rounded bg-sky-100 px-0.5">SERIES_TO_EXE_BY_LEVEL</code>.
+                  </p>
+                </details>
+                <table className="w-full border-collapse text-sm bg-white rounded border border-sky-200">
+                  <thead>
+                    <tr className="bg-sky-100">
+                      <th className="border border-sky-200 px-2 py-1 text-left text-xs font-semibold text-sky-900" />
+                      <th className="border border-sky-200 px-2 py-1 text-center text-xs font-semibold text-sky-900">Series</th>
+                      <th className="border border-sky-200 px-2 py-1 text-center text-xs font-semibold text-sky-900">Exe</th>
+                      <th className="border border-sky-200 px-2 py-1 text-center text-xs font-semibold text-sky-900">Reps</th>
+                      <th className="border border-sky-200 px-2 py-1 text-center text-xs font-semibold text-sky-900">Pause</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="border border-sky-200 px-2 py-1.5 text-xs font-semibold text-sky-800 whitespace-nowrap">Target</td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planTargetTotalSeries}
+                          onChange={(e) => setPlanTargetTotalSeries(e.target.value)}
+                          className="max-w-full rounded border border-sky-300 bg-white px-1 py-1 text-sm"
+                          aria-label="Target total series for this muscle area"
+                        >
+                          {PLAN_TARGET_TOTAL_SERIES_OPTIONS.map(n => (
+                            <option key={n} value={String(n)}>{n}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td
+                        className="border border-sky-200 bg-sky-50/80 px-2 py-1.5 text-center text-base font-bold text-sky-950"
+                        title={`Suggested exercises for ${planTargetTotalSeries} planned series, ${PLAN_TARGET_LEVEL_OPTIONS.find(o => o.id === planTargetLevel)?.label ?? planTargetLevel} (table row ${planTargetResolvedSeriesKey}, not editable)`}
+                      >
+                        <span role="status">{planTargetExeCount}</span>
+                      </td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planTargetReps}
+                          onChange={(e) => {
+                            setPlanTargetReps(e.target.value);
+                            setPlanReps(e.target.value);
+                          }}
+                          className="max-w-full rounded border border-sky-300 bg-white px-1 py-1 text-sm"
+                          aria-label="Target average reps (reference)"
+                        >
+                          {Array.from({ length: 99 }, (_, i) => i + 1).map(n => (
+                            <option key={n} value={String(n)}>{n}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planTargetPause}
+                          onChange={(e) => {
+                            setPlanTargetPause(e.target.value);
+                            setPlanPause(e.target.value);
+                          }}
+                          className="max-w-full rounded border border-sky-300 bg-white px-1 py-1 text-sm"
+                          aria-label="Target average pause (reference)"
+                        >
+                          {BREAK_OPTIONS.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-sky-200 px-2 py-1.5 text-xs font-semibold text-sky-800 whitespace-nowrap">Planned</td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center font-bold text-orange-600">{planSectorPlanningStats.seriesSum}</td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center font-semibold">{planSectorPlanningStats.exerciseCount}</td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center text-xs">
+                        {planSectorPlanningStats.avgReps != null ? `Average ${planSectorPlanningStats.avgReps}` : '—'}
+                      </td>
+                      <td className="border border-sky-200 px-2 py-1.5 text-center text-xs">
+                        {planSectorPlanningStats.avgPauseSec != null
+                          ? formatAvgPauseFromSeconds(planSectorPlanningStats.avgPauseSec)
+                          : '—'}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <div className="mb-4">
-              <button onClick={proceedScanExercise} className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-base shadow-md">Proceed scan exercises</button>
+
+            {/* Current moveframe — previous slot summary + next exercise load */}
+            <div className="mb-4 rounded-lg border-2 border-violet-300 bg-violet-50 shadow-sm">
+              <div className="rounded-t-lg bg-violet-600 px-3 py-2 text-sm font-bold text-white">Current moveframe load values</div>
+              <div className="overflow-x-auto p-3">
+                <table className="w-full border-collapse text-sm bg-white rounded border border-violet-200">
+                  <thead>
+                    <tr>
+                      <th className="border border-violet-200 bg-violet-100 px-2 py-1.5 text-center text-xs font-semibold text-violet-900">#</th>
+                      <th className="border border-violet-200 bg-violet-100 px-2 py-1.5 text-center text-xs font-semibold text-violet-900" colSpan={3}>WORK</th>
+                      <th className="border border-violet-200 bg-violet-100 px-2 py-1.5 text-center text-xs font-semibold text-violet-900">PAUSE</th>
+                    </tr>
+                    <tr className="bg-violet-50">
+                      <th className="border border-violet-200 px-2 py-1 text-center text-[10px] font-normal text-violet-800">Added / next</th>
+                      <th className="border border-violet-200 px-2 py-1 text-center text-xs">Series</th>
+                      <th className="border border-violet-200 px-2 py-1 text-center text-xs">Reps</th>
+                      <th className="border border-violet-200 px-2 py-1 text-center text-xs">Pyramidal</th>
+                      <th className="border border-violet-200 px-2 py-1 text-center text-xs">Pause</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td
+                        className="border border-violet-200 px-2 py-1.5 text-center text-xs font-semibold text-violet-900"
+                        title="Moveframe rows in this plan for this sector (any position in the table)"
+                      >
+                        {planSectorPlanningStats.exerciseCount}
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center text-sm text-gray-700">
+                        {planSectorPlanningStats.lastRow?.series || '—'}
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center text-sm text-gray-700">
+                        {planSectorPlanningStats.lastRow?.ripTime || '—'}
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center text-sm text-gray-700">
+                        {planPyramidalLabel(planSectorPlanningStats.lastRow?.pyramidal)}
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center text-sm text-gray-700">
+                        {planSectorPlanningStats.lastRow?.break || '—'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td
+                        className="border border-violet-200 px-2 py-1.5 text-center font-semibold text-violet-900"
+                        title="Index of the next exercise line for this sector"
+                      >
+                        {planSectorPlanningStats.exerciseCount + 1}
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planSeries}
+                          onChange={(e) => setPlanSeries(e.target.value)}
+                          className="rounded border border-violet-300 bg-white px-2 py-1 text-sm"
+                        >
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20].map(n => (
+                            <option key={n} value={n.toString()}>{n}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planReps}
+                          onChange={(e) => setPlanReps(e.target.value)}
+                          className="mx-auto block min-w-[3.5rem] rounded border border-violet-300 bg-white px-2 py-1 text-sm"
+                          aria-label="Repetitions 1–99"
+                        >
+                          {Array.from({ length: 99 }, (_, i) => i + 1).map((n) => (
+                            <option key={n} value={String(n)}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planPyramidal}
+                          onChange={(e) => setPlanPyramidal(e.target.value)}
+                          className={`max-w-[11rem] rounded border border-violet-300 bg-white px-2 py-1 text-sm ${
+                            planPyramidal === 'flat' ? 'text-red-700 font-medium' : 'text-gray-900'
+                          }`}
+                          aria-label="Pyramidal load"
+                        >
+                          {PLAN_PYRAMIDAL_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="border border-violet-200 px-2 py-1.5 text-center">
+                        <select
+                          value={planPause}
+                          onChange={(e) => setPlanPause(e.target.value)}
+                          className="rounded border border-violet-300 bg-white px-2 py-1 text-sm"
+                        >
+                          {BREAK_OPTIONS.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-            {/* Search: Name exercise input */}
+
             <div className="mb-4">
+              <button
+                type="button"
+                onClick={proceedScanExercise}
+                className="w-full rounded-lg bg-red-600 px-4 py-3 text-base font-bold text-white shadow-md hover:bg-red-700"
+              >
+                Proceed scan exercises
+              </button>
+            </div>
+            <div className="mb-2">
+              <label htmlFor="plan-exercise-search" className="mb-1 block text-sm font-semibold text-gray-800">
+                Search exercise
+              </label>
               <input
+                id="plan-exercise-search"
                 type="text"
                 value={planExerciseSearch}
                 onChange={(e) => setPlanExerciseSearch(e.target.value)}
-                placeholder="Name exercise (search)"
-                className="w-full px-4 py-2.5 text-base border-2 border-amber-300 rounded-lg bg-white placeholder-gray-500 focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+                placeholder="Name exercise"
+                className="w-full rounded-lg border-2 border-amber-300 bg-white px-4 py-2.5 text-base placeholder-gray-500 focus:border-orange-400 focus:ring-2 focus:ring-orange-400"
                 aria-label="Search exercises by name"
               />
             </div>
-            {/* Exercise area - bigger for 2 pictures per exercise, with scroll arrows */}
-            <div className="min-h-[280px] h-72 bg-amber-100/60 border-2 border-amber-200 rounded-lg flex items-center justify-center mb-4 relative">
+            <div className="mb-0 flex overflow-hidden rounded-t-lg bg-slate-800 shadow-sm" role="tablist" aria-label="Exercise detail">
+              {(
+                [
+                  { id: 'execution' as const, label: 'Execution' },
+                  { id: 'points' as const, label: 'Start-end points' },
+                  { id: 'video' as const, label: 'Video' },
+                  { id: 'other' as const, label: 'Other info' }
+                ]
+              ).map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={planExerciseDetailTab === tab.id}
+                  onClick={() => setPlanExerciseDetailTab(tab.id)}
+                  className={`min-w-0 flex-1 px-1.5 py-2.5 text-center text-[11px] font-semibold text-white sm:px-2 sm:text-sm ${
+                    planExerciseDetailTab === tab.id
+                      ? 'bg-slate-900 ring-2 ring-inset ring-amber-400'
+                      : 'bg-slate-800 hover:bg-slate-700'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div
+              className={`mb-4 rounded-b-lg border border-t-0 border-amber-200 bg-white px-3 py-2 text-sm text-gray-700 ${
+                planExerciseDetailTab === 'points'
+                  ? 'min-h-[11rem]'
+                  : planExerciseDetailTab === 'video'
+                    ? 'min-h-[11rem]'
+                    : 'min-h-[6.5rem]'
+              }`}
+              role="tabpanel"
+            >
+              {planExerciseDetailTab === 'execution' && (
+                <div className="min-h-[5.5rem] py-2" aria-label="Execution">
+                  {planCandidate ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">How to perform</p>
+                      <p className="text-sm leading-relaxed text-gray-800">
+                        <span className="font-medium text-gray-900">{planCandidate.name}</span>
+                        {' — '}
+                        Full step-by-step instructions will appear here when this exercise is linked to your database (setup,
+                        range of motion, tempo, breathing).
+                      </p>
+                      <ul className="list-disc space-y-1 pl-4 text-xs text-gray-600">
+                        <li>Keep stable posture and a controlled lowering phase.</li>
+                        <li>Align effort with the planned reps and pauses above.</li>
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="py-3 text-center text-sm text-gray-500">Select an exercise below to see execution notes.</p>
+                  )}
+                </div>
+              )}
+              {planExerciseDetailTab === 'points' &&
+                (planCandidate ? (
+                  <div className="flex flex-wrap items-start justify-center gap-6 py-2">
+                    {(
+                      [
+                        { key: 'a', title: 'Picture A', altSuffix: 'picture A' },
+                        { key: 'b', title: 'Picture B', altSuffix: 'picture B' }
+                      ] as const
+                    ).map(({ key, title, altSuffix }) => (
+                      <div key={key} className="flex flex-col items-center gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">{title}</span>
+                        <div className="flex h-44 w-44 items-center justify-center rounded-lg border-2 border-amber-200 bg-amber-50/50">
+                          <Image
+                            src={planCandidate.image}
+                            alt={`${planCandidate.name} — ${altSuffix}`}
+                            width={168}
+                            height={168}
+                            className="object-contain"
+                            unoptimized
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="py-4 text-center text-sm text-gray-500">Select an exercise below to see picture A and picture B.</p>
+                ))}
+              {planExerciseDetailTab === 'video' && (
+                <div className="flex min-h-[9rem] flex-col items-center justify-center gap-3 py-3" aria-label="Video">
+                  {planCandidate ? (
+                    <>
+                      <div className="relative flex h-36 w-full max-w-md items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50">
+                        <span
+                          className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600 text-white shadow-md"
+                          aria-hidden
+                        >
+                          <svg className="ml-1 h-7 w-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </span>
+                      </div>
+                      <p className="max-w-md text-center text-xs text-gray-500">
+                        Placeholder player for <span className="font-medium text-gray-700">{planCandidate.name}</span>. Attach a
+                        video URL in your exercise library to enable playback here.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500">Select an exercise to preview its video.</p>
+                  )}
+                </div>
+              )}
+              {planExerciseDetailTab === 'other' && (
+                <div className="min-h-[5.5rem] space-y-2 py-2" aria-label="Other info">
+                  {planCandidate ? (
+                    <>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Reference</p>
+                      <dl className="grid grid-cols-1 gap-2 text-xs text-gray-700 sm:grid-cols-2">
+                        <div>
+                          <dt className="font-medium text-gray-900">Muscular sector</dt>
+                          <dd className="mt-0.5">{planCandidate.sector ?? '—'}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-medium text-gray-900">Safety / cues</dt>
+                          <dd className="mt-0.5">Neutral alignment, full comfortable range, stop if sharp pain.</dd>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <dt className="font-medium text-gray-900">Equipment & substitutions</dt>
+                          <dd className="mt-0.5">Will be filled from your exercise library when available.</dd>
+                        </div>
+                      </dl>
+                    </>
+                  ) : (
+                    <p className="py-3 text-center text-sm text-gray-500">Select an exercise for tips and reference info.</p>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Exercise area — capped height so modal fits viewport */}
+            <div className="relative mb-4 flex h-48 min-h-[11rem] max-h-[32vh] items-center justify-center rounded-lg border-2 border-amber-200 bg-amber-100/60 sm:h-64 sm:max-h-[38vh] md:h-72 md:max-h-none">
               <button
                 onClick={() => pickPlanCandidateByOffset(-1)}
                 className="absolute left-2 z-10 w-12 h-12 flex items-center justify-center rounded-lg bg-orange-400 hover:bg-orange-500 text-white shadow-md transition-colors"
@@ -2354,13 +3033,14 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
               </button>
             </div>
-            <div className="bg-amber-100/60 border-2 border-amber-200 rounded-lg px-5 py-4 mb-4 text-center">
-              <div className="text-sm font-semibold text-amber-800 mb-1">Selected exercise</div>
-              <div className="text-2xl md:text-3xl font-bold text-gray-900">{planCandidate?.name || 'No exercise selected'}</div>
+            <div className="mb-1 rounded-lg border-2 border-amber-200 bg-amber-100/60 px-4 py-3 text-center sm:px-5 sm:py-4">
+              <div className="mb-1 text-sm font-semibold text-amber-800">Name exercise</div>
+              <div className="text-xl font-bold text-gray-900 sm:text-2xl md:text-3xl">{planCandidate?.name || 'No exercise selected'}</div>
             </div>
-            <div className="flex items-center justify-between gap-2">
-              <button onClick={addPlannedExercise} className="px-6 py-2.5 bg-gray-300 hover:bg-gray-400 text-black rounded-lg font-semibold">Add exercise</button>
-              <button onClick={endSeriesPlan} className="px-6 py-2.5 bg-black hover:bg-gray-800 text-white rounded-lg font-semibold">End the plan</button>
+            </div>
+            <div className="flex flex-shrink-0 items-center justify-between gap-2 border-t border-amber-200/60 bg-amber-50 px-4 py-3 sm:px-5">
+              <button type="button" onClick={addPlannedExercise} className="rounded-lg bg-gray-300 px-4 py-2.5 font-semibold text-black hover:bg-gray-400 sm:px-6">Add exercise</button>
+              <button type="button" onClick={endSeriesPlan} className="rounded-lg bg-black px-4 py-2.5 font-semibold text-white hover:bg-gray-800 sm:px-6">End the plan</button>
             </div>
           </div>
         </div>

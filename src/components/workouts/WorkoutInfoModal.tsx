@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { SPORT_OPTIONS, WORKOUT_SYMBOLS } from '@/constants/workout.constants';
 import { isSeriesBasedSport, shouldShowDistance, getDistanceUnit } from '@/constants/moveframe.constants';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 // Main Workout Goals options
 export const WORKOUT_GOALS = [
@@ -45,6 +46,7 @@ export default function WorkoutInfoModal({
   onEdit,
   onUpdate
 }: WorkoutInfoModalProps) {
+  const { t } = useLanguage();
   const [mainSport, setMainSport] = useState(workout?.mainSport || '');
   const [isSavingMainSport, setIsSavingMainSport] = useState(false);
   const [mainGoal, setMainGoal] = useState(workout?.mainGoal || '');
@@ -706,7 +708,7 @@ export default function WorkoutInfoModal({
               <option value="">⚡ Select main workout goal...</option>
               {WORKOUT_GOALS.map((goal) => (
                 <option key={goal.value} value={goal.value}>
-                  {goal.label}
+                  {t(`goal_${goal.value.toLowerCase()}`)}
                 </option>
               ))}
             </select>

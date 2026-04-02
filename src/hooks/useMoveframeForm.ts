@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getSportConfig, sportNeedsExerciseName, DISTANCE_BASED_SPORTS, AEROBIC_SPORTS, isSeriesBasedSport, isAerobicSport, getRepsLabel } from '@/constants/moveframe.constants';
+import { computePyramidalRepsSeries, type PyramidalMode } from '@/utils/pyramidalReps';
 
 export interface IndividualRepetitionPlan {
   index: number;
@@ -81,6 +82,9 @@ export interface MoveframeFormData {
   
   // Manual mode
   manualContent: string;
+
+  /** Body-building individual planning: flat / ascending / descending / mix reps across series */
+  pyramidalMode: PyramidalMode;
 }
 
 interface UseMoveframeFormProps {
@@ -133,6 +137,7 @@ export function useMoveframeForm({
   // Planning mode
   const [planningMode, setPlanningMode] = useState<'all' | 'individual'>('all');
   const [individualPlans, setIndividualPlans] = useState<IndividualRepetitionPlan[]>([]);
+  const [pyramidalMode, setPyramidalMode] = useState<PyramidalMode>('flat');
 
   // Standard fields
   const [distance, setDistance] = useState('');
@@ -236,6 +241,7 @@ export function useMoveframeForm({
     setSectionId(''); // Reset workout section
     setPlanningMode('all'); // Reset planning mode
     setIndividualPlans([]); // Clear individual plans
+    setPyramidalMode('flat');
     setDistance('');
     setCustomDistance('');
     setRepetitions('1');
@@ -365,24 +371,56 @@ export function useMoveframeForm({
     // Force immediate update without batching
     setIndividualPlans(prev => {
       const updated = [...prev];
-      
+
+      const bbRepsPyramid =
+        sport === 'BODY_BUILDING' &&
+        repsType === 'Reps' &&
+        field === 'reps' &&
+        pyramidalMode !== 'flat';
+
+      if (bbRepsPyramid && index === 0 && updated.length > 0) {
+        const base = parseInt(value, 10);
+        const baseNorm = Number.isNaN(base) ? 1 : base;
+        const series = computePyramidalRepsSeries(baseNorm, updated.length, pyramidalMode);
+        for (let i = 0; i < updated.length; i++) {
+          updated[i] = { ...updated[i], reps: String(series[i]) };
+        }
+        return [...updated];
+      }
+
       // Update the specified row - create a new object reference to force re-render
       if (updated[index]) {
-        updated[index] = { 
-          ...updated[index], 
-          [field]: value 
+        updated[index] = {
+          ...updated[index],
+          [field]: value
         };
       }
-      
+
       // If updating the first row (index 0), copy the value to all subsequent rows (2nd to last)
-      if (index === 0 && updated.length > 1) {
+      const copyFirstToRest =
+        index === 0 &&
+        updated.length > 1 &&
+        !(sport === 'BODY_BUILDING' && repsType === 'Reps' && field === 'reps' && pyramidalMode !== 'flat');
+
+      if (copyFirstToRest) {
         for (let i = 1; i < updated.length; i++) {
           updated[i] = { ...updated[i], [field]: value };
         }
       }
-      
+
       // Return a completely new array to ensure React detects the change
       return [...updated];
+    });
+  };
+
+  const applyGlobalRepsBodyBuildingIndividualPlans = (repsStr: string) => {
+    if (sport !== 'BODY_BUILDING') return;
+    setIndividualPlans(prev => {
+      if (prev.length === 0) return prev;
+      const parsed = parseInt(repsStr, 10);
+      const base = Number.isNaN(parsed) ? 12 : parsed;
+      const series = computePyramidalRepsSeries(base, prev.length, pyramidalMode);
+      return prev.map((p, i) => ({ ...p, reps: String(series[i]) }));
     });
   };
 
@@ -1115,6 +1153,23 @@ export function useMoveframeForm({
   }, [planningMode, repetitions, aerobicSeries, sport, canShowIndividualPlanning, initializeIndividualPlans, individualPlans.length]);
 
   /**
+   * Body-building: when pyramidal mode or series count changes, redistribute reps from series 1.
+   */
+  useEffect(() => {
+    if (sport !== 'BODY_BUILDING' || planningMode !== 'individual' || repsType !== 'Reps') return;
+    if (individualPlans.length === 0) return;
+    setIndividualPlans(prev => {
+      if (prev.length === 0) return prev;
+      let base = parseInt(prev[0]?.reps ?? '', 10);
+      if (Number.isNaN(base)) base = 12;
+      const series = computePyramidalRepsSeries(base, prev.length, pyramidalMode);
+      const next = prev.map((p, i) => ({ ...p, reps: String(series[i]) }));
+      if (next.every((p, i) => p.reps === prev[i].reps)) return prev;
+      return next;
+    });
+  }, [pyramidalMode, individualPlans.length, sport, planningMode, repsType]);
+
+  /**
    * Reset distance field when manual input type changes
    */
   useEffect(() => {
@@ -1189,7 +1244,8 @@ export function useMoveframeForm({
       annotationBold,
       batteryCount,
       batterySequence,
-      manualContent
+      manualContent,
+      pyramidalMode
     },
     
     // State setters
@@ -1202,6 +1258,7 @@ export function useMoveframeForm({
       setSectionId, // Workout section setter for ALL sports
       setPlanningMode, // Planning mode setter
       setIndividualPlans, // Individual plans setter
+      setPyramidalMode,
       setDistance,
       setCustomDistance,
       setRepetitions,
@@ -1263,6 +1320,7 @@ export function useMoveframeForm({
     calculateEstimatedTime,
     generateDescription,
     initializeIndividualPlans,
-    updateIndividualPlan
+    updateIndividualPlan,
+    applyGlobalRepsBodyBuildingIndividualPlans
   };
 }
