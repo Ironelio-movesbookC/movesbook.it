@@ -3,6 +3,8 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 /** GET - List users who have a Telegram account (for starting a chat). Excludes current user.
  *  Query param: search - filter by telegramAccount (Telegram username) or name, case-insensitive partial match.
  */

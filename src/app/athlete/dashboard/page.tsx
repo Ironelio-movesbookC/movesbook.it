@@ -86,6 +86,7 @@ import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModa
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import AthleteMyPageRightSidebarExtras from '@/components/dashboard/AthleteMyPageRightSidebarExtras';
 import AthleteMyClubRightSidebar from '@/components/dashboard/AthleteMyClubRightSidebar';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 function heroBannerStripBgUrl(p: AthleteLegacyBannerProfile | null): string {
   return getHeroBannerDisplayUrl(p);
@@ -111,6 +112,8 @@ function AthleteDashboardContent() {
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
   const [newsExpanded, setNewsExpanded] = useState(false);
+  const [clubAddSongsOgpOpen, setClubAddSongsOgpOpen] = useState(false);
+  const [clubAddSongsOgpExpanded, setClubAddSongsOgpExpanded] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
   const showLegacyButtonBars = false;
   const [activeRightTab, setActiveRightTab] = useState<'actions-planner' | 'chat-panel'>('actions-planner');
@@ -165,10 +168,15 @@ function AthleteDashboardContent() {
     }
   }, [user, loading, router]);
 
-  // Redirect if not athlete
+  // Redirect if not athlete: club accounts use /club/dashboard (e.g. News → ?open=news); others use legacy my-page.
   useEffect(() => {
     if (user && !['ATHLETE', 'ADMIN'].includes(user.userType)) {
-      router.push('/my-page');
+      if (isClubAccountUserType(user.userType)) {
+        const q = typeof window !== 'undefined' ? window.location.search.replace(/^\?/, '') : '';
+        router.replace(q ? `/club/dashboard?${q}` : '/club/dashboard');
+      } else {
+        router.push('/my-page');
+      }
     }
   }, [user, router]);
 
@@ -179,6 +187,13 @@ function AthleteDashboardContent() {
       router.replace('/athlete/dashboard', { scroll: false });
     }
   }, [searchParams, router]);
+
+  useEffect(() => {
+    if (activeTab !== 'my-entity') {
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+    }
+  }, [activeTab]);
 
   // Load entities the athlete belongs to
   useEffect(() => {
@@ -670,7 +685,7 @@ function AthleteDashboardContent() {
 
         <div className="flex-1 flex gap-0">
           {/* Left Sidebar - Hidden when News Expand is on */}
-          {showLeftSidebar && !newsExpanded && (
+          {showLeftSidebar && !newsExpanded && !clubAddSongsOgpExpanded && (
             <div className="w-80 flex-shrink-0 sticky top-0 self-start print:hidden">
               <DarkSidebar
                 userType={user?.userType || ''}
@@ -688,6 +703,10 @@ function AthleteDashboardContent() {
                   setActiveSection('posts');
                 }}
                 onMyClubClick={() => setActiveTab('my-entity')}
+                onClubAddSongsPlaylistsClick={() => {
+                  setActiveTab('my-entity');
+                  setClubAddSongsOgpOpen(true);
+                }}
               />
             </div>
           )}
@@ -739,18 +758,34 @@ function AthleteDashboardContent() {
               </div>
             )}
             
-            {activeTab === 'my-entity' && (
-              <div className="bg-white rounded-lg shadow-sm border p-8 pt-12 flex-1 flex items-start justify-center">
-                <div className="text-center">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-4">My Club Page</h2>
-                  <p className="text-gray-600 mb-6">Club-related content will be displayed here.</p>
+            {activeTab === 'my-entity' &&
+              (clubAddSongsOgpOpen ? (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <NewsOGPPanel
+                    onClose={() => {
+                      setClubAddSongsOgpOpen(false);
+                      setClubAddSongsOgpExpanded(false);
+                    }}
+                    embedded
+                    isExpanded={clubAddSongsOgpExpanded}
+                    onExpandReduce={() => setClubAddSongsOgpExpanded((prev) => !prev)}
+                  />
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="bg-white rounded-lg shadow-sm border p-8 pt-12 flex-1 flex items-start justify-center">
+                  <div className="text-center">
+                    <h2 className="text-2xl font-bold text-gray-900 mb-4">My Club Page</h2>
+                    <p className="text-gray-600 mb-6">Club-related content will be displayed here.</p>
+                  </div>
+                </div>
+              ))}
           </div>
 
           {/* Right Sidebar - Hidden when Personal Settings or News Expand is on */}
-          {!(activeTab === 'my-page' && activeSection === 'personal-settings') && showRightSidebar && !newsExpanded && (
+          {!(activeTab === 'my-page' && activeSection === 'personal-settings') &&
+            showRightSidebar &&
+            !newsExpanded &&
+            !clubAddSongsOgpExpanded && (
             <div className="w-80 flex-shrink-0 print:hidden">
               <div className="bg-white shadow-sm border h-full flex flex-col overflow-y-auto">
                 {activeTab === 'my-entity' ? (

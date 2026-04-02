@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
+import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
 
 // Map language codes to flag file names
 const getFlagFileName = (code: string): string => {
@@ -143,18 +143,30 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const menuItems = [
-    { href: '/', label: t('nav_home'), icon: Home },
-    // Removed non-existent routes: /athletes, /coaches, /teams, /groups, /clubs
-    { href: '/testimonials', label: 'Testimonials', icon: MessageCircle },
-    { href: '/blog', label: t('nav_blog'), icon: MessageCircle },
-    { href: '/athlete/dashboard?open=news', label: t('nav_news'), icon: Newspaper },
-    { href: '/news-by-movesbook', label: t('nav_news_by_movesbook'), icon: Newspaper },
-    { href: '/sell-buy', label: 'Sell/Buy', icon: ShoppingCart },
-    { href: '/job-offers', label: 'Jobs', icon: Briefcase },
-    { href: '/promote-yourself', label: 'Promote', icon: Megaphone },
-    { href: '/our-shop', label: 'Shop', icon: ShoppingBag },
-  ];
+  /** CLUB accounts use their own dashboard; athlete URL would redirect them away from OGP/News. */
+  const navNewsHref =
+    user && isClubAccountUserType(user.userType)
+      ? '/club/dashboard?open=news'
+      : '/athlete/dashboard?open=news';
+
+  const isOpenNewsNavHref = (href: string) =>
+    href === '/athlete/dashboard?open=news' || href === '/club/dashboard?open=news';
+
+  const menuItems = useMemo(
+    () => [
+      { href: '/', label: t('nav_home'), icon: Home },
+      // Removed non-existent routes: /athletes, /coaches, /teams, /groups, /clubs
+      { href: '/testimonials', label: 'Testimonials', icon: MessageCircle },
+      { href: '/blog', label: t('nav_blog'), icon: MessageCircle },
+      { href: navNewsHref, label: t('nav_news'), icon: Newspaper },
+      { href: '/news-by-movesbook', label: t('nav_news_by_movesbook'), icon: Newspaper },
+      { href: '/sell-buy', label: 'Sell/Buy', icon: ShoppingCart },
+      { href: '/job-offers', label: 'Jobs', icon: Briefcase },
+      { href: '/promote-yourself', label: 'Promote', icon: Megaphone },
+      { href: '/our-shop', label: 'Shop', icon: ShoppingBag },
+    ],
+    [navNewsHref, t]
+  );
 
   const socialLinks = [
     { icon: Facebook, href: '#', label: 'Facebook', color: 'hover:text-blue-400' },
@@ -613,12 +625,20 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                 {menuItems.map((item, index) => {
                   const isActive = pathname === item.href;
                   const isHome = item.href === '/';
-                  const isPublicRoute = isHome || item.href === '/testimonials' || item.href === '/athlete/dashboard?open=news' || item.href === '/sell-buy' || item.href === '/job-offers' || item.href === '/promote-yourself' || item.href === '/our-shop' || item.href === '/news-by-movesbook';
+                  const isPublicRoute =
+                    isHome ||
+                    item.href === '/testimonials' ||
+                    isOpenNewsNavHref(item.href) ||
+                    item.href === '/sell-buy' ||
+                    item.href === '/job-offers' ||
+                    item.href === '/promote-yourself' ||
+                    item.href === '/our-shop' ||
+                    item.href === '/news-by-movesbook';
                   const canAccess = isPublicRoute || isAuthenticated;
                   
                   return (
                     <Link
-                      key={item.href}
+                      key={`${item.label}-${item.href}`}
                       href={canAccess ? item.href : '#'}
                       onClick={(e) => {
                         if (!canAccess) {
@@ -805,12 +825,20 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                 {menuItems.map((item) => {
                   const isActive = pathname === item.href;
                   const isHome = item.href === '/';
-                  const isPublicRoute = isHome || item.href === '/testimonials' || item.href === '/athlete/dashboard?open=news' || item.href === '/sell-buy' || item.href === '/job-offers' || item.href === '/promote-yourself' || item.href === '/our-shop';
+                  const isPublicRoute =
+                    isHome ||
+                    item.href === '/testimonials' ||
+                    isOpenNewsNavHref(item.href) ||
+                    item.href === '/sell-buy' ||
+                    item.href === '/job-offers' ||
+                    item.href === '/promote-yourself' ||
+                    item.href === '/our-shop' ||
+                    item.href === '/news-by-movesbook';
                   const canAccess = isPublicRoute || isAuthenticated;
                   
                   return (
                     <Link
-                      key={item.href}
+                      key={`${item.label}-${item.href}`}
                       href={canAccess ? item.href : '#'}
                       onClick={(e) => {
                         if (!canAccess) {

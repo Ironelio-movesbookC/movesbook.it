@@ -278,6 +278,8 @@ interface DarkSidebarProps {
   onMyGroupClick?: () => void;
   onMyCoachingGroupClick?: () => void;
   onPostsClick?: () => void;
+  /** My Club → Music for the club → opens OGP-style panel in dashboard main area */
+  onClubAddSongsPlaylistsClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
 }
@@ -293,6 +295,7 @@ export default function DarkSidebar({
   onMyGroupClick,
   onMyCoachingGroupClick,
   onPostsClick,
+  onClubAddSongsPlaylistsClick,
   activeTab = 'my-page',
   onTabChange
 }: DarkSidebarProps) {
@@ -329,6 +332,7 @@ export default function DarkSidebar({
   const [clubArchivesOpen, setClubArchivesOpen] = useState(false);
   const [clubUserGuidesOpen, setClubUserGuidesOpen] = useState(false);
   const [clubPostsOpen, setClubPostsOpen] = useState(false);
+  const [musicForClubOpen, setMusicForClubOpen] = useState(false);
   const [clubMarketingOpen, setClubMarketingOpen] = useState(false);
   const [clubMarketingClubStaffOpen, setClubMarketingClubStaffOpen] = useState(false);
   const [clubMarketingCoursesOpen, setClubMarketingCoursesOpen] = useState(false);
@@ -1456,19 +1460,62 @@ export default function DarkSidebar({
                 </div>
 
                 {/* Music / notifications / messages / bookings */}
-                <button
-                  type="button"
-                  className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Music className="w-5 h-5 shrink-0" />
-                    <span className="font-semibold tracking-wide truncate">Music for the club</span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <ChevronDown className="w-4 h-4 opacity-90" />
-                    <Settings className="w-4 h-4 opacity-90" />
-                  </div>
-                </button>
+                <div className="w-full border-b border-teal-700">
+                  <button
+                    type="button"
+                    onClick={() => setMusicForClubOpen((v) => !v)}
+                    aria-expanded={musicForClubOpen}
+                    className="flex w-full items-center justify-between bg-teal-800 py-2.5 px-3 text-white transition-colors hover:bg-teal-700"
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <Music className="h-5 w-5 shrink-0" />
+                      <span className="truncate font-semibold tracking-wide">
+                        {t('sidebar_music_club')}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <ChevronDown
+                        className={`h-4 w-4 opacity-90 transition-transform duration-200 ${
+                          musicForClubOpen ? 'rotate-180' : ''
+                        }`}
+                      />
+                      <Settings className="h-4 w-4 opacity-90" aria-hidden />
+                    </div>
+                  </button>
+                  {musicForClubOpen && (
+                    <div className="bg-[#4a4a4a] text-white">
+                      <button
+                        type="button"
+                        onClick={() => onClubAddSongsPlaylistsClick?.()}
+                        className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                      >
+                        <Users className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                        <span className="min-w-0 leading-snug">Add songs & playlists</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                      >
+                        <Users className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                        <span className="min-w-0 leading-snug">Music Panel</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                      >
+                        <Users className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                        <span className="min-w-0 leading-snug">Mood Music</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                      >
+                        <Users className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
+                        <span className="min-w-0 leading-snug">My favoured radios</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 <button
                   type="button"

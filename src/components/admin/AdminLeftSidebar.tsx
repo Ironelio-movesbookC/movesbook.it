@@ -646,19 +646,35 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
               className="w-full bg-[#058592] px-4 py-2 font-bold text-sm text-white flex items-center justify-between hover:bg-[#046c76] transition cursor-move"
             >
               <span>Music</span>
-              <Triangle className="w-4 h-4 text-white fill-[#ff8d00] rotate-180" />
+              <Triangle
+                className={`w-4 h-4 text-white fill-[#ff8d00] transition-transform duration-200 ${
+                  openSections.music ? 'rotate-180' : ''
+                }`}
+              />
             </button>
             
             {openSections.music && (
-              <div className="bg-[#2b2b2b] mt-1 space-y-1">
-                <Link href="/admin/medias/index" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
-                   <Music className="w-4 h-4 text-white" />
-                   <span>Music Tracked From Users</span>
+              <div className="bg-[#2b2b2b] mt-1 overflow-hidden border border-[#aeaeae]/80">
+                <Link
+                  href="/admin/dashboard?panel=music-tracked"
+                  className="flex items-center gap-3 px-3 py-2.5 bg-[#4f4f4f] border-b border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white"
+                >
+                  <Music className="w-4 h-4 shrink-0 text-white" />
+                  <span>Music Tracked</span>
                 </Link>
-                
-                <Link href="/admin/medias/settings" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
-                   <Settings className="w-4 h-4 text-white" />
-                   <span>Settings</span>
+                <Link
+                  href="/admin/news/links"
+                  className="flex items-center gap-3 px-3 py-2.5 bg-[#4f4f4f] border-b border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white"
+                >
+                  <Music className="w-4 h-4 shrink-0 text-white" />
+                  <span>OG Music panel</span>
+                </Link>
+                <Link
+                  href="/admin/medias/settings"
+                  className="flex items-center gap-3 px-3 py-2.5 bg-[#4f4f4f] hover:bg-[#3d3d3d] transition text-sm text-white"
+                >
+                  <Settings className="w-4 h-4 shrink-0 text-white" />
+                  <span>Settings</span>
                 </Link>
               </div>
             )}

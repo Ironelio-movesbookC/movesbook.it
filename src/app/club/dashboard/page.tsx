@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { 
   Users, 
   Dumbbell,
@@ -25,16 +25,18 @@ import {
   FolderOpen,
   CalendarRange,
   Mail,
-  Filter
+  Filter,
+  Loader2
 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
+import NewsOGPPanel from '@/components/news/NewsOGPPanel';
 import SimpleFooter from '@/components/SimpleFooter';
 import AddMemberModal from '@/components/AddMemberModal';
 import RightSidebar from '@/components/dashboard/RightSidebar';
 import { useAuth } from '@/hooks/useAuth';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import ClubDashboardMyPageBanner from './components/ClubDashboardMyPageBanner';
@@ -42,8 +44,9 @@ import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLeg
 import ChangeBannerModal, { type BannerAlignment } from '@/components/athlete/ChangeBannerModal';
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 
-export default function ClubDashboard() {
+function ClubDashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading } = useAuth();
   const { t } = useLanguage();
 
@@ -60,6 +63,8 @@ export default function ClubDashboard() {
   const [activeRightTab, setActiveRightTab] = useState<'actions-planner' | 'chat-panel'>('actions-planner');
   const [expandedActionsPlanner, setExpandedActionsPlanner] = useState(true);
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
+  const [clubAddSongsOgpOpen, setClubAddSongsOgpOpen] = useState(false);
+  const [clubAddSongsOgpExpanded, setClubAddSongsOgpExpanded] = useState(false);
   const [bannerProfile, setBannerProfile] = useState<AthleteLegacyBannerProfile | null>(null);
   const [showChangeBannerModal, setShowChangeBannerModal] = useState(false);
 
@@ -114,6 +119,23 @@ export default function ClubDashboard() {
       if (saved) setSelectedClubId(saved);
     }
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'my-entity') {
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+    }
+  }, [activeTab]);
+
+  // After tab cleanup effect: open normal-user OGP/News (same `NewsOGPPanel` / `useNewsData` as athletes; not super-admin).
+  useEffect(() => {
+    if (searchParams != null && searchParams.get('open') === 'news') {
+      setActiveTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(true);
+      router.replace('/club/dashboard', { scroll: false });
+    }
+  }, [searchParams, router]);
 
   useEffect(() => {
     if (user && !isClubAccountUserType(user.userType)) {
@@ -222,7 +244,7 @@ export default function ClubDashboard() {
         )}
 
         <div className="flex-1 flex gap-0">
-          {showLeftSidebar && (
+          {showLeftSidebar && !clubAddSongsOgpExpanded && (
             <div className="w-80 flex-shrink-0 sticky top-0 self-start">
               <DarkSidebar
                 userType={user?.userType || ''}
@@ -239,6 +261,11 @@ export default function ClubDashboard() {
                   } else if (clubs.length > 0) {
                     window.location.href = `/my-club?clubId=${clubs[0].id}`;
                   }
+                }}
+                onClubAddSongsPlaylistsClick={() => {
+                  setActiveTab('my-entity');
+                  setShowWorkoutSection(false);
+                  setClubAddSongsOgpOpen(true);
                 }}
               />
             </div>
@@ -291,6 +318,18 @@ export default function ClubDashboard() {
                   </div>
                 )}
               </div>
+            ) : clubAddSongsOgpOpen ? (
+              <div className="flex-1 flex flex-col min-h-0 py-4">
+                <NewsOGPPanel
+                  onClose={() => {
+                    setClubAddSongsOgpOpen(false);
+                    setClubAddSongsOgpExpanded(false);
+                  }}
+                  embedded
+                  isExpanded={clubAddSongsOgpExpanded}
+                  onExpandReduce={() => setClubAddSongsOgpExpanded((prev) => !prev)}
+                />
+              </div>
             ) : !showWorkoutSection ? (
               <div className="bg-white rounded-lg shadow-sm border p-8 flex-1 flex items-center justify-center">
                 <div className="text-center">
@@ -312,7 +351,7 @@ export default function ClubDashboard() {
             )}
           </div>
 
-          {showRightSidebar && (
+          {showRightSidebar && !clubAddSongsOgpExpanded && (
             <RightSidebar 
               context="my-club" 
               activeTab={activeTab}
@@ -377,3 +416,16 @@ export default function ClubDashboard() {
   );
 }
 
+export default function ClubDashboard() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      }
+    >
+      <ClubDashboardContent />
+    </Suspense>
+  );
+}
