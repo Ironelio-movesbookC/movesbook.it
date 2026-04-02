@@ -661,16 +661,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-<<<<<<< HEAD
-=======
     await prismaConnect();
 
-    console.log('POST /api/workouts/plan - Request received');
->>>>>>> main
-    
     const body = await request.json();
-    const { name, type, startDate: requestedStartDate, numberOfWeeks, autoCreateDays } = body;
-    
+    const { name, type, startDate: requestedStartDate, numberOfWeeks } = body;
 
     const startDate = getMondayOfWeek(new Date(requestedStartDate));
 

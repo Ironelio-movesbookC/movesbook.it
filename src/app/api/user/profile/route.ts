@@ -135,12 +135,8 @@ export async function PATCH(request: NextRequest) {
       profileBanner?: string | null;
       profileBannerAlignment?: string | null;
       profileBannerSequence?: string | null | unknown[];
-<<<<<<< HEAD
-      language?: string | null;
-=======
       profileBannerVideo?: string | null;
       image?: string | null;
->>>>>>> main
     };
 
     const data: {
@@ -191,27 +187,6 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-<<<<<<< HEAD
-    const requestedLanguage = typeof body.language === 'string' ? body.language.trim().toLowerCase() : '';
-    if (requestedLanguage) {
-      await prisma.userSettings.upsert({
-        where: { userId: decoded.userId },
-        update: { language: requestedLanguage },
-        create: {
-          userId: decoded.userId,
-          language: requestedLanguage,
-          colorSettings: '{}',
-          widgetArrangement: '[]',
-          toolsSettings: '{}',
-          favouritesSettings: '{}',
-          myBestSettings: '{}',
-          adminSettings: '{}',
-          workoutPreferences: '{}',
-          socialSettings: '{}',
-          notificationSettings: '{}'
-        }
-      });
-=======
     if (profileBannerVideo !== undefined) {
       data.profileBannerVideo =
         profileBannerVideo === null || profileBannerVideo === ''
@@ -221,7 +196,6 @@ export async function PATCH(request: NextRequest) {
 
     if (image !== undefined) {
       data.image = image === null || image === '' ? null : String(image).trim().slice(0, 512);
->>>>>>> main
     }
 
     if (Object.keys(data).length > 0) {
@@ -246,22 +220,12 @@ export async function PATCH(request: NextRequest) {
         profileBannerSequence: true,
         profileBannerVideo: true,
         userType: true,
-<<<<<<< HEAD
-        settings: {
-          select: {
-            language: true
-          }
-        }
-      },
-=======
       } as Prisma.UserSelect,
->>>>>>> main
     });
 
-    return NextResponse.json({ success: true, user, language: user?.settings?.language || 'en' });
+    return NextResponse.json({ success: true, user });
   } catch (error) {
     console.error('Error updating user profile:', error);
     return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
   }
 }
-
