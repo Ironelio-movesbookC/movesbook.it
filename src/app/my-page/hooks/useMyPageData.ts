@@ -152,7 +152,7 @@ export function useMyPageData(user: User | null) {
 
   useEffect(() => {
     if (user) {
-      if (user.userType === 'CLUB_TRAINER') {
+      if (user.userType === 'CLUB_TRAINER' || user.userType === 'CLUB') {
         loadClubs();
       } else if (user.userType === 'GROUP_ADMIN') {
         loadGroups();

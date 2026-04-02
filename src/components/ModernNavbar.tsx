@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 
 // Map language codes to flag file names
 const getFlagFileName = (code: string): string => {
@@ -322,7 +323,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
     
     // Redirect to appropriate dashboard based on user type
     if (user) {
-      router.push('/athlete/dashboard');
+      router.push(getDashboardPathForUserType(user.userType));
     } else {
       // Fallback: redirect to home if user is not available
       router.push('/');

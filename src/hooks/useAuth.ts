@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 
 export interface AuthUser {
   id: string;
@@ -7,6 +8,8 @@ export interface AuthUser {
   username: string;
   email: string;
   userType: string;
+  country?: string | null;
+  image?: string | null;
 }
 
 export function useAuth() {
@@ -61,26 +64,10 @@ export function useAuth() {
         router.push(redirectAfterLogin);
         setRedirectAfterLogin(null);
       } else {
-        router.push('/athlete/dashboard');
+        router.push(getDashboardPathForUserType(userData.userType));
       }
-    } else if (userData.userType === 'ATHLETE') {
-      // Athletes redirect to athlete dashboard
-      router.push('/athlete/dashboard');
-    } else if (userData.userType === 'COACH') {
-      // Coaches redirect to coach dashboard
-      router.push('/coach/dashboard');
-    } else if (userData.userType === 'TEAM_MANAGER') {
-      // Team admins redirect to team dashboard
-      router.push('/team/dashboard');
-    } else if (userData.userType === 'CLUB_TRAINER') {
-      // Club admins redirect to club dashboard
-      router.push('/club/dashboard');
-    } else if (userData.userType === 'GROUP_ADMIN') {
-      // Group admins redirect to group dashboard
-      router.push('/group/dashboard');
     } else {
-      // Fallback to my-page for any other types
-      router.push('/my-page');
+      router.push(getDashboardPathForUserType(userData.userType));
     }
   };
 

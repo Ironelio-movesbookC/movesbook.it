@@ -259,6 +259,8 @@ export async function POST(request: NextRequest) {
         name: true,
         username: true,
         email: true,
+        country: true,
+        image: true,
         password: true,
         userType: true,
         createdAt: true,
@@ -283,7 +285,7 @@ export async function POST(request: NextRequest) {
     }
     if (!user) {
       const rawUser = await prisma.$queryRaw<any[]>`
-        SELECT id, name, username, email, password, userType, createdAt
+        SELECT id, name, username, email, country, image, password, userType, createdAt
         FROM users_new
         WHERE lower(email) = lower(${loginIdentifier}) OR lower(username) = lower(${loginIdentifier})
       `;

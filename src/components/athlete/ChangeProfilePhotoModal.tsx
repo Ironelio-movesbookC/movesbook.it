@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 export type ChangeProfilePhotoSaved = {
@@ -61,6 +62,7 @@ export default function ChangeProfilePhotoModal({
   };
 
   if (!isOpen) return null;
+  const canPortal = typeof document !== 'undefined';
 
   const hasSavedPhoto = Boolean(currentImagePath?.trim());
 
@@ -133,9 +135,9 @@ export default function ChangeProfilePhotoModal({
     }
   };
 
-  return (
+  const content = (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="change-profile-photo-title"
@@ -210,4 +212,8 @@ export default function ChangeProfilePhotoModal({
       </div>
     </div>
   );
+
+  // Portaling avoids z-index / stacking-context issues (e.g. banners/navbars),
+  // ensuring the modal stays on top and the close button is clickable.
+  return canPortal ? createPortal(content, document.body) : content;
 }

@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
         name: true,
         firstName: true,
         surname: true,
+        country: true,
         image: true,
         profileBanner: true,
         profileBannerAlignment: true,
