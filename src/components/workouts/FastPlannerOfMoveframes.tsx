@@ -759,7 +759,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       setShowSubExercises(false);
       setShowExercisePopup(false);
     }
-  }, [mode, existingMoveframe?.id, existingMoveframe?.movelaps, existingMoveframe?.notes]);
+  }, [mode, existingMoveframe?.id, existingMoveframe?.movelaps, existingMoveframe?.notes, existingMoveframe?.fastPlannerData]);
 
   // Mock frequently used exercises (for blue indicator)
   const frequentlyUsedExercises = ['shoulders-0', 'chest-0', 'biceps-1', 'quadriceps-0'];

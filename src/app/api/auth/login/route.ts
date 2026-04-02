@@ -581,8 +581,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const userSettings = await prisma.userSettings.findUnique({
+      where: { userId: user.id },
+      select: { language: true }
+    });
+
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
+    const userPayload = {
+      ...userWithoutPassword,
+      language: userSettings?.language || 'en'
+    };
 
     // Generate JWT token with RSA signing
     const token = generateToken(
@@ -595,7 +604,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       token,
-      user: userWithoutPassword
+      user: userPayload
     });
 
   } catch (error) {

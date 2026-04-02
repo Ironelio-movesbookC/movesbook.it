@@ -134,6 +134,7 @@ export async function PATCH(request: NextRequest) {
       profileBanner?: string | null;
       profileBannerAlignment?: string | null;
       profileBannerSequence?: string | null | unknown[];
+      language?: string | null;
     };
 
     const data: {
@@ -182,6 +183,27 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    const requestedLanguage = typeof body.language === 'string' ? body.language.trim().toLowerCase() : '';
+    if (requestedLanguage) {
+      await prisma.userSettings.upsert({
+        where: { userId: decoded.userId },
+        update: { language: requestedLanguage },
+        create: {
+          userId: decoded.userId,
+          language: requestedLanguage,
+          colorSettings: '{}',
+          widgetArrangement: '[]',
+          toolsSettings: '{}',
+          favouritesSettings: '{}',
+          myBestSettings: '{}',
+          adminSettings: '{}',
+          workoutPreferences: '{}',
+          socialSettings: '{}',
+          notificationSettings: '{}'
+        }
+      });
+    }
+
     if (Object.keys(data).length > 0) {
       await prisma.user.update({
         where: { id: decoded.userId },
@@ -203,10 +225,15 @@ export async function PATCH(request: NextRequest) {
         profileBannerAlignment: true,
         profileBannerSequence: true,
         userType: true,
+        settings: {
+          select: {
+            language: true
+          }
+        }
       },
     });
 
-    return NextResponse.json({ success: true, user });
+    return NextResponse.json({ success: true, user, language: user?.settings?.language || 'en' });
   } catch (error) {
     console.error('Error updating user profile:', error);
     return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
