@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Image from 'next/image';
 import { Plus, Edit2, Trash2, GripVertical, ArrowUpAZ, ArrowDownZA, Save, X, Download, Globe, Image as ImageIcon, Smile, Grid3x3, List, ArrowUpDown } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -16,18 +16,33 @@ import {
   IconType,
   ToolsTab,
   SUPPORTED_LANGUAGES,
+  supportedLanguagesPeriodAdminOrder,
   DEFAULT_SPORTS,
   filterBySearch,
   filterByCategory,
   reorderItems
 } from '@/constants/tools.constants';
 import { SPORTS_LIST, getSportDisplayName } from '@/constants/moveframe.constants';
+import PeriodizationTabPanel from '@/components/settings/PeriodizationTabPanel';
+import PeriodizationOverviewPanel from '@/components/settings/PeriodizationOverviewPanel';
+
+function normalizeToolsLanguage(code: string | undefined): string {
+  if (!code) return 'en';
+  const lower = code.toLowerCase().trim();
+  if (SUPPORTED_LANGUAGES.some((l) => l.code === lower)) return lower;
+  const two = lower.split('-')[0] || 'en';
+  return SUPPORTED_LANGUAGES.some((l) => l.code === two) ? two : 'en';
+}
+
+type PeriodizationSubview = 'periodSettings' | 'periodization' | 'overview';
 
 interface ToolsSettingsProps {
   isAdmin?: boolean;
   userType?: string;
   mode?: 'tools' | 'technical';
   initialTab?: ToolsTab;
+  /** When true, only the Periods UI is shown (main Settings → Periodization). */
+  periodizationOnly?: boolean;
 }
 
 function getAllowedTabs(isAdmin: boolean, mode: 'tools' | 'technical'): ToolsTab[] {
@@ -46,7 +61,8 @@ export default function ToolsSettings({
   isAdmin = false,
   userType = 'ATHLETE',
   mode = 'tools',
-  initialTab
+  initialTab,
+  periodizationOnly = false
 }: ToolsSettingsProps = {}) {
   const { t, currentLanguage } = useLanguage();
   
@@ -78,9 +94,16 @@ export default function ToolsSettings({
     saveToDatabase
   } = useToolsData();
   
-  const [activeTab, setActiveTab] = useState<ToolsTab>(
-    mode === 'technical' ? 'equipmentFactories' : 'periods'
-  );
+  const [activeTab, setActiveTab] = useState<ToolsTab>(() => {
+    if (typeof window === 'undefined' || periodizationOnly) {
+      return mode === 'technical' ? 'equipmentFactories' : 'periods';
+    }
+    const key = `settings_tools_tab_${mode}`;
+    const saved = localStorage.getItem(key) as ToolsTab | null;
+    const allowed = getAllowedTabs(isAdmin, mode);
+    if (saved && allowed.includes(saved)) return saved;
+    return mode === 'technical' ? 'equipmentFactories' : 'periods';
+  });
   const [editingItem, setEditingItem] = useState<Period | WorkoutSection | null>(null);
   const [editItemTranslations, setEditItemTranslations] = useState<Record<string, { title: string; description: string }>>({});
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -118,9 +141,31 @@ export default function ToolsSettings({
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [superAdminPassword, setSuperAdminPassword] = useState('');
   const [showLoadDialog, setShowLoadDialog] = useState(false);
-  const allowedTabs = getAllowedTabs(isAdmin, mode);
+  const [periodizationSubview, setPeriodizationSubview] =
+    useState<PeriodizationSubview>(() => {
+      if (typeof window === 'undefined') return 'periodSettings';
+      const saved = localStorage.getItem('settings_periodization_subview');
+      const valid: PeriodizationSubview[] = ['periodSettings', 'periodization', 'overview'];
+      return (saved && valid.includes(saved as PeriodizationSubview))
+        ? (saved as PeriodizationSubview)
+        : 'periodSettings';
+    });
+  const allowedTabs = useMemo(() => {
+    const base = getAllowedTabs(isAdmin, mode);
+    return periodizationOnly ? base.filter((tab) => tab === 'periods') : base;
+  }, [isAdmin, mode, periodizationOnly]);
+
+  useEffect(() => {
+    if (!periodizationOnly) return;
+    setSelectedLanguage(normalizeToolsLanguage(currentLanguage));
+  }, [periodizationOnly, currentLanguage]);
   const useEnglishFallbackRules =
     activeTab === 'periods' || activeTab === 'sections' || activeTab === 'bodyBuildingTechniques';
+
+  const adminTranslationLanguages = useMemo(() => {
+    if (isAdmin && activeTab === 'periods') return supportedLanguagesPeriodAdminOrder();
+    return SUPPORTED_LANGUAGES;
+  }, [isAdmin, activeTab]);
 
   useEffect(() => {
     if (!allowedTabs.includes(activeTab)) {
@@ -134,6 +179,16 @@ export default function ToolsSettings({
       setActiveTab(initialTab);
     }
   }, [initialTab, allowedTabs]);
+
+  // Persist active tab and periodization subview across refreshes
+  useEffect(() => {
+    if (periodizationOnly) return;
+    localStorage.setItem(`settings_tools_tab_${mode}`, activeTab);
+  }, [activeTab, mode, periodizationOnly]);
+
+  useEffect(() => {
+    localStorage.setItem('settings_periodization_subview', periodizationSubview);
+  }, [periodizationSubview]);
   
   // Get current user ID for ownership checking
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -165,6 +220,22 @@ export default function ToolsSettings({
       setSelectedLanguage(currentLanguage);
     }
   }, [currentLanguage]);
+
+  // For non-admin users, lock selected language to their profile language.
+  useEffect(() => {
+    if (isAdmin) return;
+    const userStr = localStorage.getItem('user');
+    if (!userStr) return;
+    try {
+      const parsed = JSON.parse(userStr);
+      const profileLanguage = typeof parsed?.language === 'string' ? parsed.language.toLowerCase() : '';
+      if (profileLanguage) {
+        setSelectedLanguage(profileLanguage);
+      }
+    } catch (e) {
+      console.error('Failed to parse user language from localStorage:', e);
+    }
+  }, [isAdmin, currentLanguage]);
   
   // Equipment sorting function
   const sortEquipment = (equipmentList: Equipment[]) => {
@@ -380,18 +451,35 @@ export default function ToolsSettings({
 
     const items = getActiveItems();
     const newId = Date.now().toString();
-    
-    // Use current language translation for the main entry (database)
-    const currentLangData = isAdmin 
+
+    const isSuperAdminPeriods = isAdmin && activeTab === 'periods';
+    const currentLangData = isAdmin
       ? (newItemTranslations[currentLanguage] || newItemTranslations['en'] || { title: '', description: '' })
       : { title: newItem.title, description: newItem.description };
-    
+
+    let descriptionByLanguage: Record<string, string> | undefined;
+    if (isSuperAdminPeriods) {
+      const m: Record<string, string> = {};
+      SUPPORTED_LANGUAGES.forEach((lang) => {
+        const d = (newItemTranslations[lang.code]?.description || '').trim();
+        if (d) m[lang.code] = d;
+      });
+      descriptionByLanguage = Object.keys(m).length > 0 ? m : undefined;
+    }
+
+    const englishBlock = newItemTranslations['en'] || { title: '', description: '' };
+
     const newEntry = {
       id: newId,
-      title: isAdmin 
-        ? (currentLangData.title || Object.values(newItemTranslations).find(t => t.title)?.title || '')
+      title: isAdmin
+        ? isSuperAdminPeriods
+          ? (englishBlock.title || Object.values(newItemTranslations).find((t) => t.title)?.title || '')
+          : (currentLangData.title || Object.values(newItemTranslations).find((t) => t.title)?.title || '')
         : newItem.title,
-      description: currentLangData.description || '',
+      description: isSuperAdminPeriods
+        ? (englishBlock.description || '').trim()
+        : currentLangData.description || '',
+      ...(isSuperAdminPeriods && descriptionByLanguage ? { descriptionByLanguage } : {}),
       color: newItem.color,
       order: items.length,
       isUserCreated: !isAdmin, // Tag user-created items
@@ -472,19 +560,28 @@ export default function ToolsSettings({
     }
     
     setEditingItem({ ...item });
-    
-    // Initialize translations with current values from the database item
-    // Since periods/sections are now in Prisma database (not localStorage language libraries),
-    // we initialize all languages with the same values from the database
+
+    const skipLocalStorageForPeriodAdmin = activeTab === 'periods' && isAdmin;
+
     const translations: Record<string, { title: string; description: string }> = {};
-    
-    SUPPORTED_LANGUAGES.forEach(lang => {
-      // For tabs using English fallback, keep non-English blank when no explicit
-      // translation exists so UI can show the English fallback in red.
+
+    SUPPORTED_LANGUAGES.forEach((lang) => {
       if (useEnglishFallbackRules) {
+        const periodItem = item as Period;
+        const byLang = periodItem.descriptionByLanguage;
+        const descForLang =
+          activeTab === 'periods' && isAdmin
+            ? (byLang?.[lang.code]?.trim()
+                ? (byLang[lang.code] as string)
+                : lang.code === 'en'
+                  ? (item.description || '')
+                  : '')
+            : lang.code === 'en'
+              ? (item.description || '')
+              : '';
         translations[lang.code] = {
           title: lang.code === 'en' ? (item.title || '') : '',
-          description: lang.code === 'en' ? (item.description || '') : ''
+          description: descForLang
         };
       } else {
         translations[lang.code] = {
@@ -492,8 +589,9 @@ export default function ToolsSettings({
           description: item.description || ''
         };
       }
-      
-      // Also try to load from localStorage for backward compatibility
+
+      if (skipLocalStorageForPeriodAdmin) return;
+
       const itemType = activeTab === 'periods' ? 'periods' : 'sections';
       const storageKey = `tools_${itemType}_${lang.code}`;
       const existingDataStr = localStorage.getItem(storageKey);
@@ -512,8 +610,9 @@ export default function ToolsSettings({
         }
       }
     });
-    
+
     setEditItemTranslations(translations);
+    if (isAdmin && activeTab === 'periods') setActiveInputLanguage('en');
   };
 
   const handleSaveEdit = () => {
@@ -549,11 +648,26 @@ export default function ToolsSettings({
         }
       }
 
-      // Update the editingItem with the current language's values (use English as default)
-      const currentLangData = editItemTranslations[currentLanguage] || editItemTranslations['en'] || Object.values(editItemTranslations)[0];
-      if (currentLangData) {
-        editingItem.title = currentLangData.title || editingItem.title;
-        editingItem.description = currentLangData.description || editingItem.description;
+      if (activeTab === 'periods') {
+        const enT = editItemTranslations['en'];
+        editingItem.title = (enT?.title?.trim() || editingItem.title || '').trim();
+        editingItem.description = (enT?.description || '').trim();
+        const descByLang: Record<string, string> = {};
+        SUPPORTED_LANGUAGES.forEach((lang) => {
+          const d = (editItemTranslations[lang.code]?.description || '').trim();
+          if (d) descByLang[lang.code] = d;
+        });
+        (editingItem as Period).descriptionByLanguage =
+          Object.keys(descByLang).length > 0 ? descByLang : undefined;
+      } else {
+        const currentLangData =
+          editItemTranslations[currentLanguage] ||
+          editItemTranslations['en'] ||
+          Object.values(editItemTranslations)[0];
+        if (currentLangData) {
+          editingItem.title = currentLangData.title || editingItem.title;
+          editingItem.description = currentLangData.description || editingItem.description;
+        }
       }
     } else {
       // Non-Admin: Validate current language only
@@ -857,7 +971,6 @@ export default function ToolsSettings({
           const parsed = JSON.parse(periodsFromStorage);
           if (Array.isArray(parsed)) {
             setPeriods([...parsed]);
-            console.log(`✅ Loaded periods from localStorage (${languageCode})`);
           }
         } catch (e) {
           console.error('Error parsing periods language library:', e);
@@ -900,30 +1013,23 @@ export default function ToolsSettings({
         if (data.toolsData.devices) {
           setDevices([...data.toolsData.devices]);
         }
-        console.log('✅ Terms loaded for', languageCode);
       } else {
-        console.log('ℹ️ No data found for', languageCode);
       }
     } catch (error) {
-      console.error('Error loading language terms:', error);
     }
   };
 
-  // Handle Load Admin Defaults (for non-admin users)
+  // Handle Load from Movesbook (for non-admin users)
   const handleLoadAdminDefaults = async () => {
     const languageName = SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name || selectedLanguage;
     
     const confirmed = window.confirm(
-      `⚠️ Warning\n\n` +
-      `Loading the Admin settings will load the settings made by Movesbook in ${languageName}.\n\n` +
-      `They will substitute all the previous Default settings loaded by you but will not affect the items inserted by you manually.\n\n` +
-      `Do you want to continue?`
+      "Do you want to continue?"
     );
     
     if (!confirmed) return;
     
     try {
-      console.log('📥 Loading Admin defaults for language:', selectedLanguage);
       const response = await fetch(`/api/admin/tools-defaults/load?language=${selectedLanguage}`);
       const data = await response.json();
 
@@ -955,25 +1061,20 @@ export default function ToolsSettings({
           setDevices([...data.toolsData.devices, ...userDevices]);
         }
         
-        alert(`✅ Success!\n\nAdmin defaults for ${languageName} have been loaded.\n\nYour manually created items have been preserved.`);
-        console.log('✅ Admin defaults loaded, user items preserved');
+        alert(`✅ Success!\n\nMovesbook settings for ${languageName} have been loaded and added to your current list.\n\nYour manually created items are preserved.`);
       } else {
         alert(`❌ No admin defaults found for ${languageName}`);
       }
     } catch (error) {
-      console.error('Error loading admin defaults:', error);
       alert('❌ Error loading admin defaults. Please try again.');
     }
   };
 
-  // Get display title with fallback to English or Italian (in RED if not in selected language)
   const getDisplayTitle = (item: any): { text: string; isRed: boolean } => {
-    // Try selected language first
     if (item.title && item.title.trim() !== '') {
       return { text: item.title, isRed: false };
     }
     
-    // Fallback to English
     const storageKeyEn = activeTab === 'periods' ? 'tools_periods_en' : (activeTab === 'sections' || activeTab === 'commonDailyActions') ? 'tools_sections_en' : null;
     if (storageKeyEn) {
       const enData = localStorage.getItem(storageKeyEn);
@@ -988,7 +1089,6 @@ export default function ToolsSettings({
       }
     }
     
-    // Fallback to Italian
     const storageKeyIt = activeTab === 'periods' ? 'tools_periods_it' : (activeTab === 'sections' || activeTab === 'commonDailyActions') ? 'tools_sections_it' : null;
     if (storageKeyIt) {
       const itData = localStorage.getItem(storageKeyIt);
@@ -1008,57 +1108,42 @@ export default function ToolsSettings({
 
   const handleLoadConfirm = async () => {
     try {
-      // Load from the selected language
       const response = await fetch(`/api/admin/tools-defaults/load?language=${selectedLanguage}`);
       const data = await response.json();
 
       if (response.ok && data.toolsData) {
         const languageName = SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name;
         
-        console.log('📥 Loading data for language:', selectedLanguage);
-        console.log('📦 Loaded periods:', data.toolsData.periods);
-        
-        // SMART MERGE: Preserve existing periods, update translations only
-        // This prevents losing workouts when loading new language settings
         if (data.toolsData.periods) {
           const loadedPeriods = [...data.toolsData.periods];
           const existingPeriods = [...periods];
           
-          // Create a merged array: keep existing IDs, update translations
           const mergedPeriods = existingPeriods.map(existing => {
-            // Try to find a matching period by title/name from loaded data
             const matchingLoaded = loadedPeriods.find(loaded => 
               loaded.title?.toLowerCase() === existing.title?.toLowerCase()
             );
             
             if (matchingLoaded) {
-              // Update translations but keep the same ID
-              console.log(`🔄 Updating period: ${existing.title} (ID preserved)`);
               return {
                 ...matchingLoaded,
-                id: existing.id // CRITICAL: Keep the original ID to preserve workout links
+                id: existing.id
               };
             }
             
-            // Keep existing period unchanged if no match found
             return existing;
           });
           
-          // Add any new periods from loaded data that don't exist yet
           loadedPeriods.forEach(loaded => {
             const alreadyExists = mergedPeriods.some(merged => 
               merged.title?.toLowerCase() === loaded.title?.toLowerCase()
             );
             if (!alreadyExists) {
-              console.log(`➕ Adding new period: ${loaded.title}`);
               mergedPeriods.push(loaded);
             }
           });
           
-          console.log('✅ Setting merged periods (IDs preserved):', mergedPeriods);
           setPeriods(mergedPeriods);
           
-          // Also save to localStorage for this language to ensure persistence
           const storageKey = `tools_periods_${selectedLanguage}`;
           localStorage.setItem(storageKey, JSON.stringify(mergedPeriods));
         }
@@ -1066,35 +1151,30 @@ export default function ToolsSettings({
           const loadedSections = [...data.toolsData.sections];
           const existingSections = [...sections];
           
-          // Same smart merge for sections
           const mergedSections = existingSections.map(existing => {
             const matchingLoaded = loadedSections.find(loaded => 
               loaded.title?.toLowerCase() === existing.title?.toLowerCase()
             );
             
             if (matchingLoaded) {
-              console.log(`🔄 Updating section: ${existing.title} (ID preserved)`);
               return {
                 ...matchingLoaded,
-                id: existing.id // CRITICAL: Keep the original ID
+                id: existing.id
               };
             }
             
             return existing;
           });
           
-          // Add new sections
           loadedSections.forEach(loaded => {
             const alreadyExists = mergedSections.some(merged => 
               merged.title?.toLowerCase() === loaded.title?.toLowerCase()
             );
             if (!alreadyExists) {
-              console.log(`➕ Adding new section: ${loaded.title}`);
               mergedSections.push(loaded);
             }
           });
           
-          console.log('✅ Setting merged sections (IDs preserved):', mergedSections);
           setSections(mergedSections);
           
           const storageKey = `tools_sections_${selectedLanguage}`;
@@ -1102,7 +1182,6 @@ export default function ToolsSettings({
         }
         if (data.toolsData.sports) {
           const loadedSports = [...data.toolsData.sports];
-          console.log('✅ Setting sports:', loadedSports);
           setSports(loadedSports);
         }
         if (data.toolsData.equipment) {
@@ -1270,23 +1349,49 @@ export default function ToolsSettings({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-3xl font-bold text-gray-900">{mode === 'technical' ? 'Technical Settings' : 'Tools Settings'}</h2>
-        <p className="text-gray-600 mt-1">
-          {mode === 'technical'
-            ? 'Manage factories, muscles, equipment, exercises, libraries, and devices'
-            : 'Manage your workout periods, sections, sports, and equipment'}
-        </p>
-        {!isAdmin && mode === 'tools' && (
-          <p className="mt-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2.5 py-1.5 inline-block">
-            Admin creates language defaults. Choose your display language and load that template as your personal starting point.
+      {periodizationOnly && (
+        <div className="flex gap-1 sm:gap-2 border-b border-gray-200 dark:border-gray-600 overflow-x-auto pb-0">
+          {(['periodSettings', 'periodization', 'overview'] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setPeriodizationSubview(key)}
+              className={`px-4 sm:px-6 py-3 font-semibold transition whitespace-nowrap ${
+                periodizationSubview === key
+                  ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
+            >
+              {key === 'periodSettings' && t('settings_periodization_tab_period_settings')}
+              {key === 'periodization' && t('settings_periodization_tab_periodization')}
+              {key === 'overview' && t('settings_periodization_tab_overview')}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Header (Tools / Technical only — Periodization uses sidebar title + sub-tabs) */}
+      {!periodizationOnly && (
+        <div>
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
+            {mode === 'technical' ? 'Technical Settings' : 'Tools Settings'}
+          </h2>
+          <p className="text-gray-600 dark:text-gray-300 mt-1">
+            {mode === 'technical'
+              ? 'Manage factories, muscles, equipment, exercises, libraries, and devices'
+              : 'Manage your workout periods, sections, sports, and equipment'}
           </p>
-        )}
-      </div>
+          {!isAdmin && mode === 'tools' && (
+            <p className="mt-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2.5 py-1.5 inline-block">
+              Admin creates language defaults. Choose your display language and load that template as your personal starting point.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-200">
+      {allowedTabs.length > 1 && (
+      <div className="flex gap-2 border-b border-gray-200 dark:border-gray-600">
         {allowedTabs.includes('periods') && (
           <button
             onClick={() => setActiveTab('periods')}
@@ -1430,8 +1535,10 @@ export default function ToolsSettings({
           </button>
         )}
       </div>
+      )}
 
-      {/* Language Defaults - Admin Only */}
+      {/* Language selector + load (hidden in Periodization — language follows profile) */}
+      {!periodizationOnly && (
       <div className="grid grid-cols-1 gap-3">
         
         {/* Instructions Banner - HIDDEN (code preserved for future use) */}
@@ -1474,7 +1581,7 @@ export default function ToolsSettings({
         <div className="flex items-center gap-4 p-4 bg-white border-2 border-indigo-300 rounded-lg shadow-sm">
           <Globe className="w-5 h-5 text-indigo-500" />
           <div className="flex flex-col">
-            <span className="text-xs text-gray-500 mb-1">Display Language:</span>
+            <span className="text-xs text-gray-500 mb-1">{isAdmin ? 'Display Language:' : 'User Language:'}</span>
             <select
               value={selectedLanguage}
               onChange={(e) => {
@@ -1482,6 +1589,7 @@ export default function ToolsSettings({
                 // Auto-load terms for selected language
                 loadLanguageTerms(e.target.value);
               }}
+              disabled={!isAdmin}
               className="px-3 py-2 text-sm font-medium border-2 border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
             >
               {SUPPORTED_LANGUAGES.map(lang => (
@@ -1490,29 +1598,94 @@ export default function ToolsSettings({
             </select>
           </div>
           
-          {/* For non-admin: Show Load Admin Defaults button */}
+          {/* For non-admin: Show Load from Movesbook button */}
           {!isAdmin && (
             <button
               onClick={handleLoadAdminDefaults}
               className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-md font-medium"
-              title="Load Movesbook default settings in your language"
+              title="Load period settings from Movesbook in your language"
             >
               <Download className="w-4 h-4" />
-              Load Admin Defaults
+              Load from Movesbook
             </button>
           )}
 
         </div>
       </div>
+      )}
+
+      {periodizationOnly && periodizationSubview === 'periodSettings' && (
+        <div className="flex flex-wrap justify-end gap-2 items-center">
+          {isAdmin ? (
+            <>
+              <button
+                type="button"
+                onClick={() => loadLanguageDefaults()}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg text-white bg-violet-600 hover:bg-violet-700 shadow-md transition"
+                title="Load admin period/tools defaults in your profile language"
+              >
+                <Download className="w-4 h-4" />
+                Load from Movesbook
+              </button>
+              <button
+                type="button"
+                onClick={() => saveLanguageDefaults()}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg text-white bg-orange-500 hover:bg-orange-600 shadow-md transition"
+                title="Save current tools as language defaults (super admin)"
+              >
+                <Save className="w-4 h-4" />
+                Save
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleLoadAdminDefaults}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg text-white bg-violet-600 hover:bg-violet-700 shadow-md transition"
+                title="Load period settings from Movesbook in your profile language only"
+              >
+                <Download className="w-4 h-4" />
+                Load from Movesbook
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleManualSave()}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg text-white bg-orange-500 hover:bg-orange-600 shadow-md transition"
+                title="Save your personal period settings"
+              >
+                <Save className="w-4 h-4" />
+                Save
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {periodizationOnly && periodizationSubview === 'periodization' && (
+        <PeriodizationTabPanel periods={periods} />
+      )}
+
+      {periodizationOnly && periodizationSubview === 'overview' && (
+        <PeriodizationOverviewPanel periods={periods} />
+      )}
 
       {/* Periods, Sections & Execution Techniques Tab Content */}
-      {(activeTab === 'periods' || activeTab === 'sections' || activeTab === 'commonDailyActions' || activeTab === 'bodyBuildingTechniques') && (
+      {((!periodizationOnly &&
+        (activeTab === 'periods' ||
+          activeTab === 'sections' ||
+          activeTab === 'commonDailyActions' ||
+          activeTab === 'bodyBuildingTechniques')) ||
+        (periodizationOnly && periodizationSubview === 'periodSettings')) && (
         <div className="space-y-6">
           {/* Action Bar */}
           <div className="flex justify-between items-center">
             <div className="flex gap-3">
               <button
-                onClick={() => setShowAddDialog(true)}
+                onClick={() => {
+                  if (isAdmin && activeTab === 'periods') setActiveInputLanguage('en');
+                  setShowAddDialog(true);
+                }}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
               >
                 <Plus className="w-4 h-4" />
@@ -2402,6 +2575,16 @@ export default function ToolsSettings({
                 </span>
               </div>
             </div>
+
+            {isAdmin && activeTab === 'periods' && (
+              <div className="mb-6 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-sm text-amber-950">
+                  <span className="font-semibold">Super Admin — Periods:</span> English (EN) is the default reference
+                  language. The stored primary name and description are the English fields; other languages are saved as
+                  translations. Language blocks are listed with English first.
+                </p>
+              </div>
+            )}
             
             {/* Global Fields (Code & Color) */}
             <div className="space-y-4 mb-6">
@@ -2493,7 +2676,7 @@ export default function ToolsSettings({
               <div className="space-y-6">
                 <h4 className="text-lg font-semibold text-gray-800 border-b pb-2">Translations</h4>
                 
-                {SUPPORTED_LANGUAGES.map((lang) => (
+                {adminTranslationLanguages.map((lang) => (
                   <div key={lang.code} className="border-2 border-gray-200 rounded-lg p-4 bg-gray-50">
                     <div className="flex items-center gap-2 mb-4">
                       <span className="px-3 py-1 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-md font-bold text-sm">
@@ -2682,6 +2865,16 @@ export default function ToolsSettings({
               </div>
             )}
 
+            {isAdmin && activeTab === 'periods' && (
+              <div className="mb-6 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-sm text-amber-950">
+                  <span className="font-semibold">Super Admin — Periods:</span> English (EN) is the default reference
+                  language. The stored primary name and description are the English fields; other languages are saved as
+                  translations. Language blocks are listed with English first.
+                </p>
+              </div>
+            )}
+
             {/* Global Fields (Code & Color) */}
             <div className="space-y-4 mb-6">
               {(activeTab === 'sections' || activeTab === 'commonDailyActions') && (
@@ -2772,7 +2965,7 @@ export default function ToolsSettings({
               <div className="space-y-6">
                 <h4 className="text-lg font-semibold text-gray-800 border-b pb-2">Translations</h4>
                 
-                {SUPPORTED_LANGUAGES.map((lang) => (
+                {adminTranslationLanguages.map((lang) => (
                   <div key={lang.code} className="border-2 border-gray-200 rounded-lg p-4 bg-gray-50">
                     <div className="flex items-center gap-2 mb-4">
                       <span className="px-3 py-1 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-md font-bold text-sm">

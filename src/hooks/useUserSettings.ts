@@ -39,6 +39,9 @@ export interface UserSettings {
   
   // Language
   language: string;
+
+  /** Weekly workout structure (Plans A–E); parsed from DB JSON */
+  weeklyStructureV1?: Record<string, unknown> | null;
 }
 
 export function useUserSettings(userId?: string) {

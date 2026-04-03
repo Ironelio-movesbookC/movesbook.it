@@ -469,7 +469,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       });
       return changed ? next : prev;
     });
-  }, [seriesMode, pauseCircuits, pauseSeries]);
+  }, [seriesMode, pauseCircuits, pauseSeries, circuits.length]);
   
   // 2026-01-21 22:00 UTC - Added preferences modal state
   const [showPreferencesModal, setShowPreferencesModal] = useState(false);

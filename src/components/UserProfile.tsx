@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { User, Mail, Calendar, Users, Award, Trophy, Settings as SettingsIcon } from 'lucide-react';
+import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
 
 interface UserProfile {
   id: string;
@@ -33,6 +34,8 @@ export default function UserProfile() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [preferredLanguage, setPreferredLanguage] = useState('en');
+  const [savingLanguage, setSavingLanguage] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -56,6 +59,7 @@ export default function UserProfile() {
       if (response.ok) {
         const data = await response.json();
         setProfile(data);
+        setPreferredLanguage(data?.settings?.language || 'en');
       } else {
         setError('Failed to load profile');
       }
@@ -64,6 +68,41 @@ export default function UserProfile() {
       setError('Error loading profile');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const savePreferredLanguage = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      setSavingLanguage(true);
+      const response = await fetch('/api/user/profile', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ language: preferredLanguage })
+      });
+      if (!response.ok) {
+        throw new Error('Failed to save language');
+      }
+      localStorage.setItem('language', preferredLanguage);
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+        try {
+          const parsed = JSON.parse(storedUser);
+          localStorage.setItem('user', JSON.stringify({ ...parsed, language: preferredLanguage }));
+        } catch (e) {
+          console.error('Failed to update local user language cache:', e);
+        }
+      }
+      window.location.reload();
+    } catch (e) {
+      console.error('Error saving preferred language:', e);
+      alert('Failed to save language preference');
+    } finally {
+      setSavingLanguage(false);
     }
   };
 
@@ -146,6 +185,33 @@ export default function UserProfile() {
           <Users className="w-8 h-8 text-green-500 mx-auto mb-2" />
           <p className="text-3xl font-bold text-gray-800">{profile._count.clubMemberships}</p>
           <p className="text-sm text-gray-600">Club Memberships</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <h2 className="text-xl font-bold text-gray-800 mb-4">Profile Language</h2>
+        <div className="flex flex-col md:flex-row md:items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-sm text-gray-600 mb-2">Preferred language for Movesbook terms</label>
+            <select
+              value={preferredLanguage}
+              onChange={(e) => setPreferredLanguage(e.target.value)}
+              className="w-full md:max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {SUPPORTED_LANGUAGES.map((lang) => (
+                <option key={lang.code} value={lang.code}>
+                  {lang.name} ({lang.code.toUpperCase()})
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={savePreferredLanguage}
+            disabled={savingLanguage}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {savingLanguage ? 'Saving...' : 'Save Language'}
+          </button>
         </div>
       </div>
 

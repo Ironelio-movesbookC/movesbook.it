@@ -17,6 +17,19 @@ export const WORKOUT_SECTIONS = {
     icon: 'Calendar',
     subSections: ['A', 'B', 'C'] // Has Weekly Plans A, B, C as subsections
   },
+  W: {
+    id: 'W' as const,
+    name: 'Weekly Workout Structures',
+    description:
+      'Outline a week with sport targets (distance, time, goal, notes). Drag planned workouts onto days; export later to Yearly Plan or Done.',
+    planType: 'TEMPLATE_WEEKS',
+    maxWeeks: 1,
+    maxDays: 7,
+    canAddDays: false,
+    isEditable: true,
+    icon: 'Calendar',
+    subSections: []
+  },
   B: {
     id: 'B' as const,
     name: 'Yearly Plan',

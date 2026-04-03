@@ -237,7 +237,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       if (parsed.restChoice) setRestChoice(parsed.restChoice);
       if (parsed.breakChoice) setBreakChoice(parsed.breakChoice);
       if (typeof parsed.descriptionInstructions === 'string') setDescriptionInstructions(parsed.descriptionInstructions);
-    }, [mode, existingMoveframe]);
+    }, [mode, existingMoveframe, setActiveFieldAndRef]);
 
     const setRowField = (rowId: number, field: keyof AerobicPlannerRow, value: string) => {
       if (field === 'rest' || field === 'time') setRestartTimeValidationError(false);

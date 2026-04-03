@@ -16,7 +16,8 @@ export async function POST(request: NextRequest) {
       userType, 
       gender, 
       birthdate, 
-      country 
+      country,
+      language
     } = await request.json();
 
     console.log('Registration attempt:', { name, firstName, surname, username, email, userType, country });
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
     console.log('User created:', user.id);
 
     // Load admin defaults for user's language (fallback to 'en')
-    const userLanguage = 'en'; // Default language
+    const userLanguage = typeof language === 'string' && language.trim() ? language.trim().toLowerCase() : 'en';
     console.log(`Loading admin defaults for language: ${userLanguage}`);
 
     const [colorDefaults, toolsDefaults, favouritesDefaults] = await Promise.all([
