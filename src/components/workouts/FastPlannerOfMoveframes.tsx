@@ -124,7 +124,7 @@ function suggestedExeFromSeriesAndLevel(totalSeries: number, level: PlanTargetLe
   return v >= 1 ? v : 1;
 }
 
-function parsePauseToSeconds(p: string): number | null {
+function parsePauseToSecondsOrNull(p: string): number | null {
   if (!p || p === '0') return 0;
   const s = p.trim();
   const minOnly = s.match(/^(\d+)'$/);
@@ -531,7 +531,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     const repsVals = sectorRows.map(r => parseInt(String(r.ripTime), 10)).filter(n => !Number.isNaN(n) && n > 0);
     const avgReps = repsVals.length ? Math.round(repsVals.reduce((a, b) => a + b, 0) / repsVals.length) : null;
     const pauseSecs = sectorRows
-      .map(r => parsePauseToSeconds(String(r.break || '')))
+      .map(r => parsePauseToSecondsOrNull(String(r.break || '')))
       .filter((x): x is number => x !== null);
     const avgPauseSec = pauseSecs.length ? pauseSecs.reduce((a, b) => a + b, 0) / pauseSecs.length : null;
     const lastRow = sectorRows.length ? sectorRows[sectorRows.length - 1] : null;

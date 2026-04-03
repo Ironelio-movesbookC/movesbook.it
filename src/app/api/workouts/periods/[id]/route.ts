@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { verifyToken } from '@/lib/auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 export async function PUT(
   request: NextRequest,
@@ -21,7 +19,19 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { name, description, color } = body;
+    const { name, description, color, descriptionTranslations: dtRaw, descriptionByLanguage } = body;
+
+    let descriptionTranslations: string | null | undefined = undefined;
+    if (descriptionByLanguage !== undefined && descriptionByLanguage !== null) {
+      const cleaned: Record<string, string> = {};
+      for (const [k, v] of Object.entries(descriptionByLanguage as Record<string, unknown>)) {
+        if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim().slice(0, 2000);
+      }
+      descriptionTranslations = Object.keys(cleaned).length > 0 ? JSON.stringify(cleaned) : null;
+    } else if (dtRaw !== undefined) {
+      descriptionTranslations =
+        typeof dtRaw === 'string' && dtRaw ? dtRaw : null;
+    }
 
     const period = await prisma.period.update({
       where: {
@@ -31,7 +41,8 @@ export async function PUT(
       data: {
         name,
         description,
-        color
+        color,
+        ...(descriptionTranslations !== undefined && { descriptionTranslations })
       }
     });
 

@@ -78,6 +78,22 @@ function clientXToBoundaryWeek(clientX: number, trackEl: HTMLElement, weekCount:
   return Math.min(weekCount, Math.max(1, w));
 }
 
+/**
+ * Clamp boundary week B between summary segment at `boundaryIndex` (left) and `boundaryIndex+1` (right).
+ * - Left period keeps weeks [L.start .. B] → need B ≥ L.start (cannot shrink left past L's first week / previous block's end).
+ * - Right period keeps weeks [B+1 .. R.end] → need B ≤ R.end−1 (cannot grow right past R's last week / next block's start).
+ * When a third segment exists on the timeline, those rules still apply: L and R are the two blocks meeting at this handle.
+ */
+function clampBoundaryBetweenSegments(segs: WeekSeg[], boundaryIndex: number, rawB: number): number {
+  if (boundaryIndex < 0 || boundaryIndex >= segs.length - 1) return Math.round(rawB);
+  const L = segs[boundaryIndex];
+  const R = segs[boundaryIndex + 1];
+  let B = Math.round(rawB);
+  const minB = L.startWeek;
+  const maxB = R.endWeek - 1;
+  return Math.max(minB, Math.min(maxB, B));
+}
+
 function summaryIndexForSegment(summarySegments: WeekSeg[], s: WeekSeg): number {
   return summarySegments.findIndex(
     (x) => x.periodId === s.periodId && x.startWeek === s.startWeek && x.endWeek === s.endWeek
@@ -228,13 +244,11 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
     async (boundaryIndex: number, rawB: number) => {
       const segs = segsRef.current;
       const weeksList = weeksRef.current;
-      const wc = weekCountRef.current;
       if (boundaryIndex < 0 || boundaryIndex >= segs.length - 1) return;
       const left = segs[boundaryIndex];
       const right = segs[boundaryIndex + 1];
       const oldB = left.endWeek;
-      let B = Math.round(rawB);
-      B = Math.max(left.startWeek, Math.min(right.endWeek - 1, B));
+      const B = clampBoundaryBetweenSegments(segs, boundaryIndex, rawB);
       if (B === oldB) return;
       const token = getAuthToken();
       if (!token) return;
@@ -284,14 +298,23 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
       const prev = segmentIndex > 0 ? segs[segmentIndex - 1] : null;
       const next = segmentIndex < segs.length - 1 ? segs[segmentIndex + 1] : null;
 
-      // Whole-block shift keeps length and moves both boundaries.
-      const minDelta = prev ? prev.endWeek + 1 - seg.startWeek : 0;
-      const maxDelta = next ? next.endWeek - seg.endWeek : 0;
+      if (!prev || !next) return;
+
+      // Whole-block shift only when the three blocks are contiguous weeks (no unassigned gap).
+      const contiguousPrev = seg.startWeek === prev.endWeek + 1;
+      const contiguousNext = next.startWeek === seg.endWeek + 1;
+      if (!contiguousPrev || !contiguousNext) return;
+
       let delta = Math.round(rawDelta);
-      delta = Math.max(minDelta, Math.min(maxDelta, delta));
       if (delta === 0) return;
-      if (delta > 0 && !prev) return;
-      if (delta < 0 && !next) return;
+
+      // Move right (delta > 0): prev grows, next shrinks — next must keep ≥1 week after the move.
+      const maxPositive = Math.max(0, next.endWeek - seg.endWeek - 1);
+      // Move left (delta < 0): take weeks from prev's tail — prev must keep ≥1 week (down to prev.startWeek).
+      const minDelta = -Math.max(0, prev.endWeek - prev.startWeek);
+
+      delta = Math.max(minDelta, Math.min(maxPositive, delta));
+      if (delta === 0) return;
 
       const token = getAuthToken();
       if (!token) return;
@@ -300,7 +323,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
         const updates: { id: string; periodId: string }[] = [];
         const byWeekNumber = new Map<number, { id: string; periodId: string }>();
 
-        if (delta > 0 && prev && next) {
+        if (delta > 0) {
           // Move segment to the right:
           // - left vacated weeks become prev period
           // - same amount taken from next becomes segment period
@@ -312,7 +335,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
             const w = weeksList.find((x: any) => x.weekNumber === wn);
             if (w?.id) byWeekNumber.set(wn, { id: w.id, periodId: seg.periodId });
           }
-        } else if (delta < 0 && prev && next) {
+        } else {
           const d = -delta;
           // Move segment to the left:
           // - weeks taken from prev become segment period
@@ -367,16 +390,14 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
         pointerId
       };
       const B0 = clientXToBoundaryWeek(clientX, trackEl, wc);
-      setDragPreviewB(Math.max(left.startWeek, Math.min(right.endWeek - 1, B0)));
+      setDragPreviewB(clampBoundaryBetweenSegments(segs, boundaryIndex, B0));
 
       const onMove = (ev: PointerEvent) => {
         if (dragActiveRef.current?.pointerId !== ev.pointerId) return;
         const d = dragActiveRef.current;
         if (!d || d.mode !== 'boundary') return;
-        const B = clientXToBoundaryWeek(ev.clientX, d.trackEl, weekCountRef.current);
-        const L = segsRef.current[d.boundaryIndex];
-        const R = segsRef.current[d.boundaryIndex + 1];
-        if (L && R) setDragPreviewB(Math.max(L.startWeek, Math.min(R.endWeek - 1, B)));
+        const raw = clientXToBoundaryWeek(ev.clientX, d.trackEl, weekCountRef.current);
+        setDragPreviewB(clampBoundaryBetweenSegments(segsRef.current, d.boundaryIndex, raw));
       };
 
       const onUp = (ev: PointerEvent) => {
@@ -387,8 +408,8 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
         dragActiveRef.current = null;
         setDragPreviewB(null);
         if (!d || d.mode !== 'boundary') return;
-        const B = clientXToBoundaryWeek(ev.clientX, d.trackEl, weekCountRef.current);
-        void applyBoundaryMove(d.boundaryIndex, B);
+        const raw = clientXToBoundaryWeek(ev.clientX, d.trackEl, weekCountRef.current);
+        void applyBoundaryMove(d.boundaryIndex, raw);
       };
 
       window.addEventListener('pointermove', onMove);
@@ -753,7 +774,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
             ))}
           </div>
 
-          {/* Summary strip — drag blue handles to move period boundaries */}
+          {/* Summary strip — drag blue handles to move period boundaries (clamped so prev/next blocks keep ≥1 week) */}
           <div className="flex items-center gap-2">
             <span className="w-24 flex-shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400">Summary</span>
             <div
@@ -780,6 +801,9 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                     key={`sum-bh-${i}`}
                     role="slider"
                     aria-label="Resize period boundary"
+                    aria-valuenow={s.endWeek}
+                    aria-valuemin={1}
+                    aria-valuemax={weekCount}
                     tabIndex={0}
                     className="absolute top-0 bottom-0 w-3 z-20 cursor-ew-resize touch-none flex items-center justify-center -translate-x-1/2"
                     style={{ left: `${(s.endWeek / weekCount) * 100}%` }}
@@ -859,6 +883,9 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                           <div
                             role="slider"
                             aria-label="Resize period boundary"
+                            aria-valuenow={summarySegments[gIdx - 1].endWeek}
+                            aria-valuemin={1}
+                            aria-valuemax={weekCount}
                             tabIndex={0}
                             className="absolute top-1 bottom-1 w-3 z-20 cursor-ew-resize touch-none flex items-center justify-center -translate-x-1/2"
                             style={{ left: `${(summarySegments[gIdx - 1].endWeek / weekCount) * 100}%` }}
@@ -871,6 +898,9 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                           <div
                             role="slider"
                             aria-label="Resize period boundary"
+                            aria-valuenow={summarySegments[gIdx].endWeek}
+                            aria-valuemin={1}
+                            aria-valuemax={weekCount}
                             tabIndex={0}
                             className="absolute top-1 bottom-1 w-3 z-20 cursor-ew-resize touch-none flex items-center justify-center -translate-x-1/2"
                             style={{ left: `${(summarySegments[gIdx].endWeek / weekCount) * 100}%` }}

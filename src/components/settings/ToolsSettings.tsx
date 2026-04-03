@@ -16,6 +16,7 @@ import {
   IconType,
   ToolsTab,
   SUPPORTED_LANGUAGES,
+  supportedLanguagesPeriodAdminOrder,
   DEFAULT_SPORTS,
   filterBySearch,
   filterByCategory,
@@ -160,6 +161,11 @@ export default function ToolsSettings({
   }, [periodizationOnly, currentLanguage]);
   const useEnglishFallbackRules =
     activeTab === 'periods' || activeTab === 'sections' || activeTab === 'bodyBuildingTechniques';
+
+  const adminTranslationLanguages = useMemo(() => {
+    if (isAdmin && activeTab === 'periods') return supportedLanguagesPeriodAdminOrder();
+    return SUPPORTED_LANGUAGES;
+  }, [isAdmin, activeTab]);
 
   useEffect(() => {
     if (!allowedTabs.includes(activeTab)) {
@@ -445,18 +451,35 @@ export default function ToolsSettings({
 
     const items = getActiveItems();
     const newId = Date.now().toString();
-    
-    // Use current language translation for the main entry (database)
-    const currentLangData = isAdmin 
+
+    const isSuperAdminPeriods = isAdmin && activeTab === 'periods';
+    const currentLangData = isAdmin
       ? (newItemTranslations[currentLanguage] || newItemTranslations['en'] || { title: '', description: '' })
       : { title: newItem.title, description: newItem.description };
-    
+
+    let descriptionByLanguage: Record<string, string> | undefined;
+    if (isSuperAdminPeriods) {
+      const m: Record<string, string> = {};
+      SUPPORTED_LANGUAGES.forEach((lang) => {
+        const d = (newItemTranslations[lang.code]?.description || '').trim();
+        if (d) m[lang.code] = d;
+      });
+      descriptionByLanguage = Object.keys(m).length > 0 ? m : undefined;
+    }
+
+    const englishBlock = newItemTranslations['en'] || { title: '', description: '' };
+
     const newEntry = {
       id: newId,
-      title: isAdmin 
-        ? (currentLangData.title || Object.values(newItemTranslations).find(t => t.title)?.title || '')
+      title: isAdmin
+        ? isSuperAdminPeriods
+          ? (englishBlock.title || Object.values(newItemTranslations).find((t) => t.title)?.title || '')
+          : (currentLangData.title || Object.values(newItemTranslations).find((t) => t.title)?.title || '')
         : newItem.title,
-      description: currentLangData.description || '',
+      description: isSuperAdminPeriods
+        ? (englishBlock.description || '').trim()
+        : currentLangData.description || '',
+      ...(isSuperAdminPeriods && descriptionByLanguage ? { descriptionByLanguage } : {}),
       color: newItem.color,
       order: items.length,
       isUserCreated: !isAdmin, // Tag user-created items
@@ -537,19 +560,28 @@ export default function ToolsSettings({
     }
     
     setEditingItem({ ...item });
-    
-    // Initialize translations with current values from the database item
-    // Since periods/sections are now in Prisma database (not localStorage language libraries),
-    // we initialize all languages with the same values from the database
+
+    const skipLocalStorageForPeriodAdmin = activeTab === 'periods' && isAdmin;
+
     const translations: Record<string, { title: string; description: string }> = {};
-    
-    SUPPORTED_LANGUAGES.forEach(lang => {
-      // For tabs using English fallback, keep non-English blank when no explicit
-      // translation exists so UI can show the English fallback in red.
+
+    SUPPORTED_LANGUAGES.forEach((lang) => {
       if (useEnglishFallbackRules) {
+        const periodItem = item as Period;
+        const byLang = periodItem.descriptionByLanguage;
+        const descForLang =
+          activeTab === 'periods' && isAdmin
+            ? (byLang?.[lang.code]?.trim()
+                ? (byLang[lang.code] as string)
+                : lang.code === 'en'
+                  ? (item.description || '')
+                  : '')
+            : lang.code === 'en'
+              ? (item.description || '')
+              : '';
         translations[lang.code] = {
           title: lang.code === 'en' ? (item.title || '') : '',
-          description: lang.code === 'en' ? (item.description || '') : ''
+          description: descForLang
         };
       } else {
         translations[lang.code] = {
@@ -557,8 +589,9 @@ export default function ToolsSettings({
           description: item.description || ''
         };
       }
-      
-      // Also try to load from localStorage for backward compatibility
+
+      if (skipLocalStorageForPeriodAdmin) return;
+
       const itemType = activeTab === 'periods' ? 'periods' : 'sections';
       const storageKey = `tools_${itemType}_${lang.code}`;
       const existingDataStr = localStorage.getItem(storageKey);
@@ -577,8 +610,9 @@ export default function ToolsSettings({
         }
       }
     });
-    
+
     setEditItemTranslations(translations);
+    if (isAdmin && activeTab === 'periods') setActiveInputLanguage('en');
   };
 
   const handleSaveEdit = () => {
@@ -614,11 +648,26 @@ export default function ToolsSettings({
         }
       }
 
-      // Update the editingItem with the current language's values (use English as default)
-      const currentLangData = editItemTranslations[currentLanguage] || editItemTranslations['en'] || Object.values(editItemTranslations)[0];
-      if (currentLangData) {
-        editingItem.title = currentLangData.title || editingItem.title;
-        editingItem.description = currentLangData.description || editingItem.description;
+      if (activeTab === 'periods') {
+        const enT = editItemTranslations['en'];
+        editingItem.title = (enT?.title?.trim() || editingItem.title || '').trim();
+        editingItem.description = (enT?.description || '').trim();
+        const descByLang: Record<string, string> = {};
+        SUPPORTED_LANGUAGES.forEach((lang) => {
+          const d = (editItemTranslations[lang.code]?.description || '').trim();
+          if (d) descByLang[lang.code] = d;
+        });
+        (editingItem as Period).descriptionByLanguage =
+          Object.keys(descByLang).length > 0 ? descByLang : undefined;
+      } else {
+        const currentLangData =
+          editItemTranslations[currentLanguage] ||
+          editItemTranslations['en'] ||
+          Object.values(editItemTranslations)[0];
+        if (currentLangData) {
+          editingItem.title = currentLangData.title || editingItem.title;
+          editingItem.description = currentLangData.description || editingItem.description;
+        }
       }
     } else {
       // Non-Admin: Validate current language only
@@ -1633,7 +1682,10 @@ export default function ToolsSettings({
           <div className="flex justify-between items-center">
             <div className="flex gap-3">
               <button
-                onClick={() => setShowAddDialog(true)}
+                onClick={() => {
+                  if (isAdmin && activeTab === 'periods') setActiveInputLanguage('en');
+                  setShowAddDialog(true);
+                }}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
               >
                 <Plus className="w-4 h-4" />
@@ -2523,6 +2575,16 @@ export default function ToolsSettings({
                 </span>
               </div>
             </div>
+
+            {isAdmin && activeTab === 'periods' && (
+              <div className="mb-6 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-sm text-amber-950">
+                  <span className="font-semibold">Super Admin — Periods:</span> English (EN) is the default reference
+                  language. The stored primary name and description are the English fields; other languages are saved as
+                  translations. Language blocks are listed with English first.
+                </p>
+              </div>
+            )}
             
             {/* Global Fields (Code & Color) */}
             <div className="space-y-4 mb-6">
@@ -2614,7 +2676,7 @@ export default function ToolsSettings({
               <div className="space-y-6">
                 <h4 className="text-lg font-semibold text-gray-800 border-b pb-2">Translations</h4>
                 
-                {SUPPORTED_LANGUAGES.map((lang) => (
+                {adminTranslationLanguages.map((lang) => (
                   <div key={lang.code} className="border-2 border-gray-200 rounded-lg p-4 bg-gray-50">
                     <div className="flex items-center gap-2 mb-4">
                       <span className="px-3 py-1 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-md font-bold text-sm">
@@ -2803,6 +2865,16 @@ export default function ToolsSettings({
               </div>
             )}
 
+            {isAdmin && activeTab === 'periods' && (
+              <div className="mb-6 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-sm text-amber-950">
+                  <span className="font-semibold">Super Admin — Periods:</span> English (EN) is the default reference
+                  language. The stored primary name and description are the English fields; other languages are saved as
+                  translations. Language blocks are listed with English first.
+                </p>
+              </div>
+            )}
+
             {/* Global Fields (Code & Color) */}
             <div className="space-y-4 mb-6">
               {(activeTab === 'sections' || activeTab === 'commonDailyActions') && (
@@ -2893,7 +2965,7 @@ export default function ToolsSettings({
               <div className="space-y-6">
                 <h4 className="text-lg font-semibold text-gray-800 border-b pb-2">Translations</h4>
                 
-                {SUPPORTED_LANGUAGES.map((lang) => (
+                {adminTranslationLanguages.map((lang) => (
                   <div key={lang.code} className="border-2 border-gray-200 rounded-lg p-4 bg-gray-50">
                     <div className="flex items-center gap-2 mb-4">
                       <span className="px-3 py-1 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-md font-bold text-sm">

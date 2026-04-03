@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, prismaConnect } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { resolveWorkoutDatabaseUserId } from '@/lib/workoutUserId';
 
 // Disable caching for this API route
 export const dynamic = 'force-dynamic';
@@ -49,6 +50,11 @@ export async function GET(request: NextRequest) {
 
     await prismaConnect();
 
+    const dbUserId = await resolveWorkoutDatabaseUserId(decoded.userId);
+    if (!dbUserId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') || 'TEMPLATE_WEEKS';
     const section = searchParams.get('section') || 'A'; // Section A, B, or C
@@ -78,7 +84,7 @@ export async function GET(request: NextRequest) {
 
     let plan = await prisma.workoutPlan.findFirst({
       where: {
-        userId: decoded.userId,
+        userId: dbUserId,
         type: actualPlanType as any,
         ...(actualPlanType === 'TEMPLATE_WEEKS' ? { storageZone: planStorageZone } : {})
       },
@@ -253,7 +259,7 @@ export async function GET(request: NextRequest) {
 
       const deletedDaysInRange = await prisma.workoutDay.deleteMany({
         where: {
-          userId: decoded.userId,
+          userId: dbUserId,
           storageZone: cleanupStorageZone,
           date: {
             gte: cleanupStartDate,
@@ -305,13 +311,13 @@ export async function GET(request: NextRequest) {
 
 
       let defaultPeriod = await prisma.period.findFirst({
-        where: { userId: decoded.userId }
+        where: { userId: dbUserId }
       });
       
       if (!defaultPeriod) {
         defaultPeriod = await prisma.period.create({
           data: {
-            userId: decoded.userId,
+            userId: dbUserId,
             name: 'Base Period',
             description: 'Default training period',
             color: '#3b82f6'
@@ -321,7 +327,7 @@ export async function GET(request: NextRequest) {
 
       const newPlan = await prisma.workoutPlan.create({
         data: {
-          userId: decoded.userId,
+          userId: dbUserId,
           name: actualPlanType === 'TEMPLATE_WEEKS' ? `Weekly Plan ${section}` :
                 actualPlanType === 'YEARLY_PLAN' ? 'Yearly Plan' : 
                 actualPlanType === 'WORKOUTS_DONE' ? 'Workouts Done' : 'Archive',
@@ -362,7 +368,7 @@ export async function GET(request: NextRequest) {
             await prisma.workoutDay.upsert({
               where: {
                 userId_date_storageZone: {
-                  userId: decoded.userId,
+                  userId: dbUserId,
                   date: dayDate,
                   storageZone: dayStorageZone
                 }
@@ -376,7 +382,7 @@ export async function GET(request: NextRequest) {
               },
               create: {
                 workoutWeekId: week.id,
-                userId: decoded.userId,
+                userId: dbUserId,
                 dayOfWeek,
                 weekNumber: i + 1,
                 date: dayDate,
@@ -663,6 +669,11 @@ export async function POST(request: NextRequest) {
 
     await prismaConnect();
 
+    const dbUserId = await resolveWorkoutDatabaseUserId(decoded.userId);
+    if (!dbUserId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { name, type, startDate: requestedStartDate, numberOfWeeks } = body;
 
@@ -672,13 +683,13 @@ export async function POST(request: NextRequest) {
     endDate.setDate(endDate.getDate() + (numberOfWeeks * 7));
 
     let defaultPeriod = await prisma.period.findFirst({
-      where: { userId: decoded.userId }
+      where: { userId: dbUserId }
     });
     
     if (!defaultPeriod) {
       defaultPeriod = await prisma.period.create({
         data: {
-          userId: decoded.userId,
+          userId: dbUserId,
           name: 'Base Period',
           description: 'Default training period',
           color: '#3b82f6'
@@ -693,7 +704,7 @@ export async function POST(request: NextRequest) {
 
     const plan = await prisma.workoutPlan.create({
       data: {
-        userId: decoded.userId,
+        userId: dbUserId,
         name,
         type: type as any,
         storageZone: storageZoneForPlan,
@@ -740,7 +751,7 @@ export async function POST(request: NextRequest) {
           await prisma.workoutDay.upsert({
             where: {
               userId_date_storageZone: {
-                userId: decoded.userId,
+                userId: dbUserId,
                 date: dayDate,
                 storageZone
               }
@@ -754,7 +765,7 @@ export async function POST(request: NextRequest) {
             },
             create: {
               workoutWeekId: week.id,
-              userId: decoded.userId,
+              userId: dbUserId,
               dayOfWeek,
               weekNumber: i + 1,
               date: dayDate,

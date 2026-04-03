@@ -48,6 +48,7 @@ import { useWorkoutExpansion } from '@/hooks/useWorkoutExpansion';
 
 // Components
 import WorkoutSectionHeader from '@/components/workouts/WorkoutSectionHeader';
+import WeeklyWorkoutStructurePanel from '@/components/workouts/WeeklyWorkoutStructurePanel';
 import WorkoutCalendarView from '@/components/workouts/WorkoutCalendarView';
 import WorkoutTreeView from '@/components/workouts/WorkoutTreeView';
 import DayTableView from '@/components/workouts/tables/DayTableView';
@@ -180,6 +181,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
     const newType = iconType === 'emoji' ? 'icon' : 'emoji';
     localStorage.setItem('sportIconType', newType);
     setIconType(newType);
+    window.dispatchEvent(new Event('sportIconTypeChange'));
   };
   
   // Debug logging for Section B view mode
@@ -243,6 +245,9 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
     feedbackMessage,
     showMessage
   } = useWorkoutData({ initialSection: activeSection });
+
+  /** Modals / print flows only know legacy sections A–D (weekly-structure tab W maps to A for typing). */
+  const activeSectionForModals = (activeSection === 'W' ? 'A' : activeSection) as 'A' | 'B' | 'C' | 'D';
 
   const lastWorkoutBySector = React.useMemo(() => computeLastWorkoutBySector(workoutPlan), [workoutPlan]);
   
@@ -1549,7 +1554,9 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       {/* Check if we can add a day (Section A: only if a week has < 7 days) */}
       {(() => {
         let canAddDay = true;
-        if (activeSection === 'A' && workoutPlan?.weeks) {
+        if (activeSection === 'W') {
+          canAddDay = false;
+        } else if (activeSection === 'A' && workoutPlan?.weeks) {
           // For Section A, check if any week has less than 7 days
           canAddDay = workoutPlan.weeks.some((week: any) => {
             const dayCount = week.days?.length || 0;
@@ -1578,7 +1585,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             onSectionChange={(section) => {
               setActiveSection(section);
               // Template plans (Section A) don't have calendar view since they don't have specific dates
-              if (section === 'A' && viewMode === 'calendar') {
+              if ((section === 'A' || section === 'W') && viewMode === 'calendar') {
                 setViewMode('table');
               }
             }}
@@ -1695,7 +1702,15 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
         <main className="flex-1 bg-white overflow-y-auto w-full">
           <div className="p-2">
 
-            {isLoading ? (
+            {activeSection === 'W' ? (
+              <WeeklyWorkoutStructurePanel
+                periods={(Array.isArray(periods) ? periods : []).map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                  color: p.color
+                }))}
+              />
+            ) : isLoading ? (
               <div className="flex items-center justify-center h-96">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
               </div>
@@ -3922,7 +3937,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           }}
           sourceDay={copiedDay}
           workoutPlan={workoutPlan}
-          activeSection={activeSection}
+          activeSection={activeSectionForModals}
           onConfirm={async (targetDate, targetWeekId) => {
             try {
               const token = localStorage.getItem('token');
@@ -3964,7 +3979,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           }}
           sourceDay={copiedDay}
           workoutPlan={workoutPlan}
-          activeSection={activeSection}
+          activeSection={activeSectionForModals}
           onConfirm={async (targetDate, targetWeekId) => {
             try {
               const token = localStorage.getItem('token');
@@ -4006,7 +4021,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           }}
           sourceWorkout={copiedWorkout}
           workoutPlan={workoutPlan}
-          activeSection={activeSection}
+          activeSection={activeSectionForModals}
           onConfirm={async (targetDayId, sessionNumber) => {
             try {
               const token = localStorage.getItem('token');
@@ -4051,7 +4066,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           }}
           sourceWorkout={copiedWorkout}
           workoutPlan={workoutPlan}
-          activeSection={activeSection}
+          activeSection={activeSectionForModals}
           onConfirm={async (targetDayId, sessionNumber) => {
             try {
               const token = localStorage.getItem('token');
@@ -4096,7 +4111,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           }}
           sourceMoveframe={copiedMoveframe}
           workoutPlan={workoutPlan}
-          activeSection={activeSection}
+          activeSection={activeSectionForModals}
           onConfirm={async (targetWorkoutId, position, targetMoveframeId) => {
             try {
               const token = localStorage.getItem('token');
@@ -4141,7 +4156,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           sourceMoveframe={copiedMoveframe}
           sourceWorkout={activeWorkout}
           workoutPlan={workoutPlan}
-          activeSection={activeSection}
+          activeSection={activeSectionForModals}
           onConfirm={async (targetWorkoutId, position, targetMoveframeId) => {
             try {
               const token = localStorage.getItem('token');
@@ -4278,7 +4293,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           }}
           day={dayToPrint}
           autoPrint={autoPrintDay}
-          activeSection={activeSection}
+          activeSection={activeSectionForModals}
         />
       )}
 
@@ -4295,7 +4310,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           workout={workoutToPrint}
           day={dayForWorkoutPrint}
           autoPrint={autoPrintWorkout}
-          activeSection={activeSection}
+          activeSection={activeSectionForModals}
         />
       )}
 
@@ -4359,7 +4374,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           }}
           week={currentWeek}
           autoPrint={autoPrintWeek}
-          activeSection={activeSection}
+          activeSection={activeSectionForModals}
         />
       )}
 
