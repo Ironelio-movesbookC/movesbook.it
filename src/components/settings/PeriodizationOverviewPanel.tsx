@@ -78,12 +78,6 @@ function clientXToBoundaryWeek(clientX: number, trackEl: HTMLElement, weekCount:
   return Math.min(weekCount, Math.max(1, w));
 }
 
-/**
- * Clamp boundary week B between summary segment at `boundaryIndex` (left) and `boundaryIndex+1` (right).
- * - Left period keeps weeks [L.start .. B] → need B ≥ L.start (cannot shrink left past L's first week / previous block's end).
- * - Right period keeps weeks [B+1 .. R.end] → need B ≤ R.end−1 (cannot grow right past R's last week / next block's start).
- * When a third segment exists on the timeline, those rules still apply: L and R are the two blocks meeting at this handle.
- */
 function clampBoundaryBetweenSegments(segs: WeekSeg[], boundaryIndex: number, rawB: number): number {
   if (boundaryIndex < 0 || boundaryIndex >= segs.length - 1) return Math.round(rawB);
   const L = segs[boundaryIndex];
