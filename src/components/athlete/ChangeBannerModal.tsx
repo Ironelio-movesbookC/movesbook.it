@@ -151,6 +151,7 @@ export default function ChangeBannerModal({
           profileBanner: path,
           profileBannerAlignment: alignment,
           profileBannerVideo: null,
+          profileBannerSequence: null,
         }),
       });
 
@@ -165,12 +166,14 @@ export default function ChangeBannerModal({
           profileBanner?: string;
           profileBannerAlignment?: string | null;
           profileBannerVideo?: string | null;
+          profileBannerSequence?: string | null;
         };
       }).user;
       onSaved({
         profileBanner: user?.profileBanner ?? path,
         profileBannerAlignment: (user?.profileBannerAlignment as BannerAlignment) ?? alignment,
         profileBannerVideo: user?.profileBannerVideo ?? null,
+        profileBannerSequence: user?.profileBannerSequence ?? null,
       });
       setSelectedFile(null);
       if (inputRef.current) inputRef.current.value = '';
@@ -252,6 +255,7 @@ export default function ChangeBannerModal({
           profileBanner?: string | null;
           profileBannerSequence?: string | null;
           profileBannerVideo?: string | null;
+          profileBannerAlignment?: string | null;
         };
       }).user;
 
@@ -259,6 +263,9 @@ export default function ChangeBannerModal({
         profileBanner: user?.profileBanner ?? undefined,
         profileBannerSequence: user?.profileBannerSequence ?? null,
         profileBannerVideo: user?.profileBannerVideo ?? null,
+        profileBannerAlignment: user?.profileBannerAlignment
+          ? (user.profileBannerAlignment as BannerAlignment)
+          : undefined,
       });
       handleClose();
     } catch {
@@ -336,6 +343,7 @@ export default function ChangeBannerModal({
           profileBannerVideo?: string | null;
           profileBanner?: string | null;
           profileBannerSequence?: string | null;
+          profileBannerAlignment?: string | null;
         };
       }).user;
 
@@ -343,6 +351,9 @@ export default function ChangeBannerModal({
         profileBannerVideo: user?.profileBannerVideo ?? path,
         profileBanner: user?.profileBanner ?? undefined,
         profileBannerSequence: user?.profileBannerSequence ?? null,
+        profileBannerAlignment: user?.profileBannerAlignment
+          ? (user.profileBannerAlignment as BannerAlignment)
+          : undefined,
       });
       setSelectedVideoFile(null);
       if (videoInputRef.current) videoInputRef.current.value = '';

@@ -4,14 +4,7 @@ import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { Camera } from 'lucide-react';
 import { parseBannerSequenceJson } from '@/lib/profileBannerSequence';
-
-function resolvePublicImageUrl(path: string | null | undefined): string | null {
-  if (!path || !path.trim()) return null;
-  const p = path.trim();
-  if (p.startsWith('http://') || p.startsWith('https://') || p.startsWith('data:')) return p;
-  if (p.startsWith('/')) return p;
-  return `/img/profile_images/${p}`;
-}
+import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 
 export type AthleteLegacyBannerProfile = {
   image?: string | null;
@@ -107,6 +100,7 @@ export default function AthleteLegacyBanner({
       <div className="relative flex-1 min-h-[200px] sm:min-h-[220px]">
         {videoSrc ? (
           <video
+            key={videoSrc}
             src={videoSrc}
             className={`absolute inset-0 h-full w-full ${coverObjectClass} opacity-90`}
             autoPlay
@@ -116,9 +110,14 @@ export default function AthleteLegacyBanner({
             aria-hidden
           />
         ) : useSequence ? (
-          <SequenceCoverImages sequencePaths={sequencePaths} coverObjectClass={coverObjectClass} />
+          <SequenceCoverImages
+            key={sequencePaths.join('|')}
+            sequencePaths={sequencePaths}
+            coverObjectClass={coverObjectClass}
+          />
         ) : (
           <Image
+            key={bannerSrc}
             src={bannerSrc}
             alt=""
             fill
@@ -156,6 +155,7 @@ export default function AthleteLegacyBanner({
                 {avatarSrc ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
+                    key={avatarSrc}
                     src={avatarSrc}
                     alt=""
                     className="w-full h-full object-cover"

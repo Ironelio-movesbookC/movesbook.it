@@ -694,6 +694,8 @@ function AthleteDashboardContent() {
                 onEntitySelect={(id) => {}}
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
+                profileImageFromDb={bannerProfile?.image}
+                onProfileImageSaved={loadBannerProfile}
                 onMyPageClick={() => {
                   setActiveTab('my-page');
                   setActiveSection('overview');
@@ -894,6 +896,18 @@ function AthleteDashboardContent() {
             if (patch.image !== undefined) next.image = patch.image;
             return next;
           });
+          if (patch.image !== undefined && typeof window !== 'undefined') {
+            try {
+              const raw = localStorage.getItem('user');
+              if (raw) {
+                const parsed = JSON.parse(raw) as Record<string, unknown>;
+                parsed.image = patch.image;
+                localStorage.setItem('user', JSON.stringify(parsed));
+              }
+            } catch {
+              /* ignore */
+            }
+          }
         }}
         currentImagePath={bannerProfile?.image}
         t={t}

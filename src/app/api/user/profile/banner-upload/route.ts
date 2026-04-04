@@ -50,6 +50,9 @@ export async function POST(request: NextRequest) {
     else if (file.type === 'image/gif') ext = 'gif';
     else if (file.type === 'image/webp') ext = 'webp';
 
+    // Do not delete previous banner files here — sequence uploads add multiple files per session.
+    // Orphan cleanup runs in PATCH /api/user/profile after save (see userMediaUploadCleanup).
+
     const timestamp = Date.now();
     const randomString = Math.random().toString(36).substring(2, 15);
     const fileName = `banner_${decoded.userId.slice(0, 8)}_${timestamp}_${randomString}.${ext}`;
