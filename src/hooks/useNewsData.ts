@@ -164,6 +164,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           id: a.id,
           userId: a.userId,
           creatorUsername: a.creatorUsername ?? null,
+          creatorCountry: a.creatorCountry ?? null,
           createdByCurrentUser: a.createdByCurrentUser === true,
           createdBySuperAdmin: a.createdBySuperAdmin === true,
           title: a.title,
@@ -322,6 +323,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         {
           id: created.id,
           userId: effectiveUserId ?? undefined,
+          creatorCountry: user?.country ?? null,
           createdByCurrentUser: true,
           title: created.title,
           image: created.image,
@@ -343,7 +345,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         },
       ]);
     },
-    [effectiveUserId, getHeaders]
+    [effectiveUserId, getHeaders, user?.country]
   );
 
   const removePastedArticle = useCallback(
