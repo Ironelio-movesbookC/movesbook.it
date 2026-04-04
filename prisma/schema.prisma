@@ -279,6 +279,8 @@ model Period {
   userId      String
   name        String
   description String
+  /// JSON map of language code → description (e.g. {"en":"...","it":"..."}). English mirrors `description`.
+  descriptionTranslations String? @db.Text
   color       String
   displayOrder Int          @default(0) // Order for display in lists
   createdAt   DateTime      @default(now())
@@ -467,6 +469,8 @@ model UserSettings {
   yearlyPlanStartDate    DateTime? // Start date for Section B (Yearly Plan)
   templateWeeksStartDate DateTime? // Start date for Section A (3 Weeks Plan)
   newsTopicOrder         String?   @db.Text // JSON array of topic names for user's favorite order
+  /// JSON: { "A"?: PlanPersist, "B"?: … } for Weekly workout structure tab (Plans A–E)
+  weeklyStructureV1      String?   @db.LongText
   user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_settings")

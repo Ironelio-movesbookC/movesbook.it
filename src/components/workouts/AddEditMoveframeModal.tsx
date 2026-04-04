@@ -1525,23 +1525,23 @@ export default function AddEditMoveframeModal({
                 }`}
                 style={mode === 'edit' ? { pointerEvents: 'none' } : undefined}
               >
-                <optgroup label="Aerobic sports">
+                <optgroup label="Aerobic sports" style={{ color: '#1d4ed8', fontWeight: 700 }}>
                   {sportOptionsBySection.aerobic.map((s) => (
-                    <option key={s} value={s}>
+                    <option key={s} value={s} style={{ color: '#111827', fontWeight: 400 }}>
                       {getEmphasizedSportLabel(s)}
                     </option>
                   ))}
                 </optgroup>
-                <optgroup label="Not aerobic sports">
+                <optgroup label="Not aerobic sports" style={{ color: '#1d4ed8', fontWeight: 700 }}>
                   {sportOptionsBySection.nonAerobic.map((s) => (
-                    <option key={s} value={s}>
+                    <option key={s} value={s} style={{ color: '#111827', fontWeight: 400 }}>
                       {getEmphasizedSportLabel(s)}
                     </option>
                   ))}
                 </optgroup>
-                <optgroup label="Others - technical moveframes">
+                <optgroup label="Others - technical moveframes" style={{ color: '#1d4ed8', fontWeight: 700 }}>
                   {sportOptionsBySection.technical.map((s) => (
-                    <option key={s} value={s}>
+                    <option key={s} value={s} style={{ color: '#111827', fontWeight: 400 }}>
                       {getEmphasizedSportLabel(s)}
                     </option>
                   ))}
@@ -1702,112 +1702,6 @@ export default function AddEditMoveframeModal({
           </div>
           )}
 
-          {/* Fast plannings Mode — directly under Type; light blue = selected; grey = unavailable */}
-          {effectiveType === 'BATTERY' &&
-            !hideTopChromeForAerobicFastEdit &&
-            canUseFastPlanners &&
-            (fpCategory === 'A' ||
-              fpCategory === 'B' ||
-              isEditingCircuitMoveframe ||
-              isEditingCircuitFromMovelap) && (
-            <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50/80 p-3 shadow-sm">
-              <div className="mb-2 border-l-4 border-sky-400 pl-2 text-xs font-bold tracking-wide text-sky-950">
-                Fast plannings Mode
-              </div>
-              {(() => {
-                const aerobicFastEnabled =
-                  fpCategory === 'A' && !isEditingCircuitMoveframe && !isEditingCircuitFromMovelap;
-                const notAerobicFastEnabled =
-                  fpCategory === 'B' && !isEditingCircuitMoveframe && !isEditingCircuitFromMovelap;
-                const circuitsEnabled = canUseCircuitPlanner;
-                const aiEnabled = canUseAiMoveframePlan;
-                const optBase = 'min-h-[2.75rem] px-3 py-2 text-left text-sm font-medium rounded border-2 transition-colors';
-                const optOn =
-                  'bg-sky-100 border-sky-400 text-sky-950 shadow-sm';
-                const optIdle = 'border-gray-300 bg-white text-gray-800 hover:border-sky-200 hover:bg-sky-50/60';
-                const optDis =
-                  'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 opacity-80';
-                const aerobicSelected =
-                  batterySubmenu === 'fast' &&
-                  fpCategory === 'A' &&
-                  !isEditingCircuitMoveframe &&
-                  !isEditingCircuitFromMovelap;
-                const notAerobicSelected =
-                  batterySubmenu === 'fast' &&
-                  fpCategory === 'B' &&
-                  !isEditingCircuitMoveframe &&
-                  !isEditingCircuitFromMovelap;
-                return (
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      disabled={!aerobicFastEnabled}
-                      title={
-                        aerobicFastEnabled
-                          ? undefined
-                          : 'Not available for this sport (not aerobic fast planning).'
-                      }
-                      onClick={() => aerobicFastEnabled && setBatterySubmenu('fast')}
-                      className={`${optBase} ${
-                        aerobicSelected ? optOn : aerobicFastEnabled ? optIdle : optDis
-                      }`}
-                    >
-                      Fast Plan of Aerobic sports
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!notAerobicFastEnabled}
-                      title={
-                        notAerobicFastEnabled
-                          ? undefined
-                          : 'Not available for this sport (aerobic / circuit-only context).'
-                      }
-                      onClick={() => notAerobicFastEnabled && setBatterySubmenu('fast')}
-                      className={`${optBase} ${
-                        notAerobicSelected ? optOn : notAerobicFastEnabled ? optIdle : optDis
-                      }`}
-                    >
-                      Fast Plan of Not Aerobic sports
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!circuitsEnabled}
-                      title={
-                        circuitsEnabled
-                          ? undefined
-                          : 'Circuits planner is only available for not-aerobic sports (or circuit edit).'
-                      }
-                      onClick={() => circuitsEnabled && setBatterySubmenu('circuits')}
-                      className={`${optBase} ${
-                        batterySubmenu === 'circuits'
-                          ? optOn
-                          : circuitsEnabled
-                            ? optIdle
-                            : optDis
-                      }`}
-                    >
-                      Circuits planner
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!aiEnabled}
-                      title={
-                        aiEnabled
-                          ? undefined
-                          : 'AI planning is not available for this sport or when editing circuits.'
-                      }
-                      onClick={() => aiEnabled && setBatterySubmenu('ai')}
-                      className={`${optBase} ${
-                        batterySubmenu === 'ai' ? optOn : aiEnabled ? optIdle : optDis
-                      }`}
-                    >
-                      Plan of Moveframes with AI
-                    </button>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
 
           {/* Workout Section Selection - Only for STANDARD and BATTERY modes */}
           {/* 2026-01-22 15:30 UTC - Reduced width to 50% and centered */}

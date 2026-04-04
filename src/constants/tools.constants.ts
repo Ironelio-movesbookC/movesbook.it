@@ -23,6 +23,8 @@ export interface Period {
   id: string;
   title: string;
   description: string;
+  /** Per-language descriptions (Super Admin); English should match `description` for DB/API compatibility */
+  descriptionByLanguage?: Record<string, string>;
   color: string;
   order: number;
   userId?: string; // Track ownership
@@ -124,6 +126,13 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'zh', name: '中文' },
   { code: 'ar', name: 'العربية' },
 ];
+
+/** Super Admin Period Settings: English first (default on-screen reference language). */
+export function supportedLanguagesPeriodAdminOrder() {
+  const en = SUPPORTED_LANGUAGES.find((l) => l.code === 'en');
+  const rest = SUPPORTED_LANGUAGES.filter((l) => l.code !== 'en');
+  return en ? [en, ...rest] : [...SUPPORTED_LANGUAGES];
+}
 
 /**
  * Default workout periods

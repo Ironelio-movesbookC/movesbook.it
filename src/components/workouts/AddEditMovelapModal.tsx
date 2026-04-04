@@ -385,7 +385,7 @@ export default function AddEditMovelapModal({
         setR2('');
       }
     }
-  }, [mode, existingMovelap, moveframe, sourceMovelapForAdd, movelapInsertIndex, isOpen]);
+  }, [mode, existingMovelap, moveframe, sourceMovelapForAdd, movelapInsertIndex, isOpen, sport]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};

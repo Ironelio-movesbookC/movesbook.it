@@ -266,14 +266,26 @@ export function useToolsData(): UseToolsDataReturn {
         const periodsData = await periodsResponse.json();
         if (periodsData.periods && periodsData.periods.length > 0) {
           // Convert Prisma Period format to local Period format
-          const formattedPeriods = periodsData.periods.map((p: any) => ({
-            id: p.id,
-            title: p.name,
-            description: p.description || '',
-            color: p.color,
-            order: p.displayOrder !== undefined ? p.displayOrder : 0, // Use displayOrder from database
-            userId: p.userId // Track ownership
-          }));
+          const formattedPeriods = periodsData.periods.map((p: any) => {
+            let descriptionByLanguage: Record<string, string> | undefined;
+            if (p.descriptionTranslations && typeof p.descriptionTranslations === 'string') {
+              try {
+                const parsed = JSON.parse(p.descriptionTranslations) as Record<string, string>;
+                if (parsed && typeof parsed === 'object') descriptionByLanguage = parsed;
+              } catch {
+                /* ignore */
+              }
+            }
+            return {
+              id: p.id,
+              title: p.name,
+              description: p.description || '',
+              descriptionByLanguage,
+              color: p.color,
+              order: p.displayOrder !== undefined ? p.displayOrder : 0,
+              userId: p.userId
+            };
+          });
           setPeriods(formattedPeriods);
         } else {
           loadPeriodsFromLocalStorage();

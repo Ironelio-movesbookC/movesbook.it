@@ -15,7 +15,8 @@ import {
   LogOut,
   Menu,
   X,
-  Building2
+  Building2,
+  LayoutDashboard
 } from 'lucide-react';
 import Image from 'next/image';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -82,6 +83,30 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
   const handleLogout = () => {
     localStorage.removeItem('adminUser');
     router.push('/');
+  };
+
+  const handleOpenDashboard = async () => {
+    const adminToken = localStorage.getItem('adminToken');
+    if (!adminToken) {
+      alert('Admin session not found. Please log in again.');
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/staff-token', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      const data = await res.json();
+      if (!res.ok || !data.token) {
+        alert(data.error || 'Could not open dashboard. Please try again.');
+        return;
+      }
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      window.open('/athlete/dashboard', '_blank');
+    } catch {
+      alert('Network error. Could not open dashboard.');
+    }
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -244,6 +269,15 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
                 <Settings className="w-4 h-4" />
                 <span className="font-medium">Sport settings</span>
               </Link>
+
+              <button
+                onClick={handleOpenDashboard}
+                className="flex items-center gap-2 px-3 lg:px-4 py-2.5 lg:py-3 hover:bg-yellow-600 bg-yellow-500 transition border-r border-yellow-600 text-sm text-white font-semibold"
+                title="Open user dashboard as Movesbook Staff"
+              >
+                <LayoutDashboard className="w-4 h-4" />
+                <span className="font-medium">Dashboard</span>
+              </button>
 
               {/* Language Dropdown */}
               <div className="relative" ref={languageRef}>
@@ -450,6 +484,14 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
               <span className="font-medium">Sport settings</span>
             </Link>
 
+            <button
+              onClick={() => { void handleOpenDashboard(); setMobileMenuOpen(false); }}
+              className="w-full text-left flex items-center gap-3 px-5 py-3 bg-yellow-500 hover:bg-yellow-600 transition border-b border-yellow-600 text-white font-semibold"
+            >
+              <LayoutDashboard className="w-5 h-5" />
+              <span className="font-medium">Dashboard</span>
+            </button>
+
             <Link
               href="/settings/language"
               onClick={() => setMobileMenuOpen(false)}
@@ -495,6 +537,13 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
                   <Settings className="w-5 h-5" />
                   <span className="font-medium">Sport settings</span>
                 </Link>
+                <button
+                  onClick={() => { void handleOpenDashboard(); setMobileMenuOpen(false); }}
+                  className="w-full text-left flex items-center gap-3 px-6 py-4 hover:bg-yellow-600 bg-yellow-500 transition text-white font-semibold"
+                >
+                  <LayoutDashboard className="w-5 h-5" />
+                  <span className="font-medium">Dashboard</span>
+                </button>
                 <button
                   onClick={() => {
                     handleLogout();

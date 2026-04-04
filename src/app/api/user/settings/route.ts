@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma, prismaConnect, resetPrismaClient } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { resolveWorkoutDatabaseUserId } from '@/lib/workoutUserId';
 
 function isPrismaEngineTransportError(error: unknown): boolean {
   if (!(error instanceof Prisma.PrismaClientUnknownRequestError)) return false;
@@ -101,27 +102,23 @@ export async function GET(request: NextRequest) {
         imageQuality: 'high',
         lazyLoading: true,
         dashboardLayout: 'default',
-        language: 'en'
+        language: 'en',
+        weeklyStructureV1: null
       });
     }
 
     await prismaConnect();
 
-    // Verify user exists in database
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true }
-    });
-
-    if (!user) {
-      console.error(`❌ User ${userId} not found in database`);
+    const dbUserId = await resolveWorkoutDatabaseUserId(userId);
+    if (!dbUserId) {
+      console.error(`❌ No User row for token userId ${userId}`);
       return NextResponse.json({ error: 'User not found' }, { status: 401 });
     }
 
     let settings;
     try {
       settings = await prisma.userSettings.findUnique({
-        where: { userId }
+        where: { userId: dbUserId }
       });
     } catch (dbError) {
       if (isPrismaEngineTransportError(dbError)) {
@@ -130,7 +127,7 @@ export async function GET(request: NextRequest) {
         await prismaConnect();
         try {
           settings = await prisma.userSettings.findUnique({
-            where: { userId }
+            where: { userId: dbUserId }
           });
         } catch {
           settings = null;
@@ -139,7 +136,7 @@ export async function GET(request: NextRequest) {
         console.error('❌ Database error reading settings (will try to recreate):', dbError);
         try {
           await prisma.userSettings.deleteMany({
-            where: { userId }
+            where: { userId: dbUserId }
           });
           console.log('🔧 Deleted settings row after read error');
         } catch (deleteError) {
@@ -153,7 +150,7 @@ export async function GET(request: NextRequest) {
     if (!settings) {
       // Load admin defaults for user's language (default to 'en')
       const userLanguage = 'en';
-      console.log(`No settings found for user ${userId}, loading admin defaults for language: ${userLanguage}`);
+      console.log(`No settings found for user ${dbUserId}, loading admin defaults for language: ${userLanguage}`);
 
       const [colorDefaults, toolsDefaults, favouritesDefaults] = await Promise.all([
         prisma.colorDefaults.findUnique({ where: { language: userLanguage } }),
@@ -163,7 +160,7 @@ export async function GET(request: NextRequest) {
 
       settings = await prisma.userSettings.create({
         data: {
-          userId,
+          userId: dbUserId,
           // JSON Settings loaded from admin defaults
           colorSettings: colorDefaults?.data ? JSON.stringify(colorDefaults.data) : '{}',
           toolsSettings: toolsDefaults?.data ? JSON.stringify(toolsDefaults.data) : '{}',
@@ -232,7 +229,11 @@ export async function GET(request: NextRequest) {
       adminSettings: safeJsonParse(settings.adminSettings, {}, 'adminSettings'),
       workoutPreferences: safeJsonParse(settings.workoutPreferences, {}, 'workoutPreferences'),
       socialSettings: safeJsonParse(settings.socialSettings, {}, 'socialSettings'),
-      notificationSettings: safeJsonParse(settings.notificationSettings, {}, 'notificationSettings')
+      notificationSettings: safeJsonParse(settings.notificationSettings, {}, 'notificationSettings'),
+      weeklyStructureV1:
+        settings.weeklyStructureV1?.trim?.()
+          ? safeJsonParse(settings.weeklyStructureV1, null, 'weeklyStructureV1')
+          : null
     };
 
     return NextResponse.json(response);
@@ -278,6 +279,11 @@ export async function POST(request: NextRequest) {
 
     await prismaConnect();
 
+    const dbUserId = await resolveWorkoutDatabaseUserId(userId);
+    if (!dbUserId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
+
     const body = await request.json();
     
     // Convert all JSON objects to strings for database storage
@@ -290,16 +296,22 @@ export async function POST(request: NextRequest) {
       'adminSettings',
       'workoutPreferences',
       'socialSettings',
-      'notificationSettings'
+      'notificationSettings',
+      'weeklyStructureV1'
     ];
     
     const settingsData: any = { ...body };
     
     jsonFields.forEach(field => {
       if (body[field] !== undefined) {
-        settingsData[field] = typeof body[field] === 'object' 
-          ? JSON.stringify(body[field])
-          : body[field];
+        const v = body[field];
+        if (v === null) {
+          settingsData[field] = null;
+        } else if (typeof v === 'object') {
+          settingsData[field] = JSON.stringify(v);
+        } else {
+          settingsData[field] = v;
+        }
       }
     });
 
@@ -324,10 +336,10 @@ export async function POST(request: NextRequest) {
 
     // Upsert (update or create)
     const settings = await prisma.userSettings.upsert({
-      where: { userId },
+      where: { userId: dbUserId },
       update: settingsData,
       create: {
-        userId,
+        userId: dbUserId,
         ...defaultSettings,
         ...settingsData // Override defaults with any provided settings
       }
@@ -357,7 +369,11 @@ export async function POST(request: NextRequest) {
       adminSettings: safeJsonParse(settings.adminSettings, {}, 'adminSettings'),
       workoutPreferences: safeJsonParse(settings.workoutPreferences, {}, 'workoutPreferences'),
       socialSettings: safeJsonParse(settings.socialSettings, {}, 'socialSettings'),
-      notificationSettings: safeJsonParse(settings.notificationSettings, {}, 'notificationSettings')
+      notificationSettings: safeJsonParse(settings.notificationSettings, {}, 'notificationSettings'),
+      weeklyStructureV1:
+        settings.weeklyStructureV1?.trim?.()
+          ? safeJsonParse(settings.weeklyStructureV1, null, 'weeklyStructureV1')
+          : null
     };
 
     return NextResponse.json(response);
@@ -402,14 +418,9 @@ export async function PATCH(request: NextRequest) {
 
     await prismaConnect();
 
-    // Verify user exists in database
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true }
-    });
-
-    if (!user) {
-      console.error(`❌ User ${userId} not found in database`);
+    const dbUserId = await resolveWorkoutDatabaseUserId(userId);
+    if (!dbUserId) {
+      console.error(`❌ No User row for token userId ${userId}`);
       return NextResponse.json({ error: 'User not found' }, { status: 401 });
     }
 
@@ -425,16 +436,22 @@ export async function PATCH(request: NextRequest) {
       'adminSettings',
       'workoutPreferences',
       'socialSettings',
-      'notificationSettings'
+      'notificationSettings',
+      'weeklyStructureV1'
     ];
     
     const updateData: any = {};
     
     Object.keys(body).forEach(key => {
       if (jsonFields.includes(key)) {
-        updateData[key] = typeof body[key] === 'object' 
-          ? JSON.stringify(body[key]) 
-          : body[key];
+        const v = body[key];
+        if (v === null || v === undefined) {
+          updateData[key] = null;
+        } else if (typeof v === 'object') {
+          updateData[key] = JSON.stringify(v);
+        } else {
+          updateData[key] = v;
+        }
       } else if (!['id', 'userId', 'createdAt', 'updatedAt'].includes(key)) {
         updateData[key] = body[key];
       }
@@ -443,10 +460,10 @@ export async function PATCH(request: NextRequest) {
     let settings;
     try {
       settings = await prisma.userSettings.upsert({
-        where: { userId },
+        where: { userId: dbUserId },
         update: updateData,
         create: {
-          userId,
+          userId: dbUserId,
           colorSettings: '{}',
           widgetArrangement: '[]',
           toolsSettings: '{}',
@@ -465,14 +482,14 @@ export async function PATCH(request: NextRequest) {
       // If upsert fails (likely due to corrupted JSON), delete and recreate
       try {
         await prisma.userSettings.deleteMany({
-          where: { userId }
+          where: { userId: dbUserId }
         });
         
         console.log('🔧 Deleted corrupted settings, creating fresh ones...');
         
         settings = await prisma.userSettings.create({
           data: {
-            userId,
+            userId: dbUserId,
             colorSettings: '{}',
             widgetArrangement: '[]',
             toolsSettings: '{}',
@@ -504,7 +521,11 @@ export async function PATCH(request: NextRequest) {
       adminSettings: safeJsonParse(settings.adminSettings, {}),
       workoutPreferences: safeJsonParse(settings.workoutPreferences, {}),
       socialSettings: safeJsonParse(settings.socialSettings, {}),
-      notificationSettings: safeJsonParse(settings.notificationSettings, {})
+      notificationSettings: safeJsonParse(settings.notificationSettings, {}),
+      weeklyStructureV1:
+        settings.weeklyStructureV1?.trim?.()
+          ? safeJsonParse(settings.weeklyStructureV1, null)
+          : null
     };
 
     return NextResponse.json(response);

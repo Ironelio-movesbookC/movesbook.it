@@ -146,6 +146,10 @@ export const sectionHelpers = {
       return true;
     }
 
+    if (section === 'W') {
+      return true;
+    }
+
     return false;
   },
 

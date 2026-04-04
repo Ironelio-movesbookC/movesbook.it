@@ -81,6 +81,12 @@ export function useWorkoutData({
     setWorkoutPlan(null);
     
     try {
+      if (targetSection === 'W') {
+        setWorkoutPlan(null);
+        setIsLoading(false);
+        return;
+      }
+
       const planType = sectionHelpers.getPlanType(targetSection);
       
       // For Section A, use the subsection (A, B, or C) to get independent plans
@@ -228,8 +234,10 @@ export function useWorkoutData({
       const response = await periodsApi.getAll();
       
       if (response.success && response.data) {
-        setPeriods(response.data || []);
-        console.log('✅ Periods loaded:', response.data?.length);
+        const raw = response.data as unknown;
+        const list = Array.isArray(raw) ? raw : (raw as { periods?: unknown })?.periods;
+        setPeriods(Array.isArray(list) ? list : []);
+        console.log('✅ Periods loaded:', Array.isArray(list) ? list.length : 0);
       } else {
         console.error('❌ Failed to load periods:', response.error);
       }

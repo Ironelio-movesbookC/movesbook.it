@@ -149,10 +149,19 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, description, color } = body;
+    const { name, description, color, descriptionByLanguage } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    }
+
+    let descriptionTranslations: string | null = null;
+    if (descriptionByLanguage && typeof descriptionByLanguage === 'object') {
+      const cleaned: Record<string, string> = {};
+      for (const [k, v] of Object.entries(descriptionByLanguage)) {
+        if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim().slice(0, 2000);
+      }
+      if (Object.keys(cleaned).length > 0) descriptionTranslations = JSON.stringify(cleaned);
     }
 
     const period = await prisma.period.create({
@@ -160,6 +169,7 @@ export async function POST(request: NextRequest) {
         userId: decoded.userId,
         name,
         description: description || '',
+        descriptionTranslations,
         color: color || '#9CA3AF' // Gray default
       }
     });

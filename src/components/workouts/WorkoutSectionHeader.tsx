@@ -119,6 +119,7 @@ export default function WorkoutSectionHeader({
   const getSectionLabel = (section: SectionId): string => {
     switch (section) {
       case 'A': return 'A';
+      case 'W': return 'W';
       case 'B': return 'B';
       case 'C': return 'C';
       case 'D': return 'D';
@@ -130,6 +131,7 @@ export default function WorkoutSectionHeader({
   const getSectionTitle = (section: SectionId): string => {
     switch (section) {
       case 'A': return 'Create Template Plans';
+      case 'W': return 'Weekly workouts structures';
       case 'B': return 'Yearly Plan';
       case 'C': return 'Done';
       case 'D': return 'Archive';
@@ -173,7 +175,7 @@ export default function WorkoutSectionHeader({
       <div className="bg-white border-b border-gray-300 px-2 py-2">
         <div className="flex items-center gap-2">
           {/* Section Tabs */}
-          {(['A', 'B', 'C', 'D'] as SectionId[]).map((section) => (
+          {(['A', 'W', 'B', 'C', 'D'] as SectionId[]).map((section) => (
             <button
               key={section}
               onClick={() => onSectionChange(section)}
@@ -262,7 +264,11 @@ export default function WorkoutSectionHeader({
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <h2 className="text-xl font-bold">
-              {activeSection === 'A' ? `Weekly Plan ${activeSubSection}` : getSectionTitle(activeSection)}
+              {activeSection === 'A'
+                ? `Weekly Plan ${activeSubSection}`
+                : activeSection === 'W'
+                  ? 'Weekly workout structure'
+                  : getSectionTitle(activeSection)}
             </h2>
             
             {/* Colored Circle and Description for Weekly Plans (Section A subsections) */}

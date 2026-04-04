@@ -235,6 +235,16 @@ export interface LanguageStrings {
         // Settings
         'settings_title': 'Settings',
         'settings_backgrounds': 'Backgrounds & Colors',
+        'settings_periodization': 'Periodization',
+        'settings_periodization_desc':
+          'Training periods (name, color, description) for your plans. Load templates from Movesbook, merge your own, and edit anytime — full tools remain under Tools Settings.',
+        'settings_periodization_tab_period_settings': 'Period settings',
+        'settings_periodization_tab_periodization': 'Periodization',
+        'settings_periodization_tab_overview': 'Overview',
+        'settings_periodization_panel_help':
+          'Periodization is how you structure training over time (e.g. base, build, peak, recovery). Here you define the period labels and colors that appear on your plans. Loading from Movesbook always uses your profile language.',
+        'settings_periodization_overview_intro':
+          'Summary of your personal training periods. Names and colors are what you see on template and yearly plans.',
         'settings_tools': 'Tools Settings',
         'settings_favourites': 'Favourites',
         'settings_my_best': 'My Best',
@@ -1085,6 +1095,16 @@ export interface LanguageStrings {
         'moveframe_title': 'Moveframe',
         'settings_title': 'Configuración',
         'settings_backgrounds': 'Fondos y Colores',
+        'settings_periodization': 'Periodización',
+        'settings_periodization_desc':
+          'Periodos de entrenamiento (nombre, color, descripción) para tus planes. Carga plantillas desde Movesbook, combina las tuyas y edítalas cuando quieras; el resto de herramientas sigue en Configuración de Herramientas.',
+        'settings_periodization_tab_period_settings': 'Ajustes de periodo',
+        'settings_periodization_tab_periodization': 'Periodización',
+        'settings_periodization_tab_overview': 'Resumen',
+        'settings_periodization_panel_help':
+          'La periodización estructura el entrenamiento en el tiempo (base, desarrollo, pico, recuperación). Aquí defines nombres y colores que ves en tus planes. Cargar desde Movesbook usa siempre el idioma de tu perfil.',
+        'settings_periodization_overview_intro':
+          'Resumen de tus periodos de entrenamiento personales. Los nombres y colores son los que ves en plantillas y plan anual.',
         'settings_tools': 'Configuración de Herramientas',
         'settings_favourites': 'Favoritos',
         'settings_my_best': 'Mis Mejores',

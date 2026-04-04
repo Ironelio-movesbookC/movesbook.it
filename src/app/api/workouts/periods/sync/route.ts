@@ -78,13 +78,29 @@ export async function POST(request: NextRequest) {
     // 2. Update or create periods
     for (let i = 0; i < periods.length; i++) {
       const period = periods[i];
-      const periodData = {
+      const periodBase = {
         userId: decoded.userId,
         name: period.title || period.name, // Support both 'title' and 'name'
-        description: period.description || '',
+        description: (period.description || '').slice(0, 2000),
         color: period.color || '#3b82f6',
         displayOrder: period.order !== undefined ? period.order : i // Use order from client or index
       };
+
+      let translationPatch: { descriptionTranslations?: string | null } = {};
+      if (period.descriptionByLanguage !== undefined && period.descriptionByLanguage !== null) {
+        const descByLang = period.descriptionByLanguage;
+        let descriptionTranslations: string | null = null;
+        if (descByLang && typeof descByLang === 'object') {
+          const cleaned: Record<string, string> = {};
+          for (const [k, v] of Object.entries(descByLang)) {
+            if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim().slice(0, 2000);
+          }
+          if (Object.keys(cleaned).length > 0) descriptionTranslations = JSON.stringify(cleaned);
+        }
+        translationPatch = { descriptionTranslations };
+      }
+
+      const periodData = { ...periodBase, ...translationPatch };
 
       // If period has an ID and it exists in database, update it
       if (period.id && existingIds.has(period.id)) {
