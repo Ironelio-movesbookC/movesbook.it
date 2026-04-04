@@ -137,6 +137,7 @@ function AthleteDashboardContent() {
     try {
       const token = localStorage.getItem('token');
       const res = await fetch('/api/user/profile', {
+        cache: 'no-store',
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -695,7 +696,11 @@ function AthleteDashboardContent() {
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
                 profileImageFromDb={bannerProfile?.image}
-                onProfileImageSaved={loadBannerProfile}
+                onProfileImageSaved={(patch) => {
+                  if (patch.image !== undefined) {
+                    setBannerProfile((prev) => ({ ...(prev ?? {}), image: patch.image }));
+                  }
+                }}
                 onMyPageClick={() => {
                   setActiveTab('my-page');
                   setActiveSection('overview');
