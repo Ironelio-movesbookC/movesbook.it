@@ -4,6 +4,7 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import { verifyToken } from '@/lib/auth';
 import { deleteAllUserFilesInManagedDir, userMediaFilenamePrefix } from '@/lib/userMediaUploadCleanup';
+import { getServerPublicDir } from '@/lib/serverPublicDir';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
     const randomString = Math.random().toString(36).substring(2, 15);
     const fileName = `banner_video_${idPrefix}_${timestamp}_${randomString}.${ext}`;
 
-    const uploadDir = join(process.cwd(), 'public', 'uploads', 'profile_banner_videos');
+    const uploadDir = join(getServerPublicDir(), 'uploads', 'profile_banner_videos');
     if (!existsSync(uploadDir)) {
       await mkdir(uploadDir, { recursive: true });
     }

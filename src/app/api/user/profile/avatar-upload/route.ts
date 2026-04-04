@@ -3,6 +3,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { verifyToken } from '@/lib/auth';
+import { getServerPublicDir } from '@/lib/serverPublicDir';
 import { deleteAllUserFilesInManagedDir, userMediaFilenamePrefix } from '@/lib/userMediaUploadCleanup';
 
 export const dynamic = 'force-dynamic';
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
     const randomString = Math.random().toString(36).substring(2, 15);
     const fileName = `avatar_${idPrefix}_${timestamp}_${randomString}.${ext}`;
 
-    const uploadDir = join(process.cwd(), 'public', 'uploads', 'profile_avatars');
+    const uploadDir = join(getServerPublicDir(), 'uploads', 'profile_avatars');
     if (!existsSync(uploadDir)) {
       await mkdir(uploadDir, { recursive: true });
     }

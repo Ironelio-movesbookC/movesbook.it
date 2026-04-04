@@ -4,6 +4,7 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { verifyToken } from '@/lib/auth';
+import { getServerPublicDir } from '@/lib/serverPublicDir';
 import { MAX_ATTACHMENT_BYTES } from '@/lib/periodizationAttachments';
 
 const ALLOWED_MIMES = new Set([
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
     const ext = base.includes('.') ? base.slice(base.lastIndexOf('.')) : '';
     const fileName = `${id}${ext || '.bin'}`;
 
-    const uploadDir = join(process.cwd(), 'public', 'uploads', 'periodization', userId);
+    const uploadDir = join(getServerPublicDir(), 'uploads', 'periodization', userId);
     if (!existsSync(uploadDir)) {
       await mkdir(uploadDir, { recursive: true });
     }
@@ -110,7 +111,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const relative = url.replace(/^\/+/, '');
-    const diskPath = join(process.cwd(), 'public', relative);
+    const diskPath = join(getServerPublicDir(), relative);
     if (existsSync(diskPath)) {
       await unlink(diskPath);
     }

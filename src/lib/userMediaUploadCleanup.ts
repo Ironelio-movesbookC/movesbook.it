@@ -1,6 +1,7 @@
 import { readdir, unlink } from 'fs/promises';
 import { join, normalize, relative } from 'path';
 import { parseBannerSequenceJson } from '@/lib/profileBannerSequence';
+import { getServerPublicDir } from '@/lib/serverPublicDir';
 
 /** Matches filename prefixes used in avatar/banner/banner-video upload routes. */
 export function userMediaFilenamePrefix(userId: string): string {
@@ -38,8 +39,8 @@ export function collectReferencedUploadPaths(row: {
 function absolutePathForPublicUpload(publicPath: string): string | null {
   if (!publicPath.startsWith('/uploads/')) return null;
   const rel = publicPath.replace(/^\//, '');
-  const abs = normalize(join(process.cwd(), 'public', rel));
-  const root = normalize(join(process.cwd(), 'public', 'uploads'));
+  const abs = normalize(join(getServerPublicDir(), rel));
+  const root = normalize(join(getServerPublicDir(), 'uploads'));
   const fromRoot = relative(root, abs);
   if (fromRoot.startsWith('..') || fromRoot === '') return null;
   return abs;
@@ -62,7 +63,7 @@ export async function deleteUnreferencedUserMediaFiles(
   ];
 
   for (const { dir, filePrefix } of specs) {
-    const uploadDir = join(process.cwd(), 'public', 'uploads', dir);
+    const uploadDir = join(getServerPublicDir(), 'uploads', dir);
     let names: string[] = [];
     try {
       names = await readdir(uploadDir);
@@ -89,7 +90,7 @@ export async function deleteAllUserFilesInManagedDir(
   dir: 'profile_avatars' | 'profile_banners' | 'profile_banner_videos',
   filePrefix: string,
 ): Promise<void> {
-  const uploadDir = join(process.cwd(), 'public', 'uploads', dir);
+  const uploadDir = join(getServerPublicDir(), 'uploads', dir);
   let names: string[] = [];
   try {
     names = await readdir(uploadDir);
