@@ -284,8 +284,8 @@ interface DarkSidebarProps {
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
   /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
   profileImageFromDb?: string | null;
-  /** Called after a successful profile photo upload so parents can refresh banner/other UI. */
-  onProfileImageSaved?: () => void;
+  /** Called after a successful profile photo upload so parents can sync banner/other UI (passes saved path — avoid immediate refetch-only sync). */
+  onProfileImageSaved?: (patch: { image?: string }) => void;
 }
 
 export default function DarkSidebar({
@@ -982,7 +982,7 @@ export default function DarkSidebar({
             } catch {
               // ignore localStorage issues
             }
-            onProfileImageSaved?.();
+            onProfileImageSaved?.({ image: patch.image });
           }
         }}
         currentImagePath={userImageOverride ?? profileImageFromDb ?? user?.image}
