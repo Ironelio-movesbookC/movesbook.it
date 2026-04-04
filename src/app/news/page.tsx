@@ -310,6 +310,11 @@ export default function NewsPage() {
             onUpdatePastedTopic={handleUpdatePastedTopic}
             onAddClick={() => setShowOgpForm((prev) => !prev)}
             addButtonDisabled={activeTopic === ALL_TOPICS}
+            showOfficialMovesbookOgNewsFilter={
+              user?.userType === 'ATHLETE' || user?.userType === 'CLUB'
+            }
+            showMyCountryOgNewsFilter={user?.userType === 'ATHLETE' || user?.userType === 'CLUB'}
+            viewerCountry={user?.country ?? null}
           />
         </div>
 

@@ -192,6 +192,7 @@ export default function NewsSettingModal({
                       const checked = e.target.checked;
                       setEnableSports(checked);
                       if (checked) setSports(options.sports.map((s) => s.value));
+                      else setSports([]);
                     }}
                     className="rounded border-gray-300"
                   />
@@ -225,6 +226,7 @@ export default function NewsSettingModal({
                       const checked = e.target.checked;
                       setEnableUserTypes(checked);
                       if (checked) setUserTypes(options.userTypes.map((t) => t.value));
+                      else setUserTypes([]);
                     }}
                     className="rounded border-gray-300"
                   />
@@ -258,6 +260,7 @@ export default function NewsSettingModal({
                       const checked = e.target.checked;
                       setEnableLanguages(checked);
                       if (checked) setLanguages(options.languages.map((l) => l.value));
+                      else setLanguages([]);
                     }}
                     className="rounded border-gray-300"
                   />
@@ -291,6 +294,7 @@ export default function NewsSettingModal({
                       const checked = e.target.checked;
                       setEnableCountries(checked);
                       if (checked) setCountries(options.countries.slice());
+                      else setCountries([]);
                     }}
                     className="rounded border-gray-300"
                   />
