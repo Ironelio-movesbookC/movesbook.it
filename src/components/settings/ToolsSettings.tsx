@@ -2,7 +2,27 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Image from 'next/image';
-import { Plus, Edit2, Trash2, GripVertical, ArrowUpAZ, ArrowDownZA, Save, X, Download, Globe, Image as ImageIcon, Smile, Grid3x3, List, ArrowUpDown } from 'lucide-react';
+import {
+  Plus,
+  Edit2,
+  Trash2,
+  GripVertical,
+  ArrowUpAZ,
+  ArrowDownZA,
+  Save,
+  X,
+  Download,
+  Globe,
+  Image as ImageIcon,
+  Smile,
+  Grid3x3,
+  List,
+  ArrowUpDown,
+  AlertCircle,
+  CheckCircle,
+  Building2,
+  LogIn,
+} from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToolsData } from '@/hooks/useToolsData';
 import {
@@ -26,6 +46,9 @@ import { SPORTS_LIST, getSportDisplayName } from '@/constants/moveframe.constant
 import PeriodizationTabPanel from '@/components/settings/PeriodizationTabPanel';
 import PeriodizationOverviewPanel from '@/components/settings/PeriodizationOverviewPanel';
 import PlannedActionTemplatesEditor from '@/components/settings/PlannedActionTemplatesEditor';
+import SportMachinesSection from '@/components/settings/SportMachinesSection';
+import SuperAdminCompaniesSection from '@/components/settings/SuperAdminCompaniesSection';
+import { useCanManageSportMachineCompanies } from '@/hooks/useCanManageSportMachineCompanies';
 
 function normalizeToolsLanguage(code: string | undefined): string {
   if (!code) return 'en';
@@ -48,14 +71,30 @@ interface ToolsSettingsProps {
 
 function getAllowedTabs(isAdmin: boolean, mode: 'tools' | 'technical'): ToolsTab[] {
   if (mode === 'technical') {
-    return ['equipmentFactories', 'muscles', 'sportsEquipment', 'exercises', 'myLibrary', 'devices'];
+    return ['equipmentFactories', 'muscles', 'sportsEquipment', 'sportMachines', 'exercises', 'myLibrary', 'devices'];
   }
   if (isAdmin) {
-    return ['periods', 'sections', 'bodyBuildingTechniques', 'commonDailyActions', 'insertActions'];
+    return [
+      'periods',
+      'sections',
+      'bodyBuildingTechniques',
+      'commonDailyActions',
+      'sportMachines',
+      'insertActions',
+    ];
   }
-  // Personal Settings (all users): keep official user tabs only
-  // and exclude technical/admin tabs (factories, muscles, sports-equipment).
-  return ['periods', 'sections', 'bodyBuildingTechniques', 'equipment', 'exercises', 'myLibrary', 'devices', 'insertActions'];
+  // Personal Settings (all users): same machine catalog as Technical → Machines (user-scoped data).
+  return [
+    'periods',
+    'sections',
+    'bodyBuildingTechniques',
+    'equipment',
+    'sportMachines',
+    'exercises',
+    'myLibrary',
+    'devices',
+    'insertActions',
+  ];
 }
 
 export default function ToolsSettings({
@@ -142,6 +181,13 @@ export default function ToolsSettings({
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [superAdminPassword, setSuperAdminPassword] = useState('');
   const [showLoadDialog, setShowLoadDialog] = useState(false);
+  const [equipmentFactoriesMessage, setEquipmentFactoriesMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  const { canManage: canManageMachineCompanies, refresh: refreshMachineCompaniesAccess } =
+    useCanManageSportMachineCompanies(mode === 'technical');
   const [periodizationSubview, setPeriodizationSubview] =
     useState<PeriodizationSubview>(() => {
       if (typeof window === 'undefined') return 'periodSettings';
@@ -180,6 +226,11 @@ export default function ToolsSettings({
       setActiveTab(initialTab);
     }
   }, [initialTab, allowedTabs]);
+
+  useEffect(() => {
+    if (mode !== 'technical' || activeTab !== 'equipmentFactories') return;
+    void refreshMachineCompaniesAccess();
+  }, [mode, activeTab, refreshMachineCompaniesAccess]);
 
   // Persist active tab and periodization subview across refreshes
   useEffect(() => {
@@ -1489,6 +1540,18 @@ export default function ToolsSettings({
             Sports Equipment
           </button>
         )}
+        {allowedTabs.includes('sportMachines') && (
+          <button
+            onClick={() => setActiveTab('sportMachines')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'sportMachines'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Machines
+          </button>
+        )}
         {allowedTabs.includes('exercises') && (
           <button
             onClick={() => setActiveTab('exercises')}
@@ -2121,33 +2184,64 @@ export default function ToolsSettings({
         </div>
       )}
 
-      {/* Sports Equipment Factories Tab */}
+      {/* Sports Equipment Factories Tab — machine manufacturer catalog (Super Admin / Admin panel) */}
       {activeTab === 'equipmentFactories' && (
         <div className="space-y-6">
-          {/* Info Banner */}
-          <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-200 p-6">
-            <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+          <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/40 dark:to-pink-950/30 rounded-xl border border-purple-200 dark:border-purple-800 p-6">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
               <span className="text-2xl">🏭</span>
-              Sports Equipment Factories
+              Equipment factories
             </h3>
-            <p className="text-gray-600 text-sm">
-              Manage sports equipment manufacturers and factory information. This section is available for{' '}
-              <span className="font-semibold text-purple-600">all users</span>.
+            <p className="text-gray-600 dark:text-gray-300 text-sm">
+              Register brands that build gym and sport machines. This catalog feeds the{' '}
+              <span className="font-semibold text-purple-600 dark:text-purple-400">Machines</span> section.
+              Editing is limited to{' '}
+              <span className="font-semibold text-purple-600 dark:text-purple-400">
+                Super Admin or Admin panel (ADMIN user)
+              </span>
+              .
             </p>
           </div>
 
-          {/* Placeholder Content */}
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-            <div className="text-6xl mb-4">🏭</div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Sports Equipment Factories</h3>
-            <p className="text-gray-600 mb-4">
-              Add and manage sports equipment manufacturers, factory locations, and supplier information.
-            </p>
-            <button className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-semibold">
-              <Plus className="w-4 h-4 inline-block mr-2" />
-              Add Factory
-            </button>
-          </div>
+          {equipmentFactoriesMessage && (
+            <div
+              className={`flex items-center gap-2 p-4 rounded-lg ${
+                equipmentFactoriesMessage.type === 'success'
+                  ? 'bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 text-green-800 dark:text-green-200'
+                  : 'bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+              }`}
+            >
+              {equipmentFactoriesMessage.type === 'success' ? (
+                <CheckCircle className="w-5 h-5 shrink-0" />
+              ) : (
+                <AlertCircle className="w-5 h-5 shrink-0" />
+              )}
+              <span className="text-sm font-medium">{equipmentFactoriesMessage.text}</span>
+            </div>
+          )}
+
+          {canManageMachineCompanies ? (
+            <SuperAdminCompaniesSection onNotify={setEquipmentFactoriesMessage} />
+          ) : (
+            <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-8 text-center space-y-4">
+              <Building2 className="w-12 h-12 text-amber-700 dark:text-amber-500 mx-auto" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Companies (machine manufacturers)</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 max-w-lg mx-auto">
+                  Sign in with the <strong>admin panel</strong> (red admin bar) as an ADMIN user, or log in as{' '}
+                  <strong>Super Admin</strong> under{' '}
+                  <span className="whitespace-nowrap">Admin Management</span>. Then return here or refresh the page.
+                </p>
+              </div>
+              <a
+                href="/settings/admin-management"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition"
+              >
+                <LogIn className="w-4 h-4" />
+                Open Admin Management
+              </a>
+            </div>
+          )}
         </div>
       )}
 
@@ -2209,6 +2303,8 @@ export default function ToolsSettings({
           </div>
         </div>
       )}
+
+      {activeTab === 'sportMachines' && <SportMachinesSection />}
 
       {/* Exercises Tab */}
       {activeTab === 'exercises' && (

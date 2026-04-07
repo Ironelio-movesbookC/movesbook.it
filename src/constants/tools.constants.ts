@@ -18,7 +18,8 @@ export type ToolsTab =
   | 'executionTechniques'
   | 'bodyBuildingTechniques'
   | 'commonDailyActions'
-  | 'insertActions';
+  | 'insertActions'
+  | 'sportMachines';
 
 export interface Period {
   id: string;
