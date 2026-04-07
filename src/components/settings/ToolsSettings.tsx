@@ -25,6 +25,7 @@ import {
 import { SPORTS_LIST, getSportDisplayName } from '@/constants/moveframe.constants';
 import PeriodizationTabPanel from '@/components/settings/PeriodizationTabPanel';
 import PeriodizationOverviewPanel from '@/components/settings/PeriodizationOverviewPanel';
+import PlannedActionTemplatesEditor from '@/components/settings/PlannedActionTemplatesEditor';
 
 function normalizeToolsLanguage(code: string | undefined): string {
   if (!code) return 'en';
@@ -50,11 +51,11 @@ function getAllowedTabs(isAdmin: boolean, mode: 'tools' | 'technical'): ToolsTab
     return ['equipmentFactories', 'muscles', 'sportsEquipment', 'exercises', 'myLibrary', 'devices'];
   }
   if (isAdmin) {
-    return ['periods', 'sections', 'bodyBuildingTechniques', 'commonDailyActions'];
+    return ['periods', 'sections', 'bodyBuildingTechniques', 'commonDailyActions', 'insertActions'];
   }
   // Personal Settings (all users): keep official user tabs only
   // and exclude technical/admin tabs (factories, muscles, sports-equipment).
-  return ['periods', 'sections', 'bodyBuildingTechniques', 'equipment', 'exercises', 'myLibrary', 'devices'];
+  return ['periods', 'sections', 'bodyBuildingTechniques', 'equipment', 'exercises', 'myLibrary', 'devices', 'insertActions'];
 }
 
 export default function ToolsSettings({
@@ -1511,10 +1512,19 @@ export default function ToolsSettings({
           >
             <span className="flex flex-col items-center leading-tight">
               <span>My Library of Exercises</span>
-              {!isAdmin && mode === 'tools' && (
-                <span className="text-[10px] font-normal text-gray-500 mt-0.5">only in user language</span>
-              )}
             </span>
+          </button>
+        )}
+        {allowedTabs.includes('insertActions') && (
+          <button
+            onClick={() => setActiveTab('insertActions')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'insertActions'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Insert actions
           </button>
         )}
         {allowedTabs.includes('devices') && (
@@ -1528,9 +1538,6 @@ export default function ToolsSettings({
           >
             <span className="flex flex-col items-center leading-tight">
               <span>Device Enabled</span>
-              {!isAdmin && mode === 'tools' && (
-                <span className="text-[10px] font-normal text-gray-500 mt-0.5">only in user language</span>
-              )}
             </span>
           </button>
         )}
@@ -1573,7 +1580,7 @@ export default function ToolsSettings({
             </>
           )}
           <p className="text-xs text-purple-600 mt-2 font-semibold">
-            ✅ This applies to: Periods, Sections, {isAdmin ? 'Sports, ' : ''}Equipment, Exercises, Library, Devices
+            This applies to: Periods, Sections, {isAdmin ? 'Sports, ' : ''}Equipment, Exercises, Library, Devices
           </p>
         </div>
 
@@ -1581,7 +1588,7 @@ export default function ToolsSettings({
         <div className="flex items-center gap-4 p-4 bg-white border-2 border-indigo-300 rounded-lg shadow-sm">
           <Globe className="w-5 h-5 text-indigo-500" />
           <div className="flex flex-col">
-            <span className="text-xs text-gray-500 mb-1">{isAdmin ? 'Display Language:' : 'User Language:'}</span>
+            <span className="text-xs text-gray-500 mb-1">{isAdmin ? 'Display Language:' : ''}</span>
             <select
               value={selectedLanguage}
               onChange={(e) => {
@@ -2376,6 +2383,12 @@ export default function ToolsSettings({
               Add Custom Exercise
             </button>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'insertActions' && (
+        <div className="space-y-4">
+          <PlannedActionTemplatesEditor />
         </div>
       )}
 

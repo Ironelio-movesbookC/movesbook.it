@@ -107,8 +107,44 @@ export default function WorkoutHierarchyView({
   console.log(`📋 WorkoutHierarchyView rendering for day with ${workouts.length} workouts`);
   console.log(`📋 Expanded workouts in view:`, Array.from(expandedWorkoutsSet));
 
+  const planned = Array.isArray(day.plannedActions) ? day.plannedActions : [];
+
   return (
     <div className="space-y-6">
+      {planned.length > 0 && (
+        <div className="ml-8 space-y-2">
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Planned actions
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {planned.map((pa: any) => (
+              <div
+                key={pa.id}
+                className="rounded-lg border-2 px-3 py-2 text-sm shadow-sm max-w-md"
+                style={{
+                  backgroundColor: pa.backgroundColor || '#f8fafc',
+                  color: pa.textColor || '#111827',
+                  borderColor: pa.colorSnapshot || '#cbd5e1',
+                }}
+                title={pa.description || pa.nameSnapshot || ''}
+              >
+                <span className="mr-2">{pa.iconSnapshot || '•'}</span>
+                <span className="font-medium">{pa.nameSnapshot}</span>
+                {pa.url ? (
+                  <a
+                    href={pa.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 text-xs underline break-all"
+                  >
+                    link
+                  </a>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {workouts.map((workout: any, workoutIndex: number) => {
         const isWorkoutExpanded = expandedWorkoutsSet.has(workout.id);
         console.log(`📋 Rendering workout ${workout.id}, isExpanded: ${isWorkoutExpanded}`);

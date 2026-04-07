@@ -15,10 +15,12 @@ import {
   AlertCircle,
   Edit2,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  Building2
 } from 'lucide-react';
+import SuperAdminCompaniesSection from '@/components/settings/SuperAdminCompaniesSection';
 
-type AdminTab = 'super-admin' | 'admin-users';
+type AdminTab = 'super-admin' | 'admin-users' | 'companies';
 
 export default function AdminManagement() {
   const [activeTab, setActiveTab] = useState<AdminTab>('super-admin');
@@ -29,6 +31,8 @@ export default function AdminManagement() {
   const [superAdminExists, setSuperAdminExists] = useState(false);
   const [superAdminMode, setSuperAdminMode] = useState<'check' | 'register' | 'login'>('check');
   const [superAdminLoggedIn, setSuperAdminLoggedIn] = useState(false);
+  /** Admin panel JWT (User ADMIN) or super_admins JWT — unlocks Companies. */
+  const [canManageCompanies, setCanManageCompanies] = useState(false);
   
   // Super Admin Registration
   const [regUsername, setRegUsername] = useState('');
@@ -83,10 +87,39 @@ export default function AdminManagement() {
       const data = await response.json();
       setSuperAdminExists(data.exists);
       setSuperAdminMode(data.exists ? 'login' : 'register');
-      
-      // Check if logged in
-      const storedAdmin = localStorage.getItem('superAdminUser');
-      setSuperAdminLoggedIn(!!storedAdmin);
+
+      const token = localStorage.getItem('adminToken');
+      let tableSuperAdmin = false;
+      let manageCompanies = false;
+
+      if (token) {
+        try {
+          const sessionRes = await fetch('/api/admin/super-admin/session', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const session = await sessionRes.json();
+          if (session.tableSuperAdmin && session.superAdmin) {
+            tableSuperAdmin = true;
+            manageCompanies = true;
+            if (!localStorage.getItem('superAdminUser')) {
+              localStorage.setItem(
+                'superAdminUser',
+                JSON.stringify(session.superAdmin)
+              );
+            }
+          } else if (session.isAdminUser) {
+            manageCompanies = true;
+          }
+        } catch {
+          /* ignore */
+        }
+      } else if (localStorage.getItem('superAdminUser')) {
+        tableSuperAdmin = true;
+        manageCompanies = true;
+      }
+
+      setSuperAdminLoggedIn(tableSuperAdmin);
+      setCanManageCompanies(manageCompanies);
     } catch (error) {
       console.error('Error checking super admin:', error);
       setSuperAdminMode('register');
@@ -144,6 +177,7 @@ export default function AdminManagement() {
         setMessage({ type: 'success', text: '✅ Super Admin registered successfully!' });
         localStorage.setItem('superAdminUser', JSON.stringify(data.superAdmin));
         setSuperAdminLoggedIn(true);
+        setCanManageCompanies(true);
         setTimeout(() => {
           checkSuperAdminStatus();
         }, 1500);
@@ -190,6 +224,7 @@ export default function AdminManagement() {
           localStorage.setItem('adminUser', JSON.stringify(data.user));
         }
         setSuperAdminLoggedIn(true);
+        setCanManageCompanies(true);
       } else {
         setMessage({ type: 'error', text: `❌ ${data.error || 'Login failed'}` });
       }
@@ -206,6 +241,7 @@ export default function AdminManagement() {
     localStorage.removeItem('adminUser');
     localStorage.removeItem('adminToken');
     setSuperAdminLoggedIn(false);
+    setCanManageCompanies(false);
     setMessage({ type: 'success', text: 'Logged out successfully' });
   };
 
@@ -514,6 +550,17 @@ export default function AdminManagement() {
         >
           <UserCog className="w-5 h-5" />
           Admin Users
+        </button>
+        <button
+          onClick={() => setActiveTab('companies')}
+          className={`flex items-center gap-2 px-6 py-3 font-semibold transition-all ${
+            activeTab === 'companies'
+              ? 'border-b-2 border-blue-600 text-blue-600'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+          }`}
+        >
+          <Building2 className="w-5 h-5" />
+          Companies
         </button>
       </div>
 
@@ -1007,6 +1054,34 @@ export default function AdminManagement() {
           </div>
         </div>
       )}
+
+      {/* Sport machine manufacturers — panel Admin (User ADMIN) or table Super Admin */}
+      {activeTab === 'companies' &&
+        (canManageCompanies ? (
+          <SuperAdminCompaniesSection onNotify={setMessage} />
+        ) : (
+          <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-8 text-center space-y-4">
+            <Building2 className="w-12 h-12 text-amber-700 mx-auto" />
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Companies
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 max-w-lg mx-auto">
+                Sign in with an <strong>admin</strong> account (red admin bar login) or use the{' '}
+                <strong>Super Admin</strong> tab login here. Your current session does not have admin
+                panel access, or the page needs a refresh after login.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('super-admin')}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition"
+            >
+              <LogIn className="w-4 h-4" />
+              Super Admin login
+            </button>
+          </div>
+        ))}
 
       {/* Admin Users Tab */}
       {activeTab === 'admin-users' && (

@@ -135,6 +135,22 @@ export async function GET(request: NextRequest) {
                     color: true
                   }
                 },
+                plannedActions: {
+                  orderBy: { sortOrder: 'asc' },
+                  select: {
+                    id: true,
+                    templateId: true,
+                    nameSnapshot: true,
+                    iconSnapshot: true,
+                    colorSnapshot: true,
+                    description: true,
+                    textColor: true,
+                    backgroundColor: true,
+                    url: true,
+                    sortOrder: true,
+                    createdAt: true
+                  }
+                },
                 ...(minimal
                   ? {}
                   : {
@@ -464,6 +480,22 @@ export async function GET(request: NextRequest) {
                       name: true,
                       description: true,
                       color: true
+                    }
+                  },
+                  plannedActions: {
+                    orderBy: { sortOrder: 'asc' },
+                    select: {
+                      id: true,
+                      templateId: true,
+                      nameSnapshot: true,
+                      iconSnapshot: true,
+                      colorSnapshot: true,
+                      description: true,
+                      textColor: true,
+                      backgroundColor: true,
+                      url: true,
+                      sortOrder: true,
+                      createdAt: true
                     }
                   },
                   ...(minimal
