@@ -74,27 +74,11 @@ function getAllowedTabs(isAdmin: boolean, mode: 'tools' | 'technical'): ToolsTab
     return ['equipmentFactories', 'muscles', 'sportsEquipment', 'sportMachines', 'exercises', 'myLibrary', 'devices'];
   }
   if (isAdmin) {
-    return [
-      'periods',
-      'sections',
-      'bodyBuildingTechniques',
-      'commonDailyActions',
-      'sportMachines',
-      'insertActions',
-    ];
+    return ['periods', 'sections', 'bodyBuildingTechniques', 'commonDailyActions', 'insertActions'];
   }
-  // Personal Settings (all users): same machine catalog as Technical → Machines (user-scoped data).
-  return [
-    'periods',
-    'sections',
-    'bodyBuildingTechniques',
-    'equipment',
-    'sportMachines',
-    'exercises',
-    'myLibrary',
-    'devices',
-    'insertActions',
-  ];
+  // Personal Settings (all users): keep official user tabs only
+  // and exclude technical/admin tabs (factories, muscles, sports-equipment).
+  return ['periods', 'sections', 'bodyBuildingTechniques', 'equipment', 'exercises', 'myLibrary', 'devices', 'insertActions'];
 }
 
 export default function ToolsSettings({
@@ -1587,7 +1571,7 @@ export default function ToolsSettings({
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            Insert actions
+            Action settings
           </button>
         )}
         {allowedTabs.includes('devices') && (

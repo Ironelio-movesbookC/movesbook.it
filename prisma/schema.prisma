@@ -278,7 +278,7 @@ model WorkoutDay {
   @@map("workout_days")
 }
 
-/// User-defined action types for “Insert actions” (color, icon, per-language descriptions).
+/// User-defined action types for Action settings (color, icon, per-language descriptions).
 model PlannedActionTemplate {
   id                    String   @id @default(cuid())
   userId                String
