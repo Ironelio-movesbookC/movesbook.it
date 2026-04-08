@@ -1,20 +1,3 @@
-/**
- * Automatic plan gym week: muscular areas to distribute and constant sectors.
- *
- * From the user's choices we derive:
- * - Number of workouts per week
- * - How many times to train each sector (once, 2, 3, all)
- * - Type of distribution (A/B/C/D)
- * - Sector(s) to keep constant (1 or 2)
- *
- * Then we know: how many routines to create (A, B, C, …), how many muscular areas
- * per routine (2, 3, 4, 5, …), and we elaborate the suggested muscular areas for
- * each workout. Once displayed, the user can freely change them manually.
- *
- * Case A – 1-2-3 workouts: Total areas (12) - 1 constant = 11 areas to distribute.
- * Case B – 4-5-6 workouts: Total areas (12) - 2 constants = 10 areas to distribute.
- */
-
 import type { ManualDayPlan, ManualDaySector } from '@/components/workouts/modals/PlanGymWeekManualModal';
 import { computePyramidalRepsSeries, type PyramidalMode } from '@/utils/pyramidalReps';
 
@@ -36,7 +19,6 @@ const SECTOR_IMAGES: Record<string, string> = {
   hams: '/muscular/hams.png', calves: '/muscular/calves.png', glutes: '/muscular/glutes.png'
 };
 
-/** Areas to distribute = Total areas - constant areas. Case A: 1-2-3 workouts → 11; Case B: 4-5-6 → 10. For 1 workout → 12 (0 constant). */
 export function getAreasToDistribute(daysCount: number): number {
   const n = Math.min(6, Math.max(1, daysCount));
   if (n === 1) return 12;
@@ -44,7 +26,6 @@ export function getAreasToDistribute(daysCount: number): number {
   return 10; // 12 - 2 constants
 }
 
-/** Number of constant sectors: 0 for 1 workout, 1 for 2-3, 2 for 4-5-6. */
 export function getConstantCount(daysCount: number): number {
   const n = Math.min(6, Math.max(1, daysCount));
   if (n === 1) return 0;
@@ -52,7 +33,6 @@ export function getConstantCount(daysCount: number): number {
   return 2;
 }
 
-/** Distributed areas per day (without constant). Once: divide areas to distribute by N workouts; sum = areas to distribute. */
 function getAreasPerDayOnce(daysCount: number): number[] {
   const areas = getAreasToDistribute(daysCount);
   const n = daysCount;
@@ -84,19 +64,7 @@ function getAreasPerDayOnce(daysCount: number): number[] {
   return out;
 }
 
-/**
- * How many times do you want to train each muscular group? → 2 times a week (this section).
- *
- * For 4 workouts a week, 2 times per sector:
- * - 2 routines: A and B.
- * - Each routine has 5 sectors + 1 of the 2 constant areas previously selected (1st constant with A, 2nd with B).
- * Sequence:
- *   Workout 1  Routine A with 5 areas + 1st constant area
- *   Workout 2  Routine B with 5 areas + 2nd constant area
- *   Workout 3  Routine A with 5 areas + 1st constant area
- *   Workout 4  Routine B with 5 areas + 2nd constant area
- * So there are 2 routines (A and B), each with 5 sectors; the 2 constant areas are assigned one per routine.
- */
+
 function getAreasPerRoutineLetter(daysCount: number, timesPerSector: '2' | '3'): [number, number] {
   const areas = getAreasToDistribute(daysCount);
   const half = areas / 2;
