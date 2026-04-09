@@ -73,6 +73,7 @@ import MoveMoveframeModal from '@/components/workouts/modals/MoveMoveframeModal'
 import ColumnSettingsModal from '@/components/workouts/ColumnSettingsModal';
 import BulkAddMovelapModal from '@/components/workouts/BulkAddMovelapModal';
 import CreateYearlyPlanModal from '@/components/workouts/modals/CreateYearlyPlanModal';
+import InsertActionsModal from '@/components/workouts/modals/InsertActionsModal';
 import ImportFromPlanModal from '@/components/workouts/modals/ImportFromPlanModal';
 import CopyFromTemplateModal from '@/components/workouts/modals/CopyFromTemplateModal';
 import DayPrintModal from '@/components/workouts/modals/DayPrintModal';
@@ -563,6 +564,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [showDayOverviewModal, setShowDayOverviewModal] = useState(false);
   const [dayForOverview, setDayForOverview] = useState<any>(null);
   const [showWorkoutOverviewModal, setShowWorkoutOverviewModal] = useState(false);
+  const [showInsertActionsModal, setShowInsertActionsModal] = useState(false);
   const [workoutForOverview, setWorkoutForOverview] = useState<any>(null);
   const [dayForWorkoutOverview, setDayForWorkoutOverview] = useState<any>(null);
   // Use moveframeModalMode from the hook instead of local state
@@ -1636,6 +1638,11 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           setPlanGymWeekWizardInitialStep(1);
           setShowPlanGymWeekModal(true);
         }}
+        onInsertActions={
+          activeSection === 'B' || activeSection === 'C'
+            ? () => setShowInsertActionsModal(true)
+            : undefined
+        }
         excludeStretchingCheckbox={
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
@@ -1668,6 +1675,18 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           isOpen={showCreateYearlyPlanModal}
           onClose={() => setShowCreateYearlyPlanModal(false)}
           onConfirm={handleCreateYearlyPlan}
+        />
+      )}
+
+      {(activeSection === 'B' || activeSection === 'C') && (
+        <InsertActionsModal
+          isOpen={showInsertActionsModal}
+          onClose={() => setShowInsertActionsModal(false)}
+          workoutPlan={workoutPlan}
+          activeSection={activeSection}
+          onSaved={async () => {
+            await loadWorkoutData(activeSection);
+          }}
         />
       )}
 

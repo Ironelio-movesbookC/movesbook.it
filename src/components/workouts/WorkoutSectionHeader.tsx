@@ -37,6 +37,7 @@ interface WorkoutSectionHeaderProps {
   onWeekIndexChange?: (index: number) => void; // For Section A week navigation
   onPrintWeek?: () => void; // For Section A/C print button
   onPlanGymWeek?: () => void; // Plan gym week – opens questions for Fast Plan (Archive / Yearly Plan)
+  onInsertActions?: () => void; // Yearly (B) / Done (C): day-level planned actions
 }
 
 export default function WorkoutSectionHeader({
@@ -69,7 +70,8 @@ export default function WorkoutSectionHeader({
   onNextPage,
   onWeekIndexChange,
   onPrintWeek,
-  onPlanGymWeek
+  onPlanGymWeek,
+  onInsertActions
 }: WorkoutSectionHeaderProps) {
   
   // Local state for plan descriptions
@@ -398,6 +400,16 @@ export default function WorkoutSectionHeader({
           </div>
           
           <div className="flex gap-2 items-center">
+            {(activeSection === 'B' || activeSection === 'C') && onInsertActions && (
+              <button
+                type="button"
+                onClick={onInsertActions}
+                className="px-3 py-1.5 bg-indigo-600 text-white hover:bg-indigo-700 rounded text-sm font-medium transition-colors"
+                title="Plan actions on days (not moveframes)"
+              >
+                Insert actions
+              </button>
+            )}
             {/* Athlete Selector for Section C (Coaches/Teams/Clubs only) */}
             {activeSection === 'C' && userType && ['COACH', 'TEAM', 'CLUB', 'TEAM_MANAGER', 'CLUB_TRAINER'].includes(userType) && (
               <button 
