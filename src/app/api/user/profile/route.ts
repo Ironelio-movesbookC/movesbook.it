@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
 import { verifyToken } from '@/lib/auth';
+import { collectReferencedUploadPaths, deleteUnreferencedUserMediaFiles } from '@/lib/userMediaUploadCleanup';
 
 export const dynamic = 'force-dynamic';
 
@@ -198,6 +199,12 @@ export async function PATCH(request: NextRequest) {
       data.image = image === null || image === '' ? null : String(image).trim().slice(0, 512);
     }
 
+    const mediaTouched =
+      data.image !== undefined ||
+      data.profileBanner !== undefined ||
+      data.profileBannerSequence !== undefined ||
+      data.profileBannerVideo !== undefined;
+
     if (Object.keys(data).length > 0) {
       await prisma.user.update({
         where: { id: decoded.userId },
@@ -222,6 +229,17 @@ export async function PATCH(request: NextRequest) {
         userType: true,
       } as Prisma.UserSelect,
     });
+
+    if (mediaTouched && Object.keys(data).length > 0 && user) {
+      try {
+        await deleteUnreferencedUserMediaFiles(
+          decoded.userId,
+          collectReferencedUploadPaths(user),
+        );
+      } catch (cleanupErr) {
+        console.error('User media cleanup after profile PATCH:', cleanupErr);
+      }
+    }
 
     return NextResponse.json({ success: true, user });
   } catch (error) {

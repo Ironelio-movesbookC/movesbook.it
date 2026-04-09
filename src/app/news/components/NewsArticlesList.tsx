@@ -29,6 +29,8 @@ export type ArticlePasted = OGPData & {
   createdByCurrentUser?: boolean;
   /** When true, article was posted by a Super Admin account (used for filtering; action icon is always trash). */
   createdBySuperAdmin?: boolean;
+  /** Poster’s `users_new.country` (not OGP visibility countries). */
+  creatorCountry?: string | null;
 };
 export type ArticleTyped = { id: string; description: string };
 
@@ -39,6 +41,10 @@ const ROWS_PER_PAGE_OPTIONS = [3, 5, 10, 15, 20];
 const MAX_PAGE_BUTTONS = 9;
 
 export type SortOrder = 'date-desc' | 'date-asc' | 'alpha-asc' | 'alpha-desc';
+
+function normalizeCountryForMatch(value: string | null | undefined): string {
+  return (value ?? '').trim().toLowerCase();
+}
 
 function formatDate(iso?: string) {
   if (!iso) return '';
@@ -108,6 +114,12 @@ interface NewsArticlesListProps {
   showOnlyMyOgNewsLabelUsername?: string | null;
   /** When true, `pasted` is already limited to what a viewer may see (e.g. super admin view-as-user API); do not apply extra client visibility filtering. */
   viewerScopedOgpList?: boolean;
+  /** Athlete/club: show “Show only official OG News posted by Movesbook” left of “posted by me”. */
+  showOfficialMovesbookOgNewsFilter?: boolean;
+  /** Athlete/club: show “Show only OG News posted by my country” between official and “posted by me”. */
+  showMyCountryOgNewsFilter?: boolean;
+  /** Logged-in user’s `users_new.country`; used with `showMyCountryOgNewsFilter`. */
+  viewerCountry?: string | null;
 }
 
 export default function NewsArticlesList({
@@ -131,6 +143,9 @@ export default function NewsArticlesList({
   superAdminReadOnlyOgpActions = false,
   showOnlyMyOgNewsLabelUsername = null,
   viewerScopedOgpList = false,
+  showOfficialMovesbookOgNewsFilter = false,
+  showMyCountryOgNewsFilter = false,
+  viewerCountry = null,
 }: NewsArticlesListProps) {
   const { t } = useLanguage();
   const topicsList = topicsProp.length > 0 ? topicsProp : ['News', 'Sport', 'Events', 'Nutrition', 'Training', 'Medicine', 'Equipments', 'Lounge music'];
@@ -256,6 +271,8 @@ export default function NewsArticlesList({
   const [search, setSearch] = useState('');
   const [highlightMatches, setHighlightMatches] = useState(false);
   const [showOnlyMyOgNews, setShowOnlyMyOgNews] = useState(false);
+  const [showOnlyOfficialMovesbookOgNews, setShowOnlyOfficialMovesbookOgNews] = useState(false);
+  const [showOnlyMyCountryOgNews, setShowOnlyMyCountryOgNews] = useState(false);
   const [showExpired, setShowExpired] = useState(false);
   const [showDeletedTemporarily, setShowDeletedTemporarily] = useState(false);
   const [showOnlyLiked, setShowOnlyLiked] = useState(false);
@@ -399,6 +416,8 @@ export default function NewsArticlesList({
   useEffect(() => {
     setCurrentPage(1);
     setShowOnlyMyOgNews(false);
+    setShowOnlyOfficialMovesbookOgNews(false);
+    setShowOnlyMyCountryOgNews(false);
   }, [activeTopic]);
 
   const byTopic = useMemo(() => {
@@ -448,12 +467,29 @@ export default function NewsArticlesList({
    * for any topic whenever we know the current user id.
    */
   const canFilterByMyOgNews = !!currentUserId;
+  const viewerCountryNorm = normalizeCountryForMatch(viewerCountry);
+  const canFilterByMyCountryOgNews =
+    showMyCountryOgNewsFilter && viewerCountryNorm !== '';
+
+  useEffect(() => {
+    if (!canFilterByMyCountryOgNews && showOnlyMyCountryOgNews) {
+      setShowOnlyMyCountryOgNews(false);
+    }
+  }, [canFilterByMyCountryOgNews, showOnlyMyCountryOgNews]);
 
   const filtered = useMemo(() => {
     let list = byTopic;
     // When checkbox is checked, filter TO that subset; when unchecked, exclude those OGPs.
     if (showOnlyMyOgNews && canFilterByMyOgNews) {
       list = list.filter(canEditAsCreator);
+    }
+    if (showOnlyOfficialMovesbookOgNews && showOfficialMovesbookOgNewsFilter) {
+      list = list.filter((a) => a.createdBySuperAdmin === true);
+    }
+    if (showOnlyMyCountryOgNews && canFilterByMyCountryOgNews) {
+      list = list.filter(
+        (a) => normalizeCountryForMatch(a.creatorCountry) === viewerCountryNorm
+      );
     }
     // Expired and deleted visibility.
     if (isSuperAdmin) {
@@ -503,6 +539,11 @@ export default function NewsArticlesList({
     selectedSport,
     selectedLanguage,
     showOnlyMyOgNews,
+    showOnlyOfficialMovesbookOgNews,
+    showOfficialMovesbookOgNewsFilter,
+    showOnlyMyCountryOgNews,
+    canFilterByMyCountryOgNews,
+    viewerCountryNorm,
     showExpired,
     showDeletedTemporarily,
     canFilterByMyOgNews,
@@ -803,13 +844,76 @@ export default function NewsArticlesList({
             {renderActiveTopicHeading('dark')}
           </div>
           <div className="flex items-center gap-4">
+            {showOfficialMovesbookOgNewsFilter && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showOnlyOfficialMovesbookOgNews}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setShowOnlyOfficialMovesbookOgNews(checked);
+                    if (checked) {
+                      setShowOnlyMyOgNews(false);
+                      setShowOnlyMyCountryOgNews(false);
+                    }
+                    setCurrentPage(1);
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                  aria-label={t('news_show_only_official_movesbook_ogp')}
+                />
+                <span className="text-white text-[10px] leading-tight whitespace-nowrap">
+                  {t('news_show_only_official_movesbook_ogp')}
+                </span>
+              </label>
+            )}
+            {showMyCountryOgNewsFilter && (
+              <label
+                className={`flex items-center gap-2 select-none ${
+                  canFilterByMyCountryOgNews ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+                }`}
+                title={
+                  canFilterByMyCountryOgNews
+                    ? undefined
+                    : 'Set your country in your profile to use this filter'
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={showOnlyMyCountryOgNews}
+                  disabled={!canFilterByMyCountryOgNews}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setShowOnlyMyCountryOgNews(checked);
+                    if (checked) {
+                      setShowOnlyOfficialMovesbookOgNews(false);
+                      setShowOnlyMyOgNews(false);
+                    }
+                    setCurrentPage(1);
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500 disabled:opacity-50"
+                  aria-label={t('news_show_only_my_country_ogp')}
+                />
+                <span className="text-white text-[10px] leading-tight whitespace-nowrap">
+                  {t('news_show_only_my_country_ogp')}
+                </span>
+              </label>
+            )}
             {canFilterByMyOgNews && (
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={showOnlyMyOgNews}
                   onChange={(e) => {
-                    setShowOnlyMyOgNews(e.target.checked);
+                    const checked = e.target.checked;
+                    setShowOnlyMyOgNews(checked);
+                    if (checked) {
+                      if (showOfficialMovesbookOgNewsFilter) {
+                        setShowOnlyOfficialMovesbookOgNews(false);
+                      }
+                      if (showMyCountryOgNewsFilter) {
+                        setShowOnlyMyCountryOgNews(false);
+                      }
+                    }
                     setCurrentPage(1);
                   }}
                   className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
@@ -819,7 +923,7 @@ export default function NewsArticlesList({
                       : t('news_show_only_my_ogp')
                   }
                 />
-                <span className="text-yellow-300 text-sm whitespace-nowrap">
+                <span className="text-yellow-300 text-[10px] leading-tight whitespace-nowrap">
                   {showOnlyMyOgNewsLabelUsername
                     ? `Show only OG News posted by ${showOnlyMyOgNewsLabelUsername}`
                     : t('news_show_only_my_ogp')}
@@ -837,7 +941,7 @@ export default function NewsArticlesList({
                 className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                 aria-label={isSuperAdmin ? 'Show expired' : 'Show also expired'}
               />
-              <span className="text-yellow-300 text-sm whitespace-nowrap">
+              <span className="text-yellow-300 text-[10px] leading-tight whitespace-nowrap">
                 {isSuperAdmin ? 'Show expired' : 'Show also expired'}
               </span>
             </label>
@@ -852,7 +956,7 @@ export default function NewsArticlesList({
                 className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                 aria-label={isSuperAdmin ? 'Show deleted temporarily' : 'Show also deleted temporarily'}
               />
-              <span className="text-yellow-300 text-sm whitespace-nowrap">
+              <span className="text-yellow-300 text-[10px] leading-tight whitespace-nowrap">
                 {isSuperAdmin ? 'Show deleted temporarily' : 'Show also deleted temporarily'}
               </span>
             </label>

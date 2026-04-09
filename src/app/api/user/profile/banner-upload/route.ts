@@ -3,6 +3,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { verifyToken } from '@/lib/auth';
+import { getServerPublicDir } from '@/lib/serverPublicDir';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,11 +51,14 @@ export async function POST(request: NextRequest) {
     else if (file.type === 'image/gif') ext = 'gif';
     else if (file.type === 'image/webp') ext = 'webp';
 
+    // Do not delete previous banner files here — sequence uploads add multiple files per session.
+    // Orphan cleanup runs in PATCH /api/user/profile after save (see userMediaUploadCleanup).
+
     const timestamp = Date.now();
     const randomString = Math.random().toString(36).substring(2, 15);
     const fileName = `banner_${decoded.userId.slice(0, 8)}_${timestamp}_${randomString}.${ext}`;
 
-    const uploadDir = join(process.cwd(), 'public', 'uploads', 'profile_banners');
+    const uploadDir = join(getServerPublicDir(), 'uploads', 'profile_banners');
     if (!existsSync(uploadDir)) {
       await mkdir(uploadDir, { recursive: true });
     }

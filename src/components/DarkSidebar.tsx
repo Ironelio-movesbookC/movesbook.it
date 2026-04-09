@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Image from 'next/image';
+import { useState, useEffect, useLayoutEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { 
@@ -111,6 +110,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import SidebarClubMyEntityTop from '@/components/SidebarClubMyEntityTop';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
+import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 
 type ClubAdminInsertItem =
   | { kind: 'icon'; Icon: LucideIcon; label: string }
@@ -282,6 +282,10 @@ interface DarkSidebarProps {
   onClubAddSongsPlaylistsClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
+  /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
+  profileImageFromDb?: string | null;
+  /** Called after a successful profile photo upload so parents can sync banner/other UI (passes saved path — avoid immediate refetch-only sync). */
+  onProfileImageSaved?: (patch: { image?: string }) => void;
 }
 
 export default function DarkSidebar({
@@ -297,7 +301,9 @@ export default function DarkSidebar({
   onPostsClick,
   onClubAddSongsPlaylistsClick,
   activeTab = 'my-page',
-  onTabChange
+  onTabChange,
+  profileImageFromDb,
+  onProfileImageSaved
 }: DarkSidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
@@ -336,6 +342,14 @@ export default function DarkSidebar({
   const [clubMarketingOpen, setClubMarketingOpen] = useState(false);
   const [clubMarketingClubStaffOpen, setClubMarketingClubStaffOpen] = useState(false);
   const [clubMarketingCoursesOpen, setClubMarketingCoursesOpen] = useState(false);
+
+  const sidebarProfileImageSrc = resolvePublicImageUrl(
+    userImageOverride ?? profileImageFromDb ?? user?.image
+  );
+  /** When parent sends a new `users_new.image`, drop local override before paint so banner + sidebar stay in sync. */
+  useLayoutEffect(() => {
+    setUserImageOverride(undefined);
+  }, [profileImageFromDb]);
 
   useEffect(() => {
     if (!clubManagementOpen) {
@@ -857,17 +871,16 @@ export default function DarkSidebar({
             <span className="text-white text-sm font-medium truncate">{user?.name || 'User'}</span>
           </div>
 
-          {/* Profile Picture - Smaller */}
+          {/* Profile Picture — `users_new.image` via API + local override after upload */}
           <div className="mb-2">
             <div className="w-20 h-20 bg-gray-700 rounded-lg mb-1 overflow-hidden flex items-center justify-center relative border border-gray-600/60">
-              {userImageOverride ?? user?.image ? (
-                <Image
-                  src={(userImageOverride ?? user?.image) as string}
+              {sidebarProfileImageSrc ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={sidebarProfileImageSrc}
+                  src={sidebarProfileImageSrc}
                   alt=""
-                  fill
-                  className="object-cover"
-                  sizes="80px"
-                  unoptimized
+                  className="absolute inset-0 h-full w-full object-cover"
                 />
               ) : (
                 <UserCircle className="w-12 h-12 text-gray-500" />
@@ -969,9 +982,10 @@ export default function DarkSidebar({
             } catch {
               // ignore localStorage issues
             }
+            onProfileImageSaved?.({ image: patch.image });
           }
         }}
-        currentImagePath={userImageOverride ?? user?.image}
+        currentImagePath={userImageOverride ?? profileImageFromDb ?? user?.image}
         t={t}
       />
 

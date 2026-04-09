@@ -3,6 +3,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { verifyToken } from '@/lib/auth';
+import { getServerPublicDir } from '@/lib/serverPublicDir';
 
 export async function POST(request: NextRequest) {
   try {
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
     const randomString = Math.random().toString(36).substring(2, 15);
     const fileName = `${type}_${timestamp}_${randomString}.${fileExtension}`;
 
-    const uploadDir = join(process.cwd(), 'public', 'uploads', 'news');
+    const uploadDir = join(getServerPublicDir(), 'uploads', 'news');
     
     if (!existsSync(uploadDir)) {
       await mkdir(uploadDir, { recursive: true });
