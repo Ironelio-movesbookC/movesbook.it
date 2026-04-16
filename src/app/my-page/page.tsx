@@ -89,7 +89,7 @@ export default function MyPage() {
 
         {/* Personal Banner - Horizontal Navigation Bar */}
         {showPersonalBanner ? (
-          <PersonalBanner user={user} />
+          <PersonalBanner user={user} currentTab={activeTab}/>
         ) : null}
 
         {/* Main Content Area - Fills remaining space */}
