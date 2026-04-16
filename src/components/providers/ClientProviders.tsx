@@ -1,12 +1,11 @@
-'use client';
-
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
-
-export function ClientProviders({ children }: { children: React.ReactNode }) {
+import { getCurrentTheme } from '@/lib/theme';
+export async function ClientProviders({ children }: { children: React.ReactNode }) {
+  const theme = await getCurrentTheme();
   return (
-    <ThemeProvider>
+    <ThemeProvider mode={theme}>
       <LanguageProvider>
         <SettingsProvider>
           {children}
@@ -15,4 +14,3 @@ export function ClientProviders({ children }: { children: React.ReactNode }) {
     </ThemeProvider>
   );
 }
-
