@@ -207,7 +207,7 @@ export default function NewsPage() {
 
       {showPersonalBanner && user && (
         <div className="mb-4 flex-shrink-0">
-          <PersonalBanner user={user} />
+          <PersonalBanner currentTab='my-entity' user={user} />
         </div>
       )}
 
