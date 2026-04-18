@@ -79,7 +79,7 @@ export default function MembersMovesBookTable({
   const perPage = 8;
 
   /* ------------------ SEARCH ------------------ */
-  const getAge = (dateOfBirth: string) => {
+  const getAge = (dateOfBirth: string | Date | undefined) => {
       if (!dateOfBirth) return 0;
       const today = new Date();
       const birth = new Date(dateOfBirth);
@@ -142,7 +142,7 @@ const [dateRange, setDateRange] = useState({
     const matchAge = (() => {
       if (!ageRange) return true;
 
-      const age = getAge(row.dateOfBirth);
+      const age = getAge( row.dateOfBirth ?? "");
       if (ageRange === "all") return age > 0 && age <= 150;
       if (ageRange === "15-20") return age >= 15 && age <= 20;
       if (ageRange === "20-50") return age > 20 && age <= 50;
@@ -177,7 +177,7 @@ const matchCasual = (() => {
 const matchDate = (() => {
   if (!dateRange.startDate || !dateRange.endDate) return true;
 
-  const insertDate = new Date(row.insertDate);
+  const insertDate = new Date(row.insertDate?? "");
   const start = new Date(dateRange.startDate);
   const end = new Date(dateRange.endDate);
 
@@ -309,7 +309,6 @@ const matchDate = (() => {
         <div className="pt-6 flex justify-between">
           <PaginationBar
             pageCount={totalPages}
-            initialPage={page}
             onPageChange={(p: number) => setPage(p)}
           />
 

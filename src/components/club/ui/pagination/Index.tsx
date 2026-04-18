@@ -23,7 +23,7 @@ export const PaginationBar = ({
 
   // URL is 1-based → convert to 0-based for UI
   const getInitialPage = () => {
-    const pageFromUrl = Number(searchParams.get('page') ?? '1');
+    const pageFromUrl = Number(searchParams?.get('page') ?? '1');
     return Math.max(pageFromUrl - 1, 0);
   };
 

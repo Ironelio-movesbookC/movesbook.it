@@ -6,8 +6,8 @@ import RightSidebar from '@/components/dashboard/RightSidebar';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
-import { useMyPageData } from '../my-page/hooks/useMyPageData';
-import { useMyPageHandlers } from '../my-page/hooks/useMyPageHandlers';
+import { useMyPageData } from '@/app/my-page/hooks/useMyPageData';
+import { useMyPageHandlers } from '@/app/my-page/hooks/useMyPageHandlers';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 export default function ClubLayout({ children }: { children: React.ReactNode }) {

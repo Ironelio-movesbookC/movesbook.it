@@ -195,7 +195,7 @@ function renderClubAdminInsertItemLeading(item: ClubAdminInsertItem): ReactNode 
 
 type ClubAdminArchiveItem =
   | { kind: 'icon'; Icon: LucideIcon; label: string; path: string }
-  | { kind: 'affiliate'; label: string }
+  | { kind: 'affiliate'; label: string; path: string }
   | { kind: 'overview'; label: string };
 
 const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
@@ -2599,7 +2599,6 @@ export default function DarkSidebar({
                                             ? 'border-b border-gray-600/50'
                                             : ''
                                         }`}
-                                        onClick={() => router.push(item.path)}
                                       >
                                         {renderClubAdminArchiveLeading(item)}
                                         <span className="min-w-0 leading-snug">{item.label}</span>
