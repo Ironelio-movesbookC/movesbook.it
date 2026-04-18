@@ -14,7 +14,7 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({ children, mode }: { children: ReactNode, mode: string }) {
   const [theme, setThemeState] = useState<ThemeMode>('light');
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>('light');
   const [currentTimeInfo, setCurrentTimeInfo] = useState<string>('');

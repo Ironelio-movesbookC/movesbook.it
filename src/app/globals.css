@@ -212,17 +212,7 @@ form select {
 /* Global print styles removed to avoid conflicts */
 
 /* Hide source code elements during printing */
-@media print {
-  pre,
-  code,
-  .hljs,
-  [class*="language-"],
-  .code-block,
-  .source-code {
-    display: none !important;
-    visibility: hidden !important;
-  }
-}
+
 
 /* FontAwesome for news pages */
 @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css');
@@ -237,4 +227,34 @@ form select {
   text-rendering: auto;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+@media print {
+
+  /* hide everything */
+  body * {
+    visibility: hidden;
+  }
+
+  /* show only table */
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  /* hide elements */
+  .no-print {
+    display: none !important;
+  }
+
+  /* show print-only elements */
+  .print\\:block {
+    display: block !important;
+  }
 }

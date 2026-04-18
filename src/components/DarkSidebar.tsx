@@ -194,54 +194,55 @@ function renderClubAdminInsertItemLeading(item: ClubAdminInsertItem): ReactNode 
 }
 
 type ClubAdminArchiveItem =
-  | { kind: 'icon'; Icon: LucideIcon; label: string }
+  | { kind: 'icon'; Icon: LucideIcon; label: string; path: string }
   | { kind: 'affiliate'; label: string }
   | { kind: 'overview'; label: string };
 
 const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
   [{ kind: 'overview', label: '» Overview' }],
   [
-    { kind: 'icon', Icon: Users, label: 'Members' },
-    { kind: 'icon', Icon: UserCog, label: 'Operators' },
-    { kind: 'icon', Icon: User, label: 'Employees' },
+    { kind: 'icon', Icon: Users, label: 'Members', path: '/clubMembers/memberList'},
+    { kind: 'icon', Icon: UserCog, label: 'Operators', path: '/clubs/club_operatorlist' },
+    { kind: 'icon', Icon: User, label: 'Employees', path: '' },
   ],
   [
-    { kind: 'affiliate', label: 'Affiliations' },
-    { kind: 'icon', Icon: Contact2, label: 'Subscriptions to the club' },
-    { kind: 'icon', Icon: CreditCard, label: 'Accesses' },
+    { kind: 'affiliate', label: 'Affiliations', path: '/clubMembers/membership' },
+    { kind: 'icon', Icon: Contact2, label: 'Subscriptions to the club', path: '/clubs/subscription' },
+    { kind: 'icon', Icon: CreditCard, label: 'Accesses', path: '' },
   ],
   [
-    { kind: 'icon', Icon: Hourglass, label: 'Deadlines of payment' },
-    { kind: 'icon', Icon: Award, label: 'Credit voucher' },
-    { kind: 'icon', Icon: Hourglass, label: 'Other debts' },
-    { kind: 'icon', Icon: Hourglass, label: 'Planned expenses' },
+    { kind: 'icon', Icon: Hourglass, label: 'Deadlines of payment', path: '/users/deadLine' },
+    { kind: 'icon', Icon: Award, label: 'Credit voucher', path: '/clubSettings/creditCustomer' },
+    { kind: 'icon', Icon: Hourglass, label: 'Other debts', path: '' },
+    { kind: 'icon', Icon: Hourglass, label: 'Planned expenses', path: '' },
   ],
   [
-    { kind: 'icon', Icon: ShoppingCart, label: 'Shop/Selling of products' },
-    { kind: 'icon', Icon: ShoppingBasket, label: 'Services for the customers' },
+    { kind: 'icon', Icon: ShoppingCart, label: 'Shop/Selling of products', path: '/ArchiveSeles/product_sale_list' },
+    { kind: 'icon', Icon: ShoppingBasket, label: 'Services for the customers', path: '' },
   ],
   [
-    { kind: 'icon', Icon: CornerDownLeft, label: 'Cash In' },
-    { kind: 'icon', Icon: CornerDownRight, label: 'Cash Out' },
-    { kind: 'icon', Icon: Repeat2, label: 'Cash (all movements)' },
+    { kind: 'icon', Icon: CornerDownLeft, label: 'Cash In', path: '/clubs/movement_cash_details/IN' },
+    { kind: 'icon', Icon: CornerDownRight, label: 'Cash Out', path: '/clubs/movement_cash_details/OUT' },
+    { kind: 'icon', Icon: Repeat2, label: 'Cash (all movements)', path: '/clubs/movement_cash_details' },
   ],
-  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts' }],
+  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubMembers/movement_cash' }],
   [
-    { kind: 'icon', Icon: FileStack, label: 'Cards assignments' },
-    { kind: 'icon', Icon: FileWarning, label: 'Alert assigned' },
-  ],
-  [
-    { kind: 'icon', Icon: Paperclip, label: 'Reservations' },
-    { kind: 'icon', Icon: Phone, label: 'Contacts of marketing' },
-    { kind: 'icon', Icon: Calendar, label: 'Events' },
+    { kind: 'icon', Icon: FileStack, label: 'Cards assignments', path: '' },
+    { kind: 'icon', Icon: FileWarning, label: 'Alert assigned', path: '' },
   ],
   [
-    { kind: 'icon', Icon: Presentation, label: 'Polls' },
-    { kind: 'icon', Icon: Megaphone, label: 'Advertising campaigns' },
+    { kind: 'icon', Icon: Paperclip, label: 'Reservations', path: '' },
+    { kind: 'icon', Icon: Phone, label: 'Contacts of marketing', path: '' },
+    { kind: 'icon', Icon: Calendar, label: 'Events', path: '' },
+  ],
+  [
+    { kind: 'icon', Icon: Presentation, label: 'Polls', path: '' },
+    { kind: 'icon', Icon: Megaphone, label: 'Advertising campaigns', path: '' },
     {
       kind: 'icon',
       Icon: HelpCircle,
       label: 'Queries to the staff ...',
+      path: ''
     },
   ],
 ];
@@ -817,6 +818,7 @@ export default function DarkSidebar({
       <div className="flex bg-gray-900 border-b border-gray-700 flex-shrink-0">
         <button
           onClick={handleMyPageTab}
+          
           className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${
             currentTab === 'my-page'
               ? 'bg-gray-700 text-white border-b-2 border-yellow-400'
@@ -2597,6 +2599,7 @@ export default function DarkSidebar({
                                             ? 'border-b border-gray-600/50'
                                             : ''
                                         }`}
+                                        onClick={() => router.push(item.path)}
                                       >
                                         {renderClubAdminArchiveLeading(item)}
                                         <span className="min-w-0 leading-snug">{item.label}</span>
