@@ -282,11 +282,6 @@ export default function NewsOGPPanel({ onClose, embedded = true, isExpanded = fa
           onUpdatePastedTopic={handleUpdatePastedTopic}
           onAddClick={() => setShowOgpForm((prev) => !prev)}
           addButtonDisabled={activeTopic === ALL_TOPICS}
-          showOfficialMovesbookOgNewsFilter={
-            user?.userType === 'ATHLETE' || user?.userType === 'CLUB'
-          }
-          showMyCountryOgNewsFilter={user?.userType === 'ATHLETE' || user?.userType === 'CLUB'}
-          viewerCountry={user?.country ?? null}
         />
       </div>
     </div>
