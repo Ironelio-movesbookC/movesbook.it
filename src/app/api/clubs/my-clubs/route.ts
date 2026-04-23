@@ -63,6 +63,7 @@ export async function GET(request: NextRequest) {
         name: club.name,
         description: club.description,
         location: club.location,
+        youtubeChannelUrl: club.youtubeChannelUrl,
         memberCount: club.members.length,
         createdAt: club.createdAt,
         admin: club.admin ? {

@@ -1,26 +1,27 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
 import SimpleFooter from '@/components/SimpleFooter';
-import AddMemberModal from '@/components/AddMemberModal';
+import MyDeskSettingsTree from '@/components/desk/MyDeskSettingsTree';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
-import { useMyPageData } from './hooks/useMyPageData';
-import { useMyPageHandlers } from './hooks/useMyPageHandlers';
-import { getEntityType } from './utils/myPageUtils';
+import { useMyPageData } from '@/app/my-page/hooks/useMyPageData';
+import { useMyPageHandlers } from '@/app/my-page/hooks/useMyPageHandlers';
+import { getEntityType } from '@/app/my-page/utils/myPageUtils';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
-import WorkoutsSection from './components/WorkoutsSection';
-import ProgressSection from './components/ProgressSection';
-import SettingsSection from './components/SettingsSection';
-import DisplayOptionsToolbar from './components/DisplayOptionsToolbar';
-import PersonalBanner from './components/PersonalBanner';
-import RightSidebar from './components/RightSidebar';
+import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolbar';
+import PersonalBanner from '@/app/my-page/components/PersonalBanner';
+import RightSidebar from '@/app/my-page/components/RightSidebar';
+import AddMemberModal from '@/components/AddMemberModal';
 
-export default function MyPage() {
-  const [activeSection, setActiveSection] = useState<'workouts' | 'progress' | 'settings'>('workouts');
+/**
+ * Legacy route parity: `/users/my_desk` — manage desk tree (gear next to “My Desk” in sidebar).
+ * Data is demo-only until a Prisma model and API exist.
+ */
+export default function MyDeskPage() {
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -32,14 +33,7 @@ export default function MyPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
-  // All hooks must be called before any conditional returns
-  const {
-    clubs,
-    groups,
-    teams,
-    coachingGroups,
-    myClubs
-  } = useMyPageData(user);
+  const { clubs, groups, teams, coachingGroups, myClubs } = useMyPageData(user);
 
   const {
     selectedClub,
@@ -50,24 +44,20 @@ export default function MyPage() {
     handleMyClubSelect
   } = useMyPageHandlers();
 
-  // Redirect to home if not authenticated
   useEffect(() => {
     if (!loading && !user) {
       router.push('/');
     }
   }, [user, loading, router]);
 
-  // Don't render if not authenticated (after all hooks are called)
   if (loading || !user) {
     return null;
   }
 
   return (
-    <div className="bg-gray-50 flex flex-col" style={{ minHeight: '100vh' }}>
-      {/* Modern Navbar */}
+    <div className="flex flex-col bg-gray-50" style={{ minHeight: '100vh' }}>
       <ModernNavbar />
 
-      {/* Display Options Toolbar - Always visible but can be collapsed */}
       <DisplayOptionsToolbar
         showAdBanner={showAdBanner}
         showPersonalBanner={showPersonalBanner}
@@ -81,40 +71,45 @@ export default function MyPage() {
         onToggleToolbar={setShowToolbar}
       />
 
-      <div className="flex-1 flex flex-col w-full py-6">
-        {/* Advertisement Carousel - Top Section */}
-        {showAdBanner && (
+      <div className="flex w-full flex-1 flex-col py-6">
+        {showAdBanner ? (
           <div className="mb-6 flex-shrink-0 px-4">
             <AdvertisementCarousel />
           </div>
-        )}
-
-        {/* Personal Banner - Horizontal Navigation Bar */}
-        {showPersonalBanner ? (
-          <PersonalBanner user={user} />
         ) : null}
 
-        {/* Main Content Area - Fills remaining space */}
-        <div className="flex-1 flex gap-0">
-          {/* Left Sidebar */}
-          {showLeftSidebar && (
-            <div className="w-80 flex-shrink-0 sticky top-0 self-start">
+        {showPersonalBanner ? <PersonalBanner user={user} /> : null}
+
+        <div className="flex flex-1 gap-0">
+          {showLeftSidebar ? (
+            <div className="sticky top-0 w-80 flex-shrink-0 self-start">
               <DarkSidebar
                 userType={user?.userType || ''}
                 entities={
-                  isClubAccountUserType(user?.userType || '') ? clubs :
-                  user?.userType === 'ATHLETE' ? myClubs :
-                  user?.userType === 'TEAM_MANAGER' ? teams :
-                  user?.userType === 'GROUP_ADMIN' ? groups :
-                  user?.userType === 'COACH' ? coachingGroups : []
+                  isClubAccountUserType(user?.userType || '')
+                    ? clubs
+                    : user?.userType === 'ATHLETE'
+                      ? myClubs
+                      : user?.userType === 'TEAM_MANAGER'
+                        ? teams
+                        : user?.userType === 'GROUP_ADMIN'
+                          ? groups
+                          : user?.userType === 'COACH'
+                            ? coachingGroups
+                            : []
                 }
                 selectedEntityId={
-                  isClubAccountUserType(user?.userType || '') ? selectedClub :
-                  user?.userType === 'ATHLETE'
-                    ? (selectedClub ?? myClubs[0]?.id ?? null)
-                    : user?.userType === 'TEAM_MANAGER' ? null :
-                  user?.userType === 'GROUP_ADMIN' ? null :
-                  user?.userType === 'COACH' ? null : null
+                  isClubAccountUserType(user?.userType || '')
+                    ? selectedClub
+                    : user?.userType === 'ATHLETE'
+                      ? (selectedClub ?? myClubs[0]?.id ?? null)
+                      : user?.userType === 'TEAM_MANAGER'
+                        ? null
+                        : user?.userType === 'GROUP_ADMIN'
+                          ? null
+                          : user?.userType === 'COACH'
+                            ? null
+                            : null
                 }
                 onEntitySelect={(id) => {
                   if (isClubAccountUserType(user?.userType || '')) {
@@ -160,39 +155,30 @@ export default function MyPage() {
                 }}
               />
             </div>
-          )}
+          ) : null}
 
-          {/* Main Content - Stretched to fill remaining space */}
-          <div className="flex-1 min-w-0 flex flex-col px-4">
-            {activeSection === 'workouts' && <WorkoutsSection />}
-            {activeSection === 'progress' && <ProgressSection />}
-            {activeSection === 'settings' && <SettingsSection />}
+          <div className="min-w-0 flex-1 flex-col px-4 py-2">
+            <MyDeskSettingsTree />
           </div>
 
-          {/* Right Sidebar */}
-          {showRightSidebar && (
+          {showRightSidebar ? (
             <RightSidebar
               user={user}
               onAddMemberClick={() => setShowAddMemberModal(true)}
               activeTab={activeTab}
             />
-          )}
+          ) : null}
         </div>
 
-        {/* Add Member Modal */}
         <AddMemberModal
           isOpen={showAddMemberModal}
           onClose={() => setShowAddMemberModal(false)}
           onAddNewUser={(data) => {
-            // Handle adding a new user (never registered)
             console.log('Add new user with password:', data);
-            // TODO: Call API to add new user with password
             setShowAddMemberModal(false);
           }}
           onAddExistingUser={(data) => {
-            // Handle adding existing Movesbook user
             console.log('Add existing user:', data);
-            // TODO: Call API to add existing user with username and password
             setShowAddMemberModal(false);
           }}
           entityType={getEntityType(user?.userType)}
