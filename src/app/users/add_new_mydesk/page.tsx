@@ -75,7 +75,7 @@ export default function AddNewMyDeskPage() {
           </div>
         ) : null}
 
-        {showPersonalBanner ? <PersonalBanner user={user} /> : null}
+        {showPersonalBanner ? <PersonalBanner user={user} currentTab={activeTab} /> : null}
 
         <div className="flex flex-1 gap-0">
           {showLeftSidebar ? (
