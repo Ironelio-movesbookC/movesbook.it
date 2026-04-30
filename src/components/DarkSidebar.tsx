@@ -2851,6 +2851,12 @@ export default function DarkSidebar({
                                       <button
                                         key={item.label}
                                         type="button"
+                                        onClick={() => {
+                                          if ('path' in item && item.path) {
+                                            router.push(item.path);
+                                          }
+                                          // Handle click event
+                                        }}
                                         className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333] ${
                                           ii < group.length - 1
                                             ? 'border-b border-gray-600/50'
