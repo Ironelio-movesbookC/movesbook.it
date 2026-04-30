@@ -53,6 +53,8 @@ model User {
   profileBannerAlignment   String?   // "center" | "default" — object-position for cover (legacy)
   profileBannerSequence    String?   @db.Text // JSON string[] of public image paths for rotating banner
   profileBannerVideo       String?   // Uploaded cover video path (public URL under /uploads/...)
+  /// Personal YouTube URL (channel, @handle, or video) for "My channel on YouTube" on My Page.
+  youtubeChannelUrl        String?   @db.Text
   superAdminId             String?   @unique // When set, this User mirrors a super_admin for news/OGP attribution
   conversationsStarted    ChatConversation[] @relation("ConversationStarter")
   conversationsReceived   ChatConversation[] @relation("ConversationReceiver")
@@ -67,6 +69,29 @@ model User {
   sportMachines           SportMachine[]
 
   @@map("users_new")
+}
+
+model MyDeskItem {
+  id          String      @id @default(cuid())
+  userId      String
+  parentId    String?
+  title       String
+  path        String?
+  faIconClass String?
+  bgColor     String?
+  titleColor  String?
+  displayMode String? // "new_label" | "central_page"
+  visible     Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  parent   MyDeskItem? @relation("MyDeskParentChild", fields: [parentId], references: [id], onDelete: Cascade)
+  children MyDeskItem[] @relation("MyDeskParentChild")
+
+  @@index([userId, parentId, sortOrder])
+  @@index([parentId])
+  @@map("my_desk_items")
 }
 
 model UserNewsTopic {
@@ -681,15 +706,17 @@ model TeamMember {
 }
 
 model Club {
-  id          String       @id @default(cuid())
-  adminId     String
-  name        String
-  description String?
-  location    String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  members     ClubMember[]
-  admin       User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
+  id                 String       @id @default(cuid())
+  adminId            String
+  name               String
+  description        String?
+  location           String?
+  /// Public club YouTube URL (channel, @handle, or video), set by club admin; shown to members.
+  youtubeChannelUrl  String?      @db.Text
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  members            ClubMember[]
+  admin              User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId], map: "clubs_new_adminId_fkey")
   @@map("clubs_new")
