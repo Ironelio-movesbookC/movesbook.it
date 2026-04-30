@@ -14,8 +14,8 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-export function ThemeProvider({ children, mode }: { children: ReactNode, mode: string }) {
-  const [theme, setThemeState] = useState<ThemeMode>('light');
+export function ThemeProvider({ children, mode }: { children: ReactNode, mode: ThemeMode }) {
+  const [theme, setThemeState] = useState<ThemeMode>(mode);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>('light');
   const [currentTimeInfo, setCurrentTimeInfo] = useState<string>('');
 
@@ -73,14 +73,14 @@ export function ThemeProvider({ children, mode }: { children: ReactNode, mode: s
   // Initialize theme from localStorage or default
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedTheme = (localStorage.getItem('theme') || 'light') as ThemeMode;
+      const savedTheme = (localStorage.getItem('theme') || mode) as ThemeMode;
       setThemeState(savedTheme);
       
       const resolved = resolveTheme(savedTheme);
       setResolvedTheme(resolved);
       applyTheme(resolved);
     }
-  }, [resolveTheme, applyTheme]);
+  }, [resolveTheme, applyTheme, mode]);
 
   // Listen for system theme changes (for auto mode)
   useEffect(() => {
