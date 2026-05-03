@@ -675,6 +675,10 @@ export default function DarkSidebar({
 
   const handleMyEntityTab = () => {
     setCurrentTab('my-entity');
+    if (userType === 'CLUB') {
+      return;
+    }
+
     if (isClubAccountUserType(userType) && onMyClubClick) {
       onMyClubClick();
     } else if (userType === 'TEAM_MANAGER' && onMyTeamClick) {

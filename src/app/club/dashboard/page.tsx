@@ -178,6 +178,11 @@ function ClubDashboardContent() {
     return null;
   }
 
+  const keepDashboardShellAsMyPage = user.userType === 'CLUB';
+  const dashboardShellActiveTab: 'my-page' | 'my-entity' = keepDashboardShellAsMyPage
+    ? 'my-page'
+    : activeTab;
+
   return (
     <div className="bg-gray-50 flex flex-col" style={{ minHeight: '100vh' }}>
       <ModernNavbar />
@@ -239,7 +244,7 @@ function ClubDashboardContent() {
               bannerProfile?.profileBannerAlignment === 'center' ? 'center' : 'default'
             }
             onCoverCameraClick={() => setShowChangeBannerModal(true)}
-            showSponsored={activeTab === 'my-page'}
+            showSponsored={dashboardShellActiveTab === 'my-page'}
           />
         )}
 
@@ -272,7 +277,7 @@ function ClubDashboardContent() {
           )}
 
           <div className="flex-1 min-w-0 flex flex-col px-4">
-            {activeTab === 'my-page' ? (
+            {!clubAddSongsOgpOpen && !showWorkoutSection ? (
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-2xl font-bold text-gray-900">Club Management Dashboard</h2>
@@ -330,19 +335,6 @@ function ClubDashboardContent() {
                   onExpandReduce={() => setClubAddSongsOgpExpanded((prev) => !prev)}
                 />
               </div>
-            ) : !showWorkoutSection ? (
-              <div className="bg-white rounded-lg shadow-sm border p-8 flex-1 flex items-center justify-center">
-                <div className="text-center">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to Your Club</h2>
-                  <p className="text-gray-600 mb-6">Click on "Workouts section" in the navigation bar above to view and manage workouts.</p>
-                  <button 
-                    onClick={() => setShowWorkoutSection(true)}
-                    className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition"
-                  >
-                    Go to Workouts Section
-                  </button>
-                </div>
-              </div>
             ) : (
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">Workouts Section</h2>
@@ -354,13 +346,13 @@ function ClubDashboardContent() {
           {showRightSidebar && !clubAddSongsOgpExpanded && (
             <RightSidebar 
               context="my-club" 
-              activeTab={activeTab}
+              activeTab={dashboardShellActiveTab}
               onAddMember={() => setShowAddMemberModal(true)}
               athleteMyPageRightSidebar={
-                isClubAccountUserType(user?.userType ?? '') && activeTab === 'my-page'
+                isClubAccountUserType(user?.userType ?? '') && dashboardShellActiveTab === 'my-page'
               }
               athleteMyClubRightSidebar={
-                isClubAccountUserType(user?.userType ?? '') && activeTab === 'my-entity'
+                isClubAccountUserType(user?.userType ?? '') && dashboardShellActiveTab === 'my-entity'
               }
             />
           )}
