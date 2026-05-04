@@ -5,8 +5,8 @@ import Image from 'next/image';
 import { X } from 'lucide-react';
 import {
   getExercisesBySector,
-  getMockExerciseThumbnail,
   getExerciseMedia,
+  getExercisePictureAThumbnailForDisplay,
   MockExercise,
 } from '@/data/mockExercises';
 
@@ -427,13 +427,16 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                   >
                     <div className="flex items-center gap-1 exercise-menu-container relative z-[10000]">
                       {(() => {
-                        const thumb = getMockExerciseThumbnail(station.exercise);
+                        const picA = getExercisePictureAThumbnailForDisplay(
+                          (station.exercise || '').trim()
+                        );
                         const sectorImg =
                           station.sector && MUSCULAR_SECTOR_IMAGES[station.sector]
                             ? MUSCULAR_SECTOR_IMAGES[station.sector]
                             : null;
                         const src =
-                          thumb?.src ?? (station.exercise?.trim() && sectorImg ? sectorImg : null);
+                          picA?.src ??
+                          (station.exercise?.trim() && sectorImg ? sectorImg : null);
                         const openGallery = () => {
                           const exName = (station.exercise || '').trim();
                           const sectorS = (station.sector || '').trim();
@@ -460,7 +463,8 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                             />
                           );
                         }
-                        const isData = thumb?.isDataUrl === true || src.startsWith('data:');
+                        const isData =
+                          picA?.isDataUrl === true || (!!src && src.startsWith('data:'));
                         return (
                           <button
                             type="button"
@@ -555,7 +559,7 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                     ) : seriesIdx === seriesCountToRender - 1 && !isLastStationCol ? (
                       <div
                         className="flex min-h-[38px] items-center justify-center rounded border border-gray-200 bg-gray-100 px-2 text-sm font-medium text-gray-700"
-                        title="After all series here — rest before next station (Horizontal Series)"
+                        title="After all series here — rest before next station (Pause after all the series of each station)"
                       >
                         {formatPauseSeconds(
                           STATION_PAUSE_OPTIONS,
@@ -611,7 +615,7 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                           }
                         }}
                         className="p-1.5 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
-                        title="Copy Rip & Pause"
+                        title="Single click: copy Rip & Pause to the next serie (same station). Double click: copy to all following series for this station."
                       >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"

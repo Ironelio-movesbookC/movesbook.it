@@ -19,10 +19,50 @@ import {
 } from '@/constants/tools.constants';
 import { getAuthToken, getAuthHeaders } from '@/utils/auth.utils';
 
+/** Load `{ id }[]` from localStorage and return id set (best-effort). */
+function toolsItemsIdsFromLocalStorage(storageKey: string): Set<string> {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as { id?: unknown }[];
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.map((x) => String(x?.id ?? '')).filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Drop entries that belong to other tools lists (legacy corrupt saves sometimes duplicated periods/sections into commonDailyActions).
+ */
+function sanitizeCommonDailyActionsList(
+  items: WorkoutSection[],
+  opts: {
+    periodIds: Set<string>;
+    sectionIds: Set<string>;
+    techniqueIds: Set<string>;
+    workMethodIds: Set<string>;
+  }
+): WorkoutSection[] {
+  return items.filter((item) => {
+    const id = String(item?.id ?? '');
+    if (!id) return true;
+    if (opts.periodIds.has(id)) return false;
+    if (opts.sectionIds.has(id)) return false;
+    if (opts.techniqueIds.has(id)) return false;
+    if (opts.workMethodIds.has(id)) return false;
+    return true;
+  });
+}
+
 interface UseToolsDataReturn {
   // State
   periods: Period[];
   sections: WorkoutSection[];
+  /** Common daily actions — stored in toolsSettings JSON only (not WorkoutSection table) */
+  commonDailyActions: WorkoutSection[];
+  /** Work methods — same shape as sections; toolsSettings JSON only */
+  workMethods: WorkoutSection[];
   bodyBuildingTechniques: BodyBuildingTechnique[];
   sports: Sport[];
   equipment: Equipment[];
@@ -36,6 +76,8 @@ interface UseToolsDataReturn {
   // Actions
   setPeriods: React.Dispatch<React.SetStateAction<Period[]>>;
   setSections: React.Dispatch<React.SetStateAction<WorkoutSection[]>>;
+  setCommonDailyActions: React.Dispatch<React.SetStateAction<WorkoutSection[]>>;
+  setWorkMethods: React.Dispatch<React.SetStateAction<WorkoutSection[]>>;
   setBodyBuildingTechniques: React.Dispatch<React.SetStateAction<BodyBuildingTechnique[]>>;
   setSports: React.Dispatch<React.SetStateAction<Sport[]>>;
   setEquipment: React.Dispatch<React.SetStateAction<Equipment[]>>;
@@ -54,7 +96,9 @@ interface UseToolsDataReturn {
     sports?: Sport[],
     equipment?: Equipment[],
     exercises?: Exercise[],
-    devices?: Device[]
+    devices?: Device[],
+    commonDailyActions?: WorkoutSection[],
+    workMethods?: WorkoutSection[]
   ) => void;
   saveToDatabase: () => Promise<void>;
 }
@@ -72,6 +116,8 @@ interface UseToolsDataReturn {
 export function useToolsData(): UseToolsDataReturn {
   const [periods, setPeriods] = useState<Period[]>([]);
   const [sections, setSections] = useState<WorkoutSection[]>([]);
+  const [commonDailyActions, setCommonDailyActions] = useState<WorkoutSection[]>([]);
+  const [workMethods, setWorkMethods] = useState<WorkoutSection[]>([]);
   const [bodyBuildingTechniques, setBodyBuildingTechniques] = useState<BodyBuildingTechnique[]>([]);
   const [sports, setSports] = useState<Sport[]>([]);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
@@ -145,7 +191,47 @@ export function useToolsData(): UseToolsDataReturn {
       setSections(DEFAULT_SECTIONS);
     }
   }, []);
-  
+
+  const loadCommonDailyActionsFromLocalStorage = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.COMMON_DAILY_ACTIONS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as WorkoutSection[];
+        const list = Array.isArray(parsed) ? parsed : [];
+        const cleaned = sanitizeCommonDailyActionsList(list, {
+          periodIds: toolsItemsIdsFromLocalStorage(STORAGE_KEYS.PERIODS),
+          sectionIds: toolsItemsIdsFromLocalStorage(STORAGE_KEYS.SECTIONS),
+          techniqueIds: toolsItemsIdsFromLocalStorage(STORAGE_KEYS.BODYBUILDING_TECHNIQUES),
+          workMethodIds: toolsItemsIdsFromLocalStorage(STORAGE_KEYS.WORK_METHODS),
+        });
+        if (cleaned.length !== list.length) {
+          console.warn(
+            `[tools] Sanitized commonDailyActions (localStorage): removed ${list.length - cleaned.length} misplaced entr${list.length - cleaned.length === 1 ? 'y' : 'ies'}.`
+          );
+        }
+        setCommonDailyActions(cleaned);
+      } catch (e) {
+        console.error('Failed to load common daily actions');
+        setCommonDailyActions([]);
+      }
+    } else {
+      setCommonDailyActions([]);
+    }
+  }, []);
+
+  const loadWorkMethodsFromLocalStorage = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.WORK_METHODS);
+    if (saved) {
+      try {
+        setWorkMethods(JSON.parse(saved));
+      } catch {
+        setWorkMethods([]);
+      }
+    } else {
+      setWorkMethods([]);
+    }
+  }, []);
+
   /**
    * Load body building techniques from localStorage
    */
@@ -237,12 +323,24 @@ export function useToolsData(): UseToolsDataReturn {
   const loadAllFromLocalStorage = useCallback(() => {
     loadPeriodsFromLocalStorage();
     loadSectionsFromLocalStorage();
+    loadCommonDailyActionsFromLocalStorage();
+    loadWorkMethodsFromLocalStorage();
     loadBodyBuildingTechniquesFromLocalStorage();
     loadSportsFromLocalStorage();
     loadEquipmentFromLocalStorage();
     loadExercisesFromLocalStorage();
     loadDevicesFromLocalStorage();
-  }, [loadPeriodsFromLocalStorage, loadSectionsFromLocalStorage, loadBodyBuildingTechniquesFromLocalStorage, loadSportsFromLocalStorage, loadEquipmentFromLocalStorage, loadExercisesFromLocalStorage, loadDevicesFromLocalStorage]);
+  }, [
+    loadPeriodsFromLocalStorage,
+    loadSectionsFromLocalStorage,
+    loadCommonDailyActionsFromLocalStorage,
+    loadWorkMethodsFromLocalStorage,
+    loadBodyBuildingTechniquesFromLocalStorage,
+    loadSportsFromLocalStorage,
+    loadEquipmentFromLocalStorage,
+    loadExercisesFromLocalStorage,
+    loadDevicesFromLocalStorage
+  ]);
   
   /**
    * Load settings from database with localStorage fallback
@@ -258,6 +356,7 @@ export function useToolsData(): UseToolsDataReturn {
       }
       
       // Load periods from Prisma Period table (not from JSON settings)
+      let periodIdsForCda = new Set<string>();
       const periodsResponse = await fetch('/api/workouts/periods', {
         headers: getAuthHeaders()
       });
@@ -276,25 +375,39 @@ export function useToolsData(): UseToolsDataReturn {
                 /* ignore */
               }
             }
+            let titleByLanguage: Record<string, string> | undefined;
+            if (p.nameTranslations && typeof p.nameTranslations === 'string') {
+              try {
+                const parsed = JSON.parse(p.nameTranslations) as Record<string, string>;
+                if (parsed && typeof parsed === 'object') titleByLanguage = parsed;
+              } catch {
+                /* ignore */
+              }
+            }
             return {
               id: p.id,
               title: p.name,
               description: p.description || '',
+              titleByLanguage,
               descriptionByLanguage,
               color: p.color,
               order: p.displayOrder !== undefined ? p.displayOrder : 0,
               userId: p.userId
             };
           });
+          periodIdsForCda = new Set(formattedPeriods.map((p: Period) => String(p.id)));
           setPeriods(formattedPeriods);
         } else {
           loadPeriodsFromLocalStorage();
+          periodIdsForCda = toolsItemsIdsFromLocalStorage(STORAGE_KEYS.PERIODS);
         }
       } else {
         loadPeriodsFromLocalStorage();
+        periodIdsForCda = toolsItemsIdsFromLocalStorage(STORAGE_KEYS.PERIODS);
       }
       
       // Load workout sections from Prisma WorkoutSection table (not from JSON settings)
+      let sectionIdsForCda = new Set<string>();
       const sectionsResponse = await fetch('/api/workouts/sections', {
         headers: getAuthHeaders()
       });
@@ -303,27 +416,53 @@ export function useToolsData(): UseToolsDataReturn {
         const sectionsData = await sectionsResponse.json();
         if (sectionsData.sections && sectionsData.sections.length > 0) {
           // Convert Prisma WorkoutSection format to local Section format
-          const formattedSections = sectionsData.sections.map((s: any) => ({
-            id: s.id,
-            title: s.name,
-            code: s.code || '',
-            description: s.description || '',
-            color: s.color,
-            order: s.displayOrder !== undefined ? s.displayOrder : 0, // Use displayOrder from database
-            userId: s.userId // Track ownership
-          }));
+          const formattedSections = sectionsData.sections.map((s: any) => {
+            let descriptionByLanguage: Record<string, string> | undefined;
+            if (s.descriptionTranslations && typeof s.descriptionTranslations === 'string') {
+              try {
+                const parsed = JSON.parse(s.descriptionTranslations) as Record<string, string>;
+                if (parsed && typeof parsed === 'object') descriptionByLanguage = parsed;
+              } catch {
+                /* ignore */
+              }
+            }
+            let titleByLanguage: Record<string, string> | undefined;
+            if (s.nameTranslations && typeof s.nameTranslations === 'string') {
+              try {
+                const parsed = JSON.parse(s.nameTranslations) as Record<string, string>;
+                if (parsed && typeof parsed === 'object') titleByLanguage = parsed;
+              } catch {
+                /* ignore */
+              }
+            }
+            return {
+              id: s.id,
+              title: s.name,
+              code: s.code || '',
+              description: s.description || '',
+              descriptionByLanguage,
+              titleByLanguage,
+              color: s.color,
+              order: s.displayOrder !== undefined ? s.displayOrder : 0,
+              userId: s.userId
+            };
+          });
+          sectionIdsForCda = new Set(formattedSections.map((s: WorkoutSection) => String(s.id)));
           setSections(formattedSections);
           console.log('✅ Loaded workout sections from database:', formattedSections);
           console.log('📊 Sections with order:', formattedSections.map((s: any) => ({ title: s.title, order: s.order, displayOrder: sectionsData.sections.find((orig: any) => orig.id === s.id)?.displayOrder })));
           console.log('🔢 SECTION ORDERS:', formattedSections.map((s: any) => `${s.title}: order=${s.order}`).join(', '));
         } else {
           loadSectionsFromLocalStorage();
+          sectionIdsForCda = toolsItemsIdsFromLocalStorage(STORAGE_KEYS.SECTIONS);
         }
       } else {
         loadSectionsFromLocalStorage();
+        sectionIdsForCda = toolsItemsIdsFromLocalStorage(STORAGE_KEYS.SECTIONS);
       }
       
       // Load body building techniques from Prisma BodyBuildingTechnique table
+      let techniqueIdsForCda = new Set<string>();
       const techniquesResponse = await fetch('/api/bodybuilding/techniques', {
         headers: getAuthHeaders()
       });
@@ -351,15 +490,38 @@ export function useToolsData(): UseToolsDataReturn {
           console.log(`🔍 Filtered ${userTechniques.length} user techniques from ${techniquesData.techniques.length} total (excluding ${techniquesData.techniques.length - userTechniques.length} admin techniques)`);
           
           // Convert Prisma BodyBuildingTechnique format to local format
-          const formattedTechniques = userTechniques.map((t: any) => ({
-            id: t.id,
-            title: t.name,
-            description: t.description || '',
-            color: t.color,
-            sports: t.sports || [], // API already returns array, no need to check
-            order: t.displayOrder !== undefined ? t.displayOrder : 0, // Use displayOrder from database
-            userId: t.userId // Track ownership
-          }));
+          const formattedTechniques = userTechniques.map((t: any) => {
+            let descriptionByLanguage: Record<string, string> | undefined;
+            if (t.descriptionTranslations && typeof t.descriptionTranslations === 'string') {
+              try {
+                const parsed = JSON.parse(t.descriptionTranslations) as Record<string, string>;
+                if (parsed && typeof parsed === 'object') descriptionByLanguage = parsed;
+              } catch {
+                /* ignore */
+              }
+            }
+            let titleByLanguage: Record<string, string> | undefined;
+            if (t.nameTranslations && typeof t.nameTranslations === 'string') {
+              try {
+                const parsed = JSON.parse(t.nameTranslations) as Record<string, string>;
+                if (parsed && typeof parsed === 'object') titleByLanguage = parsed;
+              } catch {
+                /* ignore */
+              }
+            }
+            return {
+              id: t.id,
+              title: t.name,
+              description: t.description || '',
+              descriptionByLanguage,
+              titleByLanguage,
+              color: t.color,
+              sports: t.sports || [],
+              order: t.displayOrder !== undefined ? t.displayOrder : 0,
+              userId: t.userId
+            };
+          });
+          techniqueIdsForCda = new Set(formattedTechniques.map((t: BodyBuildingTechnique) => String(t.id)));
           setBodyBuildingTechniques(formattedTechniques);
           console.log('✅ Loaded body building techniques from database:', formattedTechniques);
           console.log('🔍 Techniques details:', formattedTechniques.map((t: BodyBuildingTechnique) => ({ 
@@ -372,9 +534,11 @@ export function useToolsData(): UseToolsDataReturn {
           console.log('🔢 TECHNIQUE ORDERS:', formattedTechniques.map((t: any) => `${t.title}: order=${t.order}`).join(', '));
         } else {
           loadBodyBuildingTechniquesFromLocalStorage();
+          techniqueIdsForCda = toolsItemsIdsFromLocalStorage(STORAGE_KEYS.BODYBUILDING_TECHNIQUES);
         }
       } else {
         loadBodyBuildingTechniquesFromLocalStorage();
+        techniqueIdsForCda = toolsItemsIdsFromLocalStorage(STORAGE_KEYS.BODYBUILDING_TECHNIQUES);
       }
       
       // Load other settings from UserSettings JSON
@@ -411,6 +575,34 @@ export function useToolsData(): UseToolsDataReturn {
         } else {
           loadDevicesFromLocalStorage();
         }
+
+        if (Array.isArray(toolsSettings.commonDailyActions)) {
+          const wmArr = Array.isArray(toolsSettings.workMethods) ? toolsSettings.workMethods : [];
+          const wmIdsForCda = new Set<string>(
+            wmArr.map((w: { id?: unknown }) => String(w?.id ?? '')).filter(Boolean)
+          );
+          const rawCda = toolsSettings.commonDailyActions as WorkoutSection[];
+          const cleanedCda = sanitizeCommonDailyActionsList(rawCda, {
+            periodIds: periodIdsForCda,
+            sectionIds: sectionIdsForCda,
+            techniqueIds: techniqueIdsForCda,
+            workMethodIds: wmIdsForCda,
+          });
+          if (cleanedCda.length !== rawCda.length) {
+            console.warn(
+              `[tools] Sanitized commonDailyActions (loaded from DB): removed ${rawCda.length - cleanedCda.length} misplaced entr${rawCda.length - cleanedCda.length === 1 ? 'y' : 'ies'} (same ids as periods/sections/work methods/techniques).`
+            );
+          }
+          setCommonDailyActions(cleanedCda);
+        } else {
+          setCommonDailyActions([]);
+        }
+
+        if (Array.isArray(toolsSettings.workMethods)) {
+          setWorkMethods(toolsSettings.workMethods as WorkoutSection[]);
+        } else {
+          setWorkMethods([]);
+        }
       } else {
         // Fallback to localStorage if API fails
         loadAllFromLocalStorage();
@@ -420,7 +612,16 @@ export function useToolsData(): UseToolsDataReturn {
       // Fallback to localStorage on error
       loadAllFromLocalStorage();
     }
-  }, [loadAllFromLocalStorage, loadPeriodsFromLocalStorage, loadSectionsFromLocalStorage, loadBodyBuildingTechniquesFromLocalStorage, loadSportsFromLocalStorage, loadEquipmentFromLocalStorage, loadExercisesFromLocalStorage, loadDevicesFromLocalStorage]);
+  }, [
+    loadAllFromLocalStorage,
+    loadPeriodsFromLocalStorage,
+    loadSectionsFromLocalStorage,
+    loadBodyBuildingTechniquesFromLocalStorage,
+    loadSportsFromLocalStorage,
+    loadEquipmentFromLocalStorage,
+    loadExercisesFromLocalStorage,
+    loadDevicesFromLocalStorage
+  ]);
   
   /**
    * Load all tools settings from database first, then fallback to localStorage
@@ -439,7 +640,9 @@ export function useToolsData(): UseToolsDataReturn {
     sportsData?: Sport[],
     equipmentData?: Equipment[],
     exercisesData?: Exercise[],
-    devicesData?: Device[]
+    devicesData?: Device[],
+    commonDailyActionsData?: WorkoutSection[],
+    workMethodsData?: WorkoutSection[]
   ) => {
     if (periodsData) {
       localStorage.setItem(STORAGE_KEYS.PERIODS, JSON.stringify(periodsData));
@@ -461,6 +664,12 @@ export function useToolsData(): UseToolsDataReturn {
     }
     if (devicesData) {
       localStorage.setItem(STORAGE_KEYS.DEVICES, JSON.stringify(devicesData));
+    }
+    if (commonDailyActionsData) {
+      localStorage.setItem(STORAGE_KEYS.COMMON_DAILY_ACTIONS, JSON.stringify(commonDailyActionsData));
+    }
+    if (workMethodsData) {
+      localStorage.setItem(STORAGE_KEYS.WORK_METHODS, JSON.stringify(workMethodsData));
     }
   };
   
@@ -534,7 +743,33 @@ export function useToolsData(): UseToolsDataReturn {
         console.error('❌ Failed to sync body building techniques');
       }
 
-      // Save other tools settings to UserSettings JSON
+      let mergedToolsSettings: Record<string, unknown> = {
+        sports,
+        equipment,
+        exercises,
+        devices,
+        commonDailyActions,
+        workMethods
+      };
+      try {
+        const cur = await fetch('/api/user/settings', { headers: getAuthHeaders() });
+        if (cur.ok) {
+          const sd = await cur.json();
+          const prev = sd.toolsSettings && typeof sd.toolsSettings === 'object' ? sd.toolsSettings : {};
+          mergedToolsSettings = {
+            ...(prev as Record<string, unknown>),
+            sports,
+            equipment,
+            exercises,
+            devices,
+            commonDailyActions,
+            workMethods
+          };
+        }
+      } catch {
+        /* keep mergedToolsSettings as-is */
+      }
+
       const response = await fetch('/api/user/settings', {
         method: 'PATCH',
         headers: {
@@ -542,13 +777,7 @@ export function useToolsData(): UseToolsDataReturn {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          toolsSettings: {
-            // Periods and sections are now in Prisma tables, not JSON
-            sports,
-            equipment,
-            exercises,
-            devices
-          }
+          toolsSettings: mergedToolsSettings
         })
       });
 
@@ -576,6 +805,8 @@ export function useToolsData(): UseToolsDataReturn {
     // State
     periods,
     sections,
+    commonDailyActions,
+    workMethods,
     bodyBuildingTechniques,
     sports,
     equipment,
@@ -589,6 +820,8 @@ export function useToolsData(): UseToolsDataReturn {
     // Actions
     setPeriods,
     setSections,
+    setCommonDailyActions,
+    setWorkMethods,
     setBodyBuildingTechniques,
     setSports,
     setEquipment,

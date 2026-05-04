@@ -15,27 +15,41 @@ function clampRepsForPyramid(n: number): number {
   return Math.min(99, Math.round(n));
 }
 
+/**
+ * “Ascending” pyramid (reps go down): series 1 = base; series 2 = first step down;
+ * from series 3 onward, two consecutive series share the same reps (step applies every 2 sets after the first).
+ */
 function buildAscendingSeries(start: number, count: number, step: number): number[] {
   const out: number[] = [];
-  let cur = clampRepsForPyramid(start);
+  const s = clampRepsForPyramid(start);
   for (let i = 0; i < count; i++) {
-    out.push(cur);
-    if (i < count - 1) {
-      const next = cur - step;
-      cur = next < 1 ? 1 : next;
+    if (i === 0) {
+      out.push(s);
+      continue;
     }
+    const level = Math.ceil(i / 2);
+    let reps = s - level * step;
+    if (reps < 1) reps = 1;
+    out.push(clampRepsForPyramid(reps));
   }
   return out;
 }
 
+/**
+ * “Descending” pyramid (reps go up): same pairing — step applies every 2 series after the first.
+ */
 function buildDescendingSeries(start: number, count: number, step: number): number[] {
   const out: number[] = [];
-  let cur = clampRepsForPyramid(start);
+  const s = clampRepsForPyramid(start);
   for (let i = 0; i < count; i++) {
-    out.push(cur);
-    if (i < count - 1) {
-      cur = Math.min(99, cur + step);
+    if (i === 0) {
+      out.push(s);
+      continue;
     }
+    const level = Math.ceil(i / 2);
+    let reps = s + level * step;
+    if (reps > 99) reps = 99;
+    out.push(clampRepsForPyramid(reps));
   }
   return out;
 }

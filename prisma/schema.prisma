@@ -331,6 +331,8 @@ model Period {
   description String
   /// JSON map of language code → description (e.g. {"en":"...","it":"..."}). English mirrors `description`.
   descriptionTranslations String? @db.Text
+  /// JSON map of language code → period name/title (e.g. {"en":"Base","it":"Base"}). English mirrors `name`.
+  nameTranslations String? @db.Text
   color       String
   displayOrder Int          @default(0) // Order for display in lists
   createdAt   DateTime      @default(now())
@@ -422,6 +424,10 @@ model WorkoutSection {
   name        String
   code        String? // Short code (max 5 characters) for compact display
   description String
+  /// JSON map of language code → description. English mirrors `description`.
+  descriptionTranslations String? @db.Text
+  /// JSON map of language code → section name/title. English mirrors `name`.
+  nameTranslations String? @db.Text
   color       String
   displayOrder Int        @default(0) // Order for display in lists
   createdAt   DateTime    @default(now())
@@ -437,6 +443,10 @@ model ExecutionTechnique {
   userId      String
   name        String
   description String
+  /// JSON map of language code → description. English mirrors `description`.
+  descriptionTranslations String? @db.Text
+  /// JSON map of language code → technique name/title. English mirrors `name`.
+  nameTranslations String? @db.Text
   color       String
   sports      String   @default("") // Comma-separated list of sports that can use this technique
   displayOrder Int     @default(0) // Order for display in lists
@@ -910,6 +920,7 @@ enum WorkType {
 enum RestType {
   SET_TIME
   RESTART_TIME
+  SET_METERS
   RESTART_PULSE
 }
 
