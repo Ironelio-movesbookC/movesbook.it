@@ -207,7 +207,7 @@ export default function NewsPage() {
 
       {showPersonalBanner && user && (
         <div className="mb-4 flex-shrink-0">
-          <PersonalBanner user={user} />
+          <PersonalBanner currentTab='my-entity' user={user} />
         </div>
       )}
 
@@ -310,11 +310,6 @@ export default function NewsPage() {
             onUpdatePastedTopic={handleUpdatePastedTopic}
             onAddClick={() => setShowOgpForm((prev) => !prev)}
             addButtonDisabled={activeTopic === ALL_TOPICS}
-            showOfficialMovesbookOgNewsFilter={
-              user?.userType === 'ATHLETE' || user?.userType === 'CLUB'
-            }
-            showMyCountryOgNewsFilter={user?.userType === 'ATHLETE' || user?.userType === 'CLUB'}
-            viewerCountry={user?.country ?? null}
           />
         </div>
 

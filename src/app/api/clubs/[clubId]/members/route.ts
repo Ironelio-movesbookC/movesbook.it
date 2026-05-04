@@ -70,7 +70,8 @@ export async function GET(
         id: club.id,
         name: club.name,
         description: club.description,
-        location: club.location
+        location: club.location,
+        youtubeChannelUrl: club.youtubeChannelUrl
       },
       members: members.map(m => ({
         id: m.id,

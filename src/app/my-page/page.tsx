@@ -37,7 +37,8 @@ export default function MyPage() {
     clubs,
     groups,
     teams,
-    coachingGroups
+    coachingGroups,
+    myClubs
   } = useMyPageData(user);
 
   const {
@@ -45,7 +46,8 @@ export default function MyPage() {
     handleClubSelect,
     handleGroupSelect,
     handleTeamSelect,
-    handleCoachingGroupSelect
+    handleCoachingGroupSelect,
+    handleMyClubSelect
   } = useMyPageHandlers();
 
   // Redirect to home if not authenticated
@@ -89,7 +91,7 @@ export default function MyPage() {
 
         {/* Personal Banner - Horizontal Navigation Bar */}
         {showPersonalBanner ? (
-          <PersonalBanner user={user} />
+          <PersonalBanner user={user} currentTab={activeTab}/>
         ) : null}
 
         {/* Main Content Area - Fills remaining space */}
@@ -101,19 +103,24 @@ export default function MyPage() {
                 userType={user?.userType || ''}
                 entities={
                   isClubAccountUserType(user?.userType || '') ? clubs :
+                  user?.userType === 'ATHLETE' ? myClubs :
                   user?.userType === 'TEAM_MANAGER' ? teams :
                   user?.userType === 'GROUP_ADMIN' ? groups :
                   user?.userType === 'COACH' ? coachingGroups : []
                 }
                 selectedEntityId={
                   isClubAccountUserType(user?.userType || '') ? selectedClub :
-                  user?.userType === 'TEAM_MANAGER' ? null :
+                  user?.userType === 'ATHLETE'
+                    ? (selectedClub ?? myClubs[0]?.id ?? null)
+                    : user?.userType === 'TEAM_MANAGER' ? null :
                   user?.userType === 'GROUP_ADMIN' ? null :
                   user?.userType === 'COACH' ? null : null
                 }
                 onEntitySelect={(id) => {
                   if (isClubAccountUserType(user?.userType || '')) {
                     handleClubSelect(id);
+                  } else if (user?.userType === 'ATHLETE') {
+                    handleMyClubSelect(id);
                   } else if (user?.userType === 'TEAM_MANAGER') {
                     handleTeamSelect(id);
                   } else if (user?.userType === 'GROUP_ADMIN') {

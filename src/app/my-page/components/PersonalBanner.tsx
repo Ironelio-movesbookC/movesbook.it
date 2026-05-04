@@ -1,15 +1,18 @@
 import { UserCircle, HelpCircle, Settings, Home, Menu, ChevronRight } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 interface PersonalBannerProps {
   user: any;
+  currentTab: 'my-page' | 'my-entity'
 }
 
-export default function PersonalBanner({ user }: PersonalBannerProps) {
+export default function PersonalBanner({ user, currentTab }: PersonalBannerProps) {
+  const router = useRouter();
   return (
     <div className="mb-6 flex-shrink-0 px-4">
       <div className="bg-gray-800 rounded-lg overflow-hidden shadow-lg relative">
         {/* Background image with overlay */}
-        <div 
+        <div
           className="absolute inset-0 bg-cover bg-center opacity-30"
           style={{
             backgroundImage: 'url(/images/banner.jpg)',
@@ -17,7 +20,7 @@ export default function PersonalBanner({ user }: PersonalBannerProps) {
             backgroundPosition: 'center'
           }}
         ></div>
-        
+
         <div className="flex items-center justify-between px-4 py-3 text-sm relative z-10">
           {/* Left side - Profile Picture, FAQ and Most used buttons */}
           <div className="flex items-center gap-4">
@@ -73,6 +76,15 @@ export default function PersonalBanner({ user }: PersonalBannerProps) {
 
           {/* Right side - Search button */}
           <div className="flex items-center">
+            {currentTab == 'my-entity' ?
+              <button
+                className="text-orange-300 hover:text-white transition-colors px-4 py-2"
+                onClick={() => router.push('/clubMembers/memberList')}
+              >
+                Club Management
+              </button> : <></>
+            }
+
             <button className="bg-red-700 hover:bg-red-800 text-lime-400 px-4 py-2 rounded transition-colors flex items-center gap-2">
               <span>Search in the Network</span>
               <ChevronRight className="w-4 h-4" />
