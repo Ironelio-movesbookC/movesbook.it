@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Filter,
   ChevronDown,
@@ -24,28 +24,81 @@ interface OperatorRow {
   email: string;
 }
 
-const MOCK_OPERATORS: OperatorRow[] = [
-  { id: '1', username: 'operatorSeven', operatorName: '', country: 'Andorra', role: 'Agent', regions: null, lastLogin: null, email: 'swapnilb@datalogysoftware.com', imageUrl: null },
-  { id: '2', username: 'User15', operatorName: 'UserFIFTEEN Movesbook', country: 'India', role: '', regions: null, lastLogin: null, email: 'movesbook15@gmail.com', imageUrl: null },
-  { id: '3', username: 'Lerkos', operatorName: 'Elio Blasevich', country: 'India', role: 'Movesbook staff', regions: null, lastLogin: null, email: 'lerkos000@gmail.com', imageUrl: null },
-];
-
 type TabId = 'only-staff' | 'all-operators' | 'agents';
 
 export default function OperatorsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>('all-operators');
-  const [rows, setRows] = useState<OperatorRow[]>(MOCK_OPERATORS);
+  const [rows, setRows] = useState<OperatorRow[]>([]);
   const [filterValue, setFilterValue] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string>('');
 
   const handleProceed = () => {
     // TODO: apply filter + search
   };
 
+  const isDataUrl = (src?: string | null) =>
+    typeof src === 'string' && src.startsWith('data:image/');
+
   const openProfile = (id: string) => router.push(`/operators/profile/${id}`);
-  const openSettings = (id: string) => router.push(`/operators/settings/${id}`);
+  const openSettings = (id: string) => router.push(`/operators/password-settings/${id}`);
+
+  const filteredRows = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    let base = rows;
+
+    if (activeTab === 'only-staff') {
+      base = base.filter((r) => (r.role || '').toLowerCase().includes('staff'));
+    } else if (activeTab === 'agents') {
+      base = base.filter((r) => (r.role || '').toLowerCase().includes('agent'));
+    }
+
+    if (!q) return base;
+    return base.filter((r) => {
+      const hay = `${r.username} ${r.operatorName} ${r.email} ${r.country} ${r.role}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [activeTab, rows, searchQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setLoadError('');
+      try {
+        const token = localStorage.getItem('adminToken');
+        if (!token) {
+          setLoadError('Admin session not found. Please login again.');
+          setRows([]);
+          return;
+        }
+
+        const res = await fetch('/api/admin/operators', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to load operators');
+        if (!cancelled) setRows(Array.isArray(data?.operators) ? data.operators : []);
+      } catch (e: any) {
+        if (!cancelled) {
+          setLoadError(e?.message || 'Failed to load operators');
+          setRows([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="min-h-full bg-gray-50">
@@ -128,6 +181,7 @@ export default function OperatorsPage() {
           </button>
           <button
             type="button"
+            onClick={() => router.push('/admin/add-operator')}
             className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded transition"
           >
             Add New Operator
@@ -156,19 +210,49 @@ export default function OperatorsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {rows.length === 0 ? (
+              {loading ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
-                    No operators. Connect to your API or add a new operator.
+                    Loading...
+                  </td>
+                </tr>
+              ) : loadError ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8 text-center text-red-600">
+                    {loadError}
+                  </td>
+                </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                    No operators found.
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
+                filteredRows.map((row) => (
                   <tr key={row.id} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3">
                       <div className="w-10 h-10 rounded overflow-hidden bg-gray-200 flex items-center justify-center flex-shrink-0">
                         {row.imageUrl ? (
-                          <Image src={row.imageUrl} alt="" width={40} height={40} className="object-cover w-full h-full" />
+                          isDataUrl(row.imageUrl) ? (
+                            // Next/Image can reject `data:` URLs in some setups; <img> is safest here.
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={row.imageUrl}
+                              alt=""
+                              width={40}
+                              height={40}
+                              className="object-cover w-full h-full"
+                            />
+                          ) : (
+                            <Image
+                              src={row.imageUrl}
+                              alt=""
+                              width={40}
+                              height={40}
+                              className="object-cover w-full h-full"
+                            />
+                          )
                         ) : (
                           <span className="text-xs text-gray-500 text-center px-1">NO IMAGE</span>
                         )}
