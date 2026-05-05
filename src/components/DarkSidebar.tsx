@@ -2977,7 +2977,11 @@ export default function DarkSidebar({
                                       Icon: Import,
                                       label: 'Load dbase from other apps',
                                     },
-                                    { Icon: Check, label: 'Enable-disable functions' },
+                                    {
+                                      Icon: Check,
+                                      label: 'Enable-disable functions',
+                                      path: '/club/settings/enable_disable_functions',
+                                    },
                                   ] as const
                                 ).map((item, subIdx, arr) => {
                                   const { Icon: SubIcon, label: subLabel } = item;
