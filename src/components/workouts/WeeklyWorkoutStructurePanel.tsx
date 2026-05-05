@@ -1,19 +1,21 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
-import { GripVertical, Trash2, Info } from 'lucide-react';
+import { ArrowDownAZ, GripVertical, Trash2, Info } from 'lucide-react';
 import { SPORTS_LIST } from '@/constants/moveframe.constants';
+import type { WorkoutSection } from '@/constants/tools.constants';
+import { WORKOUT_GOALS, isWorkoutGoalKey } from '@/constants/workoutGoals';
+import { useFavoriteSports } from '@/hooks/useFavoriteSports';
 import { getSportIcon } from '@/utils/sportIcons';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const PLAN_KEYS = ['A', 'B', 'C', 'D', 'E'] as const;
 type PlanKey = (typeof PLAN_KEYS)[number];
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
 const SESSIONS = [1, 2, 3] as const;
-
-const GOAL_CODES = ['INT', 'FTK', 'AP', 'CL', 'E', 'REC', 'TEM', 'OTH'] as const;
 
 const STORAGE_PREFIX = 'movesbook_weekly_structure_v1_';
 
@@ -25,14 +27,58 @@ function portalToBody(node: React.ReactNode) {
   return createPortal(node, document.body);
 }
 
+/**
+ * Planned workout time — same digit convention as moveframes: type up to 6 digits as HHMMSS
+ * (e.g. 005000 → 00h50'00"). Also accepts hh:mm:ss and values already in 00h50'00" form.
+ */
+function formatWeeklyPlanTimeInput(raw: string): string {
+  const v = raw.trim();
+  if (!v) return '';
+  if (/^\d{2}h\d{2}'\d{2}"$/.test(v)) return v;
+  const colon = v.match(/^(\d{1,3})\s*:\s*(\d{1,2})\s*:\s*(\d{1,2})$/);
+  if (colon) {
+    const h = Math.min(99, parseInt(colon[1], 10));
+    const m = Math.min(59, parseInt(colon[2], 10));
+    const s = Math.min(59, parseInt(colon[3], 10));
+    return `${String(h).padStart(2, '0')}h${String(m).padStart(2, '0')}'${String(s).padStart(2, '0')}"`;
+  }
+  const digits = v.replace(/\D/g, '');
+  if (!digits) return '';
+  const six = digits.slice(-6).padStart(6, '0');
+  let hh = parseInt(six.slice(0, 2), 10);
+  let mm = parseInt(six.slice(2, 4), 10);
+  let ss = parseInt(six.slice(4, 6), 10);
+  if (Number.isNaN(hh)) hh = 0;
+  if (Number.isNaN(mm)) mm = 0;
+  if (Number.isNaN(ss)) ss = 0;
+  hh = Math.min(99, hh);
+  mm = Math.min(59, mm);
+  ss = Math.min(59, ss);
+  return `${String(hh).padStart(2, '0')}h${String(mm).padStart(2, '0')}'${String(ss).padStart(2, '0')}"`;
+}
+
 export type WeeklyStructurePeriod = { id: string; name: string; color: string };
+
+const DEFAULT_WEEKLY_PLAN_COLOR = '#f97316';
+
+/** Plan strip color always follows the chosen period (Tools Settings); none → default orange. */
+function planColorFromPeriod(periodId: string, periodList: WeeklyStructurePeriod[]): string {
+  if (!periodId) return DEFAULT_WEEKLY_PLAN_COLOR;
+  const p = periodList.find((x) => x.id === periodId);
+  return (p?.color && String(p.color).trim()) || DEFAULT_WEEKLY_PLAN_COLOR;
+}
 
 export type PlannedWorkout = {
   id: string;
   sportKey: string;
   distance: string;
   time: string;
-  goalCode: string;
+  /** Legacy free-text column — superseded by workoutGoal + workMethodId */
+  goalCode?: string;
+  /** `WORKOUT_GOALS` value */
+  workoutGoal?: string;
+  /** Tools Settings → Work Methods item id */
+  workMethodId?: string;
   description: string;
 };
 
@@ -55,14 +101,48 @@ function isValidPlanPersist(value: unknown): value is PlanPersist {
   return true;
 }
 
+function newId() {
+  return `pw_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function migratePlannedRow(raw: unknown): PlannedWorkout {
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const goalCode = typeof r.goalCode === 'string' ? r.goalCode : '';
+  let workoutGoal = typeof r.workoutGoal === 'string' ? r.workoutGoal : '';
+  if (!workoutGoal && goalCode && isWorkoutGoalKey(goalCode)) {
+    workoutGoal = goalCode;
+  }
+  return {
+    id: typeof r.id === 'string' ? r.id : newId(),
+    sportKey: typeof r.sportKey === 'string' ? r.sportKey : '',
+    distance: typeof r.distance === 'string' ? r.distance : '',
+    time: typeof r.time === 'string' ? r.time : '',
+    description: typeof r.description === 'string' ? r.description : '',
+    goalCode,
+    workoutGoal,
+    workMethodId: typeof r.workMethodId === 'string' ? r.workMethodId : ''
+  };
+}
+
+function migratePlannedList(planned: unknown): PlannedWorkout[] {
+  if (!Array.isArray(planned)) return [];
+  return planned.map(migratePlannedRow);
+}
+
+function workMethodCodeDisplay(methods: WorkoutSection[], id: string | undefined): string {
+  if (!id?.trim()) return '';
+  const m = methods.find((x) => x.id === id);
+  return (m?.code || '').trim();
+}
+
 function normalizePlanPersist(p: PlanPersist): PlanPersist {
   return {
     meta: {
       name: p.meta?.name ?? '',
-      color: p.meta?.color ?? '#f97316',
+      color: p.meta?.color ?? DEFAULT_WEEKLY_PLAN_COLOR,
       periodId: p.meta?.periodId ?? ''
     },
-    planned: Array.isArray(p.planned) ? p.planned : [],
+    planned: Array.isArray(p.planned) ? migratePlannedList(p.planned) : [],
     grid: (p.grid && typeof p.grid === 'object' ? p.grid : {}) as DayGrid
   };
 }
@@ -84,10 +164,6 @@ function collectWeeklyStructureBlobForServer(): Record<PlanKey, PlanPersist> {
   return out;
 }
 
-function newId() {
-  return `pw_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
 function loadPlan(key: PlanKey): PlanPersist {
   try {
     const raw = localStorage.getItem(STORAGE_PREFIX + key);
@@ -97,15 +173,15 @@ function loadPlan(key: PlanKey): PlanPersist {
     return {
       meta: {
         name: p.meta.name || '',
-        color: p.meta.color || '#f97316',
+        color: p.meta.color || DEFAULT_WEEKLY_PLAN_COLOR,
         periodId: p.meta.periodId || ''
       },
-      planned: p.planned,
+      planned: migratePlannedList(p.planned),
       grid: p.grid
     };
   } catch {
     return {
-      meta: { name: '', color: '#f97316', periodId: '' },
+      meta: { name: '', color: DEFAULT_WEEKLY_PLAN_COLOR, periodId: '' },
       planned: [],
       grid: {}
     };
@@ -193,8 +269,9 @@ function WeeklySportIconThumb({
 }
 
 export default function WeeklyWorkoutStructurePanel({ periods }: { periods: WeeklyStructurePeriod[] }) {
+  const { t } = useLanguage();
   const [planKey, setPlanKey] = useState<PlanKey>('A');
-  const [meta, setMeta] = useState({ name: '', color: '#f97316', periodId: '' });
+  const [meta, setMeta] = useState({ name: '', color: DEFAULT_WEEKLY_PLAN_COLOR, periodId: '' });
   const [planned, setPlanned] = useState<PlannedWorkout[]>([]);
   const [grid, setGrid] = useState<DayGrid>({});
   const [snapshot, setSnapshot] = useState<PlanPersist | null>(null);
@@ -202,12 +279,14 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
   /** When true, planned-workouts table shows only rows currently placed on the week grid */
   const [showOnlyWeekAssignedInList, setShowOnlyWeekAssignedInList] = useState(false);
   const [dropPrompt, setDropPrompt] = useState<DropPrompt>(null);
+  const [workMethods, setWorkMethods] = useState<WorkoutSection[]>([]);
   const [formOpen, setFormOpen] = useState<{
     sportKey: string;
     editingId?: string;
     distance: string;
     time: string;
-    goalCode: string;
+    workoutGoal: string;
+    workMethodId: string;
     description: string;
   } | null>(null);
   const [listDropHint, setListDropHint] = useState(false);
@@ -216,7 +295,8 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
   const [weeklyHydrated, setWeeklyHydrated] = useState(false);
   const [savingRemote, setSavingRemote] = useState(false);
   const [planMetaModalOpen, setPlanMetaModalOpen] = useState(false);
-  const [planMetaDraft, setPlanMetaDraft] = useState({ name: '', color: '#f97316', periodId: '' });
+  const [planMetaDraft, setPlanMetaDraft] = useState({ name: '', color: DEFAULT_WEEKLY_PLAN_COLOR, periodId: '' });
+  const planMetaModalWasOpenRef = useRef(false);
 
   useEffect(() => {
     const syncSportIconType = () => {
@@ -244,8 +324,22 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
     };
   }, [dropPrompt, planMetaModalOpen, formOpen]);
 
+  const workMethodsSorted = useMemo(
+    () =>
+      [...workMethods].sort((a, b) => {
+        const ao = a.order ?? 0;
+        const bo = b.order ?? 0;
+        if (ao !== bo) return ao - bo;
+        return a.id.localeCompare(b.id);
+      }),
+    [workMethods]
+  );
+
   const plannedById = useMemo(() => new Map(planned.map((p) => [p.id, p])), [planned]);
   const assigned = useMemo(() => assignedIds(grid), [grid]);
+
+  const { favoriteSports } = useFavoriteSports();
+  const favoriteSportsSet = useMemo(() => new Set(favoriteSports), [favoriteSports]);
 
   const plannedRowsForTable = useMemo(() => {
     if (!showOnlyWeekAssignedInList) return planned;
@@ -271,6 +365,8 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
           });
           if (res.ok && !cancelled) {
             const data = await res.json();
+            const wm = data.toolsSettings?.workMethods;
+            if (Array.isArray(wm)) setWorkMethods(wm as WorkoutSection[]);
             if (data.weeklyStructureV1 && typeof data.weeklyStructureV1 === 'object') {
               applyWeeklyStructureBlobFromServer(data.weeklyStructureV1);
             }
@@ -366,11 +462,24 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
     return out;
   }, [planned]);
 
+  /** Snapshot into modal draft only when the dialog opens (not when `periods` refreshes while typing). */
   useEffect(() => {
-    if (planMetaModalOpen) {
-      setPlanMetaDraft({ name: meta.name, color: meta.color, periodId: meta.periodId });
+    const justOpened = planMetaModalOpen && !planMetaModalWasOpenRef.current;
+    planMetaModalWasOpenRef.current = planMetaModalOpen;
+    if (justOpened) {
+      setPlanMetaDraft({
+        name: meta.name,
+        periodId: meta.periodId,
+        color: planColorFromPeriod(meta.periodId, periods)
+      });
     }
-  }, [planMetaModalOpen, meta.name, meta.color, meta.periodId]);
+  }, [planMetaModalOpen, meta.name, meta.periodId, periods]);
+
+  /** Keep saved/display color aligned with the selected period’s color from Tools Settings. */
+  useEffect(() => {
+    const next = planColorFromPeriod(meta.periodId, periods);
+    setMeta((m) => (m.color === next ? m : { ...m, color: next }));
+  }, [meta.periodId, periods]);
 
   const switchToPlan = (k: PlanKey) => {
     if (planKey !== k) persist();
@@ -418,7 +527,7 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
 
   const selectSuggestedPeriod = (p: WeeklyStructurePeriod | null) => {
     if (!p) {
-      setPlanMetaDraft((d) => ({ ...d, periodId: '' }));
+      setPlanMetaDraft((d) => ({ ...d, periodId: '', color: DEFAULT_WEEKLY_PLAN_COLOR }));
       return;
     }
     setPlanMetaDraft((d) => ({ ...d, periodId: p.id, color: p.color }));
@@ -429,7 +538,8 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
       sportKey,
       distance: '',
       time: '',
-      goalCode: '',
+      workoutGoal: '',
+      workMethodId: '',
       description: ''
     });
   };
@@ -440,7 +550,8 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
       editingId: row.id,
       distance: row.distance,
       time: row.time,
-      goalCode: row.goalCode,
+      workoutGoal: row.workoutGoal || '',
+      workMethodId: row.workMethodId || '',
       description: row.description
     });
   };
@@ -531,7 +642,8 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
         sportKey,
         distance: '',
         time: '',
-        goalCode: '',
+        workoutGoal: '',
+        workMethodId: '',
         description: ''
       });
       (window as unknown as { __wsPendingDrop?: { day: number; session: number } }).__wsPendingDrop = {
@@ -635,6 +747,21 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
     });
   };
 
+  /** Reorder planned list so all rows with the same sport are adjacent; sports ordered A→Z (locale). */
+  const groupPlannedBySportAlphabetical = useCallback(() => {
+    setPlanned((prev) => {
+      if (prev.length <= 1) return prev;
+      const withIdx = prev.map((row, i) => ({ row, i }));
+      withIdx.sort((a, b) => {
+        const cmp = a.row.sportKey.localeCompare(b.row.sportKey, undefined, { sensitivity: 'base' });
+        if (cmp !== 0) return cmp;
+        return a.i - b.i;
+      });
+      return withIdx.map((x) => x.row);
+    });
+    setMoveIdx(null);
+  }, []);
+
   const handleSave = async () => {
     setSavingRemote(true);
     try {
@@ -681,23 +808,44 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
     if (!confirm('Clear this template plan structure?')) return;
     setPlanned([]);
     setGrid({});
-    setMeta({ name: '', color: '#f97316', periodId: '' });
+    setMeta({ name: '', color: DEFAULT_WEEKLY_PLAN_COLOR, periodId: '' });
   };
 
   const saveFormWithOptionalDrop = () => {
     if (!formOpen) return;
     const pending = (window as unknown as { __wsPendingDrop?: { day: number; session: number } }).__wsPendingDrop;
-    const { sportKey, editingId, distance, time, goalCode, description } = formOpen;
+    const { sportKey, editingId, distance, workoutGoal, workMethodId, description } = formOpen;
+    const time = formatWeeklyPlanTimeInput(formOpen.time);
     let newRow: PlannedWorkout;
     if (editingId) {
       setPlanned((prev) =>
         prev.map((r) =>
-          r.id === editingId ? { ...r, distance, time, goalCode, description } : r
+          r.id === editingId
+            ? { ...r, distance, time, workoutGoal, workMethodId, description, goalCode: '' }
+            : r
         )
       );
-      newRow = { id: editingId, sportKey, distance, time, goalCode, description };
+      newRow = {
+        id: editingId,
+        sportKey,
+        distance,
+        time,
+        workoutGoal,
+        workMethodId,
+        description,
+        goalCode: ''
+      };
     } else {
-      newRow = { id: newId(), sportKey, distance, time, goalCode, description };
+      newRow = {
+        id: newId(),
+        sportKey,
+        distance,
+        time,
+        workoutGoal,
+        workMethodId,
+        description,
+        goalCode: ''
+      };
       setPlanned((prev) => [...prev, newRow]);
     }
     setFormOpen(null);
@@ -766,7 +914,7 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
           <button
             key={k}
             type="button"
-            title="Click to work on this plan. Double-click to edit plan name, color & suggested period."
+            title="Click to work on this plan. Double-click to edit plan name & suggested period."
             onClick={() => switchToPlan(k)}
             onDoubleClick={(e) => {
               e.preventDefault();
@@ -798,17 +946,27 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
         >
           {savingRemote ? 'Saving…' : 'Save'}
         </button>
-        <input
-          type="color"
-          value={meta.color}
-          onChange={(e) => setMeta((m) => ({ ...m, color: e.target.value }))}
-          className="h-9 w-12 cursor-pointer rounded border"
-          title="Plan color"
+        <div
+          className="h-9 w-12 shrink-0 rounded border border-gray-400 shadow-inner"
+          style={{ backgroundColor: meta.color }}
+          title={
+            meta.periodId
+              ? 'Plan color matches the selected period (edit the period in Tools Settings to change it)'
+              : 'Choose a period below — its color appears here'
+          }
+          aria-hidden
         />
         <select
           className="border rounded px-2 py-1 text-sm"
           value={meta.periodId}
-          onChange={(e) => setMeta((m) => ({ ...m, periodId: e.target.value }))}
+          onChange={(e) => {
+            const id = e.target.value;
+            setMeta((m) => ({
+              ...m,
+              periodId: id,
+              color: planColorFromPeriod(id, periods)
+            }));
+          }}
         >
           <option value="">Period suggested…</option>
           {periods.map((p) => (
@@ -837,7 +995,8 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
 
           <div>
             <p className="text-xs font-semibold text-gray-600 mb-1">
-              Sports — double-click a tile, or drag a sport into this green area or onto the planned list table below
+              Sports — double-click a tile, or drag a sport into this green area or onto the planned list table below.
+              <span className="font-normal text-gray-500"> Favorite sports from Personal Settings use the amber tiles.</span>
             </p>
             <div
               className={`max-h-48 overflow-y-auto rounded border p-2 bg-emerald-50/50 ${listDropHint ? 'ring-2 ring-blue-400' : ''}`}
@@ -856,22 +1015,30 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
               }}
             >
               <div className="flex flex-wrap gap-2">
-                {SPORTS_LIST.slice(0, 48).map((sport) => (
+                {SPORTS_LIST.slice(0, 48).map((sport) => {
+                  const isFavorite = favoriteSportsSet.has(sport);
+                  return (
                   <button
                     key={sport}
                     type="button"
                     draggable
+                    title={isFavorite ? 'One of your favorite sports' : undefined}
                     onDragStart={(e) => {
                       e.dataTransfer.setData('application/ws-sport', sport);
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
                     onDoubleClick={() => openNewForm(sport)}
-                    className="flex flex-col items-center gap-0.5 px-2 py-1 rounded bg-green-100 border border-green-200 text-[10px] font-semibold text-green-900 hover:bg-green-200"
+                    className={
+                      isFavorite
+                        ? 'flex flex-col items-center gap-0.5 px-2 py-1 rounded bg-amber-100 border border-amber-400 text-[10px] font-semibold text-amber-950 hover:bg-amber-200 shadow-sm ring-1 ring-amber-300/50'
+                        : 'flex flex-col items-center gap-0.5 px-2 py-1 rounded bg-green-100 border border-green-200 text-[10px] font-semibold text-green-900 hover:bg-green-200'
+                    }
                   >
                     <WeeklySportIconThumb sport={sport} iconType={sportIconType} size={28} />
                     {sport.replace(/_/g, ' ')}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -896,6 +1063,18 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
               if (sport) openNewForm(sport);
             }}
           >
+            <div className="flex flex-wrap items-center justify-end gap-2 px-2 py-1.5 border-b border-gray-200 bg-emerald-50/60">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded border border-emerald-600/40 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-900 shadow-sm hover:bg-emerald-100/80 disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={planned.length < 2}
+                title="Sort A→Z by sport (e.g. Bike, Body Building, Run, Swim). NWO becomes 1…n; 1st/2nd/3rd counts within each sport. A line separates each sport block."
+                onClick={groupPlannedBySportAlphabetical}
+              >
+                <ArrowDownAZ className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                Group by sport (A–Z)
+              </button>
+            </div>
             <table className="w-full min-w-[860px] text-xs border-collapse">
               <thead>
                 <tr className="bg-emerald-100 border-b border-gray-300">
@@ -906,7 +1085,12 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                   <th className="w-[108px] px-2 py-2.5 text-left font-semibold text-blue-700 border-r border-emerald-200/80">
                     Dist &amp; Time
                   </th>
-                  <th className="w-14 px-2 py-2.5 text-center font-semibold text-blue-700 border-r border-emerald-200/80">Goal</th>
+                  <th
+                    className="min-w-[72px] max-w-[140px] px-2 py-2.5 text-center font-semibold text-blue-700 border-r border-emerald-200/80"
+                    title="Work method code from Tools Settings → Work Methods"
+                  >
+                    WM (Work Method)
+                  </th>
                   <th className="min-w-[140px] px-2 py-2.5 text-left font-semibold text-blue-700 border-r border-emerald-200/80">
                     Description
                   </th>
@@ -918,27 +1102,53 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                   const globalIdx = planned.findIndex((p) => p.id === row.id);
                   const ord = sportOrdinalInList(row, globalIdx);
                   const isAssigned = assigned.has(row.id);
-                  const rowBg = displayIdx % 2 === 0 ? 'bg-[#f2f2f2]' : 'bg-white';
+                  const prevRow = displayIdx > 0 ? plannedRowsForTable[displayIdx - 1] : null;
+                  const newSportGroup = prevRow != null && prevRow.sportKey !== row.sportKey;
+                  let groupStart = displayIdx;
+                  while (groupStart > 0 && plannedRowsForTable[groupStart - 1].sportKey === row.sportKey) {
+                    groupStart--;
+                  }
+                  const withinSportIdx = displayIdx - groupStart;
+                  const zebraAlt = withinSportIdx % 2 === 0;
+                  const isFavSport = favoriteSportsSet.has(row.sportKey);
+                  const rowBg = isFavSport
+                    ? zebraAlt
+                      ? 'bg-amber-50'
+                      : 'bg-amber-100/85'
+                    : zebraAlt
+                      ? 'bg-[#f2f2f2]'
+                      : 'bg-white';
+                  const rowHover = isFavSport ? 'hover:bg-amber-100/90' : 'hover:bg-emerald-50/40';
+                  const groupSep = newSportGroup ? 'border-t-2 border-t-emerald-400/75' : '';
+                  const startPlannedDrag = (e: React.DragEvent) => {
+                    e.dataTransfer.setData('application/ws-planned', row.id);
+                    e.dataTransfer.setData('text/plain', row.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                  };
+
                   return (
                     <React.Fragment key={row.id}>
-                      <tr
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('application/ws-planned', row.id);
-                          e.dataTransfer.effectAllowed = 'move';
-                        }}
-                        className={`border-b border-gray-200 ${rowBg} hover:bg-emerald-50/40`}
-                      >
+                      <tr className={`border-b border-gray-200 ${groupSep} ${rowBg} ${rowHover}`}>
                         <td className="align-middle border-r border-gray-200 px-1 py-2">
                           <div className="flex flex-col items-center gap-1">
-                            <button
-                              type="button"
-                              className="text-gray-500 hover:text-gray-900 cursor-grab active:cursor-grabbing"
-                              title="Reorder"
+                            {/* Draggable must NOT be <tr> nor nested in <button> — browsers ignore parent drag when gesture starts on a button */}
+                            <div
+                              draggable
+                              onDragStart={startPlannedDrag}
+                              role="button"
+                              tabIndex={0}
+                              className="text-gray-500 hover:text-gray-900 cursor-grab active:cursor-grabbing touch-none select-none rounded p-0.5 hover:bg-gray-100"
+                              title="Drag to week grid (Sport 1 → 2 → 3 order)"
                               onClick={() => setMoveIdx(moveIdx === globalIdx ? null : globalIdx)}
+                              onKeyDown={(ev) => {
+                                if (ev.key === 'Enter' || ev.key === ' ') {
+                                  ev.preventDefault();
+                                  setMoveIdx(moveIdx === globalIdx ? null : globalIdx);
+                                }
+                              }}
                             >
-                              <GripVertical className="w-5 h-5" />
-                            </button>
+                              <GripVertical className="w-5 h-5 pointer-events-none" aria-hidden />
+                            </div>
                             <button
                               type="button"
                               className="text-red-600 hover:text-red-800"
@@ -988,7 +1198,9 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                           <div className="text-[11px] text-gray-600 tabular-nums">{row.time?.trim() || '—'}</div>
                         </td>
                         <td className="align-middle border-r border-gray-200 px-2 py-2 text-center">
-                          <span className="font-bold uppercase text-gray-900">{row.goalCode?.trim() || '—'}</span>
+                          <span className="font-medium text-gray-900 text-[11px] leading-snug line-clamp-2">
+                            {workMethodCodeDisplay(workMethods, row.workMethodId) || '—'}
+                          </span>
                         </td>
                         <td className="align-middle border-r border-gray-200 px-2 py-2 text-gray-700 max-w-[280px]">
                           <span className="line-clamp-2" title={row.description || undefined}>
@@ -1237,15 +1449,22 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                 const handleSportDragOver = (e: React.DragEvent) => {
                   if (!avail) return;
                   e.preventDefault();
-                  e.dataTransfer.dropEffect = 'copy';
+                  const types = Array.from(e.dataTransfer.types);
+                  const fromPlanned = types.some((t) => t === 'application/ws-planned');
+                  e.dataTransfer.dropEffect = fromPlanned ? 'move' : 'copy';
                 };
                 const handleSportDrop = (e: React.DragEvent) => {
                   e.preventDefault();
                   if (!avail) return;
-                  const pidDrag = e.dataTransfer.getData('application/ws-planned');
+                  const pidDrag =
+                    e.dataTransfer.getData('application/ws-planned') ||
+                    e.dataTransfer.getData('text/plain');
                   const sportDrag = e.dataTransfer.getData('application/ws-sport');
-                  if (pidDrag) onDropOnCell(d, sn, { type: 'planned', id: pidDrag });
-                  else if (sportDrag) onDropOnCell(d, sn, { type: 'new', sport: sportDrag });
+                  if (pidDrag && plannedById.has(pidDrag)) {
+                    onDropOnCell(d, sn, { type: 'planned', id: pidDrag });
+                  } else if (sportDrag) {
+                    onDropOnCell(d, sn, { type: 'new', sport: sportDrag });
+                  }
                 };
                 const dropProps =
                   avail ?
@@ -1316,7 +1535,7 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                             className="font-bold text-gray-900 text-[11px]"
                             title={descTip}
                           >
-                            {r.goalCode?.trim() || '—'}
+                            {workMethodCodeDisplay(workMethods, r.workMethodId) || '—'}
                           </span>
                           <button
                             type="button"
@@ -1414,8 +1633,8 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
               Plan {planKey}
             </h2>
             <p className="text-xs text-gray-600 mb-4">
-              Set the template name, plan color, and suggested period. Choosing a period applies that period&apos;s color to
-              this plan.
+              Set the template name and suggested period. Plan color always matches the period you pick (defined in Tools
+              Settings).
             </p>
             <label className="block text-xs font-semibold text-gray-700 mb-1">Plan name</label>
             <input
@@ -1425,17 +1644,12 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
               value={planMetaDraft.name}
               onChange={(e) => setPlanMetaDraft((d) => ({ ...d, name: e.target.value }))}
             />
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Plan color</label>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Plan color (from period)</label>
             <div className="flex items-center gap-3 mb-4">
-              <input
-                type="color"
-                className="h-10 w-14 cursor-pointer rounded border border-gray-300"
-                value={planMetaDraft.color}
-                onChange={(e) => setPlanMetaDraft((d) => ({ ...d, color: e.target.value }))}
-              />
-              <span
-                className="h-10 flex-1 rounded border border-gray-200"
+              <div
+                className="h-10 w-full rounded border border-gray-300 shadow-inner"
                 style={{ backgroundColor: planMetaDraft.color }}
+                title="Matches the selected period — change it under Tools Settings → Periods"
               />
             </div>
             <label className="block text-xs font-semibold text-gray-700 mb-2">Period suggested</label>
@@ -1507,22 +1721,55 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
             />
             <label className="block text-xs font-semibold mb-1">Time</label>
             <input
-              className="w-full border rounded px-2 py-1 mb-2"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              className="w-full border rounded px-2 py-1 mb-1 font-mono text-sm"
               value={formOpen.time}
               onChange={(e) => setFormOpen({ ...formOpen, time: e.target.value })}
-              placeholder="hh:mm:ss"
+              onBlur={(e) =>
+                setFormOpen((prev) =>
+                  prev ? { ...prev, time: formatWeeklyPlanTimeInput(e.target.value) } : prev
+                )
+              }
+              placeholder={`005000 → 00h50'00"`}
             />
-            <div className="bg-pink-50 border border-pink-200 rounded p-2 mb-2">
-              <label className="block text-xs font-bold mb-1">Workout goal</label>
+            <p className="text-[10px] text-gray-500 mb-2">
+              Type up to 6 digits as <strong>HHMMSS</strong> (hours, minutes, seconds), same style as moveframes — or{' '}
+              <strong className="font-mono">hh:mm:ss</strong>.
+            </p>
+            <div className="rounded border border-pink-200 bg-pink-50/90 p-2 mb-2">
+              <label className="block text-xs font-semibold text-gray-800 mb-1">
+                Workout goal{' '}
+                <span className="font-normal text-gray-500">(optional)</span>
+              </label>
               <select
-                className="w-full border border-red-300 rounded px-2 py-1"
-                value={formOpen.goalCode}
-                onChange={(e) => setFormOpen({ ...formOpen, goalCode: e.target.value })}
+                className="w-full border border-pink-200 rounded px-2 py-1.5 text-sm bg-white"
+                value={formOpen.workoutGoal}
+                onChange={(e) => setFormOpen({ ...formOpen, workoutGoal: e.target.value })}
               >
                 <option value="">Select workout goal…</option>
-                {GOAL_CODES.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
+                {WORKOUT_GOALS.map((g) => (
+                  <option key={g.value} value={g.value}>
+                    {t(`goal_${g.value.toLowerCase()}`)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="rounded border border-emerald-200 bg-emerald-50/90 p-2 mb-2">
+              <label className="block text-xs font-semibold text-gray-800 mb-1">
+                Method of work <span className="font-normal text-gray-500">(optional)</span>
+              </label>
+              <select
+                className="w-full border border-emerald-200 rounded px-2 py-1.5 text-sm bg-white"
+                value={formOpen.workMethodId}
+                onChange={(e) => setFormOpen({ ...formOpen, workMethodId: e.target.value })}
+              >
+                <option value="">Select method of work…</option>
+                {workMethodsSorted.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {(m.code || '').trim() ? `[${(m.code || '').trim()}] ` : ''}
+                    {m.title}
                   </option>
                 ))}
               </select>

@@ -281,6 +281,20 @@ export const DEFAULT_MOVELAP_COLUMNS: ColumnConfig[] = [
     dataKey: 'sport'
   },
   {
+    id: 'muscular_sector',
+    label: 'Musc. Sector',
+    align: 'center',
+    visible: true,
+    dataKey: 'muscularSector'
+  },
+  {
+    id: 'indoor_exercise',
+    label: 'Exercise',
+    align: 'left',
+    visible: true,
+    dataKey: 'exercise'
+  },
+  {
     id: 'distance',
     label: 'Dist/Dur',
     align: 'right',

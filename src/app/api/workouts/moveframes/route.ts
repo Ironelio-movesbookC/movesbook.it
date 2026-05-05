@@ -1,22 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { restTypeDisplayToDb } from '@/utils/restTypeDb';
 
-
-// Helper function to convert display rest type to enum value
 function convertRestTypeToEnum(restType: string | null | undefined): string | null {
-  if (!restType || restType.trim() === '') return null;
-  
-  const mapping: Record<string, string> = {
-    'Set time': 'SET_TIME',
-    'Restart time': 'RESTART_TIME',
-    'Restart pulse': 'RESTART_PULSE',
-    'SET_TIME': 'SET_TIME', // Already correct
-    'RESTART_TIME': 'RESTART_TIME', // Already correct
-    'RESTART_PULSE': 'RESTART_PULSE' // Already correct
-  };
-  
-  return mapping[restType] || null;
+  return restTypeDisplayToDb(restType ?? undefined);
 }
 
 export async function POST(request: NextRequest) {

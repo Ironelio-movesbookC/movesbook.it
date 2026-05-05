@@ -1,11 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Star, Plus, Edit2, Trash2, Calendar, Dumbbell, Target, Clock, Search, Filter, Copy, Eye, Download, Globe } from 'lucide-react';
-import { useLanguage } from '@/contexts/LanguageContext';
+import { Star, Plus, Edit2, Trash2, Calendar, Dumbbell, Target, Clock, Search, Copy, Eye, Download, Globe } from 'lucide-react';
 import { SPORTS_LIST } from '@/constants/moveframe.constants';
 import { getSportIcon } from '@/utils/sportIcons';
-import { useSportIconType } from '@/hooks/useSportIconType';
 import Image from 'next/image';
 import FavoriteWorkoutCard from '@/components/workouts/FavoriteWorkoutCard';
 import WorkoutOverviewModal from '@/components/workouts/WorkoutOverviewModal';
@@ -50,8 +48,6 @@ interface Moveframe {
 }
 
 export default function FavouritesSettings() {
-  const { t, currentLanguage } = useLanguage();
-  const iconType = useSportIconType();
   const [activeTab, setActiveTab] = useState<'plans' | 'workouts' | 'moveframes' | 'sports'>('sports');
   
   // Favorite Sports State
@@ -82,8 +78,10 @@ export default function FavouritesSettings() {
   const [filterTag, setFilterTag] = useState('all');
   const [sortBy, setSortBy] = useState<'name' | 'lastUsed' | 'popular'>('lastUsed');
   
-  // Language-specific defaults state
-  const [selectedLanguage, setSelectedLanguage] = useState(currentLanguage || 'en');
+  // Language-specific defaults state (Load defaults / admin merges)
+  const [selectedLanguage, setSelectedLanguage] = useState('en');
+  /** Preview language for sport names in the grid (default English). */
+  const [sportDisplayLanguage, setSportDisplayLanguage] = useState('en');
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [superAdminPassword, setSuperAdminPassword] = useState('');
   const [showLoadDialog, setShowLoadDialog] = useState(false);
@@ -93,12 +91,6 @@ export default function FavouritesSettings() {
   const [editingSportKey, setEditingSportKey] = useState<string>('');
   const [sportTranslationsDraft, setSportTranslationsDraft] = useState<Record<string, string>>({});
   
-  // Auto-update selected language when user's language changes
-  useEffect(() => {
-    if (currentLanguage) {
-      setSelectedLanguage(currentLanguage);
-    }
-  }, [currentLanguage]);
   
   const supportedLanguages = [
     { code: 'en', name: 'English' },
@@ -141,6 +133,28 @@ export default function FavouritesSettings() {
     } catch (error) {
       console.error('❌ Error loading sport translations:', error);
     }
+  }, []);
+
+  useEffect(() => {
+    const loadServerTranslations = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const res = await fetch('/api/user/settings', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const server = data.favouritesSettings?.sportTranslations;
+        if (server && typeof server === 'object' && Object.keys(server).length > 0) {
+          setSportTranslations(server);
+          localStorage.setItem('favorite_sports_translations', JSON.stringify(server));
+        }
+      } catch (e) {
+        console.error('❌ Error loading sport translations from server:', e);
+      }
+    };
+    void loadServerTranslations();
   }, []);
 
   const loadFavoriteSports = async () => {
@@ -387,52 +401,6 @@ export default function FavouritesSettings() {
     });
   };
 
-  const handleLoadSportDefaults = () => {
-    if (!confirm('⚠️ Load sports from Main Sports Mode?\n\nThis will replace your current selection with the sports configured in admin settings (in your current language).\n\nContinue?')) {
-      return;
-    }
-
-    try {
-      // Load main sports from localStorage (admin settings)
-      // Format: tools_sports_[language]
-      const storageKey = `tools_sports_${currentLanguage}`;
-      const sportsDataStr = localStorage.getItem(storageKey);
-      
-      if (!sportsDataStr) {
-        alert(`ℹ️ No default sports configured for "${currentLanguage}" language yet.\n\nPlease ask your admin to:\n1. Go to Settings > Tools > Main Sports tab\n2. Configure sports for ${currentLanguage}\n3. Save to ${currentLanguage.toUpperCase()}`);
-        return;
-      }
-
-      try {
-        const sportsData = JSON.parse(sportsDataStr);
-        
-        if (!Array.isArray(sportsData) || sportsData.length === 0) {
-          alert('ℹ️ No sports found in Main Sports Mode for your language.\n\nPlease ask your admin to configure sports in Tools Settings.');
-          return;
-        }
-
-        // Sort by order and take top 5
-        const sortedSports = sportsData
-          .sort((a: any, b: any) => a.order - b.order)
-          .map((sport: any) => sport.name)
-          .slice(0, 5);
-        
-        if (sortedSports.length > 0) {
-          setSelectedSports(sortedSports);
-          alert(`✅ Loaded ${sortedSports.length} sports from Main Sports Mode!\n\n${sortedSports.map((s: string) => `• ${s.replace(/_/g, ' ')}`).join('\n')}`);
-        } else {
-          alert('ℹ️ No sports configured in Main Sports Mode.');
-        }
-      } catch (parseError) {
-        console.error('Error parsing sports data:', parseError);
-        alert('❌ Error reading sports data. The data may be corrupted.');
-      }
-    } catch (error) {
-      console.error('Error loading sport defaults:', error);
-      alert('❌ Error loading sport defaults. Please try again.');
-    }
-  };
-
   const moveSportUp = (index: number) => {
     if (index === 0) return;
     setSelectedSports(prev => {
@@ -453,12 +421,60 @@ export default function FavouritesSettings() {
 
   const getDefaultSportLabel = (sport: string) => sport.replace(/_/g, ' ');
 
-  const getSportLabel = (sport: string) => {
-    return (
-      sportTranslations[sport]?.[selectedLanguage] ||
-      sportTranslations[sport]?.en ||
-      getDefaultSportLabel(sport)
-    );
+  const getEnglishSportLabel = (sport: string) => {
+    const en = sportTranslations[sport]?.en?.trim();
+    if (en) return en;
+    return getDefaultSportLabel(sport);
+  };
+
+  /** Label for the current preview language; red when falling back to English. */
+  const getSportDisplay = (sport: string): { text: string; isRed: boolean } => {
+    const lang = (sportDisplayLanguage || 'en').toLowerCase().split('-')[0];
+    const english = getEnglishSportLabel(sport);
+    if (lang === 'en') {
+      return { text: english, isRed: false };
+    }
+    const loc = sportTranslations[sport]?.[lang]?.trim();
+    if (loc) {
+      return { text: loc, isRed: false };
+    }
+    return { text: english, isRed: true };
+  };
+
+  const persistSportTranslationsServer = async (
+    next: Record<string, Record<string, string>>
+  ) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const res = await fetch('/api/user/settings', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const fav =
+        data.favouritesSettings && typeof data.favouritesSettings === 'object'
+          ? data.favouritesSettings
+          : {};
+      await fetch('/api/user/settings', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          favouritesSettings: {
+            weeklyPlans: fav.weeklyPlans ?? [],
+            workouts: fav.workouts ?? [],
+            moveframes: fav.moveframes ?? [],
+            ...fav,
+            sportTranslations: next
+          }
+        })
+      });
+    } catch (e) {
+      console.error('❌ Failed to persist sport translations:', e);
+    }
   };
 
   const handleOpenSportTranslationDialog = (sport: string) => {
@@ -466,20 +482,33 @@ export default function FavouritesSettings() {
     supportedLanguages.forEach((lang) => {
       draft[lang.code] = sportTranslations[sport]?.[lang.code] || '';
     });
-    if (!draft.en) draft.en = getDefaultSportLabel(sport);
+    if (!draft.en?.trim()) draft.en = getEnglishSportLabel(sport);
     setEditingSportKey(sport);
     setSportTranslationsDraft(draft);
     setShowSportTranslationDialog(true);
   };
 
-  const handleSaveSportTranslations = () => {
+  const handleSaveSportTranslations = async () => {
     if (!editingSportKey) return;
+    const en = (sportTranslationsDraft.en || '').trim();
+    if (!en) {
+      alert('English name is required.');
+      return;
+    }
+    const cleaned: Record<string, string> = {};
+    supportedLanguages.forEach(({ code }) => {
+      const v = (sportTranslationsDraft[code] || '').trim();
+      if (v) cleaned[code] = v;
+    });
+    cleaned.en = en;
+
     const next = {
       ...sportTranslations,
-      [editingSportKey]: { ...sportTranslationsDraft },
+      [editingSportKey]: cleaned
     };
     setSportTranslations(next);
     localStorage.setItem('favorite_sports_translations', JSON.stringify(next));
+    await persistSportTranslationsServer(next);
     setShowSportTranslationDialog(false);
     setEditingSportKey('');
     setSportTranslationsDraft({});
@@ -570,7 +599,8 @@ export default function FavouritesSettings() {
       const favouritesData = {
         weeklyPlans,
         workouts,
-        moveframes
+        moveframes,
+        sportTranslations
       };
 
       // Save to user's personal settings
@@ -817,6 +847,7 @@ export default function FavouritesSettings() {
             value={selectedLanguage}
             onChange={(e) => setSelectedLanguage(e.target.value)}
             className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            title="Pick a language, then Load — merges admin favourites and sport label hints for that language"
           >
             {supportedLanguages.map(lang => (
               <option key={lang.code} value={lang.code}>{lang.name}</option>
@@ -911,20 +942,6 @@ export default function FavouritesSettings() {
               <option value="lastUsed">Recently Used</option>
               {activeTab === 'moveframes' && <option value="popular">Most Popular</option>}
             </select>
-          </div>
-        )}
-        {activeTab === 'sports' && (
-          <div className="flex gap-3 items-center">
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search sports..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
           </div>
         )}
       </div>
@@ -1150,13 +1167,32 @@ export default function FavouritesSettings() {
         <div className="space-y-6">
           {/* Instructions */}
           <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <Star className="w-5 h-5 text-yellow-600 fill-yellow-400 flex-shrink-0 mt-0.5" />
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-1">Select Your Favorite Sports</h3>
-                <p className="text-sm text-gray-700 mb-2">
-                  Choose up to 5 sports that you use most frequently. These will appear as quick-select icons when adding moveframes.
-                </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3">
+                <Star className="w-5 h-5 text-yellow-600 fill-yellow-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-1">Select Your Favorite Sports</h3>
+                  <p className="text-sm text-gray-700 mb-2">
+                    Choose up to 5 sports. They appear as quick-select icons when adding moveframes. Use{' '}
+                    <strong>Names</strong> on each sport to edit labels in all languages (English is required). Names in
+                    another language without a translation show the English name in <span className="text-red-600 font-semibold">red</span>.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-white/80 px-3 py-2">
+                <span className="text-xs font-medium text-gray-600">Preview labels:</span>
+                <select
+                  value={sportDisplayLanguage}
+                  onChange={(e) => setSportDisplayLanguage(e.target.value)}
+                  className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  title="Language used for sport names in the grid below"
+                >
+                  {supportedLanguages.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.name} ({lang.code.toUpperCase()})
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -1199,13 +1235,25 @@ export default function FavouritesSettings() {
                       )}
                       
                       {/* Sport Name */}
-                      <span
-                        className="flex-1 font-semibold text-gray-900 cursor-pointer"
-                        onDoubleClick={() => handleOpenSportTranslationDialog(sport)}
-                        title="Double click to edit translations"
-                      >
-                        {getSportLabel(sport)}
-                      </span>
+                      <div className="flex flex-1 items-center gap-2 min-w-0">
+                        <span
+                          className={`flex-1 font-semibold truncate cursor-pointer ${
+                            getSportDisplay(sport).isRed ? 'text-red-600' : 'text-gray-900'
+                          }`}
+                          onDoubleClick={() => handleOpenSportTranslationDialog(sport)}
+                          title="Double-click to edit names in all languages"
+                        >
+                          {getSportDisplay(sport).text}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSportTranslationDialog(sport)}
+                          className="flex-shrink-0 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md"
+                          title="Edit sport name in all languages"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      </div>
                       
                       {/* Reorder Buttons */}
                       <div className="flex items-center gap-1">
@@ -1279,65 +1327,69 @@ export default function FavouritesSettings() {
             </div>
             
             <p className="text-sm text-gray-600 mb-4">
-              Click on a sport to add it to your favorites. Toggle between emoji and icon display above.
+              Click the tile to add or remove a favorite. Use <strong>Names</strong> to edit labels in every language.
             </p>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
               {SPORTS_LIST.filter((sport) =>
                 searchQuery.trim() === '' ||
-                getSportLabel(sport).toLowerCase().includes(searchQuery.toLowerCase()) ||
+                getSportDisplay(sport).text.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 sport.toLowerCase().includes(searchQuery.toLowerCase())
               ).map((sport) => {
                 const isSelected = selectedSports.includes(sport);
-                // Use the showIconType instead of iconType from context
                 const icon = getSportIcon(sport, showIconType);
                 const isImage = icon.startsWith('/');
-                
+                const disp = getSportDisplay(sport);
+
                 return (
-                  <button
+                  <div
                     key={sport}
-                    onClick={() => toggleSport(sport)}
-                    className={`flex flex-col items-center justify-center p-2 rounded-lg border-2 transition-all ${
+                    className={`flex flex-col rounded-lg border-2 overflow-hidden transition-all ${
                       isSelected
                         ? 'border-blue-500 bg-blue-50 shadow-md'
                         : 'border-gray-300 bg-white hover:border-yellow-400 hover:bg-yellow-50'
                     }`}
-                    title={isSelected ? 'Remove from favorites' : 'Add to favorites'}
                   >
-                    {/* Icon */}
-                    {isImage ? (
-                      <div className="w-8 h-8 flex items-center justify-center mb-1 flex-shrink-0">
-                        <Image 
-                          src={icon} 
-                          alt={sport}
-                          width={32}
-                          height={32}
-                          className="object-contain"
-                          style={{ width: '32px', height: '32px' }}
-                        />
-                      </div>
-                    ) : (
-                      <div className="w-8 h-8 flex items-center justify-center text-xl mb-1 flex-shrink-0">
-                        {icon}
-                      </div>
-                    )}
-                    
-                    {/* Name */}
-                    <span
-                      className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2"
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenSportTranslationDialog(sport);
-                      }}
-                      title="Double click to edit translations"
+                    <button
+                      type="button"
+                      onClick={() => toggleSport(sport)}
+                      className="flex flex-col items-center justify-center p-2 flex-1 min-h-[72px]"
+                      title={isSelected ? 'Remove from favorites' : 'Add to favorites'}
                     >
-                      {getSportLabel(sport)}
-                    </span>
-                    
-                    {/* Selected Badge */}
-                    {isSelected && (
-                      <Star className="w-3 h-3 text-yellow-600 fill-yellow-400 mt-0.5" />
-                    )}
-                  </button>
+                      {isImage ? (
+                        <div className="w-8 h-8 flex items-center justify-center mb-1 flex-shrink-0">
+                          <Image
+                            src={icon}
+                            alt={sport}
+                            width={32}
+                            height={32}
+                            className="object-contain"
+                            style={{ width: '32px', height: '32px' }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-8 h-8 flex items-center justify-center text-xl mb-1 flex-shrink-0">
+                          {icon}
+                        </div>
+                      )}
+                      <span
+                        className={`text-[10px] font-medium text-center leading-tight line-clamp-2 ${
+                          disp.isRed ? 'text-red-600' : 'text-gray-800'
+                        }`}
+                      >
+                        {disp.text}
+                      </span>
+                      {isSelected && (
+                        <Star className="w-3 h-3 text-yellow-600 fill-yellow-400 mt-0.5" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSportTranslationDialog(sport)}
+                      className="text-[10px] py-1 px-1 bg-gray-50 border-t border-gray-200 text-indigo-600 hover:bg-indigo-50 font-medium"
+                    >
+                      Names
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -1350,14 +1402,6 @@ export default function FavouritesSettings() {
               className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-semibold"
             >
               Clear All
-            </button>
-            <button
-              onClick={handleLoadSportDefaults}
-              className="px-6 py-3 border border-blue-500 text-blue-600 rounded-lg hover:bg-blue-50 transition font-semibold flex items-center gap-2"
-              title="Load sports from Main Sports Mode in your current language"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
-              Load Sport Default
             </button>
           </div>
         </div>
@@ -1808,9 +1852,12 @@ export default function FavouritesSettings() {
       {showSportTranslationDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-semibold mb-2">Edit sport in all languages</h3>
+            <h3 className="text-xl font-semibold mb-2">Edit sport names (all languages)</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Sport: <strong>{getDefaultSportLabel(editingSportKey)}</strong>
+              Sport code: <strong>{editingSportKey}</strong>
+              <span className="block mt-1 text-red-700 font-medium">
+                English name is required. Leave other languages blank to show English in red for that language in the grid.
+              </span>
             </p>
             <div className="space-y-3">
               {supportedLanguages.map((lang) => (

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { X, LayoutGrid, CalendarDays, Trash2, Pencil, ArrowRightLeft } from 'lucide-react';
+import { X, LayoutGrid, CalendarDays, Trash2, Pencil, ArrowRightLeft, Clock3 } from 'lucide-react';
 type TemplateRow = {
   id: string;
   name: string;
@@ -82,6 +82,47 @@ function formatDay(d: string) {
   }
 }
 
+const ACTION_TIME_TAG = /\[ACTION_TIME\](\d{2}:\d{2})\[\/ACTION_TIME\]/;
+const ACTION_TITLE_TAG = /\[ACTION_TITLE\]([\s\S]*?)\[\/ACTION_TITLE\]/;
+
+function extractActionStartTime(rawDescription: string | null | undefined): string {
+  if (!rawDescription) return '';
+  const m = rawDescription.match(ACTION_TIME_TAG);
+  return m?.[1] ?? '';
+}
+
+function stripActionTimeTag(rawDescription: string | null | undefined): string {
+  if (!rawDescription) return '';
+  return rawDescription.replace(ACTION_TIME_TAG, '').trim();
+}
+
+function extractActionShortTitle(rawDescription: string | null | undefined): string {
+  if (!rawDescription) return '';
+  const m = rawDescription.match(ACTION_TITLE_TAG);
+  return (m?.[1] || '').trim();
+}
+
+function stripActionTitleTag(rawDescription: string | null | undefined): string {
+  if (!rawDescription) return '';
+  return rawDescription.replace(ACTION_TITLE_TAG, '').trim();
+}
+
+function stripActionMetaTags(rawDescription: string | null | undefined): string {
+  return stripActionTitleTag(stripActionTimeTag(rawDescription || ''));
+}
+
+function withActionMetaTags(description: string, startTime: string, shortTitle: string): string {
+  const clean = stripActionMetaTags(description).trim();
+  const time = startTime.trim();
+  const title = shortTitle.trim();
+  const tags: string[] = [];
+  if (title) tags.push(`[ACTION_TITLE]${title}[/ACTION_TITLE]`);
+  if (time) tags.push(`[ACTION_TIME]${time}[/ACTION_TIME]`);
+  if (tags.length === 0) return clean;
+  const meta = tags.join('\n');
+  return clean ? `${clean}\n${meta}` : meta;
+}
+
 type Props = {
   isOpen: boolean;
   onClose: () => void;
@@ -104,10 +145,13 @@ export default function InsertActionsModal({
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState<'grid' | 'timeline'>('grid');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showAddPanel, setShowAddPanel] = useState(true);
 
   const [dateStr, setDateStr] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [description, setDescription] = useState('');
+  const [shortTitle, setShortTitle] = useState('');
+  const [startTime, setStartTime] = useState('');
   const [textColor, setTextColor] = useState('#111827');
   const [bgColor, setBgColor] = useState('#f1f5f9');
   const [url, setUrl] = useState('');
@@ -158,6 +202,8 @@ export default function InsertActionsModal({
   const resetForm = () => {
     setEditingId(null);
     setDescription('');
+    setShortTitle('');
+    setStartTime('');
     setUrl('');
     setTextColor('#111827');
     setBgColor('#f1f5f9');
@@ -178,7 +224,7 @@ export default function InsertActionsModal({
     const body = {
       workoutDayId,
       templateId,
-      description,
+      description: withActionMetaTags(description, startTime, shortTitle),
       textColor,
       backgroundColor: bgColor,
       url: url.trim() || null,
@@ -219,7 +265,9 @@ export default function InsertActionsModal({
   const startEdit = (row: ActionRow) => {
     setEditingId(row.id);
     setTemplateId(row.templateId || '');
-    setDescription(row.description || '');
+    setDescription(stripActionMetaTags(row.description || ''));
+    setShortTitle(extractActionShortTitle(row.description || ''));
+    setStartTime(extractActionStartTime(row.description || ''));
     setTextColor(row.textColor || '#111827');
     setBgColor(row.backgroundColor || '#f1f5f9');
     setUrl(row.url || '');
@@ -304,25 +352,36 @@ export default function InsertActionsModal({
           <div>
             <h2 className="text-lg font-bold text-gray-900">Action settings</h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-200"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowAddPanel((prev) => !prev)}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg text-red-800 hover:bg-red-50"
+              title={showAddPanel ? 'Hide Add panel' : 'Show Add panel'}
+            >
+              {showAddPanel ? 'Hide Add panel' : 'Show Add panel'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-gray-200"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
-          <form
-            onSubmit={handleSubmit}
-            className="rounded-lg border border-gray-200 p-4 space-y-3 bg-slate-50/80"
-          >
+          {showAddPanel && (
+            <form
+              onSubmit={handleSubmit}
+              className="rounded-lg border border-gray-200 p-4 space-y-3 bg-slate-50/80"
+            >
             <h3 className="font-semibold text-gray-800">
               {editingId ? 'Edit planned action' : 'Add planned action'}
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   Date
@@ -365,6 +424,19 @@ export default function InsertActionsModal({
                   placeholder="https://"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Title
+                </label>
+                <input
+                  type="text"
+                  value={shortTitle}
+                  onChange={(e) => setShortTitle(e.target.value)}
+                  className="w-full border rounded px-2 py-1.5 text-sm"
+                  placeholder="Short title"
+                  maxLength={80}
+                />
+              </div>
               <div className="md:col-span-2">
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   Description (this occurrence)
@@ -399,6 +471,21 @@ export default function InsertActionsModal({
                     className="h-9 w-14 border rounded cursor-pointer"
                   />
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Start time
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <Clock3 className="w-4 h-4 text-gray-500" />
+                    <input
+                      type="time"
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                      className="h-9 border rounded px-2 text-sm"
+                      step={60}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
             {selectedTemplate && (
@@ -414,6 +501,18 @@ export default function InsertActionsModal({
                   style={{ backgroundColor: selectedTemplate.color }}
                 />
                 <span className="font-medium">{selectedTemplate.name}</span>
+                {shortTitle.trim() && (
+                  <span
+                    className="px-2 py-0.5 rounded border text-xs font-medium"
+                    style={{
+                      backgroundColor: bgColor || '#f1f5f9',
+                      color: textColor || '#111827',
+                      borderColor: selectedTemplate.color || '#cbd5e1',
+                    }}
+                  >
+                    {shortTitle.trim()}
+                  </span>
+                )}
               </div>
             )}
             <div className="flex gap-2">
@@ -433,7 +532,8 @@ export default function InsertActionsModal({
                 </button>
               )}
             </div>
-          </form>
+            </form>
+          )}
 
           <div className="flex flex-wrap items-center gap-2 justify-between">
             <div className="flex rounded-lg border border-gray-300 overflow-hidden">
@@ -547,6 +647,7 @@ export default function InsertActionsModal({
                     <th className="p-2 text-left">Icon</th>
                     <th className="p-2 text-left">Name</th>
                     <th className="p-2 text-left">Date</th>
+                    <th className="p-2 text-left">Description</th>
                     <th className="p-2 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -570,13 +671,26 @@ export default function InsertActionsModal({
                       <td className="p-2">
                         <span
                           className="font-medium cursor-help border-b border-dotted border-gray-400"
-                          title={row.description || ''}
+                          title={stripActionMetaTags(row.description || '')}
                         >
                           {row.nameSnapshot}
                         </span>
                       </td>
                       <td className="p-2 whitespace-nowrap">
                         {formatDay(row.workoutDay.date)}
+                        {extractActionStartTime(row.description || '') && (
+                          <span className="ml-2 text-xs text-gray-500">
+                            {extractActionStartTime(row.description || '')}
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-2 max-w-[320px]">
+                        <span
+                          className="block truncate text-gray-700"
+                          title={stripActionTimeTag(row.description || '')}
+                        >
+                          {stripActionMetaTags(row.description || '') || '—'}
+                        </span>
                       </td>
                       <td className="p-2 text-right space-x-1">
                         <button
@@ -631,10 +745,27 @@ export default function InsertActionsModal({
                           color: row.textColor || '#111827',
                           borderColor: row.colorSnapshot || '#cbd5e1',
                         }}
-                        title={row.description || row.nameSnapshot}
+                        title={stripActionMetaTags(row.description || '') || row.nameSnapshot}
                       >
                         <span className="mr-1">{row.iconSnapshot}</span>
                         <span className="font-medium">{row.nameSnapshot}</span>
+                        {extractActionShortTitle(row.description || '') && (
+                          <span
+                            className="ml-2 inline-block rounded px-1.5 py-0.5 text-xs font-medium border"
+                            style={{
+                              backgroundColor: row.backgroundColor || '#f8fafc',
+                              color: row.textColor || '#111827',
+                              borderColor: row.colorSnapshot || '#cbd5e1',
+                            }}
+                          >
+                            {extractActionShortTitle(row.description || '')}
+                          </span>
+                        )}
+                        {extractActionStartTime(row.description || '') && (
+                          <div className="text-xs mt-1 opacity-80">
+                            {extractActionStartTime(row.description || '')}
+                          </div>
+                        )}
                         {row.url && (
                           <a
                             href={row.url}

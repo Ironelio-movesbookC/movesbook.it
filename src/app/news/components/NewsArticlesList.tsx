@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import Image from 'next/image';
 import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag, ThumbsUp, Share2 } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
@@ -31,6 +32,58 @@ export type ArticlePasted = OGPData & {
   createdBySuperAdmin?: boolean;
 };
 export type ArticleTyped = { id: string; description: string };
+
+const FALLBACK_NEWS_TOPICS_LIST = [
+  'News',
+  'Sport',
+  'Events',
+  'Nutrition',
+  'Training',
+  'Medicine',
+  'Equipments',
+  'Lounge music',
+] as const;
+
+function hasAnyVisibilitySettings(a: ArticlePasted): boolean {
+  const v = a.visibility;
+  if (!v) return false;
+  const hasSelections =
+    (v.userTypes?.length ?? 0) > 0 ||
+    (v.countries?.length ?? 0) > 0 ||
+    (v.languages?.length ?? 0) > 0 ||
+    (v.sports?.length ?? 0) > 0;
+  const hasDuration = v.expiresAt != null && String(v.expiresAt).trim() !== '';
+  return hasSelections || hasDuration;
+}
+
+function isNotExpired(a: ArticlePasted): boolean {
+  const exp = a.visibility?.expiresAt;
+  if (exp == null || String(exp).trim() === '') return true;
+  try {
+    return new Date(exp).getTime() >= Date.now();
+  } catch {
+    return true;
+  }
+}
+
+function isExpiredOrNoExpiry(a: ArticlePasted): boolean {
+  const exp = a.visibility?.expiresAt;
+  if (exp == null || String(exp).trim() === '') return true;
+  try {
+    return new Date(exp).getTime() < Date.now();
+  } catch {
+    return true;
+  }
+}
+
+function hasExpirationDateSet(a: ArticlePasted): boolean {
+  const exp = a.visibility?.expiresAt;
+  return exp != null && String(exp).trim() !== '';
+}
+
+function isActiveForNormalUser(a: ArticlePasted): boolean {
+  return hasExpirationDateSet(a) && isNotExpired(a) && !a.deletedAt && hasAnyVisibilitySettings(a);
+}
 
 /** Number of OGP cards per row (each row = 6 OGPs). */
 const OGPS_PER_ROW = 6;
@@ -133,54 +186,14 @@ export default function NewsArticlesList({
   viewerScopedOgpList = false,
 }: NewsArticlesListProps) {
   const { t } = useLanguage();
-  const topicsList = topicsProp.length > 0 ? topicsProp : ['News', 'Sport', 'Events', 'Nutrition', 'Training', 'Medicine', 'Equipments', 'Lounge music'];
-  const canEditAsCreator = (a: ArticlePasted) => a.userId === currentUserId || a.createdByCurrentUser === true;
-
-  const hasAnyVisibilitySettings = (a: ArticlePasted): boolean => {
-    const v = a.visibility;
-    if (!v) return false;
-    const hasSelections =
-      (v.userTypes?.length ?? 0) > 0 ||
-      (v.countries?.length ?? 0) > 0 ||
-      (v.languages?.length ?? 0) > 0 ||
-      (v.sports?.length ?? 0) > 0;
-    const hasDuration =
-      v.expiresAt != null &&
-      String(v.expiresAt).trim() !== '';
-    return hasSelections || hasDuration;
-  };
-
-  /** True if the OGP has no expiry or expiry is in the future (respects News Setting duration in All/default topics). */
-  const isNotExpired = (a: ArticlePasted): boolean => {
-    const exp = a.visibility?.expiresAt;
-    if (exp == null || String(exp).trim() === '') return true;
-    try {
-      return new Date(exp).getTime() >= Date.now();
-    } catch {
-      return true;
-    }
-  };
-
-  /** True if the OGP is expired OR expiry is not set (blank). Used for super-admin visual highlighting. */
-  const isExpiredOrNoExpiry = (a: ArticlePasted): boolean => {
-    const exp = a.visibility?.expiresAt;
-    if (exp == null || String(exp).trim() === '') return true;
-    try {
-      return new Date(exp).getTime() < Date.now();
-    } catch {
-      return true;
-    }
-  };
-
-  /** True if the OGP has an expiration date set in News Setting (non-blank). When false, treat as "expired" for default filtering. */
-  const hasExpirationDateSet = (a: ArticlePasted): boolean => {
-    const exp = a.visibility?.expiresAt;
-    return exp != null && String(exp).trim() !== '';
-  };
-
-  /** Base "active" condition for normal users (non-expired, non-deleted, has settings, and has an explicit expiry). */
-  const isActiveForNormalUser = (a: ArticlePasted): boolean =>
-    hasExpirationDateSet(a) && isNotExpired(a) && !a.deletedAt && hasAnyVisibilitySettings(a);
+  const topicsList = useMemo(
+    () => (topicsProp.length > 0 ? topicsProp : [...FALLBACK_NEWS_TOPICS_LIST]),
+    [topicsProp]
+  );
+  const canEditAsCreator = useCallback(
+    (a: ArticlePasted) => a.userId === currentUserId || a.createdByCurrentUser === true,
+    [currentUserId]
+  );
 
   const translateTopic = useCallback((topic: string) => {
     const key = NEWS_TOPIC_KEYS[topic];
@@ -440,7 +453,16 @@ export default function NewsArticlesList({
     }
 
     return base;
-  }, [pasted, activeTopic, topicNamesCreatedByNormalUsers, adminContext, canDeleteOgp, isSuperAdmin, viewerScopedOgpList]);
+  }, [
+    pasted,
+    activeTopic,
+    topicNamesCreatedByNormalUsers,
+    adminContext,
+    canDeleteOgp,
+    isSuperAdmin,
+    viewerScopedOgpList,
+    canEditAsCreator,
+  ]);
 
   /**
    * True when the current UI should allow filtering to "my" OGPs.
@@ -509,6 +531,7 @@ export default function NewsArticlesList({
     showOnlyLiked,
     likesMap,
     isSuperAdmin,
+    canEditAsCreator,
   ]);
 
   const sorted = useMemo(() => {
@@ -603,7 +626,7 @@ export default function NewsArticlesList({
       .then((r) => r.json())
       .then((data) => setLikesMap(data ?? {}))
       .catch(() => setLikesMap({}));
-  }, [allArticleIds.join(','), adminContext]);
+  }, [allArticleIds, adminContext]);
 
   const handleLikeClick = useCallback(async (articleId: string) => {
     const token = typeof window !== 'undefined'
@@ -948,11 +971,16 @@ export default function NewsArticlesList({
                         onClick={(e) => e.stopPropagation()}
                         aria-label={`Open article: ${a.title || a.url}`}
                       >
-                        <img
-                          src={a.image}
-                          alt=""
-                          className={`w-full h-28 object-cover rounded ${a.deletedAt ? 'opacity-75' : ''}`}
-                        />
+                        <span className={`relative block w-full h-28 rounded overflow-hidden ${a.deletedAt ? 'opacity-75' : ''}`}>
+                          <Image
+                            src={a.image}
+                            alt=""
+                            fill
+                            className="object-cover"
+                            sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 16vw"
+                            unoptimized
+                          />
+                        </span>
                       </a>
                     )}
                     {/* OGP topic name + creator username - identifies which topic this article belongs to and who posted it */}
@@ -1292,8 +1320,8 @@ export default function NewsArticlesList({
                       <p className="text-gray-500">No creator details available.</p>
                     )}
                   </dl>
-                  <div className="flex-shrink-0">
-                    <img
+                  <div className="flex-shrink-0 relative w-24 h-24 bg-gray-200 border border-gray-300 overflow-hidden">
+                    <Image
                       src={
                         creatorInfo.image && creatorInfo.image.trim() !== ''
                           ? creatorInfo.image
@@ -1302,7 +1330,10 @@ export default function NewsArticlesList({
                             : '/male_default.jpg'
                       }
                       alt=""
-                      className="w-24 h-24 object-cover bg-gray-200 border border-gray-300"
+                      fill
+                      className="object-cover"
+                      sizes="96px"
+                      unoptimized
                     />
                   </div>
                 </div>
@@ -1350,18 +1381,28 @@ export default function NewsArticlesList({
                       className="block w-full focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-inset cursor-pointer"
                       aria-label={`Open article: ${article.title || article.url}`}
                     >
-                      <img
-                        src={article.image}
-                        alt=""
-                        className="w-full max-h-64 object-cover"
-                      />
+                      <span className="relative block w-full h-64 max-h-64">
+                        <Image
+                          src={article.image}
+                          alt=""
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 512px) 100vw, 512px"
+                          unoptimized
+                        />
+                      </span>
                     </a>
                   ) : (
-                    <img
-                      src={article.image}
-                      alt=""
-                      className="w-full max-h-64 object-cover"
-                    />
+                    <span className="relative block w-full h-64 max-h-64">
+                      <Image
+                        src={article.image}
+                        alt=""
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 512px) 100vw, 512px"
+                        unoptimized
+                      />
+                    </span>
                   )
                 )}
                 <div className="p-4">

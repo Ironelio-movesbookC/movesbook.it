@@ -65,6 +65,26 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const buildTranslationFields = (technique: any) => {
+      let descriptionTranslations: string | null = null;
+      let nameTranslations: string | null = null;
+      if (technique.descriptionByLanguage && typeof technique.descriptionByLanguage === 'object') {
+        const cleaned: Record<string, string> = {};
+        for (const [k, v] of Object.entries(technique.descriptionByLanguage)) {
+          if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim().slice(0, 2000);
+        }
+        if (Object.keys(cleaned).length > 0) descriptionTranslations = JSON.stringify(cleaned);
+      }
+      if (technique.titleByLanguage && typeof technique.titleByLanguage === 'object') {
+        const cleaned: Record<string, string> = {};
+        for (const [k, v] of Object.entries(technique.titleByLanguage)) {
+          if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim().slice(0, 255);
+        }
+        if (Object.keys(cleaned).length > 0) nameTranslations = JSON.stringify(cleaned);
+      }
+      return { descriptionTranslations, nameTranslations };
+    };
+
     // Create new techniques (only user's techniques)
     const createdTechniques = [];
     for (let i = 0; i < userTechniques.length; i++) {
@@ -72,12 +92,15 @@ export async function POST(request: NextRequest) {
       // Convert sports array to comma-separated string
       const sportsString = Array.isArray(technique.sports) ? technique.sports.join(',') : '';
       console.log(`  📝 Saving technique: ${technique.title || technique.name} | Sports: ${sportsString} | Order: ${technique.order !== undefined ? technique.order : i}`);
-      
+      const { descriptionTranslations, nameTranslations } = buildTranslationFields(technique);
+
       const created = await prisma.executionTechnique.create({
         data: {
           userId: decoded.userId,
           name: technique.title || technique.name,
           description: technique.description || '',
+          descriptionTranslations,
+          nameTranslations,
           color: technique.color,
           sports: sportsString,
           displayOrder: technique.order !== undefined ? technique.order : i, // Use order from client or index
