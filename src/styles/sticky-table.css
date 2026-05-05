@@ -214,8 +214,8 @@ th.sticky-header-7 {
   left: 420px !important;
 }
 
-/* Column 8 - Workouts (480px = 300 + 120 + 60, width: 80px) */
-/* Only used for Sections B and C (Dayname + Match done + Workouts) */
+/* Column 8 - Workouts (480px = 300 + 120 + 60; cell width matches COL_WIDTHS.workouts, typically 120px) */
+/* Sections B and C: Dayname + Match done + Workouts — body cells must use sticky-col-8, not sticky-col-7 */
 td.sticky-col-8,
 th.sticky-header-8 { 
   left: 480px !important;

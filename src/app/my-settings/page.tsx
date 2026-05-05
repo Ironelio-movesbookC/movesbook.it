@@ -2,18 +2,33 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Download, Palette, Settings as SettingsIcon, Star, Trophy, Grid } from 'lucide-react';
+import { ArrowLeft, Download, Palette, Settings as SettingsIcon, Star, Trophy, Grid, Layers } from 'lucide-react';
 import BackgroundsColorsSettings from '@/components/settings/BackgroundsColorsSettings';
 import ToolsSettings from '@/components/settings/ToolsSettings';
 import FavouritesSettings from '@/components/settings/FavouritesSettings';
 import MyBestSettings from '@/components/settings/MyBestSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
 
-type SettingsSection = 'backgrounds' | 'tools' | 'favourites' | 'mybest' | 'grid';
+type SettingsSection = 'backgrounds' | 'periodization' | 'tools' | 'favourites' | 'mybest' | 'grid';
+
+const VALID_MY_SETTINGS_SECTIONS: SettingsSection[] = [
+  'grid',
+  'backgrounds',
+  'periodization',
+  'tools',
+  'favourites',
+  'mybest',
+];
 
 export default function PersonalSettingsPage() {
   const router = useRouter();
-  const [activeSection, setActiveSection] = useState<SettingsSection>('backgrounds');
+  const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
+    if (typeof window === 'undefined') return 'backgrounds';
+    const saved = localStorage.getItem('my_settings_active_section') as SettingsSection | null;
+    return saved && VALID_MY_SETTINGS_SECTIONS.includes(saved) ? saved : 'backgrounds';
+  });
+  /** Mirrors /settings: staff/super-admin users have userType ADMIN and get full Tools / periodization controls. */
+  const [sessionUser, setSessionUser] = useState<{ userType?: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [userSettings, setUserSettings] = useState<any>(null);
   const [userLanguage, setUserLanguage] = useState('en');
@@ -22,6 +37,21 @@ export default function PersonalSettingsPage() {
   useEffect(() => {
     loadUserSettings();
   }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('user');
+      setSessionUser(raw ? JSON.parse(raw) : null);
+    } catch {
+      setSessionUser(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('my_settings_active_section', activeSection);
+  }, [activeSection]);
+
+  const toolsIsAdmin = sessionUser?.userType === 'ADMIN';
 
   const loadUserSettings = async () => {
     try {
@@ -137,6 +167,7 @@ export default function PersonalSettingsPage() {
   const settingsSections = [
     { id: 'grid' as SettingsSection, label: 'Grid Display Mode', icon: Grid },
     { id: 'backgrounds' as SettingsSection, label: 'Backgrounds & Colors', icon: Palette },
+    { id: 'periodization' as SettingsSection, label: 'Periodization', icon: Layers },
     { id: 'tools' as SettingsSection, label: 'Tools', icon: SettingsIcon },
     { id: 'favourites' as SettingsSection, label: 'Favourites', icon: Star },
     { id: 'mybest' as SettingsSection, label: 'My Best', icon: Trophy },
@@ -236,7 +267,22 @@ export default function PersonalSettingsPage() {
             {/* Settings Content */}
             <div className="flex-1 p-8 bg-white overflow-y-auto" style={{ maxHeight: 'calc(100vh - 280px)' }}>
               {activeSection === 'backgrounds' && <BackgroundsColorsSettings />}
-              {activeSection === 'tools' && <ToolsSettings isAdmin={false} userType="ATHLETE" />}
+              {activeSection === 'periodization' && (
+                <ToolsSettings
+                  isAdmin={toolsIsAdmin}
+                  userType={sessionUser?.userType ?? 'ATHLETE'}
+                  mode="tools"
+                  periodizationOnly
+                  initialTab="periods"
+                />
+              )}
+              {activeSection === 'tools' && (
+                <ToolsSettings
+                  isAdmin={toolsIsAdmin}
+                  userType={sessionUser?.userType ?? 'ATHLETE'}
+                  mode="tools"
+                />
+              )}
               {activeSection === 'favourites' && <FavouritesSettings />}
               {activeSection === 'mybest' && <MyBestSettings />}
               {activeSection === 'grid' && <GridDisplaySettings />}

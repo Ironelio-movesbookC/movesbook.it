@@ -19,7 +19,15 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { name, description, color, descriptionTranslations: dtRaw, descriptionByLanguage } = body;
+    const {
+      name,
+      description,
+      color,
+      descriptionTranslations: dtRaw,
+      descriptionByLanguage,
+      nameTranslations: ntRaw,
+      titleByLanguage
+    } = body;
 
     let descriptionTranslations: string | null | undefined = undefined;
     if (descriptionByLanguage !== undefined && descriptionByLanguage !== null) {
@@ -33,6 +41,17 @@ export async function PUT(
         typeof dtRaw === 'string' && dtRaw ? dtRaw : null;
     }
 
+    let nameTranslations: string | null | undefined = undefined;
+    if (titleByLanguage !== undefined && titleByLanguage !== null) {
+      const cleaned: Record<string, string> = {};
+      for (const [k, v] of Object.entries(titleByLanguage as Record<string, unknown>)) {
+        if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim().slice(0, 255);
+      }
+      nameTranslations = Object.keys(cleaned).length > 0 ? JSON.stringify(cleaned) : null;
+    } else if (ntRaw !== undefined) {
+      nameTranslations = typeof ntRaw === 'string' && ntRaw ? ntRaw : null;
+    }
+
     const period = await prisma.period.update({
       where: {
         id: params.id,
@@ -42,7 +61,8 @@ export async function PUT(
         name,
         description,
         color,
-        ...(descriptionTranslations !== undefined && { descriptionTranslations })
+        ...(descriptionTranslations !== undefined && { descriptionTranslations }),
+        ...(nameTranslations !== undefined && { nameTranslations })
       }
     });
 

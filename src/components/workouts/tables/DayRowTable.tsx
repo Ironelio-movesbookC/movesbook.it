@@ -305,8 +305,15 @@ export default function DayRowTable({
       )}
 
       {/* Workout Sessions - Show numbers with symbols for each workout + Day Description */}
+      {/* Sticky index must match DayTableView headers: A→6, B/C→8 (after dayname + match done), D→7 */}
       <td 
-        className={`border border-gray-200 px-1 py-2 text-center ${activeSection === 'A' ? 'sticky-col-6' : 'sticky-col-7'}`}
+        className={`border border-gray-200 px-1 py-2 text-center w-[120px] min-w-[120px] ${
+          activeSection === 'A'
+            ? 'sticky-col-6'
+            : activeSection === 'B' || activeSection === 'C'
+              ? 'sticky-col-8'
+              : 'sticky-col-7'
+        }`}
         style={{ backgroundColor: bgStyle }}
         onClick={(e) => e.stopPropagation()} // Prevent row click when clicking on workout numbers
       >

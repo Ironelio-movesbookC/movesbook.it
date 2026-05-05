@@ -1,6 +1,8 @@
 import { PrismaClient, UserType, SportType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { serializeMultiLanguageContent } from '../src/lib/news/contentParser';
+import { INFO_REPS_DEFAULT_EN, INFO_REPS_TRANSLATION_KEY } from '../src/constants/infoRepsLongText';
+import { AUTO_PROCESS_INFO_DEFAULT_EN, AUTO_PROCESS_INFO_KEY } from '../src/constants/autoProcessInfoLongText';
 
 const prisma = new PrismaClient() as any;
 
@@ -401,6 +403,20 @@ async function seedTranslations() {
         it: 'Integra senza problemi con indossabili fitness e smartwatch popolari. Importa automaticamente dati di allenamento da Garmin, Fitbit, Apple Watch, Polar e molti altri dispositivi. Sincronizza frequenza cardiaca, distanza, ritmo e altre metriche direttamente sul tuo profilo Movesbook. I dispositivi compatibili vengono continuamente aggiunti per supportare la tua tecnologia fitness preferita.',
         es: 'Integra sin problemas con wearables de fitness populares y relojes inteligentes. Importa automáticamente datos de entrenamiento desde Garmin, Fitbit, Apple Watch, Polar y muchos más dispositivos. Sincroniza frecuencia cardíaca, distancia, ritmo y otras métricas directamente a tu perfil de Movesbook. Los dispositivos compatibles se agregan continuamente para admitir tu tecnología de fitness favorita.',
       }
+    },
+    {
+      key: INFO_REPS_TRANSLATION_KEY,
+      category: 'social',
+      values: {
+        en: INFO_REPS_DEFAULT_EN,
+      },
+    },
+    {
+      key: AUTO_PROCESS_INFO_KEY,
+      category: 'management',
+      values: {
+        en: AUTO_PROCESS_INFO_DEFAULT_EN,
+      },
     },
   ];
 
