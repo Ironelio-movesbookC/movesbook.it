@@ -150,6 +150,28 @@ form select {
   margin-bottom: 10px;
 }
 
+.club-typology-form input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='file']),
+.club-typology-form select,
+.club-typology-form textarea {
+  color: #111827 !important;
+  caret-color: #111827;
+  background-color: #ffffff;
+}
+
+.club-typology-form input::placeholder,
+.club-typology-form textarea::placeholder {
+  color: #9ca3af !important;
+}
+
+.club-typology-form option {
+  color: #111827;
+  background-color: #ffffff;
+}
+
+.club-typology-form input[type='date']::-webkit-datetime-edit {
+  color: #111827;
+}
+
 /* Workout Elements with Custom Borders */
 .workout-day,
 .workout-session,
