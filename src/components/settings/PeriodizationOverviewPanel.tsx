@@ -94,6 +94,12 @@ function summaryIndexForSegment(summarySegments: WeekSeg[], s: WeekSeg): number 
   );
 }
 
+/** Resolve HTML notes for a period id (keys are always strings in JSON). */
+function notesHtmlForPeriod(notes: Record<string, string>, periodId: string): string {
+  const raw = notes[String(periodId)];
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
 export default function PeriodizationOverviewPanel({ periods }: { periods: Period[] }) {
   const [loading, setLoading] = useState(true);
   const [plan, setPlan] = useState<any>(null);
@@ -106,6 +112,8 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
   const [dragPreviewB, setDragPreviewB] = useState<number | null>(null);
 
   const [detailSeg, setDetailSeg] = useState<WeekSeg | null>(null);
+  /** Timeline segment click opens notes-first popup (matches Periodization tab). */
+  const [periodNotesModalSeg, setPeriodNotesModalSeg] = useState<WeekSeg | null>(null);
   const [startDateModal, setStartDateModal] = useState<{
     open: boolean;
     dateIso: string;
@@ -184,7 +192,8 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
         }
         const ts = s.toolsSettings || {};
         const p = ts.periodization || {};
-        if (p.notesByPeriodId) setNotesByPeriodId({ ...p.notesByPeriodId });
+        const n = p.notesByPeriodId;
+        setNotesByPeriodId(n && typeof n === 'object' ? { ...(n as Record<string, string>) } : {});
         if (p.attachmentsByPeriodId && typeof p.attachmentsByPeriodId === 'object') {
           setAttachmentsByPeriodId({ ...(p.attachmentsByPeriodId as Record<string, PeriodizationAttachmentMeta[]>) });
         } else {
@@ -199,6 +208,26 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  const refreshPeriodizationNotes = useCallback(async () => {
+    try {
+      const res = await fetch('/api/user/settings', { headers: getAuthHeaders() });
+      if (!res.ok) return;
+      const s = await res.json();
+      const p = s.toolsSettings?.periodization || {};
+      const n = p.notesByPeriodId;
+      setNotesByPeriodId(n && typeof n === 'object' ? { ...(n as Record<string, string>) } : {});
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  /** Fresh notes when opening a modal (after Save/Apply on another tab or persistence race). */
+  useEffect(() => {
+    const open = periodNotesModalSeg || detailSeg;
+    if (!open) return;
+    void refreshPeriodizationNotes();
+  }, [detailSeg, periodNotesModalSeg, refreshPeriodizationNotes]);
 
   const weeks = useMemo(() => {
     const w = plan?.weeks || [];
@@ -465,10 +494,10 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
         if (!d || d.mode !== 'segment') return;
 
         if (!moved) {
-          // Treat as a click → open modal
+          // Treat as a click → Periodization notes popup
           const g = segGestureRef.current;
           segGestureRef.current = null;
-          if (g) setDetailSeg(g.seg);
+          if (g) setPeriodNotesModalSeg(g.seg);
           return;
         }
 
@@ -496,7 +525,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
       suppressNextSegmentClickRef.current = false;
       return;
     }
-    setDetailSeg(seg);
+    setPeriodNotesModalSeg(seg);
   }, []);
 
   const callYearlyApi = async (body: Record<string, unknown>) => {
@@ -693,6 +722,15 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
     return () => window.removeEventListener('keydown', onKey);
   }, [resetAllConfirm]);
 
+  useEffect(() => {
+    if (!periodNotesModalSeg) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPeriodNotesModalSeg(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [periodNotesModalSeg]);
+
   if (!getAuthToken()) {
     return <p className="text-sm text-gray-500">Sign in to view yearly periodization.</p>;
   }
@@ -755,25 +793,55 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
             </button>
           </div>
 
-          {/* Month ruler */}
-          <div className="relative h-8 ml-28 border-b border-gray-200 dark:border-gray-600">
-            {ticks.map((t, i) => (
-              <span
-                key={i}
-                className="absolute text-[10px] text-gray-500 dark:text-gray-400 whitespace-nowrap -translate-x-1/2"
-                style={{ left: `${t.leftPct}%`, top: 0 }}
-              >
-                {t.label}
-              </span>
-            ))}
+          {/* Timeline grid: columns match [lead trash][label w-24][track][trail trash] so Summary aligns with period rows */}
+          {/* Month ruler — ticks only above the track column */}
+          <div className="grid grid-cols-[auto_6rem_minmax(0,1fr)_auto] gap-x-2 items-end border-b border-gray-200 dark:border-gray-600 pb-1">
+            <button
+              type="button"
+              tabIndex={-1}
+              className="pointer-events-none invisible flex-shrink-0 p-1"
+              aria-hidden
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <div className="w-24 flex-shrink-0" aria-hidden />
+            <div className="relative h-8 min-w-0">
+              {ticks.map((t, i) => (
+                <span
+                  key={i}
+                  className="absolute text-[10px] text-gray-500 dark:text-gray-400 whitespace-nowrap -translate-x-1/2"
+                  style={{ left: `${t.leftPct}%`, top: 0 }}
+                >
+                  {t.label}
+                </span>
+              ))}
+            </div>
+            <button
+              type="button"
+              tabIndex={-1}
+              className="pointer-events-none invisible flex-shrink-0 p-1"
+              aria-hidden
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
 
           {/* Summary strip — drag blue handles to move period boundaries (clamped so prev/next blocks keep ≥1 week) */}
-          <div className="flex items-center gap-2">
-            <span className="w-24 flex-shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400">Summary</span>
+          <div className="grid grid-cols-[auto_6rem_minmax(0,1fr)_auto] gap-x-2 items-center">
+            <button
+              type="button"
+              tabIndex={-1}
+              className="pointer-events-none invisible flex-shrink-0 p-1"
+              aria-hidden
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <span className="w-24 flex-shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400">
+              Summary
+            </span>
             <div
               data-timeline-track
-              className="flex-1 relative h-8 bg-gray-100 dark:bg-gray-800 rounded-md overflow-visible min-w-0"
+              className="group relative h-8 bg-gray-100 dark:bg-gray-800 rounded-md overflow-visible min-w-0"
             >
               {summarySegments.map((s, i) => (
                 <button
@@ -782,7 +850,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                   title={s.name}
                   onClick={() => handleSegmentClick(s)}
                   onPointerDown={(e) => startSegmentDrag(e, i, s)}
-                  className="absolute top-0 h-full border border-white/40 dark:border-gray-900/40 hover:brightness-110 cursor-grab active:cursor-grabbing z-10 select-none touch-none"
+                  className="absolute top-0 h-full border-0 hover:brightness-110 cursor-grab active:cursor-grabbing z-10 select-none touch-none"
                   style={{
                     ...segStyle(s.startWeek, s.endWeek, weekCount),
                     backgroundColor: s.color
@@ -803,7 +871,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                     style={{ left: `${(s.endWeek / weekCount) * 100}%` }}
                     onPointerDown={(e) => startBoundaryDrag(e, i)}
                   >
-                    <span className="w-1 h-5 rounded bg-blue-900 dark:bg-blue-200 shadow-sm" />
+                    <span className="w-1 h-5 rounded bg-blue-900 dark:bg-blue-200 shadow-sm opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none" />
                   </div>
                 ))}
               {dragPreviewB !== null && (
@@ -815,7 +883,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
             </div>
             <button
               type="button"
-              className="p-1.5 text-gray-400 hover:text-red-600"
+              className="p-1 text-gray-400 hover:text-red-600 flex-shrink-0"
               title="Clear summary (use per-row trash)"
               disabled
             >
@@ -826,7 +894,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
           {/* Per-period rows */}
           <div className="space-y-2">
             {periodRows.map(({ period, segments }) => (
-              <div key={period.id} className="flex items-center gap-2">
+              <div key={period.id} className="grid grid-cols-[auto_6rem_minmax(0,1fr)_auto] gap-x-2 items-center">
                 <button
                   type="button"
                   className="p-1 text-gray-400 hover:text-red-600 flex-shrink-0"
@@ -846,15 +914,8 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                 </div>
                 <div
                   data-timeline-track
-                  className="flex-1 relative h-10 bg-gray-100 dark:bg-gray-800 rounded-md overflow-visible min-w-0"
+                  className="group relative h-10 bg-gray-100 dark:bg-gray-800 rounded-md overflow-visible min-w-0"
                 >
-                  {Array.from({ length: weekCount }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="absolute top-0 bottom-0 w-px bg-gray-300/50 dark:bg-gray-600/50 pointer-events-none"
-                      style={{ left: `${(i / weekCount) * 100}%` }}
-                    />
-                  ))}
                   {segments.map((s, si) => {
                     const gIdx = summaryIndexForSegment(summarySegments, s);
                     return (
@@ -863,16 +924,13 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                           type="button"
                           onClick={() => handleSegmentClick(s)}
                           onPointerDown={(e) => startSegmentDrag(e, gIdx, s)}
-                          className="absolute top-1 bottom-1 rounded-sm border-2 border-white dark:border-gray-900 shadow-sm hover:brightness-110 cursor-grab active:cursor-grabbing flex items-center justify-center z-10 select-none touch-none"
+                          className="absolute top-1 bottom-1 rounded-sm border-0 shadow-none hover:brightness-110 cursor-grab active:cursor-grabbing z-10 select-none touch-none"
                           style={{
                             ...segStyle(s.startWeek, s.endWeek, weekCount),
                             backgroundColor: s.color
                           }}
                           title={`Weeks ${s.startWeek}–${s.endWeek}`}
-                        >
-                          <span className="w-1 h-6 self-center bg-blue-900/70 dark:bg-blue-200/80 rounded-sm mx-0.5" />
-                          <span className="w-1 h-6 self-center bg-blue-900/70 dark:bg-blue-200/80 rounded-sm mx-0.5" />
-                        </button>
+                        />
                         {gIdx > 0 && (
                           <div
                             role="slider"
@@ -885,7 +943,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                             style={{ left: `${(summarySegments[gIdx - 1].endWeek / weekCount) * 100}%` }}
                             onPointerDown={(e) => startBoundaryDrag(e, gIdx - 1)}
                           >
-                            <span className="w-1 h-5 rounded bg-blue-900 dark:bg-blue-200 shadow-sm" />
+                            <span className="w-1 h-5 rounded bg-blue-900 dark:bg-blue-200 shadow-sm opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none" />
                           </div>
                         )}
                         {gIdx >= 0 && gIdx < summarySegments.length - 1 && (
@@ -900,7 +958,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                             style={{ left: `${(summarySegments[gIdx].endWeek / weekCount) * 100}%` }}
                             onPointerDown={(e) => startBoundaryDrag(e, gIdx)}
                           >
-                            <span className="w-1 h-5 rounded bg-blue-900 dark:bg-blue-200 shadow-sm" />
+                            <span className="w-1 h-5 rounded bg-blue-900 dark:bg-blue-200 shadow-sm opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none" />
                           </div>
                         )}
                       </React.Fragment>
@@ -965,6 +1023,77 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
         </div>
       </div>
 
+      {/* Periodization notes (timeline segment click) */}
+      {periodNotesModalSeg && (
+        <div
+          className="fixed inset-0 z-[200000] flex items-center justify-center p-4 bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="overview-period-notes-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPeriodNotesModalSeg(null);
+          }}
+        >
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-lg w-full max-h-[min(80vh,560px)] flex flex-col border border-gray-200 dark:border-gray-700">
+            <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              <h2
+                id="overview-period-notes-title"
+                className="text-base font-semibold text-gray-900 dark:text-white pr-2"
+              >
+                Periodization notes
+              </h2>
+              <button
+                type="button"
+                onClick={() => setPeriodNotesModalSeg(null)}
+                className="p-1 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-4 py-3 overflow-y-auto text-sm text-gray-800 dark:text-gray-200 prose prose-sm dark:prose-invert max-w-none flex-1 min-h-0">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 not-prose">
+                {periodNotesModalSeg.name}
+                <span className="text-gray-400 dark:text-gray-500 font-normal">
+                  {' '}
+                  · Weeks {periodNotesModalSeg.startWeek}–{periodNotesModalSeg.endWeek}
+                </span>
+              </p>
+              {(() => {
+                const nh = notesHtmlForPeriod(notesByPeriodId, periodNotesModalSeg.periodId);
+                return nh ? (
+                  <div dangerouslySetInnerHTML={{ __html: nh }} />
+                ) : (
+                  <p className="text-gray-500 dark:text-gray-400 not-prose">
+                    No periodization notes for this period yet.
+                  </p>
+                );
+              })()}
+            </div>
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap gap-2 justify-end">
+              <button
+                type="button"
+                className="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                onClick={() => {
+                  const s = periodNotesModalSeg;
+                  setPeriodNotesModalSeg(null);
+                  setDetailSeg(s);
+                }}
+              >
+                Description & attachments…
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm font-semibold"
+                onClick={() => setPeriodNotesModalSeg(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Block detail */}
       {detailSeg && (
         <div
@@ -994,7 +1123,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                   className="text-sm prose prose-sm dark:prose-invert max-w-none rounded-lg bg-sky-50 dark:bg-gray-800 p-3 border border-sky-200 dark:border-gray-600 max-h-48 overflow-y-auto"
                   dangerouslySetInnerHTML={{
                     __html:
-                      notesByPeriodId[detailSeg.periodId]?.trim() ||
+                      notesHtmlForPeriod(notesByPeriodId, detailSeg.periodId) ||
                       '<p class="text-gray-500 italic">No notes yet. Add them under the Periodization tab.</p>'
                   }}
                 />

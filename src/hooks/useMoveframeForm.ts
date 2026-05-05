@@ -1,6 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { getSportConfig, sportNeedsExerciseName, DISTANCE_BASED_SPORTS, AEROBIC_SPORTS, isSeriesBasedSport, isAerobicSport, getRepsLabel } from '@/constants/moveframe.constants';
+import { getSportConfig, sportNeedsExerciseName, DISTANCE_BASED_SPORTS, AEROBIC_SPORTS, isSeriesBasedSport, isAerobicSport, getRepsLabel, isOfficialIndoorToolsLayoutSport } from '@/constants/moveframe.constants';
 import { computePyramidalRepsSeries, type PyramidalMode } from '@/utils/pyramidalReps';
+import { averageIndividualPlanPauseDisplay } from '@/utils/averagePauseDisplay';
+import { restTypeDbToDisplay } from '@/utils/restTypeDb';
+
+/** Normalize curly/typographic quotes so "0'" comparisons and pause parsing stay consistent. */
+function normalizeAsciiQuotes(s: string): string {
+  return String(s ?? '')
+    .trim()
+    .replace(/\u2018|\u2019|\u201A|\u2032/g, "'")
+    .replace(/\u201C|\u201D|\u2033/g, '"');
+}
 
 export interface IndividualRepetitionPlan {
   index: number;
@@ -18,6 +28,8 @@ export interface IndividualRepetitionPlan {
   pauseMin?: string; // Pause minimum for pause section
   pauseMode?: string; // Mode for pause section
   pausePace?: string; // Pace for pause section
+  /** Work-section pace per lap (movelap.pace); separate from row duration (time) when execution is Time */
+  workPace?: string;
 }
 
 export interface MoveframeFormData {
@@ -227,6 +239,19 @@ export function useMoveframeForm({
     }
   }, [sport, isOpen, manualMode, repsType, distance, sportConfig]);
 
+  /** Stretching / Pilates / Gym / CrossFit-style: table-only planning */
+  useEffect(() => {
+    if (isOfficialIndoorToolsLayoutSport(sport) && planningMode !== 'individual') {
+      setPlanningMode('individual');
+    }
+  }, [sport, planningMode]);
+
+  /** Align execution type with Reps | Time toggle (avoid legacy "Minutes" label from old dropdowns). */
+  useEffect(() => {
+    if (!isOfficialIndoorToolsLayoutSport(sport)) return;
+    if (repsType === 'Minutes') setRepsType('Time');
+  }, [sport, repsType]);
+
   // ==================== HELPER FUNCTIONS ====================
   
   /**
@@ -349,25 +374,30 @@ export function useMoveframeForm({
         plan.reps = reps || '12';
         plan.weight = ''; // Start blank, user can enter 0-9999
       } else if (isToolsBased) {
-        // TOOLS-BASED: reps, tools
-        plan.reps = repetitions || '1'; // Use repetitions from moveframe
+        // TOOLS-BASED: reps per series + tools column (series count is repetitions, not plan.reps)
+        plan.reps = reps || '12';
         plan.tools = '';
       } else {
-        // DISTANCE-BASED: speed, time (time should be loaded from pace field, not time field)
+        // DISTANCE-BASED: speed + duration (time) + optional work pace per lap
         plan.speed = speed || 'A2';
-        plan.time = pace || time || '0h05\'30"'; // Load from pace first, then time, then default
+        plan.workPace = pace || '';
+        if (repsType === 'Time') {
+          plan.time = time || '';
+        } else {
+          plan.time = time || pace || '0h05\'30"';
+        }
       }
       
       plans.push(plan);
     }
     setIndividualPlans(plans);
-  }, [sport, pause, macroFinal, strokes, watts, restType, pauseMin, pauseMode, pausePace, reps, repetitions, speed, pace, time]);
+  }, [sport, pause, macroFinal, strokes, watts, restType, pauseMin, pauseMode, pausePace, reps, speed, pace, time, repsType]);
 
   /**
    * Update an individual plan value
    * If updating the first row (index 0), automatically copy the value to all subsequent rows
    */
-  const updateIndividualPlan = (index: number, field: 'speed' | 'time' | 'pause' | 'reps' | 'weight' | 'tools' | 'macroFinal' | 'strokes' | 'watts' | 'restType' | 'pauseMin' | 'pauseMode' | 'pausePace', value: string) => {
+  const updateIndividualPlan = (index: number, field: 'speed' | 'time' | 'workPace' | 'pause' | 'reps' | 'weight' | 'tools' | 'macroFinal' | 'strokes' | 'watts' | 'restType' | 'pauseMin' | 'pauseMode' | 'pausePace', value: string) => {
     // Force immediate update without batching
     setIndividualPlans(prev => {
       const updated = [...prev];
@@ -460,6 +490,13 @@ export function useMoveframeForm({
         if (!repetitions || parseInt(repetitions) < 1 || parseInt(repetitions) > 99) {
           newErrors.repetitions = 'Number of series must be between 1 and 99';
         }
+      } else if (isOfficialIndoorToolsLayoutSport(sport)) {
+        if (!muscularSector) newErrors.muscularSector = 'Muscular sector is required';
+        if (!exercise) newErrors.exercise = 'Exercise is required';
+        const n = parseInt(repetitions, 10);
+        if (!repetitions || Number.isNaN(n) || n < 1 || n > 12) {
+          newErrors.repetitions = 'Number of series must be between 1 and 12';
+        }
       } else if (sport === 'FREE_MOVES') {
         // FREE_MOVES validation
         if (!exercise) newErrors.exercise = 'Exercise is required';
@@ -510,17 +547,17 @@ export function useMoveframeForm({
       return manualContent;
     }
 
-    // Use individual plan values if in individual planning mode
-    const effectivePause = (planningMode === 'individual' && individualPlans.length > 0) 
-      ? individualPlans[0].pause 
-      : pause;
-    
-    const effectiveMacroFinal = (planningMode === 'individual' && individualPlans.length > 0) 
-      ? individualPlans[0].macroFinal 
-      : macroFinal;
+    // Individual grid: preview pause = mean of row pauses; macro = form dropdown (moveframe-level), not lap[0]
+    const effectivePause =
+      planningMode === 'individual' && individualPlans.length > 0
+        ? averageIndividualPlanPauseDisplay(individualPlans) ?? individualPlans[0].pause
+        : pause;
+
+    const macroNorm = normalizeAsciiQuotes(macroFinal);
 
     if (sport === 'BODY_BUILDING') {
-      const macroFinalText = effectiveMacroFinal ? ` M${effectiveMacroFinal}` : '';
+      const macroFinalText =
+        macroNorm && macroNorm !== "0'" ? ` M${macroFinal.trim()}` : '';
       const sectorText = muscularSector ? `${muscularSector} - ` : '';
       const exerciseText = exercise || 'Exercise';
       const setsCount = parseInt(repetitions) || 1;
@@ -534,6 +571,8 @@ export function useMoveframeForm({
           pauseText = ` Pause ${effectivePause}`;
         } else if (restType === 'Restart time') {
           pauseText = ` Restart to ${effectivePause}`;
+        } else if (restType === 'Set meters') {
+          pauseText = ` Pause ${effectivePause} m`;
         } else if (restType === 'Restart pulse') {
           pauseText = ` Restart to ${effectivePause} BPM`;
         } else {
@@ -561,13 +600,16 @@ export function useMoveframeForm({
           pauseText = ` Pause ${effectivePause}`;
         } else if (restType === 'Restart time') {
           pauseText = ` Restart to ${effectivePause}`;
+        } else if (restType === 'Set meters') {
+          pauseText = ` Pause ${effectivePause} m`;
         } else if (restType === 'Restart pulse') {
           pauseText = ` Restart to ${effectivePause} BPM`;
         } else {
           pauseText = ` Pause ${effectivePause}`;
         }
       }
-      const macroFinalText = effectiveMacroFinal ? ` M${effectiveMacroFinal}` : '';
+      const macroFinalText =
+        macroNorm && macroNorm !== "0'" ? ` M${macroFinal.trim()}` : '';
       
       let baseDescription = `${dist}m${repsText}${styleText}${speedText}${pauseText}${macroFinalText}`;
       
@@ -593,13 +635,16 @@ export function useMoveframeForm({
           pauseText = ` Pause ${effectivePause}`;
         } else if (restType === 'Restart time') {
           pauseText = ` Restart to ${effectivePause}`;
+        } else if (restType === 'Set meters') {
+          pauseText = ` Pause ${effectivePause} m`;
         } else if (restType === 'Restart pulse') {
           pauseText = ` Restart to ${effectivePause} BPM`;
         } else {
           pauseText = ` Pause ${effectivePause}`;
         }
       }
-      const macroFinalText = effectiveMacroFinal ? ` M${effectiveMacroFinal}` : '';
+      const macroFinalText =
+        macroNorm && macroNorm !== "0'" ? ` M${macroFinal.trim()}` : '';
       
       let baseDescription = `${exerciseText}: ${setsCount} sets x ${repsPerSet} ${repsTypeText}${styleText}${speedText}${pauseText}${macroFinalText}`;
       
@@ -804,7 +849,10 @@ export function useMoveframeForm({
       pauseMin: pauseMin || null,
       pauseMode: pauseMode || null,
       pausePace: pausePace || null,
-      muscularSector: effectiveSport === 'BODY_BUILDING' ? muscularSector : null,
+      muscularSector:
+        effectiveSport === 'BODY_BUILDING' || isOfficialIndoorToolsLayoutSport(effectiveSport)
+          ? muscularSector
+          : null,
       exercise: sportNeedsExerciseName(effectiveSport) ? exercise : null,
       appliedTechnique: appliedTechnique || null, // Save technique for ANY sport (not just BODY_BUILDING)
       aerobicSeries: parseInt(aerobicSeries) || 1, // Series/Batteries/Groups for aerobic sports
@@ -825,28 +873,6 @@ export function useMoveframeForm({
       workoutSessionId: workout.id,
       dayId: day.id
     };
-    
-    console.log('🔸 [FORM] buildMoveframeData returning:');
-    console.log('  Manual Mode:', data.manualMode);
-    console.log('  Manual Priority:', data.manualPriority);
-    console.log('  ⭐ Manual Input Type (STATE):', manualInputType);
-    console.log('  ⭐ Manual Input Type (DATA):', data.manualInputType);
-    console.log('  Sport:', data.sport);
-    console.log('  Manual Repetitions:', data.manualRepetitions);
-    console.log('  📊 Manual Distance (what will be saved):', data.manualDistance);
-    console.log('  📝 Distance Value (formatted string):', distanceValue);
-    console.log('  🕐 Distance Deciseconds (calculated):', manualDistanceDeciseconds);
-    console.log('  🔍 Is manualInputType time?', manualInputType === 'time');
-    console.log('  🔍 Should save deciseconds?', manualInputType === 'time' ? 'YES' : 'NO');
-    
-    // Verify manualInputType is actually being set
-    if (data.manualMode && DISTANCE_BASED_SPORTS.includes(data.sport as any)) {
-      console.log('🚨 [DEBUG] This is an aerobic sport in manual mode!');
-      console.log('🚨 [DEBUG] Expected manualInputType to be saved:', manualInputType);
-      console.log('🚨 [DEBUG] Actual manualInputType in data object:', data.manualInputType);
-      console.log('🚨 [DEBUG] Are they equal?', manualInputType === data.manualInputType);
-    }
-    console.log('  Distance (for movelap gen):', data.distance);
     
     return data;
   };
@@ -946,16 +972,16 @@ export function useMoveframeForm({
           // Rest and alerts
           const loadedPause = firstMovelap.pause || '20"';
           const loadedRestType = firstMovelap.restType || '';
+          const restTypeDisplay = restTypeDbToDisplay(loadedRestType);
           
           // Clean up pause value for "Restart time" - remove any malformed data
-          if (loadedRestType === 'Restart time') {
-            // Check if the pause value is malformed (e.g., "0h00'00"123213254")
-            // A valid format should be like "1h23'45"6" with reasonable digit counts
-            const isValidRestartTime = /^\d{1,2}h\d{2}'\d{2}"\d$/.test(loadedPause);
+          if (restTypeDisplay === 'Restart time') {
+            const isValidCompact = /^\d+'\d{2}"\d$/.test(loadedPause);
+            const isValidLegacyHour = /^\d{1,2}h\d{2}'\d{2}"\d$/.test(loadedPause);
             
-            if (!isValidRestartTime) {
+            if (!isValidCompact && !isValidLegacyHour) {
               console.log('⚠️ Clearing malformed restart time:', loadedPause);
-              setPause(''); // Clear malformed data
+              setPause('');
             } else {
               setPause(loadedPause);
             }
@@ -963,8 +989,12 @@ export function useMoveframeForm({
             setPause(loadedPause);
           }
           
-          setRestType(loadedRestType);
-          setMacroFinal(firstMovelap.macroFinal || "0'");
+          setRestType(restTypeDisplay);
+          setMacroFinal(
+            existingMoveframe.macroFinal != null && String(existingMoveframe.macroFinal).trim() !== ''
+              ? normalizeAsciiQuotes(String(existingMoveframe.macroFinal))
+              : normalizeAsciiQuotes(String(firstMovelap.macroFinal || "0'"))
+          );
           setAlarm(firstMovelap.alarm?.toString() || '-1');
           setSound(firstMovelap.sound || 'Beep');
           
@@ -975,18 +1005,32 @@ export function useMoveframeForm({
         setMuscularSector(firstMovelap.muscularSector || '');
         setExercise(firstMovelap.exercise || '');
         
-        // 🔄 RESTORE INDIVIDUAL PLANNING MODE if moveframe was created with "Plan one by one"
-        // Check if there are multiple movelaps (2-12) - this indicates potential individual planning
+        // 🔄 Restore "Plan one by one" grid from movelaps when saved as individual or when laps differ meaningfully.
         const movelapsCount = existingMoveframe.movelaps?.length || 0;
+        const laps = existingMoveframe.movelaps || [];
+        const savedPlanningMode = existingMoveframe.planningMode as 'all' | 'individual' | undefined;
+
         if (movelapsCount >= 2 && movelapsCount <= 12) {
-          console.log(`🔍 Checking if moveframe was created with individual planning (${movelapsCount} movelaps)`);
-          
-          // Check if movelaps have different values (indicating individual planning was used)
-          const hasVariedValues = existingMoveframe.movelaps.some((lap: any, index: number) => {
-            if (index === 0) return false; // Skip first lap (we compare against it)
-            const firstLap = existingMoveframe.movelaps[0];
-            
-            // Check if ANY value differs from the first lap
+          const firstLap = laps[0];
+          const differsFromFirst = (lap: any, index: number) => {
+            if (index === 0) return false;
+            if (existingMoveframe.sport === 'BODY_BUILDING') {
+              // Pyramidal / per-row reps can differ in "plan all" — do not infer individual mode from reps alone.
+              return (
+                lap.speed !== firstLap.speed ||
+                lap.time !== firstLap.time ||
+                lap.pace !== firstLap.pace ||
+                lap.pause !== firstLap.pause ||
+                lap.weight !== firstLap.weight ||
+                lap.tools !== firstLap.tools ||
+                lap.macroFinal !== firstLap.macroFinal ||
+                lap.strokes !== firstLap.strokes ||
+                lap.watts !== firstLap.watts ||
+                lap.pauseMin !== firstLap.pauseMin ||
+                lap.pauseMode !== firstLap.pauseMode ||
+                lap.pausePace !== firstLap.pausePace
+              );
+            }
             return (
               lap.speed !== firstLap.speed ||
               lap.time !== firstLap.time ||
@@ -1002,40 +1046,38 @@ export function useMoveframeForm({
               lap.pauseMode !== firstLap.pauseMode ||
               lap.pausePace !== firstLap.pausePace
             );
-          });
-          
-          if (hasVariedValues) {
-            console.log('✅ Detected individual planning! Restoring individual lap data...');
-            
-            // Set planning mode to 'individual'
+          };
+
+          const inferredIndividual = laps.some((lap: any, index: number) => differsFromFirst(lap, index));
+          const useIndividual = savedPlanningMode === 'individual' || inferredIndividual;
+
+          if (useIndividual) {
+            console.log('✅ Restoring individual planning from movelaps');
             setPlanningMode('individual');
-            
-            // Restore individual plans from movelaps
-            const restoredPlans: IndividualRepetitionPlan[] = existingMoveframe.movelaps.map((lap: any, index: number) => ({
+            const restoredPlans: IndividualRepetitionPlan[] = laps.map((lap: any, index: number) => ({
               index: index + 1,
               speed: lap.speed || '',
-              time: lap.time || lap.pace || '',
+              time: lap.time || '',
+              workPace: lap.pace || '',
               pause: lap.pause || '20"',
               reps: lap.reps?.toString() || '',
               weight: lap.weight || '',
               tools: lap.tools || '',
-              macroFinal: lap.macroFinal || "0'",
+              macroFinal: normalizeAsciiQuotes(String(lap.macroFinal || "0'")),
               strokes: lap.strokes || '',
               watts: lap.watts || '',
-              restType: lap.restType || 'Set time',
+              restType: restTypeDbToDisplay(lap.restType) || 'Set time',
               pauseMin: lap.pauseMin || '',
               pauseMode: lap.pauseMode || '',
               pausePace: lap.pausePace || ''
             }));
-            
             setIndividualPlans(restoredPlans);
-            console.log(`✅ Restored ${restoredPlans.length} individual lap plans`);
           } else {
-            console.log('ℹ️ All movelaps have same values - using "Plan for all" mode');
+            console.log('ℹ️ All movelaps match (non-reps where applicable) — Plan for all');
             setPlanningMode('all');
           }
         } else {
-          console.log(`ℹ️ ${movelapsCount} movelaps - using "Plan for all" mode`);
+          console.log(`ℹ️ ${movelapsCount} movelaps — Plan for all`);
           setPlanningMode('all');
         }
         
@@ -1045,6 +1087,9 @@ export function useMoveframeForm({
           setRepetitions('1');
           setSpeed('A2');
           setPlanningMode('all');
+          if (existingMoveframe.macroFinal != null && String(existingMoveframe.macroFinal).trim() !== '') {
+            setMacroFinal(existingMoveframe.macroFinal);
+          }
         }
         
         // Manual content - check both description and notes fields
@@ -1152,6 +1197,32 @@ export function useMoveframeForm({
     }
   }, [planningMode, repetitions, aerobicSeries, sport, canShowIndividualPlanning, initializeIndividualPlans, individualPlans.length]);
 
+  /** Aerobic + distance: when switching execution Reps ↔ Time, re-seed row defaults from globals without resizing */
+  const prevDistExecutionTypeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevDistExecutionTypeRef.current === null) {
+      prevDistExecutionTypeRef.current = repsType;
+      return;
+    }
+    if (prevDistExecutionTypeRef.current === repsType) return;
+    prevDistExecutionTypeRef.current = repsType;
+    const ds = DISTANCE_BASED_SPORTS.includes(sport as any);
+    const aer = AEROBIC_SPORTS.includes(sport as any);
+    if (!ds || !aer || planningMode !== 'individual' || !canShowIndividualPlanning()) return;
+    const baseReps = parseInt(repetitions) || 0;
+    const seriesMultiplier = aer ? parseInt(aerobicSeries) || 1 : 1;
+    const repsCount = baseReps * seriesMultiplier;
+    if (repsCount > 0) initializeIndividualPlans(repsCount);
+  }, [
+    repsType,
+    sport,
+    planningMode,
+    repetitions,
+    aerobicSeries,
+    canShowIndividualPlanning,
+    initializeIndividualPlans
+  ]);
+
   /**
    * Body-building: when pyramidal mode or series count changes, redistribute reps from series 1.
    */
@@ -1181,19 +1252,6 @@ export function useMoveframeForm({
       setDistance('');
     }
   }, [manualInputType, isOpen, mode, manualMode]);
-
-  /**
-   * Clear pause field when rest type changes to avoid carrying over invalid formats
-   */
-  useEffect(() => {
-    // Skip initial load (only act on user changes)
-    if (!isOpen) return;
-    
-    // When user changes to "Restart time", clear the field for fresh input
-    if (restType === 'Restart time' && pause && !/^\d{1,2}h\d{2}'\d{2}"\d$/.test(pause)) {
-      setPause('');
-    }
-  }, [restType, isOpen, pause]);
 
   // ==================== RETURN VALUES ====================
   return {

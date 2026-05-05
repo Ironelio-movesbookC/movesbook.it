@@ -53,6 +53,8 @@ model User {
   profileBannerAlignment   String?   // "center" | "default" — object-position for cover (legacy)
   profileBannerSequence    String?   @db.Text // JSON string[] of public image paths for rotating banner
   profileBannerVideo       String?   // Uploaded cover video path (public URL under /uploads/...)
+  /// Personal YouTube URL (channel, @handle, or video) for "My channel on YouTube" on My Page.
+  youtubeChannelUrl        String?   @db.Text
   superAdminId             String?   @unique // When set, this User mirrors a super_admin for news/OGP attribution
   conversationsStarted    ChatConversation[] @relation("ConversationStarter")
   conversationsReceived   ChatConversation[] @relation("ConversationReceiver")
@@ -67,6 +69,29 @@ model User {
   sportMachines           SportMachine[]
 
   @@map("users_new")
+}
+
+model MyDeskItem {
+  id          String      @id @default(cuid())
+  userId      String
+  parentId    String?
+  title       String
+  path        String?
+  faIconClass String?
+  bgColor     String?
+  titleColor  String?
+  displayMode String? // "new_label" | "central_page"
+  visible     Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  parent   MyDeskItem? @relation("MyDeskParentChild", fields: [parentId], references: [id], onDelete: Cascade)
+  children MyDeskItem[] @relation("MyDeskParentChild")
+
+  @@index([userId, parentId, sortOrder])
+  @@index([parentId])
+  @@map("my_desk_items")
 }
 
 model UserNewsTopic {
@@ -331,6 +356,8 @@ model Period {
   description String
   /// JSON map of language code → description (e.g. {"en":"...","it":"..."}). English mirrors `description`.
   descriptionTranslations String? @db.Text
+  /// JSON map of language code → period name/title (e.g. {"en":"Base","it":"Base"}). English mirrors `name`.
+  nameTranslations String? @db.Text
   color       String
   displayOrder Int          @default(0) // Order for display in lists
   createdAt   DateTime      @default(now())
@@ -422,6 +449,10 @@ model WorkoutSection {
   name        String
   code        String? // Short code (max 5 characters) for compact display
   description String
+  /// JSON map of language code → description. English mirrors `description`.
+  descriptionTranslations String? @db.Text
+  /// JSON map of language code → section name/title. English mirrors `name`.
+  nameTranslations String? @db.Text
   color       String
   displayOrder Int        @default(0) // Order for display in lists
   createdAt   DateTime    @default(now())
@@ -437,6 +468,10 @@ model ExecutionTechnique {
   userId      String
   name        String
   description String
+  /// JSON map of language code → description. English mirrors `description`.
+  descriptionTranslations String? @db.Text
+  /// JSON map of language code → technique name/title. English mirrors `name`.
+  nameTranslations String? @db.Text
   color       String
   sports      String   @default("") // Comma-separated list of sports that can use this technique
   displayOrder Int     @default(0) // Order for display in lists
@@ -681,15 +716,17 @@ model TeamMember {
 }
 
 model Club {
-  id          String       @id @default(cuid())
-  adminId     String
-  name        String
-  description String?
-  location    String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  members     ClubMember[]
-  admin       User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
+  id                 String       @id @default(cuid())
+  adminId            String
+  name               String
+  description        String?
+  location           String?
+  /// Public club YouTube URL (channel, @handle, or video), set by club admin; shown to members.
+  youtubeChannelUrl  String?      @db.Text
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  members            ClubMember[]
+  admin              User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId], map: "clubs_new_adminId_fkey")
   @@map("clubs_new")
@@ -910,6 +947,7 @@ enum WorkType {
 enum RestType {
   SET_TIME
   RESTART_TIME
+  SET_METERS
   RESTART_PULSE
 }
 

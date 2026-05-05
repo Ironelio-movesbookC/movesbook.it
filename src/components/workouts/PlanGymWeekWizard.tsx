@@ -272,7 +272,28 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
     setManualDays(prev => {
       const next = [...prev];
       const sectors = [...next[dayIdx].sectors];
-      sectors[sectorIdx] = { ...sectors[sectorIdx], [field]: value };
+      const cur = sectors[sectorIdx];
+      if (!cur) return prev;
+
+      if (field === 'exercises') {
+        const v = typeof value === 'number' ? value : parseInt(String(value), 10);
+        if (!Number.isFinite(v)) return prev;
+        let ex = Math.max(1, Math.min(20, Math.floor(v)));
+        let series = Math.max(cur.series, ex);
+        series = Math.min(20, series);
+        ex = Math.min(ex, series);
+        sectors[sectorIdx] = { ...cur, exercises: ex, series };
+      } else if (field === 'series') {
+        const v = typeof value === 'number' ? value : parseInt(String(value), 10);
+        if (!Number.isFinite(v)) return prev;
+        let series = Math.max(1, Math.min(20, Math.floor(v)));
+        series = Math.max(series, cur.exercises);
+        const exercises = Math.min(cur.exercises, series);
+        sectors[sectorIdx] = { ...cur, series, exercises };
+      } else {
+        sectors[sectorIdx] = { ...cur, [field]: value };
+      }
+
       next[dayIdx] = { ...next[dayIdx], sectors };
       return next;
     });
@@ -598,8 +619,8 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                       ))}
                     </div>
                   </div>
-                  <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0">
-                    <Image src="/plan-gym-week/q2.jpg" alt="Question 2" fill className="object-cover" />
+                  <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-lg overflow-hidden border-y border-gray-200 border-x-0 flex-shrink-0">
+                    <Image src="/plan-gym-week/q2.jpg" alt="Question 2" fill className="border-0 object-cover outline-none ring-0" />
                   </div>
                 </div>
 
@@ -621,8 +642,8 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                       ))}
                     </div>
                   </div>
-                  <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0">
-                    <Image src="/plan-gym-week/q3.jpg" alt="Question 3" fill className="object-cover" />
+                  <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-lg overflow-hidden border-y border-gray-200 border-x-0 flex-shrink-0">
+                    <Image src="/plan-gym-week/q3.jpg" alt="Question 3" fill className="border-0 object-cover outline-none ring-0" />
                   </div>
                 </div>
 
@@ -659,8 +680,8 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                         <p className="text-xs text-gray-600 mt-2">Selected: {constantSectors.join(', ')}</p>
                       )}
                     </div>
-                    <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0">
-                      <Image src="/plan-gym-week/q4.jpg" alt="Question 4" fill className="object-cover" />
+                    <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-lg overflow-hidden border-y border-gray-200 border-x-0 flex-shrink-0">
+                      <Image src="/plan-gym-week/q4.jpg" alt="Question 4" fill className="border-0 object-cover outline-none ring-0" />
                     </div>
                   </div>
                 )}
@@ -743,11 +764,29 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                           </div>
                         )}
                         <div className="flex flex-wrap gap-2 items-center">
-                          <select value={sec.exercises} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'exercises', parseInt(e.target.value, 10))} className="text-xs border border-gray-300 rounded px-2 py-1">
-                            {[1,2,3,4,5,6].map(n => <option key={n} value={n}>Exercises {n}</option>)}
+                          <select
+                            value={sec.exercises}
+                            onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'exercises', parseInt(e.target.value, 10))}
+                            className="text-xs border border-gray-300 rounded px-2 py-1"
+                            title="Cannot exceed Series"
+                          >
+                            {Array.from({ length: Math.max(1, sec.series) }, (_, i) => i + 1).map((n) => (
+                              <option key={n} value={n}>
+                                Exercises {n}
+                              </option>
+                            ))}
                           </select>
-                          <select value={sec.series} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'series', parseInt(e.target.value, 10))} className="text-xs border border-gray-300 rounded px-2 py-1">
-                            {[2,3,4,5].map(n => <option key={n} value={n}>Series {n}</option>)}
+                          <select
+                            value={sec.series}
+                            onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'series', parseInt(e.target.value, 10))}
+                            className="text-xs border border-gray-300 rounded px-2 py-1"
+                            title="Cannot go below Exercises"
+                          >
+                            {Array.from({ length: 20 - Math.max(0, sec.exercises) + 1 }, (_, i) => sec.exercises + i).map((n) => (
+                              <option key={n} value={n}>
+                                Series {n}
+                              </option>
+                            ))}
                           </select>
                           <select value={sec.reps} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'reps', parseInt(e.target.value, 10))} className="text-xs border border-gray-300 rounded px-2 py-1">
                             {[8,10,12,15,20,30].map(n => <option key={n} value={n}>Reps {n}</option>)}
