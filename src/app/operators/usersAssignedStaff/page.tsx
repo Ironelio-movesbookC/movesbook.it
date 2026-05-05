@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   Filter,
   ChevronDown,
@@ -20,74 +20,34 @@ interface AssignedStaffRow {
   country?: string | null;
   staffLinked?: string | null;
   lastLogin?: string | null;
-  kind?: 'OPERATOR' | 'CO_ADMIN';
-  regions?: string | null;
 }
+
+// Placeholder data to match PHP UI; replace with API data
+const MOCK_ROWS: AssignedStaffRow[] = [
+  {
+    id: '1',
+    username: 'Lerkos',
+    name: 'Elio Blasevich',
+    imageUrl: null,
+    country: 'India',
+    staffLinked: 'Operator (0)',
+    lastLogin: null,
+  },
+];
 
 export default function UsersAssignedStaffPage() {
   const router = useRouter();
-  const [rows, setRows] = useState<AssignedStaffRow[]>([]);
+  const [rows, setRows] = useState<AssignedStaffRow[]>(MOCK_ROWS);
   const [filterValue, setFilterValue] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string>('');
 
   const openProfile = (id: string) => router.push(`/operators/profile/${id}`);
   const openSettings = (id: string) => router.push(`/operators/settings/${id}`);
 
-  const isDataUrl = (src?: string | null) =>
-    typeof src === 'string' && src.startsWith('data:image/');
-
   const handleProceed = () => {
     // TODO: apply filter + search and refetch or filter client-side
   };
-
-  const filteredRows = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    let base = rows;
-    if (filterValue === 'coadmin') base = base.filter((r) => r.kind === 'CO_ADMIN');
-    if (filterValue === 'operator') base = base.filter((r) => r.kind === 'OPERATOR');
-    if (!q) return base;
-    return base.filter((r) => `${r.username} ${r.name} ${r.country ?? ''}`.toLowerCase().includes(q));
-  }, [filterValue, rows, searchQuery]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setLoadError('');
-      try {
-        const token = localStorage.getItem('adminToken');
-        if (!token) {
-          setLoadError('Admin session not found. Please login again.');
-          setRows([]);
-          return;
-        }
-
-        const res = await fetch('/api/admin/staff-accounts', {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: 'no-store',
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.error || 'Failed to load staff');
-        if (!cancelled) setRows(Array.isArray(data?.staff) ? data.staff : []);
-      } catch (e: any) {
-        if (!cancelled) {
-          setLoadError(e?.message || 'Failed to load staff');
-          setRows([]);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   return (
     <div className="min-h-full bg-gray-50">
@@ -173,48 +133,25 @@ export default function UsersAssignedStaffPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {loading ? (
+              {rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                    Loading...
-                  </td>
-                </tr>
-              ) : loadError ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-red-600">
-                    {loadError}
-                  </td>
-                </tr>
-              ) : filteredRows.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                    No staff found.
+                    No staff assigned. Connect this page to your API to load Co-Admins and Operators.
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((row) => (
+                rows.map((row) => (
                   <tr key={row.id} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3">
                       <div className="w-10 h-10 rounded overflow-hidden bg-gray-200 flex items-center justify-center flex-shrink-0">
                         {row.imageUrl ? (
-                          isDataUrl(row.imageUrl) ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={row.imageUrl}
-                              alt={row.name}
-                              width={40}
-                              height={40}
-                              className="object-cover w-full h-full"
-                            />
-                          ) : (
-                            <Image
-                              src={row.imageUrl}
-                              alt={row.name}
-                              width={40}
-                              height={40}
-                              className="object-cover w-full h-full"
-                            />
-                          )
+                          <Image
+                            src={row.imageUrl}
+                            alt={row.name}
+                            width={40}
+                            height={40}
+                            className="object-cover w-full h-full"
+                          />
                         ) : (
                           <User className="w-5 h-5 text-gray-500" />
                         )}
