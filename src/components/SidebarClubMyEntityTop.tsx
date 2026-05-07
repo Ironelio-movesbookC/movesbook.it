@@ -7,12 +7,11 @@ import {
   Bell,
   Building2,
   Eye,
+  LayoutDashboard,
   ChevronDown,
   Settings,
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
-import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 type ClubEntity = {
   id?: string;
@@ -20,7 +19,6 @@ type ClubEntity = {
   description?: string | null;
   location?: string | null;
   imageUrl?: string | null;
-  youtubeChannelUrl?: string | null;
 };
 
 function parseLocalityAndCountry(location: string | null | undefined): {
@@ -51,22 +49,12 @@ export default function SidebarClubMyEntityTop({
   club,
   userCountry,
   userImageUrl,
-  userType,
-  onClubYoutubeSaved,
-  onClubBootstrapped,
   onChangeLogo,
 }: {
   personName: string;
   club: ClubEntity | null;
   userCountry?: string | null;
   userImageUrl?: string | null;
-  userType: string;
-  onClubYoutubeSaved?: (clubId: string, url: string | null) => void;
-  onClubBootstrapped?: (club: {
-    id: string;
-    name?: string;
-    youtubeChannelUrl?: string | null;
-  }) => void;
   onChangeLogo?: () => void;
 }) {
   const { t } = useLanguage();
@@ -195,13 +183,16 @@ export default function SidebarClubMyEntityTop({
           <ChevronDown className="w-4 h-4 opacity-90" />
         </button>
 
-        <ClubMembersDashboardSection
-          clubId={club?.id}
-          youtubeChannelUrl={club?.youtubeChannelUrl}
-          canManageClub={isClubAccountUserType(userType)}
-          onYoutubeChannelUrlSaved={onClubYoutubeSaved}
-          onClubBootstrapped={onClubBootstrapped}
-        />
+        <button
+          type="button"
+          className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <LayoutDashboard className="w-5 h-5 shrink-0" />
+            <span className="font-semibold tracking-wide truncate">Dashboard for the members</span>
+          </div>
+          <ChevronDown className="w-4 h-4 opacity-90" />
+        </button>
       </div>
     </div>
   );

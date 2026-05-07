@@ -6,16 +6,14 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const rawLang = searchParams.get('language');
+    const language = searchParams.get('language');
 
-    if (!rawLang) {
+    if (!language) {
       return NextResponse.json(
         { success: false, error: 'Language parameter required' },
         { status: 400 }
       );
     }
-
-    const language = rawLang.toLowerCase().trim().split('-')[0] || 'en';
 
     // Load from Prisma database
     const defaults = await prisma.toolsDefaults.findUnique({

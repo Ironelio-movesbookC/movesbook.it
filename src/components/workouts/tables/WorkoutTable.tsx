@@ -460,7 +460,6 @@ export default function WorkoutTable({
             <input
               type="checkbox"
               className="w-4 h-4 cursor-pointer flex-shrink-0"
-              style={{ accentColor: '#111111' }}
               title="Select workout"
               onClick={(e) => e.stopPropagation()}
             />
@@ -470,7 +469,7 @@ export default function WorkoutTable({
               ref={setDragNodeRef}
               {...attributes}
               {...listeners}
-              className="cursor-move text-black hover:text-gray-700 transition-colors inline-block flex-shrink-0"
+              className="cursor-move text-white hover:text-cyan-200 transition-colors inline-block flex-shrink-0"
               title="Drag to move workout"
             >
               <GripVertical size={18} />

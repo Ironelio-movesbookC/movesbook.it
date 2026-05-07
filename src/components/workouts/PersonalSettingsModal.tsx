@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Download, Palette, Settings as SettingsIcon, Star, Trophy, Grid, Layers } from 'lucide-react';
+import { X, Download, Palette, Settings as SettingsIcon, Star, Trophy, Grid } from 'lucide-react';
 import BackgroundsColorsSettings from '@/components/settings/BackgroundsColorsSettings';
 import ToolsSettings from '@/components/settings/ToolsSettings';
 import FavouritesSettings from '@/components/settings/FavouritesSettings';
@@ -14,7 +14,7 @@ interface PersonalSettingsModalProps {
   userLanguage?: string;
 }
 
-type SettingsSection = 'backgrounds' | 'periodization' | 'tools' | 'favourites' | 'mybest' | 'grid';
+type SettingsSection = 'backgrounds' | 'tools' | 'favourites' | 'mybest' | 'grid';
 
 export default function PersonalSettingsModal({ 
   isOpen, 
@@ -24,18 +24,6 @@ export default function PersonalSettingsModal({
   const [activeSection, setActiveSection] = useState<SettingsSection>('backgrounds');
   const [loading, setLoading] = useState(false);
   const [userSettings, setUserSettings] = useState<any>(null);
-  const [sessionUser, setSessionUser] = useState<{ userType?: string } | null>(null);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('user');
-      setSessionUser(raw ? JSON.parse(raw) : null);
-    } catch {
-      setSessionUser(null);
-    }
-  }, [isOpen]);
-
-  const toolsIsAdmin = sessionUser?.userType === 'ADMIN';
   
   // Load user's current settings when modal opens
   useEffect(() => {
@@ -156,7 +144,6 @@ export default function PersonalSettingsModal({
   const settingsSections = [
     { id: 'grid' as SettingsSection, label: 'Grid Display Mode', icon: Grid },
     { id: 'backgrounds' as SettingsSection, label: 'Backgrounds & Colors', icon: Palette },
-    { id: 'periodization' as SettingsSection, label: 'Periodization', icon: Layers },
     { id: 'tools' as SettingsSection, label: 'Tools', icon: SettingsIcon },
     { id: 'favourites' as SettingsSection, label: 'Favourites', icon: Star },
     { id: 'mybest' as SettingsSection, label: 'My Best', icon: Trophy },
@@ -248,22 +235,7 @@ export default function PersonalSettingsModal({
           {/* Settings Content */}
           <div className="flex-1 overflow-y-auto p-6 bg-white">
             {activeSection === 'backgrounds' && <BackgroundsColorsSettings />}
-            {activeSection === 'periodization' && (
-              <ToolsSettings
-                isAdmin={toolsIsAdmin}
-                userType={sessionUser?.userType ?? 'ATHLETE'}
-                mode="tools"
-                periodizationOnly
-                initialTab="periods"
-              />
-            )}
-            {activeSection === 'tools' && (
-              <ToolsSettings
-                isAdmin={toolsIsAdmin}
-                userType={sessionUser?.userType ?? 'ATHLETE'}
-                mode="tools"
-              />
-            )}
+            {activeSection === 'tools' && <ToolsSettings isAdmin={false} userType="ATHLETE" />}
             {activeSection === 'favourites' && <FavouritesSettings />}
             {activeSection === 'mybest' && <MyBestSettings />}
             {activeSection === 'grid' && <GridDisplaySettings />}
