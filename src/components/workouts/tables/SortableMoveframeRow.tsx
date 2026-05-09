@@ -702,7 +702,6 @@ export default function SortableMoveframeRow({
         const isFastPlanMoveframe = moveframe.type === 'BATTERY' && !moveframe.isCircuitBased &&
           (typeof moveframe.description === 'string' && moveframe.description.toLowerCase().startsWith('fast planner') ||
             (typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]')));
-        /** Aerobic only: distance\\style or fallback movelap line. Anaerobic uses Rip\\set summary instead of raw reps\\pace. */
         const fastPlanDistancesLine = isFastPlanMoveframe
           ? isAerobicFastPlan && Array.isArray(fastPlannerPayload?.rows)
             ? fastPlannerPayload.rows
@@ -714,7 +713,7 @@ export default function SortableMoveframeRow({
                 })
                 .filter(Boolean)
                 .join('+')
-            : isAerobicFastPlan && Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0
+            : Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0
             ? moveframe.movelaps
                 .map((lap: any) => {
                   const val = lap.reps ?? lap.distance ?? lap.weight ?? '';
@@ -790,11 +789,8 @@ export default function SortableMoveframeRow({
                     ))}
                   </div>
                 ) : null}
-                {!isAerobicFastPlan && anaerobicFastPlannerStats ? (
-                  <div className="font-medium leading-snug text-gray-900">
-                    Rip\set = {anaerobicFastPlannerStats.totalRepVolume} :{' '}
-                    {anaerobicFastPlannerStats.totalSeries}
-                  </div>
+                {!isAerobicFastPlan && fastPlanDistancesLine ? (
+                  <div className="font-medium leading-snug text-gray-900">{fastPlanDistancesLine}</div>
                 ) : isAerobicFastPlan && fastPlanDistancesLine ? (
                   <div className="font-medium text-gray-900">{fastPlanDistancesLine}</div>
                 ) : null}
@@ -804,12 +800,8 @@ export default function SortableMoveframeRow({
                 {(() => {
                   const hasAnaerobicSectors =
                     !isAerobicFastPlan && !!anaerobicFastPlannerStats?.sectorPairs?.length;
-                  const hasRipSetSummary = !isAerobicFastPlan && anaerobicFastPlannerStats != null;
                   const hasAny =
-                    hasAnaerobicSectors ||
-                    hasRipSetSummary ||
-                    (!!fastPlanDistancesLine && isAerobicFastPlan) ||
-                    !!fastPlanUserNoteLine;
+                    hasAnaerobicSectors || !!fastPlanDistancesLine || !!fastPlanUserNoteLine;
                   return hasAny ? null : <span className="text-gray-400">No description</span>;
                 })()}
               </div>

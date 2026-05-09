@@ -40,7 +40,6 @@ import { movelapApi } from '@/utils/api.utils';
 
 // Helper Functions
 import { sectionHelpers } from '@/utils/workout.helpers';
-import { restTypeDisplayToDb } from '@/utils/restTypeDb';
 
 // Custom Hooks
 import { useWorkoutData } from '@/hooks/useWorkoutData';
@@ -623,8 +622,21 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   });
 
   // Helper function to generate movelaps from moveframe data
-  const convertRestTypeToEnum = (restType: string | null): string | null =>
-    restTypeDisplayToDb(restType ?? undefined);
+  // Helper function to convert display rest type to enum value
+  const convertRestTypeToEnum = (restType: string | null): string | null => {
+    if (!restType || restType.trim() === '') return null;
+    
+    const mapping: Record<string, string> = {
+      'Set time': 'SET_TIME',
+      'Restart time': 'RESTART_TIME',
+      'Restart pulse': 'RESTART_PULSE',
+      'SET_TIME': 'SET_TIME', // Already correct
+      'RESTART_TIME': 'RESTART_TIME', // Already correct
+      'RESTART_PULSE': 'RESTART_PULSE' // Already correct
+    };
+    
+    return mapping[restType] || null;
+  };
 
   const generateMovelaps = (moveframeData: any): any[] => {
     const movelaps: any[] = [];
@@ -703,28 +715,13 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
         planData: plan ? { reps: plan.reps, weight: plan.weight, tools: plan.tools } : null
       });
       
-      const lapPace =
-        hasIndividualPlans && plan
-          ? plan.workPace != null && String(plan.workPace).trim() !== ''
-            ? plan.workPace
-            : moveframeData.pace ?? null
-          : moveframeData.pace ?? null;
-      const lapTime =
-        hasIndividualPlans && plan
-          ? plan.time != null && String(plan.time).trim() !== ''
-            ? plan.time
-            : moveframeData.time ?? null
-          : moveframeData.time ?? null;
-      const lapRestTypeRaw =
-        hasIndividualPlans && plan?.restType ? plan.restType : moveframeData.restType;
-
       movelaps.push({
         repetitionNumber: i + 1,
         distance: moveframeData.distance?.toString() || null,
         speed: plan?.speed || moveframeData.speed || null,
         style: moveframeData.style || null,
-        pace: lapPace,
-        time: lapTime,
+        pace: moveframeData.pace || null,
+        time: plan?.time || moveframeData.time || null,
         reps: plan?.reps || moveframeData.reps || null,
         weight: plan?.weight || null,
         tools: plan?.tools || null,
@@ -733,7 +730,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
         muscularSector: moveframeData.muscularSector || null,
         exercise: moveframeData.exercise || null,
         // Convert display value to enum value
-        restType: convertRestTypeToEnum(lapRestTypeRaw),
+        restType: convertRestTypeToEnum(moveframeData.restType),
         pause: plan?.pause || moveframeData.pause || null,
         macroFinal: plan?.macroFinal || moveframeData.macroFinal || null,
         alarm: moveframeData.alarm || null,
@@ -3310,8 +3307,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
               daysCount: answers.daysCount,
               timesPerSector: answers.timesPerSector,
               distributionType: answers.distributionType,
-              constantSectors: answers.constantSectors,
-              trainingLevel: answers.trainingLevel,
+              constantSectors: answers.constantSectors
             });
             setPlanGymWeekInitialPlan(plan);
             setPlanGymWeekManualDaysCount(plan.daysCount);
@@ -3344,7 +3340,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setShowPlanGymWeekManualForm(false);
             setPlanGymWeekInitialPlan(null);
             setPlanGymWeekRescanParams(null);
-            // Keep trainingLevel until Fast Plan closes — needed for Lev 1–2 vs 3–4 vs 5 distribution tables
+            setPlanGymWeekTrainingLevel(null);
             setPlanGymWeekCreatedPlan(result);
           }}
         />
@@ -3356,15 +3352,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           plan={planGymWeekCreatedPlan}
           goals={planGymWeekGoals}
           trainingLevel={planGymWeekTrainingLevel}
-          onBack={(updatedPlan) => {
-            setPlanGymWeekCreatedPlan(null);
-            setPlanGymWeekManualDaysCount(updatedPlan.daysCount);
-            setPlanGymWeekInitialPlan(updatedPlan);
-            setShowPlanGymWeekManualForm(true);
-          }}
           onClose={() => {
             setPlanGymWeekCreatedPlan(null);
-            setPlanGymWeekTrainingLevel(null);
             // After creation, switch to table view so the user can see their workout schedule
             setViewMode('table');
           }}

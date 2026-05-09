@@ -405,7 +405,7 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
         { label: 'Execution techniques', href: '/settings?section=tools&tab=bodyBuildingTechniques' },
         { label: 'Equipment factories', href: '/settings?section=technical&tab=equipmentFactories' },
         { label: 'Muscle Settings', href: '/settings?section=technical&tab=muscles' },
-        { label: 'Gym machines', href: '/settings?section=technical&tab=sportMachines' },
+        { label: 'Gym machines', href: '/settings?section=technical&tab=sportsEquipment' },
         { label: 'Exercise bank', href: '/settings?section=technical&tab=exercises' },
         { label: 'My library of exercises', href: '/settings?section=technical&tab=myLibrary' },
         { label: 'Sport devices enabled', href: '/settings?section=technical&tab=devices' },
@@ -488,7 +488,7 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
       id: 'countries',
       label: 'Countries & Languages',
       items: [
-        { label: 'Countries settings', icon: Flag },
+        { label: 'Countries settings', icon: Flag, href: '/countries' },
         {
           label: 'Languages',
           icon: Languages,

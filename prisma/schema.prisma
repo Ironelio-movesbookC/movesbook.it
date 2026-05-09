@@ -800,6 +800,42 @@ model SuperAdminSettings {
   @@map("super_admin_settings")
 }
 
+/// Operator and Co-Admin accounts managed from the admin console (separate from `User` / `users_new`).
+model StaffAccount {
+  id             String           @id @default(cuid())
+  kind           StaffAccountKind
+  username       String           @unique
+  email          String           @unique
+  password       String
+  name           String
+  surname        String
+  country        String?
+  regions        String?
+  roleLabel      String?
+  alternateEmail String?
+  phonePrefix    String?
+  phoneNumber    String?
+  cellularPrefix String?
+  cellularNumber String?
+  facebook       String?
+  twitter        String?
+  website        String?
+  blogsite       String?
+  otherSite      String?
+  otherInfos     String?          @db.LongText
+  imageUrl       String?          @db.LongText
+  lastLogin      DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@map("staff_accounts")
+}
+
+enum StaffAccountKind {
+  OPERATOR
+  CO_ADMIN
+}
+
 /// Manufacturers / brands that build sport and fitness machines (Super Admin catalog).
 model SportMachineCompany {
   id          String   @id @default(cuid())

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Image from 'next/image';
 import {
   Building2,
@@ -14,7 +14,6 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
 
 export type SportMachineCompanyRow = {
   id: string;
@@ -40,99 +39,16 @@ function authHeaders(): HeadersInit {
   return { Authorization: `Bearer ${token}` };
 }
 
-/**
- * Normalize stored asset paths for browser <img>.
- * Handles missing leading slash, Windows backslashes, and absolute filesystem-style paths that still contain `/uploads/`.
- */
-function mediaSrc(path: string | null | undefined): string | null {
-  if (!path?.trim()) return null;
-  let s = path.trim().replace(/\\/g, '/');
-  const lower = s.toLowerCase();
-  const uploadsMarker = '/uploads/';
-  const uIdx = lower.indexOf(uploadsMarker);
-  if (uIdx !== -1 && !/^https?:\/\//i.test(s)) {
-    s = s.slice(uIdx);
-  }
-  if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('blob:') || s.startsWith('data:')) {
-    return s;
-  }
-  return s.startsWith('/') ? s : `/${s}`;
-}
-
-/** Absolute URL in the browser so Label/Grid images are not broken by next/image constraints. */
-function companyImageSrc(path: string | null | undefined): string {
-  const n = mediaSrc(path);
-  if (!n) return '';
-  if (/^(https?:|blob:|data:)/i.test(n)) return n;
-  if (typeof window !== 'undefined') {
-    try {
-      return new URL(n.startsWith('/') ? n : `/${n}`, window.location.origin).href;
-    } catch {
-      return n;
-    }
-  }
-  return n;
-}
-
-const DESC_LANG_KEYS = ['en', 'fr', 'it', 'de', 'es', 'ru'] as const;
-
-function emptyDescMap(): Record<string, string> {
-  return Object.fromEntries(DESC_LANG_KEYS.map((k) => [k, '']));
-}
-
-function parseCompanyDescription(raw: string | null): Record<string, string> {
-  const blank = emptyDescMap();
-  if (!raw?.trim()) return { ...blank };
-  const t = raw.trim();
-  if (t.startsWith('{')) {
-    try {
-      const j = JSON.parse(t) as Record<string, unknown>;
-      if (j && typeof j === 'object') {
-        const out = { ...blank };
-        for (const k of DESC_LANG_KEYS) {
-          const v = j[k];
-          if (typeof v === 'string') out[k] = v;
-        }
-        return out;
-      }
-    } catch {
-      /* plain text */
-    }
-  }
-  return { ...blank, en: t };
-}
-
-function serializeCompanyDescription(map: Record<string, string>): string | null {
-  const trimmed = Object.fromEntries(
-    Object.entries(map).map(([k, v]) => [k, (v || '').trim()])
-  );
-  const nonEmpty = Object.entries(trimmed).filter(([, v]) => v.length > 0);
-  if (nonEmpty.length === 0) return null;
-  if (nonEmpty.length === 1 && nonEmpty[0][0] === 'en') return nonEmpty[0][1];
-  return JSON.stringify(Object.fromEntries(nonEmpty));
-}
-
-function descriptionPreview(raw: string | null): string {
-  const m = parseCompanyDescription(raw);
-  const en = (m.en || '').trim();
-  if (en) return en;
-  for (const k of DESC_LANG_KEYS) {
-    const v = (m[k] || '').trim();
-    if (v) return v;
-  }
-  return '';
-}
-
 export default function SuperAdminCompaniesSection({ onNotify }: Props) {
   const [companies, setCompanies] = useState<SportMachineCompanyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>('grid');
-  const [showCompanyForm, setShowCompanyForm] = useState(true);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [country, setCountry] = useState('');
+  const [description, setDescription] = useState('');
   const [url, setUrl] = useState('');
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [iconUrl, setIconUrl] = useState<string | null>(null);
@@ -140,16 +56,6 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
   const [iconFile, setIconFile] = useState<File | null>(null);
   const [logoBlobUrl, setLogoBlobUrl] = useState<string | null>(null);
   const [iconBlobUrl, setIconBlobUrl] = useState<string | null>(null);
-  const [descByLang, setDescByLang] = useState<Record<string, string>>(() => emptyDescMap());
-  const [activeDescLang, setActiveDescLang] = useState('en');
-
-  const descLanguages = useMemo(
-    () =>
-      SUPPORTED_LANGUAGES.filter((l: { code: string }) =>
-        (DESC_LANG_KEYS as readonly string[]).includes(l.code)
-      ),
-    []
-  );
 
   useEffect(() => {
     if (!logoFile) {
@@ -201,8 +107,7 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
     setEditingId(null);
     setName('');
     setCountry('');
-    setDescByLang(emptyDescMap());
-    setActiveDescLang('en');
+    setDescription('');
     setUrl('');
     setLogoUrl(null);
     setIconUrl(null);
@@ -261,7 +166,7 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
       const payload = {
         name: name.trim(),
         country: country.trim() || null,
-        description: serializeCompanyDescription(descByLang),
+        description: description.trim() || null,
         url: url.trim() || null,
         logoUrl: nextLogo,
         iconUrl: nextIcon,
@@ -310,8 +215,7 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
     setEditingId(c.id);
     setName(c.name);
     setCountry(c.country || '');
-    setDescByLang(parseCompanyDescription(c.description));
-    setActiveDescLang('en');
+    setDescription(c.description || '');
     setUrl(c.url || '');
     setLogoUrl(c.logoUrl);
     setIconUrl(c.iconUrl);
@@ -339,12 +243,12 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
     }
   };
 
-  const logoPreviewResolved = mediaSrc(logoBlobUrl || logoUrl || undefined);
-  const iconPreviewResolved = mediaSrc(iconBlobUrl || iconUrl || undefined);
+  const logoPreview = logoBlobUrl || logoUrl;
+  const iconPreview = iconBlobUrl || iconUrl;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
             <Building2 className="w-5 h-5 text-blue-600" />
@@ -354,15 +258,7 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
             Sport and fitness machine manufacturers — logo (square), icon, country, and website.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 justify-end">
-          <button
-            type="button"
-            onClick={() => setShowCompanyForm((v) => !v)}
-            className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
-          >
-            {showCompanyForm ? 'Hide add/edit form' : 'Show add/edit form'}
-          </button>
-          <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
+        <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
           <button
             type="button"
             onClick={() => setDisplayMode('grid')}
@@ -388,10 +284,8 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
             Label
           </button>
         </div>
-        </div>
       </div>
 
-      {showCompanyForm && (
       <form
         onSubmit={handleSubmit}
         className="bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-xl p-6 space-y-4"
@@ -431,15 +325,14 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
                   onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
                 />
               </label>
-              {logoPreviewResolved && (
-                <div className="relative h-16 w-16 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white shrink-0">
+              {logoPreview && (
+                <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white shrink-0">
                   <Image
-                    src={companyImageSrc(logoPreviewResolved) ?? ''}
+                    src={logoPreview}
                     alt="Logo preview"
                     fill
                     className="object-cover"
-                    sizes="64px"
-                    unoptimized
+                    unoptimized={logoPreview.startsWith('blob:')}
                   />
                 </div>
               )}
@@ -461,15 +354,14 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
                   onChange={(e) => setIconFile(e.target.files?.[0] || null)}
                 />
               </label>
-              {iconPreviewResolved && (
-                <div className="relative h-12 w-12 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white shrink-0">
+              {iconPreview && (
+                <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white shrink-0">
                   <Image
-                    src={companyImageSrc(iconPreviewResolved) ?? ''}
+                    src={iconPreview}
                     alt="Icon preview"
                     fill
                     className="object-contain p-1"
-                    sizes="48px"
-                    unoptimized
+                    unoptimized={iconPreview.startsWith('blob:')}
                   />
                 </div>
               )}
@@ -507,30 +399,9 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
               Short description
             </label>
-            <div className="flex flex-wrap gap-1 mb-2">
-              {descLanguages.map((lang: { code: string; name: string }) => (
-                <button
-                  key={lang.code}
-                  type="button"
-                  onClick={() => setActiveDescLang(lang.code)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded-md border transition ${
-                    activeDescLang === lang.code
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  {lang.name}
-                </button>
-              ))}
-            </div>
             <textarea
-              value={descByLang[activeDescLang] ?? ''}
-              onChange={(e) =>
-                setDescByLang((prev) => ({
-                  ...prev,
-                  [activeDescLang]: e.target.value
-                }))
-              }
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-white resize-y min-h-[4rem]"
               placeholder="One or two lines about the brand"
@@ -557,7 +428,6 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
           )}
         </div>
       </form>
-      )}
 
       <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-800">
         {loading ? (
@@ -597,14 +467,12 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
                     <td className="p-3 font-medium text-gray-900 dark:text-white">{c.name}</td>
                     <td className="p-3">
                       {c.logoUrl ? (
-                        <div className="relative h-12 w-12 rounded-md overflow-hidden border border-gray-200 dark:border-gray-600">
+                        <div className="relative w-12 h-12 rounded-md overflow-hidden border border-gray-200 dark:border-gray-600">
                           <Image
-                            src={companyImageSrc(c.logoUrl) ?? ''}
+                            src={c.logoUrl}
                             alt=""
                             fill
                             className="object-cover"
-                            sizes="48px"
-                            unoptimized
                           />
                         </div>
                       ) : (
@@ -652,35 +520,19 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
           </div>
         ) : (
           <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-            {companies.map((c) => {
-              const descPreview = descriptionPreview(c.description);
-              return (
+            {companies.map((c) => (
               <li
                 key={c.id}
                 className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 flex flex-col gap-3 bg-gray-50/50 dark:bg-gray-900/20"
               >
                 <div className="flex items-start gap-3">
                   {c.iconUrl ? (
-                    <div className="relative h-10 w-10 shrink-0 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white">
-                      <Image
-                        src={companyImageSrc(c.iconUrl) ?? ''}
-                        alt=""
-                        fill
-                        className="object-contain p-0.5"
-                        sizes="40px"
-                        unoptimized
-                      />
+                    <div className="relative w-10 h-10 shrink-0 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white">
+                      <Image src={c.iconUrl} alt="" fill className="object-contain p-0.5" />
                     </div>
                   ) : c.logoUrl ? (
-                    <div className="relative h-10 w-10 shrink-0 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
-                      <Image
-                        src={companyImageSrc(c.logoUrl) ?? ''}
-                        alt=""
-                        fill
-                        className="object-cover"
-                        sizes="40px"
-                        unoptimized
-                      />
+                    <div className="relative w-10 h-10 shrink-0 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
+                      <Image src={c.logoUrl} alt="" fill className="object-cover" />
                     </div>
                   ) : (
                     <div className="w-10 h-10 rounded-lg bg-gray-200 dark:bg-gray-700 shrink-0" />
@@ -695,15 +547,8 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
                   </div>
                 </div>
                 {c.logoUrl && (
-                  <div className="relative mx-auto h-32 w-full max-w-[10rem] rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40">
-                    <Image
-                      src={companyImageSrc(c.logoUrl) ?? ''}
-                      alt=""
-                      fill
-                      className="object-cover"
-                      sizes="160px"
-                      unoptimized
-                    />
+                  <div className="relative w-full aspect-square max-h-32 mx-auto rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
+                    <Image src={c.logoUrl} alt="" fill className="object-cover" />
                   </div>
                 )}
                 {c.url && (
@@ -716,11 +561,11 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
                     {c.url}
                   </a>
                 )}
-                {descPreview ? (
+                {c.description && (
                   <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-3">
-                    {descPreview}
+                    {c.description}
                   </p>
-                ) : null}
+                )}
                 <div className="flex gap-2 mt-auto pt-2">
                   <button
                     type="button"
@@ -740,8 +585,7 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
                   </button>
                 </div>
               </li>
-              );
-            })}
+            ))}
           </ul>
         )}
       </div>

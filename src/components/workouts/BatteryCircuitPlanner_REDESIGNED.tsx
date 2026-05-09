@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { AlertCircle, RefreshCw, Settings, Clock, Play } from 'lucide-react';
 import Image from 'next/image';
-import { CIRCUIT_SERIES_PAUSE_OPTIONS } from '@/constants/moveframe.constants';
 import CircuitExecutionPlayer from './CircuitExecutionPlayer';
 import CircuitPlanner_OLD from './CircuitPlanner_OLD';
 
@@ -104,33 +103,6 @@ const countSeriesPauseToPlannerSeconds = (n: number, fallbackSec = 120): number 
   if (v >= 60) return Math.min(600, v);
   if (v >= 1 && v <= 10) return v * 60;
   return v;
-};
-
-const snapCircuitSeriesPauseSec = (raw: number): number => {
-  const allowed = CIRCUIT_SERIES_PAUSE_OPTIONS.map((o) => o.value);
-  const r = Math.max(0, Math.round(Number.isFinite(raw) ? raw : 0));
-  if (allowed.includes(r)) return r;
-  let best = allowed[0]!;
-  let bestDist = Infinity;
-  for (const v of allowed) {
-    const d = Math.abs(v - r);
-    if (d < bestDist) {
-      bestDist = d;
-      best = v;
-    }
-  }
-  return best;
-};
-
-const formatCircuitSeriesPauseLabel = (seconds: number): string => {
-  const found = CIRCUIT_SERIES_PAUSE_OPTIONS.find((o) => o.value === seconds);
-  if (found) return found.label;
-  const secTotal = Math.max(0, Math.round(seconds));
-  const m = Math.floor(secTotal / 60);
-  const s = secTotal % 60;
-  if (m <= 0) return `${s}"`;
-  if (s === 0) return `${m}'`;
-  return `${m}'${String(s).padStart(2, '0')}"`;
 };
 
 const buildCircuitsFromMovelaps = (movelaps: any[], fallbackConfig: any) => {
@@ -349,29 +321,9 @@ export default function BatteryCircuitPlanner({
   
   // Execution settings
   const [executionOrder, setExecutionOrder] = useState<'vertical' | 'horizontal'>(
-    config?.executionMode === 'horizontal' ? 'horizontal' : 'vertical'
+    config?.executionMode || 'vertical'
   );
-  /** When Execution horizontally + Set series: "Pause at the end" (seconds; same option list as Pause\\series). */
-  const [horizontalPauseAtEndSec, setHorizontalPauseAtEndSec] = useState(() => {
-    let sec = 120;
-    if (typeof config?.pauses?.series === 'number') {
-      sec = countSeriesPauseToPlannerSeconds(config.pauses.series, 120);
-    } else if (config?.pauseSeries !== undefined) {
-      const min = Number(config.pauseSeries) || 2;
-      sec = Math.min(600, Math.max(0, min * 60));
-    }
-    return snapCircuitSeriesPauseSec(sec);
-  });
-  /** Pause\\series (horizontal): rest between series at a station — seconds, same list as Pause at the end. */
-  const [horizontalPauseBetweenSeriesSec, setHorizontalPauseBetweenSeriesSec] = useState(() => {
-    const h =
-      typeof config?.horizontalSeries === 'number'
-        ? config.horizontalSeries
-        : typeof config?.pauses?.horizontalSeries === 'number'
-          ? config.pauses.horizontalSeries
-          : 40;
-    return snapCircuitSeriesPauseSec(h);
-  });
+  const [executionPauseStations, setExecutionPauseStations] = useState('');
   
   // Execution player state
   const [showExecutionPlayer, setShowExecutionPlayer] = useState(false);
@@ -464,23 +416,20 @@ export default function BatteryCircuitPlanner({
     setShowOldCircuitPlanner(true);
   };
 
-  /** Seconds for Pause\stations in OLD planner; horizontal + Set series uses Pause\series (granular list). */
+  /** Seconds between stations in OLD planner: horizontal + Set series uses Pause\series (minutes → sec). */
   const pauseStationsForOldPlanner =
     executionOrder === 'horizontal' && seriesMode === 'series'
-      ? horizontalPauseBetweenSeriesSec
+      ? pauseSeries * 60
       : pauseStations;
 
   const stationPauseSelectOptions = React.useMemo(() => {
-    if (executionOrder === 'horizontal' && seriesMode === 'series') {
-      return CIRCUIT_SERIES_PAUSE_OPTIONS.map((o) => o.value);
-    }
     const base = [5, 10, 15, 20, 25, 30, 40, 50, 60];
     const sec = pauseStationsForOldPlanner;
     if (!base.includes(sec)) {
       return [...base, sec].sort((a, b) => a - b);
     }
     return base;
-  }, [executionOrder, seriesMode, pauseStationsForOldPlanner]);
+  }, [pauseStationsForOldPlanner]);
 
   // If showing old circuit planner, render it instead of the first view
   if (showOldCircuitPlanner) {
@@ -495,11 +444,7 @@ export default function BatteryCircuitPlanner({
           seriesTime: timePerCircuit,
           pauseStations: pauseStationsForOldPlanner,
           pauseCircuits,
-          pauseSeries:
-            executionOrder === 'horizontal' && seriesMode === 'series'
-              ? horizontalPauseAtEndSec / 60
-              : pauseSeries,
-          horizontalSeries: horizontalPauseBetweenSeriesSec,
+          pauseSeries,
           loadOfWork: undefined,
           executionMode: executionOrder,
           startInTablePhase: true,
@@ -521,13 +466,9 @@ export default function BatteryCircuitPlanner({
               seriesMode,
               seriesPerCircuit,
               timePerCircuit,
-              pauseSeries:
-                executionOrder === 'horizontal' && seriesMode === 'series'
-                  ? horizontalPauseAtEndSec / 60
-                  : pauseSeries,
+              pauseSeries,
               executionOrder,
-              horizontalSeries: horizontalPauseBetweenSeriesSec,
-              executionPauseStations: String(horizontalPauseBetweenSeriesSec)
+              executionPauseStations
             }
           });
           setShowOldCircuitPlanner(false);
@@ -702,19 +643,16 @@ export default function BatteryCircuitPlanner({
                   disabled={executionOrder === 'horizontal' && seriesMode === 'series'}
                   title={
                     executionOrder === 'horizontal' && seriesMode === 'series'
-                      ? 'Set series\\circuit: pause between stations matches Pause\\series (same time list). Edit Pause\\series.'
+                      ? 'Set series\\circuit: pause between stations matches Pause\\series (minutes → seconds). Edit Pause\\series.'
                       : undefined
                   }
                   className="w-20 px-2 py-1.5 border border-gray-400 rounded text-center focus:ring-2 focus:ring-blue-500 text-sm font-semibold disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
                 >
-                  {stationPauseSelectOptions.map((n) => {
-                    const opt = CIRCUIT_SERIES_PAUSE_OPTIONS.find((o) => o.value === n);
-                    return (
-                      <option key={n} value={n}>
-                        {executionOrder === 'horizontal' && seriesMode === 'series' && opt ? opt.label : `${n}"`}
-                      </option>
-                    );
-                  })}
+                  {stationPauseSelectOptions.map((n) => (
+                    <option key={n} value={n}>
+                      {n}"
+                    </option>
+                  ))}
                 </select>
                 <button type="button" className="w-6 h-6 rounded-full bg-gray-300 hover:bg-gray-400 flex items-center justify-center text-gray-700 text-lg font-bold">×</button>
               </div>
@@ -801,10 +739,7 @@ export default function BatteryCircuitPlanner({
                     <input 
                       type="radio" 
                       checked={seriesMode === 'time'} 
-                      onChange={() => {
-                        setSeriesMode('time');
-                        setExecutionOrder('vertical');
-                      }} 
+                      onChange={() => setSeriesMode('time')} 
                       className="w-4 h-4 text-blue-600"
                     />
                     <span className="text-sm font-medium text-gray-700">Set time\circuit</span>
@@ -844,11 +779,7 @@ export default function BatteryCircuitPlanner({
                     <div className="relative w-10 bg-white border-2 border-gray-400 rounded flex flex-col justify-between items-center py-2">
                       {/* Display pauseSeries value at top */}
                       <div className="text-xs font-bold text-blue-700 mt-1">
-                        {seriesMode === 'time'
-                          ? String(pauseSeries)
-                          : executionOrder === 'horizontal'
-                            ? formatCircuitSeriesPauseLabel(horizontalPauseAtEndSec)
-                            : `${pauseSeries}'`}
+                        {pauseSeries}'
                         </div>
                       
                       {/* Timer icon at bottom */}
@@ -883,47 +814,18 @@ export default function BatteryCircuitPlanner({
                   </label>
                 </div>
                 <div className="flex items-center gap-2 bg-white border border-gray-300 rounded px-2 py-1">
-                  <select
-                    value={
-                      seriesMode === 'time'
-                        ? pauseSeries
-                        : executionOrder === 'horizontal'
-                          ? horizontalPauseAtEndSec
-                          : pauseSeries
-                    }
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value, 10);
-                      if (seriesMode === 'time') {
-                        setPauseSeries(Number.isFinite(v) ? v : 0);
-                        return;
-                      }
-                      if (executionOrder === 'horizontal') {
-                        setHorizontalPauseAtEndSec(snapCircuitSeriesPauseSec(v));
-                        return;
-                      }
-                      setPauseSeries(Number.isFinite(v) ? v : 2);
-                    }}
-                    className={`border border-gray-400 rounded text-center focus:ring-2 focus:ring-blue-500 text-base font-semibold ${
-                      seriesMode === 'series' && executionOrder === 'horizontal' ? 'min-w-[4.5rem] px-2 py-1' : 'w-16 px-2 py-1'
-                    }`}
+                  <select 
+                    value={pauseSeries} 
+                    onChange={(e) => setPauseSeries(parseInt(e.target.value))}
+                    className="w-16 px-2 py-1 border border-gray-400 rounded text-center focus:ring-2 focus:ring-blue-500 text-base font-semibold"
                   >
                     {seriesMode === 'time'
-                      ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-                          <option key={n} value={n}>
-                            {n}
-                          </option>
+                      ? [0,1,2,3,4,5,6,7,8,9].map(n => (
+                          <option key={n} value={n}>{n}</option>
                         ))
-                      : executionOrder === 'horizontal'
-                        ? CIRCUIT_SERIES_PAUSE_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))
-                        : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                            <option key={n} value={n}>
-                              {`${n}'`}
-                            </option>
-                          ))}
+                      : [1,2,3,4,5,6,7,8,9,10].map(n => (
+                          <option key={n} value={n}>{n}'</option>
+                        ))}
                   </select>
                   <button type="button" className="w-7 h-7 rounded-full bg-gray-300 hover:bg-gray-400 flex items-center justify-center text-gray-700 text-lg font-bold">×</button>
                 </div>
@@ -1007,14 +909,7 @@ export default function BatteryCircuitPlanner({
                   <input 
                     type="radio" 
                     checked={executionOrder === 'vertical'} 
-                    onChange={() => {
-                      if (executionOrder === 'horizontal' && seriesMode === 'series') {
-                        setPauseSeries(
-                          Math.max(1, Math.min(10, Math.round(horizontalPauseAtEndSec / 60)))
-                        );
-                      }
-                      setExecutionOrder('vertical');
-                    }} 
+                    onChange={() => setExecutionOrder('vertical')} 
                     className="w-4 h-4 text-blue-600"
                   />
                   <span className="text-sm font-medium text-gray-700">
@@ -1081,12 +976,7 @@ export default function BatteryCircuitPlanner({
                   <input 
                     type="radio" 
                     checked={executionOrder === 'horizontal'} 
-                    onChange={() => {
-                      if (seriesMode === 'time') return;
-                      setHorizontalPauseAtEndSec(snapCircuitSeriesPauseSec(pauseSeries * 60));
-                      setHorizontalPauseBetweenSeriesSec(snapCircuitSeriesPauseSec(pauseStations));
-                      setExecutionOrder('horizontal');
-                    }} 
+                    onChange={() => setExecutionOrder('horizontal')} 
                     disabled={seriesMode === 'time'}
                     className="w-4 h-4 text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                   />
@@ -1096,20 +986,14 @@ export default function BatteryCircuitPlanner({
                 </label>
                 <div className="flex items-center gap-2">
                 <label className="text-sm font-medium text-gray-700">Pause\series</label>
-                <select
-                  value={horizontalPauseBetweenSeriesSec}
-                  onChange={(e) =>
-                    setHorizontalPauseBetweenSeriesSec(
-                      snapCircuitSeriesPauseSec(parseInt(e.target.value, 10))
-                    )
-                  }
-                  disabled={executionOrder !== 'horizontal' || seriesMode === 'time'}
-                  className="min-w-[4.5rem] px-2 py-1 border border-gray-400 rounded text-sm disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                <select 
+                  value={executionPauseStations || ''} 
+                  onChange={(e) => setExecutionPauseStations(e.target.value)}
+                    className="w-20 px-2 py-1 border border-gray-400 rounded text-sm"
                 >
-                  {CIRCUIT_SERIES_PAUSE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
+                    <option value="">20"</option>
+                  {[5,10,15,20,25,30,40,50,60].map(n => (
+                    <option key={n} value={n}>{n}"</option>
                   ))}
                 </select>
                   <button type="button" className="w-6 h-6 bg-gray-200 rounded flex items-center justify-center text-gray-600 hover:bg-gray-300">

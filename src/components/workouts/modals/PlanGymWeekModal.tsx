@@ -209,7 +209,7 @@ export default function PlanGymWeekModal({
       }`}
     >
       <div
-        className={`flex-shrink-0 w-32 bg-amber-100 border-y border-amber-200 border-x-0 rounded overflow-hidden relative ${
+        className={`flex-shrink-0 w-32 bg-amber-100 border border-amber-200 rounded overflow-hidden relative ${
           stretchImage ? 'self-stretch min-h-24' : 'h-24 flex items-center justify-center text-amber-700 text-xs text-center'
         }`}
       >
@@ -220,7 +220,7 @@ export default function PlanGymWeekModal({
               alt=""
               fill
               unoptimized
-              className="border-0 object-cover object-center outline-none ring-0"
+              className="object-cover object-center"
               sizes="128px"
               onError={(e) => {
                 const el = e.currentTarget as HTMLImageElement;
@@ -236,7 +236,7 @@ export default function PlanGymWeekModal({
               width={128}
               height={96}
               unoptimized
-              className="max-w-full max-h-full border-0 object-contain outline-none ring-0 rounded"
+              className="max-w-full max-h-full object-contain rounded"
               onError={(e) => {
                 const el = e.currentTarget as HTMLImageElement;
                 el.style.display = 'none';

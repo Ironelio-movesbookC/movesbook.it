@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { PrismaClient } from '@prisma/client';
 import { verifyToken } from '@/lib/auth';
+
+const prisma = new PrismaClient();
 
 // GET /api/workouts/moveframes/[id] - Get a single moveframe with movelaps
 export async function GET(

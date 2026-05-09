@@ -55,7 +55,6 @@ export async function GET(request: NextRequest) {
         name: m.club.name,
         description: m.club.description,
         location: m.club.location,
-        youtubeChannelUrl: m.club.youtubeChannelUrl,
         admin: m.club.admin,
         role: m.role,
         membershipType: m.membershipType,

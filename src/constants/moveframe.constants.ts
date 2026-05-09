@@ -15,59 +15,6 @@ export function circuitLoadOfWorkToMacroFinal(load: unknown): string | null {
   return MACRO_FINAL_OPTIONS[parseInt(s, 10)] ?? null;
 }
 
-/** Inter-station pause in circuit planner grid and Add/Edit station modal (seconds). */
-export const CIRCUIT_STATION_PAUSE_OPTIONS: { label: string; value: number }[] = [
-  { label: '0"', value: 0 },
-  { label: '5"', value: 5 },
-  { label: '10"', value: 10 },
-  { label: '15"', value: 15 },
-  { label: '20"', value: 20 },
-  { label: '25"', value: 25 },
-  { label: '30"', value: 30 },
-  { label: '40"', value: 40 },
-  { label: '50"', value: 50 },
-  { label: "1'", value: 60 },
-  { label: '1\'30"', value: 90 },
-  { label: "2'", value: 120 }
-];
-
-/**
- * Pause at the end / Pause between series (count mode) — CircuitPlanner_OLD series pauses
- * and BatteryCircuitPlanner_REDESIGNED when Execution horizontally (both dropdowns).
- */
-export const CIRCUIT_SERIES_PAUSE_OPTIONS: { label: string; value: number }[] = [
-  { label: '0"', value: 0 },
-  { label: '30"', value: 30 },
-  { label: "1'", value: 60 },
-  { label: '1\'30"', value: 90 },
-  { label: "2'", value: 120 },
-  { label: '2\'30"', value: 150 },
-  { label: "3'", value: 180 },
-  { label: "4'", value: 240 },
-  { label: "5'", value: 300 },
-  { label: "6'", value: 360 },
-  { label: "7'", value: 420 },
-  { label: "8'", value: 480 },
-  { label: "9'", value: 540 },
-  { label: "10'", value: 600 }
-];
-
-/** Rest / pause between sets — fast planner toolbars, bulk Pause apply, Plan gym week manual tables */
-export const FAST_PLANNER_REST_PAUSE_OPTIONS: string[] = [
-  '0"',
-  '30"',
-  "1'",
-  "2'",
-  "3'",
-  "4'",
-  "5'",
-  "6'",
-  "7'",
-  "8'",
-  "9'",
-  "10'"
-];
-
 // Muscular sectors for BODY_BUILDING (WEIGHTS)
 export const MUSCULAR_SECTORS = [
   'Shoulders',
@@ -91,19 +38,7 @@ export const MUSCULAR_SECTORS = [
 export const REST_TYPES = {
   SET_TIME: 'Set time',
   RESTART_TIME: 'Restart time',
-  SET_METERS: 'Set meters',
   RESTART_PULSE: 'Restart pulse'
-} as const;
-
-/**
- * Pause section — Pace field vs Mode (Stopped / Speed / Watts).
- * Stopped: fixed 0, disabled. Speed: decimal pace/speed. Watts: 0–999.
- */
-export const PAUSE_PACE_BY_MODE = {
-  speedPlaceholder: 'Min/km · Vel/h…',
-  speedTitle: 'Min/km or Vel/h (bike, mtb, ski)',
-  wattsPlaceholder: '0–999',
-  wattsTitle: 'from 0 to 999'
 } as const;
 
 // Reps type options (for non-distance sports)
@@ -932,28 +867,11 @@ export const DISTANCE_BASED_SPORTS = [
   'SKI',
   'SNOWBOARD',
   'WALKING',
-  'HIKING'
-] as const;
-
-/** Official moveframe UI: muscular dropdown + reps/tools table (not top-level series/reps/speed). */
-export const OFFICIAL_INDOOR_TOOLS_LAYOUT_SPORTS = [
+  'HIKING',
   'STRETCHING',
-  'GYMNASTIC',
-  'PILATES',
-  'YOGA',
-  'CALISTENIC',
-  'SPARTAN',
-  'CROSSFIT'
+  'CROSSFIT',
+  'SPARTAN'
 ] as const;
-
-export function isOfficialIndoorToolsLayoutSport(sport: string): boolean {
-  return (OFFICIAL_INDOOR_TOOLS_LAYOUT_SPORTS as readonly string[]).includes(sport);
-}
-
-/** Shared muscular-sector dropdown list (BODY BUILDING + official indoor tools). */
-export function isMuscularSectorDropdownSport(sport: string): boolean {
-  return sport === 'BODY_BUILDING' || isOfficialIndoorToolsLayoutSport(sport);
-}
 
 // Aerobic sports (use "reps" terminology)
 export const AEROBIC_SPORTS = [

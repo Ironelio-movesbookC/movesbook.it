@@ -143,10 +143,26 @@ export default function WorkoutSectionHeader({
   
   return (
     <>
-      {/* Top bar: Workout Management + Close */}
+      {/* Top bar: Workout Management + Plan gym week + Close */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Workout Management</h1>
         <div className="flex items-center gap-3">
+          {onPlanGymWeek && (
+            <button
+              onClick={onPlanGymWeek}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-all shadow-md"
+              title="Plan a routine to save in Archive or Yearly Plan"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+              Plan gym week
+            </button>
+          )}
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors"
@@ -161,7 +177,7 @@ export default function WorkoutSectionHeader({
       <div className="bg-white border-b border-gray-300 px-2 py-2">
         <div className="flex items-center gap-2">
           {/* Section Tabs */}
-          {(['B', 'C', 'D'] as SectionId[]).map((section) => (
+          {(['A', 'W', 'B', 'C', 'D'] as SectionId[]).map((section) => (
             <button
               key={section}
               onClick={() => onSectionChange(section)}
@@ -171,7 +187,7 @@ export default function WorkoutSectionHeader({
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              {section === 'D' ? 'Archive workouts & weekly plans' : getSectionTitle(section)}
+              {getSectionTitle(section)}
             </button>
           ))}
         </div>
@@ -351,20 +367,6 @@ export default function WorkoutSectionHeader({
             {/* Buttons for Section B (Yearly Plan) - Right of Title */}
             {activeSection === 'B' && (
               <>
-                <button
-                  onClick={() => onSectionChange('A')}
-                  className="px-3 py-1.5 bg-gray-100 text-gray-800 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
-                  title="Open template plans"
-                >
-                  Create Template Plans
-                </button>
-                <button
-                  onClick={() => onSectionChange('W')}
-                  className="px-3 py-1.5 bg-gray-100 text-gray-800 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
-                  title="Open weekly workouts structures"
-                >
-                  Weekly workouts structures
-                </button>
                 {onCreatePlan && (
                   <button
                     onClick={onCreatePlan}
