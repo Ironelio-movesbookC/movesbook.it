@@ -498,6 +498,10 @@ export default function DarkSidebar({
 
   const handleMyEntityTab = () => {
     setCurrentTab('my-entity');
+    if (userType === 'CLUB') {
+      return;
+    }
+
     if (isClubAccountUserType(userType) && onMyClubClick) {
       onMyClubClick();
     } else if (userType === 'TEAM_MANAGER' && onMyTeamClick) {
@@ -2695,7 +2699,11 @@ export default function DarkSidebar({
                                       label: "Default for member's profiles",
                                     },
                                     { Icon: Fingerprint, label: 'Identification devices' },
-                                    { Icon: List, label: 'Typologies of subscription' },
+                                    {
+                                      Icon: List,
+                                      label: 'Typologies of subscription',
+                                      path: '/club/settings/typology_subscription',
+                                    },
                                     { Icon: Settings, label: 'System settings' },
                                     { Icon: CreditCard, label: 'Accesses controls' },
                                     { Icon: Settings2, label: 'Other settings' },
@@ -2706,20 +2714,33 @@ export default function DarkSidebar({
                                       Icon: Import,
                                       label: 'Load dbase from other apps',
                                     },
-                                    { Icon: Check, label: 'Enable-disable functions' },
+                                    {
+                                      Icon: Check,
+                                      label: 'Enable-disable functions',
+                                      path: '/club/settings/enable_disable_functions',
+                                    },
                                   ] as const
-                                ).map(({ Icon: SubIcon, label: subLabel }, subIdx, arr) => (
-                                  <button
-                                    key={subLabel}
-                                    type="button"
-                                    className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333] ${
-                                      subIdx < arr.length - 1 ? 'border-b border-gray-600/70' : ''
-                                    }`}
-                                  >
-                                    <SubIcon className="h-3.5 w-3.5 shrink-0 opacity-95" />
-                                    <span className="leading-snug">{subLabel}</span>
-                                  </button>
-                                ))}
+                                ).map((item, subIdx, arr) => {
+                                  const { Icon: SubIcon, label: subLabel } = item;
+                                  const path = 'path' in item ? item.path : undefined;
+                                  return (
+                                    <button
+                                      key={subLabel}
+                                      type="button"
+                                      onClick={() => {
+                                        if (path) {
+                                          router.push(path);
+                                        }
+                                      }}
+                                      className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333] ${
+                                        subIdx < arr.length - 1 ? 'border-b border-gray-600/70' : ''
+                                      }`}
+                                    >
+                                      <SubIcon className="h-3.5 w-3.5 shrink-0 opacity-95" />
+                                      <span className="leading-snug">{subLabel}</span>
+                                    </button>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
