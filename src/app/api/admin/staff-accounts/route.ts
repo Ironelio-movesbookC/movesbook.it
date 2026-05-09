@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma, resetPrismaClient } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
 
 export const dynamic = 'force-dynamic';
@@ -8,6 +8,11 @@ export async function GET(request: NextRequest) {
   const auth = await requireAdmin(request);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  // Next.js dev keeps a cached PrismaClient in global; after adding models, the delegate may be missing until refresh.
+  if (!(prisma as unknown as { staffAccount?: { findMany: (...args: unknown[]) => Promise<unknown> } }).staffAccount) {
+    await resetPrismaClient();
   }
 
   const url = new URL(request.url);
@@ -31,7 +36,7 @@ export async function GET(request: NextRequest) {
   });
 
   return NextResponse.json({
-    staff: rows.map((r) => ({
+    staff: rows.map((r: (typeof rows)[number]) => ({
       id: r.id,
       kind: r.kind,
       username: r.username,
