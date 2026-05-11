@@ -2969,7 +2969,11 @@ export default function DarkSidebar({
                                     },
                                     { Icon: Settings, label: 'System settings' },
                                     { Icon: CreditCard, label: 'Accesses controls' },
-                                    { Icon: Settings2, label: 'Other settings' },
+                                    {
+                                      Icon: Settings2,
+                                      label: 'Other settings',
+                                      path: '/club/settings/other_settings',
+                                    },
                                     { Icon: LayoutGrid, label: 'Tables' },
                                     { Icon: Volume2, label: 'Access of outcome settings' },
                                     { Icon: Mic, label: 'Audio messages' },
