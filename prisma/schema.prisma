@@ -549,7 +549,8 @@ model UserSettings {
   notificationSettings   String    @db.Text
   socialSettings         String    @db.Text
   sportIconType          String    @default("emoji")
-  toolsSettings          String    @db.Text
+  /// JSON: sports, equipment, exercises, pathology catalog, etc. — can exceed 64KB; use LongText
+  toolsSettings          String    @db.LongText
   workoutPreferences     String    @db.Text
   yearlyPlanStartDate    DateTime? // Start date for Section B (Yearly Plan)
   templateWeeksStartDate DateTime? // Start date for Section A (3 Weeks Plan)

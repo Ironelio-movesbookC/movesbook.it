@@ -20,6 +20,8 @@ import {
   normalizeCatalogExerciseName,
 } from '@/data/mockExercises';
 import ExerciseGalleryModal from '@/components/workouts/ExerciseGalleryModal';
+import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
+import { computeAnaerobicFastPlannerRowStats, formatAvePauseFromSeconds } from '@/utils/moveframeAvePause';
 import '../../../styles/sticky-table.css';
 
 type AerobicRestChoice = 'rest_time' | 'restart_to' | 'reset_pulse';
@@ -275,11 +277,7 @@ function EditableNotesField({ movelap, stripHtmlTags, onRefresh, isNewlyAdded }:
   React.useEffect(() => {
     let cleanNotes = movelap.notes || '';
     if (typeof cleanNotes === 'string') {
-      // Remove circuit metadata tags
-      cleanNotes = cleanNotes.replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '');
-      cleanNotes = cleanNotes.replace(/\[CIRCUIT_DATA\].*?\[\/CIRCUIT_DATA\]/g, '');
-      cleanNotes = cleanNotes.replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '');
-      cleanNotes = cleanNotes.trim();
+      cleanNotes = stripInternalWorkoutTags(cleanNotes).trim();
     }
     setNotesValue(stripHtmlTags(cleanNotes));
   }, [movelap.notes, movelap.id, stripHtmlTags]);
@@ -504,23 +502,78 @@ function SortableMovelapRow({
   const nextLayout = nextMovelapInTable ? readCircuitLayoutFromMovelap(nextMovelapInTable) : null;
   const sameCircuitNext =
     !!normalizedCircuitLetter && !!nextLayout && nextLayout.letter === normalizedCircuitLetter;
+  /** Sparse grids (e.g. 1 station per serie): end-of-serie is when the next lap is not the same local serie — not when stationNumber hits configured width. */
+  const nextSameSerieVertical =
+    execMode === 'vertical' &&
+    sameCircuitNext &&
+    !!nextLayout &&
+    nextLayout.localSeries === localSeriesNum;
+  const nextSameSerieHorizontal =
+    execMode === 'horizontal' &&
+    sameCircuitNext &&
+    !!nextLayout &&
+    nextLayout.localSeries === localSeriesNum &&
+    nextLayout.station === stationNum;
+  const isLogicalEndOfSerie =
+    hasCircuitIdentity &&
+    (isEndOfSeries ||
+      (execMode === 'vertical' && !!normalizedCircuitLetter && !nextSameSerieVertical) ||
+      (execMode === 'horizontal' && !!normalizedCircuitLetter && !nextSameSerieHorizontal));
+  const isLogicalEndOfCircuit =
+    hasCircuitIdentity &&
+    isLogicalEndOfSerie &&
+    (seriesCount > 0 ? localSeriesNum === seriesCount : !sameCircuitNext);
+  /** Next lap same circuit and strictly later local serie — works for sparse grids where serie 1 only fills station 1. */
   const listDetectsVerticalSeriesEnd =
     execMode === 'vertical' &&
     sameCircuitNext &&
     !!nextLayout &&
     nextLayout.localSeries > localSeriesNum &&
     localSeriesNum > 0 &&
-    localSeriesNum < seriesCount;
+    (seriesCount <= 0 || localSeriesNum < seriesCount);
+  const listDetectsHorizontalSeriesEnd =
+    execMode === 'horizontal' &&
+    sameCircuitNext &&
+    !!nextLayout &&
+    nextLayout.station === stationNum &&
+    nextLayout.localSeries > localSeriesNum &&
+    localSeriesNum > 0 &&
+    (seriesCount <= 0 || localSeriesNum < seriesCount);
   /** Vertical: after last station of a serie, except the last serie of the circuit. Horizontal: after last serie at a station, except the last station of the circuit. */
-  const showThickSerieEndSeparator =
-    !!hasCircuitIdentity &&
+  const classicVerticalSerieEnd =
+    execMode === 'vertical' &&
     seriesCount > 0 &&
     stationsPerSeries > 0 &&
+    stationNum === stationsPerSeries &&
+    localSeriesNum < seriesCount;
+  const classicHorizontalSerieEnd =
+    execMode === 'horizontal' &&
+    seriesCount > 0 &&
+    stationsPerSeries > 0 &&
+    localSeriesNum === seriesCount &&
+    stationNum < stationsPerSeries;
+  /**
+   * List-order truth: next lap is same circuit and starts local serie N+1 — works for vertical listing (C-1-4 → C-2-1)
+   * even when saved executionMode is "horizontal". Does NOT fire after last serie (guarded by localSeriesNum < seriesCount)
+   * nor after C-2-4 when the next row is another moveframe / circuit.
+   */
+  const listShowsNextSerieSameCircuit =
+    !!normalizedCircuitLetter &&
+    !!nextLayout &&
+    sameCircuitNext &&
+    localSeriesNum >= 1 &&
+    Number.isFinite(nextLayout.localSeries) &&
+    nextLayout.localSeries === localSeriesNum + 1 &&
+    (seriesCount <= 0 || localSeriesNum < seriesCount);
+  const showThickSerieEndSeparator =
+    !!hasCircuitIdentity &&
     localSeriesNum > 0 &&
     stationNum > 0 &&
-    (execMode === 'horizontal'
-      ? localSeriesNum === seriesCount && stationNum < stationsPerSeries
-      : (stationNum === stationsPerSeries && localSeriesNum < seriesCount) || listDetectsVerticalSeriesEnd);
+    (listShowsNextSerieSameCircuit ||
+      classicVerticalSerieEnd ||
+      classicHorizontalSerieEnd ||
+      listDetectsVerticalSeriesEnd ||
+      listDetectsHorizontalSeriesEnd);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -556,8 +609,9 @@ function SortableMovelapRow({
     !!lastCircuitLetter &&
     !!normalizedCircuitLetter &&
     normalizedCircuitLetter === lastCircuitLetter;
-  const isWorkoutFinalRestRow = isEndOfCircuit && isLastCircuitInWorkout;
-  const isIntermediateSeriesEndRow = hasCircuitIdentity && isEndOfSeries && !isEndOfCircuit;
+  const isWorkoutFinalRestRow = isLogicalEndOfCircuit && isLastCircuitInWorkout;
+  const isIntermediateSeriesEndRow =
+    hasCircuitIdentity && isLogicalEndOfSerie && !isLogicalEndOfCircuit;
   const finalRestSeconds =
     isWorkoutFinalRestRow && (circuitPauseFromCircuit ?? pauseCircuitsSeconds) != null
       ? (circuitPauseFromCircuit ?? pauseCircuitsSeconds)!
@@ -586,19 +640,28 @@ function SortableMovelapRow({
   // Same pause→macro mapping as non-final rows: after last serie of a circuit use pause-after-circuit; else end-of-serie uses pause-between-series.
   const macroFromCircuitPauses = !hasCircuitIdentity
     ? null
-    : isEndOfCircuit && (circuitPauseFromCircuit ?? pauseCircuitsSeconds) != null
+    : isLogicalEndOfCircuit && (circuitPauseFromCircuit ?? pauseCircuitsSeconds) != null
       ? formatPause((circuitPauseFromCircuit ?? pauseCircuitsSeconds) as number)
-      : isEndOfSeries && (seriesPauseFromCircuit ?? pauseSeriesSeconds) != null
+      : isLogicalEndOfSerie && (seriesPauseFromCircuit ?? pauseSeriesSeconds) != null
         ? formatPause((seriesPauseFromCircuit ?? pauseSeriesSeconds) as number)
         : null;
 
-  // Macro: lap field; else end-of-series / end-of-circuit pauses; on final workout cell use circuit/moveframe macro (Continuous Time) when lap field missing, then same circuit/series pauses as other end-of-serie rows (fixes last station showing only inter-station Pause).
-  const macroValue = macroFromLap
+  const lapMacroSeconds = macroFromLap ? parseMovelapPauseToSeconds(macroFromLap) : 0;
+  const fallbackMacroSecondsFromConfig = Math.max(
+    circuitMacroFallback ? parseMovelapPauseToSeconds(circuitMacroFallback) : 0,
+    moveframeMacroFallback ? parseMovelapPauseToSeconds(moveframeMacroFallback) : 0,
+    macroFromCircuitPauses ? parseMovelapPauseToSeconds(macroFromCircuitPauses) : 0,
+    finalRestSeconds ?? 0,
+  );
+  /** Lap sometimes stores legacy `0'` while planner macro lives in [CIRCUIT_DATA]. Prefer non-zero config when final lap macro parses to 0. */
+  const suppressZeroLapMacroForFinal =
+    isWorkoutFinalRestRow && !!macroFromLap && lapMacroSeconds === 0 && fallbackMacroSecondsFromConfig > 0;
+
+  // Macro column: lap macro only on rows that store macroFinal; final-row fallback from config/moveframe. Between-series rest lives on movelap.pause (Pause column), not here — avoids every lap inheriting macro and hiding Pause.
+  const macroValue = macroFromLap && !suppressZeroLapMacroForFinal
     ? macroFromLap
-    : hasCircuitIdentity
-      ? isWorkoutFinalRestRow
-        ? circuitMacroFallback ?? moveframeMacroFallback ?? macroFromCircuitPauses
-        : macroFromCircuitPauses
+    : hasCircuitIdentity && isWorkoutFinalRestRow
+      ? circuitMacroFallback ?? moveframeMacroFallback ?? macroFromCircuitPauses
       : null;
   const pauseValue = macroValue
     ? null
@@ -649,6 +712,27 @@ function SortableMovelapRow({
     !moveframe?.isCircuitBased;
   const isAerobicFastPlanner = isFastPlanner && fastPlannerPayload?.plannerType === 'aerobic';
   const isAnaerobicFastPlanner = isFastPlanner && !isAerobicFastPlanner;
+
+  /** Circuit laps store pause as seconds on `movelap.pause` — format Pause column (between-series / macro rest live here when only one station produces movelaps per serie). */
+  const pauseSecondsCircuitDisplay =
+    hasCircuitIdentity && !isAnaerobicFastPlanner && !isAerobicFastPlanner
+      ? isWorkoutFinalRestRow
+        ? Math.max(
+            storedPauseSeconds,
+            finalRestSeconds ?? 0,
+            lapMacroSeconds,
+            fallbackMacroSecondsFromConfig,
+          )
+        : storedPauseSeconds
+      : storedPauseSeconds;
+  const pauseColumnDisplay =
+    hasCircuitIdentity && !isAnaerobicFastPlanner && !isAerobicFastPlanner
+      ? useLegacyFinalRestInPause && finalRestSeconds != null
+        ? formatPause(finalRestSeconds)
+        : formatPause(pauseSecondsCircuitDisplay)
+      : pauseValue === 0
+        ? '0'
+        : pauseValue || '—';
   
   // Distance-based sports (no tools)
   const distanceBasedSports = ['SWIM', 'BIKE', 'MTB', 'RUN', 'ROWING', 'CANOEING', 'SKATE', 'SKI', 'SNOWBOARD', 'HIKING', 'WALKING'];
@@ -719,6 +803,70 @@ function SortableMovelapRow({
       
        {isAnaerobicFastPlanner && (
          <>
+           <td className={`border border-gray-300 px-1 py-1 align-middle ${isNewlyAdded ? 'text-red-600' : ''}`}>
+             {(() => {
+               const exName = (movelap.exercise || '').trim();
+               const sectorLabel = (movelap.muscularSector || movelap.style || '').trim();
+               const sectorImg =
+                 sectorLabel && MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                   ? MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                   : null;
+               const media = exName ? getExerciseMedia(exName) : null;
+               const thumbSrc =
+                 media?.thumb?.src ?? (exName && sectorImg ? sectorImg : null);
+               const thumbData =
+                 media?.thumb?.isDataUrl === true || (!!thumbSrc && thumbSrc.startsWith('data:'));
+               const openGallery = () => {
+                 const title =
+                   exName || (sectorLabel ? `${sectorLabel} — exercise` : 'Exercise');
+                 setExerciseGallery({
+                   title,
+                   pictureA: media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                   pictureB:
+                     media?.pictureB ?? media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                 });
+               };
+               if (!exName && !sectorLabel) {
+                 return <span className="text-sm text-gray-400">—</span>;
+               }
+               return (
+                 <div className="flex max-w-[220px] items-center gap-1.5">
+                   <button
+                     type="button"
+                     title="Click to enlarge pictures"
+                     className="h-10 w-10 flex-shrink-0 overflow-hidden rounded border border-gray-200 bg-gray-50 hover:ring-2 hover:ring-teal-500"
+                     onClick={(e) => {
+                       e.stopPropagation();
+                       openGallery();
+                     }}
+                   >
+                     {thumbSrc ? (
+                       thumbData ? (
+                         // eslint-disable-next-line @next/next/no-img-element -- thumb may be data URL from catalog
+                         <img src={thumbSrc} alt="" className="h-full w-full object-cover" />
+                       ) : (
+                         <Image
+                           src={thumbSrc}
+                           alt=""
+                           width={40}
+                           height={40}
+                           className="h-full w-full object-cover"
+                           unoptimized
+                         />
+                       )
+                     ) : (
+                       <div className="h-full w-full bg-gray-100" aria-hidden />
+                     )}
+                   </button>
+                   <div className="min-w-0 flex-1 text-left text-sm leading-tight text-gray-900">
+                     {exName || (
+                       <span className="italic text-amber-800">{sectorLabel}</span>
+                     )}
+                   </div>
+                 </div>
+               );
+             })()}
+           </td>
            <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {(() => {
                const s = typeof movelap.speed === 'string' ? movelap.speed.trim() : (movelap.speed != null ? String(movelap.speed).trim() : '');
@@ -857,18 +1005,19 @@ function SortableMovelapRow({
                        ? MUSCULAR_SECTOR_IMAGES[sectorLabel]
                        : null;
                    const media = exName ? getExerciseMedia(exName) : null;
-                   const thumbSrc =
-                     media?.thumb?.src ?? (exName && sectorImg ? sectorImg : sectorImg);
+                  const thumbSrc =
+                    media?.thumb?.src ?? (exName && sectorImg ? sectorImg : null);
                    const thumbData =
                      media?.thumb?.isDataUrl === true || (!!thumbSrc && thumbSrc.startsWith('data:'));
                    const openGallery = () => {
                      const title =
                        exName || (sectorLabel ? `${sectorLabel} — select exercise` : 'Exercise');
-                     setExerciseGallery({
-                       title,
-                       pictureA: media?.pictureA ?? sectorImg ?? null,
-                       pictureB: media?.pictureB ?? media?.pictureA ?? sectorImg ?? null,
-                     });
+                    setExerciseGallery({
+                      title,
+                      pictureA: media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                      pictureB:
+                        media?.pictureB ?? media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                    });
                    };
                    return (
                      <div className="flex items-center gap-1.5">
@@ -994,18 +1143,19 @@ function SortableMovelapRow({
                    ? MUSCULAR_SECTOR_IMAGES[sectorLabel]
                    : null;
                const media = exName ? getExerciseMedia(exName) : null;
-               const thumbSrc =
-                 media?.thumb?.src ?? (exName && sectorImg ? sectorImg : sectorImg);
+              const thumbSrc =
+                media?.thumb?.src ?? (exName && sectorImg ? sectorImg : null);
                const thumbData =
                  media?.thumb?.isDataUrl === true || (!!thumbSrc && thumbSrc.startsWith('data:'));
                const openGallery = () => {
                  const title =
                    exName || (sectorLabel ? `${sectorLabel} — select exercise` : 'Exercise');
-                 setExerciseGallery({
-                   title,
-                   pictureA: media?.pictureA ?? sectorImg ?? null,
-                   pictureB: media?.pictureB ?? media?.pictureA ?? sectorImg ?? null,
-                 });
+                setExerciseGallery({
+                  title,
+                  pictureA: media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                  pictureB:
+                    media?.pictureB ?? media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                });
                };
                return (
                  <div className="flex items-center gap-1.5">
@@ -1127,7 +1277,7 @@ function SortableMovelapRow({
        {/* Pause/Recovery */}
      {!isAnaerobicFastPlanner && !isAerobicFastPlanner && (
       <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
-        {pauseValue === 0 ? '0' : pauseValue || '—'}
+        {pauseColumnDisplay}
        </td>
       )}
        
@@ -1407,13 +1557,8 @@ export default function MovelapDetailTable({
   }));
   // 2026-01-22 14:15 UTC - Strip circuit tags from initial notes value
   const [noteValue, setNoteValue] = useState(() => {
-    let cleanNotes = moveframe.notes || '';
-    if (typeof cleanNotes === 'string') {
-      cleanNotes = cleanNotes.replace(/\[CIRCUIT_DATA\].*?\[\/CIRCUIT_DATA\]/g, '');
-      cleanNotes = cleanNotes.replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '');
-      cleanNotes = cleanNotes.replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '');
-      cleanNotes = cleanNotes.trim();
-    }
+    const raw = moveframe.notes || '';
+    const cleanNotes = typeof raw === 'string' ? stripInternalWorkoutTags(raw).trim() : '';
     return stripHtmlTags(cleanNotes);
   });
   const [isSavingNote, setIsSavingNote] = useState(false);
@@ -1796,31 +1941,6 @@ export default function MovelapDetailTable({
     return `${minutes}'${seconds.toString().padStart(2, '0')}"`;
   };
 
-  const parseMacroToSeconds = (value: unknown): number => {
-    if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value));
-    if (typeof value !== 'string') return 0;
-    const s = String(value).trim();
-    if (!s) return 0;
-    if (/^\d+$/.test(s)) return Math.max(0, parseInt(s, 10));
-    if (s.includes("'")) {
-      const parts = s.split("'");
-      const mStr = (parts[0] ?? '').replace(/\D/g, '');
-      const secStr = parts.slice(1).join("'").replace(/\D/g, '');
-      const m = mStr ? parseInt(mStr, 10) : 0;
-      const sec = secStr ? parseInt(secStr.slice(0, 2), 10) : 0;
-      return Math.max(0, m * 60 + sec);
-    }
-    const secOnly = s.match(/^(\d+)\s*"?$/);
-    if (secOnly) return Math.max(0, parseInt(secOnly[1], 10));
-    return 0;
-  };
-  const formatMacroFromSeconds = (seconds: number) => {
-    const totalSeconds = Math.max(0, Math.round(seconds));
-    const minutes = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${minutes}'${secs.toString().padStart(2, '0')}"`;
-  };
-
   const isPlaceholderEmptyExercise = (value: unknown): boolean => {
     if (typeof value !== 'string') return true;
     const normalized = value.trim().toLowerCase();
@@ -1844,17 +1964,10 @@ export default function MovelapDetailTable({
   // Check if this moveframe is manual mode
   const isManualMode = moveframe.manualMode === true;
   
-  // Update noteValue when moveframe.notes changes (strip HTML and circuit tags)
-  // 2026-01-22 14:15 UTC - Strip CIRCUIT_DATA and CIRCUIT_META tags
+  // Update noteValue when moveframe.notes changes (strip HTML and internal metadata tags)
   React.useEffect(() => {
-    let cleanNotes = moveframe.notes || '';
-    if (typeof cleanNotes === 'string') {
-      // Remove circuit data and metadata tags
-      cleanNotes = cleanNotes.replace(/\[CIRCUIT_DATA\].*?\[\/CIRCUIT_DATA\]/g, '');
-      cleanNotes = cleanNotes.replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '');
-      cleanNotes = cleanNotes.replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '');
-      cleanNotes = cleanNotes.trim();
-    }
+    const raw = moveframe.notes || '';
+    const cleanNotes = typeof raw === 'string' ? stripInternalWorkoutTags(raw).trim() : '';
     setNoteValue(stripHtmlTags(cleanNotes));
   }, [moveframe.notes]);
   
@@ -2026,12 +2139,7 @@ export default function MovelapDetailTable({
 
   const extractUserNotesOnly = (rawNotes: unknown): string => {
     if (typeof rawNotes !== 'string') return '';
-    return rawNotes
-      .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
-      .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
-      .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
-      .replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '')
-      .trim();
+    return stripInternalWorkoutTags(rawNotes).trim();
   };
 
   const handleApplyStationMove = async (mode: 'substitute' | 'exchange') => {
@@ -3547,11 +3655,9 @@ export default function MovelapDetailTable({
       manualContent = moveframe.notes || 'No content';
     }
     
-    // Strip circuit tags if present
+    // Strip internal planner / circuit tags if present
     if (typeof manualContent === 'string') {
-      manualContent = manualContent.replace(/\[CIRCUIT_DATA\].*?\[\/CIRCUIT_DATA\]/g, '');
-      manualContent = manualContent.replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '');
-      manualContent = manualContent.trim();
+      manualContent = stripInternalWorkoutTags(manualContent).trim();
     }
 
     return (
@@ -3954,20 +4060,26 @@ export default function MovelapDetailTable({
                         value={aerobicFastPlannerDraft.rest}
                         onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, rest: e.target.value }))}
                         onBlur={(e) => {
-                          if (aerobicFastPlannerDraft.restChoice === 'restart_to') {
-                            const raw = e.target.value.replace(/\D/g, '').slice(0, 7);
-                            const formatted = formatAerobicTimeFromDigits(raw);
-                            setAerobicFastPlannerDraft((prev) => ({ ...prev, rest: formatted }));
-                            return;
-                          }
-                          if (aerobicFastPlannerDraft.restChoice === 'rest_time') {
-                            const raw = e.target.value.replace(/\D/g, '').slice(0, 6);
-                            const formatted = formatAerobicPauseFromDigits(raw);
-                            setAerobicFastPlannerDraft((prev) => ({ ...prev, rest: formatted }));
-                          }
+                          const rawField = e.target.value;
+                          setAerobicFastPlannerDraft((prev) => {
+                            if (prev.restChoice === 'restart_to') {
+                              const raw = rawField.replace(/\D/g, '').slice(0, 7);
+                              const formatted = formatAerobicTimeFromDigits(raw);
+                              return { ...prev, rest: formatted };
+                            }
+                            if (prev.restChoice === 'rest_time') {
+                              const raw = rawField.replace(/\D/g, '').slice(0, 6);
+                              const formatted = formatAerobicPauseFromDigits(raw);
+                              return { ...prev, rest: formatted };
+                            }
+                            return prev;
+                          });
                         }}
                         className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
                         disabled={isSavingAerobicFastPlannerMovelap}
+                        placeholder=""
+                        autoComplete="off"
+                        aria-label="Rest value"
                       />
                     </div>
                   </div>
@@ -4015,13 +4127,16 @@ export default function MovelapDetailTable({
                     </div>
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-semibold text-gray-800 mb-1">Note</label>
+                    <span className="sr-only">Notes for this repetition</span>
                     <input
                       type="text"
                       value={aerobicFastPlannerDraft.note}
                       onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, note: e.target.value }))}
                       className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                       disabled={isSavingAerobicFastPlannerMovelap}
+                      placeholder=""
+                      autoComplete="off"
+                      aria-label="Notes for this repetition"
                     />
                   </div>
                 </div>
@@ -4164,7 +4279,7 @@ export default function MovelapDetailTable({
 
           {/* 2026-01-24 - Scrollable wrapper for sticky Options column */}
           <div className="overflow-x-auto overflow-y-visible table-scrollbar">
-            <table className="text-sm bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: isAnaerobicFastPlanner ? '1500px' : (moveframe.isCircuitBased ? '1560px' : '1600px'), width: '100%' }}>
+            <table className="text-sm bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: isAnaerobicFastPlanner ? '1700px' : (moveframe.isCircuitBased ? '1560px' : '1600px'), width: '100%' }}>
             {/* Render sport-specific column headers */}
             {(() => {
               const sport = moveframe.sport || 'SWIM';
@@ -4192,6 +4307,7 @@ export default function MovelapDetailTable({
                       <col style={{ width: '30px' }} />
                       <col style={{ width: '120px' }} />
                       <col style={{ width: '80px' }} />
+                      <col style={{ width: '200px', minWidth: '180px' }} />
                       <col style={{ width: '90px' }} />
                       <col style={{ width: '60px' }} />
                       <col style={{ width: '80px' }} />
@@ -4210,6 +4326,7 @@ export default function MovelapDetailTable({
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm">#</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm">Workout section</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm">Sport</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Description</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm">Speed</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm">Series</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm">Rip\time</th>
@@ -4449,7 +4566,7 @@ export default function MovelapDetailTable({
                 if (isAerobicFastPlanner) {
                   totalColumns = 17;
                 } else if (isAnaerobicFastPlanner) {
-                  totalColumns = 13;
+                  totalColumns = 15;
                 } else if (isBodyBuilding) {
                   totalColumns += 3; // Reps + Weight + Tempo
                   if (circuitBasedMoveframe) {
@@ -4540,7 +4657,17 @@ export default function MovelapDetailTable({
                       circuitExecutionMode={
                         circuitConfig?.executionMode === 'horizontal' ? 'horizontal' : 'vertical'
                       }
-                      circuitMacroFromConfig={circuitLoadOfWorkToMacroFinal(circuitConfig?.loadOfWork)}
+                      circuitMacroFromConfig={(() => {
+                        const lw = circuitConfig?.loadOfWork;
+                        const fromDigit = circuitLoadOfWorkToMacroFinal(lw);
+                        if (fromDigit) return fromDigit;
+                        const sec = parseInt(String(lw ?? '').trim(), 10);
+                        if (Number.isFinite(sec) && sec >= 60 && sec <= 600 && sec % 60 === 0) {
+                          const m = sec / 60;
+                          if (m >= 1 && m <= 10) return `${m}'`;
+                        }
+                        return null;
+                      })()}
                       nextMovelapInTable={displayMovelaps[index + 1] ?? null}
                     />
                   </React.Fragment>
@@ -4548,19 +4675,16 @@ export default function MovelapDetailTable({
               })}
             </tbody>
             {isAnaerobicFastPlanner && displayMovelaps.length > 0 && (() => {
-              const macroSeconds = displayMovelaps
-                .map((ml: any) => parseMacroToSeconds(ml.macroFinal ?? ml.pause))
-                .filter((s: number) => s > 0);
-              const avgSeconds = macroSeconds.length > 0
-                ? macroSeconds.reduce((a: number, b: number) => a + b, 0) / macroSeconds.length
-                : 0;
-              const avgMacro = avgSeconds > 0 ? formatMacroFromSeconds(avgSeconds) : '—';
+              const stats = computeAnaerobicFastPlannerRowStats(fastPlannerData, moveframe.movelaps);
+              const avgSec =
+                stats.totalRepVolume > 0 ? stats.totalPauseSec / stats.totalRepVolume : 0;
+              const avgPause = avgSec > 0 ? formatAvePauseFromSeconds(avgSec) : '—';
               return (
                 <tfoot className="bg-gray-100">
                   <tr>
-                    <td colSpan={10} className="border border-gray-300 px-2 py-1 text-right text-sm font-semibold text-gray-700">Macro (avg)</td>
-                    <td className="border border-gray-300 px-1 py-1 text-center text-sm font-semibold">{avgMacro}</td>
-                    <td colSpan={3} className="border border-gray-300" />
+                    <td colSpan={12} className="border border-gray-300 px-2 py-1 text-right text-sm font-semibold text-gray-700">AvePause (avg)</td>
+                    <td className="border border-gray-300 px-1 py-1 text-center text-sm font-semibold">{avgPause}</td>
+                    <td colSpan={2} className="border border-gray-300" />
                   </tr>
                 </tfoot>
               );
@@ -5175,7 +5299,7 @@ export default function MovelapDetailTable({
                           ? MUSCULAR_SECTOR_IMAGES[sectorLabel]
                           : null;
                       const media = exName ? getExerciseMedia(exName) : null;
-                      const thumbSrc = media?.thumb?.src ?? sectorImg;
+                      const thumbSrc = media?.thumb?.src ?? (exName ? sectorImg : null);
                       const thumbData =
                         media?.thumb?.isDataUrl === true || (!!thumbSrc && thumbSrc.startsWith('data:'));
                       return (
@@ -5183,7 +5307,7 @@ export default function MovelapDetailTable({
                           <div className="min-w-0 flex-1">
                             <div className="mb-1 text-sm font-semibold text-gray-800">Preview</div>
                             <p className="text-sm text-gray-600">
-                              Uses mock bank image when available; otherwise the sector diagram. Click to open A/B gallery.
+                              Uses exercise image when available. Click to open A/B gallery.
                             </p>
                           </div>
                           <button
@@ -5192,8 +5316,12 @@ export default function MovelapDetailTable({
                             onClick={() =>
                               setFpMovelapExerciseGallery({
                                 title: exName || sectorLabel || 'Exercise',
-                                pictureA: media?.pictureA ?? sectorImg ?? null,
-                                pictureB: media?.pictureB ?? media?.pictureA ?? sectorImg ?? null,
+                                pictureA: media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                                pictureB:
+                                  media?.pictureB ??
+                                  media?.pictureA ??
+                                  (exName ? sectorImg : null) ??
+                                  null,
                               })
                             }
                             disabled={!thumbSrc || isSavingFastPlannerMovelap}

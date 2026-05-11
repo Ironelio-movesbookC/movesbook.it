@@ -7,15 +7,16 @@ import { useTableColumns } from '@/hooks/useTableColumns';
 import { useColorSettings } from '@/hooks/useColorSettings';
 import TableColumnConfig from '../TableColumnConfig';
 import { formatMoveframeType } from '@/constants/moveframe.constants';
+import { stripInternalWorkoutTags, stripCircuitCompactExerciseTrail } from '@/utils/sanitizeWorkoutHtml';
+import {
+  computeAnaerobicFastPlannerRowStats,
+  computeMoveframeAvePauseSeconds,
+  formatAvePauseFromSeconds
+} from '@/utils/moveframeAvePause';
 
-// 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
-  return content
-    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
-    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
-    .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
-    .trim();
+  return stripInternalWorkoutTags(content).trim();
 };
 
 const extractFastPlannerDataFromNotes = (notes: unknown): any | null => {
@@ -96,6 +97,34 @@ export default function MoveframeTable({
     }
   });
 
+  const fastPlannerPayloadForAve = React.useMemo(
+    () => extractFastPlannerDataFromNotes(moveframe.notes) ?? moveframe.fastPlannerData ?? null,
+    [moveframe.notes, moveframe.fastPlannerData]
+  );
+  const isFastPlanMoveframeForAve = React.useMemo(
+    () =>
+      moveframe.type === 'BATTERY' &&
+      !moveframe.isCircuitBased &&
+      ((typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]')) ||
+        !!fastPlannerPayloadForAve),
+    [moveframe.type, moveframe.isCircuitBased, moveframe.notes, fastPlannerPayloadForAve]
+  );
+  const anaerobicStatsForAve = React.useMemo(() => {
+    if (!isFastPlanMoveframeForAve || !fastPlannerPayloadForAve || fastPlannerPayloadForAve.plannerType === 'aerobic')
+      return null;
+    return computeAnaerobicFastPlannerRowStats(fastPlannerPayloadForAve, moveframe.movelaps);
+  }, [isFastPlanMoveframeForAve, fastPlannerPayloadForAve, moveframe.movelaps]);
+  const moveframeAvePauseSeconds = React.useMemo(
+    () =>
+      computeMoveframeAvePauseSeconds(
+        moveframe,
+        anaerobicStatsForAve,
+        fastPlannerPayloadForAve,
+        isFastPlanMoveframeForAve
+      ),
+    [moveframe, anaerobicStatsForAve, fastPlannerPayloadForAve, isFastPlanMoveframeForAve]
+  );
+
   // Parse annotation colors from notes if type is ANNOTATION
   let annotationColors = null;
   if (moveframe.type === 'ANNOTATION' && moveframe.notes) {
@@ -109,32 +138,6 @@ export default function MoveframeTable({
       annotationColors = null;
     }
   }
-
-  const parseMacroToSeconds = (value: unknown) => {
-    if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value));
-    if (typeof value !== 'string') return 0;
-    const s = value.trim();
-    if (!s) return 0;
-    if (/^\d+$/.test(s)) return Math.max(0, parseInt(s, 10));
-    if (s.includes("'")) {
-      const parts = s.split("'");
-      const mStr = (parts[0] ?? '').replace(/\D/g, '');
-      const secStr = parts.slice(1).join("'").replace(/\D/g, '');
-      const m = mStr ? parseInt(mStr, 10) : 0;
-      const sec = secStr ? parseInt(secStr.slice(0, 2), 10) : 0;
-      return Math.max(0, m * 60 + sec);
-    }
-    const secOnly = s.match(/^(\d+)\s*"?$/);
-    if (secOnly) return Math.max(0, parseInt(secOnly[1], 10));
-    return 0;
-  };
-
-  const formatMacroFromSeconds = (seconds: number) => {
-    const totalSeconds = Math.max(0, Math.round(seconds));
-    const minutes = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${minutes}'${secs.toString().padStart(2, '0')}"`;
-  };
 
   // Helper function to get cell value
   const getCellValue = (column: any) => {
@@ -214,6 +217,8 @@ export default function MoveframeTable({
           ? '' // Blank for manual mode without priority
           : (moveframe.description || '100s * 10 A2 R20*');
         const content = stripCircuitTags(rawContent);
+        const displayContent =
+          moveframe.isCircuitBased ? stripCircuitCompactExerciseTrail(content) : content;
         console.log('📝 Description column:', {
           moveframeId: moveframe.id,
           manualMode: moveframe.manualMode,
@@ -222,16 +227,41 @@ export default function MoveframeTable({
           notesLength: moveframe.notes?.length || 0,
           hasDescription: !!moveframe.description,
           descriptionLength: moveframe.description?.length || 0,
-          contentLength: content?.length || 0,
+          contentLength: displayContent?.length || 0,
           willShowBlank: moveframe.manualMode && !moveframe.manualPriority
         });
-        return content;
+        return displayContent;
         }
       case 'repetitions':
         // For manual mode moveframes in series-based sports, show moveframe.repetitions
-        // For normal moveframes, show movelaps count
+        // For circuit moveframes, show average reps per series (total reps ÷ repetitions / rounds)
         if (moveframe.manualMode) {
           return moveframe.repetitions || '0';
+        }
+        if (moveframe.isCircuitBased) {
+          const totalFromField = Number(moveframe.totalReps);
+          const totalR =
+            Number.isFinite(totalFromField) && totalFromField > 0
+              ? Math.round(totalFromField)
+              : (moveframe.movelaps || []).reduce((s: number, lap: any) => {
+                  const n = parseInt(String(lap?.reps ?? '').replace(/[^\d]/g, ''), 10);
+                  return s + (Number.isFinite(n) ? n : 0);
+                }, 0);
+          let seriesN = Math.max(0, parseInt(String(moveframe.repetitions ?? '0'), 10) || 0);
+          if (seriesN <= 0 && Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0) {
+            const keys = new Set<string>();
+            for (const lap of moveframe.movelaps) {
+              const letter = String(lap?.circuitLetter || '').trim().toUpperCase();
+              if (!letter) continue;
+              const sn = lap?.localSeriesNumber ?? lap?.seriesNumber ?? 1;
+              keys.add(`${letter}:${sn}`);
+            }
+            seriesN = keys.size;
+          }
+          if (seriesN > 0 && totalR > 0) {
+            return String(Math.round(totalR / seriesN));
+          }
+          return '—';
         }
         return moveframe.movelaps?.length || '0';
       case 'total_distance':
@@ -244,19 +274,10 @@ export default function MoveframeTable({
         // Show total distance for distance-based moveframes
         return (moveframe.movelaps || []).reduce((sum: number, lap: any) => sum + (parseInt(lap.distance) || 0), 0);
       case 'macro': {
-        const macroValues = (moveframe.movelaps || [])
-          .map((lap: any) => lap?.macroFinal)
-          .filter((value: any) => {
-            if (typeof value === 'string') {
-              const trimmed = value.trim();
-              return trimmed !== '' && trimmed !== '—';
-            }
-            return value != null;
-          });
-        if (macroValues.length === 0) return moveframe.macroFinal || '—';
-        const totalSeconds = macroValues.reduce((sum: number, value: unknown) => sum + parseMacroToSeconds(value), 0);
-        const avgSeconds = totalSeconds / macroValues.length;
-        return formatMacroFromSeconds(avgSeconds);
+        if (moveframeAvePauseSeconds != null && moveframeAvePauseSeconds > 0) {
+          return formatAvePauseFromSeconds(moveframeAvePauseSeconds);
+        }
+        return '—';
       }
       case 'alarm':
         return moveframe.alarm?.toString() || '—';

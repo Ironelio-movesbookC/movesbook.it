@@ -2,13 +2,18 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { ChevronDown, ChevronUp, FileText, GripVertical, Loader2, Paperclip, X } from 'lucide-react';
-import type { Period } from '@/constants/tools.constants';
+import { ChevronDown, ChevronUp, FileText, GripVertical, Loader2, Paperclip, X, Search, Download } from 'lucide-react';
+import type { Period, PeriodizationTemplate } from '@/constants/tools.constants';
+import { normalizePeriodizationTemplates } from '@/constants/tools.constants';
 import {
   MAX_PERIOD_ATTACHMENTS,
   type PeriodizationAttachmentMeta
 } from '@/lib/periodizationAttachments';
 import { getAuthToken, getAuthHeaders } from '@/utils/auth.utils';
+import {
+  resolveProfileLanguageCodeForToolsLoad,
+  getToolsProfileLanguageDisplayName,
+} from '@/utils/toolsProfileLanguage';
 
 const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), { ssr: false });
 
@@ -249,7 +254,13 @@ function WeekPickerDropdown({
   );
 }
 
-export default function PeriodizationTabPanel({ periods }: { periods: Period[] }) {
+export default function PeriodizationTabPanel({
+  periods,
+  onPeriodizationTemplatesChanged,
+}: {
+  periods: Period[];
+  onPeriodizationTemplatesChanged?: () => void;
+}) {
   const [planMode, setPlanMode] = useState<PlanMode>('yearly');
   const [planLoading, setPlanLoading] = useState(true);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -271,6 +282,12 @@ export default function PeriodizationTabPanel({ periods }: { periods: Period[] }
   const [assignmentSectionOpen, setAssignmentSectionOpen] = useState(true);
   const [periodNotesModalId, setPeriodNotesModalId] = useState<string | null>(null);
   const [periodWeekListMode, setPeriodWeekListMode] = useState<PeriodWeekListMode>('byPeriod');
+
+  const [archiveModalOpen, setArchiveModalOpen] = useState(false);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveItems, setArchiveItems] = useState<PeriodizationTemplate[]>([]);
+  const [archiveSearch, setArchiveSearch] = useState('');
+  const [archiveFetchNote, setArchiveFetchNote] = useState<string | null>(null);
 
   const includeDates = planMode === 'yearly';
 
@@ -695,36 +712,253 @@ export default function PeriodizationTabPanel({ periods }: { periods: Period[] }
     }
   };
 
+  const loadMovesbookArchive = useCallback(async () => {
+    setArchiveLoading(true);
+    setArchiveFetchNote(null);
+    try {
+      const loadLang = resolveProfileLanguageCodeForToolsLoad();
+      let response = await fetch(
+        `/api/admin/tools-defaults/load?language=${encodeURIComponent(loadLang)}`
+      );
+      let data: { toolsData?: { periodizationTemplates?: unknown } } = await response.json().catch(() => ({}));
+      let usedEnglishFallback = false;
+      if ((!response.ok || !data.toolsData) && loadLang !== 'en') {
+        const enRes = await fetch(`/api/admin/tools-defaults/load?language=${encodeURIComponent('en')}`);
+        const enJson = await enRes.json().catch(() => ({}));
+        if (enRes.ok && enJson.toolsData) {
+          response = enRes;
+          data = enJson;
+          usedEnglishFallback = true;
+        }
+      }
+      if (!response.ok || !data.toolsData) {
+        setArchiveItems([]);
+        setArchiveFetchNote(
+          `No Movesbook archive found for ${getToolsProfileLanguageDisplayName(loadLang)}.`
+        );
+        return;
+      }
+      const list = normalizePeriodizationTemplates(data.toolsData.periodizationTemplates);
+      setArchiveItems(list);
+      if (usedEnglishFallback) {
+        setArchiveFetchNote(
+          `No defaults row for ${getToolsProfileLanguageDisplayName(loadLang)}; showing the English archive (${list.length} preset(s)).`
+        );
+      } else {
+        setArchiveFetchNote(
+          list.length === 0
+            ? `Archive is empty for ${getToolsProfileLanguageDisplayName(loadLang)} (${loadLang.toUpperCase()}).`
+            : `${list.length} preset(s) in ${getToolsProfileLanguageDisplayName(loadLang)} (${loadLang.toUpperCase()}) — your profile language.`
+        );
+      }
+    } catch {
+      setArchiveItems([]);
+      setArchiveFetchNote('Failed to load the Movesbook archive.');
+    } finally {
+      setArchiveLoading(false);
+    }
+  }, []);
 
-  if (!periods.length) {
-    return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 p-6 text-amber-900 dark:text-amber-200">
-        <p className="font-semibold mb-1">No periods defined</p>
-        <p className="text-sm">Create periods under the Period settings tab first.</p>
-      </div>
+  useEffect(() => {
+    if (!archiveModalOpen) return;
+    void loadMovesbookArchive();
+  }, [archiveModalOpen, loadMovesbookArchive]);
+
+  const appendPeriodizationTemplateToUserSettings = useCallback(
+    async (tpl: PeriodizationTemplate) => {
+      const res = await fetch('/api/user/settings', { headers: getAuthHeaders() });
+      if (!res.ok) {
+        alert('Could not read your settings.');
+        return false;
+      }
+      const settings = await res.json();
+      const prevTools = settings.toolsSettings || {};
+      const prevList = normalizePeriodizationTemplates(prevTools.periodizationTemplates);
+      const id = `pt-import-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const newEntry: PeriodizationTemplate = {
+        ...tpl,
+        id,
+        isUserCreated: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const nextList = [...prevList, newEntry];
+      const patch = await fetch('/api/user/settings', {
+        method: 'PATCH',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          toolsSettings: {
+            ...prevTools,
+            periodizationTemplates: nextList,
+          },
+        }),
+      });
+      if (!patch.ok) {
+        alert('Could not save import. Try again.');
+        return false;
+      }
+      return true;
+    },
+    []
+  );
+
+  const filteredArchiveItems = useMemo(() => {
+    const q = archiveSearch.trim().toLowerCase();
+    if (!q) return archiveItems;
+    return archiveItems.filter(
+      (tpl) =>
+        tpl.name.toLowerCase().includes(q) ||
+        tpl.sport.toLowerCase().includes(q) ||
+        tpl.level.toLowerCase().includes(q) ||
+        (tpl.tags || []).some((t) => t.toLowerCase().includes(q))
     );
-  }
+  }, [archiveItems, archiveSearch]);
+
+  const profileLangCode = resolveProfileLanguageCodeForToolsLoad();
+  const profileLangLabel = getToolsProfileLanguageDisplayName(profileLangCode);
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3 justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Plan:</span>
-          <select
-            value={planMode}
-            onChange={(e) => setPlanMode(e.target.value as PlanMode)}
-            className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+      <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/90 dark:bg-violet-950/40 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">
+              Movesbook periodization archive
+            </p>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
+              Loads in <strong>{profileLangLabel}</strong> ({profileLangCode.toUpperCase()}) — your profile language
+              only. Open the archive to search Super Admin presets and import one into your library (also under
+              Favourites → Periodizations).
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setArchiveSearch('');
+              setArchiveModalOpen(true);
+            }}
+            className="inline-flex shrink-0 items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 shadow-sm transition"
           >
-            <option value="yearly">Yearly plan (52 weeks)</option>
-            <option value="template">Template weekly plan (3 weeks)</option>
-          </select>
+            <Download className="w-4 h-4" />
+            Load from Movesbook
+          </button>
         </div>
-        {planLoading && (
-          <span className="flex items-center gap-2 text-sm text-gray-500">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading plan…
-          </span>
-        )}
       </div>
+
+      {archiveModalOpen && (
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/60"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Movesbook periodization archive"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setArchiveModalOpen(false);
+          }}
+        >
+          <div
+            className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full max-h-[min(92vh,720px)] flex flex-col border border-gray-200 dark:border-gray-600"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Browse archive</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Language: {profileLangLabel} ({profileLangCode.toUpperCase()})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setArchiveModalOpen(false)}
+                className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-600">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="search"
+                  value={archiveSearch}
+                  onChange={(e) => setArchiveSearch(e.target.value)}
+                  placeholder="Search by name, sport, level, tag…"
+                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+              {archiveFetchNote && (
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">{archiveFetchNote}</p>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-[200px]">
+              {archiveLoading ? (
+                <p className="text-sm text-gray-500 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading Movesbook archive…
+                </p>
+              ) : filteredArchiveItems.length === 0 ? (
+                <p className="text-sm text-gray-500">No presets match your search.</p>
+              ) : (
+                filteredArchiveItems.map((tpl) => (
+                  <div
+                    key={tpl.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50/80 dark:bg-gray-800/80"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-gray-900 dark:text-white truncate">{tpl.name}</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                        {tpl.sport} · {tpl.level}
+                        {(tpl.tags || []).length > 0 ? ` · ${(tpl.tags || []).join(', ')}` : ''}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ok = await appendPeriodizationTemplateToUserSettings(tpl);
+                        if (ok) {
+                          alert(`Imported "${tpl.name}" into your periodization library.`);
+                          setArchiveModalOpen(false);
+                          onPeriodizationTemplatesChanged?.();
+                        }
+                      }}
+                      className="shrink-0 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      Import
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!periods.length ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 p-6 text-amber-900 dark:text-amber-200">
+          <p className="font-semibold mb-1">No periods defined</p>
+          <p className="text-sm">
+            Create periods under the Period settings tab first, then assign weeks below.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-3 justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Plan:</span>
+              <select
+                value={planMode}
+                onChange={(e) => setPlanMode(e.target.value as PlanMode)}
+                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              >
+                <option value="yearly">Yearly plan (52 weeks)</option>
+                <option value="template">Template weekly plan (3 weeks)</option>
+              </select>
+            </div>
+            {planLoading && (
+              <span className="flex items-center gap-2 text-sm text-gray-500">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading plan…
+              </span>
+            )}
+          </div>
 
       {planError && (
         <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
@@ -1130,6 +1364,8 @@ export default function PeriodizationTabPanel({ periods }: { periods: Period[] }
             </div>
           </div>
         </div>
+      )}
+    </>
       )}
     </div>
   );

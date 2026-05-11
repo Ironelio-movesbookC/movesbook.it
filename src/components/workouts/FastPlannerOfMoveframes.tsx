@@ -701,22 +701,6 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return `${m}'${String(s).padStart(2, '0')}"`;
   }, []);
 
-  type FastPlannerSummaryStats = {
-    sectorCount: number;
-    totalSeries: number;
-    avgSeriesPerSector: string;
-    totalExercises: number;
-    avgExercisesPerSector: string;
-    totalReps: number;
-    kgTot: string;
-    avgPause: string;
-  };
-
-  const filledRowsForSummary = useMemo(
-    () => rows.map(r => ({ ...r, exercise: (r.exercise || '').trim() })).filter(r => r.exercise !== ''),
-    [rows]
-  );
-
   /** Per muscle card: total series and exercise count (for strip totals). */
   const muscleGroupAggregates = useMemo(() => {
     const byId: Record<string, { series: number; exercises: number }> = {};
@@ -735,64 +719,18 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return byId;
   }, [rows, getSectorForExercise]);
 
-  const { summaryStats } = useMemo(() => {
-    const filledRows = filledRowsForSummary;
-    if (filledRows.length === 0) {
-      return { summaryStats: null as FastPlannerSummaryStats | null };
-    }
-
-    /** Each filled row maps to one sector (catalog sector or first word of exercise name). */
-    const sectorMap = new Map<string, { seriesSum: number; exerciseCount: number }>();
-    for (const r of filledRows) {
-      const name = (r.exercise || '').trim();
-      const sectorLabel = getSectorForExercise(name) || name.split(/\s+/)[0] || 'Other';
-      const cur = sectorMap.get(sectorLabel) ?? { seriesSum: 0, exerciseCount: 0 };
-      cur.seriesSum += parseInt(String(r.series || '0'), 10) || 0;
-      cur.exerciseCount += 1;
-      sectorMap.set(sectorLabel, cur);
-    }
-
-    const sectorCount = sectorMap.size;
-    let totalSeries = 0;
-    Array.from(sectorMap.values()).forEach((v) => {
-      totalSeries += v.seriesSum;
-    });
-    const totalExercises = filledRows.length;
-
-    const avgSeriesPerSector =
-      sectorCount > 0 ? (totalSeries / sectorCount).toFixed(1) : '0';
-    const avgExercisesPerSector =
-      sectorCount > 0 ? (totalExercises / sectorCount).toFixed(1) : '0';
-
-    let totalReps = 0;
-    let kgTot = 0;
-    const pauseSeconds: number[] = [];
-    for (const r of filledRows) {
-      const reps = resolveFastPlannerRowSeriesReps(r).reduce((a, b) => a + b, 0);
-      totalReps += reps;
-      const weightKg = parseFloat(String(r.weight || '0').replace(',', '.')) || 0;
-      kgTot += weightKg * reps;
-      const sec = parsePauseToSeconds(r.break || '');
-      if (sec > 0 || r.break?.trim()) pauseSeconds.push(sec);
-    }
-    const avgPauseSeconds = pauseSeconds.length > 0
-      ? pauseSeconds.reduce((a, b) => a + b, 0) / pauseSeconds.length
-      : 0;
-    const avgPauseStr = formatPauseFromSeconds(Math.round(avgPauseSeconds));
-
-    const stats: FastPlannerSummaryStats = {
-      sectorCount,
-      totalSeries,
-      avgSeriesPerSector,
-      totalExercises,
-      avgExercisesPerSector,
-      totalReps,
-      kgTot: kgTot.toFixed(1),
-      avgPause: avgPauseStr,
-    };
-
-    return { summaryStats: stats };
-  }, [filledRowsForSummary, getSectorForExercise, parsePauseToSeconds, formatPauseFromSeconds]);
+  const sectorSeriesSummaryChips = useMemo(
+    () =>
+      MUSCLE_GROUPS
+        .map((group) => ({
+          id: group.id,
+          label: group.label,
+          series: muscleGroupAggregates[group.id]?.series ?? 0,
+          exercises: muscleGroupAggregates[group.id]?.exercises ?? 0,
+        }))
+        .filter((item) => item.series > 0 || item.exercises > 0),
+    [muscleGroupAggregates]
+  );
 
   useEffect(() => {
     if (mode !== 'edit') return;
@@ -2148,8 +2086,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                     </button>
                     <div
                       ref={sectorListScrollRef}
-                      className="min-w-0 max-w-[min(100%,36rem)] flex-1 overflow-x-auto overflow-y-hidden scroll-smooth pb-1 [scrollbar-gutter:stable]"
-                      title="About six areas visible; scroll for the rest. Totals update from the table."
+                      className="min-w-0 w-full flex-1 overflow-x-auto overflow-y-hidden scroll-smooth pb-1 [scrollbar-gutter:stable]"
+                      title="All available width is used for sector cards; scroll only when needed."
                       onWheel={(e) => {
                         const el = e.currentTarget;
                         if (el.scrollWidth <= el.clientWidth) return;
@@ -2341,6 +2279,27 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
             <button onClick={handleRemove} className="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900">Remove</button>
             <button onClick={handleResetRow} className="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900">Reset row</button>
             <button onClick={handleResetAll} className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700">Reset all</button>
+            {sectorSeriesSummaryChips.length > 0 && (
+              <div className="mx-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto border-l border-r border-gray-200 px-1.5 py-0.5">
+                {sectorSeriesSummaryChips.map((chip) => (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    onClick={() => setSelectedMuscleGroup(chip.id)}
+                    className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] leading-none ${
+                      selectedMuscleGroup === chip.id
+                        ? 'border-blue-500 bg-blue-50 text-blue-800'
+                        : 'border-gray-300 bg-white text-gray-700 hover:border-blue-400 hover:bg-blue-50/60'
+                    }`}
+                    title={`${chip.label}: ${chip.series} series, ${chip.exercises} exercises`}
+                    aria-label={`${chip.label}: ${chip.series} series`}
+                  >
+                    <span className="font-semibold">{chip.label}</span>
+                    <span className="font-bold text-blue-700">{chip.series} series</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <button onClick={handleSaveMoveframe} disabled={!canSaveWithSuperset} className="ml-auto rounded-md bg-red-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50" title={!canSaveWithSuperset ? 'Fix Superset: each Superset exercise must be grouped with at least one other Superset' : undefined}>Save moveframe</button>
           </div>
           <table className="w-full border-collapse table-fixed">
@@ -2487,33 +2446,37 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                         }`}
                     />
                   </td>
-                  <td className="px-0.5 py-1 border-r bg-emerald-50/90">
-                    <select
-                      value={row.pyramidal || 'flat'}
-                      onChange={(e) =>
-                        setRows((prevRows) =>
-                          prevRows.map((r) =>
-                            r.id === row.id
-                              ? afterSeriesRipTimeOrPyramidalChange({ ...r, pyramidal: e.target.value })
-                              : r
+                  <td className="px-0.5 py-1 border-r bg-emerald-50/90 align-middle">
+                    <div className="flex min-h-[40px] items-center">
+                      <select
+                        value={row.pyramidal || 'flat'}
+                        onChange={(e) =>
+                          setRows((prevRows) =>
+                            prevRows.map((r) =>
+                              r.id === row.id
+                                ? afterSeriesRipTimeOrPyramidalChange({ ...r, pyramidal: e.target.value })
+                                : r
+                            )
                           )
-                        )
-                      }
-                      onClick={() => handleCellClick(row.id, 'pyramidal')}
-                      className={`w-full min-w-0 max-w-full rounded border bg-white px-0.5 py-1 text-[11px] leading-tight ${selectedCell?.rowId === row.id && selectedCell?.field === 'pyramidal'
-                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
-                        : 'border-emerald-200'
-                        }`}
-                      aria-label="Pyramidal load"
-                    >
-                      {PLAN_PYRAMIDAL_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
+                        }
+                        onClick={() => handleCellClick(row.id, 'pyramidal')}
+                        className={`w-full min-w-0 max-w-full rounded border bg-white px-0.5 py-1 text-[11px] leading-tight ${selectedCell?.rowId === row.id && selectedCell?.field === 'pyramidal'
+                          ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
+                          : 'border-emerald-200'
+                          }`}
+                        aria-label="Pyramidal load"
+                      >
+                        {PLAN_PYRAMIDAL_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </td>
-                  <td className="px-1 py-1 border-r bg-green-50 align-top">
+                  <td className={`px-1 py-1 border-r bg-green-50 ${
+                    parsePyramidalMode(row.pyramidal) !== 'flat' && clampSeriesCount(row) > 0 ? 'align-top' : 'align-middle'
+                  }`}>
                     {ripTimeMode === 'time' ? (
                       <input
                         type="text"
@@ -2527,7 +2490,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       />
                     ) : parsePyramidalMode(row.pyramidal) !== 'flat' && clampSeriesCount(row) > 0 ? (
                       <div className="flex flex-col gap-1">
-                        <div className="flex max-h-24 max-w-[13rem] flex-wrap gap-0.5 overflow-y-auto py-0.5">
+                        <div className="flex max-h-24 max-w-[13rem] flex-wrap gap-0.5 overflow-y-auto px-0.5 py-0.5">
                           {resolveFastPlannerRowSeriesReps(row).map((repVal, si) => (
                             <input
                               key={si}
@@ -2648,49 +2611,17 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       </div>
 
       <div
-        className={`mt-1.5 flex-shrink-0 space-y-1.5 rounded-lg bg-green-50 p-2 ${
+        className={`mt-1.5 flex-shrink-0 rounded-lg bg-green-50 p-2 ${
           fullView ? 'border-2 border-green-600' : 'border border-green-300'
         }`}
       >
-        {/* Label + automatic summary on one row; summary scrolls horizontally if needed */}
-        <div className="flex min-w-0 flex-nowrap items-center gap-2 rounded border border-gray-200 bg-gray-100 px-2 py-1.5">
-          <span className="shrink-0 text-xs font-bold text-gray-700 sm:text-sm whitespace-nowrap">
-            Descriptions & Instructions
-          </span>
-          {summaryStats ? (
-            <div className="min-w-0 flex-1 overflow-x-auto">
-              <p
-                className="mb-0 whitespace-nowrap text-[11px] font-medium leading-normal text-gray-800 sm:text-xs"
-                title="Computed from filled exercise rows (sectors from exercise catalog, or first word if unknown)."
-              >
-                <span className="font-bold text-green-800">Summary (automatic):</span>{' '}
-                No. sectors {summaryStats.sectorCount}
-                <span className="text-gray-400"> · </span>
-                Total series {summaryStats.totalSeries}
-                <span className="text-gray-400"> · </span>
-                Average series/sector {summaryStats.avgSeriesPerSector}
-                <span className="text-gray-400"> · </span>
-                Total exercises {summaryStats.totalExercises}
-                <span className="text-gray-400"> · </span>
-                Average exercises/sector {summaryStats.avgExercisesPerSector}
-                <span className="text-gray-400"> · </span>
-                Total reps {summaryStats.totalReps}
-                <span className="text-gray-400"> · </span>
-                Kg tot. {summaryStats.kgTot}
-                <span className="text-gray-400"> · </span>
-                Avg pause {summaryStats.avgPause}
-              </p>
-            </div>
-          ) : (
-            <span className="text-[11px] text-gray-500 sm:text-xs">—</span>
-          )}
-        </div>
         <textarea
           value={userDescription}
           onChange={(e) => setUserDescription(e.target.value)}
-          className="w-full resize-none rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          className="w-full resize-y rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
           rows={2}
           placeholder="Add descriptions or instructions here..."
+          aria-label="Descriptions and instructions"
         />
       </div>
 
@@ -3270,6 +3201,25 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                 <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
               </button>
             </div>
+            {(() => {
+              const targetSeries = Number(planTargetTotalSeries);
+              const plannedSeries = planSectorPlanningStats.seriesSum;
+              const seriesPlanMatchesTarget =
+                Number.isFinite(targetSeries) &&
+                targetSeries > 0 &&
+                plannedSeries === targetSeries;
+              return seriesPlanMatchesTarget ? (
+                <div
+                  className="mb-3 rounded-lg border border-amber-300 bg-amber-100 px-4 py-2.5 text-center shadow-sm sm:px-5"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <p className="text-sm font-semibold text-amber-950">
+                    Series of this muscular area has been set correctly
+                  </p>
+                </div>
+              ) : null;
+            })()}
             <div className="mb-1 rounded-lg border-2 border-amber-200 bg-amber-100/60 px-4 py-3 text-center sm:px-5 sm:py-4">
               <div className="mb-1 text-sm font-semibold text-amber-800">Name exercise</div>
               <div className="text-xl font-bold text-gray-900 sm:text-2xl md:text-3xl">{planCandidate?.name || 'No exercise selected'}</div>

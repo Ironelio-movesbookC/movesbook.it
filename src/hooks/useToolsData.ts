@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Period,
   WorkoutSection,
@@ -8,6 +8,9 @@ import {
   Exercise,
   Device,
   IconType,
+  type ExercisePathologyCatalogItem,
+  type PeriodizationTemplate,
+  normalizePeriodizationTemplates,
   DEFAULT_PERIODS,
   DEFAULT_SECTIONS,
   DEFAULT_BODYBUILDING_TECHNIQUES,
@@ -35,6 +38,20 @@ function toolsItemsIdsFromLocalStorage(storageKey: string): Set<string> {
 /**
  * Drop entries that belong to other tools lists (legacy corrupt saves sometimes duplicated periods/sections into commonDailyActions).
  */
+function normalizeExercisePathologyCatalog(raw: unknown): ExercisePathologyCatalogItem[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ExercisePathologyCatalogItem[] = [];
+  raw.forEach((row, i) => {
+    if (!row || typeof row !== 'object') return;
+    const o = row as Record<string, unknown>;
+    const id = String(o.id ?? '').trim() || `path-${Date.now()}-${i}`;
+    const name = String(o.name ?? '').trim();
+    const order = Number.isFinite(Number(o.order)) ? Number(o.order) : i;
+    out.push({ id, name, order });
+  });
+  return out.sort((a, b) => a.order - b.order).map((p, i) => ({ ...p, order: i }));
+}
+
 function sanitizeCommonDailyActionsList(
   items: WorkoutSection[],
   opts: {
@@ -67,6 +84,10 @@ interface UseToolsDataReturn {
   sports: Sport[];
   equipment: Equipment[];
   exercises: Exercise[];
+  /** Technical Settings — Pathologies catalog for exercise contraindications */
+  exercisePathologyCatalog: ExercisePathologyCatalogItem[];
+  /** Periodization presets (toolsSettings JSON; Super Admin defaults + user copies). */
+  periodizationTemplates: PeriodizationTemplate[];
   devices: Device[];
   iconType: IconType;
   isLoadingIconPreference: boolean;
@@ -82,6 +103,8 @@ interface UseToolsDataReturn {
   setSports: React.Dispatch<React.SetStateAction<Sport[]>>;
   setEquipment: React.Dispatch<React.SetStateAction<Equipment[]>>;
   setExercises: React.Dispatch<React.SetStateAction<Exercise[]>>;
+  setExercisePathologyCatalog: React.Dispatch<React.SetStateAction<ExercisePathologyCatalogItem[]>>;
+  setPeriodizationTemplates: React.Dispatch<React.SetStateAction<PeriodizationTemplate[]>>;
   setDevices: React.Dispatch<React.SetStateAction<Device[]>>;
   setIconType: React.Dispatch<React.SetStateAction<IconType>>;
   setIsSavingToDatabase: React.Dispatch<React.SetStateAction<boolean>>;
@@ -98,7 +121,8 @@ interface UseToolsDataReturn {
     exercises?: Exercise[],
     devices?: Device[],
     commonDailyActions?: WorkoutSection[],
-    workMethods?: WorkoutSection[]
+    workMethods?: WorkoutSection[],
+    exercisePathologyCatalog?: ExercisePathologyCatalogItem[]
   ) => void;
   saveToDatabase: () => Promise<void>;
 }
@@ -122,12 +146,42 @@ export function useToolsData(): UseToolsDataReturn {
   const [sports, setSports] = useState<Sport[]>([]);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [exercisePathologyCatalog, setExercisePathologyCatalog] = useState<ExercisePathologyCatalogItem[]>([]);
+  const [periodizationTemplates, setPeriodizationTemplates] = useState<PeriodizationTemplate[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [iconType, setIconType] = useState<IconType>('emoji');
   const [isLoadingIconPreference, setIsLoadingIconPreference] = useState(true);
   const [isSavingToDatabase, setIsSavingToDatabase] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
-  
+
+  /** Debounced callers must read latest lists (not a stale render closure). */
+  const latestForDbSave = useRef({
+    periods: [] as Period[],
+    sections: [] as WorkoutSection[],
+    commonDailyActions: [] as WorkoutSection[],
+    workMethods: [] as WorkoutSection[],
+    bodyBuildingTechniques: [] as BodyBuildingTechnique[],
+    sports: [] as Sport[],
+    equipment: [] as Equipment[],
+    exercises: [] as Exercise[],
+    devices: [] as Device[],
+    exercisePathologyCatalog: [] as ExercisePathologyCatalogItem[],
+    periodizationTemplates: [] as PeriodizationTemplate[],
+  });
+  latestForDbSave.current = {
+    periods,
+    sections,
+    commonDailyActions,
+    workMethods,
+    bodyBuildingTechniques,
+    sports,
+    equipment,
+    exercises,
+    devices,
+    exercisePathologyCatalog,
+    periodizationTemplates,
+  };
+
   /**
    * Load icon type preference from user settings
    */
@@ -316,6 +370,20 @@ export function useToolsData(): UseToolsDataReturn {
       setDevices(DEFAULT_DEVICES);
     }
   }, []);
+
+  const loadExercisePathologyCatalogFromLocalStorage = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.EXERCISE_PATHOLOGY_CATALOG);
+    if (saved) {
+      try {
+        setExercisePathologyCatalog(normalizeExercisePathologyCatalog(JSON.parse(saved)));
+      } catch (e) {
+        console.error('Failed to load exercise pathology catalog');
+        setExercisePathologyCatalog([]);
+      }
+    } else {
+      setExercisePathologyCatalog([]);
+    }
+  }, []);
   
   /**
    * Load all data from localStorage
@@ -329,6 +397,7 @@ export function useToolsData(): UseToolsDataReturn {
     loadSportsFromLocalStorage();
     loadEquipmentFromLocalStorage();
     loadExercisesFromLocalStorage();
+    loadExercisePathologyCatalogFromLocalStorage();
     loadDevicesFromLocalStorage();
   }, [
     loadPeriodsFromLocalStorage,
@@ -339,6 +408,7 @@ export function useToolsData(): UseToolsDataReturn {
     loadSportsFromLocalStorage,
     loadEquipmentFromLocalStorage,
     loadExercisesFromLocalStorage,
+    loadExercisePathologyCatalogFromLocalStorage,
     loadDevicesFromLocalStorage
   ]);
   
@@ -570,6 +640,12 @@ export function useToolsData(): UseToolsDataReturn {
           loadExercisesFromLocalStorage();
         }
 
+        if (Array.isArray(toolsSettings.exercisePathologyCatalog)) {
+          setExercisePathologyCatalog(normalizeExercisePathologyCatalog(toolsSettings.exercisePathologyCatalog));
+        } else {
+          loadExercisePathologyCatalogFromLocalStorage();
+        }
+
         if (toolsSettings.devices && toolsSettings.devices.length > 0) {
           setDevices(toolsSettings.devices);
         } else {
@@ -603,6 +679,14 @@ export function useToolsData(): UseToolsDataReturn {
         } else {
           setWorkMethods([]);
         }
+
+        if (Array.isArray(toolsSettings.periodizationTemplates)) {
+          setPeriodizationTemplates(
+            normalizePeriodizationTemplates(toolsSettings.periodizationTemplates)
+          );
+        } else {
+          setPeriodizationTemplates([]);
+        }
       } else {
         // Fallback to localStorage if API fails
         loadAllFromLocalStorage();
@@ -620,6 +704,7 @@ export function useToolsData(): UseToolsDataReturn {
     loadSportsFromLocalStorage,
     loadEquipmentFromLocalStorage,
     loadExercisesFromLocalStorage,
+    loadExercisePathologyCatalogFromLocalStorage,
     loadDevicesFromLocalStorage
   ]);
   
@@ -642,7 +727,8 @@ export function useToolsData(): UseToolsDataReturn {
     exercisesData?: Exercise[],
     devicesData?: Device[],
     commonDailyActionsData?: WorkoutSection[],
-    workMethodsData?: WorkoutSection[]
+    workMethodsData?: WorkoutSection[],
+    exercisePathologyCatalogData?: ExercisePathologyCatalogItem[]
   ) => {
     if (periodsData) {
       localStorage.setItem(STORAGE_KEYS.PERIODS, JSON.stringify(periodsData));
@@ -671,12 +757,15 @@ export function useToolsData(): UseToolsDataReturn {
     if (workMethodsData) {
       localStorage.setItem(STORAGE_KEYS.WORK_METHODS, JSON.stringify(workMethodsData));
     }
+    if (exercisePathologyCatalogData) {
+      localStorage.setItem(STORAGE_KEYS.EXERCISE_PATHOLOGY_CATALOG, JSON.stringify(exercisePathologyCatalogData));
+    }
   };
   
   /**
    * Save all settings to database
    */
-  const saveToDatabase = async () => {
+  const saveToDatabase = useCallback(async () => {
     setIsSavingToDatabase(true);
     try {
       const token = getAuthToken();
@@ -685,6 +774,20 @@ export function useToolsData(): UseToolsDataReturn {
         setIsSavingToDatabase(false);
         return;
       }
+
+      const {
+        periods,
+        sections,
+        commonDailyActions,
+        workMethods,
+        bodyBuildingTechniques,
+        sports,
+        equipment,
+        exercises,
+        devices,
+        exercisePathologyCatalog,
+        periodizationTemplates,
+      } = latestForDbSave.current;
 
       console.log('💾 Saving periods to database...', periods);
 
@@ -749,7 +852,9 @@ export function useToolsData(): UseToolsDataReturn {
         exercises,
         devices,
         commonDailyActions,
-        workMethods
+        workMethods,
+        exercisePathologyCatalog,
+        periodizationTemplates,
       };
       try {
         const cur = await fetch('/api/user/settings', { headers: getAuthHeaders() });
@@ -763,7 +868,9 @@ export function useToolsData(): UseToolsDataReturn {
             exercises,
             devices,
             commonDailyActions,
-            workMethods
+            workMethods,
+            exercisePathologyCatalog,
+            periodizationTemplates,
           };
         }
       } catch {
@@ -791,15 +898,31 @@ export function useToolsData(): UseToolsDataReturn {
         setLastSavedTime(new Date());
         console.log('✅ Tools settings saved to database successfully');
       } else {
-        throw new Error('Failed to save to database');
+        const errBody = await response.text().catch(() => '');
+        let detail = errBody;
+        try {
+          const j = JSON.parse(errBody) as { error?: string; details?: string };
+          detail = j.details || j.error || errBody;
+        } catch {
+          /* keep raw */
+        }
+        console.error('❌ PATCH /api/user/settings failed:', response.status, detail);
+        throw new Error(
+          detail ? `Save failed (${response.status}): ${detail}` : `Save failed (${response.status})`
+        );
       }
     } catch (error) {
       console.error('Error saving to database:', error);
-      alert('Failed to save to database. Please try again.');
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      alert(
+        msg.includes('Save failed')
+          ? msg
+          : 'Failed to save to database. Please try again. (Check the browser console for details.)'
+      );
     } finally {
       setIsSavingToDatabase(false);
     }
-  };
+  }, []);
   
   return {
     // State
@@ -811,6 +934,8 @@ export function useToolsData(): UseToolsDataReturn {
     sports,
     equipment,
     exercises,
+    exercisePathologyCatalog,
+    periodizationTemplates,
     devices,
     iconType,
     isLoadingIconPreference,
@@ -826,6 +951,8 @@ export function useToolsData(): UseToolsDataReturn {
     setSports,
     setEquipment,
     setExercises,
+    setExercisePathologyCatalog,
+    setPeriodizationTemplates,
     setDevices,
     setIconType,
     setIsSavingToDatabase,

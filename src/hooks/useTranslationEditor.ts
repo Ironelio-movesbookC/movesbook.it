@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { i18n } from '@/lib/i18n';
 import type { TranslationKey, Language } from '@/constants/language.constants';
+import { getJsonAuthHeaders } from '@/utils/auth.utils';
 
 interface UseTranslationEditorReturn {
   // Save/update existing translation
@@ -96,7 +97,7 @@ export function useTranslationEditor(): UseTranslationEditorReturn {
 
       const response = await fetch('/api/admin/translations/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getJsonAuthHeaders(),
         body: JSON.stringify(requestBody),
       });
 
@@ -128,8 +129,18 @@ export function useTranslationEditor(): UseTranslationEditorReturn {
         
         // Note: i18n updates are handled by reloading translations from database
       } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Unknown error from API');
+        let message = `Request failed (${response.status})`;
+        try {
+          const errorData = (await response.json()) as { error?: string };
+          if (errorData?.error) message = errorData.error;
+        } catch {
+          /* non-JSON body */
+        }
+        if (response.status === 401) {
+          message =
+            'Unauthorized: log in again and ensure your session token is sent (Bearer token required for /api/admin/translations).';
+        }
+        throw new Error(message);
       }
     } catch (error) {
       console.error('❌ Error saving translation:', error);
@@ -166,7 +177,7 @@ export function useTranslationEditor(): UseTranslationEditorReturn {
       // Save to database
       const response = await fetch('/api/admin/translations/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getJsonAuthHeaders(),
         body: JSON.stringify({
           key: newKeyName,
           translations: newKeyTranslations,
@@ -175,8 +186,14 @@ export function useTranslationEditor(): UseTranslationEditorReturn {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to save to database');
+        let message = 'Failed to save to database';
+        try {
+          const errorData = (await response.json()) as { error?: string };
+          if (errorData?.error) message = errorData.error;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(message);
       }
 
       console.log('✅ New translation key saved to database');
@@ -229,7 +246,7 @@ export function useTranslationEditor(): UseTranslationEditorReturn {
       // Save to database
       const response = await fetch('/api/admin/translations/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getJsonAuthHeaders(),
         body: JSON.stringify({
           key: keyName,
           isDeleted: newDeletedStatus,

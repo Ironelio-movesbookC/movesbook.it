@@ -1123,7 +1123,9 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                   const startPlannedDrag = (e: React.DragEvent) => {
                     e.dataTransfer.setData('application/ws-planned', row.id);
                     e.dataTransfer.setData('text/plain', row.id);
-                    e.dataTransfer.effectAllowed = 'move';
+                    // copyMove: some browsers omit custom MIME in `types` during dragover; then we use
+                    // dropEffect "move" from text/plain — that is invalid if effectAllowed were only "move".
+                    e.dataTransfer.effectAllowed = 'copyMove';
                   };
 
                   return (
@@ -1446,19 +1448,34 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                   );
                 }
 
+                const handleSportDragEnter = (e: React.DragEvent) => {
+                  if (!avail) return;
+                  const types = Array.from(e.dataTransfer.types);
+                  if (types.includes('Files')) return;
+                  const fromSport = types.includes('application/ws-sport');
+                  const fromPlannedMime = types.includes('application/ws-planned');
+                  const fromPlannedPlain = types.includes('text/plain') && !fromSport;
+                  if (!fromSport && !fromPlannedMime && !fromPlannedPlain) return;
+                  e.preventDefault();
+                };
                 const handleSportDragOver = (e: React.DragEvent) => {
                   if (!avail) return;
-                  e.preventDefault();
                   const types = Array.from(e.dataTransfer.types);
-                  const fromPlanned = types.some((t) => t === 'application/ws-planned');
-                  e.dataTransfer.dropEffect = fromPlanned ? 'move' : 'copy';
+                  if (types.includes('Files')) return;
+                  const fromSport = types.includes('application/ws-sport');
+                  const fromPlannedMime = types.includes('application/ws-planned');
+                  const fromPlannedPlain = types.includes('text/plain') && !fromSport;
+                  if (!fromSport && !fromPlannedMime && !fromPlannedPlain) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = fromSport ? 'copy' : 'move';
                 };
                 const handleSportDrop = (e: React.DragEvent) => {
                   e.preventDefault();
                   if (!avail) return;
-                  const pidDrag =
+                  const pidRaw =
                     e.dataTransfer.getData('application/ws-planned') ||
                     e.dataTransfer.getData('text/plain');
+                  const pidDrag = pidRaw.trim();
                   const sportDrag = e.dataTransfer.getData('application/ws-sport');
                   if (pidDrag && plannedById.has(pidDrag)) {
                     onDropOnCell(d, sn, { type: 'planned', id: pidDrag });
@@ -1468,7 +1485,11 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                 };
                 const dropProps =
                   avail ?
-                    { onDragOver: handleSportDragOver, onDrop: handleSportDrop }
+                    {
+                      onDragEnter: handleSportDragEnter,
+                      onDragOver: handleSportDragOver,
+                      onDrop: handleSportDrop
+                    }
                   : {};
 
                 const sportCellBg = !avail ? 'bg-gray-300' : dayStripe;

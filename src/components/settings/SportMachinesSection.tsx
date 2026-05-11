@@ -19,6 +19,7 @@ import {
 } from '@/lib/sportMachineHelpers';
 import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
 import { MUSCULAR_SECTORS } from '@/constants/moveframe.constants';
+import { getAuthHeaders, getAuthToken } from '@/utils/auth.utils';
 
 type CompanyOpt = { id: string; name: string; country: string | null; logoUrl: string | null };
 
@@ -48,13 +49,17 @@ function muscularSectorSelectOptions(currentMain: string): string[] {
   return list;
 }
 
-function authHeaders(): HeadersInit {
-  const token =
-    typeof window !== 'undefined'
-      ? localStorage.getItem('token') || localStorage.getItem('adminToken')
-      : null;
-  if (!token) return {};
-  return { Authorization: `Bearer ${token}` };
+/** JSON requests: Bearer + Content-Type. FormData uploads: Bearer only (browser sets multipart boundary). */
+function jsonAuthHeaders(): HeadersInit {
+  const auth = getAuthHeaders();
+  return {
+    'Content-Type': 'application/json',
+    ...auth,
+  };
+}
+
+function bearerAuthHeaders(): HeadersInit {
+  return getAuthHeaders();
 }
 
 function openVideoPreview(url: string) {
@@ -115,7 +120,7 @@ export default function SportMachinesSection() {
   const loadCompanies = useCallback(async () => {
     try {
       const res = await fetch('/api/workouts/machine-companies-catalog', {
-        headers: authHeaders(),
+        headers: bearerAuthHeaders(),
       });
       const data = await res.json();
       if (res.ok) {
@@ -143,7 +148,7 @@ export default function SportMachinesSection() {
         filterCompany: appliedCompany,
       });
       const res = await fetch(`/api/workouts/sport-machines?${q}`, {
-        headers: authHeaders(),
+        headers: bearerAuthHeaders(),
       });
       const data = await res.json();
       if (res.ok) setMachines(data.machines || []);
@@ -177,7 +182,7 @@ export default function SportMachinesSection() {
     fd.append('type', type);
     const res = await fetch('/api/workouts/sport-machines/upload', {
       method: 'POST',
-      headers: authHeaders(),
+      headers: bearerAuthHeaders(),
       body: fd,
     });
     const data = await res.json();
@@ -259,6 +264,14 @@ export default function SportMachinesSection() {
       alert('Company, original name, main area, and code are required.');
       return;
     }
+    if (!getAuthToken()) {
+      alert(
+        'Cannot save: you are not authenticated.\n\n' +
+          'Sign in as a normal user (token saved) or as Super Admin (admin token saved), then try again.\n\n' +
+          'The Machines API requires a Bearer token in the request.'
+      );
+      return;
+    }
     setSaving(true);
     try {
       const body = {
@@ -278,23 +291,39 @@ export default function SportMachinesSection() {
       if (editingId) {
         const res = await fetch(`/api/workouts/sport-machines/${editingId}`, {
           method: 'PATCH',
-          headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+          headers: jsonAuthHeaders(),
           body: JSON.stringify(body),
         });
         if (!res.ok) {
-          const err = await res.json();
-          alert(err.error || 'Update failed');
+          const err = await res.json().catch(() => ({}));
+          const msg = typeof err.error === 'string' ? err.error : `Update failed (${res.status})`;
+          if (res.status === 401 && msg === 'Unauthorized') {
+            alert(
+              'Unauthorized: the request had no valid login token.\n\n' +
+                'Sign in again, or open Super Admin login so adminToken is stored. Expired sessions also return 401 (try signing in again).'
+            );
+            return;
+          }
+          alert(msg);
           return;
         }
       } else {
         const res = await fetch('/api/workouts/sport-machines', {
           method: 'POST',
-          headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+          headers: jsonAuthHeaders(),
           body: JSON.stringify(body),
         });
         if (!res.ok) {
-          const err = await res.json();
-          alert(err.error || 'Create failed');
+          const err = await res.json().catch(() => ({}));
+          const msg = typeof err.error === 'string' ? err.error : `Create failed (${res.status})`;
+          if (res.status === 401 && msg === 'Unauthorized') {
+            alert(
+              'Unauthorized: the request had no valid login token.\n\n' +
+                'Sign in again, or open Super Admin login so adminToken is stored. Expired sessions also return 401 (try signing in again).'
+            );
+            return;
+          }
+          alert(msg);
           return;
         }
       }
@@ -309,7 +338,7 @@ export default function SportMachinesSection() {
     if (!confirm('Delete this machine?')) return;
     const res = await fetch(`/api/workouts/sport-machines/${id}`, {
       method: 'DELETE',
-      headers: authHeaders(),
+      headers: bearerAuthHeaders(),
     });
     if (res.ok) {
       if (editingId === id) resetForm();
@@ -322,7 +351,7 @@ export default function SportMachinesSection() {
     if (!confirm(`Delete ${selected.size} machine(s)?`)) return;
     const res = await fetch('/api/workouts/sport-machines/bulk-delete', {
       method: 'POST',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      headers: jsonAuthHeaders(),
       body: JSON.stringify({ ids: Array.from(selected) }),
     });
     if (res.ok) {

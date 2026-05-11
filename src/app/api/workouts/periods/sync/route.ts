@@ -63,8 +63,14 @@ export async function POST(request: NextRequest) {
     const existingIds = new Set(existingPeriods.map(p => p.id));
     const incomingIds = new Set(periods.map((p: any) => p.id).filter((id: string) => id && !id.startsWith('temp_')));
 
+    // If every row still has only a temp id, the client list is not yet reconciled with DB ids.
+    // Treating that as authoritative would delete all persisted periods — refuse deletes in that case.
+    const incomingHasStableId = incomingIds.size > 0;
+
     // 1. Delete periods that are no longer in the incoming list
-    const periodsToDelete = existingPeriods.filter(p => !incomingIds.has(p.id));
+    const periodsToDelete = incomingHasStableId
+      ? existingPeriods.filter(p => !incomingIds.has(p.id))
+      : [];
     if (periodsToDelete.length > 0) {
       await prisma.period.deleteMany({
         where: {

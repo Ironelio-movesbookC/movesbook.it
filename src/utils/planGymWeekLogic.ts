@@ -233,13 +233,21 @@ function partitionBySizes<T>(arr: T[], sizes: number[]): T[][] {
   return out;
 }
 
+/** Series per area assigned when the gym-week wizard builds sectors (before distribution dialog). */
+export const PLAN_GYM_WEEK_WIZARD_DEFAULT_SERIES_PER_SECTOR = 4;
+/** Wizard defaults before workout-parameter scalars are applied. */
+export const PLAN_GYM_WEEK_WIZARD_DEFAULT_REPS = 12;
+export const PLAN_GYM_WEEK_WIZARD_DEFAULT_PAUSE_LABEL = "1'30\"";
+export const PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_EX_LABEL = "1'";
+export const PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_END_LABEL = "2'";
+
 /** Default series/reps for wizard-built sectors; exercise count comes from `seriesDistribution` + training level. */
 const DEFAULT_SECTOR_PARAMS = {
-  series: 4,
-  reps: 12,
-  pause: "1'30\"",
-  macroExercise: "1'",
-  macroEndOfSector: "2'",
+  series: PLAN_GYM_WEEK_WIZARD_DEFAULT_SERIES_PER_SECTOR,
+  reps: PLAN_GYM_WEEK_WIZARD_DEFAULT_REPS,
+  pause: PLAN_GYM_WEEK_WIZARD_DEFAULT_PAUSE_LABEL,
+  macroExercise: PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_EX_LABEL,
+  macroEndOfSector: PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_END_LABEL,
   pyramidal: 'flat' as PyramidalMode,
 };
 

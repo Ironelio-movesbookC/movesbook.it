@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Search, Plus, Save, Download, Upload, RefreshCw, Globe, Filter } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
+import { getAuthHeaders, getJsonAuthHeaders } from '@/utils/auth.utils';
 
 interface Language {
   id: string;
@@ -69,7 +70,9 @@ export default function TranslationsAdminPage() {
 
   const fetchLanguages = async () => {
     try {
-      const res = await fetch('/api/admin/translations/languages');
+      const res = await fetch('/api/admin/translations/languages', {
+        headers: { ...getAuthHeaders() },
+      });
       const data = await res.json();
       setLanguages(data.languages);
     } catch (error) {
@@ -80,7 +83,9 @@ export default function TranslationsAdminPage() {
   const fetchTranslations = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/admin/translations');
+      const res = await fetch('/api/admin/translations', {
+        headers: { ...getAuthHeaders() },
+      });
       const data = await res.json();
       setTranslations(data.translations);
       setCategories(data.categories);
@@ -100,15 +105,26 @@ export default function TranslationsAdminPage() {
     if (!editingCell) return;
 
     try {
-      await fetch('/api/admin/translations/update', {
+      const res = await fetch('/api/admin/translations/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getJsonAuthHeaders(),
         body: JSON.stringify({
           key: editingCell.key,
           languageCode: editingCell.langCode,
           value: editValue,
         }),
       });
+
+      if (!res.ok) {
+        let msg = `Save failed (${res.status})`;
+        try {
+          const j = (await res.json()) as { error?: string };
+          if (j?.error) msg = j.error;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg);
+      }
 
       // Update local state
       setTranslations(prev => prev.map(t => {
@@ -139,6 +155,7 @@ export default function TranslationsAdminPage() {
     try {
       const res = await fetch('/api/admin/translations/export', {
         method: 'POST',
+        headers: { ...getAuthHeaders() },
       });
       const data = await res.json();
       
@@ -159,6 +176,7 @@ export default function TranslationsAdminPage() {
     try {
       const res = await fetch('/api/admin/translations/sync', {
         method: 'POST',
+        headers: { ...getAuthHeaders() },
       });
       const data = await res.json();
       

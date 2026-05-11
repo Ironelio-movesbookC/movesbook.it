@@ -1,13 +1,16 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Star, Plus, Edit2, Trash2, Calendar, Dumbbell, Target, Clock, Search, Copy, Eye, Download, Globe } from 'lucide-react';
-import { SPORTS_LIST } from '@/constants/moveframe.constants';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { Star, Plus, Edit2, Trash2, Calendar, Dumbbell, Target, Clock, Search, Copy, Eye, Download, Globe, Layers } from 'lucide-react';
+import { SPORTS_LIST, getSportDisplayName } from '@/constants/moveframe.constants';
 import { getSportIcon } from '@/utils/sportIcons';
 import Image from 'next/image';
 import FavoriteWorkoutCard from '@/components/workouts/FavoriteWorkoutCard';
 import WorkoutOverviewModal from '@/components/workouts/WorkoutOverviewModal';
 import UseInPlannerModal from '@/components/workouts/UseInPlannerModal';
+import type { PeriodizationTemplate } from '@/constants/tools.constants';
+import { normalizePeriodizationTemplates } from '@/constants/tools.constants';
 
 interface WeeklyPlan {
   id: string;
@@ -48,7 +51,10 @@ interface Moveframe {
 }
 
 export default function FavouritesSettings() {
-  const [activeTab, setActiveTab] = useState<'plans' | 'workouts' | 'moveframes' | 'sports'>('sports');
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<
+    'plans' | 'workouts' | 'moveframes' | 'periodizations' | 'sports'
+  >('sports');
   
   // Favorite Sports State
   const [selectedSports, setSelectedSports] = useState<string[]>([]);
@@ -72,6 +78,72 @@ export default function FavouritesSettings() {
   const [moveframes, setMoveframes] = useState<Moveframe[]>([]);
   const [showMoveframeDialog, setShowMoveframeDialog] = useState(false);
   const [editingMoveframe, setEditingMoveframe] = useState<Moveframe | null>(null);
+
+  const [periodizationTemplates, setPeriodizationTemplates] = useState<PeriodizationTemplate[]>([]);
+  const [showPeriodizationDialog, setShowPeriodizationDialog] = useState(false);
+  const [editingPeriodization, setEditingPeriodization] = useState<PeriodizationTemplate | null>(null);
+  const [periodizationTagsInput, setPeriodizationTagsInput] = useState('');
+  
+  const loadPeriodizationTemplatesFromSettings = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const res = await fetch('/api/user/settings', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const raw = data.toolsSettings?.periodizationTemplates;
+      setPeriodizationTemplates(normalizePeriodizationTemplates(raw));
+    } catch {
+      setPeriodizationTemplates([]);
+    }
+  }, []);
+
+  const persistPeriodizationTemplates = useCallback(async (next: PeriodizationTemplate[]) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert('Please log in');
+      return false;
+    }
+    try {
+      const cur = await fetch('/api/user/settings', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!cur.ok) {
+        alert('Could not load current settings');
+        return false;
+      }
+      const body = await cur.json();
+      const prev =
+        body.toolsSettings &&
+        typeof body.toolsSettings === 'object' &&
+        !Array.isArray(body.toolsSettings)
+          ? body.toolsSettings
+          : {};
+      const res = await fetch('/api/user/settings', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          toolsSettings: {
+            ...(prev as Record<string, unknown>),
+            periodizationTemplates: next,
+          },
+        }),
+      });
+      if (!res.ok) {
+        alert('Failed to save periodization presets');
+        return false;
+      }
+      return true;
+    } catch {
+      alert('Failed to save periodization presets');
+      return false;
+    }
+  }, []);
   
   // Filter & Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,6 +157,8 @@ export default function FavouritesSettings() {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [superAdminPassword, setSuperAdminPassword] = useState('');
   const [showLoadDialog, setShowLoadDialog] = useState(false);
+  /** True after user confirms loading Movesbook templates (sport labels + optional favourites). */
+  const [isLoadingUserDefaults, setIsLoadingUserDefaults] = useState(false);
   const hasLoadedFavoriteSportsRef = useRef(false);
   const [sportTranslations, setSportTranslations] = useState<Record<string, Record<string, string>>>({});
   const [showSportTranslationDialog, setShowSportTranslationDialog] = useState(false);
@@ -113,6 +187,12 @@ export default function FavouritesSettings() {
     loadFavoriteWorkouts();
     loadFavoriteMoveframes();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'periodizations') {
+      void loadPeriodizationTemplatesFromSettings();
+    }
+  }, [activeTab, loadPeriodizationTemplatesFromSettings]);
 
   // Data is now saved to database via API endpoints
   // No need for localStorage sync
@@ -421,8 +501,21 @@ export default function FavouritesSettings() {
 
   const getDefaultSportLabel = (sport: string) => sport.replace(/_/g, ' ');
 
+  /** Resolve a language slot on a per-sport map (handles minor key variants). */
+  const pickSportLang = (byLang: Record<string, string> | undefined, langCode: string): string => {
+    if (!byLang || typeof byLang !== 'object') return '';
+    const want = (langCode || 'en').toLowerCase().split('-')[0];
+    const direct = byLang[want];
+    if (typeof direct === 'string' && direct.trim()) return direct.trim();
+    for (const [k, v] of Object.entries(byLang)) {
+      if (typeof v !== 'string' || !v.trim()) continue;
+      if ((k || '').toLowerCase().split('-')[0] === want) return v.trim();
+    }
+    return '';
+  };
+
   const getEnglishSportLabel = (sport: string) => {
-    const en = sportTranslations[sport]?.en?.trim();
+    const en = pickSportLang(sportTranslations[sport], 'en');
     if (en) return en;
     return getDefaultSportLabel(sport);
   };
@@ -434,7 +527,7 @@ export default function FavouritesSettings() {
     if (lang === 'en') {
       return { text: english, isRed: false };
     }
-    const loc = sportTranslations[sport]?.[lang]?.trim();
+    const loc = pickSportLang(sportTranslations[sport], lang);
     if (loc) {
       return { text: loc, isRed: false };
     }
@@ -480,7 +573,7 @@ export default function FavouritesSettings() {
   const handleOpenSportTranslationDialog = (sport: string) => {
     const draft: Record<string, string> = {};
     supportedLanguages.forEach((lang) => {
-      draft[lang.code] = sportTranslations[sport]?.[lang.code] || '';
+      draft[lang.code] = pickSportLang(sportTranslations[sport], lang.code);
     });
     if (!draft.en?.trim()) draft.en = getEnglishSportLabel(sport);
     setEditingSportKey(sport);
@@ -514,16 +607,21 @@ export default function FavouritesSettings() {
     setSportTranslationsDraft({});
   };
 
-  const loadSportsVersionForLanguage = (languageCode: string): boolean => {
+  /** Merge `tools_sports_${lang}` from localStorage into translation maps (pure). */
+  const mergeLocalStorageToolsSportsLabels = (
+    base: Record<string, Record<string, string>>,
+    languageCode: string
+  ): { next: Record<string, Record<string, string>>; changed: boolean } => {
     try {
       const storageKey = `tools_sports_${languageCode}`;
       const raw = localStorage.getItem(storageKey);
-      if (!raw) return false;
+      if (!raw) return { next: base, changed: false };
       const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed) || parsed.length === 0) return false;
+      if (!Array.isArray(parsed) || parsed.length === 0) return { next: base, changed: false };
 
       const knownSports = new Set(SPORTS_LIST);
-      const next = { ...sportTranslations };
+      const next = { ...base };
+      let changed = false;
 
       parsed.forEach((item: any) => {
         const sportKey =
@@ -535,16 +633,15 @@ export default function FavouritesSettings() {
 
         next[sportKey] = {
           ...(next[sportKey] || {}),
-          [languageCode]: translatedLabel,
+          [languageCode]: translatedLabel.trim(),
         };
+        changed = true;
       });
 
-      setSportTranslations(next);
-      localStorage.setItem('favorite_sports_translations', JSON.stringify(next));
-      return true;
+      return { next, changed };
     } catch (error) {
-      console.error('❌ Error loading sports version for language:', error);
-      return false;
+      console.error('❌ Error merging localStorage tools sports labels:', error);
+      return { next: base, changed: false };
     }
   };
 
@@ -555,11 +652,6 @@ export default function FavouritesSettings() {
     }, 350);
     return () => clearTimeout(timeout);
   }, [selectedSports]);
-
-  // Language-specific defaults handlers
-  const saveLanguageDefaults = async () => {
-    setShowPasswordDialog(true);
-  };
 
   const loadLanguageDefaults = async () => {
     setShowLoadDialog(true);
@@ -631,42 +723,87 @@ export default function FavouritesSettings() {
   };
 
   const handleLoadConfirm = async () => {
+    const lang = selectedLanguage;
+    const langName = supportedLanguages.find((l) => l.code === lang)?.name || lang;
+    setIsLoadingUserDefaults(true);
     try {
-      const response = await fetch(`/api/admin/favourites-defaults/load?language=${selectedLanguage}`);
-      const data = await response.json();
-      const sportsLoaded = loadSportsVersionForLanguage(selectedLanguage);
+      let nextTranslations = { ...sportTranslations };
+      const lsMerge = mergeLocalStorageToolsSportsLabels(nextTranslations, lang);
+      nextTranslations = lsMerge.next;
 
-      if (response.ok && data.favouritesData) {
-        // Merge loaded settings with current settings
-        if (data.favouritesData.weeklyPlans) {
-          setWeeklyPlans(prev => [...prev, ...data.favouritesData.weeklyPlans.filter((p: WeeklyPlan) => 
-            !prev.some(existing => existing.id === p.id)
-          )]);
-        }
-        if (data.favouritesData.workouts) {
-          setWorkouts(prev => [...prev, ...data.favouritesData.workouts.filter((w: Workout) => 
-            !prev.some(existing => existing.id === w.id)
-          )]);
-        }
-        if (data.favouritesData.moveframes) {
-          setMoveframes(prev => [...prev, ...data.favouritesData.moveframes.filter((m: Moveframe) => 
-            !prev.some(existing => existing.id === m.id)
-          )]);
-        }
-        
-        alert(`✅ Default favourites for ${supportedLanguages.find(l => l.code === selectedLanguage)?.name} loaded!\n\n${sportsLoaded ? 'Sports labels for this language were loaded.' : 'No sports labels found for this language.'}\n\nNote: Your existing items have been preserved.`);
-        setShowLoadDialog(false);
-      } else {
-        if (sportsLoaded) {
-          alert(`✅ Sports labels for ${supportedLanguages.find(l => l.code === selectedLanguage)?.name} loaded.`);
+      const res = await fetch(`/api/user/settings/load-defaults?language=${encodeURIComponent(lang)}`);
+      const data = await res.json();
+
+      if (!data.success || !data.settings) {
+        setSportTranslations(nextTranslations);
+        localStorage.setItem('favorite_sports_translations', JSON.stringify(nextTranslations));
+        await persistSportTranslationsServer(nextTranslations);
+        if (lsMerge.changed) {
+          alert(`✅ Loaded sport label hints for ${langName} from this browser (local tools cache).`);
         } else {
-          alert(`ℹ️ No default favourites found for ${supportedLanguages.find(l => l.code === selectedLanguage)?.name}.`);
+          alert(`ℹ️ No Movesbook defaults found for ${langName}. Try English, or ask an admin to publish defaults for that language.`);
         }
         setShowLoadDialog(false);
+        return;
       }
+
+      const fav = data.settings.favouritesSettings as Record<string, unknown> | undefined;
+      const tools = data.settings.toolsSettings as Record<string, unknown> | undefined;
+      const known = new Set<string>([...SPORTS_LIST]);
+
+      if (fav?.sportTranslations && typeof fav.sportTranslations === 'object') {
+        const st = fav.sportTranslations as Record<string, Record<string, string>>;
+        for (const [sportKey, byLang] of Object.entries(st)) {
+          if (!known.has(sportKey) || !byLang || typeof byLang !== 'object') continue;
+          nextTranslations[sportKey] = { ...(nextTranslations[sportKey] || {}), ...byLang };
+        }
+      }
+
+      if (tools?.sports && Array.isArray(tools.sports)) {
+        for (const item of tools.sports as { id?: string; name?: string }[]) {
+          const sportKey =
+            (typeof item?.id === 'string' && known.has(item.id) ? item.id : null) ||
+            (typeof item?.name === 'string' && known.has(item.name) ? item.name : null);
+          if (!sportKey) continue;
+          const label = typeof item?.name === 'string' ? item.name.trim() : '';
+          if (!label) continue;
+          nextTranslations[sportKey] = { ...(nextTranslations[sportKey] || {}), [lang]: label };
+        }
+      }
+
+      if (fav?.weeklyPlans && Array.isArray(fav.weeklyPlans)) {
+        setWeeklyPlans((prev) => [
+          ...prev,
+          ...(fav.weeklyPlans as WeeklyPlan[]).filter((p) => !prev.some((existing) => existing.id === p.id)),
+        ]);
+      }
+      if (fav?.workouts && Array.isArray(fav.workouts)) {
+        setWorkouts((prev) => [
+          ...prev,
+          ...(fav.workouts as Workout[]).filter((w) => !prev.some((existing) => existing.id === w.id)),
+        ]);
+      }
+      if (fav?.moveframes && Array.isArray(fav.moveframes)) {
+        setMoveframes((prev) => [
+          ...prev,
+          ...(fav.moveframes as Moveframe[]).filter((m) => !prev.some((existing) => existing.id === m.id)),
+        ]);
+      }
+
+      setSportTranslations(nextTranslations);
+      localStorage.setItem('favorite_sports_translations', JSON.stringify(nextTranslations));
+      await persistSportTranslationsServer(nextTranslations);
+
+      alert(
+        `✅ Loaded Movesbook templates for ${langName} (user defaults).\n\nSport names and any bundled favourite items were merged with what you already had.`
+      );
+      setShowLoadDialog(false);
     } catch (error) {
       console.error('Error:', error);
-      alert('❌ Error loading defaults');
+      alert('❌ Error loading defaults. Check your connection and try again.');
+      setShowLoadDialog(false);
+    } finally {
+      setIsLoadingUserDefaults(false);
     }
   };
 
@@ -676,6 +813,8 @@ export default function FavouritesSettings() {
       return Array.from(new Set(weeklyPlans.flatMap(p => p.tags)));
     } else if (activeTab === 'workouts') {
       return Array.from(new Set(workouts.flatMap(w => w.tags)));
+    } else if (activeTab === 'periodizations') {
+      return Array.from(new Set(periodizationTemplates.flatMap((p) => p.tags || [])));
     }
     return [];
   };
@@ -771,6 +910,7 @@ export default function FavouritesSettings() {
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return '—';
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - date.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -787,7 +927,7 @@ export default function FavouritesSettings() {
       {/* Header */}
       <div>
         <h2 className="text-3xl font-bold text-gray-900 mb-2">Favourites</h2>
-        <p className="text-gray-600">Manage your favourite plans, workouts, and moveframes</p>
+        <p className="text-gray-600">Manage your favourite plans, workouts, moveframes, and periodization presets</p>
       </div>
 
       {/* Tab Navigation */}
@@ -826,6 +966,18 @@ export default function FavouritesSettings() {
           Moveframes ({moveframes.length})
         </button>
         <button
+          type="button"
+          onClick={() => setActiveTab('periodizations')}
+          className={`px-6 py-3 font-semibold transition ${
+            activeTab === 'periodizations'
+              ? 'text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <Layers className="w-4 h-4 inline mr-2" />
+          Periodizations ({periodizationTemplates.length})
+        </button>
+        <button
           onClick={() => setActiveTab('sports')}
           className={`px-6 py-3 font-semibold transition ${
             activeTab === 'sports'
@@ -838,38 +990,45 @@ export default function FavouritesSettings() {
         </button>
       </div>
 
-      {/* Language-Specific Defaults - Compact Single Line */}
-      <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg">
-        <div className="flex items-center gap-3">
-          <Globe className="w-4 h-4 text-gray-500" />
-          <span className="text-sm font-medium text-gray-700">Language Defaults:</span>
-          <select
-            value={selectedLanguage}
-            onChange={(e) => setSelectedLanguage(e.target.value)}
-            className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            title="Pick a language, then Load — merges admin favourites and sport label hints for that language"
-          >
-            {supportedLanguages.map(lang => (
-              <option key={lang.code} value={lang.code}>{lang.name}</option>
-            ))}
-          </select>
+      {/* Movesbook templates (sport names + optional favourite items) — only on Favorite Sports */}
+      {activeTab === 'sports' && (
+        <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-600 rounded-lg">
+          <div className="flex items-center gap-3 min-w-0">
+            <Globe className="w-4 h-4 text-gray-500 shrink-0" />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200 shrink-0">
+              Load labels & templates:
+            </span>
+            <select
+              value={selectedLanguage}
+              onChange={(e) => setSelectedLanguage(e.target.value)}
+              className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[11rem]"
+              title="Language for Movesbook default templates (same as Personal Settings → Load defaults)"
+            >
+              {supportedLanguages.map((lang) => (
+                <option key={lang.code} value={lang.code}>
+                  {lang.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={loadLanguageDefaults}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
+              title="Merge Movesbook-published defaults for this language (no Super Admin login)"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Load
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadLanguageDefaults}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
-            title="Load language-specific default favourites (merges with current)"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Load
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Action Bar */}
       <div className="flex justify-between items-center">
         <div className="flex gap-3">
-          {/* Only show Add button for plans and moveframes, not for workouts */}
+          {/* Only show Add button for plans, periodizations, and moveframes — not workouts or sports */}
           {activeTab !== 'workouts' && activeTab !== 'sports' && (
             <button
               onClick={() => {
@@ -885,6 +1044,16 @@ export default function FavouritesSettings() {
                     tags: []
                   });
                   setShowPlanDialog(true);
+                } else if (activeTab === 'periodizations') {
+                  setEditingPeriodization({
+                    id: '',
+                    name: '',
+                    sport: '',
+                    level: '',
+                    tags: [],
+                  });
+                  setPeriodizationTagsInput('');
+                  setShowPeriodizationDialog(true);
                 } else {
                   setEditingMoveframe({
                     id: '',
@@ -905,7 +1074,8 @@ export default function FavouritesSettings() {
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
             >
               <Plus className="w-4 h-4" />
-              Add {activeTab === 'plans' ? 'Plan' : 'Moveframe'}
+              Add{' '}
+              {activeTab === 'plans' ? 'Plan' : activeTab === 'periodizations' ? 'Periodization' : 'Moveframe'}
             </button>
           )}
         </div>
@@ -939,7 +1109,9 @@ export default function FavouritesSettings() {
               className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="name">Name</option>
-              <option value="lastUsed">Recently Used</option>
+              <option value="lastUsed">
+                {activeTab === 'periodizations' ? 'Recently added' : 'Recently Used'}
+              </option>
               {activeTab === 'moveframes' && <option value="popular">Most Popular</option>}
             </select>
           </div>
@@ -1162,6 +1334,150 @@ export default function FavouritesSettings() {
         </div>
       )}
 
+      {/* Periodizations (from toolsSettings — Super Admin + your own) */}
+      {activeTab === 'periodizations' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {periodizationTemplates
+            .filter(
+              (tpl) =>
+                (searchQuery === '' ||
+                  tpl.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  tpl.sport.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  tpl.level.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  (tpl.tags || []).some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))) &&
+                (filterTag === 'all' || (tpl.tags || []).includes(filterTag))
+            )
+            .sort((a, b) => {
+              if (sortBy === 'name') return a.name.localeCompare(b.name);
+              if (sortBy === 'lastUsed') {
+                const da = new Date(a.createdAt || 0).getTime();
+                const db = new Date(b.createdAt || 0).getTime();
+                return db - da;
+              }
+              return 0;
+            })
+            .map((tpl) => (
+              <div
+                key={tpl.id}
+                className="bg-white rounded-xl border-2 border-gray-200 p-6 hover:border-blue-300 hover:shadow-lg transition"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Star className="w-5 h-5 text-yellow-500 fill-yellow-500 shrink-0" />
+                    <h3 className="font-bold text-gray-900 truncate">{tpl.name}</h3>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingPeriodization({ ...tpl });
+                        setPeriodizationTagsInput((tpl.tags || []).join(', '));
+                        setShowPeriodizationDialog(true);
+                      }}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                      title="Edit"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm('Remove this periodization from your list?')) return;
+                        const next = periodizationTemplates.filter((p) => p.id !== tpl.id);
+                        setPeriodizationTemplates(next);
+                        await persistPeriodizationTemplates(next);
+                      }}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-sm text-gray-600 mb-4">
+                  {tpl.createdAt
+                    ? `Saved ${formatDate(tpl.createdAt)}`
+                    : tpl.updatedAt
+                      ? `Updated ${formatDate(tpl.updatedAt)}`
+                      : 'From Movesbook or your library'}
+                </p>
+
+                <div className="space-y-2 mb-4">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Sport</span>
+                    <span className="font-semibold text-gray-900">{tpl.sport || '—'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Level</span>
+                    <span className="font-semibold text-gray-900">{tpl.level || '—'}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {(tpl.tags || []).map((tag, idx) => (
+                    <span
+                      key={`${tpl.id}-${tag}-${idx}`}
+                      className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        localStorage.setItem('my_settings_active_section', 'tools');
+                        localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
+                      } catch {
+                        /* ignore */
+                      }
+                      router.push('/my-settings');
+                    }}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition"
+                  >
+                    Use in periodization
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const copy: PeriodizationTemplate = {
+                        ...tpl,
+                        id: `pt-${Date.now()}`,
+                        name: `${tpl.name} (copy)`,
+                        isUserCreated: true,
+                        createdAt: new Date().toISOString(),
+                      };
+                      const next = [...periodizationTemplates, copy];
+                      setPeriodizationTemplates(next);
+                      await persistPeriodizationTemplates(next);
+                    }}
+                    className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition"
+                    title="Duplicate"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.alert(
+                        `${tpl.name}\n\nSport: ${tpl.sport}\nLevel: ${tpl.level}\nTags: ${(tpl.tags || []).join(', ') || '—'}`
+                      );
+                    }}
+                    className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition"
+                    title="View"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+
       {/* Favorite Sports Tab */}
       {activeTab === 'sports' && (
         <div className="space-y-6">
@@ -1172,10 +1488,13 @@ export default function FavouritesSettings() {
                 <Star className="w-5 h-5 text-yellow-600 fill-yellow-400 flex-shrink-0 mt-0.5" />
                 <div>
                   <h3 className="font-semibold text-gray-900 mb-1">Select Your Favorite Sports</h3>
-                  <p className="text-sm text-gray-700 mb-2">
-                    Choose up to 5 sports. They appear as quick-select icons when adding moveframes. Use{' '}
-                    <strong>Names</strong> on each sport to edit labels in all languages (English is required). Names in
-                    another language without a translation show the English name in <span className="text-red-600 font-semibold">red</span>.
+                  <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">
+                    Choose up to 5 sports. They appear as quick-select icons when adding moveframes.{' '}
+                    <strong>Double-click a name</strong> in the grid below or use <strong>Names</strong> / the pencil on
+                    your list to edit labels in all languages (English is required). Names in another language without a
+                    translation show the English name in{' '}
+                    <span className="text-red-600 font-semibold">red</span>. Use <strong>Load labels & templates</strong>{' '}
+                    above to merge Movesbook defaults for the selected language (user defaults — not Super Admin).
                   </p>
                 </div>
               </div>
@@ -1326,8 +1645,9 @@ export default function FavouritesSettings() {
               </div>
             </div>
             
-            <p className="text-sm text-gray-600 mb-4">
-              Click the tile to add or remove a favorite. Use <strong>Names</strong> to edit labels in every language.
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              <strong>Click the icon</strong> to add or remove a favorite. <strong>Double-click the sport name</strong>{' '}
+              to edit it in every language.
             </p>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
               {SPORTS_LIST.filter((sport) =>
@@ -1345,47 +1665,63 @@ export default function FavouritesSettings() {
                     key={sport}
                     className={`flex flex-col rounded-lg border-2 overflow-hidden transition-all ${
                       isSelected
-                        ? 'border-blue-500 bg-blue-50 shadow-md'
-                        : 'border-gray-300 bg-white hover:border-yellow-400 hover:bg-yellow-50'
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30 shadow-md'
+                        : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 hover:border-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-950/20'
                     }`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => toggleSport(sport)}
-                      className="flex flex-col items-center justify-center p-2 flex-1 min-h-[72px]"
-                      title={isSelected ? 'Remove from favorites' : 'Add to favorites'}
-                    >
-                      {isImage ? (
-                        <div className="w-8 h-8 flex items-center justify-center mb-1 flex-shrink-0">
-                          <Image
-                            src={icon}
-                            alt={sport}
-                            width={32}
-                            height={32}
-                            className="object-contain"
-                            style={{ width: '32px', height: '32px' }}
-                          />
-                        </div>
-                      ) : (
-                        <div className="w-8 h-8 flex items-center justify-center text-xl mb-1 flex-shrink-0">
-                          {icon}
-                        </div>
-                      )}
+                    <div className="flex flex-col flex-1 min-h-[72px]">
+                      <button
+                        type="button"
+                        onClick={() => toggleSport(sport)}
+                        className="flex flex-col items-center justify-center p-2 flex-1 min-h-[52px]"
+                        title={isSelected ? 'Remove from favorites' : 'Add to favorites'}
+                      >
+                        {isImage ? (
+                          <div className="w-8 h-8 flex items-center justify-center mb-1 flex-shrink-0">
+                            <Image
+                              src={icon}
+                              alt={sport}
+                              width={32}
+                              height={32}
+                              className="object-contain"
+                              style={{ width: '32px', height: '32px' }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-8 h-8 flex items-center justify-center text-xl mb-1 flex-shrink-0">
+                            {icon}
+                          </div>
+                        )}
+                      </button>
                       <span
-                        className={`text-[10px] font-medium text-center leading-tight line-clamp-2 ${
-                          disp.isRed ? 'text-red-600' : 'text-gray-800'
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleOpenSportTranslationDialog(sport);
+                          }
+                        }}
+                        onDoubleClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleOpenSportTranslationDialog(sport);
+                        }}
+                        className={`text-[10px] font-medium text-center leading-tight line-clamp-2 px-1 pb-1 cursor-pointer select-none outline-none focus:ring-2 focus:ring-indigo-400 rounded ${
+                          disp.isRed ? 'text-red-600 dark:text-red-400' : 'text-gray-800 dark:text-gray-200'
                         }`}
+                        title="Double-click to edit this sport's name in all languages"
                       >
                         {disp.text}
                       </span>
                       {isSelected && (
-                        <Star className="w-3 h-3 text-yellow-600 fill-yellow-400 mt-0.5" />
+                        <Star className="w-3 h-3 mx-auto text-yellow-600 fill-yellow-400 mb-0.5" aria-hidden />
                       )}
-                    </button>
+                    </div>
                     <button
                       type="button"
                       onClick={() => handleOpenSportTranslationDialog(sport)}
-                      className="text-[10px] py-1 px-1 bg-gray-50 border-t border-gray-200 text-indigo-600 hover:bg-indigo-50 font-medium"
+                      className="text-[10px] py-1 px-1 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-600 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 font-medium"
                     >
                       Names
                     </button>
@@ -1666,6 +2002,141 @@ export default function FavouritesSettings() {
         </div>
       )}
 
+      {/* Periodization preset dialog */}
+      {showPeriodizationDialog && editingPeriodization && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-2xl font-bold mb-6">
+              {editingPeriodization.id ? 'Edit periodization' : 'Add periodization'}
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Name *</label>
+                <input
+                  type="text"
+                  value={editingPeriodization.name}
+                  onChange={(e) =>
+                    setEditingPeriodization({ ...editingPeriodization, name: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Competition taper"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Sport *</label>
+                <select
+                  value={editingPeriodization.sport}
+                  onChange={(e) =>
+                    setEditingPeriodization({ ...editingPeriodization, sport: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select sport</option>
+                  {SPORTS_LIST.map((s) => {
+                    const label = getSportDisplayName(s);
+                    return (
+                      <option key={s} value={label}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Level *</label>
+                <input
+                  type="text"
+                  value={editingPeriodization.level}
+                  onChange={(e) =>
+                    setEditingPeriodization({ ...editingPeriodization, level: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Beginner, Club"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Tags (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={periodizationTagsInput}
+                  onChange={(e) => setPeriodizationTagsInput(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="base, endurance, week 1"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-8">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!editingPeriodization.name.trim()) {
+                    alert('Please enter a name.');
+                    return;
+                  }
+                  if (!editingPeriodization.sport.trim()) {
+                    alert('Please select a sport.');
+                    return;
+                  }
+                  if (!editingPeriodization.level.trim()) {
+                    alert('Please enter a level.');
+                    return;
+                  }
+                  const tags = periodizationTagsInput
+                    .split(',')
+                    .map((x) => x.trim())
+                    .filter(Boolean);
+                  const existingId = editingPeriodization.id;
+                  const id =
+                    existingId && periodizationTemplates.some((p) => p.id === existingId)
+                      ? existingId
+                      : `pt-${Date.now()}`;
+                  const now = new Date().toISOString();
+                  const wasNew = !existingId || !periodizationTemplates.some((p) => p.id === existingId);
+                  const entry: PeriodizationTemplate = {
+                    ...editingPeriodization,
+                    id,
+                    tags,
+                    isUserCreated: wasNew ? true : editingPeriodization.isUserCreated,
+                    createdAt: wasNew ? now : editingPeriodization.createdAt || now,
+                    updatedAt: now,
+                  };
+                  const next = (() => {
+                    const idx = periodizationTemplates.findIndex((p) => p.id === id);
+                    if (idx >= 0) {
+                      const copy = [...periodizationTemplates];
+                      copy[idx] = entry;
+                      return copy;
+                    }
+                    return [...periodizationTemplates, entry];
+                  })();
+                  setPeriodizationTemplates(next);
+                  const ok = await persistPeriodizationTemplates(next);
+                  if (ok) {
+                    setShowPeriodizationDialog(false);
+                    setEditingPeriodization(null);
+                  }
+                }}
+                className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPeriodizationDialog(false);
+                  setEditingPeriodization(null);
+                }}
+                className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Moveframe Dialog */}
       {showMoveframeDialog && editingMoveframe && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
@@ -1902,27 +2373,34 @@ export default function FavouritesSettings() {
         </div>
       )}
 
-      {/* Load Language Defaults Dialog */}
+      {/* Load Movesbook user-default templates (sport labels + optional favourites) */}
       {showLoadDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full">
-            <h3 className="text-xl font-semibold mb-4">📥 Load Language Defaults</h3>
-            <p className="text-gray-600 mb-4">
-              Load default favourites for <strong>{supportedLanguages.find(l => l.code === selectedLanguage)?.name}</strong>?
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl p-8 max-w-md w-full border border-gray-200 dark:border-gray-600">
+            <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Load Movesbook templates</h3>
+            <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
+              Merge published <strong>user defaults</strong> for{' '}
+              <strong>{supportedLanguages.find((l) => l.code === selectedLanguage)?.name}</strong>: sport name hints from
+              Movesbook, optional favourite plans/workouts/moveframes, plus any labels cached in this browser for that
+              language. Existing items are kept; duplicates are skipped by id.
             </p>
-            <p className="text-sm text-yellow-700 bg-yellow-50 p-3 rounded-lg mb-4">
-              ⚠️ <strong>Note:</strong> This will add default favourite items for this language. Your existing items will be preserved.
+            <p className="text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 p-3 rounded-lg mb-4 border border-amber-200 dark:border-amber-800">
+              No Super Admin login required — this uses the same public defaults as Personal Settings → Load defaults.
             </p>
             <div className="flex gap-3">
               <button
-                onClick={handleLoadConfirm}
-                className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold"
+                type="button"
+                disabled={isLoadingUserDefaults}
+                onClick={() => void handleLoadConfirm()}
+                className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold disabled:opacity-60"
               >
-                Load Defaults
+                {isLoadingUserDefaults ? 'Loading…' : 'Load'}
               </button>
               <button
+                type="button"
+                disabled={isLoadingUserDefaults}
                 onClick={() => setShowLoadDialog(false)}
-                className="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                className="flex-1 px-4 py-3 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"
               >
                 Cancel
               </button>

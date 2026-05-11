@@ -32,7 +32,6 @@ const GOALS = [
   'Sport Performance',
 ] as const;
 type Goal = (typeof GOALS)[number];
-const WORKOUT_COLUMNS = [1, 2, 3, 4, 5] as const;
 const LEVEL_BANDS = ['Beginner', 'Intermediate', 'Advanced', 'Elite', 'Professional'] as const;
 
 interface GoalLoadParams {
@@ -87,9 +86,10 @@ function percentToReps(pct: number): number {
 }
 
 function buildDefaultGoalParams(): GoalLoadParams {
+  /** Indices 0–4 = Beginner … Professional; index 5 mirrors Professional for legacy 6-slot readers. */
   return {
-    volumeFrom: [20, 4, 5, 6, 7, 8],
-    volumeTo:   [40, 5, 6, 8, 10, 12],
+    volumeFrom: [20, 25, 30, 35, 40, 40],
+    volumeTo: [40, 43, 46, 49, 52, 52],
     repsFrom:   10, repsTo: 22,
     repsFromProfessional: 15, repsToProfessional: 30,
     pctFrom:    repsToPercent(10), pctTo: repsToPercent(22),
@@ -112,6 +112,8 @@ function normalizeGoalParams(raw: Partial<GoalLoadParams> | undefined): GoalLoad
   };
   next.volumeFrom = Array.from({ length: 6 }, (_, i) => Number(next.volumeFrom?.[i] ?? d.volumeFrom[i]));
   next.volumeTo = Array.from({ length: 6 }, (_, i) => Number(next.volumeTo?.[i] ?? d.volumeTo[i]));
+  next.volumeFrom[5] = Number(next.volumeFrom[5] ?? next.volumeFrom[4]);
+  next.volumeTo[5] = Number(next.volumeTo[5] ?? next.volumeTo[4]);
   next.repsFrom = num(next.repsFrom, d.repsFrom);
   next.repsTo = num(next.repsTo, d.repsTo);
   next.repsFromProfessional = num(next.repsFromProfessional, d.repsFromProfessional);
@@ -352,6 +354,7 @@ export default function WorkoutsParametersSettings({ initialTab = 'changesVolume
       const cur = normalizeGoalParams(prev[selectedGoal]);
       const arr = [...cur[field]];
       arr[idx] = value;
+      if (idx === 4) arr[5] = value;
       return { ...prev, [selectedGoal]: { ...cur, [field]: arr } };
     });
   }, [selectedGoal]);
@@ -561,47 +564,45 @@ export default function WorkoutsParametersSettings({ initialTab = 'changesVolume
             </button>
           </div>
 
-          {/* ── Volume serie ── */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-4">
+          {/* ── Volume serie (per training level; First/Last period = yearly window endpoints) ── */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-3">
             <div className="flex items-start gap-6">
-              {/* label */}
-              <div className="w-44 flex-shrink-0 pt-1">
-                <span className="text-sm font-semibold border border-yellow-400 bg-yellow-50 text-gray-900 px-3 py-1 rounded">
+              <div className="w-44 flex-shrink-0 pt-1 space-y-2">
+                <span className="inline-block text-sm font-semibold border border-yellow-400 bg-yellow-50 text-gray-900 px-3 py-1 rounded">
                   Volume serie
                 </span>
+                <p className="text-[11px] text-gray-500 leading-snug">
+                  Reference total series range by athlete level. &quot;from&quot; / &quot;to&quot; align with First period → Last period across the yearly plan (same idea as Load Repeated / Pauses).
+                </p>
               </div>
-              {/* column headers + spinners */}
-              <div className="flex-1 space-y-3 overflow-x-auto">
-                {/* session headers */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400 w-10 flex-shrink-0"/>
-                  {WORKOUT_COLUMNS.map(s => (
-                    <span key={s} className="flex-1 min-w-[72px] max-w-[90px] inline-flex items-center justify-center h-8 rounded-md bg-yellow-300 border border-yellow-400 font-bold text-gray-900 text-sm">
-                      {s}
-                    </span>
-                  ))}
-                </div>
-                {/* from row */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-10 flex-shrink-0 text-right">from</span>
-                  {WORKOUT_COLUMNS.map((s, i) => (
-                    <Spinner key={s}
-                      value={goalParams.volumeFrom[i] ?? 3} min={1} max={99}
-                      onChange={v => updateVolume(i, 'volumeFrom', v)}
-                      width="flex-1 min-w-[72px] max-w-[90px]"
+              <div className="flex flex-col gap-2 pt-1 flex-1 min-w-0">
+                {LEVEL_BANDS.map((lv, idx) => (
+                  <div key={lv} className="flex items-center gap-2 flex-wrap">
+                    <span className={`w-28 text-[11px] font-bold px-2 py-0.5 rounded shrink-0 ${levelColors[lv]}`}>{lv}</span>
+                    <span className="text-xs text-gray-500 w-8 text-right shrink-0">from</span>
+                    <Spinner
+                      value={goalParams.volumeFrom[idx] ?? 20}
+                      min={1}
+                      max={99}
+                      onChange={(v) => updateVolume(idx, 'volumeFrom', v)}
+                      width="w-[88px]"
                     />
-                  ))}
-                </div>
-                {/* to row */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-10 flex-shrink-0 text-right">to</span>
-                  {WORKOUT_COLUMNS.map((s, i) => (
-                    <Spinner key={s}
-                      value={goalParams.volumeTo[i] ?? 5} min={1} max={99}
-                      onChange={v => updateVolume(i, 'volumeTo', v)}
-                      width="flex-1 min-w-[72px] max-w-[90px]"
+                    <span className="text-xs text-gray-500 w-8 text-right shrink-0">to</span>
+                    <Spinner
+                      value={goalParams.volumeTo[idx] ?? 40}
+                      min={1}
+                      max={99}
+                      onChange={(v) => updateVolume(idx, 'volumeTo', v)}
+                      width="w-[88px]"
                     />
-                  ))}
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 flex-wrap border-t border-gray-100 pt-2 mt-1">
+                  <span className="w-28 shrink-0" aria-hidden />
+                  <span className="text-xs text-gray-500 w-8 shrink-0" aria-hidden />
+                  <span className="w-[88px] text-center text-[11px] font-semibold text-gray-800">First period</span>
+                  <span className="text-xs text-gray-500 w-8 shrink-0" aria-hidden />
+                  <span className="w-[88px] text-center text-[11px] font-semibold text-gray-800">Last period</span>
                 </div>
               </div>
             </div>

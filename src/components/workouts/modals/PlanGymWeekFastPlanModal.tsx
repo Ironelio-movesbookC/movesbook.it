@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import {
   closestCenter,
@@ -42,6 +42,8 @@ import {
   readGoalParamsFromWorkoutSettings,
   computePlanGymWeekScalarDefaults,
 } from '@/utils/planGymWeekGoalScalars';
+import { GYM_WEEK_CATALOG_EXERCISES, pickRandomCatalogExerciseNamesForMuscleGroup } from '@/data/gymWeekExerciseCatalog';
+import { useFreeMoveExercises } from '@/hooks/useFreeMoveExercises';
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 const GYM_PLAN_STORAGE_KEY = 'gym_weekly_plan_saved_v1';
@@ -272,6 +274,14 @@ export default function PlanGymWeekFastPlanModal({
   const [fastPlanMode, setFastPlanMode] = useState<'select-exercises' | 'plan-series'>('plan-series');
   /** Short-lived feedback when filtering / adding muscles (strip looks “dead” otherwise) */
   const [fastPlanToolbarNotice, setFastPlanToolbarNotice] = useState<string | null>(null);
+  /** Select-exercises mode: catalog filter (muscle id or all areas). */
+  const [fastPlanCatalogFilterId, setFastPlanCatalogFilterId] = useState<string | 'all'>('all');
+  const [fastPlanCatalogSearch, setFastPlanCatalogSearch] = useState('');
+  /** Row targeted when tapping a catalog exercise (secIdx / exIdx in active day). */
+  const [fastPlanExercisePick, setFastPlanExercisePick] = useState<{ secIdx: number; exIdx: number } | null>(null);
+  const prevFastPlanModeRef = useRef<'select-exercises' | 'plan-series'>('plan-series');
+
+  const { exercises: freeMoveExerciseList } = useFreeMoveExercises();
 
   useEffect(() => {
     if (isOpen) {
@@ -279,6 +289,10 @@ export default function PlanGymWeekFastPlanModal({
       setPlanDetailsExpanded(true);
       setFastPlanMode('plan-series');
       setFastPlanToolbarNotice(null);
+      setFastPlanCatalogFilterId('all');
+      setFastPlanCatalogSearch('');
+      setFastPlanExercisePick(null);
+      prevFastPlanModeRef.current = 'plan-series';
     }
   }, [isOpen]);
 
@@ -288,7 +302,29 @@ export default function PlanGymWeekFastPlanModal({
 
   useEffect(() => {
     setFastPlanToolbarNotice(null);
+    setFastPlanExercisePick(null);
   }, [activeDayIdx]);
+
+  useEffect(() => {
+    const prev = prevFastPlanModeRef.current;
+    prevFastPlanModeRef.current = fastPlanMode;
+    if (prev === 'select-exercises' && fastPlanMode === 'plan-series') {
+      setPlanDays(prev =>
+        prev.map(d => ({
+          ...d,
+          sectors: d.sectors.map(s => ({
+            ...s,
+            exercises: clearExerciseDistributedSeries(s.exercises),
+          })),
+        })),
+      );
+    }
+    if (fastPlanMode !== 'select-exercises') {
+      setFastPlanCatalogFilterId('all');
+      setFastPlanCatalogSearch('');
+      setFastPlanExercisePick(null);
+    }
+  }, [fastPlanMode]);
 
   useEffect(() => {
     if (!fastPlanToolbarNotice) return;
@@ -311,11 +347,40 @@ export default function PlanGymWeekFastPlanModal({
     }));
   }, [activeDayIdx]);
 
+  const updateExerciseDistributedSeries = useCallback((secIdx: number, exIdx: number, raw: number) => {
+    const n = Math.max(1, Math.min(40, Number.isFinite(raw) ? Math.floor(raw) : 1));
+    setPlanDays(prev => prev.map((d, di) => {
+      if (di !== activeDayIdx) return d;
+      const sectors = d.sectors.map((s, si) => {
+        if (si !== secIdx) return s;
+        const exercises = s.exercises.map((ex, ei) =>
+          ei === exIdx ? { ...ex, distributedSeries: n, userEdited: true } : ex
+        );
+        return { ...s, exercises };
+      });
+      return { ...d, sectors };
+    }));
+  }, [activeDayIdx]);
+
   const setSectorTotalSeries = useCallback((secIdx: number, val: number) => {
     setPlanDays(prev => prev.map((d, di) => {
       if (di !== activeDayIdx) return d;
       const sectors = d.sectors.map((s, si) => {
         if (si !== secIdx) return s;
+        if (fastPlanMode === 'select-exercises') {
+          if (s.keepSeriesFixed) {
+            return { ...s, totalSeries: val };
+          }
+          const dArr = computeExerciseDist(val, s.exercises.length, levelCat);
+          return {
+            ...s,
+            totalSeries: val,
+            exercises: s.exercises.map((ex, i) => ({
+              ...ex,
+              distributedSeries: dArr[i] ?? 1,
+            })),
+          };
+        }
         // When "Keep fix" is OFF, recalculate exercise count from lookup table
         if (!s.keepSeriesFixed) {
           const newDist  = getSeriesDistribution(val, levelCat);
@@ -348,14 +413,14 @@ export default function PlanGymWeekFastPlanModal({
       });
       return { ...d, sectors };
     }));
-  }, [activeDayIdx, levelCat]);
+  }, [activeDayIdx, levelCat, fastPlanMode]);
 
   const changeExerciseCount = useCallback((secIdx: number, delta: number) => {
     setPlanDays(prev => prev.map((d, di) => {
       if (di !== activeDayIdx) return d;
       const sectors = d.sectors.map((s, si) => {
         if (si !== secIdx) return s;
-        const max    = s.defaultExerciseCount * 2;
+        const max    = fastPlanMode === 'select-exercises' ? 20 : s.defaultExerciseCount * 2;
         const newLen = Math.max(1, Math.min(max, s.exercises.length + delta));
         if (newLen === s.exercises.length) return s;
         let exercises: PlanExercise[];
@@ -375,7 +440,7 @@ export default function PlanGymWeekFastPlanModal({
       });
       return { ...d, sectors };
     }));
-  }, [activeDayIdx]);
+  }, [activeDayIdx, fastPlanMode]);
 
   const toggleKeepFixed = useCallback((secIdx: number) => {
     setPlanDays(prev => prev.map((d, di) => {
@@ -387,15 +452,24 @@ export default function PlanGymWeekFastPlanModal({
     }));
   }, [activeDayIdx]);
 
+  /** Random mode: fill every row with a random catalog exercise for this muscle, then shuffle series split across rows. */
   const shuffleSector = useCallback((secIdx: number) => {
     setPlanDays(prev => prev.map((d, di) => {
       if (di !== activeDayIdx) return d;
       const sectors = d.sectors.map((s, si) => {
         if (si !== secIdx) return s;
+        const randomNames = pickRandomCatalogExerciseNamesForMuscleGroup(s.sectorId, s.exercises.length);
         const dArr = computeExerciseDist(s.totalSeries, s.exercises.length, levelCat);
         const pairs = s.exercises.map((ex, i) => {
           const { distributedSeries: _omit, ...rest } = ex;
-          return { ex: rest, series: dArr[i] ?? 1 };
+          return {
+            ex: {
+              ...rest,
+              name: randomNames[i] ?? rest.name,
+              userEdited: true,
+            },
+            series: dArr[i] ?? 1,
+          };
         });
         for (let i = pairs.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
@@ -477,8 +551,9 @@ export default function PlanGymWeekFastPlanModal({
 
   // ── Add sector (clicking a non-current-day sector in the muscle selector) ──
   const handleAddSector = useCallback((template: PlanSector) => {
-    const dist  = getSeriesDistribution(template.totalSeries, levelCat);
-    const count = dist.length;
+    const isSelect = fastPlanMode === 'select-exercises';
+    const count = isSelect ? 1 : getSeriesDistribution(template.totalSeries, levelCat).length;
+    const dArr    = computeExerciseDist(template.totalSeries, count, levelCat);
     const newSector: PlanSector = {
       ...template,
       planRowId:            newPlanRowId(),
@@ -493,13 +568,14 @@ export default function PlanGymWeekFastPlanModal({
         breakTime:  template.pause || "1'",
         mode:       'Stopped',
         userEdited: false,
+        ...(isSelect ? { distributedSeries: dArr[i] ?? 1 } : {}),
       })),
     };
     setPlanDays(prev => prev.map((d, di) => {
       if (di !== activeDayIdx) return d;
       return { ...d, sectors: [...d.sectors, newSector] };
     }));
-  }, [activeDayIdx, levelCat]);
+  }, [activeDayIdx, levelCat, fastPlanMode]);
 
   const templateFromMuscleGroup = useCallback((mg: GymWeekMuscleGroup): PlanSector => {
     const totalSeries = 12;
@@ -582,12 +658,25 @@ export default function PlanGymWeekFastPlanModal({
   ]);
 
   // ── Series distribution dialog save ───────────────────────────────────────
-  const handleSeriesDistSave: SeriesDistDialogProps['onSave'] = (dayIdx, newSeriesCounts) => {
+  const handleSeriesDistSave = useCallback<SeriesDistDialogProps['onSave']>((dayIdx, newSeriesCounts) => {
     setPlanDays(prev => prev.map((d, di) => {
       if (di !== dayIdx) return d;
       const sectors = d.sectors.map((s, si) => {
         const newTotal = newSeriesCounts[si] ?? s.totalSeries;
         if (s.keepSeriesFixed) return s;
+        if (fastPlanMode === 'select-exercises') {
+          const dArr = computeExerciseDist(newTotal, s.exercises.length, levelCat);
+          return {
+            ...s,
+            totalSeries: newTotal,
+            defaultTotalSeries: newTotal,
+            defaultExerciseCount: s.exercises.length,
+            exercises: s.exercises.map((ex, i) => ({
+              ...ex,
+              distributedSeries: dArr[i] ?? 1,
+            })),
+          };
+        }
         const dist     = getSeriesDistribution(newTotal, levelCat);
         const newCount = dist.length;
         let exercises  = [...s.exercises];
@@ -611,7 +700,7 @@ export default function PlanGymWeekFastPlanModal({
       });
       return { ...d, sectors };
     }));
-  };
+  }, [fastPlanMode, levelCat]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleSave = () => {
@@ -639,6 +728,16 @@ export default function PlanGymWeekFastPlanModal({
 
   const manualDaysForSeriesDist = useMemo(() => planDaysToManual(planDays), [planDays]);
 
+  const fastPlanCatalogFiltered = useMemo(() => {
+    let list = [...GYM_WEEK_CATALOG_EXERCISES];
+    if (fastPlanCatalogFilterId !== 'all') {
+      list = list.filter(e => e.groupId === fastPlanCatalogFilterId);
+    }
+    const q = fastPlanCatalogSearch.trim().toLowerCase();
+    if (q) list = list.filter(e => e.name.toLowerCase().includes(q));
+    return list;
+  }, [fastPlanCatalogFilterId, fastPlanCatalogSearch]);
+
   if (!isOpen) return null;
 
   const activeDay      = planDays[activeDayIdx];
@@ -664,6 +763,7 @@ export default function PlanGymWeekFastPlanModal({
 
   const onMuscleStripAll = () => {
     setFilterSector(null);
+    if (fastPlanMode === 'select-exercises') setFastPlanCatalogFilterId('all');
     setFastPlanToolbarNotice('Showing all muscular areas.');
   };
 
@@ -673,6 +773,9 @@ export default function PlanGymWeekFastPlanModal({
     const isFilter = filterSector === mg.id && inCurrentDay;
     if (inCurrentDay) {
       setFilterSector(isFilter ? null : mg.id);
+      if (fastPlanMode === 'select-exercises') {
+        setFastPlanCatalogFilterId(isFilter ? 'all' : mg.id);
+      }
       setFastPlanToolbarNotice(
         isFilter
           ? 'Showing all muscular areas.'
@@ -680,6 +783,9 @@ export default function PlanGymWeekFastPlanModal({
       );
     } else {
       handleAddSector(templateFromMuscleGroup(mg));
+      if (fastPlanMode === 'select-exercises') {
+        setFastPlanCatalogFilterId(mg.id);
+      }
       setFastPlanToolbarNotice(`${mg.label} added — scroll down to fill exercise names or totals for this area.`);
     }
   };
@@ -750,7 +856,7 @@ export default function PlanGymWeekFastPlanModal({
         const rn          = (day.routineName || '').trim();
         const showRoutine = rn.length > 0 && rn.toLowerCase() !== dayLine.toLowerCase();
         return (
-          <button key={i} type="button" onClick={() => { setActiveDayIdx(i); setFilterSector(null); }}
+          <button key={i} type="button" onClick={() => { setActiveDayIdx(i); setFilterSector(null); setFastPlanCatalogFilterId('all'); setFastPlanExercisePick(null); }}
             className={`flex-shrink-0 min-w-[130px] px-4 py-2.5 rounded-t-lg text-left border-2 transition-colors ${
               i === activeDayIdx
                 ? 'bg-amber-100 border-amber-400 border-b-white -mb-px text-amber-900'
@@ -782,7 +888,7 @@ export default function PlanGymWeekFastPlanModal({
 
   const renderSectorBlock = (sec: PlanSector, secIdx: number, sortable: SectorSortableBag | null) => {
     const seriesDist = computeExerciseDist(sec.totalSeries, sec.exercises.length, levelCat);
-    const maxEx      = sec.defaultExerciseCount * 2;
+    const maxEx      = fastPlanMode === 'select-exercises' ? 20 : sec.defaultExerciseCount * 2;
     const secColor   = getSectorColor(sec.sectorId, secIdx);
 
     return (
@@ -817,7 +923,11 @@ export default function PlanGymWeekFastPlanModal({
 
           <div
             className="flex flex-col overflow-hidden rounded border border-sky-400"
-            title="Add or remove exercises (stations). Max 2× default from the distribution table; min 1. With “Keep fix this value”, total series stays the same while counts change."
+            title={
+              fastPlanMode === 'select-exercises'
+                ? 'Add or remove exercise rows (up to 20 per area). Series per row is edited in the Series column.'
+                : 'Add or remove exercises (stations). Max 2× default from the distribution table; min 1. With “Keep fix this value”, total series stays the same while counts change.'
+            }
           >
             <button
               type="button"
@@ -842,7 +952,7 @@ export default function PlanGymWeekFastPlanModal({
               type="button"
               onClick={() => setOpenShuffleMenuFor(prev => (prev === sec.sectorId ? null : sec.sectorId))}
               className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-gray-400 bg-white text-gray-600 hover:bg-gray-50"
-              title="Exercise actions: random mode or preferences"
+              title="Random mode: pick random catalog exercises for this area and shuffle how series are split across rows"
             >
               <RefreshCw className="h-4 w-4" />
             </button>
@@ -855,6 +965,7 @@ export default function PlanGymWeekFastPlanModal({
                     setOpenShuffleMenuFor(null);
                   }}
                   className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-gray-100"
+                  title="Assign random exercises from this muscle’s catalog to every row, then randomize series order across rows"
                 >
                   Random mode
                 </button>
@@ -918,21 +1029,38 @@ export default function PlanGymWeekFastPlanModal({
 
         {sec.exercises.map((ex, exIdx) => {
           const seriesCount = ex.distributedSeries ?? seriesDist[exIdx] ?? 1;
+          const rowPicked =
+            fastPlanMode === 'select-exercises' &&
+            fastPlanExercisePick?.secIdx === secIdx &&
+            fastPlanExercisePick?.exIdx === exIdx;
           return (
             <div
               key={ex.id}
               className={`grid grid-cols-[40px_1fr_88px_64px_72px_76px_76px_88px_56px] border-b border-gray-200 text-xs ${
                 exIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-              }`}
+              }${rowPicked ? ' ring-2 ring-inset ring-blue-400' : ''}`}
             >
-              <div className="flex items-center justify-center border-r border-gray-200 px-2 py-2 font-medium text-gray-500">
+              <button
+                type="button"
+                onClick={() => {
+                  if (fastPlanMode === 'select-exercises') setFastPlanExercisePick({ secIdx, exIdx });
+                }}
+                className={`flex items-center justify-center border-r border-gray-200 px-2 py-2 font-medium tabular-nums ${
+                  fastPlanMode === 'select-exercises'
+                    ? 'cursor-pointer text-blue-700 hover:bg-blue-50/80'
+                    : 'cursor-default text-gray-500'
+                }`}
+              >
                 {exIdx + 1}
-              </div>
+              </button>
               <div className="flex items-center border-r border-gray-200 px-2 py-2">
                 <input
                   type="text"
                   value={ex.name}
                   onChange={e => updateExercise(secIdx, exIdx, 'name', e.target.value)}
+                  onFocus={() => {
+                    if (fastPlanMode === 'select-exercises') setFastPlanExercisePick({ secIdx, exIdx });
+                  }}
                   placeholder={`${sec.sectorLabel} Exercise ${exIdx + 1}`}
                   className="w-full bg-transparent text-gray-600 outline-none placeholder:italic placeholder:text-gray-400"
                 />
@@ -948,8 +1076,22 @@ export default function PlanGymWeekFastPlanModal({
                   ))}
                 </select>
               </div>
-              <div className={`flex items-center justify-center border-r border-gray-200 px-2 py-2 font-semibold tabular-nums text-gray-900${toneCell(sectionTab, 'series')}`}>
-                {seriesCount}
+              <div className={`flex items-center justify-center border-r border-gray-200 px-1 py-2 font-semibold tabular-nums text-gray-900${toneCell(sectionTab, 'series')}`}>
+                {fastPlanMode === 'select-exercises' ? (
+                  <input
+                    type="number"
+                    min={1}
+                    max={40}
+                    value={seriesCount}
+                    onChange={e => {
+                      const v = parseInt(e.target.value, 10);
+                      if (!Number.isNaN(v)) updateExerciseDistributedSeries(secIdx, exIdx, v);
+                    }}
+                    className="w-full min-w-0 bg-transparent text-center text-xs font-semibold tabular-nums text-gray-900 outline-none"
+                  />
+                ) : (
+                  <span>{seriesCount}</span>
+                )}
               </div>
               <div className={`flex items-center justify-center border-r border-gray-200 px-1 py-2${toneCell(sectionTab, 'rips')}`}>
                 <input
@@ -1130,6 +1272,86 @@ export default function PlanGymWeekFastPlanModal({
             </div>
           </div>
 
+          {fastPlanMode === 'select-exercises' ? (
+            <div className="mx-3 mt-2 rounded-lg border border-yellow-200 bg-yellow-50/95 px-2 py-2 text-black shadow-inner">
+              <div className="mb-2 flex flex-wrap items-end gap-2">
+                <label className="flex min-w-[140px] max-w-md flex-1 flex-col gap-0.5 text-[10px] font-semibold text-gray-800">
+                  Search catalog
+                  <input
+                    type="search"
+                    value={fastPlanCatalogSearch}
+                    onChange={e => setFastPlanCatalogSearch(e.target.value)}
+                    placeholder="Filter by name…"
+                    className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900"
+                  />
+                </label>
+                <label className="flex min-w-[180px] flex-col gap-0.5 text-[10px] font-semibold text-gray-800">
+                  Your library
+                  <select
+                    className="rounded border border-gray-300 bg-white px-1 py-1 text-xs text-gray-900"
+                    defaultValue=""
+                    onChange={e => {
+                      const v = e.target.value;
+                      if (!v) return;
+                      if (!fastPlanExercisePick) {
+                        setFastPlanToolbarNotice('Tap a table row first (# or Exercise cell), then pick an exercise.');
+                        e.target.selectedIndex = 0;
+                        return;
+                      }
+                      updateExercise(fastPlanExercisePick.secIdx, fastPlanExercisePick.exIdx, 'name', v);
+                      e.target.selectedIndex = 0;
+                    }}
+                  >
+                    <option value="">Free moves…</option>
+                    {freeMoveExerciseList.map(fe => (
+                      <option key={fe.id} value={fe.name}>
+                        {fe.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="w-full text-[10px] leading-snug text-gray-700 sm:w-auto sm:flex-1">
+                  {fastPlanExercisePick
+                    ? `Applying to row ${fastPlanExercisePick.exIdx + 1} of ${activeDay.sectors[fastPlanExercisePick.secIdx]?.sectorLabel ?? '—'}.`
+                    : 'Focus a row (# or Exercise) below, then tap a card or choose from your library.'}
+                </p>
+              </div>
+              <div
+                className="overflow-x-auto pb-1"
+                onWheel={e => {
+                  if (e.shiftKey) return;
+                  const el = e.currentTarget;
+                  if (el.scrollWidth <= el.clientWidth) return;
+                  e.preventDefault();
+                  el.scrollLeft += e.deltaY;
+                }}
+              >
+                <div className="flex w-max gap-2">
+                  {fastPlanCatalogFiltered.map(ex => (
+                    <button
+                      key={ex.id}
+                      type="button"
+                      title={ex.name}
+                      onClick={() => {
+                        if (!fastPlanExercisePick) {
+                          setFastPlanToolbarNotice('Tap a table row first (# or Exercise cell), then pick an exercise.');
+                          return;
+                        }
+                        updateExercise(fastPlanExercisePick.secIdx, fastPlanExercisePick.exIdx, 'name', ex.name);
+                      }}
+                      className="flex w-28 flex-shrink-0 flex-col items-stretch rounded-lg border-2 border-gray-300 bg-white p-1 text-left hover:border-blue-500 hover:shadow-md"
+                    >
+                      <div className="relative mb-1 aspect-square w-full overflow-hidden rounded bg-gray-100">
+                        <Image src={ex.image} alt="" fill className="object-contain" sizes="112px" unoptimized />
+                      </div>
+                      <span className="line-clamp-3 text-center text-[10px] font-medium text-gray-900">{ex.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {/* Column labels sit directly above the exercise rows (below muscle picker), not above the sector strip */}
           <div className="mx-3 mt-3">
             <div className="grid grid-cols-[40px_1fr_88px_64px_72px_76px_76px_88px_56px] rounded-t-lg border border-b-0 border-gray-300 bg-gray-50 text-xs font-semibold text-gray-700">
@@ -1153,7 +1375,10 @@ export default function PlanGymWeekFastPlanModal({
                   name={`planMode-${activeDayIdx}`}
                   className="h-3 w-3"
                   checked={fastPlanMode === 'select-exercises'}
-                  onChange={() => setFastPlanMode('select-exercises')}
+                  onChange={() => {
+                    setFastPlanMode('select-exercises');
+                    setFastPlanCatalogFilterId('all');
+                  }}
                 />
                 Select exercises
               </label>
@@ -1171,7 +1396,7 @@ export default function PlanGymWeekFastPlanModal({
             <p className="rounded-b-lg border border-t-0 border-gray-300 bg-gray-50/90 px-3 py-2 text-[11px] leading-snug text-gray-700">
               {fastPlanMode === 'plan-series'
                 ? 'Series column shows how sets are split across exercises (from your training level). Adjust totals with Series distribution settings or each sector’s Series/area.'
-                : 'Type exercise names in the Exercise column. Use + / − on each sector header for more rows; dashed muscle icons add a new area — filled icons filter to one area.'}
+                : 'Use the catalog above (same layout as the moveframe fast planner): tap a muscle to filter cards, focus a table row (# or Exercise), then tap a card or pick from your library. You can still type names and edit series per row.'}
             </p>
           </div>
           </div>

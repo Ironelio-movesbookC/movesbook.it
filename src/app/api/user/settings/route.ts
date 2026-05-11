@@ -11,6 +11,12 @@ function isPrismaEngineTransportError(error: unknown): boolean {
   return msg.includes('Engine was empty') || msg.includes('Engine is not yet connected');
 }
 
+/** MySQL 1054 — column exists in Prisma schema but DB not migrated yet */
+function isUnknownColumnError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg.includes('1054') || msg.includes('Unknown column');
+}
+
 // Helper function to safely parse JSON with fallback
 function safeJsonParse(jsonString: string | null, defaultValue: any = {}) {
   if (!jsonString) return defaultValue;
@@ -27,21 +33,38 @@ function safeJsonParse(jsonString: string | null, defaultValue: any = {}) {
 }
 
 async function getUserYoutubeChannelUrl(userId: string): Promise<string | null> {
-  const rows = await prisma.$queryRaw<{ youtubeChannelUrl: string | null }[]>`
-    SELECT youtubeChannelUrl
-    FROM users_new
-    WHERE id = ${userId}
-    LIMIT 1
-  `;
-  return rows[0]?.youtubeChannelUrl ?? null;
+  try {
+    const row = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { youtubeChannelUrl: true },
+    });
+    return row?.youtubeChannelUrl ?? null;
+  } catch (e) {
+    if (isUnknownColumnError(e)) {
+      console.warn(
+        '[user/settings] users_new.youtubeChannelUrl column missing; run prisma migrate. Returning null.'
+      );
+      return null;
+    }
+    throw e;
+  }
 }
 
 async function setUserYoutubeChannelUrl(userId: string, value: string | null): Promise<void> {
-  await prisma.$executeRaw`
-    UPDATE users_new
-    SET youtubeChannelUrl = ${value}
-    WHERE id = ${userId}
-  `;
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { youtubeChannelUrl: value },
+    });
+  } catch (e) {
+    if (isUnknownColumnError(e)) {
+      console.warn(
+        '[user/settings] users_new.youtubeChannelUrl column missing; run prisma migrate. Skipping YouTube URL persist.'
+      );
+      return;
+    }
+    throw e;
+  }
 }
 
 // GET - Fetch user settings (with safe JSON parsing and auto-recovery)
@@ -606,7 +629,11 @@ export async function PATCH(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error updating settings:', error);
-    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json(
+      { error: 'Failed to update settings', details: message },
+      { status: 500 }
+    );
   }
 }
 

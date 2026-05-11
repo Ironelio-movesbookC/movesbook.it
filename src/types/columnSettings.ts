@@ -58,7 +58,7 @@ export const MOVEFRAME_COLUMNS: ColumnDefinition[] = [
   { id: 'description', label: 'Moveframe description', defaultVisible: true, required: true, description: 'Moveframe description' },
   { id: 'duration', label: 'Duration', defaultVisible: true, description: 'Distance/Time/Series duration' },
   { id: 'rip', label: 'Rip\\Sets', defaultVisible: true, description: 'Repetitions/Sets' },
-  { id: 'macro', label: 'Macro', defaultVisible: true, description: 'Macro cycle' },
+  { id: 'macro', label: 'Ave pause', defaultVisible: true, description: 'Average pause / macro rest across laps' },
   { id: 'alarm', label: 'Alarm & Sound', defaultVisible: true, description: 'Alarm settings' },
   { id: 'options', label: 'Options', defaultVisible: true, required: true, description: 'Action buttons' },
 ];
