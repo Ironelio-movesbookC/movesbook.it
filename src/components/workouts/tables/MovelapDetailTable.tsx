@@ -1,24 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import ReactDOM from 'react-dom';
-import { GripVertical, Volume2, VolumeX, Bell, BellOff, MoreVertical, ChevronDown } from 'lucide-react';
+import { GripVertical, Volume2, VolumeX, Bell, BellOff, MoreVertical } from 'lucide-react';
 import { DndContext, closestCenter, DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import {
-  MACRO_FINAL_OPTIONS,
-  CIRCUIT_STATION_PAUSE_OPTIONS,
-  circuitLoadOfWorkToMacroFinal,
-  getSportConfig,
-  REST_TYPES,
-} from '@/constants/moveframe.constants';
-import {
-  getExercisesBySector,
-  getExerciseMedia,
-  getExercisePictureAThumbnailForDisplay,
-  getMockExerciseThumbnail,
-  normalizeCatalogExerciseName,
-} from '@/data/mockExercises';
+import { MACRO_FINAL_OPTIONS, getSportConfig, REST_TYPES } from '@/constants/moveframe.constants';
+import { getExercisesBySector, getExerciseMedia, getMockExerciseThumbnail } from '@/data/mockExercises';
 import ExerciseGalleryModal from '@/components/workouts/ExerciseGalleryModal';
 import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
 import { computeAnaerobicFastPlannerRowStats, formatAvePauseFromSeconds } from '@/utils/moveframeAvePause';
@@ -35,76 +23,6 @@ const stripHtmlTags = (html: string): string => {
   tempDiv.innerHTML = html;
   return tempDiv.textContent || tempDiv.innerText || '';
 };
-
-/**
- * Circuit letter / local series / station from movelap fields or [CIRCUIT_META] in notes.
- * Used for the row below the current one: that lap may not yet have in-place metadata during the same table map pass.
- */
-function readCircuitLayoutFromMovelap(ml: any): { letter: string; localSeries: number; station: number } {
-  let letter = typeof ml?.circuitLetter === 'string' ? ml.circuitLetter.trim().toUpperCase() : '';
-  let localSeries =
-    typeof ml?.localSeriesNumber === 'number' && Number.isFinite(ml.localSeriesNumber) ? ml.localSeriesNumber : 0;
-  let station =
-    typeof ml?.stationNumber === 'number' && Number.isFinite(ml.stationNumber) ? ml.stationNumber : 0;
-  const notes = ml?.notes;
-  if (typeof notes === 'string' && notes.includes('[CIRCUIT_META]')) {
-    const metaMatch = notes.match(/\[CIRCUIT_META\](.*?)\[\/CIRCUIT_META\]/);
-    if (metaMatch?.[1]) {
-      try {
-        const meta = JSON.parse(metaMatch[1]);
-        if (typeof meta.circuitLetter === 'string' && meta.circuitLetter.trim())
-          letter = meta.circuitLetter.trim().toUpperCase();
-        if (typeof meta.localSeriesNumber === 'number' && Number.isFinite(meta.localSeriesNumber))
-          localSeries = meta.localSeriesNumber;
-        if (typeof meta.stationNumber === 'number' && Number.isFinite(meta.stationNumber)) station = meta.stationNumber;
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-  return { letter, localSeries, station };
-}
-
-function snapToCircuitStationPauseSeconds(seconds: number): number {
-  let best = CIRCUIT_STATION_PAUSE_OPTIONS[0]!.value;
-  let bestDist = Infinity;
-  for (const o of CIRCUIT_STATION_PAUSE_OPTIONS) {
-    const d = Math.abs(o.value - seconds);
-    if (d < bestDist) {
-      bestDist = d;
-      best = o.value;
-    }
-  }
-  return best;
-}
-
-/** Picture A (mock bank SVG / URL) or sector diagram; uses native img so portaled modals always show thumbnails. */
-function StationExerciseListThumb({
-  exerciseName,
-  sectorFallbackSrc,
-  sizeClass = 'h-10 w-10',
-}: {
-  exerciseName: string;
-  sectorFallbackSrc: string | null;
-  sizeClass?: string;
-}) {
-  const n = (exerciseName || '').trim();
-  let pic = n ? getExercisePictureAThumbnailForDisplay(n) : null;
-  if (!pic?.src?.trim() && n) {
-    const thumb = getMockExerciseThumbnail(n);
-    if (thumb?.src) pic = { src: thumb.src, isDataUrl: thumb.isDataUrl };
-  }
-  const src = (pic?.src?.trim() || sectorFallbackSrc || '').trim() || null;
-  if (!src) {
-    return <div className={`${sizeClass} flex-shrink-0 rounded border border-gray-200 bg-gray-100`} aria-hidden />;
-  }
-  return (
-    <div className={`relative ${sizeClass} flex-shrink-0 overflow-hidden rounded border border-gray-200 bg-gray-50`}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- small list thumbs; avoids Next/Image issues in portals */}
-      <img src={src} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
-    </div>
-  );
-}
 
 const extractCircuitMetaFromNotes = (notes: unknown) => {
   if (typeof notes !== 'string') return null;
@@ -351,7 +269,7 @@ function EditableNotesField({ movelap, stripHtmlTags, onRefresh, isNewlyAdded }:
         }
       }}
       disabled={isSaving}
-      className={`w-full px-1 py-0.5 text-sm border border-gray-200 rounded focus:border-blue-500 focus:outline-none disabled:bg-gray-100 ${isNewlyAdded ? 'text-red-600' : ''}`}
+      className={`w-full px-1 py-0.5 text-xs border border-gray-200 rounded focus:border-blue-500 focus:outline-none disabled:bg-gray-100 ${isNewlyAdded ? 'text-red-600' : ''}`}
       placeholder="Add notes..."
       title="Edit notes (press Enter to save)"
     />
@@ -392,9 +310,7 @@ function SortableMovelapRow({
   pauseByCircuitIndex,
   onRefresh,
   isCircuitBased: isCircuitBasedProp,
-  circuitMacroFromConfig = null,
-  circuitExecutionMode,
-  nextMovelapInTable = null
+  circuitExecutionMode
 }: {
   movelap: any;
   isNewlyAdded?: boolean;
@@ -428,12 +344,8 @@ function SortableMovelapRow({
   pauseByCircuitIndex?: Map<number, { pauseAfterCircuit?: number; pauseBetweenSeries?: number; seriesPauses?: number[] }>;
   onRefresh?: () => void;
   isCircuitBased?: boolean;
-  /** From [CIRCUIT_DATA] config.loadOfWork — Macro label for final station when lap.macroFinal is empty. */
-  circuitMacroFromConfig?: string | null;
   /** From saved circuit config — drives thick row separator between series blocks in the movelap list. */
   circuitExecutionMode?: 'vertical' | 'horizontal';
-  /** Next row in the displayed movelap list (same moveframe), for series-boundary detection when series lengths differ. */
-  nextMovelapInTable?: any | null;
 }) {
   const isCircuitBasedRow = isCircuitBasedProp ?? moveframe?.isCircuitBased;
   const [exerciseGallery, setExerciseGallery] = useState<{
@@ -498,6 +410,7 @@ function SortableMovelapRow({
     typeof movelap.localSeriesNumber === 'number' ? movelap.localSeriesNumber : 0;
   const stationNum = typeof movelap.stationNumber === 'number' ? movelap.stationNumber : 0;
   const execMode = circuitExecutionMode ?? 'vertical';
+<<<<<<< HEAD
   /** Vertical list order: thick line after the last row of serie N when the next row is same circuit and serie N+1 — not only when serie N fills `stationsPerSeries` (e.g. serie 1 with one station). */
   const nextLayout = nextMovelapInTable ? readCircuitLayoutFromMovelap(nextMovelapInTable) : null;
   const sameCircuitNext =
@@ -539,6 +452,8 @@ function SortableMovelapRow({
     nextLayout.localSeries > localSeriesNum &&
     localSeriesNum > 0 &&
     (seriesCount <= 0 || localSeriesNum < seriesCount);
+=======
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   /** Vertical: after last station of a serie, except the last serie of the circuit. Horizontal: after last serie at a station, except the last station of the circuit. */
   const classicVerticalSerieEnd =
     execMode === 'vertical' &&
@@ -569,11 +484,17 @@ function SortableMovelapRow({
     !!hasCircuitIdentity &&
     localSeriesNum > 0 &&
     stationNum > 0 &&
+<<<<<<< HEAD
     (listShowsNextSerieSameCircuit ||
       classicVerticalSerieEnd ||
       classicHorizontalSerieEnd ||
       listDetectsVerticalSeriesEnd ||
       listDetectsHorizontalSeriesEnd);
+=======
+    (execMode === 'horizontal'
+      ? localSeriesNum === seriesCount && stationNum < stationsPerSeries
+      : stationNum === stationsPerSeries && localSeriesNum < seriesCount);
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -617,26 +538,13 @@ function SortableMovelapRow({
       ? (circuitPauseFromCircuit ?? pauseCircuitsSeconds)!
       : null;
   const storedPauseSeconds = parseMovelapPauseToSeconds(movelap.pause);
-  const macroFromLap =
-    movelap.macroFinal != null && String(movelap.macroFinal).trim() !== ''
-      ? String(movelap.macroFinal).trim()
-      : null;
-  const moveframeMacroFallback =
-    moveframe?.macroFinal != null && String(moveframe.macroFinal).trim() !== ''
-      ? String(moveframe.macroFinal).trim()
-      : null;
-  const circuitMacroFallback =
-    circuitMacroFromConfig != null && String(circuitMacroFromConfig).trim() !== ''
-      ? String(circuitMacroFromConfig).trim()
-      : null;
   const useLegacyFinalRestInPause =
     isWorkoutFinalRestRow &&
     finalRestSeconds != null &&
-    !macroFromLap &&
-    !circuitMacroFallback &&
-    !moveframeMacroFallback &&
+    !movelap.macroFinal &&
     storedPauseSeconds + 2 < finalRestSeconds;
 
+<<<<<<< HEAD
   // Same pause→macro mapping as non-final rows: after last serie of a circuit use pause-after-circuit; else end-of-serie uses pause-between-series.
   const macroFromCircuitPauses = !hasCircuitIdentity
     ? null
@@ -662,6 +570,19 @@ function SortableMovelapRow({
     ? macroFromLap
     : hasCircuitIdentity && isWorkoutFinalRestRow
       ? circuitMacroFallback ?? moveframeMacroFallback ?? macroFromCircuitPauses
+=======
+  // Macro: between series, or between circuits (not after last exercise — that is Pause / end-of-workout rest).
+  const macroValue = movelap.macroFinal
+    ? movelap.macroFinal
+    : hasCircuitIdentity
+      ? isWorkoutFinalRestRow
+        ? null
+        : isEndOfCircuit && (circuitPauseFromCircuit ?? pauseCircuitsSeconds) != null
+          ? formatPause((circuitPauseFromCircuit ?? pauseCircuitsSeconds) as number)
+          : isEndOfSeries && (seriesPauseFromCircuit ?? pauseSeriesSeconds) != null
+            ? formatPause((seriesPauseFromCircuit ?? pauseSeriesSeconds) as number)
+            : null
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
       : null;
   const pauseValue = macroValue
     ? null
@@ -770,13 +691,13 @@ function SortableMovelapRow({
       
       {/* MF (Moveframe Letter) / Circuit Letter Column - 2026-01-22 10:30 UTC */}
       {/* 2026-01-22 11:30 UTC - Updated to show circuit letter (A, B, C) for circuits */}
-      <td className="border border-gray-300 px-1 py-1 text-center font-bold text-sm">
+      <td className="border border-gray-300 px-1 py-1 text-center font-bold text-xs">
         {movelap.circuitLetter ? movelap.circuitLetter : moveframeLetter}
       </td>
       
       {/* # (Repetition Number) / Circuit Info Column - 2026-01-22 10:30 UTC */}
       {/* 2026-01-24 - Updated to show format like "B-2-3" (circuit-series-station) */}
-      <td className="border border-gray-300 px-1 py-1 text-center font-bold text-sm">
+      <td className="border border-gray-300 px-1 py-1 text-center font-bold text-xs">
         {movelap.circuitLetter 
           ? `${movelap.circuitLetter}-${movelap.localSeriesNumber || movelap.seriesNumber}-${movelap.stationNumber}` 
           : sequenceNumber}
@@ -790,12 +711,12 @@ function SortableMovelapRow({
             style={{ backgroundColor: sectionColor }}
             title={sectionName}
           />
-          <span className="text-sm">{sectionName}</span>
+          <span className="text-[10px]">{sectionName}</span>
         </div>
       </td>
       
       {/* Action Column - Shows sport name */}
-      <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+      <td className={`border border-gray-300 px-1 py-1 text-center text-[10px] ${isNewlyAdded ? 'text-red-600' : ''}`}>
         {sport.replace(/_/g, ' ')}
       </td>
       
@@ -803,6 +724,7 @@ function SortableMovelapRow({
       
        {isAnaerobicFastPlanner && (
          <>
+<<<<<<< HEAD
            <td className={`border border-gray-300 px-1 py-1 align-middle ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {(() => {
                const exName = (movelap.exercise || '').trim();
@@ -868,6 +790,9 @@ function SortableMovelapRow({
              })()}
            </td>
            <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+=======
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
              {(() => {
                const s = typeof movelap.speed === 'string' ? movelap.speed.trim() : (movelap.speed != null ? String(movelap.speed).trim() : '');
                if (!s) return '—';
@@ -876,51 +801,51 @@ function SortableMovelapRow({
                return s;
              })()}
            </td>
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {movelap._fastPlannerSeries || '—'}
            </td>
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {movelap._fastPlannerRipTime || '—'}
            </td>
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm font-semibold ${isNewlyAdded ? 'text-red-600' : 'text-blue-700'}`}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs font-semibold ${isNewlyAdded ? 'text-red-600' : 'text-blue-700'}`}>
              {movelap.weight || '—'}
            </td>
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {movelap._fastPlannerBreak || movelap.pause || '—'}
            </td>
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {movelap._fastPlannerMode || '—'}
            </td>
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
-             {macroValue != null && String(macroValue) !== '' ? String(macroValue) : '—'}
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+             {macroValue === 0 ? '0' : macroValue || '—'}
            </td>
          </>
        )}
 
       {isAerobicFastPlanner && (
         <>
-          <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {(() => {
               const distRaw = movelap.distance != null ? String(movelap.distance).trim() : '';
               return distRaw ? (/^[0-9]+$/.test(distRaw) ? `${distRaw}m` : distRaw) : '—';
             })()}
           </td>
-          <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {movelap.style ? String(movelap.style).trim() : '—'}
           </td>
-          <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {movelap.speed ? String(movelap.speed).trim() : '—'}
           </td>
-          <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {movelap.rowPerMin != null ? String(movelap.rowPerMin) : '—'}
           </td>
-          <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {movelap.pace != null ? String(movelap.pace) : '—'}
           </td>
-          <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {movelap.time ? String(movelap.time).trim() : '—'}
           </td>
-          <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {(() => {
               const restChoice = mapRestTypeToChoice(movelap?.restType);
               if (restChoice === 'restart_to') return 'Restart to';
@@ -928,13 +853,13 @@ function SortableMovelapRow({
               return 'Rest Time';
             })()}
           </td>
-          <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {(() => {
               const restValue = movelap.pause != null ? String(movelap.pause).trim() : '';
               return restValue || '—';
             })()}
           </td>
-          <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {(() => {
               const rawTools = typeof movelap.tools === 'string' ? movelap.tools.trim() : '';
               const choice = mapToolsToBreakChoice(rawTools);
@@ -943,7 +868,7 @@ function SortableMovelapRow({
               return 'Watts';
             })()}
           </td>
-          <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {(() => {
               const rawTools = typeof movelap.tools === 'string' ? movelap.tools.trim() : '';
               const choice = mapToolsToBreakChoice(rawTools);
@@ -951,7 +876,7 @@ function SortableMovelapRow({
               return choice === 'stopped' ? 'Stopped' : '—';
             })()}
           </td>
-          <td className={`border border-gray-300 px-1 py-1 text-left text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-left text-[10px] ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {typeof movelap.notes === 'string' && movelap.notes.trim() !== '' ? movelap.notes : '—'}
           </td>
         </>
@@ -972,7 +897,7 @@ function SortableMovelapRow({
                        ? MUSCULAR_SECTOR_IMAGES[sectorLabel]
                        : null;
                    if (!src) {
-                     return <span className="text-sm text-gray-400">—</span>;
+                     return <span className="text-[10px] text-gray-400">—</span>;
                    }
                    return (
                      <div className="flex flex-col items-center gap-0.5">
@@ -985,7 +910,7 @@ function SortableMovelapRow({
                          unoptimized
                        />
                        <span
-                         className="max-w-[56px] truncate text-sm leading-tight text-gray-700"
+                         className="max-w-[56px] truncate text-[8px] leading-tight text-gray-700"
                          title={sectorLabel}
                        >
                          {sectorLabel}
@@ -1048,7 +973,7 @@ function SortableMovelapRow({
                            <div className="h-full w-full bg-gray-100" aria-hidden />
                          )}
                        </button>
-                       <div className="min-w-0 flex-1 text-left text-sm leading-tight text-gray-900">
+                       <div className="min-w-0 flex-1 text-left text-[10px] leading-tight text-gray-900">
                          {exName ? (
                            exName
                          ) : (
@@ -1062,7 +987,7 @@ function SortableMovelapRow({
              </>
            )}
            {/* Reps */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {isCircuitBasedRow
                ? (movelap.reps != null && movelap.reps !== ''
                    ? String(movelap.reps)
@@ -1072,11 +997,11 @@ function SortableMovelapRow({
            {!moveframe.isCircuitBased && (
              <>
            {/* Weight */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm font-semibold ${isNewlyAdded ? 'text-red-600' : 'text-blue-700'}`}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs font-semibold ${isNewlyAdded ? 'text-red-600' : 'text-blue-700'}`}>
              {movelap.weight || '—'}
            </td>
            {/* Tempo/Speed - Only show if user set a real tempo (e.g. Slow, Normal); do not show numeric values they did not type as Time */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {(() => {
                const s = typeof movelap.speed === 'string' ? movelap.speed.trim() : (movelap.speed != null ? String(movelap.speed).trim() : '');
                if (!s) return '—';
@@ -1090,9 +1015,10 @@ function SortableMovelapRow({
          </>
        )}
       
-       {/* Indoor/tools sports — official column order: Musc. Sector → Exercise → Reps → Tools → Tempo (then Pause/Macro…) */}
+       {/* OTHER SPORTS WITH TOOLS (Gymnastic, Stretching, Pilates, Yoga, etc.) */}
        {hasTools && !isAerobicFastPlanner && (
          <>
+<<<<<<< HEAD
            <td
              className={`border border-gray-300 px-1 py-1 text-center align-middle ${isNewlyAdded ? 'text-red-600' : ''}`}
            >
@@ -1198,19 +1124,15 @@ function SortableMovelapRow({
              })()}
            </td>
            <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+=======
+           {/* Reps */}
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
              {movelap.reps || '—'}
            </td>
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm font-semibold ${isNewlyAdded ? 'text-red-600' : 'text-green-700'}`}>
+           {/* Tools */}
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs font-semibold ${isNewlyAdded ? 'text-red-600' : 'text-green-700'}`}>
              {movelap.tools || '—'}
-           </td>
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
-             {(() => {
-               const s = typeof movelap.speed === 'string' ? movelap.speed.trim() : (movelap.speed != null ? String(movelap.speed).trim() : '');
-               if (!s) return '—';
-               if (/^\d+$/.test(s)) return '—';
-               if (movelap.reps != null && String(movelap.reps) === s) return '—';
-               return s;
-             })()}
            </td>
          </>
        )}
@@ -1220,7 +1142,7 @@ function SortableMovelapRow({
          <>
            {/* Distance/Duration - 2026-01-22 11:30 UTC - Show sector for circuits, distance/time for regular */}
            {/* 2026-01-22 14:20 UTC - Use style field for sector (stored in DB) */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {movelap.circuitLetter 
                ? (movelap.style || movelap.sector || '—')
                : (movelap.distance ? movelap.distance : (movelap.time || '—'))}
@@ -1228,7 +1150,7 @@ function SortableMovelapRow({
            
            {/* Exercise (formerly Style) - 2026-01-22 11:30 UTC - Show exercise for circuits, style for regular */}
            {(isSwim || isRun) && (
-             <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+             <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
                {movelap.circuitLetter 
                  ? (movelap.exercise || '—')
                  : (movelap.style || '—')}
@@ -1238,10 +1160,10 @@ function SortableMovelapRow({
            {/* R1, R2 - Only for BIKE */}
            {isBike && (
              <>
-               <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+               <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
                  {movelap.r1 || '—'}
                </td>
-               <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+               <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
                  {movelap.r2 || '—'}
                </td>
              </>
@@ -1249,24 +1171,24 @@ function SortableMovelapRow({
            
           {/* Speed/Reps - For SWIM, BIKE, RUN - 2026-01-22 14:10 UTC - Show reps for circuits, speed for regular */}
           {/* 2026-01-22 14:20 UTC - For circuits, speed field stores reps value */}
-          <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+          <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
             {movelap.speed || '—'}
           </td>
            
            {/* Row/min - Only for ROWING and CANOEING */}
            {(moveframe.sport === 'ROWING' || moveframe.sport === 'CANOEING') && (
-             <td className={`border border-gray-300 px-1 py-1 text-center text-sm font-semibold ${isNewlyAdded ? 'text-red-600' : 'text-purple-700'}`}>
+             <td className={`border border-gray-300 px-1 py-1 text-center text-xs font-semibold ${isNewlyAdded ? 'text-red-600' : 'text-purple-700'}`}>
                {movelap.rowPerMin || '—'}
              </td>
            )}
            
            {/* Time */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '85px', minWidth: '85px' }}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '85px', minWidth: '85px' }}>
              {movelap.time || '—'}
            </td>
            
            {/* Pace */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '85px', minWidth: '85px' }}>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '85px', minWidth: '85px' }}>
              {movelap.pace || '—'}
            </td>
          </>
@@ -1276,16 +1198,21 @@ function SortableMovelapRow({
        
        {/* Pause/Recovery */}
      {!isAnaerobicFastPlanner && !isAerobicFastPlanner && (
+<<<<<<< HEAD
       <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
         {pauseColumnDisplay}
+=======
+      <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+        {pauseValue === 0 ? '0' : pauseValue || '—'}
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
        </td>
       )}
        
        {/* Macro: between series / between circuits (final workout rest is in Pause on last row) */}
        {/* 2026-01-22 15:35 UTC - Calculate pause for each movelap individually */}
      {!isAnaerobicFastPlanner && !isAerobicFastPlanner && (
-      <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
-        {macroValue != null && String(macroValue) !== '' ? String(macroValue) : '—'}
+      <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+        {macroValue === 0 ? '0' : macroValue || '—'}
        </td>
       )}
        
@@ -1294,7 +1221,7 @@ function SortableMovelapRow({
       <td className={`border border-gray-300 px-1 py-1 text-center ${isNewlyAdded ? 'text-red-600' : ''}`}>
          <div className="flex items-center justify-center gap-1">
            {getSoundIcon(movelap)}
-           {movelap.alarm && movelap.alarm !== -1 && <span className="text-sm">{Math.abs(movelap.alarm)}</span>}
+           {movelap.alarm && movelap.alarm !== -1 && <span className="text-[8px]">{Math.abs(movelap.alarm)}</span>}
          </div>
        </td>
        )}
@@ -1303,7 +1230,7 @@ function SortableMovelapRow({
       {/* 2026-01-24 - Increased width 4x to 1200px for circuit movelap table */}
       {/* 2026-01-26 - Added red text styling for newly added movelaps */}
       {!isAerobicFastPlanner && (
-        <td className={`border border-gray-300 px-2 py-1 text-left text-sm ${isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '300px' }}>
+        <td className={`border border-gray-300 px-2 py-1 text-left text-xs ${isNewlyAdded ? 'text-red-600' : ''}`} style={{ width: '300px' }}>
           {/* 2026-01-22 11:45 UTC - Made notes field editable */}
           {/* 2026-01-22 12:00 UTC - Fixed to use controlled component with local state */}
           {/* 2026-01-22 15:35 UTC - Added onRefresh callback */}
@@ -1334,7 +1261,7 @@ function SortableMovelapRow({
               }
               if (onEditMovelap) onEditMovelap(movelap);
             }}
-            className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+            className="px-3 py-1 text-[10px] bg-blue-500 text-white rounded hover:bg-blue-600"
             title="Edit movelap"
           >
             Edit
@@ -1350,7 +1277,7 @@ function SortableMovelapRow({
                 handleOpenDropdown();
               }
             }}
-            className="px-2 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700"
+            className="px-2 py-1 text-[10px] bg-gray-600 text-white rounded hover:bg-gray-700"
             title="More options"
           >
             Options
@@ -1384,7 +1311,7 @@ function SortableMovelapRow({
             onCopyMovelap(movelap);
             setShowOptionsDropdown(false);
           }}
-          className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+          className="block w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100"
         >
           Copy
         </button>
@@ -1394,7 +1321,7 @@ function SortableMovelapRow({
             onPasteMovelap(index);
             setShowOptionsDropdown(false);
           }}
-          className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+          className="block w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100"
         >
           Paste
         </button>
@@ -1418,7 +1345,7 @@ function SortableMovelapRow({
               }
               setShowOptionsDropdown(false);
             }}
-            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            className="block w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100"
           >
             Add movelap
           </button>
@@ -1430,7 +1357,7 @@ function SortableMovelapRow({
               onAddStationAfter?.(movelap, index);
               setShowOptionsDropdown(false);
             }}
-            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            className="block w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100"
           >
             Add station
           </button>
@@ -1446,7 +1373,7 @@ function SortableMovelapRow({
             }
             setShowOptionsDropdown(false);
           }}
-          className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+          className="block w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50"
         >
           Delete
         </button>
@@ -1481,8 +1408,6 @@ export default function MovelapDetailTable({
   const sectionColor = moveframe.section?.color || '#5b8def';
   const sectionName = moveframe.section?.name || 'Default';
   const [copiedMovelap, setCopiedMovelap] = useState<any>(null);
-  const [pendingStationMove, setPendingStationMove] = useState<{ sourceId: string; targetId: string } | null>(null);
-  const [isApplyingStationMove, setIsApplyingStationMove] = useState(false);
   const [newlyAddedStationMovelapIds, setNewlyAddedStationMovelapIds] = useState<Set<string>>(() => new Set());
   const [newlyAddedFastPlannerExercises, setNewlyAddedFastPlannerExercises] = useState<Set<string>>(() => new Set());
   const [showAddStationModal, setShowAddStationModal] = useState(false);
@@ -1508,10 +1433,6 @@ export default function MovelapDetailTable({
     localSeriesNumber: number;
     stationNumber: number;
   } | null>(null);
-  const [addStationExerciseMenuOpen, setAddStationExerciseMenuOpen] = useState(false);
-  const addStationExerciseMenuRef = useRef<HTMLDivElement>(null);
-  const [fastPlannerExerciseMenuOpen, setFastPlannerExerciseMenuOpen] = useState(false);
-  const fastPlannerExerciseMenuRef = useRef<HTMLDivElement>(null);
   const [showFastPlannerMovelapModal, setShowFastPlannerMovelapModal] = useState(false);
   const [fpMovelapExerciseGallery, setFpMovelapExerciseGallery] = useState<{
     title: string;
@@ -1604,38 +1525,6 @@ export default function MovelapDetailTable({
       onAnaerobicFastPlannerModalOpenChange?.(false);
     };
   }, [showFastPlannerMovelapModal, onAnaerobicFastPlannerModalOpenChange]);
-
-  React.useEffect(() => {
-    if (!showAddStationModal) setAddStationExerciseMenuOpen(false);
-  }, [showAddStationModal]);
-
-  React.useEffect(() => {
-    if (!showFastPlannerMovelapModal) setFastPlannerExerciseMenuOpen(false);
-  }, [showFastPlannerMovelapModal]);
-
-  React.useEffect(() => {
-    setFastPlannerExerciseMenuOpen(false);
-  }, [fastPlannerDraft.muscularSector]);
-
-  React.useEffect(() => {
-    if (!addStationExerciseMenuOpen) return;
-    const onDoc = (ev: MouseEvent) => {
-      const el = addStationExerciseMenuRef.current;
-      if (el && !el.contains(ev.target as Node)) setAddStationExerciseMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [addStationExerciseMenuOpen]);
-
-  React.useEffect(() => {
-    if (!fastPlannerExerciseMenuOpen) return;
-    const onDoc = (ev: MouseEvent) => {
-      const el = fastPlannerExerciseMenuRef.current;
-      if (el && !el.contains(ev.target as Node)) setFastPlannerExerciseMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [fastPlannerExerciseMenuOpen]);
 
   React.useEffect(() => {
     setNewlyAddedStationMovelapIds((prev) => {
@@ -2026,14 +1915,6 @@ export default function MovelapDetailTable({
     if (!over || active.id === over.id) {
       return;
     }
-
-    if (moveframe.isCircuitBased) {
-      setPendingStationMove({
-        sourceId: String(active.id),
-        targetId: String(over.id),
-      });
-      return;
-    }
     
     let newOrder: any[] = [];
 
@@ -2137,6 +2018,7 @@ export default function MovelapDetailTable({
     }
   };
 
+<<<<<<< HEAD
   const extractUserNotesOnly = (rawNotes: unknown): string => {
     if (typeof rawNotes !== 'string') return '';
     return stripInternalWorkoutTags(rawNotes).trim();
@@ -2231,6 +2113,8 @@ export default function MovelapDetailTable({
     }
   };
 
+=======
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   // Handle copy movelap
   const handleCopyMovelap = (movelap: any) => {
     setCopiedMovelap(movelap);
@@ -2302,8 +2186,7 @@ export default function MovelapDetailTable({
 
     // Default Pause to circuit config "between stations" (pauseStations) - reference movelap may have macro
     const pauseStationsSeconds = circuitConfig?.pauses?.stations ?? 20;
-    const rawSec = typeof pauseStationsSeconds === 'number' ? pauseStationsSeconds : 20;
-    const defaultPause = formatSecondsToPauseInput(snapToCircuitStationPauseSeconds(rawSec));
+    const defaultPause = formatSecondsToPauseInput(typeof pauseStationsSeconds === 'number' ? pauseStationsSeconds : 20);
 
     setAddStationDraft({
       muscularSector: movelap?.muscularSector || movelap?.style || '',
@@ -2353,9 +2236,7 @@ export default function MovelapDetailTable({
       reps: typeof movelap?.reps === 'number' ? String(movelap.reps) : (movelap?.reps ? String(movelap.reps) : ''),
       pause:
         movelap?.pause != null && String(movelap.pause).trim() !== ''
-          ? formatSecondsToPauseInput(
-              snapToCircuitStationPauseSeconds(parsePauseToSeconds(movelap.pause))
-            )
+          ? formatSecondsToPauseInput(parsePauseToSeconds(movelap.pause))
           : '',
       macroFinal: movelap?.macroFinal || '',
       notes: cleanedNotes,
@@ -2481,6 +2362,27 @@ export default function MovelapDetailTable({
     const secOnly = s.match(/^(\d+)\s*"?$/);
     if (secOnly) return Math.max(0, parseInt(secOnly[1], 10));
     return 0;
+  };
+
+  const formatPauseInput = (raw: unknown) => {
+    const s = typeof raw === 'string' ? raw : String(raw ?? '');
+    const trimmed = s.trim();
+    if (!trimmed) return '';
+    // Values like 2'00" become digits 2000 if we strip first — normalize through seconds instead.
+    if (/'/.test(trimmed) || /"/.test(trimmed)) {
+      return formatSecondsToPauseInput(parsePauseToSeconds(trimmed));
+    }
+    const digits = trimmed.replace(/\D/g, '').slice(0, 4);
+    if (!digits) return '';
+    if (digits.length <= 2) return `${digits}'`;
+    if (digits.length === 3) {
+      const mNum = parseInt(digits.slice(0, 1), 10);
+      const sNum = parseInt(digits.slice(1), 10);
+      return formatSecondsToPauseInput(mNum * 60 + Math.min(59, sNum));
+    }
+    const mNum = parseInt(digits.slice(0, 2), 10);
+    const sNum = parseInt(digits.slice(2, 4), 10);
+    return formatSecondsToPauseInput(mNum * 60 + Math.min(59, sNum));
   };
 
   const formatSecondsToPauseInput = (seconds: number) => {
@@ -2899,10 +2801,7 @@ export default function MovelapDetailTable({
   const handleSaveFastPlannerMovelap = async () => {
     if (isSavingFastPlannerMovelap) return;
     const token = localStorage.getItem('token');
-    if (!token) {
-      alert('Please sign in to save fast planner changes.');
-      return;
-    }
+    if (!token) return;
 
     const canonicalExercise = typeof fastPlannerDraft.exercise === 'string'
       ? fastPlannerDraft.exercise.replace(/\u00A0/g, ' ').trim().replace(/\s+/g, ' ')
@@ -3025,23 +2924,8 @@ export default function MovelapDetailTable({
       const createdLaps: any[] = [];
       const createdIds: string[] = [];
 
-      const lapsToPatch = lapsToUpdate.filter(
-        (lap: any) => typeof lap?.id === 'string' && lap.id.length > 0 && !String(lap.id).startsWith('temp-')
-      );
-      if (lapsToPatch.length < lapsToUpdate.length) {
-        console.warn(
-          '[Fast planner save] Skipping movelap PATCH for laps without a persisted id (temp or missing).',
-          { expected: lapsToUpdate.length, patching: lapsToPatch.length }
-        );
-      }
-      if (lapsToUpdate.length > 0 && lapsToPatch.length === 0) {
-        throw new Error(
-          'Cannot update series: movelap ids are missing or stale. Refresh the workout and try again.'
-        );
-      }
-
       await Promise.all(
-        lapsToPatch.map(async (lap: any) => {
+        lapsToUpdate.map(async (lap: any) => {
           const nextNotes = upsertFastPlannerModeInNotes(lap?.notes, fastPlannerDraft.mode || null);
           const updateResponse = await fetch(`/api/workouts/movelaps/${lap.id}`, {
             method: 'PATCH',
@@ -3201,17 +3085,10 @@ export default function MovelapDetailTable({
 
       setShowFastPlannerMovelapModal(false);
       setFastPlannerOriginalExercise(null);
-      if (onRefresh) {
-        try {
-          await onRefresh();
-        } catch (refreshError) {
-          console.error('Fast planner save succeeded but refresh failed', refreshError);
-        }
-      }
+      if (onRefresh) await onRefresh();
     } catch (error) {
       console.error('Failed to save fast planner movelap edit', error);
-      const detail = error instanceof Error ? error.message : String(error);
-      alert(`Failed to save fast planner changes. ${detail}`);
+      alert('Failed to save fast planner changes. Please try again.');
     } finally {
       setIsSavingFastPlannerMovelap(false);
     }
@@ -3678,7 +3555,7 @@ export default function MovelapDetailTable({
                   <polygon points="15,18 9,12 15,6" />
                 </svg>
               </button>
-              <span className="text-sm font-semibold text-gray-700">
+              <span className="text-xs font-semibold text-gray-700">
                 Movelaps of {moveframeLetter} ({currentMovelapIndex + 1}/{movelaps.length})
               </span>
               <button
@@ -3701,7 +3578,7 @@ export default function MovelapDetailTable({
                 e.stopPropagation();
                 onAddMovelap();
               }}
-              className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 whitespace-nowrap"
+              className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 whitespace-nowrap"
             >
               + Add Movelap
             </button>
@@ -3709,12 +3586,12 @@ export default function MovelapDetailTable({
           
           {/* Note Box with Save Button */}
           <div className="flex items-center gap-2" style={{ maxWidth: '600px' }}>
-            <label className="text-sm font-semibold text-black whitespace-nowrap">
+            <label className="text-xs font-semibold text-black whitespace-nowrap">
               Note
             </label>
             <input
               type="text"
-              className="px-2 py-1 text-sm text-red-600 border-2 border-black rounded focus:outline-none focus:ring-2 focus:ring-gray-400"
+              className="px-2 py-1 text-xs text-red-600 border-2 border-black rounded focus:outline-none focus:ring-2 focus:ring-gray-400"
               style={{ width: '500px' }}
               placeholder="Add a note for this moveframe..."
               value={noteValue}
@@ -3723,7 +3600,7 @@ export default function MovelapDetailTable({
             <button
               onClick={handleSaveNote}
               disabled={isSavingNote}
-              className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 whitespace-nowrap"
+              className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 whitespace-nowrap"
             >
               {isSavingNote ? 'Saving...' : 'Save'}
             </button>
@@ -3733,19 +3610,19 @@ export default function MovelapDetailTable({
         {/* Manual Mode Table - Two separate editable sections */}
         {/* 2026-01-24 - Scrollable wrapper for sticky Options column */}
         <div className="overflow-x-auto overflow-y-visible table-scrollbar">
-          <table className="text-sm" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: '1100px', width: '100%' }}>
+          <table className="text-xs" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: '1100px', width: '100%' }}>
           <thead className="bg-gradient-to-r from-purple-200 to-pink-200">
             <tr>
-              <th className="border border-gray-300 px-3 py-2 text-center text-sm font-bold" style={{ width: '80px', minWidth: '80px' }}>Sport</th>
-              <th className="border border-gray-300 px-3 py-2 text-center text-sm font-bold" style={{ minWidth: '400px' }}>Summary</th>
-              <th className="border border-gray-300 px-3 py-2 text-center text-sm font-bold" style={{ minWidth: '400px' }}>Detail of workout</th>
-              <th className="border border-gray-300 px-3 py-2 text-center text-sm font-bold sticky-options-header bg-gradient-to-r from-purple-200 to-pink-200" style={{ width: '100px', minWidth: '100px' }}>Options</th>
+              <th className="border border-gray-300 px-3 py-2 text-center text-[11px] font-bold" style={{ width: '80px', minWidth: '80px' }}>Sport</th>
+              <th className="border border-gray-300 px-3 py-2 text-center text-[11px] font-bold" style={{ minWidth: '400px' }}>Summary</th>
+              <th className="border border-gray-300 px-3 py-2 text-center text-[11px] font-bold" style={{ minWidth: '400px' }}>Detail of workout</th>
+              <th className="border border-gray-300 px-3 py-2 text-center text-[11px] font-bold sticky-options-header bg-gradient-to-r from-purple-200 to-pink-200" style={{ width: '100px', minWidth: '100px' }}>Options</th>
             </tr>
           </thead>
           <tbody>
             <tr className="hover:bg-blue-50">
               {/* Sport */}
-              <td className="border border-gray-300 px-2 py-2 text-center text-sm font-semibold bg-white align-middle" style={{ width: '80px', minWidth: '80px' }}>
+              <td className="border border-gray-300 px-2 py-2 text-center text-xs font-semibold bg-white align-middle" style={{ width: '80px', minWidth: '80px' }}>
                 <span className="font-bold text-purple-800">
                   {moveframe.sport?.replace(/_/g, ' ') || '—'}
                 </span>
@@ -3753,7 +3630,7 @@ export default function MovelapDetailTable({
               
               {/* Summary (Notes from movelap) */}
               <td 
-                className="border border-gray-300 px-2 py-2 text-sm cursor-pointer hover:bg-gray-50 bg-white align-top"
+                className="border border-gray-300 px-2 py-2 text-xs cursor-pointer hover:bg-gray-50 bg-white align-top"
                 onDoubleClick={() => {
                   setPopupContentType('summary');
                   setShowManualContentPopup(true);
@@ -3776,7 +3653,7 @@ export default function MovelapDetailTable({
               
               {/* Detail of workout (Manual Content from moveframe.notes) */}
               <td 
-                className="border border-gray-300 px-2 py-2 text-sm cursor-pointer hover:bg-gray-50 bg-white align-top"
+                className="border border-gray-300 px-2 py-2 text-xs cursor-pointer hover:bg-gray-50 bg-white align-top"
                 onClick={() => {
                   setPopupContentType('detail');
                   setShowManualContentPopup(true);
@@ -3813,7 +3690,7 @@ export default function MovelapDetailTable({
                         onEditMovelap(movelapToEdit);
                       }
                     }}
-                    className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                    className="px-3 py-1 text-[10px] bg-blue-500 text-white rounded hover:bg-blue-600"
                     title="Edit movelap"
                   >
                     Edit
@@ -3825,7 +3702,7 @@ export default function MovelapDetailTable({
                         onAddMovelap();
                       }
                     }}
-                    className="px-2 py-1 text-sm bg-purple-500 text-white rounded hover:bg-purple-600"
+                    className="px-2 py-1 text-[10px] bg-purple-500 text-white rounded hover:bg-purple-600"
                     title="Add movelap"
                   >
                     Options
@@ -3915,7 +3792,7 @@ export default function MovelapDetailTable({
                 </div>
                 {aerobicFastPlannerMovelapModalMode === 'add' && (
                   <div className="flex items-center gap-2">
-                    <label className="text-sm font-semibold">Insert position</label>
+                    <label className="text-xs font-semibold">Insert position</label>
                     <select
                       value={aerobicFastPlannerInsertPosition}
                       onChange={(e) => {
@@ -3923,7 +3800,7 @@ export default function MovelapDetailTable({
                         const next = Number.isFinite(raw) ? Math.min(Math.max(1, raw), aerobicInsertMax) : 1;
                         setAerobicFastPlannerInsertPosition(next);
                       }}
-                      className="px-2 py-1 text-sm bg-white text-black rounded"
+                      className="px-2 py-1 text-xs bg-white text-black rounded"
                     >
                       {Array.from({ length: aerobicInsertMax }, (_, i) => i + 1).map((n) => (
                         <option key={n} value={n}>{n}</option>
@@ -3948,7 +3825,7 @@ export default function MovelapDetailTable({
               <div className="p-4 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-800 mb-1">Distance</label>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Distance</label>
                     <select
                       value={aerobicFastPlannerDraft.distance}
                       onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, distance: e.target.value }))}
@@ -3962,7 +3839,7 @@ export default function MovelapDetailTable({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-800 mb-1">Style</label>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Style</label>
                     <select
                       value={aerobicFastPlannerDraft.style}
                       onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, style: e.target.value }))}
@@ -3976,7 +3853,7 @@ export default function MovelapDetailTable({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-800 mb-1">Speed</label>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Speed</label>
                     <select
                       value={aerobicFastPlannerDraft.speed}
                       onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, speed: e.target.value }))}
@@ -3990,7 +3867,7 @@ export default function MovelapDetailTable({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-800 mb-1">Strokes</label>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Strokes</label>
                     <input
                       type="number"
                       min={0}
@@ -4007,7 +3884,7 @@ export default function MovelapDetailTable({
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-800 mb-1">Watts</label>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Watts</label>
                     <input
                       type="number"
                       min={0}
@@ -4024,7 +3901,7 @@ export default function MovelapDetailTable({
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-800 mb-1">Time</label>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Time</label>
                     <input
                       type="text"
                       value={aerobicFastPlannerDraft.time}
@@ -4043,12 +3920,12 @@ export default function MovelapDetailTable({
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-semibold text-gray-800 mb-1">Rest</label>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Rest</label>
                     <div className="flex items-center gap-3 mb-2">
                       <select
                         value={aerobicFastPlannerDraft.restChoice}
                         onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, restChoice: e.target.value as AerobicRestChoice }))}
-                        className="px-2 py-1 text-sm bg-white text-black rounded border border-gray-300"
+                        className="px-2 py-1 text-xs bg-white text-black rounded border border-gray-300"
                         disabled={isSavingAerobicFastPlannerMovelap}
                       >
                         {aerobicRestChoices.map((opt) => (
@@ -4084,7 +3961,7 @@ export default function MovelapDetailTable({
                     </div>
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-semibold text-gray-800 mb-1">Break</label>
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Break</label>
                     <div className="grid grid-cols-3 gap-3">
                       <select
                         value={aerobicFastPlannerDraft.breakChoice}
@@ -4096,7 +3973,7 @@ export default function MovelapDetailTable({
                             break: choice === 'stopped' ? 'Stopped' : ''
                           }));
                         }}
-                        className="px-2 py-1 text-sm bg-white text-black rounded border border-gray-300"
+                        className="px-2 py-1 text-xs bg-white text-black rounded border border-gray-300"
                         disabled={isSavingAerobicFastPlannerMovelap}
                       >
                         <option value="stopped">Stopped</option>
@@ -4107,7 +3984,7 @@ export default function MovelapDetailTable({
                         <select
                           value={aerobicFastPlannerDraft.break}
                           onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, break: e.target.value }))}
-                          className="px-2 py-1 text-sm bg-white text-black rounded border border-gray-300"
+                          className="px-2 py-1 text-xs bg-white text-black rounded border border-gray-300"
                           disabled={isSavingAerobicFastPlannerMovelap}
                         >
                           <option value="">—</option>
@@ -4127,7 +4004,11 @@ export default function MovelapDetailTable({
                     </div>
                   </div>
                   <div className="col-span-2">
+<<<<<<< HEAD
                     <span className="sr-only">Notes for this repetition</span>
+=======
+                    <label className="block text-xs font-semibold text-gray-800 mb-1">Note</label>
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                     <input
                       type="text"
                       value={aerobicFastPlannerDraft.note}
@@ -4192,7 +4073,7 @@ export default function MovelapDetailTable({
                     <polygon points="15,18 9,12 15,6" />
                   </svg>
                 </button>
-                <span className="text-sm font-semibold text-gray-700">
+                <span className="text-xs font-semibold text-gray-700">
                   Movelaps of {moveframeLetter} ({currentMovelapIndex + 1}/{displayMovelaps.length})
                 </span>
                 <button
@@ -4215,7 +4096,7 @@ export default function MovelapDetailTable({
                   e.stopPropagation();
                   openFastPlannerMovelapEditor('add', undefined, fastPlannerInsertMax);
                 }}
-                className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 whitespace-nowrap"
+                className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 whitespace-nowrap"
               >
                 + Add Movelap
               </button>
@@ -4225,7 +4106,7 @@ export default function MovelapDetailTable({
                   e.stopPropagation();
                   openAerobicFastPlannerMovelapEditor('add', undefined, aerobicInsertMax);
                 }}
-                className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 whitespace-nowrap"
+                className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 whitespace-nowrap"
               >
                 + Add Movelap
               </button>
@@ -4248,7 +4129,7 @@ export default function MovelapDetailTable({
                   }
                   onAddMovelap();
                 }}
-                className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 whitespace-nowrap"
+                className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 whitespace-nowrap"
               >
                 + Add Movelap
               </button>
@@ -4256,12 +4137,12 @@ export default function MovelapDetailTable({
             
             {/* Note Box with Save Button */}
             <div className="flex items-center gap-2" style={{ maxWidth: '600px' }}>
-              <label className="text-sm font-semibold text-black whitespace-nowrap">
+              <label className="text-xs font-semibold text-black whitespace-nowrap">
                 Note
               </label>
               <input
                 type="text"
-                className="px-2 py-1 text-sm text-red-600 border-2 border-black rounded focus:outline-none focus:ring-2 focus:ring-gray-400"
+                className="px-2 py-1 text-xs text-red-600 border-2 border-black rounded focus:outline-none focus:ring-2 focus:ring-gray-400"
                 style={{ width: '500px' }}
                 placeholder="Add a note for this moveframe..."
                 value={noteValue}
@@ -4270,7 +4151,7 @@ export default function MovelapDetailTable({
               <button
                 onClick={handleSaveNote}
                 disabled={isSavingNote}
-                className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 whitespace-nowrap"
+                className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 whitespace-nowrap"
               >
                 {isSavingNote ? 'Saving...' : 'Save'}
               </button>
@@ -4279,7 +4160,11 @@ export default function MovelapDetailTable({
 
           {/* 2026-01-24 - Scrollable wrapper for sticky Options column */}
           <div className="overflow-x-auto overflow-y-visible table-scrollbar">
+<<<<<<< HEAD
             <table className="text-sm bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: isAnaerobicFastPlanner ? '1700px' : (moveframe.isCircuitBased ? '1560px' : '1600px'), width: '100%' }}>
+=======
+            <table className="text-xs bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: isAnaerobicFastPlanner ? '1500px' : (moveframe.isCircuitBased ? '1560px' : '1600px'), width: '100%' }}>
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
             {/* Render sport-specific column headers */}
             {(() => {
               const sport = moveframe.sport || 'SWIM';
@@ -4321,6 +4206,7 @@ export default function MovelapDetailTable({
                     </colgroup>
                     <thead className="bg-gray-200">
                       <tr>
+<<<<<<< HEAD
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm" title="Drag to reorder">Move</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm">MF</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm">#</th>
@@ -4336,6 +4222,22 @@ export default function MovelapDetailTable({
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm">Macro</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm" style={{ width: '300px' }}>Notes</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm sticky-options-header bg-gray-200" style={{ width: '110px', minWidth: '110px' }}>Options</th>
+=======
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" title="Drag to reorder">Move</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">MF</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">#</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Workout section</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Sport</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Speed</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Series</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Rip\time</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Weight</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Break</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Mode</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Macro</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" style={{ width: '300px' }}>Notes</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px] sticky-options-header bg-gray-200" style={{ width: '110px', minWidth: '110px' }}>Options</th>
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                       </tr>
                     </thead>
                   </>
@@ -4366,23 +4268,23 @@ export default function MovelapDetailTable({
                     </colgroup>
                     <thead className="bg-gray-200">
                       <tr>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm" title="Drag to reorder">Move</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">MF</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">#</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Workout section</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Sport</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Distance</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Style</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Speed</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Strokes</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Watts</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Time</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Rest Type</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Reset</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Break Type</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Break</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm" style={{ width: '170px' }}>Notes</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-sm sticky-options-header bg-gray-200" style={{ width: '80px', minWidth: '80px' }}>Options</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" title="Drag to reorder">Move</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">MF</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">#</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Workout section</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Sport</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Distance</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Style</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Speed</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Strokes</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Watts</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Time</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Rest Type</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Reset</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Break Type</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Break</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" style={{ width: '170px' }}>Notes</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px] sticky-options-header bg-gray-200" style={{ width: '80px', minWidth: '80px' }}>Options</th>
                       </tr>
                     </thead>
                   </>
@@ -4417,11 +4319,8 @@ export default function MovelapDetailTable({
                     )}
                     {hasTools && (
                       <>
-                        <col style={{ width: '56px' }} />
-                        <col style={{ width: '168px' }} />
                         <col style={{ width: '50px' }} />
                         <col style={{ width: '120px' }} />
-                        <col style={{ width: '50px' }} />
                       </>
                     )}
                     {isDistanceBased && (
@@ -4449,25 +4348,25 @@ export default function MovelapDetailTable({
                   </colgroup>
                   <thead className="bg-gray-200">
                     <tr>
-                      <th className="border border-gray-300 px-1 py-1 text-center text-sm" title="Drag to reorder">Move</th>
-                      <th className="border border-gray-300 px-1 py-1 text-center text-sm">MF</th>
-                      <th className="border border-gray-300 px-1 py-1 text-center text-sm">#</th>
-                      <th className="border border-gray-300 px-1 py-1 text-center text-sm">Workout section</th>
-                      <th className="border border-gray-300 px-1 py-1 text-center text-sm">Sport</th>
+                      <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" title="Drag to reorder">Move</th>
+                      <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">MF</th>
+                      <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">#</th>
+                      <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Workout section</th>
+                      <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Sport</th>
                       
                       {isBodyBuilding && (
                         <>
                           {circuitBasedMoveframe && (
                             <>
-                              <th className="border border-gray-300 px-1 py-1 text-center text-sm">Muscular</th>
-                              <th className="border border-gray-300 px-1 py-1 text-center text-sm">Exercise</th>
+                              <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Muscular</th>
+                              <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Exercise</th>
                             </>
                           )}
-                          <th className="border border-gray-300 px-1 py-1 text-center text-sm">Reps</th>
+                          <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Reps</th>
                           {!circuitBasedMoveframe && (
                             <>
-                          <th className="border border-gray-300 px-1 py-1 text-center text-sm">Weight</th>
-                          <th className="border border-gray-300 px-1 py-1 text-center text-sm">Tempo</th>
+                          <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Weight</th>
+                          <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Tempo</th>
                             </>
                           )}
                         </>
@@ -4475,47 +4374,44 @@ export default function MovelapDetailTable({
                       
                       {hasTools && (
                         <>
-                          <th className="border border-gray-300 px-1 py-1 text-center text-sm">Musc. Sector</th>
-                          <th className="border border-gray-300 px-1 py-1 text-center text-sm">Exercise</th>
-                          <th className="border border-gray-300 px-1 py-1 text-center text-sm">Reps</th>
-                          <th className="border border-gray-300 px-1 py-1 text-center text-sm">Tools</th>
-                          <th className="border border-gray-300 px-1 py-1 text-center text-sm">Tempo</th>
+                          <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Reps</th>
+                          <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Tools</th>
                         </>
                       )}
                       
                       {isDistanceBased && (
                         <>
-                          <th className="border border-gray-300 px-1 py-1 text-center text-sm">
+                          <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">
                             {circuitBasedMoveframe ? 'Musc.Sector' : 'Dist/Dur'}
                           </th>
                           {(isSwim || isRun) && (
-                            <th className="border border-gray-300 px-1 py-1 text-center text-sm">Exercise</th>
+                            <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Exercise</th>
                           )}
                           {isBike && (
                             <>
-                              <th className="border border-gray-300 px-1 py-1 text-center text-sm">R1</th>
-                              <th className="border border-gray-300 px-1 py-1 text-center text-sm">R2</th>
+                              <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">R1</th>
+                              <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">R2</th>
                             </>
                           )}
-                          <th className="border border-gray-300 px-1 py-1 text-center text-sm">
+                          <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">
                             {circuitBasedMoveframe ? 'Reps' : 'Speed'}
                           </th>
                           {isRowing && (
-                            <th className="border border-gray-300 px-1 py-1 text-center text-sm">Row/min</th>
+                            <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Row/min</th>
                           )}
-                          <th className="border border-gray-300 px-1 py-1 text-center text-sm" style={{ width: '85px', minWidth: '85px' }}>Time</th>
-                          <th className="border border-gray-300 px-1 py-1 text-center text-sm" style={{ width: '85px', minWidth: '85px' }}>Pace</th>
+                          <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" style={{ width: '85px', minWidth: '85px' }}>Time</th>
+                          <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" style={{ width: '85px', minWidth: '85px' }}>Pace</th>
                         </>
                       )}
                       
                       {/* Common headers */}
-                      <th className="border border-gray-300 px-1 py-1 text-center text-sm">Pause</th>
-                      <th className="border border-gray-300 px-1 py-1 text-center text-sm">Macro</th>
+                      <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Pause</th>
+                      <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Macro</th>
                       {!circuitBasedMoveframe && (
-                      <th className="border border-gray-300 px-1 py-1 text-center text-sm">Alarm&Snd</th>
+                      <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Alarm&Snd</th>
                       )}
-                      <th className="border border-gray-300 px-1 py-1 text-center text-sm" style={{ width: '300px' }}>Notes</th>
-                      <th className="border border-gray-300 px-1 py-1 text-center text-sm sticky-options-header bg-gray-200" style={{ width: '110px', minWidth: '110px' }}>Options</th>
+                      <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" style={{ width: '300px' }}>Notes</th>
+                      <th className="border border-gray-300 px-1 py-1 text-center text-[10px] sticky-options-header bg-gray-200" style={{ width: '110px', minWidth: '110px' }}>Options</th>
                     </tr>
                   </thead>
                 </>
@@ -4574,7 +4470,7 @@ export default function MovelapDetailTable({
                     totalColumns += 2; // Muscular + Exercise (thumb + name)
                   }
                 } else if (hasTools) {
-                  totalColumns += 5; // Musc. Sector + Exercise + Reps + Tools + Tempo
+                  totalColumns += 2; // Reps + Tools
                 } else if (isDistanceBased) {
                   totalColumns += 1; // Dist/Dur
                   if (isSwim || isRun) totalColumns += 1; // Style
@@ -4657,6 +4553,7 @@ export default function MovelapDetailTable({
                       circuitExecutionMode={
                         circuitConfig?.executionMode === 'horizontal' ? 'horizontal' : 'vertical'
                       }
+<<<<<<< HEAD
                       circuitMacroFromConfig={(() => {
                         const lw = circuitConfig?.loadOfWork;
                         const fromDigit = circuitLoadOfWorkToMacroFinal(lw);
@@ -4669,6 +4566,8 @@ export default function MovelapDetailTable({
                         return null;
                       })()}
                       nextMovelapInTable={displayMovelaps[index + 1] ?? null}
+=======
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                     />
                   </React.Fragment>
                 );
@@ -4682,9 +4581,15 @@ export default function MovelapDetailTable({
               return (
                 <tfoot className="bg-gray-100">
                   <tr>
+<<<<<<< HEAD
                     <td colSpan={12} className="border border-gray-300 px-2 py-1 text-right text-sm font-semibold text-gray-700">AvePause (avg)</td>
                     <td className="border border-gray-300 px-1 py-1 text-center text-sm font-semibold">{avgPause}</td>
                     <td colSpan={2} className="border border-gray-300" />
+=======
+                    <td colSpan={10} className="border border-gray-300 px-2 py-1 text-right text-[10px] font-semibold text-gray-700">Macro (avg)</td>
+                    <td className="border border-gray-300 px-1 py-1 text-center text-xs font-semibold">{avgMacro}</td>
+                    <td colSpan={3} className="border border-gray-300" />
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                   </tr>
                 </tfoot>
               );
@@ -4730,7 +4635,7 @@ export default function MovelapDetailTable({
                 </div>
 
                 <div className="p-4 space-y-4">
-                  <div className="text-sm text-gray-700">
+                  <div className="text-xs text-gray-700">
                     Circuit {addStationTarget.circuitLetter} · Series {addStationDraft.seriesNumber} · {stationModalMode === 'edit' ? 'Station' : 'After station'} {addStationTarget.stationNumber}
                   </div>
 
@@ -4755,7 +4660,7 @@ export default function MovelapDetailTable({
                       return (
                         <>
                           <div>
-                            <label className="block text-sm font-semibold text-gray-800 mb-1">Series</label>
+                            <label className="block text-xs font-semibold text-gray-800 mb-1">Series</label>
                             <select
                               value={addStationDraft.seriesNumber}
                               onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, seriesNumber: parseInt(e.target.value) || 1 }))}
@@ -4768,7 +4673,7 @@ export default function MovelapDetailTable({
                             </select>
                           </div>
                           <div>
-                            <label className="block text-sm font-semibold text-gray-800 mb-1">Macro</label>
+                            <label className="block text-xs font-semibold text-gray-800 mb-1">Macro</label>
                             <select
                               value={addStationDraft.macroFinal}
                               onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, macroFinal: e.target.value }))}
@@ -4787,33 +4692,32 @@ export default function MovelapDetailTable({
 
                     <div className="col-span-2">
                       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                        <label className="block text-sm font-semibold text-gray-800">Sector</label>
+                        <label className="block text-xs font-semibold text-gray-800">Sector</label>
                         {!stationSectorShowAll && stationModalMode === 'edit' && (
                           <button
                             type="button"
                             onClick={() => setStationSectorShowAll(true)}
                             disabled={isAddingStation}
-                            className="rounded border border-gray-300 bg-gray-50 px-2 py-0.5 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:opacity-50"
+                            className="rounded border border-gray-300 bg-gray-50 px-2 py-0.5 text-[10px] font-semibold text-gray-800 hover:bg-gray-100 disabled:opacity-50"
                           >
                             Reset
                           </button>
                         )}
                       </div>
                       {!stationSectorShowAll && stationModalMode === 'edit' && (
-                        <p className="mb-1 text-sm text-gray-600">
+                        <p className="mb-1 text-[10px] text-gray-600">
                           Only this station&apos;s sector is listed. Use Reset to choose any sector.
                         </p>
                       )}
                       <select
                         value={addStationDraft.muscularSector}
-                        onChange={(e) => {
-                          setAddStationExerciseMenuOpen(false);
+                        onChange={(e) =>
                           setAddStationDraft((prev: any) => ({
                             ...prev,
                             muscularSector: e.target.value,
-                            exercise: '',
-                          }));
-                        }}
+                            exercise: ''
+                          }))
+                        }
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                         disabled={isAddingStation}
                       >
@@ -4831,167 +4735,59 @@ export default function MovelapDetailTable({
                       </select>
                     </div>
 
-                    <div className="col-span-2 relative" ref={addStationExerciseMenuRef}>
-                      <label className="block text-sm font-semibold text-gray-800 mb-1" id="add-station-exercise-label">
-                        Exercise
-                      </label>
-                      {(() => {
-                        const sector = (addStationDraft.muscularSector || '').trim();
-                        const sectorImg =
-                          sector && MUSCULAR_SECTOR_IMAGES[sector] ? MUSCULAR_SECTOR_IMAGES[sector] : null;
-                        const options = sector ? getExercisesBySector(sector) : [];
-                        const curNorm = normalizeCatalogExerciseName(addStationDraft.exercise);
-                        const hasCurrent =
-                          !!curNorm && options.some((o) => normalizeCatalogExerciseName(o.name) === curNorm);
-                        const ex = (addStationDraft.exercise || '').trim();
-                        return (
-                          <>
-                            <button
-                              type="button"
-                              disabled={isAddingStation || !sector}
-                              aria-expanded={addStationExerciseMenuOpen}
-                              aria-haspopup="listbox"
-                              aria-labelledby="add-station-exercise-label"
-                              onClick={() => {
-                                if (isAddingStation || !sector) return;
-                                setAddStationExerciseMenuOpen((open) => !open);
-                              }}
-                              className="flex w-full items-center gap-2 rounded border border-gray-300 bg-white px-2 py-1.5 text-left text-sm shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100"
-                            >
-                              <StationExerciseListThumb
-                                exerciseName={ex}
-                                sectorFallbackSrc={sectorImg}
-                                sizeClass="h-9 w-9"
-                              />
-                              <span className="min-w-0 flex-1 truncate text-gray-900">{ex || '—'}</span>
-                              <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-500" aria-hidden />
-                            </button>
-                            {addStationExerciseMenuOpen && sector ? (
-                              <ul
-                                className="absolute z-[100001] mt-1 max-h-52 w-full overflow-y-auto rounded-md border border-gray-300 bg-white py-1 shadow-lg"
-                                role="listbox"
-                                aria-labelledby="add-station-exercise-label"
-                              >
-                                <li role="none">
-                                  <button
-                                    type="button"
-                                    role="option"
-                                    aria-selected={false}
-                                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm hover:bg-gray-50"
-                                    onClick={() => {
-                                      setAddStationDraft((prev: any) => ({ ...prev, exercise: '' }));
-                                      setAddStationExerciseMenuOpen(false);
-                                    }}
-                                  >
-                                    <div
-                                      className="h-9 w-9 flex-shrink-0 rounded border border-gray-100 bg-gray-50"
-                                      aria-hidden
-                                    />
-                                    <span className="text-gray-500">—</span>
-                                  </button>
-                                </li>
-                                {!hasCurrent && !!addStationDraft.exercise && (
-                                  <li role="none">
-                                    <button
-                                      type="button"
-                                      role="option"
-                                      aria-selected
-                                      className="flex w-full items-center gap-2 bg-indigo-50 px-2 py-1.5 text-left text-sm hover:bg-indigo-100"
-                                      onClick={() => setAddStationExerciseMenuOpen(false)}
-                                    >
-                                      <StationExerciseListThumb
-                                        exerciseName={addStationDraft.exercise}
-                                        sectorFallbackSrc={sectorImg}
-                                        sizeClass="h-9 w-9"
-                                      />
-                                      <span className="min-w-0 flex-1 truncate font-medium text-gray-900">
-                                        {addStationDraft.exercise}
-                                      </span>
-                                      <span className="text-indigo-600" aria-hidden>
-                                        ✓
-                                      </span>
-                                    </button>
-                                  </li>
-                                )}
-                                {options.map((o) => {
-                                  const selected = normalizeCatalogExerciseName(o.name) === curNorm;
-                                  return (
-                                    <li key={o.id} role="none">
-                                      <button
-                                        type="button"
-                                        role="option"
-                                        aria-selected={selected}
-                                        className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm hover:bg-gray-50 ${
-                                          selected ? 'bg-indigo-50' : ''
-                                        }`}
-                                        onClick={() => {
-                                          setAddStationDraft((prev: any) => ({ ...prev, exercise: o.name }));
-                                          setAddStationExerciseMenuOpen(false);
-                                        }}
-                                      >
-                                        <StationExerciseListThumb
-                                          exerciseName={o.name}
-                                          sectorFallbackSrc={sectorImg}
-                                          sizeClass="h-9 w-9"
-                                        />
-                                        <span className="min-w-0 flex-1 truncate text-gray-900">{o.name}</span>
-                                        {selected ? (
-                                          <span className="text-indigo-600" aria-hidden>
-                                            ✓
-                                          </span>
-                                        ) : null}
-                                      </button>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            ) : null}
-                          </>
-                        );
-                      })()}
+                    <div className="col-span-2">
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Exercise</label>
+                      <select
+                        value={addStationDraft.exercise}
+                        onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, exercise: e.target.value }))}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isAddingStation || !addStationDraft.muscularSector}
+                      >
+                        <option value="">—</option>
+                        {(() => {
+                          if (!addStationDraft.muscularSector) return null;
+                          const options = getExercisesBySector(addStationDraft.muscularSector);
+                          const hasCurrent =
+                            !!addStationDraft.exercise && options.some((o) => o.name === addStationDraft.exercise);
+                          return (
+                            <>
+                              {!hasCurrent && !!addStationDraft.exercise && (
+                                <option value={addStationDraft.exercise}>{addStationDraft.exercise}</option>
+                              )}
+                              {options.map((o) => (
+                                <option key={o.id} value={o.name}>{o.name}</option>
+                              ))}
+                            </>
+                          );
+                        })()}
+                      </select>
                     </div>
 
-                    <div className="col-span-2 grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-800 mb-1">Repetitions</label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={addStationDraft.reps}
-                          onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, reps: e.target.value }))}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                          disabled={isAddingStation}
-                        />
-                      </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Repetitions</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={addStationDraft.reps}
+                        onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, reps: e.target.value }))}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isAddingStation}
+                      />
+                    </div>
 
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-800 mb-1" htmlFor="add-station-pause-select">
-                          Pause
-                        </label>
-                        <select
-                          id="add-station-pause-select"
-                          aria-label="Pause between stations (preset)"
-                          value={String(snapToCircuitStationPauseSeconds(parsePauseToSeconds(addStationDraft.pause)))}
-                          onChange={(e) =>
-                            setAddStationDraft((prev: any) => ({
-                              ...prev,
-                              pause: formatSecondsToPauseInput(parseInt(e.target.value, 10)),
-                            }))
-                          }
-                          className="w-full cursor-pointer bg-white px-2 py-1.5 border border-gray-300 rounded text-sm shadow-sm"
-                          disabled={isAddingStation}
-                        >
-                          {CIRCUIT_STATION_PAUSE_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={String(opt.value)}>
-                              {formatSecondsToPauseInput(opt.value)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Pause</label>
+                      <input
+                        type="text"
+                        value={addStationDraft.pause}
+                        onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, pause: formatPauseInput(e.target.value) }))}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        disabled={isAddingStation}
+                      />
                     </div>
 
                     <div className="col-span-2">
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Notes</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Notes</label>
                       <textarea
                         value={addStationDraft.notes}
                         onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, notes: e.target.value }))}
@@ -5057,7 +4853,7 @@ export default function MovelapDetailTable({
                     <div className="flex flex-shrink-0 items-center gap-2">
                       {fastPlannerMovelapModalMode === 'add' && (
                         <div className="flex items-center gap-2">
-                          <label className="text-sm font-semibold">Insert position</label>
+                          <label className="text-xs font-semibold">Insert position</label>
                           <select
                             value={fastPlannerInsertPosition}
                             onChange={(e) => {
@@ -5065,7 +4861,7 @@ export default function MovelapDetailTable({
                               const next = Number.isFinite(raw) ? Math.min(Math.max(1, raw), fastPlannerInsertMax) : 1;
                               setFastPlannerInsertPosition(next);
                             }}
-                            className="rounded bg-white px-2 py-1 text-sm text-black"
+                            className="rounded bg-white px-2 py-1 text-xs text-black"
                           >
                             {Array.from({ length: fastPlannerInsertMax }, (_, i) => i + 1).map((n) => (
                               <option key={n} value={n}>{n}</option>
@@ -5094,12 +4890,11 @@ export default function MovelapDetailTable({
                   <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="col-span-2">
-                      <label className="mb-1 block text-sm font-semibold text-gray-800">Muscular sector</label>
+                      <label className="mb-1 block text-xs font-semibold text-gray-800">Muscular sector</label>
                       <select
                         value={fastPlannerDraft.muscularSector}
                         onChange={(e) => {
                           const v = e.target.value;
-                          setFastPlannerExerciseMenuOpen(false);
                           setFastPlannerDraft((prev) => ({
                             ...prev,
                             muscularSector: v,
@@ -5115,124 +4910,36 @@ export default function MovelapDetailTable({
                         ))}
                       </select>
                     </div>
-                    <div className="col-span-2 relative" ref={fastPlannerExerciseMenuRef}>
-                      <label className="mb-1 block text-sm font-semibold text-gray-800" id="fp-movelap-exercise-label">
-                        Exercise
-                      </label>
-                      {(() => {
-                        const sector = (fastPlannerDraft.muscularSector || '').trim();
-                        const sectorImg =
-                          sector && MUSCULAR_SECTOR_IMAGES[sector] ? MUSCULAR_SECTOR_IMAGES[sector] : null;
-                        const options = sector ? getExercisesBySector(sector) : [];
-                        const ex = (fastPlannerDraft.exercise || '').trim();
-                        const exNorm = normalizeCatalogExerciseName(ex);
-                        const hasCurrent =
-                          !!exNorm && options.some((o) => normalizeCatalogExerciseName(o.name) === exNorm);
-                        const optionsForList = options;
-                        return (
-                          <>
-                            <button
-                              type="button"
-                              disabled={isSavingFastPlannerMovelap || !sector}
-                              aria-expanded={fastPlannerExerciseMenuOpen}
-                              aria-haspopup="listbox"
-                              aria-labelledby="fp-movelap-exercise-label"
-                              onClick={() => {
-                                if (isSavingFastPlannerMovelap || !sector) return;
-                                setFastPlannerExerciseMenuOpen((open) => !open);
-                              }}
-                              className="flex w-full items-center gap-2 rounded border border-gray-300 bg-white px-2 py-1.5 text-left text-sm shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100"
-                            >
-                              <StationExerciseListThumb
-                                exerciseName={ex}
-                                sectorFallbackSrc={sectorImg}
-                                sizeClass="h-9 w-9"
-                              />
-                              <span className="min-w-0 flex-1 truncate text-gray-900">{ex || '—'}</span>
-                              <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-500" aria-hidden />
-                            </button>
-                            {fastPlannerExerciseMenuOpen && sector ? (
-                              <ul
-                                className="absolute z-[100001] mt-1 max-h-52 w-full overflow-y-auto rounded-md border border-gray-300 bg-white py-1 shadow-lg"
-                                role="listbox"
-                                aria-labelledby="fp-movelap-exercise-label"
-                              >
-                                <li role="none">
-                                  <button
-                                    type="button"
-                                    role="option"
-                                    aria-selected={false}
-                                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm hover:bg-gray-50"
-                                    onClick={() => {
-                                      setFastPlannerDraft((prev) => ({ ...prev, exercise: '' }));
-                                      setFastPlannerExerciseMenuOpen(false);
-                                    }}
-                                  >
-                                    <div
-                                      className="h-9 w-9 flex-shrink-0 rounded border border-gray-100 bg-gray-50"
-                                      aria-hidden
-                                    />
-                                    <span className="text-gray-500">—</span>
-                                  </button>
-                                </li>
-                                {!hasCurrent && !!ex && (
-                                  <li role="none">
-                                    <button
-                                      type="button"
-                                      role="option"
-                                      aria-selected
-                                      className="flex w-full items-center gap-2 bg-indigo-50 px-2 py-1.5 text-left text-sm hover:bg-indigo-100"
-                                      onClick={() => setFastPlannerExerciseMenuOpen(false)}
-                                    >
-                                      <StationExerciseListThumb
-                                        exerciseName={ex}
-                                        sectorFallbackSrc={sectorImg}
-                                        sizeClass="h-9 w-9"
-                                      />
-                                      <span className="min-w-0 flex-1 truncate font-medium text-gray-900">{ex}</span>
-                                      <span className="text-indigo-600" aria-hidden>
-                                        ✓
-                                      </span>
-                                    </button>
-                                  </li>
-                                )}
-                                {optionsForList.map((o) => {
-                                  const selected = normalizeCatalogExerciseName(o.name) === exNorm;
-                                  return (
-                                    <li key={o.id} role="none">
-                                      <button
-                                        type="button"
-                                        role="option"
-                                        aria-selected={selected}
-                                        className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm hover:bg-gray-50 ${
-                                          selected ? 'bg-indigo-50' : ''
-                                        }`}
-                                        onClick={() => {
-                                          setFastPlannerDraft((prev) => ({ ...prev, exercise: o.name }));
-                                          setFastPlannerExerciseMenuOpen(false);
-                                        }}
-                                      >
-                                        <StationExerciseListThumb
-                                          exerciseName={o.name}
-                                          sectorFallbackSrc={sectorImg}
-                                          sizeClass="h-9 w-9"
-                                        />
-                                        <span className="min-w-0 flex-1 truncate text-gray-900">{o.name}</span>
-                                        {selected ? (
-                                          <span className="text-indigo-600" aria-hidden>
-                                            ✓
-                                          </span>
-                                        ) : null}
-                                      </button>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            ) : null}
-                          </>
-                        );
-                      })()}
-                      <label className="mb-1 mt-2 block text-sm font-semibold text-gray-800">Name (type to customize)</label>
+                    <div className="col-span-2">
+                      <label className="mb-1 block text-xs font-semibold text-gray-800">Exercise</label>
+                      <select
+                        value={fastPlannerDraft.exercise}
+                        onChange={(e) =>
+                          setFastPlannerDraft((prev) => ({ ...prev, exercise: e.target.value }))
+                        }
+                        className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                        disabled={isSavingFastPlannerMovelap || !fastPlannerDraft.muscularSector}
+                      >
+                        <option value="">—</option>
+                        {(() => {
+                          if (!fastPlannerDraft.muscularSector) return null;
+                          const options = getExercisesBySector(fastPlannerDraft.muscularSector);
+                          const hasCurrent =
+                            !!fastPlannerDraft.exercise &&
+                            options.some((o) => o.name === fastPlannerDraft.exercise);
+                          return (
+                            <>
+                              {!hasCurrent && !!fastPlannerDraft.exercise && (
+                                <option value={fastPlannerDraft.exercise}>{fastPlannerDraft.exercise}</option>
+                              )}
+                              {options.map((o) => (
+                                <option key={o.id} value={o.name}>{o.name}</option>
+                              ))}
+                            </>
+                          );
+                        })()}
+                      </select>
+                      <label className="mb-1 mt-2 block text-xs font-semibold text-gray-800">Name (type to customize)</label>
                       <input
                         type="text"
                         value={fastPlannerDraft.exercise}
@@ -5243,25 +4950,21 @@ export default function MovelapDetailTable({
                         disabled={isSavingFastPlannerMovelap}
                         placeholder="Exercise name"
                       />
-                      <p className="mt-1 text-sm text-gray-500">
-                        Open Exercise to pick from the bank with Picture A thumbnails, or type a custom name below.
+                      <p className="mt-1 text-[10px] text-gray-500">
+                        Dropdown and thumbnails use the mock exercise bank; typing keeps names outside the bank.
                       </p>
                     </div>
                     {fastPlannerDraft.muscularSector ? (
                       <div className="col-span-2">
-                        <label className="mb-1 block text-sm font-semibold text-gray-800">
+                        <label className="mb-1 block text-xs font-semibold text-gray-800">
                           Exercises in sector (tap thumbnail)
                         </label>
                         <div className="flex max-h-[200px] flex-wrap gap-2 overflow-y-auto rounded border border-gray-200 bg-white p-2">
                           {getExercisesBySector(fastPlannerDraft.muscularSector).map((o) => {
-                            const sectorImg =
-                              fastPlannerDraft.muscularSector &&
-                              MUSCULAR_SECTOR_IMAGES[fastPlannerDraft.muscularSector]
-                                ? MUSCULAR_SECTOR_IMAGES[fastPlannerDraft.muscularSector]
-                                : null;
-                            const selected =
-                              normalizeCatalogExerciseName(o.name) ===
-                              normalizeCatalogExerciseName(fastPlannerDraft.exercise);
+                            const thumb = getMockExerciseThumbnail(o.name);
+                            const src = thumb?.src;
+                            const isData = thumb?.isDataUrl === true || (!!src && src.startsWith('data:'));
+                            const selected = fastPlannerDraft.exercise === o.name;
                             return (
                               <button
                                 key={o.id}
@@ -5276,13 +4979,25 @@ export default function MovelapDetailTable({
                                 }`}
                               >
                                 <div className="relative h-14 w-14 overflow-hidden rounded bg-gray-100">
-                                  <StationExerciseListThumb
-                                    exerciseName={o.name}
-                                    sectorFallbackSrc={sectorImg}
-                                    sizeClass="h-14 w-14"
-                                  />
+                                  {src ? (
+                                    isData ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={src} alt="" className="h-full w-full object-cover" />
+                                    ) : (
+                                      <Image
+                                        src={src}
+                                        alt=""
+                                        width={56}
+                                        height={56}
+                                        className="h-full w-full object-cover"
+                                        unoptimized
+                                      />
+                                    )
+                                  ) : (
+                                    <div className="h-full w-full bg-gray-200" aria-hidden />
+                                  )}
                                 </div>
-                                <span className="line-clamp-2 w-full text-center text-sm leading-tight text-gray-800">
+                                <span className="line-clamp-2 w-full text-center text-[8px] leading-tight text-gray-800">
                                   {o.name.replace(/^Exercise #\d+\s+/i, '').slice(0, 24)}
                                 </span>
                               </button>
@@ -5305,9 +5020,15 @@ export default function MovelapDetailTable({
                       return (
                         <div className="col-span-2 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 bg-slate-50 p-3">
                           <div className="min-w-0 flex-1">
+<<<<<<< HEAD
                             <div className="mb-1 text-sm font-semibold text-gray-800">Preview</div>
                             <p className="text-sm text-gray-600">
                               Uses exercise image when available. Click to open A/B gallery.
+=======
+                            <div className="mb-1 text-xs font-semibold text-gray-800">Preview</div>
+                            <p className="text-[10px] text-gray-600">
+                              Uses mock bank image when available; otherwise the sector diagram. Click to open A/B gallery.
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             </p>
                           </div>
                           <button
@@ -5342,7 +5063,7 @@ export default function MovelapDetailTable({
                                 />
                               )
                             ) : (
-                              <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">
+                              <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
                                 Select sector / exercise
                               </div>
                             )}
@@ -5351,7 +5072,7 @@ export default function MovelapDetailTable({
                       );
                     })()}
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Speed</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Speed</label>
                       <select
                         value={fastPlannerDraft.speed}
                         onChange={(e) => setFastPlannerDraft((prev) => ({ ...prev, speed: e.target.value }))}
@@ -5366,7 +5087,7 @@ export default function MovelapDetailTable({
                     </div>
 
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Series</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Series</label>
                       <input
                         type="number"
                         min={1}
@@ -5378,7 +5099,7 @@ export default function MovelapDetailTable({
                     </div>
 
                     <div className="col-span-2">
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Rip\Time</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Rip\Time</label>
                       <div className="flex items-center gap-4">
                         <label className="flex items-center gap-2 text-sm text-black">
                           <input
@@ -5410,7 +5131,7 @@ export default function MovelapDetailTable({
                     </div>
 
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">
                         {fastPlannerDraft.ripTimeMode === 'time' ? 'Time' : 'Rip'}
                       </label>
                       <input
@@ -5439,7 +5160,7 @@ export default function MovelapDetailTable({
                     </div>
 
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Weight</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Weight</label>
                       <div className="flex items-center gap-2">
                         <input
                           type="number"
@@ -5492,7 +5213,7 @@ export default function MovelapDetailTable({
                     </div>
 
                     <div className="col-span-2">
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Break</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Break</label>
                       <div className="flex items-center gap-4 mb-2">
                         <label className="flex items-center gap-2 text-sm text-black">
                           <input
@@ -5566,7 +5287,7 @@ export default function MovelapDetailTable({
                     </div>
 
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Mode</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Mode</label>
                       <select
                         value={fastPlannerDraft.mode}
                         onChange={(e) => setFastPlannerDraft((prev) => ({ ...prev, mode: e.target.value }))}
@@ -5628,7 +5349,7 @@ export default function MovelapDetailTable({
                   </div>
                   {aerobicFastPlannerMovelapModalMode === 'add' && (
                     <div className="flex items-center gap-2">
-                      <label className="text-sm font-semibold">Insert position</label>
+                      <label className="text-xs font-semibold">Insert position</label>
                       <select
                         value={aerobicFastPlannerInsertPosition}
                         onChange={(e) => {
@@ -5636,7 +5357,7 @@ export default function MovelapDetailTable({
                           const next = Number.isFinite(raw) ? Math.min(Math.max(1, raw), aerobicInsertMax) : 1;
                           setAerobicFastPlannerInsertPosition(next);
                         }}
-                        className="px-2 py-1 text-sm bg-white text-black rounded"
+                        className="px-2 py-1 text-xs bg-white text-black rounded"
                       >
                         {Array.from({ length: aerobicInsertMax }, (_, i) => i + 1).map((n) => (
                           <option key={n} value={n}>{n}</option>
@@ -5661,7 +5382,7 @@ export default function MovelapDetailTable({
                 <div className="p-4 space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Distance</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Distance</label>
                       <select
                         value={aerobicFastPlannerDraft.distance}
                         onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, distance: e.target.value }))}
@@ -5675,7 +5396,7 @@ export default function MovelapDetailTable({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Style</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Style</label>
                       <select
                         value={aerobicFastPlannerDraft.style}
                         onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, style: e.target.value }))}
@@ -5689,7 +5410,7 @@ export default function MovelapDetailTable({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Speed</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Speed</label>
                       <select
                         value={aerobicFastPlannerDraft.speed}
                         onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, speed: e.target.value }))}
@@ -5703,7 +5424,7 @@ export default function MovelapDetailTable({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Strokes</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Strokes</label>
                       <input
                         type="number"
                         min={0}
@@ -5720,7 +5441,7 @@ export default function MovelapDetailTable({
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Watts</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Watts</label>
                       <input
                         type="number"
                         min={0}
@@ -5737,7 +5458,7 @@ export default function MovelapDetailTable({
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Time</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Time</label>
                       <input
                         type="text"
                         value={aerobicFastPlannerDraft.time}
@@ -5756,12 +5477,12 @@ export default function MovelapDetailTable({
                       />
                     </div>
                     <div className="col-span-2">
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Rest</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Rest</label>
                       <div className="flex items-center gap-3 mb-2">
                         <select
                           value={aerobicFastPlannerDraft.restChoice}
                           onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, restChoice: e.target.value as AerobicRestChoice }))}
-                          className="px-2 py-1 text-sm bg-white text-black rounded border border-gray-300"
+                          className="px-2 py-1 text-xs bg-white text-black rounded border border-gray-300"
                           disabled={isSavingAerobicFastPlannerMovelap}
                         >
                           {aerobicRestChoices.map((opt) => (
@@ -5791,7 +5512,7 @@ export default function MovelapDetailTable({
                       </div>
                     </div>
                     <div className="col-span-2">
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Break</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Break</label>
                       <div className="grid grid-cols-3 gap-3">
                         <select
                           value={aerobicFastPlannerDraft.breakChoice}
@@ -5803,7 +5524,7 @@ export default function MovelapDetailTable({
                               break: choice === 'stopped' ? 'Stopped' : ''
                             }));
                           }}
-                          className="px-2 py-1 text-sm bg-white text-black rounded border border-gray-300"
+                          className="px-2 py-1 text-xs bg-white text-black rounded border border-gray-300"
                           disabled={isSavingAerobicFastPlannerMovelap}
                         >
                           <option value="stopped">Stopped</option>
@@ -5814,7 +5535,7 @@ export default function MovelapDetailTable({
                           <select
                             value={aerobicFastPlannerDraft.break}
                             onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, break: e.target.value }))}
-                            className="px-2 py-1 text-sm bg-white text-black rounded border border-gray-300"
+                            className="px-2 py-1 text-xs bg-white text-black rounded border border-gray-300"
                             disabled={isSavingAerobicFastPlannerMovelap}
                           >
                             <option value="">—</option>
@@ -5834,7 +5555,7 @@ export default function MovelapDetailTable({
                       </div>
                     </div>
                     <div className="col-span-2">
-                      <label className="block text-sm font-semibold text-gray-800 mb-1">Note</label>
+                      <label className="block text-xs font-semibold text-gray-800 mb-1">Note</label>
                       <input
                         type="text"
                         value={aerobicFastPlannerDraft.note}
@@ -5870,51 +5591,6 @@ export default function MovelapDetailTable({
           )}
         </div>
       </SortableContext>
-      {pendingStationMove && (() => {
-        const source = movelaps.find((ml: any) => String(ml?.id) === pendingStationMove.sourceId);
-        const target = movelaps.find((ml: any) => String(ml?.id) === pendingStationMove.targetId);
-        if (!source || !target) return null;
-        const sourceLabel = `${source.circuitLetter || '?'}-${source.localSeriesNumber || source.seriesNumber || '?'}-${source.stationNumber || '?'}`;
-        const targetLabel = `${target.circuitLetter || '?'}-${target.localSeriesNumber || target.seriesNumber || '?'}-${target.stationNumber || '?'}`;
-        return ReactDOM.createPortal(
-          <div className="fixed inset-0 z-[9999999] bg-black/60 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-              <div className="px-4 py-3 bg-indigo-600 text-white">
-                <h3 className="text-lg font-bold">Move Station</h3>
-              </div>
-              <div className="p-4 space-y-2 text-sm text-gray-800">
-                <p><strong>From:</strong> {sourceLabel}</p>
-                <p><strong>To:</strong> {targetLabel}</p>
-                <p className="text-gray-600 pt-1">Choose how to apply this drag:</p>
-              </div>
-              <div className="px-4 pb-4 flex justify-end gap-2">
-                <button
-                  onClick={() => setPendingStationMove(null)}
-                  disabled={isApplyingStationMove}
-                  className="px-3 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-60"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleApplyStationMove('substitute')}
-                  disabled={isApplyingStationMove}
-                  className="px-3 py-2 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:bg-gray-400"
-                >
-                  {isApplyingStationMove ? 'Applying...' : 'Substitute'}
-                </button>
-                <button
-                  onClick={() => handleApplyStationMove('exchange')}
-                  disabled={isApplyingStationMove}
-                  className="px-3 py-2 text-sm bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:bg-gray-400"
-                >
-                  {isApplyingStationMove ? 'Applying...' : 'Exchange'}
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        );
-      })()}
       <ExerciseGalleryModal
         open={!!fpMovelapExerciseGallery}
         onClose={() => setFpMovelapExerciseGallery(null)}

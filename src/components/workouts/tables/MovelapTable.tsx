@@ -63,10 +63,6 @@ export default function MovelapTable({
         return moveframe.section?.name || 'No Section';
       case 'sport':
         return moveframe.sport || 'Swim';
-      case 'muscular_sector':
-        return movelap.muscularSector || movelap.style || '—';
-      case 'indoor_exercise':
-        return movelap.exercise || '—';
       case 'distance':
         // Show distance if set, otherwise show time (for time-based workouts)
         return movelap.distance ? movelap.distance : (movelap.time || '—');

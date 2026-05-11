@@ -24,18 +24,6 @@ export default function PersonalSettingsModal({
   const [activeSection, setActiveSection] = useState<SettingsSection>('backgrounds');
   const [loading, setLoading] = useState(false);
   const [userSettings, setUserSettings] = useState<any>(null);
-  const [sessionUser, setSessionUser] = useState<{ userType?: string } | null>(null);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('user');
-      setSessionUser(raw ? JSON.parse(raw) : null);
-    } catch {
-      setSessionUser(null);
-    }
-  }, [isOpen]);
-
-  const toolsIsAdmin = sessionUser?.userType === 'ADMIN';
   
   // Load user's current settings when modal opens
   useEffect(() => {
@@ -247,6 +235,7 @@ export default function PersonalSettingsModal({
           {/* Settings Content */}
           <div className="flex-1 overflow-y-auto p-6 bg-white">
             {activeSection === 'backgrounds' && <BackgroundsColorsSettings />}
+<<<<<<< HEAD
             {activeSection === 'tools' && (
               <ToolsSettings
                 isAdmin={toolsIsAdmin}
@@ -254,6 +243,9 @@ export default function PersonalSettingsModal({
                 mode="tools"
               />
             )}
+=======
+            {activeSection === 'tools' && <ToolsSettings isAdmin={false} userType="ATHLETE" />}
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
             {activeSection === 'favourites' && <FavouritesSettings />}
             {activeSection === 'mybest' && <MyBestSettings />}
             {activeSection === 'grid' && <GridDisplaySettings />}

@@ -1,7 +1,5 @@
 import type { ManualDayPlan, ManualDaySector } from '@/components/workouts/modals/PlanGymWeekManualModal';
-import type { TrainingLevel } from '@/components/workouts/modals/PlanGymWeekModal';
 import { computePyramidalRepsSeries, type PyramidalMode } from '@/utils/pyramidalReps';
-import { getSeriesDistribution, trainingLevelToCategory } from '@/utils/seriesDistribution';
 
 export type TimesPerSector = 'once' | '2' | '3' | 'all';
 export type DistributionType = 'A' | 'B' | 'C' | 'D';
@@ -233,6 +231,7 @@ function partitionBySizes<T>(arr: T[], sizes: number[]): T[][] {
   return out;
 }
 
+<<<<<<< HEAD
 /** Series per area assigned when the gym-week wizard builds sectors (before distribution dialog). */
 export const PLAN_GYM_WEEK_WIZARD_DEFAULT_SERIES_PER_SECTOR = 4;
 /** Wizard defaults before workout-parameter scalars are applied. */
@@ -249,27 +248,26 @@ const DEFAULT_SECTOR_PARAMS = {
   macroExercise: PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_EX_LABEL,
   macroEndOfSector: PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_END_LABEL,
   pyramidal: 'flat' as PyramidalMode,
+=======
+const DEFAULT_SECTOR_PARAMS = {
+  exercises: 3,
+  series: 4,
+  reps: 12,
+  pause: "1'30\"",
+  macroExercise: "1'",
+  macroEndOfSector: "2'",
+  pyramidal: 'flat' as PyramidalMode
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 };
 
-function defaultExerciseCountForSeries(
-  series: number,
-  trainingLevel?: TrainingLevel | null,
-): number {
-  if (series <= 0) return 0;
-  const dist = getSeriesDistribution(series, trainingLevelToCategory(trainingLevel));
-  return Math.min(20, dist.length);
-}
-
-function toManualDaySector(sectorId: string, trainingLevel?: TrainingLevel | null): ManualDaySector {
+function toManualDaySector(sectorId: string): ManualDaySector {
   const { pyramidal, series, reps, ...rest } = DEFAULT_SECTOR_PARAMS;
-  const exercises = defaultExerciseCountForSeries(series, trainingLevel);
   const seriesReps = computePyramidalRepsSeries(reps, series, pyramidal);
   return {
     sectorId,
     sectorLabel: SECTOR_LABELS[sectorId] ?? sectorId,
     image: SECTOR_IMAGES[sectorId] ?? '',
     ...rest,
-    exercises,
     series,
     reps,
     pyramidal,
@@ -288,10 +286,6 @@ export interface BuildHelpedRoutinesParams {
    * false (default): at the end. true: at the beginning.
    */
   constantSectorsAtBeginning?: boolean;
-  /**
-   * Sets default exercise counts per area from `seriesDistribution.ts` (e.g. Intermediate → Lev 1–2: 4→2, 6→3, 8→3).
-   */
-  trainingLevel?: TrainingLevel | null;
 }
 
 /**
@@ -329,13 +323,7 @@ function attachConstantsToSectorIds(
 }
 
 export function buildHelpedRoutines(params: BuildHelpedRoutinesParams): { daysCount: number; days: ManualDayPlan[] } {
-  const {
-    daysCount,
-    timesPerSector,
-    distributionType,
-    constantSectors,
-    trainingLevel,
-  } = params;
+  const { daysCount, timesPerSector, distributionType, constantSectors } = params;
   const constantSectorsAtBeginning = params.constantSectorsAtBeginning === true;
   const n = Math.min(6, Math.max(1, daysCount));
   const fullOrder = getSectorOrder(distributionType);
@@ -348,7 +336,7 @@ export function buildHelpedRoutines(params: BuildHelpedRoutinesParams): { daysCo
     for (let d = 0; d < n; d++) {
       days.push({
         routineName: 'Routine A',
-        sectors: fullOrder.map((id) => toManualDaySector(id, trainingLevel))
+        sectors: fullOrder.map(toManualDaySector)
       });
     }
     return { daysCount: n, days };
@@ -367,7 +355,7 @@ export function buildHelpedRoutines(params: BuildHelpedRoutinesParams): { daysCo
       const sectorIds = attachConstantsToSectorIds(systemSectors, constants, constantSectorsAtBeginning);
       days.push({
         routineName: `Routine ${letter}`,
-        sectors: sectorIds.map((id) => toManualDaySector(id, trainingLevel))
+        sectors: sectorIds.map(toManualDaySector)
       });
     }
     return { daysCount: n, days };
@@ -386,7 +374,7 @@ export function buildHelpedRoutines(params: BuildHelpedRoutinesParams): { daysCo
       const sectorIds = attachConstantsToSectorIds(systemSectors, constants, constantSectorsAtBeginning);
       days.push({
         routineName: `Routine ${letter}`,
-        sectors: sectorIds.map((id) => toManualDaySector(id, trainingLevel))
+        sectors: sectorIds.map(toManualDaySector)
       });
     }
     return { daysCount: n, days };

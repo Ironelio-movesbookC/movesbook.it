@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
-import { restTypeDisplayToDb } from '@/utils/restTypeDb';
 
 const extractCircuitMetaFromNotes = (notes: unknown) => {
   if (typeof notes !== 'string') return null;
@@ -21,8 +20,21 @@ const upsertCircuitMetaInNotes = (notes: unknown, circuitMeta: any) => {
   return cleaned ? `${cleaned}\n${metaString}` : metaString;
 };
 
+// Helper function to convert display rest type to enum value
 function convertRestTypeToEnum(restType: string | null | undefined) {
-  return restTypeDisplayToDb(restType ?? undefined) as any;
+  if (!restType || restType.trim() === '') return null;
+  
+  const mapping: Record<string, string> = {
+    'Set time': 'SET_TIME',
+    'Restart time': 'RESTART_TIME',
+    'Restart pulse': 'RESTART_PULSE',
+    'SET_TIME': 'SET_TIME', // Already correct
+    'RESTART_TIME': 'RESTART_TIME', // Already correct
+    'RESTART_PULSE': 'RESTART_PULSE' // Already correct
+  };
+  
+  const result = mapping[restType] || null;
+  return result as any; // Cast to enum type for Prisma
 }
 
 // POST /api/workouts/movelaps - Create a new movelap
@@ -72,7 +84,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'moveframeId is required' }, { status: 400 });
     }
 
-    if (repetitionNumber === undefined || repetitionNumber === null) {
+    if (!repetitionNumber) {
       return NextResponse.json({ error: 'repetitionNumber is required' }, { status: 400 });
     }
 

@@ -17,7 +17,6 @@ import {
   Smile,
   Grid3x3,
   List,
-  ListOrdered,
   ArrowUpDown,
   AlertCircle,
   CheckCircle,
@@ -90,6 +89,7 @@ function toolsTranslationFromMap(
   return '';
 }
 
+<<<<<<< HEAD
 /** Admin toolsDefaults JSON may be flat `{ commonDailyActions }` or nested `{ toolsSettings: { commonDailyActions } }`. */
 function extractCommonDailyActionsFromToolsDefaultsPayload(toolsData: unknown): WorkoutSection[] {
   if (!toolsData || typeof toolsData !== 'object' || Array.isArray(toolsData)) return [];
@@ -201,6 +201,8 @@ async function fetchToolsLineTranslations(text: string): Promise<Record<string, 
   return data.translations && typeof data.translations === 'object' ? (data.translations as Record<string, string>) : {};
 }
 
+=======
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 type PeriodizationSubview = 'periodSettings' | 'periodization' | 'overview';
 
 interface ToolsSettingsProps {
@@ -226,6 +228,7 @@ function getAllowedTabs(isAdmin: boolean, mode: 'tools' | 'technical'): ToolsTab
     ];
   }
   if (isAdmin) {
+<<<<<<< HEAD
     // Common daily actions (multi-language) + planned action types live on the same tab (see below).
     return [
       'periods',
@@ -252,6 +255,13 @@ function getAllowedTabs(isAdmin: boolean, mode: 'tools' | 'technical'): ToolsTab
     'devices',
     'commonDailyActions',
   ];
+=======
+    return ['periods', 'sections', 'bodyBuildingTechniques', 'commonDailyActions', 'insertActions'];
+  }
+  // Personal Settings (all users): keep official user tabs only
+  // and exclude technical/admin tabs (factories, muscles, sports-equipment).
+  return ['periods', 'sections', 'bodyBuildingTechniques', 'equipment', 'exercises', 'myLibrary', 'devices', 'insertActions'];
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 }
 
 export default function ToolsSettings({
@@ -267,8 +277,6 @@ export default function ToolsSettings({
   const {
     periods,
     sections,
-    commonDailyActions,
-    workMethods,
     bodyBuildingTechniques,
     sports,
     equipment,
@@ -282,8 +290,6 @@ export default function ToolsSettings({
     lastSavedTime,
     setPeriods,
     setSections,
-    setCommonDailyActions,
-    setWorkMethods,
     setBodyBuildingTechniques,
     setSports,
     setEquipment,
@@ -306,14 +312,10 @@ export default function ToolsSettings({
     const key = `settings_tools_tab_${mode}`;
     const saved = localStorage.getItem(key) as ToolsTab | null;
     const allowed = getAllowedTabs(isAdmin, mode);
-    if (saved && allowed.includes(saved)) {
-      // Legacy tab: planned templates now live under Common daily actions.
-      if (saved === 'insertActions' && allowed.includes('commonDailyActions')) return 'commonDailyActions';
-      return saved;
-    }
+    if (saved && allowed.includes(saved)) return saved;
     return mode === 'technical' ? 'equipmentFactories' : 'periods';
   });
-  const [editingItem, setEditingItem] = useState<Period | WorkoutSection | BodyBuildingTechnique | null>(null);
+  const [editingItem, setEditingItem] = useState<Period | WorkoutSection | null>(null);
   const [editItemTranslations, setEditItemTranslations] = useState<Record<string, { title: string; description: string }>>({});
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newItem, setNewItem] = useState({
@@ -325,7 +327,6 @@ export default function ToolsSettings({
     picture: ''
   });
   const [newItemTranslations, setNewItemTranslations] = useState<Record<string, { title: string; description: string }>>({});
-  const [isTranslatingToolsFields, setIsTranslatingToolsFields] = useState(false);
   const [activeInputLanguage, setActiveInputLanguage] = useState('en');
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [draggedSport, setDraggedSport] = useState<string | null>(null);
@@ -352,9 +353,10 @@ export default function ToolsSettings({
   const [equipmentSortDirection, setEquipmentSortDirection] = useState<'asc' | 'desc'>('asc');
   
   // Language-specific defaults state
-  const [selectedLanguage, setSelectedLanguage] = useState('en');
+  const [selectedLanguage, setSelectedLanguage] = useState(currentLanguage || 'en');
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [superAdminPassword, setSuperAdminPassword] = useState('');
+  const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [equipmentFactoriesMessage, setEquipmentFactoriesMessage] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -378,21 +380,23 @@ export default function ToolsSettings({
 
   useEffect(() => {
     if (!periodizationOnly) return;
+<<<<<<< HEAD
     const code = resolveProfileLanguageCodeForToolsLoad();
     setSelectedLanguage(code);
   }, [periodizationOnly]);
+=======
+    setSelectedLanguage(normalizeToolsLanguage(currentLanguage));
+  }, [periodizationOnly, currentLanguage]);
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   const useEnglishFallbackRules =
-    activeTab === 'periods' ||
-    activeTab === 'sections' ||
-    activeTab === 'workMethods' ||
-    activeTab === 'commonDailyActions' ||
-    activeTab === 'bodyBuildingTechniques';
+    activeTab === 'periods' || activeTab === 'sections' || activeTab === 'bodyBuildingTechniques';
 
   const adminTranslationLanguages = useMemo(() => {
     if (isAdmin && activeTab === 'periods') return supportedLanguagesPeriodAdminOrder();
     return SUPPORTED_LANGUAGES;
   }, [isAdmin, activeTab]);
 
+<<<<<<< HEAD
   const profileLanguageLabel = useMemo(() => {
     const code = normalizeToolsLanguage(
       !isAdmin ? resolveProfileLanguageCodeForToolsLoad() : selectedLanguage
@@ -420,6 +424,8 @@ export default function ToolsSettings({
     });
   }, [periodizationTemplates, searchQuery, periodizationLibTagFilter]);
 
+=======
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   useEffect(() => {
     if (!allowedTabs.includes(activeTab)) {
       setActiveTab(allowedTabs[0]);
@@ -428,12 +434,8 @@ export default function ToolsSettings({
 
   useEffect(() => {
     if (!initialTab) return;
-    const tab =
-      initialTab === 'insertActions' && allowedTabs.includes('commonDailyActions')
-        ? 'commonDailyActions'
-        : initialTab;
-    if (allowedTabs.includes(tab)) {
-      setActiveTab(tab);
+    if (allowedTabs.includes(initialTab)) {
+      setActiveTab(initialTab);
     }
   }, [initialTab, allowedTabs]);
 
@@ -484,6 +486,13 @@ export default function ToolsSettings({
     return () => clearTimeout(timer);
   }, []);
   
+  // Auto-update selected language when user's language changes
+  useEffect(() => {
+    if (currentLanguage) {
+      setSelectedLanguage(currentLanguage);
+    }
+  }, [currentLanguage]);
+
   // For non-admin users, lock selected language to their profile language.
   useEffect(() => {
     if (isAdmin) return;
@@ -549,8 +558,6 @@ export default function ToolsSettings({
   // Use refs to track previous values and prevent unnecessary re-renders
   const prevPeriodsRef = useRef<Period[]>([]);
   const prevSectionsRef = useRef<WorkoutSection[]>([]);
-  const prevCommonDailyActionsRef = useRef<WorkoutSection[]>([]);
-  const prevWorkMethodsRef = useRef<WorkoutSection[]>([]);
   const prevBodyBuildingTechniquesRef = useRef<BodyBuildingTechnique[]>([]);
   const prevSportsRef = useRef<Sport[]>([]);
   const prevEquipmentRef = useRef<Equipment[]>([]);
@@ -560,67 +567,6 @@ export default function ToolsSettings({
   const prevPeriodizationTemplatesRef = useRef<PeriodizationTemplate[]>([]);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  /** Drag/manual order per list (not updated by A-Z / Z-A). Used by "My sorting". */
-  const manualOrderPeriodIdsRef = useRef<string[] | null>(null);
-  const manualOrderSectionIdsRef = useRef<string[] | null>(null);
-  const manualOrderCommonDailyIdsRef = useRef<string[] | null>(null);
-  const manualOrderWorkMethodsIdsRef = useRef<string[] | null>(null);
-  const manualOrderTechniqueIdsRef = useRef<string[] | null>(null);
-
-  const getManualOrderRefForActiveTab = (): React.MutableRefObject<string[] | null> => {
-    if (activeTab === 'periods') return manualOrderPeriodIdsRef;
-    if (activeTab === 'bodyBuildingTechniques') return manualOrderTechniqueIdsRef;
-    if (activeTab === 'commonDailyActions') return manualOrderCommonDailyIdsRef;
-    if (activeTab === 'workMethods') return manualOrderWorkMethodsIdsRef;
-    return manualOrderSectionIdsRef;
-  };
-
-  // Seed manual-order snapshots from DB `order` once per list (before user uses A-Z or drag).
-  useEffect(() => {
-    if (activeTab === 'periods') {
-      if (periods.length === 0) manualOrderPeriodIdsRef.current = null;
-      else if (manualOrderPeriodIdsRef.current === null) {
-        manualOrderPeriodIdsRef.current = sortToolsItemsByOrder(periods).map((p) => p.id);
-      }
-    }
-  }, [activeTab, periods]);
-
-  useEffect(() => {
-    if (activeTab === 'sections') {
-      if (sections.length === 0) manualOrderSectionIdsRef.current = null;
-      else if (manualOrderSectionIdsRef.current === null) {
-        manualOrderSectionIdsRef.current = sortToolsItemsByOrder(sections).map((s) => s.id);
-      }
-    }
-  }, [activeTab, sections]);
-
-  useEffect(() => {
-    if (activeTab === 'workMethods') {
-      if (workMethods.length === 0) manualOrderWorkMethodsIdsRef.current = null;
-      else if (manualOrderWorkMethodsIdsRef.current === null) {
-        manualOrderWorkMethodsIdsRef.current = sortToolsItemsByOrder(workMethods).map((s) => s.id);
-      }
-    }
-  }, [activeTab, workMethods]);
-
-  useEffect(() => {
-    if (activeTab === 'commonDailyActions') {
-      if (commonDailyActions.length === 0) manualOrderCommonDailyIdsRef.current = null;
-      else if (manualOrderCommonDailyIdsRef.current === null) {
-        manualOrderCommonDailyIdsRef.current = sortToolsItemsByOrder(commonDailyActions).map((s) => s.id);
-      }
-    }
-  }, [activeTab, commonDailyActions]);
-
-  useEffect(() => {
-    if (activeTab === 'bodyBuildingTechniques') {
-      if (bodyBuildingTechniques.length === 0) manualOrderTechniqueIdsRef.current = null;
-      else if (manualOrderTechniqueIdsRef.current === null) {
-        manualOrderTechniqueIdsRef.current = sortToolsItemsByOrder(bodyBuildingTechniques).map((t) => t.id);
-      }
-    }
-  }, [activeTab, bodyBuildingTechniques]);
-
   // Debounced auto-save (uses hook)
   useEffect(() => {
     // Don't auto-save during initial load
@@ -629,8 +575,6 @@ export default function ToolsSettings({
       // Update refs on initial load
       prevPeriodsRef.current = periods;
       prevSectionsRef.current = sections;
-      prevCommonDailyActionsRef.current = commonDailyActions;
-      prevWorkMethodsRef.current = workMethods;
       prevBodyBuildingTechniquesRef.current = bodyBuildingTechniques;
       prevSportsRef.current = sports;
       prevEquipmentRef.current = equipment;
@@ -654,10 +598,6 @@ export default function ToolsSettings({
     // Check if data actually changed (deep comparison by length and IDs)
     const periodsChanged = JSON.stringify(periods) !== JSON.stringify(prevPeriodsRef.current);
     const sectionsChanged = JSON.stringify(sections) !== JSON.stringify(prevSectionsRef.current);
-    const commonDailyChanged =
-      JSON.stringify(commonDailyActions) !== JSON.stringify(prevCommonDailyActionsRef.current);
-    const workMethodsChanged =
-      JSON.stringify(workMethods) !== JSON.stringify(prevWorkMethodsRef.current);
     const techniquesChanged = JSON.stringify(bodyBuildingTechniques) !== JSON.stringify(prevBodyBuildingTechniquesRef.current);
     const sportsChanged = JSON.stringify(sports) !== JSON.stringify(prevSportsRef.current);
     const equipmentChanged = JSON.stringify(equipment) !== JSON.stringify(prevEquipmentRef.current);
@@ -668,6 +608,7 @@ export default function ToolsSettings({
     const periodizationTemplatesChanged =
       JSON.stringify(periodizationTemplates) !== JSON.stringify(prevPeriodizationTemplatesRef.current);
     
+<<<<<<< HEAD
     if (
       !periodsChanged &&
       !sectionsChanged &&
@@ -681,6 +622,9 @@ export default function ToolsSettings({
       !devicesChanged &&
       !periodizationTemplatesChanged
     ) {
+=======
+    if (!periodsChanged && !sectionsChanged && !techniquesChanged && !sportsChanged && !equipmentChanged && !exercisesChanged && !devicesChanged) {
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
       console.log('⏭️ Skipping auto-save: no changes detected');
       return;
     }
@@ -694,11 +638,10 @@ export default function ToolsSettings({
     console.log('💾 Auto-save triggered: changes detected');
     if (periodsChanged) console.log('  - Periods changed');
     if (sectionsChanged) console.log('  - Sections changed');
-    if (commonDailyChanged) console.log('  - Common daily actions changed');
-    if (workMethodsChanged) console.log('  - Work methods changed');
     if (techniquesChanged) console.log('  - Techniques changed');
     
     // Save to localStorage immediately (backup)
+<<<<<<< HEAD
       saveToLocalStorage(
         periods,
         sections,
@@ -711,6 +654,9 @@ export default function ToolsSettings({
         workMethods,
         exercisePathologyCatalog
       );
+=======
+    saveToLocalStorage(periods, sections, bodyBuildingTechniques, sports, equipment, exercises, devices);
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
     
     // Clear any pending save timeout
     if (saveTimeoutRef.current) {
@@ -733,8 +679,6 @@ export default function ToolsSettings({
     // Update refs immediately so next change is detected
     prevPeriodsRef.current = periods;
     prevSectionsRef.current = sections;
-    prevCommonDailyActionsRef.current = commonDailyActions;
-    prevWorkMethodsRef.current = workMethods;
     prevBodyBuildingTechniquesRef.current = bodyBuildingTechniques;
     prevSportsRef.current = sports;
     prevEquipmentRef.current = equipment;
@@ -752,6 +696,7 @@ export default function ToolsSettings({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+<<<<<<< HEAD
   }, [
     periods,
     sections,
@@ -767,29 +712,25 @@ export default function ToolsSettings({
     isInitialLoad,
     isSavingToDatabase
   ]);
+=======
+  }, [periods, sections, bodyBuildingTechniques, sports, equipment, exercises, devices, isInitialLoad, isSavingToDatabase]);
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
   const getActiveItems = () => {
-    if (activeTab === 'periods') return sortToolsItemsByOrder(periods);
-    if (activeTab === 'sections') return sortToolsItemsByOrder(sections);
-    if (activeTab === 'workMethods') return sortToolsItemsByOrder(workMethods);
-    if (activeTab === 'commonDailyActions') return sortToolsItemsByOrder(commonDailyActions);
-    if (activeTab === 'bodyBuildingTechniques') return sortToolsItemsByOrder(bodyBuildingTechniques);
-    return sortToolsItemsByOrder(sections);
+    if (activeTab === 'periods') return periods;
+    if (activeTab === 'sections') return sections;
+    if (activeTab === 'commonDailyActions') return sections;
+    if (activeTab === 'bodyBuildingTechniques') return bodyBuildingTechniques;
+    return sections;
   };
 
   const setActiveItems = (items: Period[] | WorkoutSection[] | BodyBuildingTechnique[]) => {
-    const clean = dedupeToolsItemsById(items as (Period & { id: string })[]);
-    const withOrder = clean.map((item, index) => ({ ...item, order: index }));
     if (activeTab === 'periods') {
-      setPeriods(withOrder as Period[]);
-    } else if (activeTab === 'sections') {
-      setSections(withOrder as WorkoutSection[]);
-    } else if (activeTab === 'workMethods') {
-      setWorkMethods(withOrder as WorkoutSection[]);
-    } else if (activeTab === 'commonDailyActions') {
-      setCommonDailyActions(withOrder as WorkoutSection[]);
+      setPeriods(items as Period[]);
+    } else if (activeTab === 'sections' || activeTab === 'commonDailyActions') {
+      setSections(items as WorkoutSection[]);
     } else if (activeTab === 'bodyBuildingTechniques') {
-      setBodyBuildingTechniques(withOrder as BodyBuildingTechnique[]);
+      setBodyBuildingTechniques(items as BodyBuildingTechnique[]);
     }
   };
 
@@ -841,25 +782,16 @@ export default function ToolsSettings({
     const items = getActiveItems();
     const newId = Date.now().toString();
 
-    const isSuperAdminTranslatedTools =
-      isAdmin &&
-      (activeTab === 'periods' ||
-        activeTab === 'sections' ||
-        activeTab === 'workMethods' ||
-        activeTab === 'commonDailyActions' ||
-        activeTab === 'bodyBuildingTechniques');
+    const isSuperAdminPeriods = isAdmin && activeTab === 'periods';
     const currentLangData = isAdmin
       ? (newItemTranslations[currentLanguage] || newItemTranslations['en'] || { title: '', description: '' })
       : { title: newItem.title, description: newItem.description };
 
     let descriptionByLanguage: Record<string, string> | undefined;
-    let titleByLanguage: Record<string, string> | undefined;
-    if (isSuperAdminTranslatedTools) {
+    if (isSuperAdminPeriods) {
       const m: Record<string, string> = {};
-      const tm: Record<string, string> = {};
-      const enT = (newItemTranslations['en']?.title || '').trim();
-      const enD = (newItemTranslations['en']?.description || '').trim();
       SUPPORTED_LANGUAGES.forEach((lang) => {
+<<<<<<< HEAD
         let d = (newItemTranslations[lang.code]?.description ?? '').trim();
         let tit = (newItemTranslations[lang.code]?.title ?? '').trim();
         if (
@@ -871,11 +803,12 @@ export default function ToolsSettings({
           tit = '';
           d = '';
         }
+=======
+        const d = (newItemTranslations[lang.code]?.description || '').trim();
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
         if (d) m[lang.code] = d;
-        if (tit) tm[lang.code] = tit;
       });
       descriptionByLanguage = Object.keys(m).length > 0 ? m : undefined;
-      titleByLanguage = Object.keys(tm).length > 0 ? tm : undefined;
     }
 
     const englishBlock = newItemTranslations['en'] || { title: '', description: '' };
@@ -883,19 +816,18 @@ export default function ToolsSettings({
     const newEntry = {
       id: newId,
       title: isAdmin
-        ? isSuperAdminTranslatedTools
+        ? isSuperAdminPeriods
           ? (englishBlock.title || Object.values(newItemTranslations).find((t) => t.title)?.title || '')
           : (currentLangData.title || Object.values(newItemTranslations).find((t) => t.title)?.title || '')
         : newItem.title,
-      description: isSuperAdminTranslatedTools
+      description: isSuperAdminPeriods
         ? (englishBlock.description || '').trim()
         : currentLangData.description || '',
-      ...(isSuperAdminTranslatedTools && descriptionByLanguage ? { descriptionByLanguage } : {}),
-      ...(isSuperAdminTranslatedTools && titleByLanguage ? { titleByLanguage } : {}),
+      ...(isSuperAdminPeriods && descriptionByLanguage ? { descriptionByLanguage } : {}),
       color: newItem.color,
       order: items.length,
       isUserCreated: !isAdmin, // Tag user-created items
-      ...((activeTab === 'sections' || activeTab === 'workMethods') && { code: newItem.code || '' }),
+      ...(activeTab === 'sections' && { code: newItem.code || '' }), // Add code field for sections
       ...(activeTab === 'commonDailyActions' && {
         code: newItem.code || '',
         picture: newItem.picture || ''
@@ -904,7 +836,7 @@ export default function ToolsSettings({
     };
 
     // Save translations to localStorage
-    const itemType = resolveToolsStorageItemType(activeTab);
+    const itemType = activeTab === 'periods' ? 'periods' : 'sections';
     
     if (isAdmin) {
       // Admin: Save for all languages
@@ -958,29 +890,13 @@ export default function ToolsSettings({
     }
 
     setActiveItems([...items, newEntry]);
-    const manualRefAdd = getManualOrderRefForActiveTab();
-    if (manualRefAdd.current) {
-      manualRefAdd.current = [...manualRefAdd.current, newEntry.id];
-    } else {
-      const base =
-        activeTab === 'periods'
-          ? periods
-          : activeTab === 'bodyBuildingTechniques'
-            ? bodyBuildingTechniques
-            : activeTab === 'commonDailyActions'
-              ? commonDailyActions
-              : activeTab === 'workMethods'
-                ? workMethods
-                : sections;
-      manualRefAdd.current = [...sortToolsItemsByOrder(base as any).map((x: any) => x.id), newEntry.id];
-    }
     setNewItem({ title: '', code: '', description: '', color: '#3b82f6', sports: [] as string[], picture: '' });
     setNewItemTranslations({});
     setActiveInputLanguage('en');
     setShowAddDialog(false);
   };
 
-  const handleEdit = (item: Period | WorkoutSection | BodyBuildingTechnique) => {
+  const handleEdit = (item: Period | WorkoutSection) => {
     // Check if user owns this item
     if (currentUserId && item.userId && item.userId !== currentUserId) {
       alert('⚠️ You cannot edit this item because it was not created by you.\n\nOnly items you created can be edited.');
@@ -989,71 +905,27 @@ export default function ToolsSettings({
     
     setEditingItem({ ...item });
 
-    const skipLocalStorageForTranslatedToolsAdmin =
-      isAdmin &&
-      (activeTab === 'periods' ||
-        activeTab === 'sections' ||
-        activeTab === 'workMethods' ||
-        activeTab === 'commonDailyActions' ||
-        activeTab === 'bodyBuildingTechniques');
+    const skipLocalStorageForPeriodAdmin = activeTab === 'periods' && isAdmin;
 
     const translations: Record<string, { title: string; description: string }> = {};
 
     SUPPORTED_LANGUAGES.forEach((lang) => {
       if (useEnglishFallbackRules) {
-        const anyItem = item as Period & WorkoutSection & BodyBuildingTechnique;
-        const byLang = anyItem.descriptionByLanguage;
-        const titlesByLang = anyItem.titleByLanguage;
-        const useDbTranslations =
-          isAdmin &&
-          (activeTab === 'periods' ||
-            activeTab === 'sections' ||
-            activeTab === 'workMethods' ||
-            activeTab === 'commonDailyActions' ||
-            activeTab === 'bodyBuildingTechniques');
-
-        const descForLang = useDbTranslations
-          ? (byLang?.[lang.code]?.trim()
-              ? (byLang[lang.code] as string)
-              : lang.code === 'en'
-                ? (item.description || '')
-                : '')
-          : lang.code === 'en'
-            ? (item.description || '')
-            : '';
-
-        const titleForLang = useDbTranslations
-          ? (titlesByLang?.[lang.code]?.trim()
-              ? (titlesByLang[lang.code] as string)
-              : lang.code === 'en'
-                ? (item.title || '')
-                : '')
-          : lang.code === 'en'
-            ? (item.title || '')
-            : '';
-
-        let titleOut = titleForLang;
-        let descOut = descForLang;
-        if (useDbTranslations && lang.code !== 'en') {
-          const rawStoredT = (titlesByLang?.[lang.code] as string | undefined)?.trim() ?? '';
-          const rawStoredD = (byLang?.[lang.code] as string | undefined)?.trim() ?? '';
-          const enPrimaryT = (item.title || '').trim();
-          const enPrimaryD = (item.description || '').trim();
-          // Older data sometimes copied the English primary into per-language maps when other languages were left blank.
-          // Clearing here makes the edit form treat the slot as empty so English shows in red until a real translation is entered.
-          if (
-            rawStoredT !== '' &&
-            rawStoredT === enPrimaryT &&
-            rawStoredD === enPrimaryD
-          ) {
-            titleOut = '';
-            descOut = '';
-          }
-        }
-
+        const periodItem = item as Period;
+        const byLang = periodItem.descriptionByLanguage;
+        const descForLang =
+          activeTab === 'periods' && isAdmin
+            ? (byLang?.[lang.code]?.trim()
+                ? (byLang[lang.code] as string)
+                : lang.code === 'en'
+                  ? (item.description || '')
+                  : '')
+            : lang.code === 'en'
+              ? (item.description || '')
+              : '';
         translations[lang.code] = {
-          title: titleOut,
-          description: descOut
+          title: lang.code === 'en' ? (item.title || '') : '',
+          description: descForLang
         };
       } else {
         translations[lang.code] = {
@@ -1062,9 +934,9 @@ export default function ToolsSettings({
         };
       }
 
-      if (skipLocalStorageForTranslatedToolsAdmin) return;
+      if (skipLocalStorageForPeriodAdmin) return;
 
-      const itemType = resolveToolsStorageItemType(activeTab);
+      const itemType = activeTab === 'periods' ? 'periods' : 'sections';
       const storageKey = `tools_${itemType}_${lang.code}`;
       const existingDataStr = localStorage.getItem(storageKey);
       if (existingDataStr) {
@@ -1084,103 +956,7 @@ export default function ToolsSettings({
     });
 
     setEditItemTranslations(translations);
-    if (isAdmin && useEnglishFallbackRules) setActiveInputLanguage('en');
-  };
-
-  const handleTranslateNewItemFields = async () => {
-    const enBlock = newItemTranslations['en'] || { title: '', description: '' };
-    const enTitle = enBlock.title.trim();
-    const enDesc = enBlock.description.trim();
-    if (!enTitle && !enDesc) {
-      alert('Enter English title or description in the EN block first, then press Translation.');
-      return;
-    }
-    setIsTranslatingToolsFields(true);
-    try {
-      const [titleMap, descMap] = await Promise.all([
-        enTitle ? fetchToolsLineTranslations(enTitle) : Promise.resolve({} as Record<string, string>),
-        enDesc ? fetchToolsLineTranslations(enDesc) : Promise.resolve({} as Record<string, string>),
-      ]);
-      setNewItemTranslations((prev) => {
-        const en = prev['en'] || { title: '', description: '' };
-        const next: Record<string, { title: string; description: string }> = {
-          ...prev,
-          en: {
-            title: en.title.trim().slice(0, 30),
-            description: en.description.trim().slice(0, 255),
-          },
-        };
-        for (const code of TOOLS_TRANSLATION_TARGET_LANG_CODES) {
-          const prior = prev[code] || { title: '', description: '' };
-          const tRaw = titleMap[code];
-          const dRaw = descMap[code];
-          next[code] = {
-            title: enTitle
-              ? (typeof tRaw === 'string' ? tRaw.trim().slice(0, 30) : prior.title)
-              : prior.title,
-            description: enDesc
-              ? (typeof dRaw === 'string' ? dRaw.trim().slice(0, 255) : prior.description)
-              : prior.description,
-          };
-        }
-        return next;
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      alert(
-        `Translation failed.\n\n${msg}\n\nYou can enter other languages manually. Same API as Language → Long texts.`
-      );
-    } finally {
-      setIsTranslatingToolsFields(false);
-    }
-  };
-
-  const handleTranslateEditItemFields = async () => {
-    const enBlock = editItemTranslations['en'] || { title: '', description: '' };
-    const enTitle = enBlock.title.trim();
-    const enDesc = enBlock.description.trim();
-    if (!enTitle && !enDesc) {
-      alert('Enter English title or description in the EN block first, then press Translation.');
-      return;
-    }
-    setIsTranslatingToolsFields(true);
-    try {
-      const [titleMap, descMap] = await Promise.all([
-        enTitle ? fetchToolsLineTranslations(enTitle) : Promise.resolve({} as Record<string, string>),
-        enDesc ? fetchToolsLineTranslations(enDesc) : Promise.resolve({} as Record<string, string>),
-      ]);
-      setEditItemTranslations((prev) => {
-        const en = prev['en'] || { title: '', description: '' };
-        const next: Record<string, { title: string; description: string }> = {
-          ...prev,
-          en: {
-            title: en.title.trim().slice(0, 30),
-            description: en.description.trim().slice(0, 255),
-          },
-        };
-        for (const code of TOOLS_TRANSLATION_TARGET_LANG_CODES) {
-          const prior = prev[code] || { title: '', description: '' };
-          const tRaw = titleMap[code];
-          const dRaw = descMap[code];
-          next[code] = {
-            title: enTitle
-              ? (typeof tRaw === 'string' ? tRaw.trim().slice(0, 30) : prior.title)
-              : prior.title,
-            description: enDesc
-              ? (typeof dRaw === 'string' ? dRaw.trim().slice(0, 255) : prior.description)
-              : prior.description,
-          };
-        }
-        return next;
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      alert(
-        `Translation failed.\n\n${msg}\n\nYou can enter other languages manually. Same API as Language → Long texts.`
-      );
-    } finally {
-      setIsTranslatingToolsFields(false);
-    }
+    if (isAdmin && activeTab === 'periods') setActiveInputLanguage('en');
   };
 
   const handleSaveEdit = () => {
@@ -1216,21 +992,13 @@ export default function ToolsSettings({
         }
       }
 
-      if (
-        activeTab === 'periods' ||
-        activeTab === 'sections' ||
-        activeTab === 'workMethods' ||
-        activeTab === 'commonDailyActions' ||
-        activeTab === 'bodyBuildingTechniques'
-      ) {
+      if (activeTab === 'periods') {
         const enT = editItemTranslations['en'];
         editingItem.title = (enT?.title?.trim() || editingItem.title || '').trim();
         editingItem.description = (enT?.description || '').trim();
         const descByLang: Record<string, string> = {};
-        const titleByLang: Record<string, string> = {};
-        const enPrimaryT = (editItemTranslations['en']?.title || '').trim();
-        const enPrimaryD = (editItemTranslations['en']?.description || '').trim();
         SUPPORTED_LANGUAGES.forEach((lang) => {
+<<<<<<< HEAD
           let d = (editItemTranslations[lang.code]?.description ?? '').trim();
           let t = (editItemTranslations[lang.code]?.title ?? '').trim();
           if (
@@ -1242,29 +1010,13 @@ export default function ToolsSettings({
             t = '';
             d = '';
           }
+=======
+          const d = (editItemTranslations[lang.code]?.description || '').trim();
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           if (d) descByLang[lang.code] = d;
-          if (t) titleByLang[lang.code] = t;
         });
-        if (activeTab === 'periods') {
-          (editingItem as Period).descriptionByLanguage =
-            Object.keys(descByLang).length > 0 ? descByLang : undefined;
-          (editingItem as Period).titleByLanguage =
-            Object.keys(titleByLang).length > 0 ? titleByLang : undefined;
-        } else if (
-          activeTab === 'sections' ||
-          activeTab === 'workMethods' ||
-          activeTab === 'commonDailyActions'
-        ) {
-          (editingItem as WorkoutSection).descriptionByLanguage =
-            Object.keys(descByLang).length > 0 ? descByLang : undefined;
-          (editingItem as WorkoutSection).titleByLanguage =
-            Object.keys(titleByLang).length > 0 ? titleByLang : undefined;
-        } else {
-          (editingItem as BodyBuildingTechnique).descriptionByLanguage =
-            Object.keys(descByLang).length > 0 ? descByLang : undefined;
-          (editingItem as BodyBuildingTechnique).titleByLanguage =
-            Object.keys(titleByLang).length > 0 ? titleByLang : undefined;
-        }
+        (editingItem as Period).descriptionByLanguage =
+          Object.keys(descByLang).length > 0 ? descByLang : undefined;
       } else {
         const currentLangData =
           editItemTranslations[currentLanguage] ||
@@ -1309,7 +1061,7 @@ export default function ToolsSettings({
     console.log('✅ State updated with:', updated);
     
     // Save to language libraries
-    const itemType = resolveToolsStorageItemType(activeTab);
+    const itemType = activeTab === 'periods' ? 'periods' : 'sections';
     
     if (isAdmin) {
       // Admin: Save to all language libraries
@@ -1328,9 +1080,7 @@ export default function ToolsSettings({
               title: langData.title || '',
               description: langData.description || '',
               color: editingItem.color,
-              ...((activeTab === 'sections' || activeTab === 'workMethods') && {
-                code: (editingItem as any).code || ''
-              }),
+              ...(activeTab === 'sections' && { code: (editingItem as any).code || '' }),
               ...(activeTab === 'commonDailyActions' && {
                 code: (editingItem as any).code || '',
                 picture: (editingItem as any).picture || ''
@@ -1344,9 +1094,7 @@ export default function ToolsSettings({
               description: langData.description || '',
               color: editingItem.color,
               order: existingData.length,
-            ...((activeTab === 'sections' || activeTab === 'workMethods') && {
-                code: (editingItem as any).code || ''
-              }),
+            ...(activeTab === 'sections' && { code: (editingItem as any).code || '' }),
             ...(activeTab === 'commonDailyActions' && {
               code: (editingItem as any).code || '',
               picture: (editingItem as any).picture || ''
@@ -1370,9 +1118,7 @@ export default function ToolsSettings({
           title: editingItem.title,
           description: editingItem.description,
           color: editingItem.color,
-          ...((activeTab === 'sections' || activeTab === 'workMethods') && {
-                code: (editingItem as any).code || ''
-              }),
+          ...(activeTab === 'sections' && { code: (editingItem as any).code || '' }),
           ...(activeTab === 'commonDailyActions' && {
             code: (editingItem as any).code || '',
             picture: (editingItem as any).picture || ''
@@ -1387,9 +1133,7 @@ export default function ToolsSettings({
           color: editingItem.color,
           order: existingData.length,
           isUserCreated: true,
-          ...((activeTab === 'sections' || activeTab === 'workMethods') && {
-                code: (editingItem as any).code || ''
-              }),
+          ...(activeTab === 'sections' && { code: (editingItem as any).code || '' }),
           ...(activeTab === 'commonDailyActions' && {
             code: (editingItem as any).code || '',
             picture: (editingItem as any).picture || ''
@@ -1407,61 +1151,34 @@ export default function ToolsSettings({
   const handleDelete = (id: string) => {
     if (!confirm('Delete this item?')) return;
     
-    const idKey = String(id);
     const items = getActiveItems();
-    const updated = items.filter((item) => String(item.id) !== idKey);
+    const updated = items.filter(item => item.id !== id);
     setActiveItems(updated);
-    const manualRefDel = getManualOrderRefForActiveTab();
-    if (manualRefDel.current) {
-      manualRefDel.current = manualRefDel.current.filter((x) => String(x) !== idKey);
-    }
   };
 
   const handleSortAZ = () => {
     const items = getActiveItems();
-    const sorted = [...items].sort((a, b) =>
-      getDisplayTitle(a).text.localeCompare(getDisplayTitle(b).text)
-    );
+    const sorted = [...items].sort((a, b) => a.title.localeCompare(b.title));
     setActiveItems(sorted.map((item, index) => ({ ...item, order: index })));
   };
 
   const handleSortZA = () => {
     const items = getActiveItems();
-    const sorted = [...items].sort((a, b) =>
-      getDisplayTitle(b).text.localeCompare(getDisplayTitle(a).text)
-    );
+    const sorted = [...items].sort((a, b) => b.title.localeCompare(a.title));
     setActiveItems(sorted.map((item, index) => ({ ...item, order: index })));
   };
 
-  /** Restore order from last drag-and-drop sequence (snapshot not altered by A-Z / Z-A). */
-  const handleRestoreMySorting = () => {
-    const items = getActiveItems() as (Period | WorkoutSection | BodyBuildingTechnique)[];
-    const manualRef = getManualOrderRefForActiveTab();
-    let ids = manualRef.current;
-    if (!ids || ids.length === 0) {
-      const sorted = sortToolsItemsByOrder(items);
-      setActiveItems(sorted.map((item, index) => ({ ...item, order: index })));
-      return;
-    }
-    const byId = new Map(items.map((i) => [i.id, i]));
-    const ordered = ids.filter((id) => byId.has(id)).map((id) => byId.get(id)!);
-    const missing = items.filter((i) => !ids.includes(i.id));
-    setActiveItems([...ordered, ...missing].map((item, index) => ({ ...item, order: index })));
-  };
-
   const handleDragStart = (id: string) => {
-    setDraggedItem(String(id));
+    setDraggedItem(id);
   };
 
   const handleDragOver = (e: React.DragEvent, id: string) => {
     e.preventDefault();
-    if (!draggedItem) return;
-    const dropId = String(id);
-    if (String(draggedItem) === dropId) return;
+    if (!draggedItem || draggedItem === id) return;
 
     const items = getActiveItems();
-    const draggedIndex = items.findIndex((item) => String(item.id) === String(draggedItem));
-    const targetIndex = items.findIndex((item) => String(item.id) === dropId);
+    const draggedIndex = items.findIndex(item => item.id === draggedItem);
+    const targetIndex = items.findIndex(item => item.id === id);
 
     if (draggedIndex === -1 || targetIndex === -1) return;
 
@@ -1469,8 +1186,7 @@ export default function ToolsSettings({
     const [removed] = newItems.splice(draggedIndex, 1);
     newItems.splice(targetIndex, 0, removed);
 
-    setActiveItems(newItems);
-    getManualOrderRefForActiveTab().current = newItems.map((item) => item.id);
+    setActiveItems(newItems.map((item, index) => ({ ...item, order: index })));
   };
 
   const handleDragEnd = () => {
@@ -1485,6 +1201,10 @@ export default function ToolsSettings({
   // Language-specific defaults handlers
   const saveLanguageDefaults = async () => {
     setShowPasswordDialog(true);
+  };
+
+  const loadLanguageDefaults = async () => {
+    setShowLoadDialog(true);
   };
 
   const handlePasswordSubmit = async () => {
@@ -1530,8 +1250,6 @@ export default function ToolsSettings({
       const toolsData = {
         periods,
         sections,
-        commonDailyActions,
-        workMethods,
         sports,
         equipment,
         exercises,
@@ -1554,11 +1272,16 @@ export default function ToolsSettings({
         const data = await response.json();
         
         if (response.ok) {
+<<<<<<< HEAD
           alert(
             '✅ Success! Movesbook default settings saved.\n\n' +
               '📋 Included: Periods, Sections, Sports, Equipment, Exercises, Library, Devices, Periodization library — with every translation you entered on each item.\n\n' +
               '👥 Users who use Load in Language Defaults get these defaults in their profile language. Ensure each user\'s language is set in their profile.'
           );
+=======
+          const languageName = SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name || selectedLanguage;
+          alert(`✅ Success! ALL settings saved as ${languageName.toUpperCase()} defaults!\n\n📋 Saved to ${languageName.toUpperCase()}:\n✓ Periods, Sections, Sports\n✓ Equipment, Exercises, Library, Devices\n\n👥 These settings are now available for ${languageName}-speaking users when they click "Load Admin Defaults" button.`);
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           setShowPasswordDialog(false);
           setSuperAdminPassword('');
         } else {
@@ -1600,9 +1323,68 @@ export default function ToolsSettings({
     }
   };
 
-  // Display language is only `selectedLanguage` — it drives getDisplayTitle / getDisplayDescription.
-  // Do not fetch /api/admin/tools-defaults/load here: that API returns a per-language snapshot (often a
-  // different row count than the user's live DB list) and would replace periods/sports/etc.
+  // Auto-load language terms when language is selected
+  const loadLanguageTerms = async (languageCode: string) => {
+    try {
+      console.log('🌍 Loading terms for language:', languageCode);
+
+      // First, apply locally saved language libraries (instant switch in UI)
+      const periodsKey = `tools_periods_${languageCode}`;
+      const sectionsKey = `tools_sections_${languageCode}`;
+
+      const periodsFromStorage = localStorage.getItem(periodsKey);
+      if (periodsFromStorage) {
+        try {
+          const parsed = JSON.parse(periodsFromStorage);
+          if (Array.isArray(parsed)) {
+            setPeriods([...parsed]);
+          }
+        } catch (e) {
+          console.error('Error parsing periods language library:', e);
+        }
+      }
+
+      const sectionsFromStorage = localStorage.getItem(sectionsKey);
+      if (sectionsFromStorage) {
+        try {
+          const parsed = JSON.parse(sectionsFromStorage);
+          if (Array.isArray(parsed)) {
+            setSections([...parsed]);
+            console.log(`✅ Loaded sections from localStorage (${languageCode})`);
+          }
+        } catch (e) {
+          console.error('Error parsing sections language library:', e);
+        }
+      }
+
+      const response = await fetch(`/api/admin/tools-defaults/load?language=${languageCode}`);
+      const data = await response.json();
+
+      if (response.ok && data.toolsData) {
+        // Load and force re-render with new array references
+        if (data.toolsData.periods) {
+          setPeriods([...data.toolsData.periods]);
+        }
+        if (data.toolsData.sections) {
+          setSections([...data.toolsData.sections]);
+        }
+        if (data.toolsData.sports) {
+          setSports([...data.toolsData.sports]);
+        }
+        if (data.toolsData.equipment) {
+          setEquipment([...data.toolsData.equipment]);
+        }
+        if (data.toolsData.exercises) {
+          setExercises([...data.toolsData.exercises]);
+        }
+        if (data.toolsData.devices) {
+          setDevices([...data.toolsData.devices]);
+        }
+      } else {
+      }
+    } catch (error) {
+    }
+  };
 
   // Handle Load from Movesbook (for non-admin users)
   const handleLoadAdminDefaults = async () => {
@@ -1620,6 +1402,7 @@ export default function ToolsSettings({
     if (!confirmed) return;
 
     try {
+<<<<<<< HEAD
       let response = await fetch(
         `/api/admin/tools-defaults/load?language=${encodeURIComponent(loadLang)}`
       );
@@ -1640,6 +1423,10 @@ export default function ToolsSettings({
           /* ignore */
         }
       }
+=======
+      const response = await fetch(`/api/admin/tools-defaults/load?language=${selectedLanguage}`);
+      const data = await response.json();
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
       if (response.ok && data.toolsData) {
         const toolsPayload: Record<string, any> = { ...data.toolsData };
@@ -1666,8 +1453,6 @@ export default function ToolsSettings({
         // Get current user-created items (items with isUserCreated flag)
         const userPeriods = periods.filter((p: any) => p.isUserCreated);
         const userSections = sections.filter((s: any) => s.isUserCreated);
-        const userWorkMethods = workMethods.filter((s: any) => s.isUserCreated);
-        const userCommonDaily = commonDailyActions.filter((s: any) => s.isUserCreated);
         const userEquipment = equipment.filter((e: any) => e.isUserCreated);
         const userExercises = exercises.filter((ex: any) => ex.isUserCreated);
         const userDevices = devices.filter((d: any) => d.isUserCreated);
@@ -1680,6 +1465,7 @@ export default function ToolsSettings({
         if (toolsPayload.sections) {
           setSections([...toolsPayload.sections, ...userSections]);
         }
+<<<<<<< HEAD
         if (toolsPayload.workMethods && Array.isArray(toolsPayload.workMethods)) {
           setWorkMethods([...toolsPayload.workMethods, ...userWorkMethods]);
         }
@@ -1706,6 +1492,10 @@ export default function ToolsSettings({
         setCommonDailyActions([...adminCommonDaily, ...userCommonDaily]);
         if (toolsPayload.sports) {
           setSports([...toolsPayload.sports]); // Sports are read-only for users
+=======
+        if (data.toolsData.sports) {
+          setSports([...data.toolsData.sports]); // Sports are read-only for users
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
         }
         if (toolsPayload.equipment) {
           setEquipment([...toolsPayload.equipment, ...userEquipment]);
@@ -1734,6 +1524,7 @@ export default function ToolsSettings({
     }
   };
 
+<<<<<<< HEAD
   /** Periods/sections/etc. cards: respect Display language for every user (not only admin). */
   const useTranslatedEntityCards =
     useEnglishFallbackRules &&
@@ -1823,9 +1614,148 @@ export default function ToolsSettings({
         return { text: d, isRed: false };
       }
       return { text: englishDesc, isRed: !!englishDesc };
+=======
+  const getDisplayTitle = (item: any): { text: string; isRed: boolean } => {
+    if (item.title && item.title.trim() !== '') {
+      return { text: item.title, isRed: false };
     }
+    
+    const storageKeyEn = activeTab === 'periods' ? 'tools_periods_en' : (activeTab === 'sections' || activeTab === 'commonDailyActions') ? 'tools_sections_en' : null;
+    if (storageKeyEn) {
+      const enData = localStorage.getItem(storageKeyEn);
+      if (enData) {
+        try {
+          const parsed = JSON.parse(enData);
+          const enItem = parsed.find((i: any) => i.id === item.id);
+          if (enItem && enItem.title && enItem.title.trim() !== '') {
+            return { text: enItem.title, isRed: true };
+          }
+        } catch (e) {}
+      }
+    }
+    
+    const storageKeyIt = activeTab === 'periods' ? 'tools_periods_it' : (activeTab === 'sections' || activeTab === 'commonDailyActions') ? 'tools_sections_it' : null;
+    if (storageKeyIt) {
+      const itData = localStorage.getItem(storageKeyIt);
+      if (itData) {
+        try {
+          const parsed = JSON.parse(itData);
+          const itItem = parsed.find((i: any) => i.id === item.id);
+          if (itItem && itItem.title && itItem.title.trim() !== '') {
+            return { text: itItem.title, isRed: true };
+          }
+        } catch (e) {}
+      }
+    }
+    
+    return { text: item.title || 'Untitled', isRed: false };
+  };
 
-    return { text: item.description || '', isRed: false };
+  const handleLoadConfirm = async () => {
+    try {
+      const response = await fetch(`/api/admin/tools-defaults/load?language=${selectedLanguage}`);
+      const data = await response.json();
+
+      if (response.ok && data.toolsData) {
+        const languageName = SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name;
+        
+        if (data.toolsData.periods) {
+          const loadedPeriods = [...data.toolsData.periods];
+          const existingPeriods = [...periods];
+          
+          const mergedPeriods = existingPeriods.map(existing => {
+            const matchingLoaded = loadedPeriods.find(loaded => 
+              loaded.title?.toLowerCase() === existing.title?.toLowerCase()
+            );
+            
+            if (matchingLoaded) {
+              return {
+                ...matchingLoaded,
+                id: existing.id
+              };
+            }
+            
+            return existing;
+          });
+          
+          loadedPeriods.forEach(loaded => {
+            const alreadyExists = mergedPeriods.some(merged => 
+              merged.title?.toLowerCase() === loaded.title?.toLowerCase()
+            );
+            if (!alreadyExists) {
+              mergedPeriods.push(loaded);
+            }
+          });
+          
+          setPeriods(mergedPeriods);
+          
+          const storageKey = `tools_periods_${selectedLanguage}`;
+          localStorage.setItem(storageKey, JSON.stringify(mergedPeriods));
+        }
+        if (data.toolsData.sections) {
+          const loadedSections = [...data.toolsData.sections];
+          const existingSections = [...sections];
+          
+          const mergedSections = existingSections.map(existing => {
+            const matchingLoaded = loadedSections.find(loaded => 
+              loaded.title?.toLowerCase() === existing.title?.toLowerCase()
+            );
+            
+            if (matchingLoaded) {
+              return {
+                ...matchingLoaded,
+                id: existing.id
+              };
+            }
+            
+            return existing;
+          });
+          
+          loadedSections.forEach(loaded => {
+            const alreadyExists = mergedSections.some(merged => 
+              merged.title?.toLowerCase() === loaded.title?.toLowerCase()
+            );
+            if (!alreadyExists) {
+              mergedSections.push(loaded);
+            }
+          });
+          
+          setSections(mergedSections);
+          
+          const storageKey = `tools_sections_${selectedLanguage}`;
+          localStorage.setItem(storageKey, JSON.stringify(mergedSections));
+        }
+        if (data.toolsData.sports) {
+          const loadedSports = [...data.toolsData.sports];
+          setSports(loadedSports);
+        }
+        if (data.toolsData.equipment) {
+          setEquipment([...data.toolsData.equipment]);
+        }
+        if (data.toolsData.exercises) {
+          setExercises([...data.toolsData.exercises]);
+        }
+        if (data.toolsData.devices) {
+          setDevices([...data.toolsData.devices]);
+        }
+        
+        // Force a re-render by toggling a state
+        setTimeout(() => {
+          console.log('🔄 Data loaded and state updated');
+        }, 100);
+        
+        alert(`✅ ${languageName} default settings loaded successfully!\n\n📋 All settings loaded (ALL TABS):\n• Periods (${data.toolsData.periods?.length || 0} items)\n• Sections (${data.toolsData.sections?.length || 0} items)\n• Sports\n• Equipment, Exercises, Library, Devices\n\n📝 Next Steps:\n1. Navigate to ANY tab and edit/translate items\n2. Select target language from dropdown (e.g., Russian)\n3. Click "Save to [Language]" to save ALL tabs\n\n💡 Example: Load Spanish → Edit Sports/Periods → Select Russian → Save to RU`);
+        setShowLoadDialog(false);
+      } else {
+        const languageName = SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name;
+        alert(`ℹ️ No default settings found for ${languageName}.\n\nPlease create defaults for this language by:\n1. Loading English defaults if available\n2. Translating the items\n3. Saving them as ${languageName} defaults`);
+        setShowLoadDialog(false);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      alert('❌ Error loading defaults');
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
+    }
   };
 
   // Sports-specific handlers
@@ -2105,6 +2035,11 @@ export default function ToolsSettings({
               ? 'Manage factories, muscles, equipment, exercises, libraries, and devices'
               : 'Manage your workout periods, sections, sports, and equipment'}
           </p>
+          {!isAdmin && mode === 'tools' && (
+            <p className="mt-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2.5 py-1.5 inline-block">
+              Admin creates language defaults. Choose your display language and load that template as your personal starting point.
+            </p>
+          )}
         </div>
       )}
 
@@ -2162,19 +2097,6 @@ export default function ToolsSettings({
             Workout Sections
           </button>
         )}
-        {allowedTabs.includes('workMethods') && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('workMethods')}
-            className={`px-6 py-3 font-semibold transition ${
-              activeTab === 'workMethods'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Work Methods
-          </button>
-        )}
         {allowedTabs.includes('bodyBuildingTechniques') && (
           <button
             onClick={() => setActiveTab('bodyBuildingTechniques')}
@@ -2196,7 +2118,7 @@ export default function ToolsSettings({
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            {isAdmin ? 'Common daily actions' : 'Daily actions'}
+            Common daily actions
           </button>
         )}
         {allowedTabs.includes('equipment') && (
@@ -2297,6 +2219,18 @@ export default function ToolsSettings({
             </span>
           </button>
         )}
+        {allowedTabs.includes('insertActions') && (
+          <button
+            onClick={() => setActiveTab('insertActions')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'insertActions'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Action settings
+          </button>
+        )}
         {allowedTabs.includes('devices') && (
           <button
             onClick={() => setActiveTab('devices')}
@@ -2316,6 +2250,7 @@ export default function ToolsSettings({
 
       {/* Language defaults + load (main Tools — translated lists only; other tabs keep a compact language picker) */}
       {!periodizationOnly && (
+<<<<<<< HEAD
         <div className="grid grid-cols-1 gap-3">
           {/* Instructions Banner - HIDDEN (code preserved for future use) */}
           <div className="hidden bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
@@ -2351,8 +2286,68 @@ export default function ToolsSettings({
             <p className="text-xs text-purple-600 mt-2 font-semibold">
               This applies to: Periods, Sections, {isAdmin ? 'Sports, ' : ''}Equipment, Exercises, Library, Devices
             </p>
+=======
+      <div className="grid grid-cols-1 gap-3">
+        
+        {/* Instructions Banner - HIDDEN (code preserved for future use) */}
+        <div className="hidden bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
+          <h4 className="font-semibold text-indigo-900 mb-2 flex items-center gap-2">
+            <Globe className="w-5 h-5" />
+            {isAdmin ? 'Multi-Language Settings Workflow (Admin)' : 'Personal Settings Workflow'}
+          </h4>
+          {isAdmin ? (
+            <>
+              <ol className="text-sm text-indigo-800 space-y-1 ml-6 list-decimal">
+                <li><strong>Select Language:</strong> Choose a language from the dropdown - terms load automatically</li>
+                <li><strong>Add/Edit:</strong> When adding or editing items, fill translations in ALL languages you want</li>
+                <li><strong>Required:</strong> ⚠️ At least <span className="font-bold text-red-600">English OR Italian</span> must be filled (mandatory)</li>
+                <li><strong>Missing Translations:</strong> Items without translation in selected language appear in <span className="font-bold text-red-600">RED</span> (English/Italian fallback)</li>
+              </ol>
+              <p className="text-xs text-indigo-600 mt-2 italic">
+                <strong>💡 Example:</strong> Add "Special Period" with EN/FR/IT → Select RU → Item appears in RED (needs Russian translation)
+              </p>
+            </>
+          ) : (
+            <>
+              <ol className="text-sm text-indigo-800 space-y-1 ml-6 list-decimal">
+                <li><strong>Select Language:</strong> Choose your language - terms load automatically</li>
+                <li><strong>Load Defaults:</strong> Click "Load Admin Defaults" to get Movesbook's settings in your language</li>
+                <li><strong>Add/Edit:</strong> Create or edit items in your language - they're automatically saved</li>
+                <li><strong>Your Items:</strong> Items you create manually are preserved when loading admin defaults</li>
+              </ol>
+              <p className="text-xs text-indigo-600 mt-2 italic">
+                <strong>💡 Tip:</strong> All settings are automatically available in your workout panels - no save button needed!
+              </p>
+            </>
+          )}
+          <p className="text-xs text-purple-600 mt-2 font-semibold">
+            This applies to: Periods, Sections, {isAdmin ? 'Sports, ' : ''}Equipment, Exercises, Library, Devices
+          </p>
+        </div>
+
+        {/* Language Selector */}
+        <div className="flex items-center gap-4 p-4 bg-white border-2 border-indigo-300 rounded-lg shadow-sm">
+          <Globe className="w-5 h-5 text-indigo-500" />
+          <div className="flex flex-col">
+            <span className="text-xs text-gray-500 mb-1">{isAdmin ? 'Display Language:' : ''}</span>
+            <select
+              value={selectedLanguage}
+              onChange={(e) => {
+                setSelectedLanguage(e.target.value);
+                // Auto-load terms for selected language
+                loadLanguageTerms(e.target.value);
+              }}
+              disabled={!isAdmin}
+              className="px-3 py-2 text-sm font-medium border-2 border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+            >
+              {SUPPORTED_LANGUAGES.map(lang => (
+                <option key={lang.code} value={lang.code}>{lang.name} ({lang.code.toUpperCase()})</option>
+              ))}
+            </select>
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           </div>
 
+<<<<<<< HEAD
           {showLanguageDefaultsToolbarInMainTools ? (
             languageDefaultsToolbar
           ) : isAdmin ? (
@@ -2364,6 +2359,30 @@ export default function ToolsSettings({
                 onChange={(e) => setSelectedLanguage(e.target.value)}
                 className="px-3 py-2 text-sm font-medium border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[10.5rem]"
                 aria-label="Display language"
+=======
+        </div>
+      </div>
+      )}
+
+      {periodizationOnly && periodizationSubview === 'periodSettings' && (
+        <div className="flex flex-wrap justify-end gap-2 items-center">
+          {isAdmin ? (
+            <>
+              <button
+                type="button"
+                onClick={() => loadLanguageDefaults()}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg text-white bg-violet-600 hover:bg-violet-700 shadow-md transition"
+                title="Load admin period/tools defaults in your profile language"
+              >
+                <Download className="w-4 h-4" />
+                Load from Movesbook
+              </button>
+              <button
+                type="button"
+                onClick={() => saveLanguageDefaults()}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg text-white bg-orange-500 hover:bg-orange-600 shadow-md transition"
+                title="Save current tools as language defaults (super admin)"
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
               >
                 {SUPPORTED_LANGUAGES.map((lang) => (
                   <option key={lang.code} value={lang.code}>
@@ -2596,26 +2615,16 @@ export default function ToolsSettings({
       {((!periodizationOnly &&
         (activeTab === 'periods' ||
           activeTab === 'sections' ||
-          activeTab === 'workMethods' ||
           activeTab === 'commonDailyActions' ||
           activeTab === 'bodyBuildingTechniques')) ||
         (periodizationOnly && periodizationSubview === 'periodSettings')) && (
         <div className="space-y-6">
-          {activeTab === 'commonDailyActions' && !isAdmin && (
-            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
-              <p className="text-sm text-indigo-900">
-                Add your own daily actions in <span className="font-semibold">your profile language</span> only.
-                Items from Movesbook stay read-only unless you create your own copy.
-              </p>
-            </div>
-          )}
-
           {/* Action Bar */}
           <div className="flex justify-between items-center">
             <div className="flex gap-3">
               <button
                 onClick={() => {
-                  if (isAdmin && useEnglishFallbackRules) setActiveInputLanguage('en');
+                  if (isAdmin && activeTab === 'periods') setActiveInputLanguage('en');
                   setShowAddDialog(true);
                 }}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
@@ -2637,15 +2646,6 @@ export default function ToolsSettings({
                 <ArrowDownZA className="w-4 h-4" />
                 Z-A
               </button>
-              <button
-                type="button"
-                onClick={handleRestoreMySorting}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
-                title="Restore your manual drag order (undo A-Z / Z-A)"
-              >
-                <ListOrdered className="w-4 h-4" />
-                My sorting
-              </button>
             </div>
             <div className="text-sm text-gray-600">
               Drag to reorder • {getActiveItems().length} items
@@ -2657,35 +2657,21 @@ export default function ToolsSettings({
             {getActiveItems().map((item) => (
               <div
                 key={item.id}
+                draggable={true}
+                onDragStart={() => handleDragStart(item.id)}
                 onDragOver={(e) => handleDragOver(e, item.id)}
                 onDrop={handleDrop}
-                className={`bg-white rounded-xl border-2 p-4 transition ${
-                  draggedItem !== null && String(draggedItem) === String(item.id)
-                    ? 'opacity-50 border-blue-500'
+                onDragEnd={handleDragEnd}
+                className={`bg-white rounded-xl border-2 p-4 cursor-move transition ${
+                  draggedItem === item.id 
+                    ? 'opacity-50 border-blue-500' 
                     : currentUserId && item.userId && item.userId !== currentUserId
                       ? 'border-gray-300 bg-gray-50'
                       : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  <div
-                    draggable
-                    role="button"
-                    tabIndex={0}
-                    aria-label="Drag to reorder"
-                    title="Drag to reorder"
-                    onDragStart={(e) => {
-                      e.stopPropagation();
-                      handleDragStart(item.id);
-                    }}
-                    onDragEnd={(e) => {
-                      e.stopPropagation();
-                      handleDragEnd();
-                    }}
-                    className="cursor-grab active:cursor-grabbing touch-none flex-shrink-0 p-1 -m-1 rounded hover:bg-gray-100 mt-0.5"
-                  >
-                    <GripVertical className="w-5 h-5 text-gray-400" />
-                  </div>
+                  <GripVertical className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
                   
                   <div className="flex-1 min-w-0">
                     {activeTab === 'commonDailyActions' && (item as any).picture && (
@@ -2720,6 +2706,7 @@ export default function ToolsSettings({
                         </span>
                       )}
                     </div>
+<<<<<<< HEAD
                     <p
                       className={`text-sm line-clamp-2 ${
                         getDisplayDescription(item).isRed
@@ -2729,16 +2716,14 @@ export default function ToolsSettings({
                     >
                       {getDisplayDescription(item).text}
                     </p>
+=======
+                    <p className="text-sm text-gray-600 line-clamp-2">{item.description}</p>
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                   </div>
 
                   <div className="flex gap-2 flex-shrink-0">
                     <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleEdit(item);
-                      }}
+                      onClick={() => handleEdit(item)}
                       disabled={!!(currentUserId && item.userId && item.userId !== currentUserId)}
                       className={`p-2 rounded-lg transition ${
                         currentUserId && item.userId && item.userId !== currentUserId
@@ -2750,12 +2735,7 @@ export default function ToolsSettings({
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleDelete(item.id);
-                      }}
+                      onClick={() => handleDelete(item.id)}
                       disabled={!!(currentUserId && item.userId && item.userId !== currentUserId)}
                       className={`p-2 rounded-lg transition ${
                         currentUserId && item.userId && item.userId !== currentUserId
@@ -2775,19 +2755,6 @@ export default function ToolsSettings({
           {getActiveItems().length === 0 && (
             <div className="text-center py-12 bg-gray-50 rounded-xl">
               <p className="text-gray-600 mb-4">No items yet. Click "Add New" to get started!</p>
-            </div>
-          )}
-
-          {activeTab === 'commonDailyActions' && isAdmin && (
-            <div className="mt-10 pt-8 border-t-2 border-gray-200 space-y-4">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">Planned action types</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  Colors and icons for action types on the yearly / done plan. This is separate from the common daily
-                  action cards above.
-                </p>
-              </div>
-              <PlannedActionTemplatesEditor />
             </div>
           )}
         </div>
@@ -3283,6 +3250,12 @@ export default function ToolsSettings({
         </div>
       )}
 
+      {activeTab === 'insertActions' && (
+        <div className="space-y-4">
+          <PlannedActionTemplatesEditor />
+        </div>
+      )}
+
       {/* Device Enabled Tab */}
       {activeTab === 'devices' && (
         <div className="space-y-6">
@@ -3467,56 +3440,35 @@ export default function ToolsSettings({
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-2xl font-bold mb-6">
-              Add New{' '}
-              {activeTab === 'periods'
-                ? 'Period'
-                : activeTab === 'sections'
-                  ? 'Section'
-                  : activeTab === 'workMethods'
-                    ? 'Work Method'
-                    : activeTab === 'commonDailyActions'
-                      ? isAdmin
-                        ? 'Common Daily Action'
-                        : 'Daily action'
-                      : 'Execution Technique'}
+              Add New {activeTab === 'periods' ? 'Period' : activeTab === 'sections' ? 'Section' : activeTab === 'commonDailyActions' ? 'Common Daily Action' : 'Execution Technique'}
             </h3>
             
-            {/* Info Banner — Super Admin only (user accounts edit one language) */}
-            {isAdmin && (
-              <div className="mb-6 p-3 bg-blue-50 border-2 border-blue-300 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Globe className="w-5 h-5 text-blue-700" />
-                  <span className="text-sm font-semibold text-blue-900">
-                    Edit in all languages simultaneously - changes save to all language libraries at once!
-                  </span>
-                </div>
+            {/* Info Banner */}
+            <div className="mb-6 p-3 bg-blue-50 border-2 border-blue-300 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Globe className="w-5 h-5 text-blue-700" />
+                <span className="text-sm font-semibold text-blue-900">
+                  Edit in all languages simultaneously - changes save to all language libraries at once!
+                </span>
               </div>
-            )}
+            </div>
 
             {isAdmin && activeTab === 'periods' && (
               <div className="mb-6 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                 <p className="text-sm text-amber-950">
                   <span className="font-semibold">Super Admin — Periods:</span> English (EN) is the default reference
                   language. The stored primary name and description are the English fields; other languages are saved as
-                  translations. Language blocks are listed with English first. If you have not entered a title or
-                  description for a language yet, the English text is shown in{' '}
-                  <span className="font-semibold text-red-700">red</span> in that language&apos;s fields as a reminder to
-                  add a translation.
+                  translations. Language blocks are listed with English first.
                 </p>
               </div>
             )}
             
             {/* Global Fields (Code & Color) */}
             <div className="space-y-4 mb-6">
-              {(activeTab === 'sections' ||
-                activeTab === 'workMethods' ||
-                activeTab === 'commonDailyActions') && (
+              {(activeTab === 'sections' || activeTab === 'commonDailyActions') && (
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Code{' '}
-                    <span className="text-gray-500">
-                      {isAdmin ? '(max 5 characters, same for all languages)' : '(max 5 characters)'}
-                    </span>
+                    Code <span className="text-gray-500">(max 5 characters, same for all languages)</span>
                   </label>
                   <input
                     type="text"
@@ -3538,7 +3490,7 @@ export default function ToolsSettings({
               {activeTab === 'commonDailyActions' && (
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Picture {isAdmin && <span className="text-gray-500">(same for all languages)</span>}
+                    Picture <span className="text-gray-500">(same for all languages)</span>
                   </label>
                   <div className="flex items-center gap-3">
                     <input
@@ -3571,7 +3523,7 @@ export default function ToolsSettings({
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Color {isAdmin && <span className="text-gray-500">(same for all languages)</span>}
+                  Color <span className="text-gray-500">(same for all languages)</span>
                 </label>
                 <div className="flex items-center gap-4">
                   <div
@@ -3600,28 +3552,6 @@ export default function ToolsSettings({
               // Admin: Show all languages
               <div className="space-y-6">
                 <h4 className="text-lg font-semibold text-gray-800 border-b pb-2">Translations</h4>
-
-                {useEnglishFallbackRules && (
-                  <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg flex flex-wrap items-center gap-3">
-                    <p className="text-sm text-gray-700 flex-1 min-w-[220px]">
-                      Fill all languages from the <span className="font-semibold">English (EN)</span> title and
-                      description — same <span className="font-semibold">Translation</span> service as{' '}
-                      <span className="font-semibold">Language → Long texts</span>.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => void handleTranslateNewItemFields()}
-                      disabled={isTranslatingToolsFields}
-                      className={`px-6 py-2.5 rounded-lg font-bold border-2 transition ${
-                        isTranslatingToolsFields
-                          ? 'bg-gray-200 text-gray-500 border-gray-300 cursor-not-allowed'
-                          : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50 hover:border-gray-400'
-                      }`}
-                    >
-                      {isTranslatingToolsFields ? 'Translating…' : 'Translation'}
-                    </button>
-                  </div>
-                )}
                 
                 {adminTranslationLanguages.map((lang) => (
                   <div key={lang.code} className="border-2 border-gray-200 rounded-lg p-4 bg-gray-50">
@@ -3647,6 +3577,7 @@ export default function ToolsSettings({
                           )}
                           onChange={(e) => {
                             const value = e.target.value.slice(0, 30);
+<<<<<<< HEAD
                             setNewItemTranslations((prev) => {
                               const cur = prev[lang.code] ?? { title: '', description: '' };
                               return {
@@ -3656,6 +3587,14 @@ export default function ToolsSettings({
                                   title: value,
                                 },
                               };
+=======
+                            setNewItemTranslations({
+                              ...newItemTranslations,
+                              [lang.code]: {
+                                title: value,
+                                description: newItemTranslations[lang.code]?.description || ''
+                              }
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             });
                           }}
                           placeholder={`Enter ${lang.name} title...`}
@@ -3695,6 +3634,7 @@ export default function ToolsSettings({
                           )}
                           onChange={(e) => {
                             const value = e.target.value.slice(0, 255);
+<<<<<<< HEAD
                             setNewItemTranslations((prev) => {
                               const cur = prev[lang.code] ?? { title: '', description: '' };
                               return {
@@ -3704,6 +3644,14 @@ export default function ToolsSettings({
                                   description: value,
                                 },
                               };
+=======
+                            setNewItemTranslations({
+                              ...newItemTranslations,
+                              [lang.code]: {
+                                title: newItemTranslations[lang.code]?.title || '',
+                                description: value
+                              }
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             });
                           }}
                           placeholder={`Enter ${lang.name} description...`}
@@ -3737,13 +3685,6 @@ export default function ToolsSettings({
             ) : (
               // Non-Admin: Only show current language fields
               <div className="space-y-4">
-                {activeTab === 'commonDailyActions' && (
-                  <p className="text-sm text-gray-600">
-                    Title and description are stored in{' '}
-                    <span className="font-semibold">{profileLanguageLabel}</span>, the same language used when you load
-                    defaults from Movesbook.
-                  </p>
-                )}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Title <span className="text-gray-500">(max 30 chars)</span>
@@ -3752,11 +3693,7 @@ export default function ToolsSettings({
                     type="text"
                     value={newItem.title}
                     onChange={(e) => setNewItem({ ...newItem, title: e.target.value.slice(0, 30) })}
-                    placeholder={
-                      activeTab === 'commonDailyActions'
-                        ? `Enter title in ${profileLanguageLabel}...`
-                        : 'Enter title...'
-                    }
+                    placeholder="Enter title..."
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     maxLength={30}
                   />
@@ -3772,11 +3709,7 @@ export default function ToolsSettings({
                   <textarea
                     value={newItem.description}
                     onChange={(e) => setNewItem({ ...newItem, description: e.target.value.slice(0, 255) })}
-                    placeholder={
-                      activeTab === 'commonDailyActions'
-                        ? `Enter description in ${profileLanguageLabel}...`
-                        : 'Enter description...'
-                    }
+                    placeholder="Enter description..."
                     rows={3}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     maxLength={255}
@@ -3816,18 +3749,7 @@ export default function ToolsSettings({
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-2xl font-bold mb-6">
-              Edit{' '}
-              {activeTab === 'periods'
-                ? 'Period'
-                : activeTab === 'sections'
-                  ? 'Section'
-                  : activeTab === 'workMethods'
-                    ? 'Work Method'
-                    : activeTab === 'commonDailyActions'
-                      ? isAdmin
-                        ? 'Common Daily Action'
-                        : 'Daily action'
-                      : 'Execution Technique'}
+              Edit {activeTab === 'periods' ? 'Period' : activeTab === 'sections' ? 'Section' : activeTab === 'commonDailyActions' ? 'Common Daily Action' : 'Execution Technique'}
             </h3>
             
             {/* Info Banner - Only for Admin */}
@@ -3847,25 +3769,17 @@ export default function ToolsSettings({
                 <p className="text-sm text-amber-950">
                   <span className="font-semibold">Super Admin — Periods:</span> English (EN) is the default reference
                   language. The stored primary name and description are the English fields; other languages are saved as
-                  translations. Language blocks are listed with English first. If you have not entered a title or
-                  description for a language yet, the English text is shown in{' '}
-                  <span className="font-semibold text-red-700">red</span> in that language&apos;s fields as a reminder to
-                  add a translation.
+                  translations. Language blocks are listed with English first.
                 </p>
               </div>
             )}
 
             {/* Global Fields (Code & Color) */}
             <div className="space-y-4 mb-6">
-              {(activeTab === 'sections' ||
-                activeTab === 'workMethods' ||
-                activeTab === 'commonDailyActions') && (
+              {(activeTab === 'sections' || activeTab === 'commonDailyActions') && (
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Code{' '}
-                    <span className="text-gray-500">
-                      {isAdmin ? '(max 5 characters, same for all languages)' : '(max 5 characters)'}
-                    </span>
+                    Code <span className="text-gray-500">(max 5 characters, same for all languages)</span>
                   </label>
                   <input
                     type="text"
@@ -3887,7 +3801,7 @@ export default function ToolsSettings({
               {activeTab === 'commonDailyActions' && (
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Picture {isAdmin && <span className="text-gray-500">(same for all languages)</span>}
+                    Picture <span className="text-gray-500">(same for all languages)</span>
                   </label>
                   <div className="flex items-center gap-3">
                     <input
@@ -3920,7 +3834,7 @@ export default function ToolsSettings({
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Color {isAdmin && <span className="text-gray-500">(same for all languages)</span>}
+                  Color <span className="text-gray-500">(same for all languages)</span>
                 </label>
                 <div className="flex items-center gap-4">
                   <div
@@ -3949,28 +3863,6 @@ export default function ToolsSettings({
               // Admin: Show all languages
               <div className="space-y-6">
                 <h4 className="text-lg font-semibold text-gray-800 border-b pb-2">Translations</h4>
-
-                {useEnglishFallbackRules && (
-                  <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg flex flex-wrap items-center gap-3">
-                    <p className="text-sm text-gray-700 flex-1 min-w-[220px]">
-                      Fill all languages from the <span className="font-semibold">English (EN)</span> title and
-                      description — same <span className="font-semibold">Translation</span> service as{' '}
-                      <span className="font-semibold">Language → Long texts</span>.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => void handleTranslateEditItemFields()}
-                      disabled={isTranslatingToolsFields}
-                      className={`px-6 py-2.5 rounded-lg font-bold border-2 transition ${
-                        isTranslatingToolsFields
-                          ? 'bg-gray-200 text-gray-500 border-gray-300 cursor-not-allowed'
-                          : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50 hover:border-gray-400'
-                      }`}
-                    >
-                      {isTranslatingToolsFields ? 'Translating…' : 'Translation'}
-                    </button>
-                  </div>
-                )}
                 
                 {adminTranslationLanguages.map((lang) => (
                   <div key={lang.code} className="border-2 border-gray-200 rounded-lg p-4 bg-gray-50">
@@ -3996,6 +3888,7 @@ export default function ToolsSettings({
                           )}
                           onChange={(e) => {
                             const value = e.target.value.slice(0, 30);
+<<<<<<< HEAD
                             setEditItemTranslations((prev) => {
                               const cur = prev[lang.code] ?? { title: '', description: '' };
                               return {
@@ -4005,6 +3898,14 @@ export default function ToolsSettings({
                                   title: value,
                                 },
                               };
+=======
+                            setEditItemTranslations({
+                              ...editItemTranslations,
+                              [lang.code]: {
+                                title: value,
+                                description: editItemTranslations[lang.code]?.description || ''
+                              }
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             });
                           }}
                           placeholder={`Enter ${lang.name} title...`}
@@ -4044,6 +3945,7 @@ export default function ToolsSettings({
                           )}
                           onChange={(e) => {
                             const value = e.target.value.slice(0, 255);
+<<<<<<< HEAD
                             setEditItemTranslations((prev) => {
                               const cur = prev[lang.code] ?? { title: '', description: '' };
                               return {
@@ -4053,6 +3955,14 @@ export default function ToolsSettings({
                                   description: value,
                                 },
                               };
+=======
+                            setEditItemTranslations({
+                              ...editItemTranslations,
+                              [lang.code]: {
+                                title: editItemTranslations[lang.code]?.title || '',
+                                description: value
+                              }
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             });
                           }}
                           placeholder={`Enter ${lang.name} description...`}
@@ -4086,13 +3996,6 @@ export default function ToolsSettings({
             ) : (
               // Non-Admin: Only show current language fields
               <div className="space-y-4">
-                {activeTab === 'commonDailyActions' && (
-                  <p className="text-sm text-gray-600">
-                    Title and description are stored in{' '}
-                    <span className="font-semibold">{profileLanguageLabel}</span>, the same language used when you load
-                    defaults from Movesbook.
-                  </p>
-                )}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Title <span className="text-gray-500">(max 30 chars)</span>
@@ -4101,11 +4004,7 @@ export default function ToolsSettings({
                     type="text"
                     value={editingItem.title}
                     onChange={(e) => setEditingItem({ ...editingItem, title: e.target.value.slice(0, 30) })}
-                    placeholder={
-                      activeTab === 'commonDailyActions'
-                        ? `Enter title in ${profileLanguageLabel}...`
-                        : 'Enter title...'
-                    }
+                    placeholder="Enter title..."
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     maxLength={30}
                   />
@@ -4121,11 +4020,7 @@ export default function ToolsSettings({
                   <textarea
                     value={editingItem.description}
                     onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value.slice(0, 255) })}
-                    placeholder={
-                      activeTab === 'commonDailyActions'
-                        ? `Enter description in ${profileLanguageLabel}...`
-                        : 'Enter description...'
-                    }
+                    placeholder="Enter description..."
                     rows={3}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     maxLength={255}
@@ -4842,7 +4737,7 @@ export default function ToolsSettings({
             <p className="text-gray-600 mb-4">
               {isAdmin ? (
                 <>
-                  You are about to save <strong>all current settings from every tab</strong> as global <strong>Movesbook defaults</strong>. What you save includes the data on screen now — including <strong>translations on each item for every supported language</strong> you have filled in (not just one display language).
+                  You are about to save <strong>ALL CURRENT SETTINGS FROM ALL TABS</strong> as <strong>DEFAULT</strong> for <strong>{SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name}</strong>.
                 </>
               ) : (
                 <>
@@ -4852,7 +4747,7 @@ export default function ToolsSettings({
             </p>
             {isAdmin && (
               <div className="text-sm text-orange-700 bg-orange-50 p-3 rounded-lg mb-4 space-y-2">
-                <p><strong>📌 What will be saved:</strong></p>
+                <p><strong>📌 What will be saved to {SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name.toUpperCase()}:</strong></p>
                 <ul className="list-disc ml-5 space-y-1">
                   <li><strong>Periods:</strong> All periods from Periods tab</li>
                   <li><strong>Sections:</strong> All sections from Sections tab</li>
@@ -4862,10 +4757,14 @@ export default function ToolsSettings({
                   <li><strong>Library:</strong> All exercises from My Library tab</li>
                   <li><strong>Devices:</strong> All devices from Device Enabled tab</li>
                 </ul>
+<<<<<<< HEAD
                 <p className="pt-2">
                   <strong>👥 For users:</strong> When they use <strong>Load</strong> in Language Defaults (Load admin defaults), those defaults are applied{' '}
                   <strong>in their profile language</strong>. Each user should set <strong>language</strong> in their profile so the system knows which locale to load.
                 </p>
+=======
+                <p className="pt-2 font-semibold"><strong>👥 For users:</strong> All these settings will be available when they click "Load Admin Defaults" button.</p>
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
               </div>
             )}
             {!isAdmin && (
@@ -4900,6 +4799,44 @@ export default function ToolsSettings({
                   setShowPasswordDialog(false);
                   setSuperAdminPassword('');
                 }}
+                className="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Load Language Defaults Dialog */}
+      {showLoadDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full">
+            <h3 className="text-xl font-semibold mb-4">📥 Load {SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name} Defaults</h3>
+            <p className="text-gray-600 mb-4">
+              Load default tools settings for <strong>{SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name}</strong>?
+            </p>
+            <div className="text-sm text-blue-700 bg-blue-50 p-3 rounded-lg mb-3">
+              <p className="font-semibold mb-1">📖 How it works:</p>
+              <ol className="list-decimal ml-5 space-y-1">
+                <li>Loads {SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name} defaults for ALL tabs</li>
+                <li>You can edit/translate items in any tab (Sports, Equipment, etc.)</li>
+                <li>Select a different language if needed (e.g., Russian)</li>
+                <li>Click "Save to [Language]" to save ALL tabs at once</li>
+              </ol>
+            </div>
+            <p className="text-sm text-yellow-700 bg-yellow-50 p-3 rounded-lg mb-4">
+              ⚠️ <strong>Note:</strong> This will replace ALL current unsaved changes in ALL tabs with the {SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name} defaults.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleLoadConfirm}
+                className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold"
+              >
+                Load {SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name}
+              </button>
+              <button
+                onClick={() => setShowLoadDialog(false)}
                 className="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
               >
                 Cancel

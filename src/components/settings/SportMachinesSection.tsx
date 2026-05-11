@@ -10,16 +10,18 @@ import {
   Plus,
   Upload,
   Dumbbell,
-  ExternalLink,
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
   parseJsonRecord,
   parseStringArrayJson,
 } from '@/lib/sportMachineHelpers';
+<<<<<<< HEAD
 import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
 import { MUSCULAR_SECTORS } from '@/constants/moveframe.constants';
 import { getAuthHeaders, getAuthToken } from '@/utils/auth.utils';
+=======
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
 type CompanyOpt = { id: string; name: string; country: string | null; logoUrl: string | null };
 
@@ -40,15 +42,9 @@ type MachineRow = {
   sportMachineCompanyId: string | null;
 };
 
-const MACHINE_LANG_CODES = SUPPORTED_LANGUAGES.map((l) => l.code);
+const LANG_CODES = ['en', 'it', 'de', 'fr', 'es'];
 
-function muscularSectorSelectOptions(currentMain: string): string[] {
-  const cur = currentMain.trim();
-  const list = [...MUSCULAR_SECTORS];
-  if (cur && !list.includes(cur)) return [cur, ...list];
-  return list;
-}
-
+<<<<<<< HEAD
 /** JSON requests: Bearer + Content-Type. FormData uploads: Bearer only (browser sets multipart boundary). */
 function jsonAuthHeaders(): HeadersInit {
   const auth = getAuthHeaders();
@@ -60,36 +56,24 @@ function jsonAuthHeaders(): HeadersInit {
 
 function bearerAuthHeaders(): HeadersInit {
   return getAuthHeaders();
-}
-
-function openVideoPreview(url: string) {
-  const raw = url.trim();
-  if (!raw) {
-    alert('Paste a URL first.');
-    return;
-  }
-  const href = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  if (href.length < 8 || !/\./.test(href)) {
-    alert('Could not open preview — check the URL.');
-    return;
-  }
-  window.open(href, '_blank', 'noopener,noreferrer');
+=======
+function authHeaders(): HeadersInit {
+  const token =
+    typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 }
 
 export default function SportMachinesSection() {
   const { currentLanguage } = useLanguage();
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
-  const [catalogError, setCatalogError] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [displayMode, setDisplayMode] = useState<'grid' | 'label'>('grid');
-  const [showMachineForm, setShowMachineForm] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [descLang, setDescLang] = useState(() => {
-    const c = (currentLanguage || 'en').toLowerCase();
-    return MACHINE_LANG_CODES.includes(c) ? c : 'en';
-  });
+  const [descLang, setDescLang] = useState(currentLanguage || 'en');
 
   const [sortBy, setSortBy] = useState<'name' | 'company'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -103,12 +87,9 @@ export default function SportMachinesSection() {
   const [companyName, setCompanyName] = useState('');
   const [originalName, setOriginalName] = useState('');
   const [namesByLang, setNamesByLang] = useState<Record<string, string>>({});
-  const [langTab, setLangTab] = useState(() => {
-    const c = (currentLanguage || 'en').toLowerCase();
-    return MACHINE_LANG_CODES.includes(c) ? c : 'en';
-  });
+  const [langTab, setLangTab] = useState(currentLanguage || 'en');
   const [mainArea, setMainArea] = useState('');
-  const [secondaryTags, setSecondaryTags] = useState<string[]>([]);
+  const [secondaryCsv, setSecondaryCsv] = useState('');
   const [code, setCode] = useState('');
   const [pictureAUrl, setPictureAUrl] = useState<string | null>(null);
   const [pictureBUrl, setPictureBUrl] = useState<string | null>(null);
@@ -118,6 +99,7 @@ export default function SportMachinesSection() {
   const [descByLang, setDescByLang] = useState<Record<string, string>>({});
 
   const loadCompanies = useCallback(async () => {
+<<<<<<< HEAD
     try {
       const res = await fetch('/api/workouts/machine-companies-catalog', {
         headers: bearerAuthHeaders(),
@@ -136,6 +118,13 @@ export default function SportMachinesSection() {
       setCompanies([]);
       setCatalogError('Could not load companies');
     }
+=======
+    const res = await fetch('/api/workouts/machine-companies-catalog', {
+      headers: authHeaders(),
+    });
+    const data = await res.json();
+    if (res.ok) setCompanies(data.companies || []);
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   }, []);
 
   const loadMachines = useCallback(async () => {
@@ -165,12 +154,6 @@ export default function SportMachinesSection() {
     loadMachines();
   }, [loadMachines]);
 
-  useEffect(() => {
-    const m = mainArea.trim();
-    if (!m) return;
-    setSecondaryTags((prev) => prev.filter((t) => t !== m));
-  }, [mainArea]);
-
   const applyFilters = () => {
     setAppliedName(filterName.trim());
     setAppliedCompany(filterCompany.trim());
@@ -187,11 +170,7 @@ export default function SportMachinesSection() {
     });
     const data = await res.json();
     if (!res.ok || !data.path) {
-      alert(
-        typeof data.error === 'string'
-          ? data.error
-          : `Upload failed${res.status === 401 ? ' (sign in as a user with a valid session, or use Super Admin token).' : ''}`
-      );
+      alert(data.error || 'Upload failed');
       return null;
     }
     return data.path as string;
@@ -204,7 +183,7 @@ export default function SportMachinesSection() {
     setOriginalName('');
     setNamesByLang({});
     setMainArea('');
-    setSecondaryTags([]);
+    setSecondaryCsv('');
     setCode('');
     setPictureAUrl(null);
     setPictureBUrl(null);
@@ -221,18 +200,8 @@ export default function SportMachinesSection() {
     setOriginalName(m.originalName);
     setNamesByLang(parseJsonRecord(m.nameByLanguage));
     setMainArea(m.mainArea);
-    let sec = parseStringArrayJson(m.secondaryAreasJson);
-    if (
-      sec.length === 0 &&
-      m.secondaryAreasJson &&
-      !m.secondaryAreasJson.trim().startsWith('[')
-    ) {
-      sec = m.secondaryAreasJson
-        .split(',')
-        .map((x) => x.trim())
-        .filter(Boolean);
-    }
-    setSecondaryTags(sec);
+    const sec = parseStringArrayJson(m.secondaryAreasJson);
+    setSecondaryCsv(sec.join(', '));
     setCode(m.code);
     setPictureAUrl(m.pictureAUrl);
     setPictureBUrl(m.pictureBUrl);
@@ -246,16 +215,6 @@ export default function SportMachinesSection() {
     if (!id) return;
     const c = companies.find((x) => x.id === id);
     if (c) setCompanyName(c.name);
-  };
-
-  /** Keep typed names manual: drop catalog link if the label no longer matches the chosen company. */
-  const handleCompanyNameChange = (value: string) => {
-    setCompanyName(value);
-    if (!companyId) return;
-    const picked = companies.find((x) => x.id === companyId);
-    if (!picked || picked.name.trim() !== value.trim()) {
-      setCompanyId('');
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -280,7 +239,7 @@ export default function SportMachinesSection() {
         originalName: originalName.trim(),
         nameByLanguage: namesByLang,
         mainArea: mainArea.trim(),
-        secondaryAreas: secondaryTags.join(', '),
+        secondaryAreas: secondaryCsv,
         code: code.trim(),
         pictureAUrl,
         pictureBUrl,
@@ -405,7 +364,7 @@ export default function SportMachinesSection() {
           onChange={(e) => setDescLang(e.target.value)}
           className="border rounded px-2 py-1 text-sm"
         >
-          {MACHINE_LANG_CODES.map((c) => (
+          {LANG_CODES.map((c) => (
             <option key={c} value={c}>
               {c.toUpperCase()}
             </option>
@@ -419,29 +378,16 @@ export default function SportMachinesSection() {
   return (
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-slate-50 to-indigo-50 rounded-xl border border-slate-200 p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-              <Dumbbell className="w-6 h-6 text-indigo-600" />
-              Sport instruments — Machines
-            </h3>
-            <p className="text-sm text-gray-600 mt-1">
-              Catalog machines with company, multilingual names and descriptions, areas, codes,
-              photos, and video. Company name can be typed or chosen from the Companies catalog (Super Admin → Company
-              settings).
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowMachineForm((v) => !v)}
-            className="shrink-0 px-3 py-2 text-sm font-medium rounded-lg border border-slate-300 bg-white text-gray-800 hover:bg-slate-50"
-          >
-            {showMachineForm ? 'Hide add/edit form' : 'Show add/edit form'}
-          </button>
-        </div>
+        <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+          <Dumbbell className="w-6 h-6 text-indigo-600" />
+          Sport instruments — Machines
+        </h3>
+        <p className="text-sm text-gray-600 mt-1">
+          Catalog machines with company, multilingual names and descriptions, areas, codes,
+          photos, and video. Companies list comes from Super Admin catalog when available.
+        </p>
       </div>
 
-      {showMachineForm && (
       <form
         onSubmit={handleSubmit}
         className="rounded-xl border border-gray-200 p-6 space-y-4 bg-white dark:bg-gray-800 dark:border-gray-700"
@@ -452,50 +398,34 @@ export default function SportMachinesSection() {
         </h4>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="md:col-span-2">
+          <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
-              Company name <span className="text-red-600">*</span>
-              <span className="text-gray-400 font-normal">
-                {' '}
-                — choose from Companies (catalog) or type any name
-              </span>
+              Company (from catalog)
             </label>
-            <div className="flex rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500">
-              <select
-                value={companyId}
-                onChange={(e) => handleCompanyPick(e.target.value)}
-                className="shrink-0 max-w-[40%] sm:max-w-[13rem] border-0 border-r border-gray-300 dark:border-gray-600 px-2 py-2.5 text-sm bg-gray-50 dark:bg-gray-800 dark:text-white cursor-pointer"
-                aria-label="Load company from Companies catalog"
-                title="Companies from Super Admin → Company settings (same catalog as here)"
-              >
-                <option value="">Catalog…</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                    {c.country ? ` (${c.country})` : ''}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text"
-                value={companyName}
-                onChange={(e) => handleCompanyNameChange(e.target.value)}
-                className="min-w-0 flex-1 border-0 px-3 py-2.5 text-sm dark:bg-gray-700 dark:text-white"
-                placeholder="e.g. Technogym or any manufacturer"
-                required
-                autoComplete="off"
-              />
-            </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-              Pick a row in the catalog to fill the name and link; if you edit the text so it no longer matches that
-              company, the link is cleared and the name is stored as typed.
-            </p>
-            {catalogError ? (
-              <p className="text-[11px] text-red-600 mt-1" role="alert">
-                {catalogError} — company list is empty until this succeeds (check login: user token or Super Admin
-                token).
-              </p>
-            ) : null}
+            <select
+              value={companyId}
+              onChange={(e) => handleCompanyPick(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm dark:bg-gray-700 dark:text-white"
+            >
+              <option value="">— Manual name below —</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.country ? ` (${c.country})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Company name *
+            </label>
+            <input
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm dark:bg-gray-700 dark:text-white"
+              required
+            />
           </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -510,7 +440,7 @@ export default function SportMachinesSection() {
           </div>
           <div className="md:col-span-2">
             <div className="flex flex-wrap gap-2 mb-2">
-              {MACHINE_LANG_CODES.map((code) => (
+              {LANG_CODES.map((code) => (
                 <button
                   key={code}
                   type="button"
@@ -539,70 +469,25 @@ export default function SportMachinesSection() {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
-              Main area <span className="text-red-600">*</span>
+              Main area *
             </label>
-            <select
+            <input
               value={mainArea}
               onChange={(e) => setMainArea(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 text-sm dark:bg-gray-700 dark:text-white"
               required
-            >
-              <option value="">Select muscular area…</option>
-              {muscularSectorSelectOptions(mainArea).map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            />
           </div>
-          <div className="md:col-span-2">
+          <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
-              Other muscular areas
+              Other areas (comma-separated)
             </label>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-2">
-              Add extra sectors as tags (same list as main area; main area is excluded automatically).
-            </p>
-            <div className="flex flex-wrap gap-2 min-h-[2rem] mb-2">
-              {secondaryTags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-900 dark:text-indigo-100 px-2.5 py-0.5 text-xs font-medium border border-indigo-200 dark:border-indigo-700"
-                >
-                  {tag}
-                  <button
-                    type="button"
-                    className="text-indigo-700 dark:text-indigo-200 hover:text-red-600 font-bold leading-none px-0.5"
-                    onClick={() => setSecondaryTags((prev) => prev.filter((t) => t !== tag))}
-                    aria-label={`Remove ${tag}`}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-            <select
-              className="w-full max-w-md border rounded-lg px-3 py-2 text-sm dark:bg-gray-700 dark:text-white"
-              defaultValue=""
-              onChange={(e) => {
-                const v = e.target.value;
-                e.target.value = '';
-                if (!v) return;
-                setSecondaryTags((prev) => {
-                  if (prev.includes(v)) return prev;
-                  if (v === mainArea.trim()) return prev;
-                  return [...prev, v];
-                });
-              }}
-            >
-              <option value="">+ Add sector…</option>
-              {MUSCULAR_SECTORS.filter(
-                (s) => s !== mainArea.trim() && !secondaryTags.includes(s)
-              ).map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            <input
+              value={secondaryCsv}
+              onChange={(e) => setSecondaryCsv(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm dark:bg-gray-700 dark:text-white"
+              placeholder="e.g. Upper body, Accessories"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -615,28 +500,17 @@ export default function SportMachinesSection() {
               required
             />
           </div>
-          <div className="md:col-span-2">
+          <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
               Video URL
             </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={videoUrl}
-                onChange={(e) => setVideoUrl(e.target.value)}
-                className="min-w-0 flex-1 border rounded-lg px-3 py-2 text-sm dark:bg-gray-700 dark:text-white"
-                placeholder="https://…"
-              />
-              <button
-                type="button"
-                onClick={() => openVideoPreview(videoUrl)}
-                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-600"
-                title="Open URL in a new tab"
-              >
-                <ExternalLink className="w-4 h-4" aria-hidden />
-                Preview
-              </button>
-            </div>
+            <input
+              type="url"
+              value={videoUrl}
+              onChange={(e) => setVideoUrl(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm dark:bg-gray-700 dark:text-white"
+              placeholder="https://"
+            />
           </div>
 
           <div>
@@ -715,7 +589,7 @@ export default function SportMachinesSection() {
                 />
               </label>
               <input
-                type="text"
+                type="url"
                 value={newCatalogUrl}
                 onChange={(e) => setNewCatalogUrl(e.target.value)}
                 placeholder="Or paste image URL"
@@ -789,7 +663,6 @@ export default function SportMachinesSection() {
           )}
         </div>
       </form>
-      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2 items-end">

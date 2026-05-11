@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const sectionBase = {
+      const sectionData = {
         userId: decoded.userId,
         name: sectionName.trim(),
         code: section.code && typeof section.code === 'string' && section.code.length <= 5 ? section.code.trim() : null,
@@ -101,39 +101,6 @@ export async function POST(request: NextRequest) {
         color: section.color && typeof section.color === 'string' ? section.color : '#3b82f6',
         displayOrder: section.order !== undefined ? section.order : i // Use order from client or index
       };
-
-      const translationPatch: {
-        descriptionTranslations?: string | null;
-        nameTranslations?: string | null;
-      } = {};
-
-      if (section.descriptionByLanguage !== undefined && section.descriptionByLanguage !== null) {
-        const descByLang = section.descriptionByLanguage;
-        let descriptionTranslations: string | null = null;
-        if (descByLang && typeof descByLang === 'object') {
-          const cleaned: Record<string, string> = {};
-          for (const [k, v] of Object.entries(descByLang)) {
-            if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim().slice(0, 2000);
-          }
-          if (Object.keys(cleaned).length > 0) descriptionTranslations = JSON.stringify(cleaned);
-        }
-        translationPatch.descriptionTranslations = descriptionTranslations;
-      }
-
-      if (section.titleByLanguage !== undefined && section.titleByLanguage !== null) {
-        const titlesByLang = section.titleByLanguage;
-        let nameTranslations: string | null = null;
-        if (titlesByLang && typeof titlesByLang === 'object') {
-          const cleaned: Record<string, string> = {};
-          for (const [k, v] of Object.entries(titlesByLang)) {
-            if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim().slice(0, 255);
-          }
-          if (Object.keys(cleaned).length > 0) nameTranslations = JSON.stringify(cleaned);
-        }
-        translationPatch.nameTranslations = nameTranslations;
-      }
-
-      const sectionData = { ...sectionBase, ...translationPatch };
 
       // If section has an ID and it exists in database, update it
       if (section.id && existingIds.has(section.id)) {

@@ -2,29 +2,6 @@
 
 import React, { useState } from 'react';
 import WorkoutTable from './WorkoutTable';
-
-const ACTION_TIME_TAG = /\[ACTION_TIME\](\d{2}:\d{2})\[\/ACTION_TIME\]/;
-const ACTION_TITLE_TAG = /\[ACTION_TITLE\]([\s\S]*?)\[\/ACTION_TITLE\]/;
-
-function extractActionShortTitle(rawDescription: string | null | undefined): string {
-  if (!rawDescription) return '';
-  const m = rawDescription.match(ACTION_TITLE_TAG);
-  return (m?.[1] || '').trim();
-}
-
-function extractActionStartTime(rawDescription: string | null | undefined): string {
-  if (!rawDescription) return '';
-  const m = rawDescription.match(ACTION_TIME_TAG);
-  return m?.[1] ?? '';
-}
-
-function stripActionMetaTags(rawDescription: string | null | undefined): string {
-  if (!rawDescription) return '';
-  return rawDescription
-    .replace(ACTION_TITLE_TAG, '')
-    .replace(ACTION_TIME_TAG, '')
-    .trim();
-}
 import MoveframeTable from './MoveframeTable';
 import MovelapTable from './MovelapTable';
 
@@ -145,36 +122,14 @@ export default function WorkoutHierarchyView({
                 key={pa.id}
                 className="rounded-lg border-2 px-3 py-2 text-sm shadow-sm max-w-md"
                 style={{
-                  backgroundColor: '#ffffff',
-                  color: '#111827',
+                  backgroundColor: pa.backgroundColor || '#f8fafc',
+                  color: pa.textColor || '#111827',
                   borderColor: pa.colorSnapshot || '#cbd5e1',
                 }}
-                title={stripActionMetaTags(pa.description || '') || pa.nameSnapshot || ''}
+                title={pa.description || pa.nameSnapshot || ''}
               >
                 <span className="mr-2">{pa.iconSnapshot || '•'}</span>
-                <span
-                  className="inline-block w-3 h-3 rounded-full border border-gray-300 align-middle mr-2"
-                  style={{ backgroundColor: pa.colorSnapshot || '#6366f1' }}
-                  title={pa.nameSnapshot || 'Action color'}
-                />
                 <span className="font-medium">{pa.nameSnapshot}</span>
-                {extractActionShortTitle(pa.description || '') && (
-                  <span
-                    className="ml-2 inline-block rounded px-1.5 py-0.5 text-xs font-medium border"
-                    style={{
-                      backgroundColor: pa.backgroundColor || '#f8fafc',
-                      color: pa.textColor || '#111827',
-                      borderColor: pa.colorSnapshot || '#cbd5e1',
-                    }}
-                  >
-                    {extractActionShortTitle(pa.description || '')}
-                  </span>
-                )}
-                {extractActionStartTime(pa.description || '') && (
-                  <span className="ml-2 text-xs text-gray-500">
-                    {extractActionStartTime(pa.description || '')}
-                  </span>
-                )}
                 {pa.url ? (
                   <a
                     href={pa.url}

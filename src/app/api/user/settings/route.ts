@@ -3,7 +3,6 @@ import { Prisma } from '@prisma/client';
 import { prisma, prismaConnect, resetPrismaClient } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { resolveWorkoutDatabaseUserId } from '@/lib/workoutUserId';
-import { YOUTUBE_CHANNEL_URL_KEY } from '@/utils/youtubeChannelUrl';
 
 function isPrismaEngineTransportError(error: unknown): boolean {
   if (!(error instanceof Prisma.PrismaClientUnknownRequestError)) return false;
@@ -32,6 +31,7 @@ function safeJsonParse(jsonString: string | null, defaultValue: any = {}) {
   }
 }
 
+<<<<<<< HEAD
 async function getUserYoutubeChannelUrl(userId: string): Promise<string | null> {
   try {
     const row = await prisma.user.findUnique({
@@ -67,6 +67,8 @@ async function setUserYoutubeChannelUrl(userId: string, value: string | null): P
   }
 }
 
+=======
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 // GET - Fetch user settings (with safe JSON parsing and auto-recovery)
 
 export async function GET(request: NextRequest) {
@@ -145,8 +147,7 @@ export async function GET(request: NextRequest) {
         lazyLoading: true,
         dashboardLayout: 'default',
         language: 'en',
-        weeklyStructureV1: null,
-        youtubeChannelUrl: null
+        weeklyStructureV1: null
       });
     }
 
@@ -279,18 +280,7 @@ export async function GET(request: NextRequest) {
           : null
     };
 
-    const fromUser = (await getUserYoutubeChannelUrl(dbUserId))?.trim() || '';
-    const socialObj = response.socialSettings as Record<string, unknown> | null;
-    const legacy =
-      socialObj &&
-      typeof socialObj[YOUTUBE_CHANNEL_URL_KEY] === 'string' &&
-      String(socialObj[YOUTUBE_CHANNEL_URL_KEY]).trim()
-        ? String(socialObj[YOUTUBE_CHANNEL_URL_KEY]).trim()
-        : '';
-    return NextResponse.json({
-      ...response,
-      youtubeChannelUrl: fromUser || legacy || null
-    });
+    return NextResponse.json(response);
   } catch (error) {
     console.error('❌ Error fetching settings:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -339,17 +329,6 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-
-    if (Object.prototype.hasOwnProperty.call(body, 'youtubeChannelUrl')) {
-      const v = body.youtubeChannelUrl;
-      await setUserYoutubeChannelUrl(
-        dbUserId,
-        v === null || v === undefined || String(v).trim() === ''
-          ? null
-          : String(v).trim()
-      );
-      delete body.youtubeChannelUrl;
-    }
     
     // Convert all JSON objects to strings for database storage
     const jsonFields = [
@@ -441,11 +420,7 @@ export async function POST(request: NextRequest) {
           : null
     };
 
-    const ytPost = await getUserYoutubeChannelUrl(dbUserId);
-    return NextResponse.json({
-      ...response,
-      youtubeChannelUrl: ytPost ?? null
-    });
+    return NextResponse.json(response);
   } catch (error) {
     console.error('Error saving settings:', error);
     console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
@@ -494,17 +469,6 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-
-    if (Object.prototype.hasOwnProperty.call(body, 'youtubeChannelUrl')) {
-      const v = body.youtubeChannelUrl;
-      await setUserYoutubeChannelUrl(
-        dbUserId,
-        v === null || v === undefined || String(v).trim() === ''
-          ? null
-          : String(v).trim()
-      );
-      delete body.youtubeChannelUrl;
-    }
     
     // Convert objects to JSON strings for database
     const jsonFields = [
@@ -532,44 +496,30 @@ export async function PATCH(request: NextRequest) {
         } else {
           updateData[key] = v;
         }
-      } else if (
-        !['id', 'userId', 'createdAt', 'updatedAt', 'youtubeChannelUrl'].includes(key)
-      ) {
+      } else if (!['id', 'userId', 'createdAt', 'updatedAt'].includes(key)) {
         updateData[key] = body[key];
       }
     });
 
     let settings;
     try {
-      if (Object.keys(updateData).length > 0) {
-        settings = await prisma.userSettings.upsert({
-          where: { userId: dbUserId },
-          update: updateData,
-          create: {
-            userId: dbUserId,
-            colorSettings: '{}',
-            widgetArrangement: '[]',
-            toolsSettings: '{}',
-            favouritesSettings: '{}',
-            myBestSettings: '{}',
-            adminSettings: '{}',
-            workoutPreferences: '{}',
-            socialSettings: '{}',
-            notificationSettings: '{}',
-            ...updateData
-          }
-        });
-      } else {
-        settings = await prisma.userSettings.findUnique({
-          where: { userId: dbUserId }
-        });
-        if (!settings) {
-          return NextResponse.json(
-            { error: 'User settings not initialized' },
-            { status: 404 }
-          );
+      settings = await prisma.userSettings.upsert({
+        where: { userId: dbUserId },
+        update: updateData,
+        create: {
+          userId: dbUserId,
+          colorSettings: '{}',
+          widgetArrangement: '[]',
+          toolsSettings: '{}',
+          favouritesSettings: '{}',
+          myBestSettings: '{}',
+          adminSettings: '{}',
+          workoutPreferences: '{}',
+          socialSettings: '{}',
+          notificationSettings: '{}',
+          ...updateData
         }
-      }
+      });
     } catch (dbError) {
       console.error('❌ Database error during upsert, attempting to fix corrupted data:', dbError);
       
@@ -622,11 +572,7 @@ export async function PATCH(request: NextRequest) {
           : null
     };
 
-    const ytRow = await getUserYoutubeChannelUrl(dbUserId);
-    return NextResponse.json({
-      ...response,
-      youtubeChannelUrl: ytRow ?? null
-    });
+    return NextResponse.json(response);
   } catch (error) {
     console.error('Error updating settings:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';

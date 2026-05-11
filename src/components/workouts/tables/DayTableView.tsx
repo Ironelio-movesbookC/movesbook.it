@@ -437,15 +437,15 @@ export default function DayTableView({
   };
 
   const toggleWeekWorkouts = () => {
-    // Always work with the current week only.
-    const weeksToToggle = [currentWeek].filter(Boolean);
+    // For Section B, work with ALL displayed weeks; for other sections, work with current week only
+    const weeksToToggle = activeSection === 'B' ? weeksToDisplay : [currentWeek].filter(Boolean);
     
     if (weeksToToggle.length === 0) return;
     
     const allDayIds: string[] = [];
     const allWorkoutIds: string[] = [];
     
-    // Collect all day and workout IDs from the current week only
+    // Collect all day and workout IDs from ALL displayed weeks
     weeksToToggle.forEach((week: any) => {
       if (!week || !week.days) return;
       
@@ -1029,9 +1029,9 @@ export default function DayTableView({
                 <button
                   onClick={toggleWeekWorkouts}
                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all shadow-md"
-                  title={expandState === 0 ? "Show workout headers for current week" : expandState === 1 ? "Show moveframes for current week" : "Collapse current week"}
+                  title={expandState === 0 ? "Show workout headers" : expandState === 1 ? "Show moveframes" : "Collapse all weeks"}
                 >
-                  {expandState === 0 ? 'Expand current week' : expandState === 1 ? 'Expand current week (with moveframes)' : 'Collapse current week'}
+                  {expandState === 0 ? 'Expand all the Weeks displayed' : expandState === 1 ? 'Expand all (with moveframes)' : 'Collapse all the weeks displayed'}
                 </button>
 
                  {/* Overview of the weeks displayed Button */}
@@ -1161,10 +1161,6 @@ export default function DayTableView({
           {weeksToDisplay.map((week, weekIdx) => {
             const weekDays = week?.days || [];
             const sortedWeekDays = [...weekDays].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-            const weekBgColor = week.period?.color || '#f3f4f6';
-            const weekTextColor = getContrastTextColor(weekBgColor);
-            const badgeBgColor = 'rgba(255, 255, 255, 0.9)';
-            const badgeTextColor = getContrastTextColor('#ffffff');
             
             console.log(`🔍 [DEBUG] Week ${weekIdx + 1}:`, {
               weekId: week.id,
@@ -1179,8 +1175,8 @@ export default function DayTableView({
                 <div 
                   className="rounded-t-lg px-4 py-3 flex items-center justify-between border-b-2 border-gray-300"
                   style={{ 
-                    backgroundColor: weekBgColor,
-                    color: weekTextColor
+                    backgroundColor: week.period?.color || '#f3f4f6',
+                    color: getContrastTextColor(week.period?.color || '#f3f4f6')
                   }}
                 >
                   {/* Left: Period Badge and Description */}
@@ -1195,20 +1191,15 @@ export default function DayTableView({
                         setSelectedPeriodForRange(null);
                         setShowPeriodSelector(true);
                       }}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all hover:scale-105 shadow border-2"
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all hover:scale-105 shadow border-2 bg-white/90"
                       style={{
-                        borderColor: week.period?.color || '#d1d5db',
-                        backgroundColor: badgeBgColor,
-                        color: badgeTextColor
+                        borderColor: week.period?.color || '#d1d5db'
                       }}
                       title="Set period for this week"
                     >
                       <div
-                        className="w-6 h-6 rounded-full border-2 shadow-sm"
-                        style={{
-                          backgroundColor: week.period?.color || 'transparent',
-                          borderColor: week.period?.color ? '#ffffff' : '#9ca3af'
-                        }}
+                        className="w-6 h-6 rounded-full border-2 border-white shadow-sm"
+                        style={{ backgroundColor: week.period?.color || '#3b82f6' }}
                       />
                       <span className="font-semibold text-base">
                         {week.period?.name || 'Set Period'}
@@ -1234,9 +1225,7 @@ export default function DayTableView({
                           }}
                         />
                       ) : (
-                        <span className="text-sm italic" style={{ color: weekTextColor, opacity: 0.85 }}>
-                          Click Edit to add description...
-                        </span>
+                        <span className="text-sm italic opacity-70">Click Edit to add description...</span>
                       )}
                     </div>
                   </div>

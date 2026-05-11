@@ -15,6 +15,7 @@ export function circuitLoadOfWorkToMacroFinal(load: unknown): string | null {
   return MACRO_FINAL_OPTIONS[parseInt(s, 10)] ?? null;
 }
 
+<<<<<<< HEAD
 /** Inter-station pause in circuit planner grid and Add/Edit station modal (seconds). */
 export const CIRCUIT_STATION_PAUSE_OPTIONS: { label: string; value: number }[] = [
   { label: '0"', value: 0 },
@@ -88,6 +89,8 @@ export const PLAN_GYM_WEEK_MACRO_MINUTE_LABELS: string[] = Array.from(
   (_, i) => `${i + 1}'`
 );
 
+=======
+>>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 // Muscular sectors for BODY_BUILDING (WEIGHTS)
 export const MUSCULAR_SECTORS = [
   'Shoulders',
@@ -111,19 +114,7 @@ export const MUSCULAR_SECTORS = [
 export const REST_TYPES = {
   SET_TIME: 'Set time',
   RESTART_TIME: 'Restart time',
-  SET_METERS: 'Set meters',
   RESTART_PULSE: 'Restart pulse'
-} as const;
-
-/**
- * Pause section — Pace field vs Mode (Stopped / Speed / Watts).
- * Stopped: fixed 0, disabled. Speed: decimal pace/speed. Watts: 0–999.
- */
-export const PAUSE_PACE_BY_MODE = {
-  speedPlaceholder: 'Min/km · Vel/h…',
-  speedTitle: 'Min/km or Vel/h (bike, mtb, ski)',
-  wattsPlaceholder: '0–999',
-  wattsTitle: 'from 0 to 999'
 } as const;
 
 // Reps type options (for non-distance sports)
@@ -952,28 +943,11 @@ export const DISTANCE_BASED_SPORTS = [
   'SKI',
   'SNOWBOARD',
   'WALKING',
-  'HIKING'
-] as const;
-
-/** Official moveframe UI: muscular dropdown + reps/tools table (not top-level series/reps/speed). */
-export const OFFICIAL_INDOOR_TOOLS_LAYOUT_SPORTS = [
+  'HIKING',
   'STRETCHING',
-  'GYMNASTIC',
-  'PILATES',
-  'YOGA',
-  'CALISTENIC',
-  'SPARTAN',
-  'CROSSFIT'
+  'CROSSFIT',
+  'SPARTAN'
 ] as const;
-
-export function isOfficialIndoorToolsLayoutSport(sport: string): boolean {
-  return (OFFICIAL_INDOOR_TOOLS_LAYOUT_SPORTS as readonly string[]).includes(sport);
-}
-
-/** Shared muscular-sector dropdown list (BODY BUILDING + official indoor tools). */
-export function isMuscularSectorDropdownSport(sport: string): boolean {
-  return sport === 'BODY_BUILDING' || isOfficialIndoorToolsLayoutSport(sport);
-}
 
 // Aerobic sports (use "reps" terminology)
 export const AEROBIC_SPORTS = [
