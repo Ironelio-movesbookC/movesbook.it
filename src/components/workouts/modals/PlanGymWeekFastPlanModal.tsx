@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
-import { X, Settings, RefreshCw, CheckCircle, Clock, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
+import { X, Settings, RefreshCw, CheckCircle, Clock, ChevronUp, ChevronDown, GripVertical, ChevronLeft } from 'lucide-react';
 import type { PlanGymWeekManualResult, ManualDaySector, ManualDayPlan } from './PlanGymWeekManualModal';
 import {
   ensureManualSectorShape,
@@ -17,10 +17,6 @@ import {
   type SeriesLevelCategory,
 } from '@/utils/seriesDistribution';
 import { GYM_WEEK_MUSCLE_GROUPS, type GymWeekMuscleGroup } from '@/constants/gymWeekMuscleGroups';
-import {
-  readGoalParamsFromWorkoutSettings,
-  computePlanGymWeekScalarDefaults,
-} from '@/utils/planGymWeekGoalScalars';
 import { GYM_WEEK_CATALOG_EXERCISES, pickRandomCatalogExerciseNamesForMuscleGroup } from '@/data/gymWeekExerciseCatalog';
 import { useFreeMoveExercises } from '@/hooks/useFreeMoveExercises';
 
@@ -180,13 +176,15 @@ interface PlanGymWeekFastPlanModalProps {
   plan:            PlanGymWeekManualResult;
   goals?:          GoalId[];
   trainingLevel?:  TrainingLevel | null;
+  /** Return to manual editor with current layout converted to manual sectors (optional). */
+  onBack?:         (plan: PlanGymWeekManualResult) => void;
   onClose:         () => void;
   onSave?:         (plan: PlanGymWeekManualResult) => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function PlanGymWeekFastPlanModal({
-  isOpen, plan, goals = [], trainingLevel, onClose, onSave,
+  isOpen, plan, goals = [], trainingLevel, onBack, onClose, onSave,
 }: PlanGymWeekFastPlanModalProps) {
 
   const levelCat = trainingLevelToCategory(trainingLevel);
@@ -603,6 +601,15 @@ export default function PlanGymWeekFastPlanModal({
     onSave?.(result);
     setSaved(true);
   };
+
+  const handleBackToManual = useCallback(() => {
+    if (!onBack) return;
+    onBack({
+      daysCount: plan.daysCount,
+      days: planDaysToManual(planDays),
+      yearlyPeriodSettings: plan.yearlyPeriodSettings ? { ...plan.yearlyPeriodSettings } : undefined,
+    });
+  }, [onBack, plan.daysCount, plan.yearlyPeriodSettings, planDays]);
 
   const manualDaysForSeriesDist = useMemo(() => planDaysToManual(planDays), [planDays]);
 
@@ -1526,6 +1533,16 @@ export default function PlanGymWeekFastPlanModal({
         </span>
       </p>
       <div className="flex flex-wrap items-center gap-2">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={handleBackToManual}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100"
+          >
+            <ChevronLeft className="h-4 w-4 shrink-0" aria-hidden />
+            Back to manual editor
+          </button>
+        ) : null}
         <button type="button" onClick={onClose}
           className="rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">
           Cancel

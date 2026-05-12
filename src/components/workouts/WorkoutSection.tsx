@@ -3299,7 +3299,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
               daysCount: answers.daysCount,
               timesPerSector: answers.timesPerSector,
               distributionType: answers.distributionType,
-              constantSectors: answers.constantSectors
+              constantSectors: answers.constantSectors,
+              trainingLevel: answers.trainingLevel,
             });
             const plan = buildHelpedRoutines({
               daysCount: answers.daysCount,

@@ -38,6 +38,7 @@ import {
 } from '../../../utils/percent1RmFormulas';
 import {
   INFO_REPS_DEFAULT_EN,
+  INFO_REPS_TRANSLATION_KEY,
   resolveInfoRepsText,
 } from '../../../constants/infoRepsLongText';
 
@@ -97,7 +98,7 @@ const PAUSE_OPTIONS = FAST_PLANNER_REST_PAUSE_OPTIONS;
 /** Select value meaning row pause follows header + exercise-block calculation. */
 const SERIES_ROW_PAUSE_INHERIT = '__inherit__';
 
-/** Info button: full copy comes from Language long text key \`InfoReps\` (DB); opens a dialog. */
+/** Info button: full copy comes from Language long text key InfoReps (DB; see INFO_REPS_TRANSLATION_KEY); opens a dialog. */
 const INFO_REPS_BTN_TITLE = 'Learn how reps relate to % of 1RM';
 const INFO_REPS_BTN_ARIA =
   'Open help: repetitions and percentage of one-rep max (full article from language settings).';
@@ -4201,7 +4202,7 @@ export default function PlanGymWeekManualModal({
               </button>
             </div>
             <div className="max-h-[calc(85vh-4rem)] overflow-y-auto px-4 py-3 text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">
-              {resolveInfoRepsText(language, 'InfoReps') || INFO_REPS_DEFAULT_EN}
+              {resolveInfoRepsText(language, INFO_REPS_TRANSLATION_KEY) || INFO_REPS_DEFAULT_EN}
             </div>
           </div>
         </div>

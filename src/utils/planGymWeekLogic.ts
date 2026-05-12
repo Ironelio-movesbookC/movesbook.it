@@ -1,4 +1,5 @@
 import type { ManualDayPlan, ManualDaySector } from '@/components/workouts/modals/PlanGymWeekManualModal';
+import type { TrainingLevel } from '@/components/workouts/modals/PlanGymWeekModal';
 import { computePyramidalRepsSeries, type PyramidalMode } from '@/utils/pyramidalReps';
 
 export type TimesPerSector = 'once' | '2' | '3' | 'all';
@@ -268,6 +269,7 @@ export interface BuildHelpedRoutinesParams {
   timesPerSector: TimesPerSector;
   distributionType: DistributionType;
   constantSectors: string[];
+  trainingLevel?: TrainingLevel | null;
   /**
    * Where to place constant muscle sectors in each day’s list.
    * false (default): at the end. true: at the beginning.
