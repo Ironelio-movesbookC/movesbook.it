@@ -37,12 +37,18 @@ export default function ClubSettingsLayout({ children }: { children: React.React
     }
   }, [user, loading, router]);
 
-  if (loading || !user) {
-    return null;
-  }
+  useEffect(() => {
+    if (user && !isClubAccountUserType(user.userType)) {
+      router.push('/my-page');
+    }
+  }, [user, router]);
 
   const userType = user?.userType || '';
   const isClubAccount = isClubAccountUserType(userType);
+
+  if (loading || !user || !isClubAccount) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">

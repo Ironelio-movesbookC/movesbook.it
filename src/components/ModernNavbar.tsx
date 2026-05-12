@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -30,7 +30,8 @@ import {
   Newspaper,
   ShoppingCart,
   Megaphone,
-  ShoppingBag
+  ShoppingBag,
+  Search
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -60,6 +61,15 @@ interface ModernNavbarProps {
   onAdminClick?: () => void;
 }
 
+type NetworkSearchResultItem = {
+  kind: 'user' | 'team' | 'club';
+  id: string;
+  title: string;
+  categoryLabel: string;
+  lines: string[];
+  image: string | null;
+};
+
 export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -84,9 +94,30 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
   const [confirmPassword, setConfirmPassword] = useState('');
   const [forgotPasswordError, setForgotPasswordError] = useState('');
   const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState('');
-  
+
+  const [networkSearchScope, setNetworkSearchScope] = useState<
+    'single_user' | 'coach' | 'team' | 'club'
+  >('single_user');
+  const [networkSearchQuery, setNetworkSearchQuery] = useState('');
+  const [networkSearchModalOpen, setNetworkSearchModalOpen] = useState(false);
+  const [networkSearchLoading, setNetworkSearchLoading] = useState(false);
+  const [networkSearchError, setNetworkSearchError] = useState<string | null>(null);
+  const [networkSearchItems, setNetworkSearchItems] = useState<NetworkSearchResultItem[]>([]);
+  const [networkSearchTotal, setNetworkSearchTotal] = useState(0);
+  const [networkSearchActiveQuery, setNetworkSearchActiveQuery] = useState('');
+  const [networkSearchPopoverAnchor, setNetworkSearchPopoverAnchor] = useState<'desktop' | 'mobile'>(
+    'desktop'
+  );
+  const [networkSearchPopoverStyle, setNetworkSearchPopoverStyle] = useState<React.CSSProperties | null>(
+    null
+  );
+
   const languageDropdownRef = useRef<HTMLDivElement>(null);
   const userDropdownRef = useRef<HTMLDivElement>(null);
+  const networkSearchDesktopInputWrapRef = useRef<HTMLDivElement>(null);
+  const networkSearchMobileInputWrapRef = useRef<HTMLDivElement>(null);
+  /** Captured when opening from mobile menu so layout survives menu close (input unmounts). */
+  const networkSearchMobileRectSnapshotRef = useRef<DOMRect | null>(null);
 
   // Check if admin is logged in
   useEffect(() => {
@@ -184,6 +215,137 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
     setIsMobileMenuOpen(false);
     router.push('/');
   };
+
+  const networkSearchScopeLabel = useMemo(() => {
+    switch (networkSearchScope) {
+      case 'single_user':
+        return t('nav_search_scope_single_user');
+      case 'coach':
+        return t('nav_search_scope_coach');
+      case 'team':
+        return t('nav_search_scope_team');
+      case 'club':
+        return t('nav_search_scope_club');
+      default:
+        return networkSearchScope;
+    }
+  }, [networkSearchScope, t]);
+
+  const runNetworkSearch = useCallback(async (anchor: 'desktop' | 'mobile' = 'desktop') => {
+    setNetworkSearchPopoverAnchor(anchor);
+    if (anchor === 'mobile' && networkSearchMobileInputWrapRef.current) {
+      networkSearchMobileRectSnapshotRef.current =
+        networkSearchMobileInputWrapRef.current.getBoundingClientRect();
+    } else if (anchor === 'desktop') {
+      networkSearchMobileRectSnapshotRef.current = null;
+    }
+    const q = networkSearchQuery.trim();
+    setNetworkSearchModalOpen(true);
+    setNetworkSearchError(null);
+    setNetworkSearchItems([]);
+    setNetworkSearchTotal(0);
+    setNetworkSearchActiveQuery(q);
+
+    if (!q) {
+      setNetworkSearchLoading(false);
+      setNetworkSearchError(t('nav_network_search_query_required'));
+      return;
+    }
+
+    setNetworkSearchLoading(true);
+    try {
+      const res = await fetch(
+        `/api/network-search?q=${encodeURIComponent(q)}&scope=${encodeURIComponent(networkSearchScope)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNetworkSearchError(
+          typeof data?.error === 'string' ? data.error : t('nav_network_search_error')
+        );
+        return;
+      }
+      setNetworkSearchItems(Array.isArray(data.items) ? data.items : []);
+      setNetworkSearchTotal(typeof data.total === 'number' ? data.total : 0);
+    } catch {
+      setNetworkSearchError(t('nav_network_search_error'));
+    } finally {
+      setNetworkSearchLoading(false);
+    }
+  }, [networkSearchQuery, networkSearchScope, t]);
+
+  const handleNetworkSearchSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const anchor =
+      e.currentTarget.dataset.searchAnchor === 'mobile' ? 'mobile' : 'desktop';
+    void runNetworkSearch(anchor);
+    setIsMobileMenuOpen(false);
+  };
+
+  useLayoutEffect(() => {
+    if (!networkSearchModalOpen) {
+      networkSearchMobileRectSnapshotRef.current = null;
+      setNetworkSearchPopoverStyle(null);
+      return;
+    }
+
+    const position = () => {
+      let r: DOMRect | null = null;
+      if (networkSearchPopoverAnchor === 'mobile') {
+        r =
+          networkSearchMobileInputWrapRef.current?.getBoundingClientRect() ??
+          networkSearchMobileRectSnapshotRef.current;
+      } else {
+        r = networkSearchDesktopInputWrapRef.current?.getBoundingClientRect() ?? null;
+      }
+      if (!r) {
+        setNetworkSearchPopoverStyle({
+          position: 'fixed',
+          top: 88,
+          left: 16,
+          width: 384,
+          maxHeight: 400,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        });
+        return;
+      }
+      const minW = 280;
+      const maxW = 448;
+      const width = Math.min(maxW, Math.max(minW, r.width));
+      let left = r.right - width;
+      left = Math.min(Math.max(8, left), window.innerWidth - width - 8);
+      const top = r.bottom + 6;
+      const maxHeight = Math.max(200, Math.min(512, window.innerHeight - top - 12));
+      setNetworkSearchPopoverStyle({
+        position: 'fixed',
+        top,
+        left,
+        width,
+        maxHeight,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      });
+    };
+
+    position();
+    window.addEventListener('resize', position);
+    window.addEventListener('scroll', position, true);
+    return () => {
+      window.removeEventListener('resize', position);
+      window.removeEventListener('scroll', position, true);
+    };
+  }, [networkSearchModalOpen, networkSearchPopoverAnchor]);
+
+  useEffect(() => {
+    if (!networkSearchModalOpen) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') setNetworkSearchModalOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [networkSearchModalOpen]);
 
   const handleAdminLogout = () => {
     // Clear admin credentials
@@ -619,9 +781,9 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
               </div>
             </div>
 
-            {/* Desktop Menu */}
-            <div className="hidden lg:flex items-center justify-center flex-1 mx-2 lg:mx-4 overflow-hidden">
-              <div className="flex items-center gap-1 lg:gap-2 justify-center overflow-x-auto scrollbar-hide">
+            {/* Desktop: nav links + network search (legacy “Search in …”) */}
+            <div className="hidden lg:flex min-w-0 flex-1 items-center gap-3 overflow-visible mx-2 lg:mx-4">
+              <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-hide lg:gap-2">
                 {menuItems.map((item, index) => {
                   const isActive = pathname === item.href;
                   const isHome = item.href === '/';
@@ -648,13 +810,13 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                           handleProtectedLinkClick(item.href, e);
                         }
                       }}
-                      className={`px-2 lg:px-4 py-2.5 rounded-xl text-xs lg:text-sm font-semibold transition-all duration-200 whitespace-nowrap ${
+                      className={`shrink-0 px-2 lg:px-4 py-2.5 rounded-xl text-xs lg:text-sm font-semibold transition-all duration-200 whitespace-nowrap ${
                         isActive
                           ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-2xl'
                           : canAccess
                           ? 'text-cyan-100 hover:bg-white hover:bg-opacity-10 hover:text-white'
                           : 'text-cyan-100 opacity-60'
-                      } ${isHome ? 'mr-8' : ''}`}
+                      } ${isHome ? 'mr-4 lg:mr-8' : ''}`}
                       style={canAccess ? {} : { cursor: 'default' }}
                     >
                       {item.label}
@@ -662,6 +824,61 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                   );
                 })}
               </div>
+
+              <form
+                onSubmit={handleNetworkSearchSubmit}
+                data-search-anchor="desktop"
+                className="flex shrink-0 items-center gap-2"
+                role="search"
+                aria-label={t('nav_search_network_form_aria')}
+              >
+                <span className="hidden text-xs font-semibold text-white xl:inline">
+                  {t('nav_search_in')}
+                </span>
+                <label htmlFor="navbar-network-search-scope" className="sr-only">
+                  {t('nav_search_scope_label')}
+                </label>
+                <div className="flex h-9 max-w-[9.5rem] shrink-0 items-center rounded-md bg-white shadow-sm ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-cyan-400/70">
+                  <select
+                    id="navbar-network-search-scope"
+                    value={networkSearchScope}
+                    onChange={(e) =>
+                      setNetworkSearchScope(e.target.value as typeof networkSearchScope)
+                    }
+                    className="h-full min-h-0 w-full cursor-pointer border-0 bg-transparent py-0 pl-2.5 pr-2 text-xs font-medium leading-none text-zinc-900 focus:outline-none focus:ring-0"
+                  >
+                    <option value="single_user">{t('nav_search_scope_single_user')}</option>
+                    <option value="coach">{t('nav_search_scope_coach')}</option>
+                    <option value="team">{t('nav_search_scope_team')}</option>
+                    <option value="club">{t('nav_search_scope_club')}</option>
+                  </select>
+                </div>
+                <div
+                  ref={networkSearchDesktopInputWrapRef}
+                  className="relative flex h-9 w-36 shrink-0 items-center rounded-md bg-white shadow-sm ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-cyan-400/70 sm:w-44"
+                >
+                  <label htmlFor="navbar-network-search-query" className="sr-only">
+                    {t('nav_search_placeholder')}
+                  </label>
+                  <input
+                    id="navbar-network-search-query"
+                    type="search"
+                    value={networkSearchQuery}
+                    onChange={(e) => setNetworkSearchQuery(e.target.value)}
+                    placeholder={t('nav_search_placeholder')}
+                    autoComplete="off"
+                    className="h-full min-h-0 w-full border-0 bg-transparent py-0 pl-3 pr-9 text-xs leading-none text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void runNetworkSearch('desktop')}
+                    className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+                    aria-label={t('nav_search_submit')}
+                  >
+                    <Search className="h-4 w-4" aria-hidden />
+                  </button>
+                </div>
+              </form>
             </div>
 
             {/* User Actions */}
@@ -861,6 +1078,60 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                     </Link>
                   );
                 })}
+
+                <form
+                  onSubmit={handleNetworkSearchSubmit}
+                  data-search-anchor="mobile"
+                  className="flex flex-col gap-2 px-4 pt-2"
+                  role="search"
+                  aria-label={t('nav_search_network_form_aria')}
+                >
+                  <span className="text-xs font-semibold text-white">{t('nav_search_in')}</span>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="flex h-10 w-full shrink-0 items-center rounded-md bg-white shadow-sm ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-cyan-400/70 sm:max-w-[11rem]">
+                      <select
+                        value={networkSearchScope}
+                        onChange={(e) =>
+                          setNetworkSearchScope(e.target.value as typeof networkSearchScope)
+                        }
+                        className="h-full min-h-0 w-full cursor-pointer border-0 bg-transparent py-0 pl-3 pr-1 text-sm font-medium leading-none text-zinc-900 focus:outline-none focus:ring-0"
+                        aria-label={t('nav_search_scope_label')}
+                      >
+                        <option value="single_user">{t('nav_search_scope_single_user')}</option>
+                        <option value="coach">{t('nav_search_scope_coach')}</option>
+                        <option value="team">{t('nav_search_scope_team')}</option>
+                        <option value="club">{t('nav_search_scope_club')}</option>
+                      </select>
+                    </div>
+                    <div
+                      ref={networkSearchMobileInputWrapRef}
+                      className="relative flex h-10 min-w-0 flex-1 items-center rounded-md bg-white shadow-sm ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-cyan-400/70"
+                    >
+                      <input
+                        type="search"
+                        value={networkSearchQuery}
+                        onChange={(e) => setNetworkSearchQuery(e.target.value)}
+                        placeholder={t('nav_search_placeholder')}
+                        autoComplete="off"
+                        className="h-full min-h-0 w-full border-0 bg-transparent py-0 pl-3 pr-10 text-sm leading-none text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-0"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void runNetworkSearch('mobile')}
+                        className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+                        aria-label={t('nav_search_submit')}
+                      >
+                        <Search className="h-4 w-4" aria-hidden />
+                      </button>
+                    </div>
+                    <button
+                      type="submit"
+                      className="h-10 shrink-0 self-stretch rounded bg-cyan-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-cyan-500 sm:self-center sm:w-auto"
+                    >
+                      {t('nav_search_submit')}
+                    </button>
+                  </div>
+                </form>
                 
                 <div className="pt-4 border-t border-cyan-500 border-opacity-30 space-y-3">
                   {isAdmin ? (
@@ -980,6 +1251,132 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
       </nav>
 
       {/* Forgot Password Modal */}
+      {networkSearchModalOpen && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-[199] bg-black/35"
+            aria-label={t('nav_network_search_close')}
+            onClick={() => setNetworkSearchModalOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="network-search-modal-title"
+            className="fixed z-[250] rounded-lg border border-zinc-200 bg-white shadow-2xl"
+            style={
+              networkSearchPopoverStyle ?? {
+                position: 'fixed',
+                top: 88,
+                left: 16,
+                width: 384,
+                maxHeight: 400,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              }
+            }
+          >
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-zinc-100 px-4 py-3">
+              <div className="min-w-0">
+                <h2
+                  id="network-search-modal-title"
+                  className="text-sm font-semibold text-zinc-900 sm:text-base"
+                >
+                  {t('nav_network_search_modal_title')}
+                </h2>
+                <p className="mt-0.5 truncate text-xs text-zinc-500">
+                  {networkSearchScopeLabel}
+                  {networkSearchActiveQuery ? (
+                    <>
+                      {' · '}
+                      <span className="font-medium text-zinc-700">&ldquo;{networkSearchActiveQuery}&rdquo;</span>
+                    </>
+                  ) : null}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNetworkSearchModalOpen(false)}
+                className="shrink-0 rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+                aria-label={t('nav_network_search_close')}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+              {networkSearchLoading ? (
+                <p className="py-8 text-center text-sm text-zinc-500">{t('nav_network_search_loading')}</p>
+              ) : networkSearchError ? (
+                <p className="py-6 text-center text-sm text-red-600">{networkSearchError}</p>
+              ) : networkSearchItems.length === 0 ? (
+                <p className="py-8 text-center text-sm text-zinc-500">{t('nav_network_search_empty')}</p>
+              ) : (
+                <ul className="space-y-4">
+                  {networkSearchItems.map((item) => (
+                    <li key={`${item.kind}-${item.id}`} className="border-b border-zinc-100 pb-4 last:border-0 last:pb-0">
+                      <div className="mb-2 flex items-center gap-2 rounded bg-zinc-100 px-2 py-1 text-xs font-semibold text-blue-700">
+                        <span className="inline-block h-2 w-2 shrink-0 rounded-sm bg-blue-600" aria-hidden />
+                        {item.categoryLabel}
+                      </div>
+                      <div className="flex gap-3">
+                        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md bg-zinc-200">
+                          {item.image ? (
+                            <img
+                              src={item.image}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-[10px] font-medium uppercase leading-tight text-zinc-500">
+                              —
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-blue-700">{item.title}</p>
+                          {item.lines.map((line, idx) => (
+                            <p key={`${item.id}-line-${idx}`} className="text-xs text-zinc-600">
+                              {line}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="shrink-0 border-t border-zinc-100 bg-zinc-50 px-4 py-3">
+              {networkSearchActiveQuery.trim() ? (
+                <Link
+                  href={`/users/searchList/${encodeURIComponent(networkSearchActiveQuery)}/1?source=${
+                    networkSearchScope === 'club' ? 'myclub' : 'mypage'
+                  }`}
+                  onClick={() => setNetworkSearchModalOpen(false)}
+                  className="block text-center text-sm font-medium text-red-600 hover:text-red-700 hover:underline"
+                >
+                  {t('nav_network_search_see_other').replace('{query}', networkSearchActiveQuery)}
+                </Link>
+              ) : null}
+              {!networkSearchLoading && networkSearchItems.length > 0 ? (
+                <p className="mt-1 text-center text-xs text-zinc-500">
+                  {t('nav_network_search_displayed').replace(
+                    '{count}',
+                    String(networkSearchItems.length)
+                  )}
+                  {networkSearchTotal > networkSearchItems.length
+                    ? ` (${networkSearchTotal} total)`
+                    : ''}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </>
+      )}
+
       {showForgotPasswordModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">

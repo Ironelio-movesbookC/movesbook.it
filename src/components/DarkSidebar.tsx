@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { 
@@ -102,13 +103,19 @@ import {
   Repeat2,
   FileStack,
   Info,
-  MessagesSquare
+  MessagesSquare,
+  Youtube
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import {
+  normalizeYoutubeUrlForOpen,
+  YOUTUBE_CHANNEL_URL_KEY
+} from '@/utils/youtubeChannelUrl';
 import SidebarClubMyEntityTop from '@/components/SidebarClubMyEntityTop';
+import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 
@@ -316,6 +323,24 @@ export default function DarkSidebar({
   const [communitiesOpen, setCommunitiesOpen] = useState(false);
   const [currentClubMembersOpen, setCurrentClubMembersOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
+  const [myDashboardOpen, setMyDashboardOpen] = useState(false);
+  const [socialSettings, setSocialSettings] = useState<Record<string, unknown>>({});
+  /** Personal "My channel on YouTube" — persisted on `User.youtubeChannelUrl` (API merges legacy social JSON). */
+  const [userYoutubeChannelUrl, setUserYoutubeChannelUrl] = useState('');
+  const [youtubeModalOpen, setYoutubeModalOpen] = useState(false);
+  const [youtubeUrlDraft, setYoutubeUrlDraft] = useState('');
+  const [youtubeSaveLoading, setYoutubeSaveLoading] = useState(false);
+  const [clubYoutubeOverride, setClubYoutubeOverride] = useState<
+    Record<string, string | null | undefined>
+  >({});
+  /** When `clubs_new` was empty, child can create/fetch a club and pass it here so the header has an `id`. */
+  const [clubBootstrap, setClubBootstrap] = useState<{
+    id: string;
+    name?: string;
+    description?: string | null;
+    location?: string | null;
+    youtubeChannelUrl?: string | null;
+  } | null>(null);
   const [friendsGroupsOpen, setFriendsGroupsOpen] = useState(false);
   const [friendsOnlineOpen, setFriendsOnlineOpen] = useState(true);
   const [friendsFindOpen, setFriendsFindOpen] = useState(true);
@@ -427,6 +452,54 @@ export default function DarkSidebar({
     }
   }, [clubAccountsSectionOpen]);
 
+  useEffect(() => {
+    if (!user?.id || typeof window === 'undefined') return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/user/settings', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          socialSettings?: unknown;
+          youtubeChannelUrl?: string | null;
+        };
+        let legacyYt = '';
+        const social = data.socialSettings;
+        if (
+          !cancelled &&
+          social &&
+          typeof social === 'object' &&
+          !Array.isArray(social)
+        ) {
+          const o = social as Record<string, unknown>;
+          setSocialSettings(o);
+          const raw = o[YOUTUBE_CHANNEL_URL_KEY];
+          if (typeof raw === 'string') legacyYt = raw.trim();
+        }
+        const fromUser =
+          data.youtubeChannelUrl != null && String(data.youtubeChannelUrl).trim() !== ''
+            ? String(data.youtubeChannelUrl).trim()
+            : '';
+        if (!cancelled) {
+          setUserYoutubeChannelUrl(fromUser || legacyYt);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    setClubYoutubeOverride({});
+  }, [selectedEntityId]);
+
   const friendCount = 234;
   const lastPostsCount = 11;
   const messagesCount = 0;
@@ -436,8 +509,112 @@ export default function DarkSidebar({
   const currentTab = onTabChange ? activeTab : internalActiveTab;
   const setCurrentTab = onTabChange ? onTabChange : setInternalActiveTab;
 
+  const savedYoutubeUrl = userYoutubeChannelUrl;
+
+  const myPageYoutubeOpenHref = normalizeYoutubeUrlForOpen(savedYoutubeUrl);
+
+  const openYoutubeModal = () => {
+    setYoutubeUrlDraft(savedYoutubeUrl);
+    setYoutubeModalOpen(true);
+  };
+
+  const openYoutubeDraftInNewTab = () => {
+    const href = normalizeYoutubeUrlForOpen(youtubeUrlDraft);
+    if (href) {
+      window.open(href, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const handleSaveYoutubeUrl = async () => {
+    const token =
+      typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return;
+    const trimmed = youtubeUrlDraft.trim();
+    if (trimmed && !normalizeYoutubeUrlForOpen(trimmed)) return;
+    setYoutubeSaveLoading(true);
+    try {
+      const res = await fetch('/api/user/settings', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ youtubeChannelUrl: trimmed || null })
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        socialSettings?: Record<string, unknown>;
+        youtubeChannelUrl?: string | null;
+      };
+      if (data.socialSettings && typeof data.socialSettings === 'object') {
+        setSocialSettings(data.socialSettings);
+      }
+      setUserYoutubeChannelUrl(
+        data.youtubeChannelUrl != null && String(data.youtubeChannelUrl).trim() !== ''
+          ? String(data.youtubeChannelUrl).trim()
+          : ''
+      );
+      setYoutubeModalOpen(false);
+    } finally {
+      setYoutubeSaveLoading(false);
+    }
+  };
+
   const selectedEntity =
     entities.find((e: { id?: string }) => e.id === selectedEntityId) ?? entities[0];
+
+  const selectedOrBootstrap =
+    selectedEntity &&
+    typeof selectedEntity === 'object' &&
+    (selectedEntity as { id?: string }).id != null
+      ? selectedEntity
+      : clubBootstrap;
+
+  const displaySelectedClub =
+    selectedOrBootstrap &&
+    typeof selectedOrBootstrap === 'object' &&
+    (selectedOrBootstrap as { id?: string }).id != null
+      ? {
+          ...selectedOrBootstrap,
+          youtubeChannelUrl: Object.prototype.hasOwnProperty.call(
+            clubYoutubeOverride,
+            (selectedOrBootstrap as { id: string }).id
+          )
+            ? (clubYoutubeOverride[(selectedOrBootstrap as { id: string }).id] ?? null)
+            : ((selectedOrBootstrap as { youtubeChannelUrl?: string | null }).youtubeChannelUrl ??
+                null)
+        }
+      : null;
+
+  useEffect(() => {
+    if (
+      selectedEntity &&
+      typeof selectedEntity === 'object' &&
+      (selectedEntity as { id?: string }).id != null &&
+      clubBootstrap?.id === (selectedEntity as { id: string }).id
+    ) {
+      setClubBootstrap(null);
+    }
+  }, [selectedEntity, clubBootstrap?.id]);
+
+  const handleClubYoutubeSaved = (clubId: string, url: string | null) => {
+    setClubYoutubeOverride((prev) => ({ ...prev, [clubId]: url }));
+  };
+
+  const handleClubBootstrapped = useCallback((club: {
+    id: string;
+    name?: string;
+    youtubeChannelUrl?: string | null;
+  }) => {
+    setClubBootstrap({
+      id: club.id,
+      name: club.name ?? 'Club',
+      description: null,
+      location: null,
+      youtubeChannelUrl: club.youtubeChannelUrl ?? null
+    });
+  }, []);
+
   /** Club dashboard + athlete dashboard: "My Club" tab replaces legacy profile strip with club header + primary menus. */
   const showClubMyEntityTop =
     currentTab === 'my-entity' &&
@@ -816,7 +993,11 @@ export default function DarkSidebar({
     </>
   );
 
+  const youtubeDraftValid =
+    !youtubeUrlDraft.trim() || !!normalizeYoutubeUrlForOpen(youtubeUrlDraft);
+
   return (
+    <>
     <div className="w-full h-full bg-gray-900 text-white flex flex-col overflow-hidden" style={{ width: '320px' }}>
       {/* Tab Navigation - Always show both buttons */}
       <div className="flex bg-gray-900 border-b border-gray-700 flex-shrink-0">
@@ -847,9 +1028,12 @@ export default function DarkSidebar({
       {showClubMyEntityTop ? (
         <SidebarClubMyEntityTop
           personName={user?.name || 'User'}
-          club={selectedEntity ?? null}
+          club={displaySelectedClub ?? null}
           userCountry={user?.country}
           userImageUrl={userImageOverride ?? user?.image}
+          userType={userType}
+          onClubYoutubeSaved={handleClubYoutubeSaved}
+          onClubBootstrapped={handleClubBootstrapped}
           onChangeLogo={() => setShowChangeProfilePhotoModal(true)}
         />
       ) : (
@@ -1040,15 +1224,89 @@ export default function DarkSidebar({
               </div>
             </button>
 
-            <button
-              className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700"
-            >
-              <div className="flex items-center gap-3">
-                <LayoutDashboard className="w-5 h-5" />
-                <span>My Dashboard</span>
+            <div className="border-b border-teal-700">
+              <div className="flex w-full items-stretch bg-teal-800 text-white">
+                <button
+                  type="button"
+                  onClick={() => setMyDashboardOpen((v) => !v)}
+                  aria-expanded={myDashboardOpen}
+                  className="flex flex-1 items-center gap-3 min-w-0 py-3 pl-4 pr-2 text-left hover:bg-teal-700 transition-colors"
+                >
+                  <Mail className="w-5 h-5 shrink-0" />
+                  <span className="truncate">{t('sidebar_my_dashboard_menu')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMyDashboardOpen((v) => !v)}
+                  aria-label={myDashboardOpen ? t('collapse') : t('expand')}
+                  className="shrink-0 px-4 flex items-center hover:bg-teal-700 transition-colors border-l border-teal-700/40"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 opacity-80 transition-transform duration-200 ${myDashboardOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
               </div>
-              <ChevronDown className="w-4 h-4 opacity-80" />
-            </button>
+              {myDashboardOpen && (
+                <div className="bg-[#2d2d2d] text-white text-sm border-t border-teal-900/40">
+                  <div className="flex w-full items-stretch border-b border-black/25 min-h-[44px]">
+                    <button
+                      type="button"
+                      onClick={() => router.push('/users/my_desk_list')}
+                      className="flex flex-1 items-center gap-2 min-w-0 px-4 py-2.5 text-left hover:bg-zinc-700/90 transition-colors"
+                    >
+                      <ClipboardList className="w-4 h-4 shrink-0 opacity-90" />
+                      <span className="truncate">{t('dashboard_my_desk')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      title={t('sidebar_my_desk_settings_aria')}
+                      aria-label={t('sidebar_my_desk_settings_aria')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push('/users/my_desk');
+                      }}
+                      className="shrink-0 px-3 flex items-center hover:bg-zinc-700/90 border-l border-black/25 text-gray-300"
+                    >
+                      <Settings className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex w-full items-stretch min-h-[44px]">
+                    {myPageYoutubeOpenHref ? (
+                      <a
+                        href={myPageYoutubeOpenHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex min-w-0 flex-1 items-center gap-2 px-4 py-2.5 text-left text-white no-underline transition-colors hover:bg-zinc-700/90"
+                      >
+                        <Youtube className="w-4 h-4 shrink-0 opacity-90" />
+                        <span className="truncate">{t('sidebar_my_youtube_channel')}</span>
+                      </a>
+                    ) : (
+                      <span
+                        className="flex min-w-0 flex-1 cursor-default items-center gap-2 px-4 py-2.5 text-left text-white/50"
+                        title={t('sidebar_youtube_row_empty_hint')}
+                        role="note"
+                      >
+                        <Youtube className="w-4 h-4 shrink-0 opacity-60" />
+                        <span className="truncate">{t('sidebar_my_youtube_channel')}</span>
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      title={t('sidebar_youtube_channel_settings_aria')}
+                      aria-label={t('sidebar_youtube_channel_settings_aria')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openYoutubeModal();
+                      }}
+                      className="shrink-0 px-3 flex items-center hover:bg-zinc-700/90 border-l border-black/25 text-gray-300"
+                    >
+                      <Settings className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
               <div className="flex items-center gap-3">
@@ -1435,16 +1693,15 @@ export default function DarkSidebar({
                       <ChevronDown className="w-4 h-4 opacity-90" />
                     </button>
 
-                    <button
-                      type="button"
-                      className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <LayoutDashboard className="w-5 h-5 shrink-0" />
-                        <span className="font-semibold tracking-wide truncate">Dashboard for the members</span>
-                      </div>
-                      <ChevronDown className="w-4 h-4 opacity-90" />
-                    </button>
+                    <ClubMembersDashboardSection
+                      clubId={displaySelectedClub?.id as string | undefined}
+                      youtubeChannelUrl={
+                        (displaySelectedClub as { youtubeChannelUrl?: string | null })
+                          ?.youtubeChannelUrl ?? null
+                      }
+                      canManageClub={isClubAccountUserType(userType)}
+                      onYoutubeChannelUrlSaved={handleClubYoutubeSaved}
+                    />
                   </>
                 )}
 
@@ -2598,6 +2855,12 @@ export default function DarkSidebar({
                                       <button
                                         key={item.label}
                                         type="button"
+                                        onClick={() => {
+                                          if ('path' in item && item.path) {
+                                            router.push(item.path);
+                                          }
+                                          // Handle click event
+                                        }}
                                         className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333] ${
                                           ii < group.length - 1
                                             ? 'border-b border-gray-600/50'
@@ -2706,7 +2969,11 @@ export default function DarkSidebar({
                                     },
                                     { Icon: Settings, label: 'System settings' },
                                     { Icon: CreditCard, label: 'Accesses controls' },
-                                    { Icon: Settings2, label: 'Other settings' },
+                                    {
+                                      Icon: Settings2,
+                                      label: 'Other settings',
+                                      path: '/club/settings/other_settings',
+                                    },
                                     { Icon: LayoutGrid, label: 'Tables' },
                                     { Icon: Volume2, label: 'Access of outcome settings' },
                                     { Icon: Mic, label: 'Audio messages' },
@@ -3108,6 +3375,74 @@ export default function DarkSidebar({
         )}
       </div>
     </div>
+    {youtubeModalOpen
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/55 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="youtube-channel-modal-title"
+          >
+            <div className="w-full max-w-md overflow-hidden rounded border border-zinc-600 bg-zinc-800 shadow-2xl">
+              <div
+                id="youtube-channel-modal-title"
+                className="flex items-center justify-between gap-2 bg-[#8b0000] px-3 py-2 text-sm font-semibold text-white"
+              >
+                <span className="min-w-0 flex-1">{t('modal_youtube_channel_title')}</span>
+                <span className="flex shrink-0 gap-0.5 text-white/90" aria-hidden>
+                  <Star className="h-3.5 w-3.5 fill-white" strokeWidth={0} />
+                  <Star className="h-3.5 w-3.5 fill-white" strokeWidth={0} />
+                  <Star className="h-3.5 w-3.5 fill-white" strokeWidth={0} />
+                </span>
+              </div>
+              <div className="space-y-3 p-4">
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={youtubeUrlDraft}
+                    onChange={(e) => setYoutubeUrlDraft(e.target.value)}
+                    placeholder={t('modal_youtube_channel_placeholder')}
+                    className="min-w-0 flex-1 rounded border border-zinc-500 bg-white px-2 py-2 text-sm text-zinc-900 placeholder:text-zinc-500"
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    onClick={openYoutubeDraftInNewTab}
+                    disabled={!normalizeYoutubeUrlForOpen(youtubeUrlDraft)}
+                    title={t('modal_youtube_open_draft_tab')}
+                    aria-label={t('modal_youtube_open_draft_tab')}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Youtube className="h-5 w-5" />
+                  </button>
+                </div>
+                {!youtubeDraftValid && (
+                  <p className="text-xs text-amber-300">{t('modal_youtube_channel_invalid')}</p>
+                )}
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setYoutubeModalOpen(false)}
+                    className="rounded bg-zinc-700 px-4 py-2 text-sm text-white hover:bg-zinc-600"
+                  >
+                    {t('btn_cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!youtubeDraftValid || youtubeSaveLoading}
+                    onClick={() => void handleSaveYoutubeUrl()}
+                    className="rounded bg-zinc-700 px-4 py-2 text-sm text-white hover:bg-zinc-600 disabled:opacity-50"
+                  >
+                    {t('btn_save')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null}
+    </>
   );
 }
 

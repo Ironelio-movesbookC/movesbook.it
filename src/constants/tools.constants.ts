@@ -20,6 +20,7 @@ export type ToolsTab =
   | 'executionTechniques'
   | 'bodyBuildingTechniques'
   | 'commonDailyActions'
+  | 'workMethods'
   | 'insertActions'
   | 'sportMachines'
   | 'pathologies';
@@ -28,6 +29,8 @@ export interface Period {
   id: string;
   title: string;
   description: string;
+  /** Per-language titles (Super Admin); English should match `title` / DB `name` for compatibility */
+  titleByLanguage?: Record<string, string>;
   /** Per-language descriptions (Super Admin); English should match `description` for DB/API compatibility */
   descriptionByLanguage?: Record<string, string>;
   color: string;
@@ -40,6 +43,10 @@ export interface WorkoutSection {
   id: string;
   title: string;
   description: string;
+  /** Per-language titles (Super Admin); English should match `title` / DB `name` */
+  titleByLanguage?: Record<string, string>;
+  /** Per-language descriptions (Super Admin); English should match `description` */
+  descriptionByLanguage?: Record<string, string>;
   color: string;
   code?: string;
   picture?: string;
@@ -52,6 +59,10 @@ export interface ExecutionTechnique {
   id: string;
   title: string;
   description: string;
+  /** Per-language titles (Super Admin); English should match `title` / DB `name` */
+  titleByLanguage?: Record<string, string>;
+  /** Per-language descriptions (Super Admin); English should match `description` */
+  descriptionByLanguage?: Record<string, string>;
   color: string;
   sports: string[]; // Array of sport names that can use this technique
   order: number;
@@ -737,6 +748,10 @@ export const DEFAULT_DEVICES: Device[] = [
 export const STORAGE_KEYS = {
   PERIODS: 'workoutPeriods',
   SECTIONS: 'workoutSections',
+  /** Separate from workout sections — Common daily actions tab only */
+  COMMON_DAILY_ACTIONS: 'commonDailyActions',
+  /** Work methods (same shape as sections; toolsSettings JSON) */
+  WORK_METHODS: 'workMethods',
   SPORTS: 'mainSports',
   EQUIPMENT: 'equipment',
   EXERCISES: 'exercises',

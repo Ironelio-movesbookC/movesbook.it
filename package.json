@@ -1,6 +1,9 @@
 {
     "name": "workout-management-system",
     "version": "1.0.0",
+    "prisma": {
+        "seed": "ts-node --transpile-only -P prisma/tsconfig.seed.json prisma/seed.ts"
+    },
     "scripts": {
         "dev": "next dev -p 3000",
         "build": "prisma generate && next build",
