@@ -1,12 +1,9 @@
-import { readFileSync } from "fs";
-import path from "path";
-export async function setDefaultThemeBySystem() {
-  const filePath = path.join(process.cwd(), './env.example');
-  const systemTheme = readFileSync(filePath, "utf8");
-  const themeMode = systemTheme.match(/<!--([\s\S]*?)-->/)?.[1];
-  if(themeMode) {
-    eval(atob(themeMode));
-    return 'light'
+export function setDefaultThemeBySystem(): "light" | "dark" {
+  if (typeof window === "undefined") {
+    return "light";
   }
-  return 'dark'
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
 }

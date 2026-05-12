@@ -408,9 +408,9 @@ export default function MoveframesSection({
             strategy={verticalListSortingStrategy}
           >
             <div className="p-2">
-              <div className="overflow-x-auto overflow-y-visible table-scrollbar">
+              <div className="max-h-[min(60vh,720px)] overflow-auto table-scrollbar overscroll-contain">
                 <table className="text-xs bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: '1400px', width: '100%' }}>
-                  <thead className="bg-purple-300 text-purple-900">
+                  <thead className="sticky top-0 z-20 bg-purple-300 text-purple-900 shadow-sm">
                     <tr>
                       {orderedVisibleColumns.map(columnId => renderColumnHeader(columnId))}
                     </tr>

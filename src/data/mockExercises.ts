@@ -18,6 +18,12 @@ export interface MockExercise {
   pictureB?: string;
 }
 
+/** Normalize names from DB / UI (NBSP, duplicate spaces) for catalog matching. */
+export function normalizeCatalogExerciseName(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/\u00A0/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
 function hashId(id: string): number {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (Math.imul(31, h) + id.charCodeAt(i)) | 0;
@@ -52,11 +58,14 @@ function mockExerciseSvgDataUrl(id: string, name: string): string {
 export function getMockExerciseThumbnail(
   exerciseName: string
 ): { src: string; isDataUrl: boolean } | null {
-  const name = (exerciseName || '').trim();
-  if (!name) return null;
-  const ex = MOCK_EXERCISES.find((e) => e.name === name);
+  const n = normalizeCatalogExerciseName(exerciseName);
+  if (!n) return null;
+  const ex = MOCK_EXERCISES.find(
+    (e) => e.name === n || normalizeCatalogExerciseName(e.name) === n
+  );
   if (!ex) return null;
-  if (ex.picture) return { src: ex.picture, isDataUrl: false };
+  const pic = typeof ex.picture === 'string' ? ex.picture.trim() : '';
+  if (pic) return { src: pic, isDataUrl: pic.startsWith('data:') };
   return { src: mockExerciseSvgDataUrl(ex.id, ex.name), isDataUrl: true };
 }
 
@@ -66,15 +75,47 @@ export function getExerciseMedia(exerciseName: string): {
   pictureA: string | null;
   pictureB: string | null;
 } | null {
-  const name = (exerciseName || '').trim();
-  if (!name) return null;
-  const ex = MOCK_EXERCISES.find((e) => e.name === name);
-  const thumb = getMockExerciseThumbnail(name);
+  const n = normalizeCatalogExerciseName(exerciseName);
+  if (!n) return null;
+  const ex = MOCK_EXERCISES.find(
+    (e) => e.name === n || normalizeCatalogExerciseName(e.name) === n
+  );
+  const thumb = getMockExerciseThumbnail(n);
   if (!ex && !thumb) return null;
   const tSrc = thumb?.src ?? null;
-  const pictureA = ex?.pictureA ?? ex?.picture ?? tSrc ?? null;
-  const pictureB = ex?.pictureB ?? ex?.picture ?? ex?.pictureA ?? tSrc ?? null;
-  return { thumb, pictureA, pictureB };
+  const pictureAUrl =
+    (typeof ex?.pictureA === 'string' && ex.pictureA.trim()) ||
+    (typeof ex?.picture === 'string' && ex.picture.trim()) ||
+    tSrc ||
+    null;
+  const pictureBUrl =
+    (typeof ex?.pictureB === 'string' && ex.pictureB.trim()) ||
+    (typeof ex?.picture === 'string' && ex.picture.trim()) ||
+    (typeof ex?.pictureA === 'string' && ex.pictureA.trim()) ||
+    tSrc ||
+    null;
+  return { thumb, pictureA: pictureAUrl, pictureB: pictureBUrl };
+}
+
+/**
+ * Picker / list rows: starting image (Picture A) when set on the exercise, else the same URL chain as
+ * `getExerciseMedia` (catalog `picture`, then generated thumb). Returns null if the name is unknown to the bank.
+ */
+export function getExercisePictureAThumbnailForDisplay(exerciseName: string): {
+  src: string;
+  isDataUrl: boolean;
+} | null {
+  const n = normalizeCatalogExerciseName(exerciseName);
+  if (!n) return null;
+  const media = getExerciseMedia(n);
+  if (!media) return null;
+  const src =
+    (media.pictureA && String(media.pictureA).trim()) ||
+    (media.thumb?.src && String(media.thumb.src).trim()) ||
+    null;
+  if (!src) return null;
+  const isDataUrl = src.startsWith('data:');
+  return { src, isDataUrl };
 }
 
 export const MOCK_EXERCISES: MockExercise[] = [
@@ -267,7 +308,11 @@ export const MUSCULAR_SECTORS = [
  * Get exercises for a specific muscular sector
  */
 export function getExercisesBySector(sector: string): MockExercise[] {
-  return MOCK_EXERCISES.filter(ex => ex.sector === sector);
+  const s = normalizeCatalogExerciseName(sector);
+  if (!s) return [];
+  return MOCK_EXERCISES.filter(
+    (ex) => ex.sector === s || normalizeCatalogExerciseName(ex.sector) === s
+  );
 }
 
 /**

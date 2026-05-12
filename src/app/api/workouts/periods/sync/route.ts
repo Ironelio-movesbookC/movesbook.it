@@ -86,7 +86,11 @@ export async function POST(request: NextRequest) {
         displayOrder: period.order !== undefined ? period.order : i // Use order from client or index
       };
 
-      let translationPatch: { descriptionTranslations?: string | null } = {};
+      const translationPatch: {
+        descriptionTranslations?: string | null;
+        nameTranslations?: string | null;
+      } = {};
+
       if (period.descriptionByLanguage !== undefined && period.descriptionByLanguage !== null) {
         const descByLang = period.descriptionByLanguage;
         let descriptionTranslations: string | null = null;
@@ -97,7 +101,20 @@ export async function POST(request: NextRequest) {
           }
           if (Object.keys(cleaned).length > 0) descriptionTranslations = JSON.stringify(cleaned);
         }
-        translationPatch = { descriptionTranslations };
+        translationPatch.descriptionTranslations = descriptionTranslations;
+      }
+
+      if (period.titleByLanguage !== undefined && period.titleByLanguage !== null) {
+        const titlesByLang = period.titleByLanguage;
+        let nameTranslations: string | null = null;
+        if (titlesByLang && typeof titlesByLang === 'object') {
+          const cleaned: Record<string, string> = {};
+          for (const [k, v] of Object.entries(titlesByLang)) {
+            if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim().slice(0, 255);
+          }
+          if (Object.keys(cleaned).length > 0) nameTranslations = JSON.stringify(cleaned);
+        }
+        translationPatch.nameTranslations = nameTranslations;
       }
 
       const periodData = { ...periodBase, ...translationPatch };

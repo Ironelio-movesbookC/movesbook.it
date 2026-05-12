@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { restTypeDisplayToDb } from '@/utils/restTypeDb';
 
-const prisma = new PrismaClient();
+function convertRestTypeToEnum(restType: string | null | undefined) {
+  return restTypeDisplayToDb(restType ?? undefined) as any;
+}
 
 /**
  * GET /api/workouts/movelaps/[id]
@@ -77,37 +80,51 @@ export async function PUT(
     console.log('PUT /api/workouts/movelaps/[id] - Updating movelap:', params.id);
     console.log('Request body:', body);
 
-    const {
-      distance,
-      speedCode,
-      speed,
-      style,
-      pace,
-      time,
-      pause,
-      restType,
-      alarm,
-      notes,
-      status
-    } = body;
+    const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
 
-    const updateData: any = {};
-    if (distance !== undefined) updateData.distance = distance ? parseInt(distance.toString()) : null;
-    if (speedCode !== undefined || speed !== undefined) updateData.speed = speedCode || speed || null;
-    if (style !== undefined) updateData.style = style || null;
-    if (pace !== undefined) updateData.pace = pace || null;
-    if (time !== undefined) updateData.time = time || null;
-    if (pause !== undefined) updateData.pause = pause || null;
-    if (restType !== undefined) updateData.restType = restType || null;
-    if (alarm !== undefined) updateData.alarm = alarm ? parseInt(alarm.toString()) : null;
-    if (notes !== undefined) updateData.notes = notes || null;
-    if (status !== undefined) updateData.status = status;
+    const parseIntOrNull = (v: unknown): number | null => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = parseInt(String(v), 10);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    /** Same partial-update rules as PATCH /api/workouts/movelaps?id= — keeps Fast planner / circuit saves valid. */
+    const updateData: Record<string, unknown> = {};
+
+    if (has('repetitionNumber')) updateData.repetitionNumber = body.repetitionNumber;
+    if (has('distance')) updateData.distance = parseIntOrNull(body.distance);
+    if (has('speedCode') || has('speed')) updateData.speed = (body.speedCode || body.speed) ?? null;
+    if (has('style')) updateData.style = body.style ?? null;
+    if (has('pace')) updateData.pace = body.pace ?? null;
+    if (has('time')) updateData.time = body.time ?? null;
+    if (has('rowPerMin')) updateData.rowPerMin = parseIntOrNull(body.rowPerMin);
+    if (has('pause')) updateData.pause = body.pause ?? null;
+    if (has('alarm')) updateData.alarm = parseIntOrNull(body.alarm);
+    if (has('sound')) updateData.sound = body.sound ?? null;
+    if (has('notes')) updateData.notes = body.notes ?? null;
+    if (has('reps')) updateData.reps = parseIntOrNull(body.reps);
+    if (has('weight')) updateData.weight = body.weight ?? null;
+    if (has('tools')) updateData.tools = body.tools ?? null;
+    if (has('muscularSector')) updateData.muscularSector = body.muscularSector ?? null;
+    if (has('exercise')) updateData.exercise = body.exercise ?? null;
+    if (has('restType')) updateData.restType = convertRestTypeToEnum(body.restType);
+    if (has('r1')) updateData.r1 = body.r1 ?? null;
+    if (has('r2')) updateData.r2 = body.r2 ?? null;
+    if (has('macroFinal')) updateData.macroFinal = body.macroFinal ?? null;
+    if (has('status')) updateData.status = body.status as any;
+    if (has('isSkipped')) updateData.isSkipped = !!body.isSkipped;
+    if (has('isDisabled')) updateData.isDisabled = !!body.isDisabled;
+    if (has('isNewlyAdded')) updateData.isNewlyAdded = !!body.isNewlyAdded;
 
     console.log('Update data:', updateData);
 
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
+    }
+
     const movelap = await prisma.movelap.update({
       where: { id: params.id },
-      data: updateData
+      data: updateData as any
     });
 
     console.log('✅ Movelap updated successfully:', movelap.id);
