@@ -6,14 +6,11 @@ import { ChevronRight, ChevronDown, Dumbbell, Flag } from 'lucide-react';
 import { useColorSettings } from '@/hooks/useColorSettings';
 import { useSportIconType } from '@/hooks/useSportIconType';
 import { getSportIcon, isImageIcon } from '@/utils/sportIcons';
+import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
 
-// 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
-  return content
-    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
-    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
-    .trim();
+  return stripInternalWorkoutTags(content).trim();
 };
 
 interface WorkoutTreeViewProps {

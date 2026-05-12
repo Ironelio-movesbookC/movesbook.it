@@ -9,6 +9,14 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { X, ChevronUp, ChevronDown, Trash2, Calendar } from 'lucide-react';
+import {
+  FAST_PLANNER_REST_PAUSE_OPTIONS,
+  PLAN_GYM_WEEK_MACRO_MINUTE_LABELS,
+} from '@/constants/moveframe.constants';
+
+function isMacroMinuteLabel(s: string): boolean {
+  return PLAN_GYM_WEEK_MACRO_MINUTE_LABELS.includes(String(s ?? '').trim());
+}
 
 const PLAN_DAYS_MIN = 1;
 const PLAN_DAYS_MAX = 6;
@@ -664,7 +672,10 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                               setConstantSectors(prev => {
                                 const has = prev.includes(g.sector);
                                 if (has) return prev.filter(s => s !== g.sector);
-                                if (prev.length >= constantSectorsRequired) return prev;
+                                if (prev.length >= constantSectorsRequired) {
+                                  // Keep the newest picks when max count reached (lets user switch away from current selection).
+                                  return [...prev.slice(1), g.sector];
+                                }
                                 return [...prev, g.sector];
                               });
                             }}
@@ -788,14 +799,94 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                               </option>
                             ))}
                           </select>
-                          <select value={sec.reps} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'reps', parseInt(e.target.value, 10))} className="text-xs border border-gray-300 rounded px-2 py-1">
-                            {[8,10,12,15,20,30].map(n => <option key={n} value={n}>Reps {n}</option>)}
+                          <select
+                            value={Math.min(50, Math.max(1, Number(sec.reps) || 12))}
+                            onChange={(e) =>
+                              updateSectorField(activeDayIndex, secIdx, 'reps', parseInt(e.target.value, 10))
+                            }
+                            className="text-xs border border-gray-300 rounded px-2 py-1 min-w-[5.5rem]"
+                            title="Reps 1–50"
+                          >
+                            {Array.from({ length: 50 }, (_, i) => i + 1).map((n) => (
+                              <option key={n} value={n}>
+                                Reps {n}
+                              </option>
+                            ))}
                           </select>
-                          <input type="text" value={sec.pause} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'pause', e.target.value)} placeholder="Pause" className="w-20 text-xs border border-gray-300 rounded px-2 py-1" />
-                          <span className="text-xs text-gray-500">Macro ex.</span>
-                          <input type="text" value={sec.macroExercise} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'macroExercise', e.target.value)} placeholder="e.g. 1'" className="w-14 text-xs border border-gray-300 rounded px-2 py-1" />
-                          <span className="text-xs text-gray-500">Macro sector</span>
-                          <input type="text" value={sec.macroEndOfSector} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'macroEndOfSector', e.target.value)} placeholder="e.g. 2'" className="w-14 text-xs border border-gray-300 rounded px-2 py-1" />
+                          <label className="flex items-center gap-1 text-xs text-gray-600">
+                            Pause
+                            <select
+                              value={
+                                FAST_PLANNER_REST_PAUSE_OPTIONS.includes(sec.pause)
+                                  ? sec.pause
+                                  : "1'30\""
+                              }
+                              onChange={(e) =>
+                                updateSectorField(activeDayIndex, secIdx, 'pause', e.target.value)
+                              }
+                              className="border border-gray-300 rounded px-2 py-1 text-xs min-w-[4.75rem]"
+                              title="Rest between sets — same options as Fast Not Aerobic Plan"
+                            >
+                              <option value="">—</option>
+                              {FAST_PLANNER_REST_PAUSE_OPTIONS.map((p) => (
+                                <option key={p} value={p}>
+                                  {p}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label
+                            className="flex items-center gap-1 text-xs text-gray-600"
+                            title="Pause after the last serie of an exercise"
+                          >
+                            Macro exercises
+                            <select
+                              value={
+                                sec.macroExercise.trim() === ''
+                                  ? ''
+                                  : isMacroMinuteLabel(sec.macroExercise)
+                                    ? sec.macroExercise.trim()
+                                    : "1'"
+                              }
+                              onChange={(e) =>
+                                updateSectorField(activeDayIndex, secIdx, 'macroExercise', e.target.value)
+                              }
+                              className="border border-gray-300 rounded px-2 py-1 text-xs min-w-[3.25rem]"
+                            >
+                              <option value="">—</option>
+                              {PLAN_GYM_WEEK_MACRO_MINUTE_LABELS.map((m) => (
+                                <option key={m} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label
+                            className="flex items-center gap-1 text-xs text-gray-600"
+                            title="Pause after the last serie of the last exercise of this sector"
+                          >
+                            Macro sector
+                            <select
+                              value={
+                                sec.macroEndOfSector.trim() === ''
+                                  ? ''
+                                  : isMacroMinuteLabel(sec.macroEndOfSector)
+                                    ? sec.macroEndOfSector.trim()
+                                    : "2'"
+                              }
+                              onChange={(e) =>
+                                updateSectorField(activeDayIndex, secIdx, 'macroEndOfSector', e.target.value)
+                              }
+                              className="border border-gray-300 rounded px-2 py-1 text-xs min-w-[3.25rem]"
+                            >
+                              <option value="">—</option>
+                              {PLAN_GYM_WEEK_MACRO_MINUTE_LABELS.map((m) => (
+                                <option key={m} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                         </div>
                         <button
                           type="button"

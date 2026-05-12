@@ -7,6 +7,7 @@ import {
   createLanguageList,
   sortLanguagesByOrder
 } from '@/constants/language.constants';
+import { getAuthHeaders } from '@/utils/auth.utils';
 
 /**
  * Get category from translation key name
@@ -153,7 +154,9 @@ export function useLanguageData(): UseLanguageDataReturn {
       
       // Step 2: Load edited translations from database and merge them
       try {
-        const response = await fetch('/api/admin/translations');
+        const response = await fetch('/api/admin/translations', {
+          headers: { ...getAuthHeaders() },
+        });
         
         if (response.ok) {
           const data = await response.json();

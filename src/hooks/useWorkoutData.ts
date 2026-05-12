@@ -44,8 +44,8 @@ interface UseWorkoutDataReturn {
   showMessage: (type: FeedbackMessage['type'], text: string) => void;
 }
 
-export function useWorkoutData({ 
-  initialSection = 'A' 
+export function useWorkoutData({
+  initialSection = 'B',
 }: UseWorkoutDataOptions = {}): UseWorkoutDataReturn {
   // State
   const [workoutPlan, setWorkoutPlan] = useState<WorkoutPlan | null>(null);

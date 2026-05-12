@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Period,
   WorkoutSection,
@@ -8,6 +8,9 @@ import {
   Exercise,
   Device,
   IconType,
+  type ExercisePathologyCatalogItem,
+  type PeriodizationTemplate,
+  normalizePeriodizationTemplates,
   DEFAULT_PERIODS,
   DEFAULT_SECTIONS,
   DEFAULT_BODYBUILDING_TECHNIQUES,
@@ -19,54 +22,23 @@ import {
 } from '@/constants/tools.constants';
 import { getAuthToken, getAuthHeaders } from '@/utils/auth.utils';
 
-/** Load `{ id }[]` from localStorage and return id set (best-effort). */
-function toolsItemsIdsFromLocalStorage(storageKey: string): Set<string> {
-  try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw) as { id?: unknown }[];
-    if (!Array.isArray(arr)) return new Set();
-    return new Set(arr.map((x) => String(x?.id ?? '')).filter(Boolean));
-  } catch {
-    return new Set();
-  }
-}
-
-/**
- * Drop entries that belong to other tools lists (legacy corrupt saves sometimes duplicated periods/sections into commonDailyActions).
- */
-function sanitizeCommonDailyActionsList(
-  items: WorkoutSection[],
-  opts: {
-    periodIds: Set<string>;
-    sectionIds: Set<string>;
-    techniqueIds: Set<string>;
-    workMethodIds: Set<string>;
-  }
-): WorkoutSection[] {
-  return items.filter((item) => {
-    const id = String(item?.id ?? '');
-    if (!id) return true;
-    if (opts.periodIds.has(id)) return false;
-    if (opts.sectionIds.has(id)) return false;
-    if (opts.techniqueIds.has(id)) return false;
-    if (opts.workMethodIds.has(id)) return false;
-    return true;
-  });
+function coerceExercisePathologyCatalog(raw: unknown): ExercisePathologyCatalogItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x) => x != null && typeof x === 'object') as ExercisePathologyCatalogItem[];
 }
 
 interface UseToolsDataReturn {
   // State
   periods: Period[];
   sections: WorkoutSection[];
-  /** Common daily actions — stored in toolsSettings JSON only (not WorkoutSection table) */
-  commonDailyActions: WorkoutSection[];
-  /** Work methods — same shape as sections; toolsSettings JSON only */
-  workMethods: WorkoutSection[];
   bodyBuildingTechniques: BodyBuildingTechnique[];
   sports: Sport[];
   equipment: Equipment[];
   exercises: Exercise[];
+  /** Technical Settings — Pathologies catalog for exercise contraindications */
+  exercisePathologyCatalog: ExercisePathologyCatalogItem[];
+  /** Periodization presets (toolsSettings JSON; Super Admin defaults + user copies). */
+  periodizationTemplates: PeriodizationTemplate[];
   devices: Device[];
   iconType: IconType;
   isLoadingIconPreference: boolean;
@@ -76,12 +48,12 @@ interface UseToolsDataReturn {
   // Actions
   setPeriods: React.Dispatch<React.SetStateAction<Period[]>>;
   setSections: React.Dispatch<React.SetStateAction<WorkoutSection[]>>;
-  setCommonDailyActions: React.Dispatch<React.SetStateAction<WorkoutSection[]>>;
-  setWorkMethods: React.Dispatch<React.SetStateAction<WorkoutSection[]>>;
   setBodyBuildingTechniques: React.Dispatch<React.SetStateAction<BodyBuildingTechnique[]>>;
   setSports: React.Dispatch<React.SetStateAction<Sport[]>>;
   setEquipment: React.Dispatch<React.SetStateAction<Equipment[]>>;
   setExercises: React.Dispatch<React.SetStateAction<Exercise[]>>;
+  setExercisePathologyCatalog: React.Dispatch<React.SetStateAction<ExercisePathologyCatalogItem[]>>;
+  setPeriodizationTemplates: React.Dispatch<React.SetStateAction<PeriodizationTemplate[]>>;
   setDevices: React.Dispatch<React.SetStateAction<Device[]>>;
   setIconType: React.Dispatch<React.SetStateAction<IconType>>;
   setIsSavingToDatabase: React.Dispatch<React.SetStateAction<boolean>>;
@@ -97,8 +69,7 @@ interface UseToolsDataReturn {
     equipment?: Equipment[],
     exercises?: Exercise[],
     devices?: Device[],
-    commonDailyActions?: WorkoutSection[],
-    workMethods?: WorkoutSection[]
+    exercisePathologyCatalogData?: ExercisePathologyCatalogItem[]
   ) => void;
   saveToDatabase: () => Promise<void>;
 }
@@ -116,18 +87,42 @@ interface UseToolsDataReturn {
 export function useToolsData(): UseToolsDataReturn {
   const [periods, setPeriods] = useState<Period[]>([]);
   const [sections, setSections] = useState<WorkoutSection[]>([]);
-  const [commonDailyActions, setCommonDailyActions] = useState<WorkoutSection[]>([]);
-  const [workMethods, setWorkMethods] = useState<WorkoutSection[]>([]);
   const [bodyBuildingTechniques, setBodyBuildingTechniques] = useState<BodyBuildingTechnique[]>([]);
   const [sports, setSports] = useState<Sport[]>([]);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [exercisePathologyCatalog, setExercisePathologyCatalog] = useState<ExercisePathologyCatalogItem[]>([]);
+  const [periodizationTemplates, setPeriodizationTemplates] = useState<PeriodizationTemplate[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [iconType, setIconType] = useState<IconType>('emoji');
   const [isLoadingIconPreference, setIsLoadingIconPreference] = useState(true);
   const [isSavingToDatabase, setIsSavingToDatabase] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
-  
+
+  /** Debounced callers must read latest lists (not a stale render closure). */
+  const latestForDbSave = useRef({
+    periods: [] as Period[],
+    sections: [] as WorkoutSection[],
+    bodyBuildingTechniques: [] as BodyBuildingTechnique[],
+    sports: [] as Sport[],
+    equipment: [] as Equipment[],
+    exercises: [] as Exercise[],
+    devices: [] as Device[],
+    exercisePathologyCatalog: [] as ExercisePathologyCatalogItem[],
+    periodizationTemplates: [] as PeriodizationTemplate[],
+  });
+  latestForDbSave.current = {
+    periods,
+    sections,
+    bodyBuildingTechniques,
+    sports,
+    equipment,
+    exercises,
+    devices,
+    exercisePathologyCatalog,
+    periodizationTemplates,
+  };
+
   /**
    * Load icon type preference from user settings
    */
@@ -191,47 +186,7 @@ export function useToolsData(): UseToolsDataReturn {
       setSections(DEFAULT_SECTIONS);
     }
   }, []);
-
-  const loadCommonDailyActionsFromLocalStorage = useCallback(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.COMMON_DAILY_ACTIONS);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as WorkoutSection[];
-        const list = Array.isArray(parsed) ? parsed : [];
-        const cleaned = sanitizeCommonDailyActionsList(list, {
-          periodIds: toolsItemsIdsFromLocalStorage(STORAGE_KEYS.PERIODS),
-          sectionIds: toolsItemsIdsFromLocalStorage(STORAGE_KEYS.SECTIONS),
-          techniqueIds: toolsItemsIdsFromLocalStorage(STORAGE_KEYS.BODYBUILDING_TECHNIQUES),
-          workMethodIds: toolsItemsIdsFromLocalStorage(STORAGE_KEYS.WORK_METHODS),
-        });
-        if (cleaned.length !== list.length) {
-          console.warn(
-            `[tools] Sanitized commonDailyActions (localStorage): removed ${list.length - cleaned.length} misplaced entr${list.length - cleaned.length === 1 ? 'y' : 'ies'}.`
-          );
-        }
-        setCommonDailyActions(cleaned);
-      } catch (e) {
-        console.error('Failed to load common daily actions');
-        setCommonDailyActions([]);
-      }
-    } else {
-      setCommonDailyActions([]);
-    }
-  }, []);
-
-  const loadWorkMethodsFromLocalStorage = useCallback(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.WORK_METHODS);
-    if (saved) {
-      try {
-        setWorkMethods(JSON.parse(saved));
-      } catch {
-        setWorkMethods([]);
-      }
-    } else {
-      setWorkMethods([]);
-    }
-  }, []);
-
+  
   /**
    * Load body building techniques from localStorage
    */
@@ -316,6 +271,20 @@ export function useToolsData(): UseToolsDataReturn {
       setDevices(DEFAULT_DEVICES);
     }
   }, []);
+
+  const loadExercisePathologyCatalogFromLocalStorage = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.EXERCISE_PATHOLOGY_CATALOG);
+    if (saved) {
+      try {
+        setExercisePathologyCatalog(coerceExercisePathologyCatalog(JSON.parse(saved)));
+      } catch (e) {
+        console.error('Failed to load exercise pathology catalog');
+        setExercisePathologyCatalog([]);
+      }
+    } else {
+      setExercisePathologyCatalog([]);
+    }
+  }, []);
   
   /**
    * Load all data from localStorage
@@ -323,23 +292,21 @@ export function useToolsData(): UseToolsDataReturn {
   const loadAllFromLocalStorage = useCallback(() => {
     loadPeriodsFromLocalStorage();
     loadSectionsFromLocalStorage();
-    loadCommonDailyActionsFromLocalStorage();
-    loadWorkMethodsFromLocalStorage();
     loadBodyBuildingTechniquesFromLocalStorage();
     loadSportsFromLocalStorage();
     loadEquipmentFromLocalStorage();
     loadExercisesFromLocalStorage();
+    loadExercisePathologyCatalogFromLocalStorage();
     loadDevicesFromLocalStorage();
   }, [
     loadPeriodsFromLocalStorage,
     loadSectionsFromLocalStorage,
-    loadCommonDailyActionsFromLocalStorage,
-    loadWorkMethodsFromLocalStorage,
     loadBodyBuildingTechniquesFromLocalStorage,
     loadSportsFromLocalStorage,
     loadEquipmentFromLocalStorage,
     loadExercisesFromLocalStorage,
-    loadDevicesFromLocalStorage
+    loadExercisePathologyCatalogFromLocalStorage,
+    loadDevicesFromLocalStorage,
   ]);
   
   /**
@@ -356,7 +323,6 @@ export function useToolsData(): UseToolsDataReturn {
       }
       
       // Load periods from Prisma Period table (not from JSON settings)
-      let periodIdsForCda = new Set<string>();
       const periodsResponse = await fetch('/api/workouts/periods', {
         headers: getAuthHeaders()
       });
@@ -375,39 +341,25 @@ export function useToolsData(): UseToolsDataReturn {
                 /* ignore */
               }
             }
-            let titleByLanguage: Record<string, string> | undefined;
-            if (p.nameTranslations && typeof p.nameTranslations === 'string') {
-              try {
-                const parsed = JSON.parse(p.nameTranslations) as Record<string, string>;
-                if (parsed && typeof parsed === 'object') titleByLanguage = parsed;
-              } catch {
-                /* ignore */
-              }
-            }
             return {
               id: p.id,
               title: p.name,
               description: p.description || '',
-              titleByLanguage,
               descriptionByLanguage,
               color: p.color,
               order: p.displayOrder !== undefined ? p.displayOrder : 0,
               userId: p.userId
             };
           });
-          periodIdsForCda = new Set(formattedPeriods.map((p: Period) => String(p.id)));
           setPeriods(formattedPeriods);
         } else {
           loadPeriodsFromLocalStorage();
-          periodIdsForCda = toolsItemsIdsFromLocalStorage(STORAGE_KEYS.PERIODS);
         }
       } else {
         loadPeriodsFromLocalStorage();
-        periodIdsForCda = toolsItemsIdsFromLocalStorage(STORAGE_KEYS.PERIODS);
       }
       
       // Load workout sections from Prisma WorkoutSection table (not from JSON settings)
-      let sectionIdsForCda = new Set<string>();
       const sectionsResponse = await fetch('/api/workouts/sections', {
         headers: getAuthHeaders()
       });
@@ -416,53 +368,27 @@ export function useToolsData(): UseToolsDataReturn {
         const sectionsData = await sectionsResponse.json();
         if (sectionsData.sections && sectionsData.sections.length > 0) {
           // Convert Prisma WorkoutSection format to local Section format
-          const formattedSections = sectionsData.sections.map((s: any) => {
-            let descriptionByLanguage: Record<string, string> | undefined;
-            if (s.descriptionTranslations && typeof s.descriptionTranslations === 'string') {
-              try {
-                const parsed = JSON.parse(s.descriptionTranslations) as Record<string, string>;
-                if (parsed && typeof parsed === 'object') descriptionByLanguage = parsed;
-              } catch {
-                /* ignore */
-              }
-            }
-            let titleByLanguage: Record<string, string> | undefined;
-            if (s.nameTranslations && typeof s.nameTranslations === 'string') {
-              try {
-                const parsed = JSON.parse(s.nameTranslations) as Record<string, string>;
-                if (parsed && typeof parsed === 'object') titleByLanguage = parsed;
-              } catch {
-                /* ignore */
-              }
-            }
-            return {
-              id: s.id,
-              title: s.name,
-              code: s.code || '',
-              description: s.description || '',
-              descriptionByLanguage,
-              titleByLanguage,
-              color: s.color,
-              order: s.displayOrder !== undefined ? s.displayOrder : 0,
-              userId: s.userId
-            };
-          });
-          sectionIdsForCda = new Set(formattedSections.map((s: WorkoutSection) => String(s.id)));
+          const formattedSections = sectionsData.sections.map((s: any) => ({
+            id: s.id,
+            title: s.name,
+            code: s.code || '',
+            description: s.description || '',
+            color: s.color,
+            order: s.displayOrder !== undefined ? s.displayOrder : 0, // Use displayOrder from database
+            userId: s.userId // Track ownership
+          }));
           setSections(formattedSections);
           console.log('✅ Loaded workout sections from database:', formattedSections);
           console.log('📊 Sections with order:', formattedSections.map((s: any) => ({ title: s.title, order: s.order, displayOrder: sectionsData.sections.find((orig: any) => orig.id === s.id)?.displayOrder })));
           console.log('🔢 SECTION ORDERS:', formattedSections.map((s: any) => `${s.title}: order=${s.order}`).join(', '));
         } else {
           loadSectionsFromLocalStorage();
-          sectionIdsForCda = toolsItemsIdsFromLocalStorage(STORAGE_KEYS.SECTIONS);
         }
       } else {
         loadSectionsFromLocalStorage();
-        sectionIdsForCda = toolsItemsIdsFromLocalStorage(STORAGE_KEYS.SECTIONS);
       }
       
       // Load body building techniques from Prisma BodyBuildingTechnique table
-      let techniqueIdsForCda = new Set<string>();
       const techniquesResponse = await fetch('/api/bodybuilding/techniques', {
         headers: getAuthHeaders()
       });
@@ -490,38 +416,15 @@ export function useToolsData(): UseToolsDataReturn {
           console.log(`🔍 Filtered ${userTechniques.length} user techniques from ${techniquesData.techniques.length} total (excluding ${techniquesData.techniques.length - userTechniques.length} admin techniques)`);
           
           // Convert Prisma BodyBuildingTechnique format to local format
-          const formattedTechniques = userTechniques.map((t: any) => {
-            let descriptionByLanguage: Record<string, string> | undefined;
-            if (t.descriptionTranslations && typeof t.descriptionTranslations === 'string') {
-              try {
-                const parsed = JSON.parse(t.descriptionTranslations) as Record<string, string>;
-                if (parsed && typeof parsed === 'object') descriptionByLanguage = parsed;
-              } catch {
-                /* ignore */
-              }
-            }
-            let titleByLanguage: Record<string, string> | undefined;
-            if (t.nameTranslations && typeof t.nameTranslations === 'string') {
-              try {
-                const parsed = JSON.parse(t.nameTranslations) as Record<string, string>;
-                if (parsed && typeof parsed === 'object') titleByLanguage = parsed;
-              } catch {
-                /* ignore */
-              }
-            }
-            return {
-              id: t.id,
-              title: t.name,
-              description: t.description || '',
-              descriptionByLanguage,
-              titleByLanguage,
-              color: t.color,
-              sports: t.sports || [],
-              order: t.displayOrder !== undefined ? t.displayOrder : 0,
-              userId: t.userId
-            };
-          });
-          techniqueIdsForCda = new Set(formattedTechniques.map((t: BodyBuildingTechnique) => String(t.id)));
+          const formattedTechniques = userTechniques.map((t: any) => ({
+            id: t.id,
+            title: t.name,
+            description: t.description || '',
+            color: t.color,
+            sports: t.sports || [], // API already returns array, no need to check
+            order: t.displayOrder !== undefined ? t.displayOrder : 0, // Use displayOrder from database
+            userId: t.userId // Track ownership
+          }));
           setBodyBuildingTechniques(formattedTechniques);
           console.log('✅ Loaded body building techniques from database:', formattedTechniques);
           console.log('🔍 Techniques details:', formattedTechniques.map((t: BodyBuildingTechnique) => ({ 
@@ -534,11 +437,9 @@ export function useToolsData(): UseToolsDataReturn {
           console.log('🔢 TECHNIQUE ORDERS:', formattedTechniques.map((t: any) => `${t.title}: order=${t.order}`).join(', '));
         } else {
           loadBodyBuildingTechniquesFromLocalStorage();
-          techniqueIdsForCda = toolsItemsIdsFromLocalStorage(STORAGE_KEYS.BODYBUILDING_TECHNIQUES);
         }
       } else {
         loadBodyBuildingTechniquesFromLocalStorage();
-        techniqueIdsForCda = toolsItemsIdsFromLocalStorage(STORAGE_KEYS.BODYBUILDING_TECHNIQUES);
       }
       
       // Load other settings from UserSettings JSON
@@ -570,38 +471,16 @@ export function useToolsData(): UseToolsDataReturn {
           loadExercisesFromLocalStorage();
         }
 
+        if (Array.isArray(toolsSettings.exercisePathologyCatalog)) {
+          setExercisePathologyCatalog(coerceExercisePathologyCatalog(toolsSettings.exercisePathologyCatalog));
+        } else {
+          loadExercisePathologyCatalogFromLocalStorage();
+        }
+
         if (toolsSettings.devices && toolsSettings.devices.length > 0) {
           setDevices(toolsSettings.devices);
         } else {
           loadDevicesFromLocalStorage();
-        }
-
-        if (Array.isArray(toolsSettings.commonDailyActions)) {
-          const wmArr = Array.isArray(toolsSettings.workMethods) ? toolsSettings.workMethods : [];
-          const wmIdsForCda = new Set<string>(
-            wmArr.map((w: { id?: unknown }) => String(w?.id ?? '')).filter(Boolean)
-          );
-          const rawCda = toolsSettings.commonDailyActions as WorkoutSection[];
-          const cleanedCda = sanitizeCommonDailyActionsList(rawCda, {
-            periodIds: periodIdsForCda,
-            sectionIds: sectionIdsForCda,
-            techniqueIds: techniqueIdsForCda,
-            workMethodIds: wmIdsForCda,
-          });
-          if (cleanedCda.length !== rawCda.length) {
-            console.warn(
-              `[tools] Sanitized commonDailyActions (loaded from DB): removed ${rawCda.length - cleanedCda.length} misplaced entr${rawCda.length - cleanedCda.length === 1 ? 'y' : 'ies'} (same ids as periods/sections/work methods/techniques).`
-            );
-          }
-          setCommonDailyActions(cleanedCda);
-        } else {
-          setCommonDailyActions([]);
-        }
-
-        if (Array.isArray(toolsSettings.workMethods)) {
-          setWorkMethods(toolsSettings.workMethods as WorkoutSection[]);
-        } else {
-          setWorkMethods([]);
         }
       } else {
         // Fallback to localStorage if API fails
@@ -620,7 +499,8 @@ export function useToolsData(): UseToolsDataReturn {
     loadSportsFromLocalStorage,
     loadEquipmentFromLocalStorage,
     loadExercisesFromLocalStorage,
-    loadDevicesFromLocalStorage
+    loadExercisePathologyCatalogFromLocalStorage,
+    loadDevicesFromLocalStorage,
   ]);
   
   /**
@@ -641,8 +521,7 @@ export function useToolsData(): UseToolsDataReturn {
     equipmentData?: Equipment[],
     exercisesData?: Exercise[],
     devicesData?: Device[],
-    commonDailyActionsData?: WorkoutSection[],
-    workMethodsData?: WorkoutSection[]
+    exercisePathologyCatalogData?: ExercisePathologyCatalogItem[]
   ) => {
     if (periodsData) {
       localStorage.setItem(STORAGE_KEYS.PERIODS, JSON.stringify(periodsData));
@@ -665,18 +544,18 @@ export function useToolsData(): UseToolsDataReturn {
     if (devicesData) {
       localStorage.setItem(STORAGE_KEYS.DEVICES, JSON.stringify(devicesData));
     }
-    if (commonDailyActionsData) {
-      localStorage.setItem(STORAGE_KEYS.COMMON_DAILY_ACTIONS, JSON.stringify(commonDailyActionsData));
-    }
-    if (workMethodsData) {
-      localStorage.setItem(STORAGE_KEYS.WORK_METHODS, JSON.stringify(workMethodsData));
+    if (exercisePathologyCatalogData) {
+      localStorage.setItem(
+        STORAGE_KEYS.EXERCISE_PATHOLOGY_CATALOG,
+        JSON.stringify(exercisePathologyCatalogData)
+      );
     }
   };
   
   /**
    * Save all settings to database
    */
-  const saveToDatabase = async () => {
+  const saveToDatabase = useCallback(async () => {
     setIsSavingToDatabase(true);
     try {
       const token = getAuthToken();
@@ -685,6 +564,17 @@ export function useToolsData(): UseToolsDataReturn {
         setIsSavingToDatabase(false);
         return;
       }
+
+      const {
+        periods,
+        sections,
+        bodyBuildingTechniques,
+        sports,
+        equipment,
+        exercises,
+        devices,
+        exercisePathologyCatalog,
+      } = latestForDbSave.current;
 
       console.log('💾 Saving periods to database...', periods);
 
@@ -743,33 +633,7 @@ export function useToolsData(): UseToolsDataReturn {
         console.error('❌ Failed to sync body building techniques');
       }
 
-      let mergedToolsSettings: Record<string, unknown> = {
-        sports,
-        equipment,
-        exercises,
-        devices,
-        commonDailyActions,
-        workMethods
-      };
-      try {
-        const cur = await fetch('/api/user/settings', { headers: getAuthHeaders() });
-        if (cur.ok) {
-          const sd = await cur.json();
-          const prev = sd.toolsSettings && typeof sd.toolsSettings === 'object' ? sd.toolsSettings : {};
-          mergedToolsSettings = {
-            ...(prev as Record<string, unknown>),
-            sports,
-            equipment,
-            exercises,
-            devices,
-            commonDailyActions,
-            workMethods
-          };
-        }
-      } catch {
-        /* keep mergedToolsSettings as-is */
-      }
-
+      // Save other tools settings to UserSettings JSON
       const response = await fetch('/api/user/settings', {
         method: 'PATCH',
         headers: {
@@ -777,7 +641,14 @@ export function useToolsData(): UseToolsDataReturn {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          toolsSettings: mergedToolsSettings
+          toolsSettings: {
+            // Periods and sections are now in Prisma tables, not JSON
+            sports,
+            equipment,
+            exercises,
+            devices,
+            exercisePathologyCatalog,
+          }
         })
       });
 
@@ -791,26 +662,42 @@ export function useToolsData(): UseToolsDataReturn {
         setLastSavedTime(new Date());
         console.log('✅ Tools settings saved to database successfully');
       } else {
-        throw new Error('Failed to save to database');
+        const errBody = await response.text().catch(() => '');
+        let detail = errBody;
+        try {
+          const j = JSON.parse(errBody) as { error?: string; details?: string };
+          detail = j.details || j.error || errBody;
+        } catch {
+          /* keep raw */
+        }
+        console.error('❌ PATCH /api/user/settings failed:', response.status, detail);
+        throw new Error(
+          detail ? `Save failed (${response.status}): ${detail}` : `Save failed (${response.status})`
+        );
       }
     } catch (error) {
       console.error('Error saving to database:', error);
-      alert('Failed to save to database. Please try again.');
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      alert(
+        msg.includes('Save failed')
+          ? msg
+          : 'Failed to save to database. Please try again. (Check the browser console for details.)'
+      );
     } finally {
       setIsSavingToDatabase(false);
     }
-  };
+  }, []);
   
   return {
     // State
     periods,
     sections,
-    commonDailyActions,
-    workMethods,
     bodyBuildingTechniques,
     sports,
     equipment,
     exercises,
+    exercisePathologyCatalog,
+    periodizationTemplates,
     devices,
     iconType,
     isLoadingIconPreference,
@@ -820,12 +707,12 @@ export function useToolsData(): UseToolsDataReturn {
     // Actions
     setPeriods,
     setSections,
-    setCommonDailyActions,
-    setWorkMethods,
     setBodyBuildingTechniques,
     setSports,
     setEquipment,
     setExercises,
+    setExercisePathologyCatalog,
+    setPeriodizationTemplates,
     setDevices,
     setIconType,
     setIsSavingToDatabase,

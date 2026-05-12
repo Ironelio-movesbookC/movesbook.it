@@ -7,16 +7,12 @@ import { X, Edit, Copy, Move, Trash2, Plus, CheckCircle, Circle, Clock, MapPin, 
 import { getSportIcon, isImageIcon } from '@/utils/sportIcons';
 import { useSportIconType } from '@/hooks/useSportIconType';
 import { formatMoveframeType, getRepsLabelCap, getRepsLabel, isDistanceBasedSport } from '@/constants/moveframe.constants';
+import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
+import { movelapPauseFieldLabel } from '@/utils/restTypeDb';
 
-// 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
-  return content
-    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
-    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
-    .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
-    .replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '')
-    .trim();
+  return stripInternalWorkoutTags(content).trim();
 };
 
 /** Build "distances only" line (e.g. 100\\A2+50\\A1+200\\B1) from movelaps; second return is typed description from notes. */
@@ -632,11 +628,7 @@ export default function MoveframeInfoPanel({
                         // Typed description from notes (user part outside metadata tags) if not already set
                         let parsedTypedDesc = typedDescriptionLine;
                         if (!parsedTypedDesc && typeof moveframe.notes === 'string') {
-                          const userPart = stripCircuitTags(
-                            moveframe.notes
-                              .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
-                              .trim()
-                          );
+                          const userPart = stripCircuitTags(moveframe.notes);
                           if (userPart) parsedTypedDesc = userPart;
                         }
                         return (
@@ -799,7 +791,7 @@ export default function MoveframeInfoPanel({
                               )}
                               {movelap.pause && (
                                 <span className="text-xs text-gray-500">
-                                  Pause: {movelap.pause}
+                                  {movelapPauseFieldLabel(movelap.restType)}: {movelap.pause}
                                 </span>
                               )}
                             </div>

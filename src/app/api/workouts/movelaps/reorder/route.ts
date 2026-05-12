@@ -24,24 +24,27 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid movelaps data' }, { status: 400 });
     }
 
-    // Update each movelap's repetitionNumber (order) and isNewlyAdded flag in a transaction
-    await prisma.$transaction(
-      movelaps.map((ml: { id: string; repetitionNumber: number; isNewlyAdded?: boolean }) => {
+    // Interactive tx: batch $transaction([...]) requires PrismaPromises; our prisma proxy wraps
+    // model calls as plain Promises, so we run sequential updates on the real tx client.
+    await prisma.$transaction(async (tx) => {
+      for (const ml of movelaps as {
+        id: string;
+        repetitionNumber: number;
+        isNewlyAdded?: boolean;
+      }[]) {
         console.log(`  - Updating movelap ${ml.id}: repetitionNumber=${ml.repetitionNumber}, isNewlyAdded=${ml.isNewlyAdded}`);
         const data: { repetitionNumber: number; isNewlyAdded?: boolean } = {
-          repetitionNumber: ml.repetitionNumber
+          repetitionNumber: ml.repetitionNumber,
         };
         if (typeof ml.isNewlyAdded === 'boolean') {
           data.isNewlyAdded = ml.isNewlyAdded;
         }
-        return prisma.movelap.update({
+        await tx.movelap.update({
           where: { id: ml.id },
-          data: { 
-            ...data
-          }
+          data,
         });
-      })
-    );
+      }
+    });
 
     console.log('✅ Movelaps reordered successfully');
 

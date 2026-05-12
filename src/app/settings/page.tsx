@@ -22,12 +22,10 @@ import {
   Trophy,
   Grid,
   Save,
-  Layers
 } from 'lucide-react';
 
 type SettingsSection =
   | 'backgrounds'
-  | 'periodization'
   | 'tools'
   | 'technical'
   | 'workoutParameters'
@@ -42,12 +40,22 @@ export default function SettingsPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
     if (typeof window === 'undefined') return 'grid';
-    const saved = localStorage.getItem('settings_active_section');
+    const raw = localStorage.getItem('settings_active_section');
+    if (raw === 'periodization') {
+      localStorage.setItem('settings_active_section', 'tools');
+      localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
+      return 'tools';
+    }
     const valid: SettingsSection[] = [
-      'backgrounds', 'periodization', 'tools', 'technical',
-      'workoutParameters', 'favourites', 'mybest', 'grid'
+      'backgrounds',
+      'tools',
+      'technical',
+      'workoutParameters',
+      'favourites',
+      'mybest',
+      'grid',
     ];
-    return (saved && valid.includes(saved as SettingsSection)) ? (saved as SettingsSection) : 'grid';
+    return raw && valid.includes(raw as SettingsSection) ? (raw as SettingsSection) : 'grid';
   });
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [queryParams, setQueryParams] = useState<URLSearchParams | null>(null);
@@ -100,22 +108,25 @@ export default function SettingsPage() {
     if (!queryParams) return;
     const sectionParam = queryParams.get('section');
     if (!sectionParam) return;
+    if (sectionParam === 'periodization') {
+      setActiveSection('tools');
+      localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
+      return;
+    }
     const allowedAdminSections: SettingsSection[] = [
       'backgrounds',
-      'periodization',
       'tools',
       'technical',
       'workoutParameters',
       'favourites',
-      'grid'
+      'grid',
     ];
     const allowedUserSections: SettingsSection[] = [
       'backgrounds',
-      'periodization',
       'tools',
       'favourites',
       'mybest',
-      'grid'
+      'grid',
     ];
     const allowed = isAdmin ? allowedAdminSections : allowedUserSections;
     if (allowed.includes(sectionParam as SettingsSection)) {
@@ -132,7 +143,6 @@ export default function SettingsPage() {
     ? [
         { id: 'grid' as SettingsSection, label: t('settings_display_mode'), icon: Grid },
         { id: 'backgrounds' as SettingsSection, label: t('settings_backgrounds'), icon: Palette },
-        { id: 'periodization' as SettingsSection, label: t('settings_periodization'), icon: Layers },
         { id: 'tools' as SettingsSection, label: 'Tools Settings', icon: SettingsIcon },
         { id: 'technical' as SettingsSection, label: 'Technical Settings', icon: Wrench },
         { id: 'workoutParameters' as SettingsSection, label: 'Workouts parameters settings', icon: SlidersHorizontal },
@@ -141,7 +151,6 @@ export default function SettingsPage() {
     : [
         { id: 'grid' as SettingsSection, label: t('settings_display_mode'), icon: Grid },
         { id: 'backgrounds' as SettingsSection, label: t('settings_backgrounds'), icon: Palette },
-        { id: 'periodization' as SettingsSection, label: t('settings_periodization'), icon: Layers },
         { id: 'tools' as SettingsSection, label: t('settings_tools'), icon: SettingsIcon },
         { id: 'favourites' as SettingsSection, label: t('settings_favourites'), icon: Star },
         { id: 'mybest' as SettingsSection, label: t('settings_my_best'), icon: Trophy }
@@ -256,15 +265,6 @@ export default function SettingsPage() {
           <div className="flex-1 min-w-0">
             <div className="bg-white dark:bg-gray-800 rounded-2xl sm:rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6 lg:p-8 transition-colors">
             {activeSection === 'backgrounds' && <BackgroundsColorsSettings isAdmin={isAdmin} />}
-            {activeSection === 'periodization' && (
-              <ToolsSettings
-                isAdmin={isAdmin}
-                userType={user?.userType}
-                mode="tools"
-                periodizationOnly
-                initialTab="periods"
-              />
-            )}
             {activeSection === 'tools' && <ToolsSettings isAdmin={isAdmin} userType={user?.userType} mode="tools" initialTab={requestedTab as any} />}
             {activeSection === 'technical' && <ToolsSettings isAdmin={isAdmin} userType={user?.userType} mode="technical" initialTab={requestedTab as any} />}
             {activeSection === 'workoutParameters' && <WorkoutsParametersSettings initialTab={requestedWorkoutTab} />}

@@ -548,18 +548,26 @@ export default function BatteryCircuitPlanner({
       {/* Warning Message */}
       <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3 flex items-start gap-2">
         <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-        <p className="text-sm text-yellow-800">⚠️ Here you can create sequences of exercises to be performed in circuits to be repeated</p>
+        <div className="min-w-0 text-sm text-yellow-900 space-y-1">
+          <p className="font-semibold">Circuit planning</p>
+          <p className="text-yellow-800">
+            This screen builds <span className="font-medium">circuit</span> sequences (stations A–I), not the aerobic / anaerobic{' '}
+            <span className="font-medium">fast</span> row planners.
+          </p>
+          <p className="text-yellow-800">
+            Here you can create sequences of exercises to be performed in circuits to be repeated.
+          </p>
+        </div>
       </div>
       
-      {/* Descriptions & Instructions */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-2">Descriptions & instructions</label>
-        <textarea 
-          value={description} 
-          onChange={(e) => setDescription(e.target.value)} 
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-green-50" 
-          rows={3} 
-          placeholder="Add circuit description and instructions..." 
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-green-50 resize-y"
+          rows={2}
+          placeholder="Add descriptions or instructions here..."
+          aria-label="Circuit descriptions and instructions"
         />
       </div>
       

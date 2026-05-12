@@ -5,14 +5,11 @@ import { X, Printer } from 'lucide-react';
 import { shouldShowDistance, getDistanceUnit, AEROBIC_SPORTS } from '@/constants/moveframe.constants';
 import { useSportIconType } from '@/hooks/useSportIconType';
 import { isImageIcon } from '@/utils/sportIcons';
+import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
 
-// Helper function to strip circuit metadata tags from content
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
-  return content
-    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
-    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
-    .trim();
+  return stripInternalWorkoutTags(content).trim();
 };
 
 interface WorkoutOverviewModalProps {

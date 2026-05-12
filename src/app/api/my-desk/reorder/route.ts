@@ -49,14 +49,15 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid sibling list' }, { status: 400 });
     }
 
-    await prisma.$transaction(
-      orderedIds.map((id, index) =>
-        prisma.myDeskItem.update({
+    await prisma.$transaction(async (tx) => {
+      for (let index = 0; index < orderedIds.length; index++) {
+        const id = orderedIds[index];
+        await tx.myDeskItem.update({
           where: { id },
-          data: { sortOrder: index }
-        })
-      )
-    );
+          data: { sortOrder: index },
+        });
+      }
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

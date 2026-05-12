@@ -9,15 +9,17 @@ import MovelapDetailTable from './MovelapDetailTable';
 import { getSportIcon, isImageIcon } from '@/utils/sportIcons';
 import { useSportIconType } from '@/hooks/useSportIconType';
 import { getSportDisplayName, DISTANCE_BASED_SPORTS } from '@/constants/moveframe.constants';
+import { stripInternalWorkoutTags, stripCircuitCompactExerciseTrail } from '@/utils/sanitizeWorkoutHtml';
+import { movelapPauseFieldLabel } from '@/utils/restTypeDb';
+import {
+  computeAnaerobicFastPlannerRowStats,
+  computeMoveframeAvePauseSeconds,
+  formatAvePauseFromSeconds
+} from '@/utils/moveframeAvePause';
 
-// 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
-  return content
-    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
-    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
-    .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
-    .trim();
+  return stripInternalWorkoutTags(content).trim();
 };
 
 const extractFastPlannerDataFromNotes = (notes: unknown): any | null => {
@@ -30,135 +32,6 @@ const extractFastPlannerDataFromNotes = (notes: unknown): any | null => {
     return null;
   }
 };
-
-/** Pause / macro strings like 1'30", 2', 45 — matches MovelapDetailTable fast planner footer */
-function parseFastPlannerPauseToSeconds(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value));
-  if (typeof value !== 'string') return 0;
-  const s = String(value).trim();
-  if (!s) return 0;
-  if (/^\d+$/.test(s)) return Math.max(0, parseInt(s, 10));
-  if (s.includes("'")) {
-    const parts = s.split("'");
-    const mStr = (parts[0] ?? '').replace(/\D/g, '');
-    const secStr = parts.slice(1).join("'").replace(/\D/g, '');
-    const m = mStr ? parseInt(mStr, 10) : 0;
-    const sec = secStr ? parseInt(secStr.slice(0, 2), 10) : 0;
-    return Math.max(0, m * 60 + sec);
-  }
-  const secOnly = s.match(/^(\d+)\s*"?$/);
-  if (secOnly) return Math.max(0, parseInt(secOnly[1], 10));
-  return 0;
-}
-
-function parseFastPlannerRipVolume(rip: unknown, ripTimeMode: string): number {
-  if (ripTimeMode === 'reps') {
-    return parseInt(String(rip ?? '0').replace(/[^\d]/g, '') || '0', 10) || 0;
-  }
-  const str = String(rip ?? '').trim();
-  if (!str) return 0;
-  if (str.includes(':')) {
-    const segs = str.split(':').map((x) => parseInt(x.replace(/\D/g, ''), 10) || 0);
-    if (segs.length >= 2) return segs[0] * 60 + segs[1];
-  }
-  return parseFastPlannerPauseToSeconds(str) || parseInt(str.replace(/\D/g, ''), 10) || 0;
-}
-
-/**
- * Anaerobic Fast Planner moveframe row: sector→series totals, sum of series, sum of series×rip,
- * average macro/break seconds (aligned with movelap table footer logic).
- */
-function computeAnaerobicFastPlannerRowStats(payload: any, movelaps: any[] | undefined) {
-  const rows: any[] = Array.isArray(payload?.rows) ? payload.rows : [];
-  const laps = Array.isArray(movelaps) ? movelaps : [];
-  const ripTimeMode = payload?.ripTimeMode === 'time' ? 'time' : 'reps';
-
-  const effectiveRows = rows.filter((r) => (r.exercise || '').trim() !== '');
-
-  let totalSeries = 0;
-  let totalRepVolume = 0;
-  const sectorSeries = new Map<string, number>();
-  const macroSeconds: number[] = [];
-  let lastMacroRaw: string | null = null;
-  let lastMacroSec = 0;
-
-  const setEndMacroFromRaw = (raw: unknown) => {
-    if (raw == null) return;
-    const s = String(raw).trim();
-    if (!s) return;
-    lastMacroRaw = s;
-    lastMacroSec = parseFastPlannerPauseToSeconds(raw);
-  };
-
-  effectiveRows.forEach((r, ord) => {
-    const lap = laps[ord];
-    const sector =
-      (String(r?.sector ?? '').trim() || (lap?.muscularSector || '').trim() || (lap?.sector || '').trim() || 'Other');
-    const series = parseInt(String(r.series || '0'), 10) || 0;
-    totalSeries += series;
-    sectorSeries.set(sector, (sectorSeries.get(sector) || 0) + series);
-    const repsPerSet = parseFastPlannerRipVolume(r.ripTime, ripTimeMode);
-    totalRepVolume += series * repsPerSet;
-    const macroOrBreak = lap?.macroFinal ?? r.break ?? lap?.pause ?? lap?._fastPlannerBreak;
-    const sec = parseFastPlannerPauseToSeconds(macroOrBreak);
-    if (sec > 0) macroSeconds.push(sec);
-  });
-
-  if (effectiveRows.length > 0) {
-    const ord = effectiveRows.length - 1;
-    const r = effectiveRows[ord];
-    const lap = laps[ord];
-    setEndMacroFromRaw(lap?.macroFinal ?? r?.break ?? lap?.pause ?? lap?._fastPlannerBreak);
-  }
-
-  if (effectiveRows.length === 0 && laps.length > 0) {
-    laps.forEach((lap: any) => {
-      const sector = (lap.muscularSector || '').trim() || 'Other';
-      const series = parseInt(String(lap._fastPlannerSeries || '1'), 10) || 1;
-      totalSeries += series;
-      sectorSeries.set(sector, (sectorSeries.get(sector) || 0) + series);
-      const reps =
-        typeof lap.reps === 'number' && !Number.isNaN(lap.reps)
-          ? lap.reps
-          : parseInt(String(lap._fastPlannerRipTime || '0').replace(/[^\d]/g, '') || '0', 10) || 0;
-      totalRepVolume += series * reps;
-      const macroOrBreak = lap.macroFinal ?? lap.pause ?? lap._fastPlannerBreak;
-      const sec = parseFastPlannerPauseToSeconds(macroOrBreak);
-      if (sec > 0) macroSeconds.push(sec);
-    });
-    const lastLap = laps[laps.length - 1];
-    setEndMacroFromRaw(lastLap?.macroFinal ?? lastLap?.pause ?? lastLap?._fastPlannerBreak);
-  }
-
-  const sectorPairs = Array.from(sectorSeries.entries())
-    .map(([name, series]) => ({ name, series }))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-
-  const sectorSummaryLine = sectorPairs.map(({ name, series }) => `${name}: ${series}`).join(' · ');
-
-  const avgMacroSec =
-    macroSeconds.length > 0 ? macroSeconds.reduce((a, b) => a + b, 0) / macroSeconds.length : 0;
-
-  const ripPerSet = totalSeries > 0 ? totalRepVolume / totalSeries : null;
-  const ripPerSetDisplay =
-    ripPerSet != null
-      ? Number.isInteger(ripPerSet)
-        ? String(ripPerSet)
-        : ripPerSet.toFixed(1)
-      : '—';
-
-  return {
-    totalSeries,
-    totalRepVolume,
-    sectorSummaryLine,
-    sectorPairs,
-    avgMacroSec,
-    ripPerSet,
-    ripPerSetDisplay,
-    lastMacroRaw,
-    lastMacroSec,
-  };
-}
 
 interface SortableMoveframeRowProps {
   moveframe: any;
@@ -282,6 +155,17 @@ export default function SortableMoveframeRow({
     if (fastPlannerPayloadMemo.plannerType === 'aerobic') return null;
     return computeAnaerobicFastPlannerRowStats(fastPlannerPayloadMemo, moveframe.movelaps);
   }, [isFastPlanMoveframeMemo, fastPlannerPayloadMemo, moveframe.movelaps]);
+
+  const moveframeAvePauseSeconds = React.useMemo(
+    () =>
+      computeMoveframeAvePauseSeconds(
+        moveframe,
+        anaerobicFastPlannerStats,
+        fastPlannerPayloadMemo,
+        isFastPlanMoveframeMemo
+      ),
+    [moveframe, anaerobicFastPlannerStats, fastPlannerPayloadMemo, isFastPlanMoveframeMemo]
+  );
   
   const sectionColor = moveframe.section?.color || '#5b8def';
   const sectionName = moveframe.section?.name || 'Default';
@@ -352,72 +236,6 @@ export default function SortableMoveframeRow({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showOptionsDropdown]);
-  
-  const isSeriesBasedSport = ['BODY_BUILDING', 'GYMNASTIC', 'CALISTHENICS', 'CROSSFIT', 'FUNCTIONAL'].includes(moveframe.sport || '');
-
-  const parseTimeToSeconds = (value: unknown): number | null => {
-    if (value == null) return null;
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value !== 'string') return null;
-
-    const raw = value.trim();
-    if (!raw) return null;
-
-    if (raw.includes('h') || raw.includes("'") || raw.includes('"')) {
-      const hMatch = raw.match(/(\d+)\s*h/);
-      const mMatch = raw.match(/(\d+)\s*'/);
-      const sMatch = raw.match(/(\d+)\s*"/);
-      const hours = hMatch ? parseInt(hMatch[1] || '0', 10) : 0;
-      const minutes = mMatch ? parseInt(mMatch[1] || '0', 10) : 0;
-      const seconds = sMatch ? parseInt(sMatch[1] || '0', 10) : 0;
-      const total = hours * 3600 + minutes * 60 + seconds;
-      return Number.isFinite(total) ? total : null;
-    }
-
-    if (raw.includes(':')) {
-      const parts = raw.split(':').map(p => parseInt(p, 10));
-      if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
-        return parts[0] * 60 + parts[1];
-      }
-      if (parts.length === 3 && Number.isFinite(parts[0]) && Number.isFinite(parts[1]) && Number.isFinite(parts[2])) {
-        return parts[0] * 3600 + parts[1] * 60 + parts[2];
-      }
-    }
-
-    const asNumber = Number(raw);
-    return Number.isFinite(asNumber) ? asNumber : null;
-  };
-
-  /** Parse macroFinal (e.g. "1'30"", "2'15"") to seconds */
-  const parseMacroToSeconds = (s: string | null | undefined): number | null => {
-    if (!s || typeof s !== 'string') return null;
-    return parseTimeToSeconds(s);
-  };
-
-  /** Macro column: display average of all typed macroFinal values */
-  const macroSecondsFromLaps = (moveframe.movelaps || [])
-    .map((lap: any) => parseMacroToSeconds(lap.macroFinal))
-    .filter((v: number | null | undefined): v is number => v != null && v > 0);
-  const avgMacroSeconds = macroSecondsFromLaps.length > 0
-    ? macroSecondsFromLaps.reduce((a: number, b: number) => a + b, 0) / macroSecondsFromLaps.length
-    : null;
-
-  const macroTime = (moveframe.movelaps || []).reduce((sum: number, lap: any) => {
-    const direct = parseTimeToSeconds(lap.estimatedTime ?? lap.time);
-    if (direct != null) return sum + direct;
-    if (isSeriesBasedSport) {
-      const pauseSeconds = parseTimeToSeconds(lap.pause);
-      if (pauseSeconds != null) return sum + pauseSeconds;
-    }
-    return sum;
-  }, 0);
-  
-  const formatMacroTime = (seconds: number) => {
-    if (!seconds || seconds === 0) return '-';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}'${secs.toString().padStart(2, '0')}"`;
-  };
 
   // Default column order if not provided - should match MoveframesSection
   const visibleColumns = orderedVisibleColumns || ['checkbox', 'drag', 'expand', 'index', 'mf', 'color', 'section', 'description', 'duration', 'rip', 'macro', 'alarm', 'options', 'code_section', 'action', 'dist', 'style', 'speed', 'time', 'pace', 'rec', 'rest_to', 'aim_snd', 'sport', 'annotation', 'annotations'];
@@ -702,7 +520,7 @@ export default function SortableMoveframeRow({
         const isFastPlanMoveframe = moveframe.type === 'BATTERY' && !moveframe.isCircuitBased &&
           (typeof moveframe.description === 'string' && moveframe.description.toLowerCase().startsWith('fast planner') ||
             (typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]')));
-        /** Aerobic only: distance\\style or fallback movelap line. Anaerobic uses Rip\\set summary instead of raw reps\\pace. */
+        /** Aerobic only: distance\\style or fallback movelap line. Anaerobic shows Tot. reps / Tot. series / Reps\\serie instead of raw reps\\pace. */
         const fastPlanDistancesLine = isFastPlanMoveframe
           ? isAerobicFastPlan && Array.isArray(fastPlannerPayload?.rows)
             ? fastPlannerPayload.rows
@@ -714,7 +532,7 @@ export default function SortableMoveframeRow({
                 })
                 .filter(Boolean)
                 .join('+')
-            : isAerobicFastPlan && Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0
+            : Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0
             ? moveframe.movelaps
                 .map((lap: any) => {
                   const val = lap.reps ?? lap.distance ?? lap.weight ?? '';
@@ -792,8 +610,9 @@ export default function SortableMoveframeRow({
                 ) : null}
                 {!isAerobicFastPlan && anaerobicFastPlannerStats ? (
                   <div className="font-medium leading-snug text-gray-900">
-                    Rip\set = {anaerobicFastPlannerStats.totalRepVolume} :{' '}
-                    {anaerobicFastPlannerStats.totalSeries}
+                    Tot. reps {anaerobicFastPlannerStats.totalRepVolume} Tot. series{' '}
+                    {anaerobicFastPlannerStats.totalSeries} Reps{'\\'}serie{' '}
+                    {anaerobicFastPlannerStats.ripPerSetDisplay}
                   </div>
                 ) : isAerobicFastPlan && fastPlanDistancesLine ? (
                   <div className="font-medium text-gray-900">{fastPlanDistancesLine}</div>
@@ -804,12 +623,8 @@ export default function SortableMoveframeRow({
                 {(() => {
                   const hasAnaerobicSectors =
                     !isAerobicFastPlan && !!anaerobicFastPlannerStats?.sectorPairs?.length;
-                  const hasRipSetSummary = !isAerobicFastPlan && anaerobicFastPlannerStats != null;
                   const hasAny =
-                    hasAnaerobicSectors ||
-                    hasRipSetSummary ||
-                    (!!fastPlanDistancesLine && isAerobicFastPlan) ||
-                    !!fastPlanUserNoteLine;
+                    hasAnaerobicSectors || !!fastPlanDistancesLine || !!fastPlanUserNoteLine;
                   return hasAny ? null : <span className="text-gray-400">No description</span>;
                 })()}
               </div>
@@ -836,7 +651,8 @@ export default function SortableMoveframeRow({
                   }
                   // For circuit-based moveframes, show description or "No circuit description"
                   if (moveframe.isCircuitBased) {
-                    const displayText = manualContent || 'No circuit description';
+                    const displayText =
+                      stripCircuitCompactExerciseTrail(manualContent).trim() || 'No circuit description';
                     console.log(`🔄 [SortableMoveframeRow] Circuit display for ${moveframe.letter}:`, displayText);
                     return displayText;
                   }
@@ -932,6 +748,19 @@ export default function SortableMoveframeRow({
           // For manual mode with non-aerobic sports, Duration column should be empty
           // Series value only shows in Rip\Sets column
           durationDisplay = '—';
+        } else if (moveframe.isCircuitBased && !isManualModeDuration) {
+          let circuitSeries = Math.max(0, parseInt(String(moveframe.repetitions ?? '0'), 10) || 0);
+          if (circuitSeries <= 0 && Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0) {
+            const keys = new Set<string>();
+            for (const lap of moveframe.movelaps) {
+              const letter = String(lap?.circuitLetter || '').trim().toUpperCase();
+              if (!letter) continue;
+              const sn = lap?.localSeriesNumber ?? lap?.seriesNumber ?? 1;
+              keys.add(`${letter}:${sn}`);
+            }
+            circuitSeries = keys.size;
+          }
+          durationDisplay = circuitSeries > 0 ? `${circuitSeries} series` : '—';
         } else if (anaerobicFastPlannerStats != null) {
           // Fast planner request: DUR must show total series only.
           durationDisplay =
@@ -997,6 +826,31 @@ export default function SortableMoveframeRow({
         
         if (moveframe.type === 'ANNOTATION') {
           ripDisplay = '—';
+        } else if (moveframe.isCircuitBased) {
+          const totalFromField = Number(moveframe.totalReps);
+          const totalR =
+            Number.isFinite(totalFromField) && totalFromField > 0
+              ? Math.round(totalFromField)
+              : (moveframe.movelaps || []).reduce((s: number, lap: any) => {
+                  const n = parseInt(String(lap?.reps ?? '').replace(/[^\d]/g, ''), 10);
+                  return s + (Number.isFinite(n) ? n : 0);
+                }, 0);
+          let seriesN = Math.max(0, parseInt(String(moveframe.repetitions ?? '0'), 10) || 0);
+          if (seriesN <= 0 && Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0) {
+            const keys = new Set<string>();
+            for (const lap of moveframe.movelaps) {
+              const letter = String(lap?.circuitLetter || '').trim().toUpperCase();
+              if (!letter) continue;
+              const sn = lap?.localSeriesNumber ?? lap?.seriesNumber ?? 1;
+              keys.add(`${letter}:${sn}`);
+            }
+            seriesN = keys.size;
+          }
+          if (seriesN > 0 && totalR > 0) {
+            ripDisplay = String(Math.round(totalR / seriesN));
+          } else {
+            ripDisplay = '—';
+          }
         } else if (anaerobicFastPlannerStats) {
           ripDisplay = String(anaerobicFastPlannerStats.totalRepVolume);
         } else if (isManualModeRip && !isAerobicSport) {
@@ -1033,8 +887,10 @@ export default function SortableMoveframeRow({
       
       case 'macro':
         const isManualModeMacro = moveframe.manualMode === true;
-        const fastPlannerPayloadForMacro = extractFastPlannerDataFromNotes(moveframe.notes) ?? moveframe.fastPlannerData ?? null;
-        const isAerobicFastPlannerMacro = fastPlannerPayloadForMacro?.plannerType === 'aerobic';
+        const avePauseDisplay =
+          moveframeAvePauseSeconds != null && moveframeAvePauseSeconds > 0
+            ? formatAvePauseFromSeconds(moveframeAvePauseSeconds)
+            : '—';
         return (
           <td 
             key="macro" 
@@ -1059,13 +915,7 @@ export default function SortableMoveframeRow({
               ? '—'
               : isManualModeMacro
                 ? '—'
-                : isAerobicFastPlannerMacro
-                  ? (moveframe.macroFinal || '—')
-                : anaerobicFastPlannerStats && anaerobicFastPlannerStats.avgMacroSec > 0
-                  ? formatMacroTime(Math.round(anaerobicFastPlannerStats.avgMacroSec))
-                  : avgMacroSeconds != null
-                    ? formatMacroTime(Math.round(avgMacroSeconds))
-                    : moveframe.macroFinal || formatMacroTime(macroTime)}
+                : avePauseDisplay}
           </td>
         );
       
@@ -1451,7 +1301,11 @@ export default function SortableMoveframeRow({
                         {lap.time && <div>Time: <span className="font-semibold">{lap.time}</span></div>}
                         {lap.pace && <div>Pace: <span className="font-semibold">{lap.pace}</span></div>}
                         {lap.speed && <div>Speed: <span className="font-semibold">{lap.speed}</span></div>}
-                        {lap.pause && <div>Pause: <span className="font-semibold">{lap.pause}</span></div>}
+                        {lap.pause && (
+                          <div>
+                            {movelapPauseFieldLabel(lap.restType)}: <span className="font-semibold">{lap.pause}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

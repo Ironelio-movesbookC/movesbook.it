@@ -17,12 +17,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import ReactDOM from 'react-dom';
 import { X, Settings, RotateCw, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
-import {
-  MUSCULAR_SECTORS,
-  circuitLoadOfWorkToMacroFinal,
-  CIRCUIT_STATION_PAUSE_OPTIONS as STATION_PAUSE_OPTIONS,
-  CIRCUIT_SERIES_PAUSE_OPTIONS as SERIES_PAUSE_OPTIONS,
-} from '@/constants/moveframe.constants';
+import { MUSCULAR_SECTORS, circuitLoadOfWorkToMacroFinal, MACRO_FINAL_OPTIONS } from '@/constants/moveframe.constants';
 import CircuitPreferencesModal, { ExercisePreferences } from './CircuitPreferencesModal';
 // 2026-01-22 11:45 UTC - Import mock exercise database
 import {
@@ -31,7 +26,6 @@ import {
   getAllSectors,
   getMockExerciseThumbnail,
   getExerciseMedia,
-  getExercisePictureAThumbnailForDisplay,
   MockExercise,
 } from '@/data/mockExercises';
 import ExerciseGalleryModal from './ExerciseGalleryModal';
@@ -87,16 +81,11 @@ function buildDefaultSeriesPauses(
   const n = circuit.stationsBySeries?.length ?? circuit.series;
   const len = seriesPausesSlotCount(n, mode);
   if (len <= 0) return [];
+  const fb = mode === 'time' ? fallbackAfterCirc : fallbackBetween;
   const existing = circuit.seriesPauses;
-  return Array.from({ length: len }, (_, i) => {
-    const isLastTimeSlot = mode === 'time' && i === len - 1;
-    const defaultVal = isLastTimeSlot ? fallbackAfterCirc : fallbackBetween;
-    const raw =
-      existing != null && i < existing.length && existing[i] !== undefined ? existing[i]! : defaultVal;
-    return mode === 'time' && isLastTimeSlot
-      ? coerceBetweenCircuitsSeconds(raw, fallbackAfterCirc)
-      : coerceCountSeriesPauseSeconds(raw, fallbackBetween);
-  });
+  return Array.from({ length: len }, (_, i) =>
+    existing != null && i < existing.length && existing[i] !== undefined ? existing[i]! : fb
+  );
 }
 
 /** After removing serie at removedSeriesIndex (0-based), rebuild seriesPauses. */
@@ -124,27 +113,6 @@ function circuitStationProducesMovelap(station: Station): boolean {
   const sectorS = (station.sector || '').trim();
   const exerciseS = (station.exercise || '').trim();
   return !!(sectorS || exerciseS);
-}
-
-/** Picker hints: green = already in this serie, yellow = only in other series of this circuit. */
-function getExerciseCircuitSeriesUsage(
-  circuit: Circuit | undefined,
-  exerciseName: string,
-  currentSeriesIdx: number
-): { inCurrentSeries: boolean; inOtherSeries: boolean } {
-  const target = (exerciseName || '').trim();
-  if (!circuit?.stationsBySeries?.length || !target) {
-    return { inCurrentSeries: false, inOtherSeries: false };
-  }
-  let inCurrentSeries = false;
-  let inOtherSeries = false;
-  circuit.stationsBySeries.forEach((seriesStations, si) => {
-    const found = seriesStations.some((st) => (st.exercise || '').trim() === target);
-    if (!found) return;
-    if (si === currentSeriesIdx) inCurrentSeries = true;
-    else inOtherSeries = true;
-  });
-  return { inCurrentSeries, inOtherSeries };
 }
 
 /** PREVIEW station pause average: count rows with non-blank exercise only (ignore sector). */
@@ -203,26 +171,38 @@ const MUSCULAR_SECTOR_IMAGES: Record<string, string> = {
 
 const CIRCUIT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
 
-/** Macro digit 0–9 → target seconds digit×10; snap to nearest footer Pause option (e.g. 4→40″, 6→1′). */
-function footerPauseSecondsFromMacroDigit(digit: number): number {
-  const targetSec = Math.max(0, Math.min(90, digit * 10));
-  let best = STATION_PAUSE_OPTIONS[0]!.value;
-  let bestDist = Infinity;
-  for (const o of STATION_PAUSE_OPTIONS) {
-    const d = Math.abs(o.value - targetSec);
-    if (d < bestDist) {
-      bestDist = d;
-      best = o.value;
-    }
-  }
-  return best;
-}
-
-/** Pause among / between circuits — dropdown only 1′ … 10′ (values in seconds). */
+/** Between-circuit / Continuous Time macro dropdown — 1′…10′ as seconds (60…600). */
 const CIRCUIT_PAUSE_OPTIONS = Array.from({ length: 10 }, (_, i) => {
   const minutes = i + 1;
   return { label: `${minutes}'`, value: minutes * 60 };
 });
+const CIRCUIT_PAUSE_VALUE_SET = new Set(CIRCUIT_PAUSE_OPTIONS.map((o) => o.value));
+
+// Pause options in seconds (converted from time format)
+const STATION_PAUSE_OPTIONS = [
+  { label: '0"', value: 0 },
+  { label: '5"', value: 5 },
+  { label: '10"', value: 10 },
+  { label: '15"', value: 15 },
+  { label: '20"', value: 20 },
+  { label: '25"', value: 25 },
+  { label: '30"', value: 30 },
+  { label: '40"', value: 40 },
+  { label: '50"', value: 50 },
+  { label: '1\'', value: 60 },
+  { label: '1\'30"', value: 90 },
+  { label: '2\'', value: 120 }
+];
+
+/** Rip value written when applying Macro (minute count as string 1–10, or legacy digit 0–9). */
+function macroLoadToRepsString(load: unknown): string | null {
+  const t = String(load ?? '').trim();
+  if (!t) return null;
+  if (/^[0-9]$/.test(t)) return t;
+  const sec = parseInt(t, 10);
+  if (Number.isFinite(sec) && CIRCUIT_PAUSE_VALUE_SET.has(sec)) return String(sec / 60);
+  return null;
+}
 
 /**
  * Battery REDESIGNED / legacy rows may store 1–10 as whole minutes; grid `<select>` uses seconds.
@@ -245,8 +225,55 @@ function coerceCountSeriesPauseSeconds(v: number, fallbackSec: number): number {
   return n;
 }
 
+/** Uniform index in [0, maxExclusive) — prefers crypto for scan / shuffle (client-only callers). */
+function randomUintBelow(maxExclusive: number): number {
+  if (maxExclusive <= 1) return 0;
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    return buf[0]! % maxExclusive;
+  }
+  return Math.floor(Math.random() * maxExclusive);
+}
+
+/** Fisher–Yates shuffle — varies horizontal circuit scans on repeated clicks while keeping assignment rules. */
+function shuffleExercisePoolNames(names: string[]): string[] {
+  const pool = [...names];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = randomUintBelow(i + 1);
+    const tmp = pool[i]!;
+    pool[i] = pool[j]!;
+    pool[j] = tmp;
+  }
+  return pool;
+}
+
+/** Majority vote for sector on a station column (handles sparse / mismatched rows across series). */
+function resolveSectorForStationColumn(rows: Station[][] | undefined, stationIdx0: number): string {
+  if (!Array.isArray(rows)) return '';
+  const tally = new Map<string, number>();
+  let firstNonEmpty = '';
+  for (const row of rows) {
+    const st = Array.isArray(row) ? row[stationIdx0] : undefined;
+    const sec = (st?.sector ?? '').trim();
+    if (!sec) continue;
+    if (!firstNonEmpty) firstNonEmpty = sec;
+    tally.set(sec, (tally.get(sec) ?? 0) + 1);
+  }
+  let best = firstNonEmpty;
+  let bestN = 0;
+  tally.forEach((c, sec) => {
+    if (c > bestN) {
+      best = sec;
+      bestN = c;
+    }
+  });
+  return best;
+}
+
 /**
- * Horizontal station scan: prefer distinct exercises; avoid adjacent duplicates until pool forces it.
+ * Horizontal station scan: prefer distinct exercises (spread usage); avoid adjacent duplicates until pool forces it.
+ * Picks uniformly at random among tied-best candidates so scans actually rotate through the catalog (not only #01/#02).
  */
 function pickExercisesForStationColumn(
   sector: string,
@@ -254,58 +281,53 @@ function pickExercisesForStationColumn(
   getPool: typeof getExercisesBySector
 ): string[] {
   const exercises = getPool(sector) || [];
-  const pool = exercises.map((e) => e.name).filter(Boolean);
+  const pool = shuffleExercisePoolNames(exercises.map((e) => e.name).filter(Boolean));
   const result: string[] = Array.from({ length: n }, () => '');
   if (n === 0 || pool.length === 0) return result;
   const usedCount = new Map<string, number>();
   for (let i = 0; i < n; i++) {
-    const prev = i > 0 ? result[i - 1] : '';
-    const ranked = [...pool].sort((a, b) => (usedCount.get(a) ?? 0) - (usedCount.get(b) ?? 0));
-    let choice = ranked.find((name) => name !== prev && (usedCount.get(name) ?? 0) === 0);
-    if (choice === undefined) choice = ranked.find((name) => name !== prev);
-    if (choice === undefined) choice = ranked[0]!;
+    const prev = i > 0 ? result[i - 1]! : '';
+    const minUse = Math.min(...pool.map((name) => usedCount.get(name) ?? 0));
+    let eligible = pool.filter(
+      (name) => name !== prev && (usedCount.get(name) ?? 0) === minUse
+    );
+    if (eligible.length === 0) {
+      eligible = pool.filter((name) => name !== prev);
+    }
+    if (eligible.length === 0) {
+      eligible = [...pool];
+    }
+    const choice = eligible[randomUintBelow(eligible.length)]!;
     result[i] = choice;
     usedCount.set(choice, (usedCount.get(choice) ?? 0) + 1);
   }
   return result;
 }
 
-/**
- * Execution horizontally (count): exercise chosen on **series 1** (index 0) for a station is copied to the
- * same station column in series 2+ so the grid pre-fills. Each cell remains editable afterwards.
- */
-function replicateHorizontalExerciseFromSeriesOne(
-  nextCircuits: Circuit[],
-  circuitIdx: number,
-  stationIdx: number,
-  exerciseName: string,
-  sectorName: string
-): void {
-  const circuit = nextCircuits[circuitIdx];
-  const rows = circuit?.stationsBySeries;
-  if (!rows?.length) return;
-  if (!(exerciseName || '').trim()) return;
-  for (let s = 1; s < rows.length; s++) {
-    const list = rows[s];
-    if (!list?.[stationIdx]) continue;
-    list[stationIdx] = {
-      ...list[stationIdx],
-      exercise: exerciseName,
-      sector: sectorName || list[stationIdx].sector,
-    };
-  }
-}
+const SERIES_PAUSE_OPTIONS = [
+  { label: '0"', value: 0 },
+  { label: '30"', value: 30 },
+  { label: '1\'', value: 60 },
+  { label: '1\'30"', value: 90 },
+  { label: '2\'', value: 120 },
+  { label: '2\'30"', value: 150 },
+  { label: '3\'', value: 180 },
+  { label: '4\'', value: 240 },
+  { label: '5\'', value: 300 },
+  { label: '6\'', value: 360 },
+  { label: '7\'', value: 420 },
+  { label: '8\'', value: 480 },
+  { label: '9\'', value: 540 },
+  { label: '10\'', value: 600 }
+];
 
-/** Format seconds as pause label; prefer dropdown option, else clean M′SS″ (no floating-point artifacts). */
+/** Format seconds as pause label; use closest option or M'S" */
 function formatPauseSeconds(options: { label: string; value: number }[], valueSeconds: number): string {
-  const secTotal = Math.max(0, Math.round(Number.isFinite(valueSeconds) ? Number(valueSeconds) : 0));
-  const found = options.find((o) => o.value === secTotal);
+  const rounded = Math.round(valueSeconds);
+  const found = options.find(o => o.value === rounded);
   if (found) return found.label;
-  const m = Math.floor(secTotal / 60);
-  const s = secTotal % 60;
-  if (m <= 0) return `${s}"`;
-  if (s === 0) return `${m}'`;
-  return `${m}'${String(s).padStart(2, '0')}"`;
+  if (rounded >= 60) return `${Math.floor(rounded / 60)}'${rounded % 60 ? `${rounded % 60}"` : ''}`.trim();
+  return `${rounded}"`;
 }
 
 /** Parse pause from movelap format (e.g. "0'10\"", "0'15\"", "10", 10) to seconds */
@@ -324,6 +346,47 @@ function parsePauseFromMovelap(value: unknown): number {
   }
   const secOnly = s.replace(/\D/g, '');
   return secOnly ? parseInt(secOnly.slice(0, 3), 10) || 0 : 0;
+}
+
+function parseMacroLoadToPauseSeconds(load: unknown): number {
+  const s = String(load ?? '').trim();
+  if (!s) return 0;
+  if (/^[0-9]$/.test(s)) return parseInt(s, 10) * 60;
+  const sec = parseInt(s, 10);
+  if (!Number.isFinite(sec)) return 0;
+  if (sec >= 60 && sec <= 600) return sec;
+  if (CIRCUIT_PAUSE_VALUE_SET.has(sec)) return sec;
+  return CIRCUIT_PAUSE_OPTIONS[0]?.value ?? 60;
+}
+
+function macroLoadToMovelapMacroFinal(load: unknown): string | null {
+  const s = String(load ?? '').trim();
+  if (/^[0-9]$/.test(s)) return circuitLoadOfWorkToMacroFinal(s);
+  const sec = parseMacroLoadToPauseSeconds(load);
+  if (sec <= 0) return null;
+  const idx = Math.min(9, Math.max(0, Math.round(sec / 60)));
+  return MACRO_FINAL_OPTIONS[idx] ?? null;
+}
+
+function generatePreviewStructurePlanned(circuitsData: Circuit[]): string {
+  const n = circuitsData?.length ?? 0;
+  if (!n) return '0 circuits';
+  const letters = circuitsData.map((c) => c.letter).filter(Boolean);
+  return `${n} circuit(s)${letters.length ? ` (${letters.join(', ')})` : ''}`;
+}
+
+function generatePreviewRealData(circuitsData: Circuit[]): string {
+  let slots = 0;
+  for (const c of circuitsData || []) {
+    const rows = c.stationsBySeries || [];
+    for (const row of rows) {
+      if (!Array.isArray(row)) continue;
+      for (const st of row) {
+        if (circuitStationProducesMovelap(st)) slots++;
+      }
+    }
+  }
+  return `${slots} filled station slot(s)`;
 }
 
 // ============================================================================
@@ -360,7 +423,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         : 40;
   const [pauseHorizontalSeries, setPauseHorizontalSeries] = useState(horizontalSeriesInitial);
   const [pauseDraftHorizontalSeries, setPauseDraftHorizontalSeries] = useState(horizontalSeriesInitial);
-  /** Inter-station: vertical uses Pause\\stations; horizontal uses “Pause after all the series of each station” (not Between series). */
+  /** Inter-station: vertical uses Pause\\stations; horizontal uses dedicated Horizontal Series (not Between series). */
   const pauseAmongStationsBase =
     executionMode === 'horizontal' ? pauseHorizontalSeries : pauseStations;
   const pauseAmongStationsDraft =
@@ -432,12 +495,22 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     prevPhaseForPauseDraft.current = currentPhase;
   }, [currentPhase, pauseStations, pauseCircuits, pauseSeries, pauseHorizontalSeries, executionMode]);
   
-  // Macro (`loadOfWork`) is always 0–9 or empty; never bulk reps like 12.
+  // Continuous Time: Macro uses same values as Pause among / between circuits (60…600 s). Legacy digit minutes migrate to seconds.
   useEffect(() => {
     if (seriesMode === 'time') {
-      const valid = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-      if (!loadOfWork || !valid.includes(loadOfWork)) {
-        setLoadOfWork('0');
+      const trimmed = (loadOfWork || '').trim();
+      if (/^[0-9]$/.test(trimmed)) {
+        const sec = parseInt(trimmed, 10) * 60;
+        const migrated =
+          sec === 0 ? String(CIRCUIT_PAUSE_OPTIONS[0]!.value) : String(sec);
+        if (migrated !== loadOfWork) {
+          setLoadOfWork(migrated);
+          return;
+        }
+      }
+      const circuitVals = new Set(CIRCUIT_PAUSE_OPTIONS.map((o) => String(o.value)));
+      if (!circuitVals.has(trimmed)) {
+        setLoadOfWork(String(CIRCUIT_PAUSE_OPTIONS[0]!.value));
       }
     } else {
       const valid = new Set(['', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
@@ -446,6 +519,12 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       }
     }
   }, [seriesMode, loadOfWork]);
+
+  useEffect(() => {
+    if (seriesMode === 'time') {
+      setPauseDraftSeries(pauseDraftCircuits);
+    }
+  }, [seriesMode, pauseDraftCircuits]);
 
   useEffect(() => {
     if (circuits.length === 0) return;
@@ -458,24 +537,24 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           typeof circuit.pauseAfterCircuit === 'number' ? circuit.pauseAfterCircuit : pauseCircuits,
           pauseCircuits
         );
-        const pauseBetween = coerceCountSeriesPauseSeconds(
-          typeof circuit.pauseBetweenSeries === 'number' ? circuit.pauseBetweenSeries : pauseSeries,
-          pauseSeries
-        );
+        const pauseBetween =
+          nextMode === 'time'
+            ? pauseAfter
+            : coerceCountSeriesPauseSeconds(
+                typeof circuit.pauseBetweenSeries === 'number' ? circuit.pauseBetweenSeries : pauseSeries,
+                pauseSeries
+              );
         const expectedSlots = seriesPausesSlotCount(nSeries, nextMode);
 
         let nextSeriesPauses: number[] | undefined;
         if (expectedSlots > 0) {
+          const fallback = nextMode === 'time' ? pauseAfter : pauseBetween;
           const src = Array.isArray(circuit.seriesPauses) ? circuit.seriesPauses : [];
           nextSeriesPauses = Array.from({ length: expectedSlots }, (_, i) => {
-            const slotFallback =
-              nextMode === 'time' && i < expectedSlots - 1 ? pauseBetween : pauseAfter;
-            const raw = i < src.length && typeof src[i] === 'number' ? src[i]! : slotFallback;
-            return nextMode === 'time' && i < expectedSlots - 1
-              ? coerceCountSeriesPauseSeconds(raw, pauseBetween)
-              : nextMode === 'time'
-                ? coerceBetweenCircuitsSeconds(raw, pauseAfter)
-                : coerceCountSeriesPauseSeconds(raw, pauseBetween);
+            const raw = i < src.length && typeof src[i] === 'number' ? src[i]! : fallback;
+            return nextMode === 'time'
+              ? coerceBetweenCircuitsSeconds(raw, pauseAfter)
+              : coerceCountSeriesPauseSeconds(raw, pauseBetween);
           });
         } else {
           nextSeriesPauses = undefined;
@@ -537,7 +616,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
   const [insertAfterCircuit, setInsertAfterCircuit] = useState('');
   // 2026-01-22 10:00 UTC - Checkbox selection state for remove functionality
   const [selectedCircuits, setSelectedCircuits] = useState<Set<string>>(new Set());
-  const [selectedSeries, setSelectedSeries] = useState<Set<string>>(new Set()); // format: "circuit-series" e.g., "A-1"
+  const [selectedSeries, setSelectedSeries] = useState<Set<string>>(new Set());
+  /** Vertical count: `A-2` = circuit A global serie 2. Horizontal count: `H|A|5|2` = circuit A, station 5, local serie 2 only. */
   const [selectedStations, setSelectedStations] = useState<Set<string>>(new Set()); // format: "circuit-series-station" e.g., "A-1-1"
   const selectedStationsRef = useRef<Set<string>>(new Set());
   selectedStationsRef.current = selectedStations;
@@ -579,10 +659,13 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       const normalizedCircuits = initialConfig.existingCircuits.map((c: Circuit) => {
         const afterRaw = typeof c.pauseAfterCircuit === 'number' ? c.pauseAfterCircuit : pauseCircuits;
         const after = coerceBetweenCircuitsSeconds(afterRaw, pauseCircuits);
-        const between = coerceCountSeriesPauseSeconds(
-          typeof c.pauseBetweenSeries === 'number' ? c.pauseBetweenSeries : pauseSeries,
-          pauseSeries
-        );
+        const between =
+          seriesMode === 'time'
+            ? after
+            : coerceCountSeriesPauseSeconds(
+                typeof c.pauseBetweenSeries === 'number' ? c.pauseBetweenSeries : pauseSeries,
+                pauseSeries
+              );
         const n = c.stationsBySeries?.length ?? c.series;
         const expected = seriesPausesSlotCount(n, seriesMode === 'time' ? 'time' : 'count');
         let seriesPauses = c.seriesPauses;
@@ -595,14 +678,9 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
               after
             );
           } else {
-            seriesPauses = seriesPauses.map((p, i) => {
-              const raw = typeof p === 'number' ? p : seriesMode === 'time' && i < expected - 1 ? between : after;
-              return seriesMode === 'time' && i < expected - 1
-                ? coerceCountSeriesPauseSeconds(raw, between)
-                : seriesMode === 'time'
-                  ? coerceBetweenCircuitsSeconds(raw, after)
-                  : coerceCountSeriesPauseSeconds(raw, between);
-            });
+            const coerceSlot = (p: number) =>
+              seriesMode === 'time' ? coerceBetweenCircuitsSeconds(p, after) : coerceCountSeriesPauseSeconds(p, between);
+            seriesPauses = seriesPauses.map((p) => coerceSlot(typeof p === 'number' ? p : between));
           }
         } else {
           seriesPauses = undefined;
@@ -648,30 +726,15 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         stationsBySeries.push(stationsForThisSeries);
       }
       
-      const between = pauseSeries;
+      const between = seriesMode === 'time' ? pauseCircuits : pauseSeries;
       const slots = seriesPausesSlotCount(seriesNum, seriesMode === 'time' ? 'time' : 'count');
-      const after = pauseCircuits;
       newCircuits.push({
         letter: CIRCUIT_LETTERS[i],
         stationsBySeries,
         series: seriesNum,
         pauseBetweenSeries: between,
-        pauseAfterCircuit: after,
-        seriesPauses:
-          slots > 0
-            ? buildDefaultSeriesPauses(
-                {
-                  letter: CIRCUIT_LETTERS[i],
-                  stationsBySeries,
-                  series: seriesNum,
-                  pauseBetweenSeries: between,
-                  pauseAfterCircuit: after,
-                },
-                seriesMode === 'time' ? 'time' : 'count',
-                between,
-                after
-              )
-            : undefined
+        pauseAfterCircuit: pauseCircuits,
+        seriesPauses: slots > 0 ? Array.from({ length: slots }, () => between) : undefined
       });
     }
     
@@ -749,22 +812,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         setCircuits(prevCircuits => {
           const newCircuits = JSON.parse(JSON.stringify(prevCircuits));
           const ex = scan.orderedCandidates[scan.scanIndex];
-          const cell = newCircuits[scan.circuitIdx].stationsBySeries[scan.seriesIdx][scan.stationIdx];
-          cell.exercise = ex.name;
-          if (
-            executionMode === 'horizontal' &&
-            seriesMode === 'count' &&
-            scan.seriesIdx === 0 &&
-            (ex.name || '').trim()
-          ) {
-            replicateHorizontalExerciseFromSeriesOne(
-              newCircuits,
-              scan.circuitIdx,
-              scan.stationIdx,
-              ex.name,
-              cell.sector || ''
-            );
-          }
+          newCircuits[scan.circuitIdx].stationsBySeries[scan.seriesIdx][scan.stationIdx].exercise = ex.name;
           return newCircuits;
         });
         const circuitLetter = circuits[scan.circuitIdx]?.letter || '';
@@ -779,7 +827,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [loadNewStationScan, circuits, executionMode, seriesMode]);
+  }, [loadNewStationScan, circuits]);
 
   // ============================================================================
   // HANDLERS - 2026-01-21 19:40 UTC
@@ -795,6 +843,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     setPauseCircuits(c);
     setPauseSeries(ser);
     setPauseHorizontalSeries(pauseDraftHorizontalSeries);
+    const betweenSeriesCommitted = seriesMode === 'time' ? c : ser;
     setCircuits((prev) =>
       prev.map((circuit) => {
         const slots = seriesPausesSlotCount(
@@ -802,15 +851,11 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           seriesMode === 'time' ? 'time' : 'count'
         );
         const seriesPauses =
-          slots > 0
-            ? seriesMode === 'time'
-              ? Array.from({ length: slots }, (_, i) => (i < slots - 1 ? ser : c))
-              : Array.from({ length: slots }, () => ser)
-            : undefined;
+          slots > 0 ? Array.from({ length: slots }, () => betweenSeriesCommitted) : undefined;
         return {
           ...circuit,
           pauseAfterCircuit: c,
-          pauseBetweenSeries: ser,
+          pauseBetweenSeries: betweenSeriesCommitted,
           seriesPauses,
           stationsBySeries: circuit.stationsBySeries.map((series, sIdx) => {
             const nSer = circuit.stationsBySeries.length;
@@ -871,31 +916,15 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           }
           stationsBySeries.push(stationsForThisSeries);
         }
-        const between = pauseSeries;
-        const after = pauseCircuits;
+        const between = seriesMode === 'time' ? pauseCircuits : pauseSeries;
         const slots = seriesPausesSlotCount(seriesCountActual, seriesMode === 'time' ? 'time' : 'count');
-        const modeSer = seriesMode === 'time' ? 'time' : 'count';
         newCircuits.push({
           letter,
           stationsBySeries,
           series: seriesCountActual,
           pauseBetweenSeries: between,
-          pauseAfterCircuit: after,
-          seriesPauses:
-            slots > 0
-              ? buildDefaultSeriesPauses(
-                  {
-                    letter,
-                    stationsBySeries,
-                    series: seriesCountActual,
-                    pauseBetweenSeries: between,
-                    pauseAfterCircuit: after,
-                  },
-                  modeSer,
-                  between,
-                  after
-                )
-              : undefined
+          pauseAfterCircuit: pauseCircuits,
+          seriesPauses: slots > 0 ? Array.from({ length: slots }, () => between) : undefined
         });
       }
       setCircuits(newCircuits);
@@ -990,27 +1019,17 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           }
           const newN = newStationsBySeries.length;
           const targetLen = seriesPausesSlotCount(newN, pauseMode);
-          const between = circuit.pauseBetweenSeries ?? pauseSeries;
-          const after = circuit.pauseAfterCircuit ?? pauseCircuits;
-          const sp =
-            targetLen > 0
-              ? buildDefaultSeriesPauses(
-                  {
-                    ...circuit,
-                    stationsBySeries: newStationsBySeries,
-                    series: newN,
-                    seriesPauses: circuit.seriesPauses,
-                  },
-                  pauseMode,
-                  between,
-                  after
-                )
-              : undefined;
+          const fb =
+            seriesMode === 'time'
+              ? circuit.pauseAfterCircuit ?? pauseCircuits
+              : circuit.pauseBetweenSeries ?? pauseSeries;
+          let sp = circuit.seriesPauses ? [...circuit.seriesPauses] : [];
+          while (sp.length < targetLen) sp.push(fb);
           return {
             ...circuit,
             stationsBySeries: newStationsBySeries,
             series: newN,
-            seriesPauses: sp,
+            seriesPauses: targetLen > 0 ? sp : undefined,
           };
         }
         let pauses = circuit.seriesPauses;
@@ -1162,27 +1181,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     
     setShowSectorSelector(true);
   };
-
-  const sectorPresenceByCircuitSeries = React.useMemo(() => {
-    const map: Record<string, string[]> = {};
-
-    circuits.forEach((circuit) => {
-      circuit.stationsBySeries.forEach((seriesStations, seriesIdx) => {
-        seriesStations.forEach((station) => {
-          const sectorName = (station.sector || '').trim();
-          if (!sectorName) return;
-
-          const slot = `${circuit.letter}${seriesIdx + 1}`;
-          if (!map[sectorName]) map[sectorName] = [];
-          if (!map[sectorName].includes(slot)) {
-            map[sectorName].push(slot);
-          }
-        });
-      });
-    });
-
-    return map;
-  }, [circuits]);
   
   // 2026-01-22 12:40 UTC - Handle dragging muscular area
   const handleDragStart = (e: React.DragEvent, sector: string) => {
@@ -1446,32 +1444,15 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         }
         stationsBySeries.push(stations);
       }
-      const between = pauseSeries;
-      const after = pauseCircuits;
+      const between = seriesMode === 'time' ? pauseCircuits : pauseSeries;
       const slots = seriesPausesSlotCount(nSeries, seriesMode === 'time' ? 'time' : 'count');
-      const modeSer = seriesMode === 'time' ? 'time' : 'count';
-      const letter = CIRCUIT_LETTERS[i];
       newCircuits.push({
-        letter,
+        letter: CIRCUIT_LETTERS[i],
         stationsBySeries,
         series: nSeries,
         pauseBetweenSeries: between,
-        pauseAfterCircuit: after,
-        seriesPauses:
-          slots > 0
-            ? buildDefaultSeriesPauses(
-                {
-                  letter,
-                  stationsBySeries,
-                  series: nSeries,
-                  pauseBetweenSeries: between,
-                  pauseAfterCircuit: after,
-                },
-                modeSer,
-                between,
-                after
-              )
-            : undefined
+        pauseAfterCircuit: pauseCircuits,
+        seriesPauses: slots > 0 ? Array.from({ length: slots }, () => between) : undefined
       });
     }
     return newCircuits;
@@ -1493,43 +1474,67 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     // 2026-01-22 12:15 UTC - Fixed to use series-specific stations
     // 2026-03-30 - One movelap per grid cell (sum of station slots).
     // Horizontal + Count: visit all series at station 1, then station 2, … Pause\series (blue row)
-    // rests between series at the same station; pause-after-all-series rests after the last serie before the next station.
+    // rests between series at the same station; Horizontal Series rests after the last serie before the next station.
     const movelaps: any[] = [];
     let workoutSeriesBase = 1; // Per grid serie row, continuous across circuits (same as legacy globalSeriesNumber start)
     let sequenceNumber = 1;
     const circuitsToUse = overrideCircuits ?? circuits;
-    const lapMacroFinal = circuitLoadOfWorkToMacroFinal(loadOfWork);
-    const loadTrim = String(loadOfWork ?? '').trim();
-    const finalMacroPauseSeconds = /^[0-9]$/.test(loadTrim) ? parseInt(loadTrim, 10) * 60 : 0;
+    const lapMacroFinal = macroLoadToMovelapMacroFinal(loadOfWork);
+    const finalMacroPauseSeconds = parseMacroLoadToPauseSeconds(loadOfWork);
 
     circuitsToUse.forEach((circuit, circuitIndex) => {
       const seriesRows = Array.isArray(circuit.stationsBySeries) ? circuit.stationsBySeries : [];
       const nSer = seriesRows.length;
-      const nSta = seriesRows[0]?.length ?? 0;
+      const nSta = Math.max(
+        0,
+        ...seriesRows.map((row) => (Array.isArray(row) ? row.length : 0))
+      );
       const isLastCircuit = circuitIndex === circuitsToUse.length - 1;
 
       if (executionMode === 'horizontal' && seriesMode === 'count' && nSer > 0 && nSta > 0) {
+        let lastProducingStationCol = -1;
+        for (let jj = nSta - 1; jj >= 0; jj--) {
+          const anyHere = seriesRows.some(
+            (row) => row?.[jj] && circuitStationProducesMovelap(row[jj]!)
+          );
+          if (anyHere) {
+            lastProducingStationCol = jj;
+            break;
+          }
+        }
+
         for (let j = 0; j < nSta; j++) {
+          const producingSeriesAtCol: number[] = [];
+          for (let ss = 0; ss < nSer; ss++) {
+            const st = seriesRows[ss]?.[j];
+            if (st && circuitStationProducesMovelap(st)) producingSeriesAtCol.push(ss);
+          }
+
           for (let s = 0; s < nSer; s++) {
             const seriesStations = seriesRows[s];
             if (!Array.isArray(seriesStations) || !seriesStations[j]) continue;
             const station = seriesStations[j];
             if (!circuitStationProducesMovelap(station)) continue;
 
-            const isLastSeriesAtStation = s === nSer - 1;
-            const isLastStationCol = j === nSta - 1;
+            const hasLaterProducingSerieAtSameStation = producingSeriesAtCol.some((ss) => ss > s);
 
             let effectivePause: number;
-            if (!isLastSeriesAtStation) {
+            if (hasLaterProducingSerieAtSameStation) {
               effectivePause =
                 circuit.seriesPauses?.[s] ?? circuit.pauseBetweenSeries ?? pauseSeries;
-            } else if (!isLastStationCol) {
+            } else if (lastProducingStationCol >= 0 && j < lastProducingStationCol) {
               effectivePause = station.pause ?? pauseAmongStationsBase;
             } else {
               effectivePause = isLastCircuit
                 ? finalMacroPauseSeconds
                 : (circuit.pauseAfterCircuit ?? pauseCircuits);
             }
+
+            const isMacroFinalLapHorizontal =
+              !hasLaterProducingSerieAtSameStation &&
+              lastProducingStationCol >= 0 &&
+              j === lastProducingStationCol &&
+              isLastCircuit;
 
             movelaps.push({
               repetitionNumber: sequenceNumber,
@@ -1542,7 +1547,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
               exercise: station.exercise || '',
               reps: station.reps || '',
               pause: effectivePause,
-              macroFinal: lapMacroFinal,
+              macroFinal: isMacroFinalLapHorizontal ? lapMacroFinal : null,
               muscularSector: station.sector || '',
               distance: '',
               time: '',
@@ -1567,30 +1572,39 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       seriesRows.forEach((seriesStations, seriesIdx) => {
         if (!Array.isArray(seriesStations) || seriesStations.length === 0) return;
         const seriesNum = seriesIdx + 1;
+        const producingStationIndexes = seriesStations
+          .map((st, idx) => (circuitStationProducesMovelap(st) ? idx : -1))
+          .filter((idx) => idx >= 0);
+
         seriesStations.forEach((station, stationIndex) => {
           if (!circuitStationProducesMovelap(station)) return;
-          const isLastStationOfSeries = stationIndex === seriesStations.length - 1;
+          /** Sparse rows: only stations with sector/exercise become movelaps — last *used* station gets between-series / circuits / macro pause, not grid column (fixes 1 exercise + empty slots still showing only Pause among stations). */
+          const isLastProducingStationInSeries =
+            producingStationIndexes.length > 0 &&
+            stationIndex === producingStationIndexes[producingStationIndexes.length - 1];
           const isLastSeriesOfCircuit = seriesIdx === seriesRows.length - 1;
 
           let effectivePause: number;
-          if (isLastStationOfSeries) {
+          if (isLastProducingStationInSeries) {
             if (isLastSeriesOfCircuit) {
-              if (isLastCircuit) {
-                effectivePause = finalMacroPauseSeconds;
-              } else {
-                // Continuous Time: yellow Between Circuits + synced seriesPauses[last]; Count: pauseAfterCircuit only
-                effectivePause =
-                  seriesMode === 'time'
-                    ? (circuit.seriesPauses?.[seriesIdx] ?? circuit.pauseAfterCircuit ?? pauseCircuits)
-                    : (circuit.pauseAfterCircuit ?? pauseCircuits);
-              }
-            } else {
+              effectivePause = isLastCircuit
+                ? finalMacroPauseSeconds
+                : (circuit.pauseAfterCircuit ?? pauseCircuits);
+            } else if (seriesMode === 'time') {
               effectivePause =
-                circuit.seriesPauses?.[seriesIdx] ?? circuit.pauseBetweenSeries ?? pauseSeries;
+                circuit.seriesPauses?.[seriesIdx] ?? circuit.pauseAfterCircuit ?? pauseCircuits;
+            } else {
+              effectivePause = circuit.pauseAfterCircuit ?? pauseCircuits;
             }
           } else {
-            effectivePause = station.pause || pauseAmongStationsBase;
+            effectivePause =
+              circuit.seriesPauses?.[seriesIdx] ?? circuit.pauseBetweenSeries ?? pauseSeries;
           }
+
+          const isMacroFinalLapVertical =
+            isLastProducingStationInSeries &&
+            isLastSeriesOfCircuit &&
+            isLastCircuit;
 
           movelaps.push({
             repetitionNumber: sequenceNumber,
@@ -1603,7 +1617,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             exercise: station.exercise || '',
             reps: station.reps || '',
             pause: effectivePause,
-            macroFinal: lapMacroFinal,
+            macroFinal: isMacroFinalLapVertical ? lapMacroFinal : null,
             muscularSector: station.sector || '',
             distance: '',
             time: '',
@@ -1633,21 +1647,30 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     // 2026-01-22 10:30 UTC - Generate movelaps from circuit configuration
     // 2026-03-12 - Ensure circuit-level pause overrides (from grid) are preserved for movelaps display
     const circuitsToSave = overrideCircuits ?? circuits;
-    const movelaps = generateMovelaps(circuitsToSave);
+    // Normalize pauses from the currently visible planner values before generating movelaps,
+    // so first save reflects what users see in grid controls (stations/series/circuits/macro).
+    const circuitsWithPauses = circuitsToSave.map((c) => {
+      const after = typeof c.pauseAfterCircuit === 'number' ? c.pauseAfterCircuit : pauseCircuits;
+      const between =
+        typeof c.pauseBetweenSeries === 'number' ? c.pauseBetweenSeries : pauseSeries;
+      const nSeries = Array.isArray(c.stationsBySeries) ? c.stationsBySeries.length : 0;
+      const expectedSlots = seriesPausesSlotCount(nSeries, seriesMode === 'time' ? 'time' : 'count');
+      const seriesPauses = Array.from({ length: expectedSlots }, (_, idx) => {
+        const raw = c.seriesPauses?.[idx];
+        if (typeof raw === 'number') return raw;
+        if (seriesMode === 'time' && idx === expectedSlots - 1) return after;
+        return between;
+      });
+      return { ...c, pauseBetweenSeries: between, pauseAfterCircuit: after, seriesPauses };
+    });
+    const movelaps = generateMovelaps(circuitsWithPauses);
     if (!movelaps || movelaps.length === 0) {
       alert(
         'Cannot save: add at least one station with a muscular sector (exercise can be chosen later), or pick an exercise. Fully empty rows are skipped.'
       );
       return;
     }
-    const description = `${generatePreviewStructurePlanned(circuitsToSave)} | ${generatePreviewRealData(circuitsToSave)}`;
-    // Normalize circuits so each explicitly has pauseAfterCircuit and pauseBetweenSeries (grid-edited values)
-    const circuitsWithPauses = circuitsToSave.map((c) => {
-      const after = typeof c.pauseAfterCircuit === 'number' ? c.pauseAfterCircuit : pauseCircuits;
-      const between =
-        typeof c.pauseBetweenSeries === 'number' ? c.pauseBetweenSeries : pauseSeries;
-      return { ...c, pauseBetweenSeries: between, pauseAfterCircuit: after };
-    });
+    const description = `${generatePreviewStructurePlanned(circuitsWithPauses)} | ${generatePreviewRealData(circuitsWithPauses)}`;
     
     console.log('💾 [handleSave] Generated movelaps:', movelaps);
     console.log('💾 [handleSave] Description to save:', description);
@@ -1724,7 +1747,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       (isEditingFromMovelap || hasSelectedSectorWithoutExercise);
     const sectorsToShow = shouldFilterToSingleSector ? [derivedSector] : getAllSectors();
     const isSectorLocked = shouldFilterToSingleSector;
-    const circuitForPicker = circuits[circuitIdx];
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1734,22 +1756,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             <button onClick={closeManualExerciseFlow} className="text-gray-500 hover:text-gray-700">
               <X size={24} />
             </button>
-          </div>
-
-          <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
-            <span className="font-semibold text-gray-600">Legend:</span>
-            <span className="inline-flex items-center gap-2">
-              <span className="h-3 w-3 shrink-0 rounded-full bg-yellow-300 ring-1 ring-yellow-500/60" aria-hidden />
-              Already used in another serie of this circuit
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <span className="h-3 w-3 shrink-0 rounded-full bg-green-400 ring-1 ring-green-600/50" aria-hidden />
-              Already used in this serie
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <span className="h-3 w-3 shrink-0 rounded-full border-2 border-red-500 bg-red-100" aria-hidden />
-              Current exercise / sector (editing)
-            </span>
           </div>
 
           {hasExistingExercise && (
@@ -1783,56 +1789,21 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
               return (
                 <div
                   key={sector}
-                  className={`rounded-lg p-3 ${isSectorDisabled ? 'opacity-50 pointer-events-none' : ''} ${
-                    isCurrentSector
-                      ? 'border-2 border-red-500 bg-red-50/80 shadow-sm'
-                      : 'border border-gray-200 bg-white'
+                  className={`border rounded p-3 ${isSectorDisabled ? 'opacity-50 pointer-events-none' : ''} ${
+                    isCurrentSector ? 'border-red-400 bg-red-50' : 'border-gray-200'
                   }`}
                 >
                   <h4 className={`font-semibold text-sm mb-2 flex items-center gap-2 ${isSectorDisabled ? 'text-gray-500' : 'text-blue-700'}`}>
                     {sector}
                     {isCurrentSector && (
-                      <span className="text-[11px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-300 font-medium">
+                      <span className="text-[11px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-300">
                         Current sector
                       </span>
                     )}
                   </h4>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {exercises.map((exercise, exIndex) => {
+                  <div className="grid grid-cols-2 gap-2">
+                    {exercises.map((exercise) => {
                       const isCurrentExercise = exercise.name === currentExerciseName;
-                      const { inCurrentSeries, inOtherSeries } = getExerciseCircuitSeriesUsage(
-                        circuitForPicker,
-                        exercise.name,
-                        seriesIdx
-                      );
-                      const sectorImgPick = MUSCULAR_SECTOR_IMAGES[sector] ?? null;
-                      const mediaRow = getExerciseMedia(exercise.name);
-                      // Picture A: catalog A → generated bank thumb (SVG) → sector diagram
-                      const rowSrc =
-                        (mediaRow?.pictureA && mediaRow.pictureA.trim()) ||
-                        mediaRow?.thumb?.src ||
-                        (mediaRow?.pictureB && mediaRow.pictureB.trim()) ||
-                        sectorImgPick ||
-                        null;
-
-                      let exercisePickClasses =
-                        'flex items-center gap-2 px-2 py-2 text-xs border rounded text-left transition-all ';
-                      if (isSectorDisabled) {
-                        exercisePickClasses +=
-                          'bg-gray-200 border-gray-300 text-gray-500 cursor-not-allowed';
-                      } else if (isCurrentExercise) {
-                        exercisePickClasses +=
-                          'bg-red-100 border-red-500 border-2 font-semibold hover:bg-red-200';
-                      } else if (inCurrentSeries) {
-                        exercisePickClasses +=
-                          'bg-green-100 border-green-400 hover:bg-green-200';
-                      } else if (inOtherSeries) {
-                        exercisePickClasses +=
-                          'bg-yellow-100 border-yellow-400 hover:bg-yellow-200';
-                      } else {
-                        exercisePickClasses += 'bg-gray-100 border-gray-300 hover:bg-blue-50';
-                      }
-
                       return (
                         <button
                           key={exercise.id}
@@ -1932,47 +1903,17 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                               notes: defaultNotes
                             });
                           }}
-                          className={exercisePickClasses}
-                          title={
+                          className={`px-3 py-2 text-xs border rounded text-left transition-all ${
                             isCurrentExercise
-                              ? 'Current exercise — click to edit reps / pause'
-                              : inCurrentSeries
-                                ? 'Already placed in this serie'
-                                : inOtherSeries
-                                  ? 'Used in another serie of this circuit'
-                                  : undefined
-                          }
+                              ? 'bg-red-100 border-red-500 border-2 font-semibold hover:bg-red-200'
+                              : isSectorDisabled
+                              ? 'bg-gray-200 border-gray-300 text-gray-500 cursor-not-allowed'
+                              : 'bg-gray-100 border-gray-300 hover:bg-blue-100'
+                          }`}
                           disabled={isSectorDisabled}
                         >
-                          <span
-                            className="relative h-12 w-12 min-h-[3rem] min-w-[3rem] flex-shrink-0 overflow-hidden rounded border border-gray-200 bg-white"
-                            title="Picture A"
-                          >
-                            {!rowSrc ? (
-                              <span
-                                className="flex h-full w-full items-center justify-center bg-gray-100 text-[9px] font-medium text-gray-500 leading-tight text-center px-0.5"
-                                aria-hidden
-                              >
-                                A
-                              </span>
-                            ) : (
-                              // eslint-disable-next-line @next/next/no-img-element -- data: SVG + absolute /public paths; reliable in modal
-                              <img
-                                src={rowSrc}
-                                alt=""
-                                className="h-full w-full object-cover"
-                              />
-                            )}
-                          </span>
-                          <span className="min-w-0 flex-1 leading-snug">
-                            <span className="text-[10px] font-mono text-gray-500">
-                              #{String(exIndex + 1).padStart(2, '0')}
-                            </span>{' '}
-                            {exercise.name}
-                            {isCurrentExercise && (
-                              <span className="mt-0.5 block text-red-700">(Current)</span>
-                            )}
-                          </span>
+                          {exercise.name}
+                          {isCurrentExercise && <span className="ml-2 text-red-700 text-xs">(Current)</span>}
                         </button>
                       );
                     })}
@@ -1989,54 +1930,9 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
   const renderRepsEditorModal = () => {
     if (!showManualExerciseModal || !selectedStationForManualExercise || !pendingExercise) return null;
 
-    const sectorImgRep =
-      pendingExercise.sector && MUSCULAR_SECTOR_IMAGES[pendingExercise.sector]
-        ? MUSCULAR_SECTOR_IMAGES[pendingExercise.sector]
-        : null;
-    const mediaRep = getExerciseMedia(pendingExercise.name);
-    const srcRepA =
-      (mediaRep?.pictureA && mediaRep.pictureA.trim()) || sectorImgRep || null;
-    const srcRepB =
-      (mediaRep?.pictureB && mediaRep.pictureB.trim()) ||
-      (mediaRep?.pictureA && mediaRep.pictureA.trim()) ||
-      sectorImgRep ||
-      null;
-
-    const openRepGallery = () => {
-      setExerciseGallery({
-        title: pendingExercise.name,
-        pictureA: mediaRep?.pictureA ?? sectorImgRep,
-        pictureB: mediaRep?.pictureB ?? mediaRep?.pictureA ?? sectorImgRep,
-      });
-    };
-
-    const renderRepPictureThumb = (label: string, src: string | null) => {
-      const isData = !!src && src.startsWith('data:');
-      return (
-        <div className="flex flex-col items-center gap-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">{label}</span>
-          <button
-            type="button"
-            title="Enlarge picture A and B"
-            onClick={openRepGallery}
-            className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-lg border-2 border-gray-200 bg-gray-50 shadow-sm hover:ring-2 hover:ring-teal-500"
-          >
-            {!src ? (
-              <span className="px-2 text-center text-[10px] leading-tight text-gray-400">No image</span>
-            ) : isData ? (
-              // eslint-disable-next-line @next/next/no-img-element -- data URLs for catalog SVG/thumbs
-              <img src={src} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <Image src={src} alt="" width={112} height={112} className="h-full w-full object-cover" unoptimized />
-            )}
-          </button>
-        </div>
-      );
-    };
-
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+        <div className="bg-white rounded-lg p-6 w-full max-w-md">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-bold">Edit Exercise</h3>
             <button onClick={closeManualExerciseFlow} className="text-gray-500 hover:text-gray-700">
@@ -2045,15 +1941,9 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           </div>
 
           <div className="space-y-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0 flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Exercise:</label>
-                <p className="text-base font-semibold text-gray-900">{pendingExercise.name}</p>
-              </div>
-              <div className="flex shrink-0 justify-center gap-4 sm:justify-end">
-                {renderRepPictureThumb('Picture A', srcRepA)}
-                {renderRepPictureThumb('Picture B', srcRepB)}
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Exercise:</label>
+              <p className="text-base font-semibold text-gray-900">{pendingExercise.name}</p>
             </div>
 
             <div>
@@ -2142,15 +2032,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                     nextCircuits[circuitIdx].stationsBySeries[seriesIdx][stationIdx].reps = pe.reps;
                     nextCircuits[circuitIdx].stationsBySeries[seriesIdx][stationIdx].pause = pe.pause;
                     nextCircuits[circuitIdx].stationsBySeries[seriesIdx][stationIdx].notes = pe.notes || '';
-                    if (horizontalCount && seriesIdx === 0 && (pe.name || '').trim()) {
-                      replicateHorizontalExerciseFromSeriesOne(
-                        nextCircuits,
-                        circuitIdx,
-                        stationIdx,
-                        pe.name,
-                        pe.sector
-                      );
-                    }
                     if (initialConfig?.editingFromMovelap) {
                       handleSave(nextCircuits);
                       onCancel();
@@ -2217,31 +2098,15 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           }
           stationsBySeries.push(stationsForThisSeries);
         }
-        const between = pauseSeries;
-        const after = pauseCircuits;
+        const between = seriesMode === 'time' ? pauseCircuits : pauseSeries;
         const slots = seriesPausesSlotCount(seriesNum, seriesMode === 'time' ? 'time' : 'count');
-        const modeSer = seriesMode === 'time' ? 'time' : 'count';
         newCircuits.push({
           letter: '',
           stationsBySeries,
           series: seriesNum,
           pauseBetweenSeries: between,
-          pauseAfterCircuit: after,
-          seriesPauses:
-            slots > 0
-              ? buildDefaultSeriesPauses(
-                  {
-                    letter: '',
-                    stationsBySeries,
-                    series: seriesNum,
-                    pauseBetweenSeries: between,
-                    pauseAfterCircuit: after,
-                  },
-                  modeSer,
-                  between,
-                  after
-                )
-              : undefined
+          pauseAfterCircuit: pauseCircuits,
+          seriesPauses: slots > 0 ? Array.from({ length: slots }, () => between) : undefined
         });
       }
 
@@ -2307,6 +2172,12 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         if (!Array.isArray(source)) return circuit;
 
         const newSeriesStations = JSON.parse(JSON.stringify(source)) as Station[];
+        const newSeriesPauses = circuit.seriesPauses
+          ? [
+              ...circuit.seriesPauses,
+              circuit.seriesPauses[serieToCopyFromIndex] ?? circuit.pauseBetweenSeries,
+            ]
+          : undefined;
 
         let nextBySeries = [...circuit.stationsBySeries];
         if (executionMode === 'horizontal' && seriesMode === 'count' && nextBySeries.length > 0) {
@@ -2325,35 +2196,10 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           });
         }
 
-        const mergedStations = [...nextBySeries, newSeriesStations];
-        const newN = mergedStations.length;
-        const pauseMode = seriesMode === 'time' ? 'time' : 'count';
-        const slotCount = seriesPausesSlotCount(newN, pauseMode);
-        const between = circuit.pauseBetweenSeries ?? pauseSeries;
-        const after = circuit.pauseAfterCircuit ?? pauseCircuits;
-        let newSeriesPauses: number[] | undefined;
-        if (slotCount > 0) {
-          if (seriesMode === 'time') {
-            newSeriesPauses = buildDefaultSeriesPauses(
-              { ...circuit, stationsBySeries: mergedStations, series: newN, seriesPauses: circuit.seriesPauses },
-              'time',
-              between,
-              after
-            );
-          } else if (circuit.seriesPauses && circuit.seriesPauses.length > 0) {
-            newSeriesPauses = [
-              ...circuit.seriesPauses,
-              circuit.seriesPauses[serieToCopyFromIndex] ?? between,
-            ];
-          } else {
-            newSeriesPauses = Array.from({ length: slotCount }, () => between);
-          }
-        }
-
         return {
           ...circuit,
-          stationsBySeries: mergedStations,
-          series: newN,
+          stationsBySeries: [...nextBySeries, newSeriesStations],
+          series: circuit.series + 1,
           seriesPauses: newSeriesPauses,
         };
       })
@@ -2506,7 +2352,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     if (circuits.length === 0) return;
     const minSeries = Math.min(...circuits.map((c) => c.stationsBySeries?.length ?? 0));
     if (minSeries <= 1) {
-      alert('You must have at least 1 serie');
+      alert('You must have at least 2 series');
       return;
     }
     const pauseMode = seriesMode === 'time' ? 'time' : 'count';
@@ -2579,18 +2425,13 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       const c = next[circuitIdx];
       const nSer = c.stationsBySeries?.length ?? 0;
       if (nSer === 0) return prevCircuits;
-      let sector = '';
-      for (let s = 0; s < nSer; s++) {
-        const st = c.stationsBySeries[s][stationIdx0];
-        if (st?.sector?.trim()) {
-          sector = st.sector;
-          break;
-        }
-      }
+      const sector = resolveSectorForStationColumn(c.stationsBySeries, stationIdx0);
       if (!sector.trim()) return prevCircuits;
       const names = pickExercisesForStationColumn(sector, nSer, getExercisesBySector);
       for (let s = 0; s < nSer; s++) {
-        if (names[s]) c.stationsBySeries[s][stationIdx0].exercise = names[s];
+        const row = c.stationsBySeries[s];
+        if (!Array.isArray(row) || stationIdx0 >= row.length) continue;
+        if (names[s]) row[stationIdx0].exercise = names[s];
       }
       return next;
     });
@@ -2608,21 +2449,19 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       const next = JSON.parse(JSON.stringify(prevCircuits)) as Circuit[];
       const c = next[circuitIdx];
       const nSer = c.stationsBySeries?.length ?? 0;
-      const nSta = c.stationsBySeries[0]?.length ?? 0;
+      const nSta = Math.max(
+        0,
+        ...c.stationsBySeries.map((row) => (Array.isArray(row) ? row.length : 0))
+      );
       if (nSer === 0 || nSta === 0) return prevCircuits;
       for (let j = 0; j < nSta; j++) {
-        let sector = '';
-        for (let s = 0; s < nSer; s++) {
-          const st = c.stationsBySeries[s][j];
-          if (st?.sector?.trim()) {
-            sector = st.sector;
-            break;
-          }
-        }
+        const sector = resolveSectorForStationColumn(c.stationsBySeries, j);
         if (!sector.trim()) continue;
         const names = pickExercisesForStationColumn(sector, nSer, getExercisesBySector);
         for (let s = 0; s < nSer; s++) {
-          if (names[s]) c.stationsBySeries[s][j].exercise = names[s];
+          const row = c.stationsBySeries[s];
+          if (!Array.isArray(row) || j >= row.length) continue;
+          if (names[s]) row[j].exercise = names[s];
         }
       }
       return next;
@@ -2650,21 +2489,13 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     setActionLog((prev) => [...prev, logLabel]);
   };
 
-  /** Macro digit (0–9) → Rip (`reps`). Continuous Time: also presets footer Pause dropdown (digit×10″ snapped); station Pause cells use footer Apply. */
   const applyMacroToAllCells = () => {
     const macroValue = (loadOfWork || '').trim();
     if (!macroValue) return;
-    const digit = parseInt(macroValue, 10);
-    let logLabel = `Macro applied to Rip: "${macroValue}"`;
-    if (seriesMode === 'time' && /^[0-9]$/.test(macroValue)) {
-      const snapped = footerPauseSecondsFromMacroDigit(digit);
-      setBulkPauseFooterSeconds(String(snapped));
-      const lab = STATION_PAUSE_OPTIONS.find((o) => o.value === snapped)?.label ?? `${snapped}s`;
-      logLabel += `; footer Pause preset ${lab} (click Pause Apply below to fill station cells)`;
-    } else {
-      logLabel += ' (Pause footer unchanged)';
-    }
-    applyRepsValueToAllStations(String(macroValue), logLabel);
+    applyRepsValueToAllStations(
+      String(macroValue),
+      `Macro applied: Rip (repetitions) "${macroValue}" set for all stations`
+    );
   };
 
   const applyBulkRepsLoadToAllCells = () => {
@@ -2676,12 +2507,11 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     );
   };
 
-  /** Footer Pause dropdown — uses `bulkPauseFooterSeconds`. Macro Apply (Continuous Time) presets this select only; this handler writes station.pause. */
   const applyPauseToAllStations = () => {
     if (executionMode === 'horizontal') {
       setActionLog((prev) => [
         ...prev,
-        'Horizontal execution: inter-station pause comes from “Pause after all the series of each station” (Pause Settings). Footer “Apply” for Pause column is not used.'
+        'Horizontal execution: inter-station pause comes from Horizontal Series (Pause Settings). Footer “Apply” for Pause column is not used.'
       ]);
       return;
     }
@@ -2706,7 +2536,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       }
       return next;
     });
-    setActionLog((prev) => [...prev, `Pause applied: ${label} to station Pause cells only (Rip/Macro unchanged)`]);
+    setActionLog((prev) => [...prev, `Pause applied: ${label} to all station Pause cells`]);
   };
 
   // 2026-01-22 10:00 UTC - Checkbox handlers
@@ -2722,9 +2552,15 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     });
   };
 
-  const toggleSeriesSelection = (circuitLetter: string, seriesNumber: number) => {
-    const key = `${circuitLetter}-${seriesNumber}`;
-    setSelectedSeries(prev => {
+  const horizontalSerieSelectionKey = (circuitLetter: string, stationNumber: number, seriesNumber: number) =>
+    `H|${circuitLetter}|${stationNumber}|${seriesNumber}`;
+
+  const toggleSeriesSelection = (circuitLetter: string, seriesNumber: number, stationNumber?: number) => {
+    const key =
+      executionMode === 'horizontal' && seriesMode === 'count' && typeof stationNumber === 'number'
+        ? horizontalSerieSelectionKey(circuitLetter, stationNumber, seriesNumber)
+        : `${circuitLetter}-${seriesNumber}`;
+    setSelectedSeries((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(key)) {
         newSet.delete(key);
@@ -2805,43 +2641,157 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     setSelectedCircuits(new Set());
     setShowRemoveMenu(false);
   };
-  
+
+  /** Remove whole global serie rows (vertical / non-horizontal selection keys `A-2`). */
+  const applyLegacyGlobalSeriesRemovals = (prevCircuits: Circuit[], legacyKeys: string[]): Circuit[] => {
+    const byCircuit = new Map<string, Set<number>>();
+    for (const key of legacyKeys) {
+      const m = key.match(/^([^|-]+)-(\d+)$/);
+      if (!m) continue;
+      const circuitLetter = m[1]!;
+      const idx = parseInt(m[2]!, 10) - 1;
+      if (!Number.isFinite(idx)) continue;
+      if (!byCircuit.has(circuitLetter)) byCircuit.set(circuitLetter, new Set());
+      byCircuit.get(circuitLetter)!.add(idx);
+    }
+    return prevCircuits.map((c) => {
+      const del = byCircuit.get(c.letter);
+      if (!del || del.size === 0) return c;
+      if (c.stationsBySeries.length <= 1) return c;
+      let indices = Array.from(del).filter((i) => i >= 0 && i < c.stationsBySeries.length);
+      if (indices.length >= c.stationsBySeries.length) {
+        indices = indices.sort((a, b) => b - a).slice(0, c.stationsBySeries.length - 1);
+      }
+      const toDelete = new Set(indices);
+      const pauseMode = seriesMode === 'time' ? 'time' : 'count';
+      let stations = [...c.stationsBySeries];
+      let pauses = c.seriesPauses;
+      for (const seriesIndex of Array.from(toDelete).sort((a, b) => b - a)) {
+        if (stations.length <= 1) break;
+        stations = stations.filter((_, idx) => idx !== seriesIndex);
+        pauses = seriesPausesAfterRemovingSerie(pauses, seriesIndex, pauseMode);
+      }
+      return { ...c, stationsBySeries: stations, series: stations.length, seriesPauses: pauses };
+    });
+  };
+
+  const parseHorizontalSerieSelectionKey = (
+    key: string
+  ): { circuitLetter: string; stationNum: number; seriesNum: number } | null => {
+    if (!key.startsWith('H|')) return null;
+    const parts = key.split('|');
+    if (parts.length !== 4) return null;
+    const stationNum = parseInt(parts[2] ?? '', 10);
+    const seriesNum = parseInt(parts[3] ?? '', 10);
+    if (!parts[1] || !Number.isFinite(stationNum) || !Number.isFinite(seriesNum)) return null;
+    return { circuitLetter: parts[1], stationNum, seriesNum };
+  };
+
+  /** Horizontal + count: remove the station column at `stationIdx0` from global series rows for local series S and its twin S-1 (when S≥2). */
+  const applyHorizontalSerieColumnRemovals = (
+    prevCircuits: Circuit[],
+    ops: { circuitLetter: string; stationIdx0: number; rowIndices0: number[] }[]
+  ): Circuit[] => {
+    if (ops.length === 0) return prevCircuits;
+    const next = JSON.parse(JSON.stringify(prevCircuits)) as Circuit[];
+    const sorted = [...ops].sort((a, b) => {
+      if (a.circuitLetter !== b.circuitLetter) return a.circuitLetter.localeCompare(b.circuitLetter);
+      if (a.stationIdx0 !== b.stationIdx0) return b.stationIdx0 - a.stationIdx0;
+      return 0;
+    });
+    for (const { circuitLetter, stationIdx0, rowIndices0 } of sorted) {
+      const cIdx = next.findIndex((c) => c.letter === circuitLetter);
+      if (cIdx < 0) continue;
+      const c = next[cIdx];
+      if (!Array.isArray(c.stationsBySeries)) continue;
+      const uniqRows = Array.from(new Set(rowIndices0)).sort((a, b) => b - a);
+      for (const rowIdx of uniqRows) {
+        const row = c.stationsBySeries[rowIdx];
+        if (!Array.isArray(row) || stationIdx0 < 0 || stationIdx0 >= row.length) continue;
+        row.splice(stationIdx0, 1);
+        row.forEach((st: Station, j: number) => {
+          st.stationNumber = j + 1;
+        });
+      }
+    }
+    return next;
+  };
+
   const handleRemoveSerieAction = () => {
-    // 2026-01-22 10:00 UTC - Remove selected series
-    // 2026-01-26 - Added confirmation dialog
     if (selectedSeries.size === 0) {
       alert('Please select at least one series to remove');
       return;
     }
-    
+
     const seriesToRemove = Array.from(selectedSeries);
-    if (!confirm(`Are you sure you want to delete ${seriesToRemove.length} series: ${seriesToRemove.join(', ')}? This will remove all their stations.`)) {
+    const horizontalKeys = seriesToRemove.map(parseHorizontalSerieSelectionKey).filter(Boolean) as {
+      circuitLetter: string;
+      stationNum: number;
+      seriesNum: number;
+    }[];
+    const legacyKeys = seriesToRemove.filter((k) => !k.startsWith('H|'));
+
+    if (executionMode === 'horizontal' && seriesMode === 'count' && horizontalKeys.length > 0) {
+      const opMap = new Map<string, { circuitLetter: string; stationIdx0: number; rows: Set<number> }>();
+      for (const { circuitLetter, stationNum, seriesNum } of horizontalKeys) {
+        const stationIdx0 = stationNum - 1;
+        const rows: number[] =
+          seriesNum >= 2
+            ? [seriesNum - 1, seriesNum - 2].filter((r) => r >= 0)
+            : [seriesNum - 1].filter((r) => r >= 0);
+        const key = `${circuitLetter}|${stationIdx0}`;
+        const cur = opMap.get(key) ?? { circuitLetter, stationIdx0, rows: new Set<number>() };
+        rows.forEach((r) => cur.rows.add(r));
+        opMap.set(key, cur);
+      }
+      const ops = Array.from(opMap.values()).map((o) => ({
+        circuitLetter: o.circuitLetter,
+        stationIdx0: o.stationIdx0,
+        rowIndices0: Array.from(o.rows),
+      }));
+      const summary = horizontalKeys
+        .map((h) => `${h.circuitLetter} st.${h.stationNum} ser.${h.seriesNum}`)
+        .join(', ');
+      const legacySummary = legacyKeys.length ? `\nAlso remove global series: ${legacyKeys.join(', ')}` : '';
+      if (
+        !confirm(
+          `Remove selected horizontal series (and the previous local serie at the same station when the selected serie number is >= 2)?\n${summary}${legacySummary}\nHorizontal: removes those slots at this station only; other stations unchanged.`
+        )
+      ) {
+        return;
+      }
+      setCircuits((prev) => {
+        let next = applyHorizontalSerieColumnRemovals(prev, ops);
+        if (legacyKeys.length > 0) {
+          next = applyLegacyGlobalSeriesRemovals(next, legacyKeys);
+        }
+        return next;
+      });
+      setActionLog((prev) => [
+        ...prev,
+        `Horizontal series column(s) removed: ${summary}${legacyKeys.length ? `; global: ${legacyKeys.join(', ')}` : ''}`,
+      ]);
+      setSelectedSeries(new Set());
+      setShowRemoveMenu(false);
       return;
     }
-    
-    seriesToRemove.forEach(key => {
-      const [circuit, series] = key.split('-');
-      // Skip individual confirmation since we already confirmed the batch
-      setCircuits(prevCircuits => prevCircuits.map(c => {
-        if (c.letter === circuit && c.series > 1) {
-          const seriesIndex = parseInt(series) - 1;
-          const newStationsBySeries = c.stationsBySeries.filter((_, idx) => idx !== seriesIndex);
-          return {
-            ...c,
-            stationsBySeries: newStationsBySeries,
-            series: c.series - 1,
-            seriesPauses: seriesPausesAfterRemovingSerie(
-              c.seriesPauses,
-              seriesIndex,
-              seriesMode === 'time' ? 'time' : 'count'
-            )
-          };
-        }
-        return c;
-      }));
-    });
-    
-    setActionLog(prev => [...prev, `${seriesToRemove.length} series removed`]);
+
+    if (legacyKeys.length === 0) {
+      alert('No removable series selection');
+      return;
+    }
+
+    if (
+      !confirm(
+        `Are you sure you want to delete ${legacyKeys.length} global series row(s): ${legacyKeys.join(', ')}? This removes that serie across all stations.`
+      )
+    ) {
+      return;
+    }
+
+    setCircuits((prev) => applyLegacyGlobalSeriesRemovals(prev, legacyKeys));
+
+    setActionLog((prev) => [...prev, `${legacyKeys.length} global series row(s) removed`]);
     setSelectedSeries(new Set());
     setShowRemoveMenu(false);
   };
@@ -2952,172 +2902,101 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     setActionLog(prev => [...prev, `Exercises reloaded: ${circuits.reduce((sum, c) => sum + c.stationsBySeries.reduce((s, ss) => s + ss.length, 0), 0)} stations processed`]);
   };
   
-  /** Planned grid only: circuits, station slots, averages — ignores whether exercises are chosen. */
-  const generatePreviewStructurePlanned = (overrideCircuits?: Circuit[]): string => {
+  const generatePreview = (overrideCircuits?: Circuit[]): string => {
     const circuitsToUse = overrideCircuits ?? circuits;
+    const realCircuitCount = circuitsToUse.length;
     const fallbackCircuits = Math.max(1, numCircuits);
 
-    const circuitCount =
-      circuitsToUse.length > 0 ? circuitsToUse.length : fallbackCircuits;
-
-    const totalSeriesRows = circuitsToUse.reduce(
-      (sum, c) => sum + (c.stationsBySeries?.length ?? 0),
-      0
-    );
+    // Sum of series rows across all circuits (each circuit's stationsBySeries length)
+    const totalSeries = circuitsToUse.reduce((sum, c) => sum + (c.stationsBySeries?.length ?? 0), 0);
+    // Sum of every station slot in the grid (all series × stations cells)
     const totalStationSlots = circuitsToUse.reduce(
       (sum, c) =>
         sum +
-        (c.stationsBySeries ?? []).reduce(
-          (sSum, seriesStations) => sSum + seriesStations.length,
-          0
-        ),
+        (c.stationsBySeries ?? []).reduce((sSum, seriesStations) => sSum + seriesStations.length, 0),
       0
     );
 
-    const avgStationsSerie =
-      totalSeriesRows > 0 ? totalStationSlots / totalSeriesRows : stationsPerCircuit;
-    const avgSeriesCircuit =
-      totalSeriesRows > 0 && circuitCount > 0
-        ? totalSeriesRows / circuitCount
-        : seriesCount;
+    // Stations: (sum of all station slots) ÷ (total real series)
+    const avgStations =
+      totalSeries > 0
+        ? Math.max(1, Math.round(totalStationSlots / totalSeries))
+        : Math.max(1, Math.round(stationsPerCircuit));
 
-    const fmtAvg = (n: number) => {
-      const r = Math.round(n * 100) / 100;
-      return Number.isInteger(r) ? String(r) : r.toFixed(2);
-    };
+    // Series: (sum of all series) ÷ (real number of circuits)
+    const avgSeries =
+      realCircuitCount > 0
+        ? Math.max(1, Math.round(totalSeries / realCircuitCount))
+        : Math.max(1, Math.round(seriesCount));
 
-    return `${circuitCount} circuits planned, ${totalStationSlots} total stations planned, avg ${fmtAvg(avgStationsSerie)} stations/serie, avg ${fmtAvg(avgSeriesCircuit)} series/circuit`;
-  };
+    const circuitCountDisplay = realCircuitCount > 0 ? realCircuitCount : fallbackCircuits;
 
-  const generatePreviewRealData = (overrideCircuits?: Circuit[]): string => {
-    const circuitsToUse = overrideCircuits ?? circuits;
-    const fallbackCircuits = Math.max(1, numCircuits);
+    // Macro digit → seconds (included in Pause circ. average as requested by preview rules).
+    const loadOfWorkTrimmed = String(loadOfWork ?? '').trim();
+    const macroSec = /^[0-9]$/.test(loadOfWorkTrimmed) ? parseInt(loadOfWorkTrimmed, 10) * 60 : 0;
 
-    const seriesHasExercise = (seriesStations: Station[] | undefined) =>
-      !!(seriesStations?.some((st) => stationHasNonBlankExercise(st)));
+    // Pause circ.: sum(all between-circuit pauses + Macro) ÷ real number of circuits
+    let sumPauseAfterCirc = 0;
+    if (realCircuitCount > 0) {
+      circuitsToUse.forEach((c) => {
+        sumPauseAfterCirc += c.pauseAfterCircuit ?? pauseCircuits;
+      });
+    } else {
+      sumPauseAfterCirc = (pauseCircuits ?? 0) * fallbackCircuits;
+    }
+    const denomCirc = Math.max(1, realCircuitCount > 0 ? realCircuitCount : fallbackCircuits);
+    const avgPauseCircSeconds = (sumPauseAfterCirc + macroSec) / denomCirc;
+    const pauseCircStr = formatPauseSeconds(CIRCUIT_PAUSE_OPTIONS, Math.round(avgPauseCircSeconds));
 
-    const circuitHasExercise = (c: Circuit) =>
-      (c.stationsBySeries ?? []).some((row) => seriesHasExercise(row));
-
-    /** Circuits that have at least one station with an exercise selected. */
-    const filledCircuits = circuitsToUse.filter(circuitHasExercise);
-    const filledCircuitCount = filledCircuits.length;
-
-    /** Stations where an exercise is selected (sector-only empty cells excluded). */
-    const totalStationsWithExercise = circuitsToUse.reduce((sum, c) => {
-      for (const series of c.stationsBySeries ?? []) {
-        for (const st of series) {
-          if (stationHasNonBlankExercise(st)) sum += 1;
+    // Pause series: sum(all between-series / time-mode serie pauses) ÷ (total series − 1)
+    let sumPauseSeries = 0;
+    circuitsToUse.forEach((c) => {
+      const n = c.stationsBySeries?.length ?? 0;
+      const perSeriesPauses = c.seriesPauses ?? [];
+      if (seriesMode === 'time') {
+        for (let i = 0; i < n; i++) {
+          sumPauseSeries += perSeriesPauses[i] ?? c.pauseAfterCircuit ?? pauseCircuits;
+        }
+      } else {
+        for (let i = 0; i < n - 1; i++) {
+          sumPauseSeries += perSeriesPauses[i] ?? c.pauseBetweenSeries ?? pauseSeries;
         }
       }
-      return sum;
-    }, 0);
-
-    /** Series rows that contain at least one station with an exercise. */
-    const filledSeriesCount = circuitsToUse.reduce((sum, c) => {
-      for (const series of c.stationsBySeries ?? []) {
-        if (seriesHasExercise(series)) sum += 1;
-      }
-      return sum;
-    }, 0);
-
-    const circuitCountDisplay = filledCircuitCount > 0 ? filledCircuitCount : fallbackCircuits;
-
-    const avgStationsSerie =
-      filledSeriesCount > 0 ? totalStationsWithExercise / filledSeriesCount : stationsPerCircuit;
-    const avgSeriesCircuit =
-      filledCircuitCount > 0 ? filledSeriesCount / filledCircuitCount : seriesCount;
-
-    const fmtAvg = (n: number) => {
-      const r = Math.round(n * 100) / 100;
-      return Number.isInteger(r) ? String(r) : r.toFixed(2);
-    };
-
-    const loadOfWorkTrimmed = String(loadOfWork ?? '').trim();
-
-    // Pause among circuits: each circuit with ≥1 exercise contributes pauseAfterCircuit (last circuit includes Macro / final slot).
-    let sumPauseAfterCirc = 0;
-    let circPauseCount = 0;
-    filledCircuits.forEach((c) => {
-      sumPauseAfterCirc += coerceBetweenCircuitsSeconds(
-        c.pauseAfterCircuit ?? pauseCircuits,
-        pauseCircuits ?? 120
-      );
-      circPauseCount += 1;
     });
-    if (circPauseCount === 0) {
-      sumPauseAfterCirc = coerceBetweenCircuitsSeconds(pauseCircuits ?? 120, 120) * fallbackCircuits;
-      circPauseCount = fallbackCircuits;
-    }
-    const avgPauseCircSeconds = sumPauseAfterCirc / Math.max(1, circPauseCount);
-    const pauseCircStr = formatPauseSeconds(CIRCUIT_PAUSE_OPTIONS, avgPauseCircSeconds);
-
-    // Pause among series: only gaps between consecutive series where BOTH have ≥1 exercise; pause = slot after lower series.
-    let sumPauseSeries = 0;
-    let seriesGapCount = 0;
-    circuitsToUse.forEach((c) => {
-      const rows = c.stationsBySeries ?? [];
-      const n = rows.length;
-      const fb = c.pauseBetweenSeries ?? pauseSeries;
-      for (let s = 0; s < n - 1; s++) {
-        if (!seriesHasExercise(rows[s]) || !seriesHasExercise(rows[s + 1])) continue;
-        const raw = c.seriesPauses?.[s] ?? fb;
-        const sec =
-          seriesMode === 'time'
-            ? coerceBetweenCircuitsSeconds(typeof raw === 'number' ? raw : fb, fb)
-            : coerceCountSeriesPauseSeconds(typeof raw === 'number' ? raw : fb, fb);
-        sumPauseSeries += sec;
-        seriesGapCount += 1;
-      }
-    });
-    // User spec: divide by count of series that have ≥1 exercise (not only gap count).
+    const denomSeriesPause = Math.max(1, totalSeries - 1);
     const avgPauseSeriesSeconds =
-      filledSeriesCount > 0 && seriesGapCount > 0
-        ? sumPauseSeries / filledSeriesCount
-        : pauseSeries;
-    const pauseSerStr = formatPauseSeconds(SERIES_PAUSE_OPTIONS, avgPauseSeriesSeconds);
+      totalSeries > 1 || sumPauseSeries > 0
+        ? sumPauseSeries / denomSeriesPause
+        : seriesMode === 'time'
+          ? pauseCircuits
+          : pauseSeries;
+    const pauseSerStr = formatPauseSeconds(SERIES_PAUSE_OPTIONS, Math.round(avgPauseSeriesSeconds));
 
-    // Pause among stations: station.pause only where an exercise exists; average over those stations only.
+    // Pause stations: average of station-level pauses only (non-blank exercises only).
+    // Do not mix in series/circuit pauses here.
     let sumPauseStat = 0;
     let exerciseRowCount = 0;
     circuitsToUse.forEach((c) => {
-      for (const seriesStations of c.stationsBySeries ?? []) {
-        for (const station of seriesStations) {
-          if (!stationHasNonBlankExercise(station)) continue;
+      const rows = c.stationsBySeries ?? [];
+      rows.forEach((seriesStations) => {
+        seriesStations.forEach((station) => {
+          if (!stationHasNonBlankExercise(station)) return;
           sumPauseStat += station.pause ?? pauseAmongStationsBase;
           exerciseRowCount += 1;
-        }
-      }
+        });
+      });
     });
     const avgPauseStatSeconds =
       exerciseRowCount > 0 ? sumPauseStat / exerciseRowCount : pauseAmongStationsBase;
-    const pauseStatStr = formatPauseSeconds(STATION_PAUSE_OPTIONS, avgPauseStatSeconds);
-
-    // M… : Continuous time → real seconds from last filled circuit's Macro / final pause row; count mode → load-of-work label.
-    let mSegment = '';
-    if (seriesMode === 'time' && filledCircuitCount > 0) {
-      const lastFilled = filledCircuits[filledCircuits.length - 1]!;
-      const n = lastFilled.stationsBySeries?.length ?? 0;
-      const rawLast =
-        n > 0
-          ? lastFilled.seriesPauses?.[n - 1] ?? lastFilled.pauseAfterCircuit ?? pauseCircuits
-          : lastFilled.pauseAfterCircuit ?? pauseCircuits;
-      const macroSec = coerceBetweenCircuitsSeconds(
-        typeof rawLast === 'number' ? rawLast : pauseCircuits ?? 120,
-        pauseCircuits ?? 120
-      );
-      mSegment = `M${formatPauseSeconds(CIRCUIT_PAUSE_OPTIONS, macroSec)}`;
-    } else {
-      const mf = circuitLoadOfWorkToMacroFinal(loadOfWorkTrimmed);
-      mSegment = mf ? `M${mf}` : `M0'`;
-    }
+    const pauseStatStr = formatPauseSeconds(STATION_PAUSE_OPTIONS, Math.round(avgPauseStatSeconds));
+    const mSafe = /^[0-9]$/.test(loadOfWorkTrimmed) ? loadOfWorkTrimmed : '0';
 
     const timeSuffix =
       seriesMode === 'time' ? ` (${seriesTime}' continuous)` : '';
 
     return (
-      `Circuit: ${totalStationsWithExercise} total stations (${circuitCountDisplay} circuits, avg ${fmtAvg(avgStationsSerie)} stations/serie, avg ${fmtAvg(avgSeriesCircuit)} series/circuit)${timeSuffix} ` +
-      `Pause circ. ${pauseCircStr} - stations ${pauseStatStr} - series ${pauseSerStr} ${mSegment}`
+      `Circuit: ${totalStationSlots} total stations (${circuitCountDisplay} circuits, avg ${avgStations} stations/serie, avg ${avgSeries} series/circuit)${timeSuffix} ` +
+      `Pause circ. ${pauseCircStr} - stations ${pauseStatStr} - series ${pauseSerStr} M${mSafe}'`
     );
   };
   
@@ -3295,9 +3174,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
   
   // ============================================================================
   // COPY STATION HANDLERS — Rip + Pause only; never sector or exercise.
-  // Vertical: single click = next station in same serie; double = all following stations in that serie.
-  // Horizontal: single click = next serie, same station column; double = all following series for that station.
-  // Vertical last station in serie: copy Rip only (pause from Between series / Horizontal pause-after-all-series bar).
+  // Single click: next station in same series only. Double click: all subsequent stations in same series until end.
+  // Last station of a serie: copy Rip only (pause comes from Between series / Between Circuits bar).
   // ============================================================================
   const mergeRipPauseFromSource = (
     target: Station,
@@ -3321,25 +3199,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       if (sourceStationIdx < 0) return prevCircuits;
       const sourceStation = seriesStations[sourceStationIdx];
 
-      if (executionMode === 'horizontal') {
-        const colIdx = sourceStationIdx;
-        const nextSer = seriesIdx + 1;
-        if (nextSer >= circuitData.stationsBySeries.length) return prevCircuits;
-        const targetSeries = circuitData.stationsBySeries[nextSer];
-        if (!targetSeries || colIdx >= targetSeries.length) return prevCircuits;
-        const targetStation = targetSeries[colIdx];
-        newCircuits[circuitIdx].stationsBySeries[nextSer][colIdx] = {
-          ...targetStation,
-          reps: sourceStation.reps ?? '',
-          pause: sourceStation.pause,
-        };
-        setActionLog((prev) => [
-          ...prev,
-          `Rip, Pause copied to next serie (same station ${stationNumber}) in ${circuit}: serie ${seriesIdx + 1} → ${nextSer + 1} (sector & exercise unchanged)`,
-        ]);
-        return newCircuits;
-      }
-
       const nextIdxInSeries = sourceStationIdx + 1;
       if (nextIdxInSeries >= seriesStations.length) return prevCircuits;
 
@@ -3357,7 +3216,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     });
   };
 
-  /** Double click: vertical = rest of stations in same serie; horizontal = all following series, same station. */
+  /** Double click: Rip + Pause to every station after the source in the same serie only. */
   const handleCopyRipPauseToRestOfSeries = (circuit: string, seriesIdx: number, stationNumber: number) => {
     setCircuits(prevCircuits => {
       const newCircuits = JSON.parse(JSON.stringify(prevCircuits));
@@ -3369,28 +3228,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       const sourceStationIdx = seriesStations.findIndex((s: Station) => s.stationNumber === stationNumber);
       if (sourceStationIdx < 0) return prevCircuits;
       const sourceStation = seriesStations[sourceStationIdx];
-
-      if (executionMode === 'horizontal') {
-        const colIdx = sourceStationIdx;
-        let copiedCount = 0;
-        for (let ser = seriesIdx + 1; ser < circuitData.stationsBySeries.length; ser++) {
-          const targetSeries = circuitData.stationsBySeries[ser];
-          if (!targetSeries || colIdx >= targetSeries.length) continue;
-          const targetStation = targetSeries[colIdx];
-          newCircuits[circuitIdx].stationsBySeries[ser][colIdx] = {
-            ...targetStation,
-            reps: sourceStation.reps ?? '',
-            pause: sourceStation.pause,
-          };
-          copiedCount++;
-        }
-        if (copiedCount === 0) return prevCircuits;
-        setActionLog((prev) => [
-          ...prev,
-          `Rip, Pause copied to ${copiedCount} subsequent serie(s) (same station ${stationNumber}) in ${circuit} from serie ${seriesIdx + 1} (sector & exercise unchanged)`,
-        ]);
-        return newCircuits;
-      }
 
       let copiedCount = 0;
       for (let stIdx = sourceStationIdx + 1; stIdx < seriesStations.length; stIdx++) {
@@ -3429,45 +3266,31 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       newStationsBySeries.splice(insertAt, 0, clonedSeries);
 
       const pauseMode = seriesMode === 'time' ? 'time' : 'count';
-      const fallbackBetween = circuit.pauseBetweenSeries ?? pauseSeries;
-      const fallbackAfter = circuit.pauseAfterCircuit ?? pauseCircuits;
+      const fallback = circuit.pauseBetweenSeries ?? pauseSeries;
       const slotsOld = seriesPausesSlotCount(n, pauseMode);
-      const oldPauses = Array.from({ length: slotsOld }, (_, i) => {
-        if (circuit.seriesPauses && i < circuit.seriesPauses.length && circuit.seriesPauses[i] !== undefined) {
-          return circuit.seriesPauses[i]!;
-        }
-        if (pauseMode === 'time' && i === slotsOld - 1) return fallbackAfter;
-        return fallbackBetween;
-      });
+      const oldPauses = Array.from({ length: slotsOld }, (_, i) =>
+        circuit.seriesPauses && i < circuit.seriesPauses.length && circuit.seriesPauses[i] !== undefined
+          ? circuit.seriesPauses[i]!
+          : fallback
+      );
       const needsPauseArray = pauseMode === 'time' || Array.isArray(circuit.seriesPauses);
       let newSeriesPauses: number[] | undefined = undefined;
       if (needsPauseArray) {
         if (pauseMode === 'time') {
-          // Time mode: one pause per serie row; last slot stays circuit-level “after”.
+          // Time mode stores one pause value per series row.
+          // Inserted series inherits the pause of the immediately previous series.
           const pauseFromPrevSeries =
-            insertAt - 1 >= 0 && insertAt - 1 < oldPauses.length ? oldPauses[insertAt - 1]! : fallbackBetween;
+            insertAt - 1 >= 0 && insertAt - 1 < oldPauses.length ? oldPauses[insertAt - 1]! : fallback;
           newSeriesPauses = [...oldPauses];
           newSeriesPauses.splice(insertAt, 0, pauseFromPrevSeries);
-          const newN = newStationsBySeries.length;
-          newSeriesPauses = buildDefaultSeriesPauses(
-            {
-              ...circuit,
-              stationsBySeries: newStationsBySeries,
-              series: newN,
-              seriesPauses: newSeriesPauses,
-            },
-            'time',
-            fallbackBetween,
-            fallbackAfter
-          );
         } else {
           // Count mode stores one pause value per gap between consecutive series.
           // Keep old gap after source series for "new -> next" and set "source -> new"
           // from the immediately previous series pause value.
           const oldGapAfterSource =
-            seriesIdx >= 0 && seriesIdx < oldPauses.length ? oldPauses[seriesIdx]! : fallbackBetween;
+            seriesIdx >= 0 && seriesIdx < oldPauses.length ? oldPauses[seriesIdx]! : fallback;
           const prevGapValue =
-            seriesIdx - 1 >= 0 && seriesIdx - 1 < oldPauses.length ? oldPauses[seriesIdx - 1]! : fallbackBetween;
+            seriesIdx - 1 >= 0 && seriesIdx - 1 < oldPauses.length ? oldPauses[seriesIdx - 1]! : fallback;
           newSeriesPauses = [...oldPauses];
           newSeriesPauses.splice(insertAt - 1, 0, oldGapAfterSource);
           newSeriesPauses[insertAt - 1] = prevGapValue;
@@ -3578,7 +3401,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 <p className="text-xs text-gray-500 mt-1">1-5 (default: 1)</p>
               </div>
               
-              {/* Macro (0-9) - when Set Time/Circuit (Continuous Time) mode */}
+              {/* Macro — same 1′…10′ options as Pause among / between circuits (Continuous Time). */}
               {seriesMode === 'time' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -3589,20 +3412,19 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                   onChange={(e) => setLoadOfWork(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                 >
-                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
-                    <option key={num} value={String(num)}>{num}</option>
+                  {CIRCUIT_PAUSE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={String(opt.value)}>
+                      {opt.label}
+                    </option>
                   ))}
                 </select>
-                <p className="text-xs text-gray-500 mt-1">0-9</p>
+                <p className="text-xs text-gray-500 mt-1">1′–10′ — matches Pause among the circuits.</p>
               </div>
               )}
               
               {/* Time per Circuit */}
               <div className={seriesMode !== 'time' ? 'opacity-50' : ''}>
-                <label
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                  title="Continuous Time: length of each serie work block (minutes). Yearly period From-to targets belong here, not in Macro (Rip digits 0-9)."
-                >
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Minutes of work
                 </label>
                 <input
@@ -3613,11 +3435,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                   onChange={(e) => setSeriesTime(Math.min(9, Math.max(1, parseInt(e.target.value) || 2)))}
                   disabled={seriesMode !== 'time'}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-                  aria-label="Minutes of work per serie in Continuous Time mode"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  1–9 minutes per serie (default 2). With yearly period planning, this field carries your Continuous Time target; Macro is separate (Rip).
-                </p>
+                <p className="text-xs text-gray-500 mt-1">1-9 minutes (default: 2)</p>
               </div>
             </div>
           </div>
@@ -3835,10 +3654,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           
           {/* Time per Circuit */}
           <div className={seriesMode !== 'time' ? 'opacity-50' : ''}>
-            <label
-              className="block text-sm font-medium text-gray-700 mb-1"
-              title="Continuous Time: length of each serie work block (minutes). Yearly period From-to targets belong here, not Macro (Rip)."
-            >
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Minutes of work
             </label>
             <input
@@ -3849,11 +3665,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
               onChange={(e) => setSeriesTime(Math.min(9, Math.max(1, parseInt(e.target.value) || 2)))}
               disabled={seriesMode !== 'time'}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-              aria-label="Minutes of work per serie in Continuous Time mode"
             />
-            <p className="text-xs text-gray-500 mt-1">
-              1–9 minutes per serie (default 2). Yearly Continuous Time targets use this field; Macro does not replace it.
-            </p>
+            <p className="text-xs text-gray-500 mt-1">1-9 minutes (default: 2)</p>
           </div>
         </div>
         
@@ -3908,7 +3721,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
               disabled={executionMode === 'horizontal'}
               title={
                 executionMode === 'horizontal'
-                  ? 'Horizontal execution: Pause\\stations is disabled. Set rest between stations with “Pause after all the series of each station” in Pause Settings (Count mode).'
+                  ? 'Horizontal execution: Pause\\stations is disabled. Set rest between stations with “Horizontal Series” in Pause Settings (Count mode).'
                   : undefined
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-amber-500 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
@@ -3921,10 +3734,10 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             </select>
           </div>
           
-          {/* Pause between Circuits — Continuous Time wording: Pause among the circuits */}
+          {/* Pause between Circuits */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              {seriesMode === 'time' ? 'Pause among the circuits' : 'Between Circuits'}
+              Between Circuits
             </label>
             <select
               value={pauseDraftCircuits}
@@ -3937,22 +3750,16 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             </select>
           </div>
           
-          {/* Continuous Time: default for Pause among the series (blue); last serie uses Pause among the circuits or Macro. */}
-          <div>
-            <label
-              className="block text-sm font-medium text-gray-700 mb-1"
-              title={
-                seriesMode === 'time'
-                  ? 'Default for Pause among the series (blue rows, when needed). The last serie of a circuit uses Pause among the circuits (amber); on the last circuit that slot is Macro, not this default.'
-                  : undefined
-              }
-            >
-              {seriesMode === 'time' ? 'Pause among the series' : 'Between series of stations'}
+          {/* Pause between Series — not used as a separate value in Continuous Time (uses Between Circuits). */}
+          <div className={seriesMode === 'time' ? 'opacity-70' : ''}>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Between series of stations
             </label>
             <select
-              value={pauseDraftSeries}
+              value={seriesMode === 'time' ? pauseDraftCircuits : pauseDraftSeries}
               onChange={(e) => setPauseDraftSeries(parseInt(e.target.value, 10))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-amber-500"
+              disabled={seriesMode === 'time'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-amber-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
             >
               {(seriesMode === 'time' ? CIRCUIT_PAUSE_OPTIONS : SERIES_PAUSE_OPTIONS).map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -3962,7 +3769,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             </select>
           </div>
 
-          {/* Time: Macro digit → Rip (`reps`) only. Count: Load of work → Rip. Footer purple row → Pause only — never Macro. */}
+          {/* Time: Macro → Rip column. Count: Load of work → Rip. Table footer row applies Pause only. */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               {seriesMode === 'time' ? 'Macro' : 'Load of work (Reps) - optional'}
@@ -3975,9 +3782,9 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-amber-500"
                 >
                   <option value="">Select...</option>
-                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-                    <option key={num} value={String(num)}>
-                      {num}
+                  {CIRCUIT_PAUSE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={String(opt.value)}>
+                      {opt.label}
                     </option>
                   ))}
                 </select>
@@ -4002,7 +3809,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 className="px-4 py-2 text-sm font-medium bg-purple-600 text-white rounded-md hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 shrink-0"
                 title={
                   seriesMode === 'time'
-                    ? 'Apply Macro digit to Rip; also presets footer Pause (digit×10″, e.g. 4→40″). Use Pause Apply below for station cells.'
+                    ? 'Apply Macro (1′–10′, same as Pause among circuits) to Rip (minutes); presets footer Pause (snap to station options) and last-cell Pause to this macro.'
                     : 'Apply Load of work to Rip column only (never Pause)'
                 }
               >
@@ -4028,20 +3835,18 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 setCurrentPhase('table');
               }}
               className="px-5 py-2.5 bg-amber-500 text-white font-medium rounded-lg hover:bg-amber-600 focus:ring-2 focus:ring-amber-400"
-              title="Apply Pause Settings to the grid, then open or stay on the circuit table. Horizontal + Count: Between Circuits, Between series of stations, and pause after all the series of each station."
+              title="Apply Pause Settings to the grid, then open or stay on the circuit table. Horizontal + Count: Between Circuits, Between series of stations, and Horizontal Series."
             >
               Proceed
             </button>
           </div>
 
-          {/* Bulk Pause lives in the purple circuit table footer — not Macro */}
+          {/* Bulk Pause (macro rest) lives in the circuit table footer */}
 
           {executionMode === 'horizontal' && seriesMode === 'count' && (
             <div className="col-span-full mt-2 pt-3 border-t border-amber-200/80">
-              <div className="max-w-md">
-                <label className="block text-sm font-medium text-gray-700 mb-1 leading-snug">
-                  Pause after all the series of each station
-                </label>
+              <div className="max-w-xs">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Horizontal Series</label>
                 <select
                   value={pauseDraftHorizontalSeries}
                   onChange={(e) => setPauseDraftHorizontalSeries(parseInt(e.target.value, 10))}
@@ -4149,16 +3954,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                  <th colSpan={2} className="border border-gray-300 px-3 py-2 text-sm font-semibold text-center bg-green-50">
                    Exercises
                  </th>
-                <th
-                  colSpan={3}
-                  className="border border-gray-300 px-3 py-2 text-sm font-semibold text-left"
-                  title={
-                    seriesMode === 'time'
-                      ? 'Rip · Pause · Actions — Macro (Pause Settings, Apply) updates Rip only, not Pause.'
-                      : 'Rip · Pause · Actions — Load of work updates Rip only, not Pause.'
-                  }
-                >
-                  Rip · Pause · Actions
+                <th colSpan={3} className="border border-gray-300 px-3 py-2 text-sm font-semibold text-left">
+                  {seriesMode === 'time' ? 'Macro' : 'Load of work'}
                 </th>
               </tr>
               <tr className="bg-gray-100">
@@ -4177,7 +3974,15 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 <th className="border border-gray-300 px-2 py-1 text-sm font-medium bg-green-50" style={{minWidth: '200px'}}>Sectors</th>
                 <th className="border border-gray-300 px-2 py-1 text-sm font-medium bg-green-50" style={{minWidth: '250px'}}>Exercise</th>
                  <th className="border border-gray-300 px-2 py-1 text-sm font-medium">Rip</th>
-                 <th className="border border-gray-300 px-2 py-1 text-sm font-medium">Pause</th>
+                 <th className="border border-gray-300 px-2 py-1 text-sm font-medium">
+                   {executionMode === 'horizontal' && seriesMode === 'count' ? (
+                     <span title="Set pause in the full-width blue and green rows under each exercise block">
+                       Pause <span className="block text-[10px] font-normal text-gray-600">(see rows below)</span>
+                     </span>
+                   ) : (
+                     'Pause'
+                   )}
+                 </th>
                  <th className="border border-gray-300 px-2 py-1 text-sm font-medium text-center">Actions</th>
               </tr>
              </thead>
@@ -4229,7 +4034,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                       STATION_PAUSE_OPTIONS={STATION_PAUSE_OPTIONS}
                       SERIES_PAUSE_OPTIONS={SERIES_PAUSE_OPTIONS}
                       CIRCUIT_PAUSE_OPTIONS={CIRCUIT_PAUSE_OPTIONS}
-                      formatPauseSeconds={formatPauseSeconds}
                     />
                   );
                 }
@@ -4241,7 +4045,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                   seriesMode !== 'time'
                     ? Math.max(0, circuit.series - 1 + betweenCircuitsRows)
                     : 0;
-                // Time mode: after each non-empty serie — one yellow row: "Repeat continuously for X'" + pause/macro controls.
+                // Time mode: one blue row after each non-empty rendered series (skip empty series slots).
                 const timeModeFooterRows =
                   seriesMode === 'time' ? seriesSlice.filter((ss) => ss?.length).length : 0;
                 const totalRows =
@@ -4256,28 +4060,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 let rowIndex = 0;
                 return (
                   <React.Fragment key={circuit.letter}>
-                    {seriesMode === 'time' && (
-                      <tr
-                        key={`continuous-time-banner-${circuit.letter}`}
-                        className="bg-yellow-200 border-y-2 border-yellow-500"
-                        style={{ minHeight: '40px' }}
-                      >
-                        <td
-                          colSpan={8}
-                          className="border-l border-r border-t border-b border-yellow-600 px-4 py-2"
-                        >
-                          <div className="flex flex-col gap-2 text-left sm:flex-row sm:items-start sm:gap-6">
-                            <div className="min-w-0 text-xs font-medium leading-snug text-yellow-900">
-                              <span className="font-semibold text-yellow-950">Circuit {circuit.letter}</span>
-                              {' · Continuous Time: yellow rows after each serie show '}
-                              <span className="font-semibold">{`Repeat continuously for ${seriesTime}'`}</span>
-                              {' plus the pause/macro dropdown. Between series: pause among the series; after last serie of a circuit: pause among the circuits; on the '}
-                              <span className="font-semibold">last</span> circuit: <span className="font-semibold">Macro</span>.
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
                     {Array.from({ length: seriesCountToRender }).map((_, seriesIdx) => {
                       const seriesStations = circuit.stationsBySeries[seriesIdx];
                       if (!seriesStations?.length) return <React.Fragment key={`series-${circuit.letter}-${seriesIdx}`} />;
@@ -4490,16 +4272,12 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                               <div className="flex items-center gap-1 exercise-menu-container relative z-[10000]">
                                 {/* Exercise thumb — click opens A/B gallery */}
                                 {(() => {
-                                  const picA = getExercisePictureAThumbnailForDisplay(
-                                    (station.exercise || '').trim()
-                                  );
+                                  const thumb = getMockExerciseThumbnail(station.exercise);
                                   const sectorImg =
                                     station.sector && MUSCULAR_SECTOR_IMAGES[station.sector]
                                       ? MUSCULAR_SECTOR_IMAGES[station.sector]
                                       : null;
-                                  const src =
-                                    picA?.src ??
-                                    (station.exercise?.trim() && sectorImg ? sectorImg : null);
+                                  const src = thumb?.src ?? (station.exercise?.trim() && sectorImg ? sectorImg : null);
                                   const openGallery = () => {
                                     const exName = (station.exercise || '').trim();
                                     const sectorS = (station.sector || '').trim();
@@ -4526,8 +4304,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                                       />
                                     );
                                   }
-                                  const isData =
-                                    picA?.isDataUrl === true || (!!src && src.startsWith('data:'));
+                                  const isData = thumb?.isDataUrl === true || src.startsWith('data:');
                                   return (
                                     <button
                                       type="button"
@@ -4603,19 +4380,13 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                               </select>
                             </td>
                             
-                             {/* Pause — vertical: inter-station in cell; last col → blue/yellow. Horizontal: Pause\series between rows; last row non-last col → pause after all series at station. */}
+                             {/* Pause — vertical: inter-station in cell; last col → blue/yellow. Horizontal: Pause\series between rows; last row non-last col → Horizontal Series. */}
                              <td className="border border-gray-300 px-2 py-1">
                                {seriesMode === 'time' && isLastStationOfSeries ? (
                                  <div
                                    className="flex min-h-[38px] items-center justify-center rounded border border-dashed border-gray-200 bg-gray-50 px-2 text-sm text-gray-400"
-                                   title={
-                                     !isLastSeries
-                                       ? `Continuous Time: yellow row below — Repeat continuously for ${seriesTime}', then Pause among the series (when needed).`
-                                       : circuitIdx < circuits.length - 1
-                                         ? `Continuous Time: yellow row below — Repeat continuously for ${seriesTime}', then Pause among the circuits (when needed).`
-                                         : `Continuous Time: yellow row below — Repeat continuously for ${seriesTime}', then Macro (end of workout rest).`
-                                   }
-                                   aria-label="Pause or macro controlled by row below"
+                                   title="Rest after this serie is set in the blue row below (Continuous Time)."
+                                   aria-label="Pause controlled by row below"
                                  >
                                    —
                                  </div>
@@ -4639,7 +4410,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                                  !isLastStationOfSeries ? (
                                  <div
                                    className="flex min-h-[38px] items-center justify-center rounded border border-gray-200 bg-gray-100 px-2 text-sm font-medium text-gray-700"
-                                  title="Horizontal: after all series at this station, rest before the next station — Pause after all the series of each station (Pause Settings)."
+                                  title="Horizontal: after all series at this station, rest before the next station — Horizontal Series (Pause Settings)."
                                  >
                                    {formatPauseSeconds(
                                      STATION_PAUSE_OPTIONS,
@@ -4651,8 +4422,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                                    className="flex min-h-[38px] items-center justify-center px-2 text-xs text-center font-semibold text-blue-600"
                                    title={
                                      isLastSeries && circuitIdx === circuits.length - 1
-                                       ? 'Pause among the circuits (amber) or Macro (last circuit) — see rows below.'
-                                       : 'Rest after the last station of this serie: Pause among the series (blue) or Pause among the circuits (amber after last serie).'
+                                       ? 'Rest after the last station is set in Between Circuits (yellow row) or end-of-workout pause.'
+                                       : 'Rest after the last station of this serie is set in the blue “Between series of stations” row below (or yellow Between Circuits after the last serie).'
                                    }
                                  >
                                    ↓ look down here
@@ -4746,195 +4517,61 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                         );
                           })}
                           
-                          {/* Continuous Time: one yellow row per serie — "Repeat continuously for X'" + pause among series / circuits / macro (dropdown). */}
+                          {/* Pause Between Series Row - 2026-01-27 */}
+                          {/* Time\Circuit: "Pause at the end of each serie" - show after every series */}
                           {/* Count mode: "Between series of stations" - show only between series (not after last) */}
                           {seriesMode === 'time' ? (
-                            <>
-                              {!isLastSeries ? (
-                                <tr
-                                  key={`ct-pause-series-${circuit.letter}-${seriesIdx}`}
-                                  className="bg-yellow-200 border-y-2 border-yellow-500"
-                                  style={{ minHeight: '44px' }}
-                                >
-                                  <td
-                                    colSpan={7}
-                                    className="border-l border-r border-t border-b border-yellow-600 px-4 py-2"
+                            <tr className="bg-blue-50" style={{height: '40px'}}>
+                              {/* colSpan 7 = columns 2–8 (Circ is row-spanned from first row of circuit) */}
+                              <td colSpan={7} className="border-l border-r border-t border-b border-gray-300 px-4 py-2">
+                                <div className="flex items-center justify-between">
+                                  <span
+                                    className="text-sm font-semibold text-blue-700"
+                                    title={
+                                      isLastSeries
+                                        ? undefined
+                                        : `Continuous Time — ${seriesTime}' work block per serie; same pause as Between Circuits.`
+                                    }
                                   >
-                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                                      <div className="min-w-0 leading-tight">
-                                        <div className="text-sm font-bold text-yellow-950">
-                                          {`Repeat continuously for ${seriesTime}'`}
-                                        </div>
-                                        <div
-                                          className="mt-0.5 text-xs font-semibold text-yellow-900"
-                                          title={`Continuous Time — ${seriesTime}' per serie. Pause among the series (when needed): rest before the next serie in this circuit.`}
-                                        >
-                                          Pause among the series (when needed)
-                                          <span className="block font-normal text-yellow-900/90">
-                                            {`${seriesTime}' work block / serie`}
-                                          </span>
-                                        </div>
-                                      </div>
-                                      <select
-                                        value={
-                                          circuit.seriesPauses?.[seriesIdx] ??
-                                          circuit.pauseBetweenSeries ??
-                                          pauseSeries
-                                        }
-                                        onChange={(e) => {
-                                          const value = parseInt(e.target.value, 10);
-                                          setCircuits((prevCircuits) => {
-                                            const newCircuits = JSON.parse(JSON.stringify(prevCircuits));
-                                            const c = newCircuits[circuitIdx];
-                                            const n = c.stationsBySeries?.length ?? 0;
-                                            const len = seriesPausesSlotCount(n, 'time');
-                                            const fbBetween = c.pauseBetweenSeries ?? pauseSeries;
-                                            const fbAfter = c.pauseAfterCircuit ?? pauseCircuits;
-                                            let arr = Array.isArray(c.seriesPauses) ? [...c.seriesPauses] : [];
-                                            while (arr.length < len) {
-                                              const i = arr.length;
-                                              arr.push(i < len - 1 ? fbBetween : fbAfter);
-                                            }
-                                            if (arr.length > len) arr = arr.slice(0, len);
-                                            arr[seriesIdx] = value;
-                                            c.seriesPauses = len > 0 ? arr : undefined;
-                                            return newCircuits;
-                                          });
-                                        }}
-                                        className="shrink-0 px-2 py-1 text-sm border border-gray-300 rounded bg-white"
-                                      >
-                                        {CIRCUIT_PAUSE_OPTIONS.map((opt) => (
-                                          <option key={opt.value} value={opt.value}>
-                                            {opt.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ) : circuitIdx < circuits.length - 1 ? (
-                                <tr
-                                  key={`ct-pause-circuits-${circuit.letter}-${seriesIdx}`}
-                                  className="bg-yellow-200 border-y-2 border-yellow-500"
-                                  style={{ minHeight: '44px' }}
-                                >
-                                  <td
-                                    colSpan={7}
-                                    className="border-l border-r border-t border-b border-yellow-600 px-4 py-2"
+                                    {isLastSeries
+                                      ? circuitIdx === circuits.length - 1
+                                        ? `End of workout — after last exercise (${seriesTime}' work block)`
+                                        : 'Break among the series'
+                                      : 'Break among the series'}
+                                  </span>
+                                  <select
+                                    value={
+                                      circuit.seriesPauses?.[seriesIdx] ??
+                                      circuit.pauseAfterCircuit ??
+                                      pauseCircuits
+                                    }
+                                    onChange={(e) => {
+                                      const value = parseInt(e.target.value, 10);
+                                      setCircuits((prevCircuits) => {
+                                        const newCircuits = JSON.parse(JSON.stringify(prevCircuits));
+                                        const c = newCircuits[circuitIdx];
+                                        const n = c.stationsBySeries?.length ?? 0;
+                                        const len = seriesPausesSlotCount(n, 'time');
+                                        const fb = c.pauseAfterCircuit ?? pauseCircuits;
+                                        let arr = Array.isArray(c.seriesPauses) ? [...c.seriesPauses] : [];
+                                        while (arr.length < len) arr.push(arr[arr.length - 1] ?? fb);
+                                        if (arr.length > len) arr = arr.slice(0, len);
+                                        arr[seriesIdx] = value;
+                                        c.seriesPauses = len > 0 ? arr : undefined;
+                                        return newCircuits;
+                                      });
+                                    }}
+                                    className="px-2 py-1 text-sm border border-gray-300 rounded"
                                   >
-                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                                      <div className="min-w-0 leading-tight">
-                                        <div className="text-sm font-bold text-yellow-950">
-                                          {`Repeat continuously for ${seriesTime}'`}
-                                        </div>
-                                        <div
-                                          className="mt-0.5 text-xs font-semibold text-yellow-900"
-                                          title={`Continuous Time — Pause among the circuits (when needed): after the last serie of this circuit (${seriesTime}' work block / serie), rest before the next circuit.`}
-                                        >
-                                          Pause among the circuits (when needed)
-                                          <span className="block font-normal text-yellow-900/90">
-                                            {`${seriesTime}' work block / serie`}
-                                          </span>
-                                        </div>
-                                      </div>
-                                      <select
-                                        value={circuit.pauseAfterCircuit ?? pauseCircuits}
-                                        onChange={(e) => {
-                                          const value = parseInt(e.target.value, 10);
-                                          setCircuits((prevCircuits) => {
-                                            const newCircuits = JSON.parse(JSON.stringify(prevCircuits));
-                                            const c = newCircuits[circuitIdx];
-                                            c.pauseAfterCircuit = value;
-                                            const n = c.stationsBySeries?.length ?? 0;
-                                            const len = seriesPausesSlotCount(n, 'time');
-                                            const fbBetween = c.pauseBetweenSeries ?? pauseSeries;
-                                            let arr = Array.isArray(c.seriesPauses) ? [...c.seriesPauses] : [];
-                                            while (arr.length < len) {
-                                              const i = arr.length;
-                                              arr.push(i < len - 1 ? fbBetween : value);
-                                            }
-                                            if (arr.length > len) arr = arr.slice(0, len);
-                                            const lastIdx = len - 1;
-                                            if (lastIdx >= 0) arr[lastIdx] = value;
-                                            c.seriesPauses = len > 0 ? arr : undefined;
-                                            return newCircuits;
-                                          });
-                                        }}
-                                        className="shrink-0 px-2 py-1 text-sm border border-gray-300 rounded bg-white"
-                                      >
-                                        {CIRCUIT_PAUSE_OPTIONS.map((opt) => (
-                                          <option key={opt.value} value={opt.value}>
-                                            {opt.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ) : (
-                                <tr
-                                  key={`ct-macro-final-${circuit.letter}-${seriesIdx}`}
-                                  className="bg-yellow-200 border-y-2 border-yellow-500"
-                                  style={{ minHeight: '44px' }}
-                                >
-                                  <td
-                                    colSpan={7}
-                                    className="border-l border-r border-t border-b border-yellow-600 px-4 py-2"
-                                  >
-                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                                      <div className="min-w-0 leading-tight">
-                                        <div className="text-sm font-bold text-yellow-950">
-                                          {`Repeat continuously for ${seriesTime}'`}
-                                        </div>
-                                        <div
-                                          className="mt-0.5 text-xs font-semibold text-violet-900"
-                                          title={`Continuous Time — Macro (not Pause among the circuits): after the last serie of the last circuit (${seriesTime}' work block / serie). This row sets the final timing / macro rest.`}
-                                        >
-                                          Macro — end of workout rest
-                                          <span className="block font-normal text-violet-800/95">
-                                            {`Replaces Pause among the circuits here · ${seriesTime}' work block / serie`}
-                                          </span>
-                                        </div>
-                                      </div>
-                                      <select
-                                        value={
-                                          circuit.seriesPauses?.[seriesIdx] ??
-                                          circuit.pauseAfterCircuit ??
-                                          pauseCircuits
-                                        }
-                                        onChange={(e) => {
-                                          const value = parseInt(e.target.value, 10);
-                                          setCircuits((prevCircuits) => {
-                                            const newCircuits = JSON.parse(JSON.stringify(prevCircuits));
-                                            const c = newCircuits[circuitIdx];
-                                            c.pauseAfterCircuit = value;
-                                            const n = c.stationsBySeries?.length ?? 0;
-                                            const len = seriesPausesSlotCount(n, 'time');
-                                            const fbBetween = c.pauseBetweenSeries ?? pauseSeries;
-                                            let arr = Array.isArray(c.seriesPauses) ? [...c.seriesPauses] : [];
-                                            while (arr.length < len) {
-                                              const i = arr.length;
-                                              arr.push(i < len - 1 ? fbBetween : value);
-                                            }
-                                            if (arr.length > len) arr = arr.slice(0, len);
-                                            arr[seriesIdx] = value;
-                                            c.seriesPauses = len > 0 ? arr : undefined;
-                                            return newCircuits;
-                                          });
-                                        }}
-                                        className="shrink-0 px-2 py-1 text-sm border border-gray-300 rounded bg-white"
-                                      >
-                                        {CIRCUIT_PAUSE_OPTIONS.map((opt) => (
-                                          <option key={opt.value} value={opt.value}>
-                                            {opt.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  </td>
-                                </tr>
-                              )}
-                            </>
+                                    {CIRCUIT_PAUSE_OPTIONS.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </td>
+                            </tr>
                           ) : !isLastSeries && (
                             <tr className="bg-blue-50" style={{height: '40px'}}>
                               <td colSpan={7} className="border-l border-r border-t border-b border-gray-300 px-4 py-2">
@@ -4978,7 +4615,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                       );
                     })}
                     
-                    {/* Pause Between Circuits Row — Count mode only (Continuous Time: Pause among the circuits inline after the last serie row above). */}
+                    {/* Pause Between Circuits Row — Count mode only; Continuous Time uses the blue row after the last series */}
                     {seriesMode !== 'time' && circuitIdx < circuits.length - 1 && (
                       <tr className="bg-yellow-50" style={{height: '40px'}}>
                         <td colSpan={7} className="border-l border-r border-t border-b border-gray-300 px-4 py-2">
@@ -5008,7 +4645,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 );
               })}
             </tbody>
-            {/* Bulk-fill inter-station Pause column. Continuous Time: Macro Apply presets this dropdown (digit→×10″); Apply here fills station Pause cells. */}
+            {/* Bulk-fill inter-station Pause column. Continuous Time: Macro Apply presets this dropdown (snap near macro); Apply here fills station Pause cells. */}
             <tfoot>
               <tr className="bg-purple-50" style={{height: '40px'}}>
                 <td colSpan={8} className="border-l border-r border-t border-b border-gray-300 px-4 py-2">
@@ -5017,7 +4654,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                       className="text-sm font-semibold text-purple-700"
                       title={
                         seriesMode === 'time'
-                          ? 'Rest between stations. Macro Apply above presets this value (digit×10″, e.g. 4→40″); click Apply here to write Pause cells. Rip unchanged by this row.'
+                          ? 'Rest between stations. Macro Apply above presets this value (snapped to station pause options); click Apply here to write Pause cells. Rip unchanged by this row.'
                           : 'Rest between stations — applies this Pause value only. Macro / Load of work affects Rip, not these Pause cells.'
                       }
                     >
@@ -5043,8 +4680,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                       className="px-3 py-1 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
                       title={
                         executionMode === 'horizontal'
-                          ? 'Horizontal execution: set inter-station rest with “Pause after all the series of each station” in Pause Settings, not this footer.'
-                          : 'Apply this pause to every station Pause cell. Does not change Rip or Macro.'
+                          ? 'Horizontal execution: set inter-station rest with Horizontal Series in Pause Settings, not this footer.'
+                          : 'Apply this pause to every station’s Pause cell (rest between stations).'
                       }
                     >
                       Apply
@@ -5102,10 +4739,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 {MUSCULAR_SECTORS.filter(sector => MUSCULAR_SECTOR_IMAGES[sector]).map(sector => {
                   // 2026-01-26 - Highlight previous station's sector in red
                   const isPreviousSector = previousStationSector && sector === previousStationSector;
-                  const sectorPresence = sectorPresenceByCircuitSeries[sector] || [];
-                  const visiblePresence = sectorPresence.slice(0, 10);
-                  const hasMorePresence = sectorPresence.length > 10;
-                  const presenceText = visiblePresence.join('-') + (hasMorePresence ? '-...' : '');
                   
                   return (
                   <div
@@ -5149,19 +4782,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                     }`}>
                       {sector}
                     </span>
-                    {isPreviousSector && selectedStationForSector && (
-                      <span className="text-[10px] leading-tight text-red-600 font-semibold text-center">
-                        Last selected in current series
-                      </span>
-                    )}
-                    {!!sectorPresence.length && (
-                      <span
-                        className="text-[10px] leading-tight text-red-600 font-semibold text-center break-words"
-                        title={sectorPresence.join('-')}
-                      >
-                        {presenceText}
-                      </span>
-                    )}
                   </div>
                   );
                 })}
@@ -5492,19 +5112,11 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         </button>
       </div>
       
-       {/* Preview Section - structure (planned grid) vs real (stations with exercises) */}
+       {/* Preview Section - 2026-01-21 22:10 UTC - 2026-01-22 14:35 UTC - Compacted */}
        <div className="p-3 bg-gray-50 border border-gray-300 rounded">
-         <div className="space-y-3">
-           <div className="text-sm text-gray-800">
-             <span className="font-semibold text-gray-700">PREVIEW STRUCTURE CIRCUIT PLANNED</span>
-             <span className="mx-2"> </span>
-             <span>{generatePreviewStructurePlanned()}</span>
-           </div>
-           <div className="text-sm text-gray-800">
-             <span className="font-semibold text-gray-700">PREVIEW REAL DATA CIRCUITS</span>
-             <span className="mx-2"> </span>
-             <span>{generatePreviewRealData()}</span>
-           </div>
+         <div className="text-sm font-semibold text-gray-700 mb-2">PREVIEW:</div>
+         <div className="text-sm text-gray-800">
+           {generatePreview()}
          </div>
          {actionLog.length > 0 && (
            <div className="mt-2 pt-2 border-t border-gray-300">
@@ -5728,9 +5340,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             </button>
           </div>
           <p className="text-sm text-gray-600 mb-3">
-            The list orders exercises not yet in this series first, then repeats (same order when using the arrows).{' '}
-            <span className="font-medium text-gray-800">Proceed scan</span> jumps to a{' '}
-            <span className="font-medium text-gray-800">random</span> other exercise — never the one currently shown.
+            Autoscan shows exercises not yet in this series first, then repeats at the end.
           </p>
           {loadNewStationScan.orderedCandidates.length > 0 && (() => {
             const current = loadNewStationScan.orderedCandidates[loadNewStationScan.scanIndex];
@@ -5744,15 +5354,14 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             ).length;
             const isInRepeatPhase = loadNewStationScan.scanIndex >= notInSeriesCount;
             const nCand = loadNewStationScan.orderedCandidates.length;
-            const picA = getExercisePictureAThumbnailForDisplay(current.name);
+            const thumb = getMockExerciseThumbnail(current.name);
             const sectorImg =
               loadNewStationScan.sector && MUSCULAR_SECTOR_IMAGES[loadNewStationScan.sector]
                 ? MUSCULAR_SECTOR_IMAGES[loadNewStationScan.sector]
                 : null;
-            const thumbSrc =
-              picA?.src ?? (current.name?.trim() && sectorImg ? sectorImg : null);
+            const thumbSrc = thumb?.src ?? (current.name?.trim() && sectorImg ? sectorImg : null);
             const thumbIsData =
-              picA?.isDataUrl === true || (thumbSrc != null && thumbSrc.startsWith('data:'));
+              thumb?.isDataUrl === true || (thumbSrc != null && thumbSrc.startsWith('data:'));
 
             return (
               <>
@@ -5842,31 +5451,11 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 </div>
                 <div className="flex gap-2">
                   <button
-                    type="button"
                     onClick={() => {
-                      setLoadNewStationScan((prev) => {
-                        if (!prev) return prev;
-                        const list = prev.orderedCandidates;
-                        const n = list.length;
-                        if (n <= 1) return prev;
-                        const cur = prev.scanIndex;
-                        if (n === 2) {
-                          return { ...prev, scanIndex: cur === 0 ? 1 : 0 };
-                        }
-                        let nextIdx = cur;
-                        while (nextIdx === cur) {
-                          nextIdx = Math.floor(Math.random() * n);
-                        }
-                        return { ...prev, scanIndex: nextIdx };
-                      });
+                      const nextIdx = (loadNewStationScan.scanIndex + 1) % loadNewStationScan.orderedCandidates.length;
+                      setLoadNewStationScan(prev => prev ? { ...prev, scanIndex: nextIdx } : null);
                     }}
-                    disabled={loadNewStationScan.orderedCandidates.length <= 1}
-                    title={
-                      loadNewStationScan.orderedCandidates.length <= 1
-                        ? 'Need at least two exercises to randomize'
-                        : 'Pick another exercise at random (not the current one)'
-                    }
-                    className="flex-1 px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 font-medium disabled:cursor-not-allowed disabled:bg-gray-400 disabled:hover:bg-gray-400"
+                    className="flex-1 px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 font-medium"
                   >
                     Proceed scan
                   </button>
@@ -5877,26 +5466,11 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                       setCircuits(prevCircuits => {
                         const newCircuits = JSON.parse(JSON.stringify(prevCircuits));
                         const ex = scan.orderedCandidates[scan.scanIndex];
-                        const cell = newCircuits[scan.circuitIdx].stationsBySeries[scan.seriesIdx][scan.stationIdx];
-                        cell.exercise = ex.name;
-                        if (
-                          executionMode === 'horizontal' &&
-                          seriesMode === 'count' &&
-                          scan.seriesIdx === 0 &&
-                          (ex.name || '').trim()
-                        ) {
-                          replicateHorizontalExerciseFromSeriesOne(
-                            newCircuits,
-                            scan.circuitIdx,
-                            scan.stationIdx,
-                            ex.name,
-                            cell.sector || ''
-                          );
-                        }
+                        newCircuits[scan.circuitIdx].stationsBySeries[scan.seriesIdx][scan.stationIdx].exercise = ex.name;
                         return newCircuits;
                       });
                       const circuitLetter = circuits[scan.circuitIdx]?.letter || '';
-                      const station = circuits[scan.circuitIdx]?.stationsBySeries[scan.seriesIdx]?.[scan.stationIdx];
+                      const station = circuit?.stationsBySeries[scan.seriesIdx]?.[scan.stationIdx];
                       const stationNum = station?.stationNumber;
                       setActionLog(prev => [...prev, `Exercise replaced in ${circuitLetter}${scan.seriesIdx + 1}-${stationNum}`]);
                       setLoadNewStationScan(null);

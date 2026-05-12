@@ -5,10 +5,13 @@ import Image from 'next/image';
 import { X } from 'lucide-react';
 import {
   getExercisesBySector,
+  getMockExerciseThumbnail,
   getExerciseMedia,
-  getExercisePictureAThumbnailForDisplay,
   MockExercise,
 } from '@/data/mockExercises';
+
+const horizontalSerieSelectionKey = (letter: string, stationNumber: number, seriesNumber: number) =>
+  `H|${letter}|${stationNumber}|${seriesNumber}`;
 
 interface Station {
   stationNumber: number;
@@ -82,7 +85,7 @@ export interface HorizontalSeriesGridProps {
     stationNumber: number,
     nSeries: number
   ) => void;
-  toggleSeriesSelection: (letter: string, seriesNum: number) => void;
+  toggleSeriesSelection: (letter: string, seriesNum: number, stationNumber: number) => void;
   handleCopySeries: (letter: string, seriesNum: number) => void;
   handleDropOnStation: (
     e: React.DragEvent,
@@ -123,7 +126,6 @@ export interface HorizontalSeriesGridProps {
   STATION_PAUSE_OPTIONS: { label: string; value: number }[];
   SERIES_PAUSE_OPTIONS: { label: string; value: number }[];
   CIRCUIT_PAUSE_OPTIONS: { label: string; value: number }[];
-  formatPauseSeconds: (options: { label: string; value: number }[], valueSeconds: number) => string;
 }
 
 export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
@@ -166,11 +168,13 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
     STATION_PAUSE_OPTIONS,
     SERIES_PAUSE_OPTIONS,
     CIRCUIT_PAUSE_OPTIONS,
-    formatPauseSeconds,
   } = p;
 
   const nSer = seriesCountToRender;
-  const nSta = circuit.stationsBySeries[0]?.length ?? 0;
+  const nSta = Math.max(
+    0,
+    ...circuit.stationsBySeries.map((row) => (Array.isArray(row) ? row.length : 0))
+  );
   const betweenSeriesBlueRowsPerStation = Math.max(0, nSer - 1);
   const rowsPerStationBlock = nSer + betweenSeriesBlueRowsPerStation;
   const betweenStationRows = Math.max(0, nSta - 1);
@@ -188,17 +192,26 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
           <React.Fragment key={`hgrid-${circuit.letter}-st-${stationNum}`}>
             {Array.from({ length: nSer }).map((_, seriesIdx) => {
               const seriesStations = circuit.stationsBySeries[seriesIdx];
-              const station = seriesStations?.[stationIdx];
-              if (!station) return null;
+              const stationRaw = seriesStations?.[stationIdx];
+              const station =
+                stationRaw ??
+                ({
+                  stationNumber: stationNum,
+                  sector: '',
+                  exercise: '',
+                  reps: '',
+                  pause: 0,
+                  notes: '',
+                } as Station);
+              const isPlaceholderSlot = !stationRaw;
               const isFirstRowOfCircuit = rowIndex === 0;
               const isFirstRowOfStationBlock = seriesIdx === 0;
-              const isLastStationCol = stationIdx === nSta - 1;
               rowIndex += 1;
 
               return (
                 <React.Fragment key={`h-${circuit.letter}-${stationIdx}-${seriesIdx}`}>
                 <tr
-                  className="hover:bg-gray-50"
+                  className={isPlaceholderSlot ? 'bg-gray-50' : 'hover:bg-gray-50'}
                   style={{ height: '70px' }}
                 >
                   {isFirstRowOfCircuit && (
@@ -220,16 +233,19 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                             e.stopPropagation();
                             reloadExercisesForCircuitHorizontal(circuit.letter);
                           }}
-                          className="w-9 h-9 rounded-full border-2 border-green-600 flex items-center justify-center hover:bg-green-50 bg-white"
-                          title="Scan all exercises in this circuit (distinct per station; avoid adjacent duplicates when possible)"
+                          className="flex flex-col items-center gap-0.5 rounded-lg border-2 border-green-600 bg-white px-1 py-1 hover:bg-green-50"
+                          title="Scan all exercises in this circuit in one pass: every station column that has a sector gets fresh picks (distinct where possible, avoid adjacent duplicates). Click again to reshuffle."
                         >
                           <Image
                             src="/rescan.png"
-                            alt="scan circuit"
+                            alt=""
                             width={20}
                             height={20}
                             className="w-5 h-5 pointer-events-none"
                           />
+                          <span className="max-w-[4.5rem] text-[9px] font-semibold leading-tight text-green-800">
+                            Scan all
+                          </span>
                         </button>
                         <input
                           type="checkbox"
@@ -265,7 +281,7 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                           reloadExercisesForStationHorizontal(circuit.letter, stationIdx);
                         }}
                         className="absolute top-1 left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border-2 border-blue-600 flex items-center justify-center hover:bg-blue-50 z-50 bg-white"
-                        title={`Rescan exercises for station ${stationNum} (all series)`}
+                        title={`Rescan station ${stationNum} (all series): picks random exercises from this muscle's catalog (distinct where possible). Click again to reshuffle.`}
                       >
                         <Image
                           src="/rescan.png"
@@ -300,23 +316,32 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                     </td>
                   )}
 
-                  <td className="border border-gray-300 px-2 py-2 text-center">
+                  <td
+                    className="border border-gray-300 px-2 py-2 text-center"
+                    onClick={(e) => isPlaceholderSlot && e.stopPropagation()}
+                  >
                     <div className="flex items-center justify-center gap-2">
                       <input
                         type="checkbox"
-                        checked={selectedSeries.has(`${circuit.letter}-${seriesIdx + 1}`)}
-                        onChange={() => toggleSeriesSelection(circuit.letter, seriesIdx + 1)}
+                        checked={selectedSeries.has(
+                          horizontalSerieSelectionKey(circuit.letter, stationNum, seriesIdx + 1)
+                        )}
+                        onChange={() =>
+                          toggleSeriesSelection(circuit.letter, seriesIdx + 1, stationNum)
+                        }
                         className="w-4 h-4 cursor-pointer"
                         title="Select series for removal"
                       />
                       <span className="text-sm">{seriesIdx + 1}</span>
                       <button
                         type="button"
+                        disabled={isPlaceholderSlot}
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (isPlaceholderSlot) return;
                           handleCopySeries(circuit.letter, seriesIdx + 1);
                         }}
-                        className="w-6 h-6 rounded flex items-center justify-center hover:bg-green-100 border border-green-600"
+                        className="w-6 h-6 rounded flex items-center justify-center border border-green-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-green-100"
                         title="Copy serie"
                       >
                         <svg
@@ -336,15 +361,24 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                   </td>
 
                   <td
-                    className="border border-gray-300 px-2 py-1 bg-green-50 cursor-pointer hover:bg-green-100"
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => handleDropOnStation(e, circuit.letter, seriesIdx, station.stationNumber)}
+                    className={`border border-gray-300 px-2 py-1 ${isPlaceholderSlot ? 'bg-gray-100' : 'bg-green-50 cursor-pointer hover:bg-green-100'}`}
+                    onDragOver={(e) => !isPlaceholderSlot && e.preventDefault()}
+                    onDrop={
+                      !isPlaceholderSlot
+                        ? (e) => handleDropOnStation(e, circuit.letter, seriesIdx, station.stationNumber)
+                        : undefined
+                    }
                     onClick={() =>
+                      !isPlaceholderSlot &&
                       !station.sector &&
                       handleSectorCellClick(circuit.letter, 0, station.stationNumber)
                     }
                   >
-                    {station.sector && MUSCULAR_SECTOR_IMAGES[station.sector] ? (
+                    {isPlaceholderSlot ? (
+                      <div className="flex min-h-[50px] items-center justify-center text-xs text-gray-400">
+                        —
+                      </div>
+                    ) : station.sector && MUSCULAR_SECTOR_IMAGES[station.sector] ? (
                       <div className="flex items-center gap-2 group">
                         <div
                           draggable
@@ -389,13 +423,17 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                   </td>
 
                   <td
-                    className="border border-gray-300 px-0 py-0 bg-green-50 cursor-pointer"
-                    onDragOver={handleDragExerciseOver}
-                    onDrop={(e) =>
-                      handleDropExercise(e, circuit.letter, seriesIdx + 1, station.stationNumber)
+                    className={`border border-gray-300 px-0 py-0 ${isPlaceholderSlot ? 'bg-gray-100' : 'bg-green-50 cursor-pointer'}`}
+                    onDragOver={!isPlaceholderSlot ? handleDragExerciseOver : undefined}
+                    onDrop={
+                      !isPlaceholderSlot
+                        ? (e) =>
+                            handleDropExercise(e, circuit.letter, seriesIdx + 1, station.stationNumber)
+                        : undefined
                     }
                     onDoubleClick={(e) => {
                       e.stopPropagation();
+                      if (isPlaceholderSlot) return;
                       const currentSector = station?.sector;
                       if (currentSector) {
                         const allExercises = getExercisesBySector(currentSector);
@@ -425,18 +463,20 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                     }}
                     title="Double-click to open Load new station"
                   >
+                    {isPlaceholderSlot ? (
+                      <div className="flex min-h-[44px] items-center justify-center text-xs text-gray-400">
+                        —
+                      </div>
+                    ) : (
                     <div className="flex items-center gap-1 exercise-menu-container relative z-[10000]">
                       {(() => {
-                        const picA = getExercisePictureAThumbnailForDisplay(
-                          (station.exercise || '').trim()
-                        );
+                        const thumb = getMockExerciseThumbnail(station.exercise);
                         const sectorImg =
                           station.sector && MUSCULAR_SECTOR_IMAGES[station.sector]
                             ? MUSCULAR_SECTOR_IMAGES[station.sector]
                             : null;
                         const src =
-                          picA?.src ??
-                          (station.exercise?.trim() && sectorImg ? sectorImg : null);
+                          thumb?.src ?? (station.exercise?.trim() && sectorImg ? sectorImg : null);
                         const openGallery = () => {
                           const exName = (station.exercise || '').trim();
                           const sectorS = (station.sector || '').trim();
@@ -463,8 +503,7 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                             />
                           );
                         }
-                        const isData =
-                          picA?.isDataUrl === true || (!!src && src.startsWith('data:'));
+                        const isData = thumb?.isDataUrl === true || src.startsWith('data:');
                         return (
                           <button
                             type="button"
@@ -518,9 +557,15 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                         </svg>
                       </button>
                     </div>
+                    )}
                   </td>
 
                   <td className="border border-gray-300 px-2 py-1">
+                    {isPlaceholderSlot ? (
+                      <div className="flex min-h-[38px] items-center justify-center text-xs text-gray-400">
+                        —
+                      </div>
+                    ) : (
                     <select
                       value={station.reps != null && station.reps !== '' ? String(station.reps) : ''}
                       onChange={(e) => {
@@ -541,46 +586,25 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                       ))}
                       <option value="nc">nc</option>
                     </select>
+                    )}
                   </td>
 
-                  <td className="border border-gray-300 px-2 py-1">
-                    {seriesIdx < seriesCountToRender - 1 ? (
-                      <div
-                        className="flex min-h-[38px] items-center justify-center rounded border border-gray-200 bg-blue-50/60 px-2 text-sm font-medium text-blue-900"
-                        title="Pause between series at this station (Pause\\series)"
-                      >
-                        {formatPauseSeconds(
-                          SERIES_PAUSE_OPTIONS,
-                          circuit.seriesPauses?.[seriesIdx] ??
-                            circuit.pauseBetweenSeries ??
-                            pauseSeries
-                        )}
-                      </div>
-                    ) : seriesIdx === seriesCountToRender - 1 && !isLastStationCol ? (
-                      <div
-                        className="flex min-h-[38px] items-center justify-center rounded border border-gray-200 bg-gray-100 px-2 text-sm font-medium text-gray-700"
-                        title="After all series here — rest before next station (Pause after all the series of each station)"
-                      >
-                        {formatPauseSeconds(
-                          STATION_PAUSE_OPTIONS,
-                          station.pause ?? pauseHorizontalSeries
-                        )}
-                      </div>
-                    ) : (
-                      <div
-                        className="flex min-h-[38px] items-center justify-center px-2 text-xs text-center font-semibold text-blue-600"
-                        title="End of station column — see Between Circuits or workout end"
-                      >
-                        ↓ look down here
-                      </div>
-                    )}
+                  <td
+                    className="border border-gray-300 px-2 py-1 text-center align-middle bg-slate-50"
+                    title="Horizontal mode: set Pause between series and after each station in the full-width blue and green rows directly below — not in this column."
+                  >
+                    <span className="text-[11px] font-semibold leading-tight text-blue-700">
+                      ↓ look down here
+                    </span>
                   </td>
 
                   <td className="border border-gray-300 px-2 py-1">
                     <div className="flex items-center justify-center gap-1">
                       <button
+                        disabled={isPlaceholderSlot}
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (isPlaceholderSlot) return;
                           const rect = e.currentTarget.getBoundingClientRect();
                           setShowExerciseMenu({
                             circuit: circuit.letter,
@@ -590,14 +614,16 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                             y: rect.bottom + 4,
                           });
                         }}
-                        className="px-2 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                        className="px-2 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-40"
                         title="Edit station"
                       >
                         Edit
                       </button>
                       <button
+                        disabled={isPlaceholderSlot}
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (isPlaceholderSlot) return;
                           if (copyClickTimer) {
                             clearTimeout(copyClickTimer);
                             setCopyClickTimer(null);
@@ -614,7 +640,7 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                             setCopyClickTimer(timer);
                           }
                         }}
-                        className="p-1.5 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
+                        className="p-1.5 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-40"
                         title="Single click: copy Rip & Pause to the next serie (same station). Double click: copy to all following series for this station."
                       >
                         <svg
@@ -631,11 +657,13 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                         </svg>
                       </button>
                       <button
+                        disabled={isPlaceholderSlot}
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (isPlaceholderSlot) return;
                           handleRemoveStation(circuit.letter, station.stationNumber);
                         }}
-                        className="p-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600"
+                        className="p-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-40"
                         title="Delete this station from all series"
                       >
                         <svg
@@ -711,7 +739,7 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
             {stationIdx < nSta - 1 && (
               <tr
                 key={`hafter-${circuit.letter}-${stationIdx}`}
-                className="bg-teal-50"
+                className="bg-green-50"
                 style={{ height: '40px' }}
               >
                 <td
@@ -719,7 +747,7 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                   className="border-l border-r border-t border-b border-gray-300 px-4 py-2"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-teal-800">
+                    <span className="text-sm font-semibold text-green-800">
                       After the series of the station
                     </span>
                     <select

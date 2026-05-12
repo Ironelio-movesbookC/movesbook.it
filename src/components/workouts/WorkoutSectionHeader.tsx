@@ -398,6 +398,34 @@ export default function WorkoutSectionHeader({
           </div>
           
           <div className="flex gap-2 items-center">
+            {activeSection === 'B' && (
+              <>
+                {onPlanGymWeek && (
+                  <button
+                    onClick={onPlanGymWeek}
+                    className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                    title="Plan a routine (Q1–Q4, save to Archive or Yearly Plan)"
+                  >
+                    <ClipboardList className="w-4 h-4" />
+                    Plan gym week
+                  </button>
+                )}
+                <button
+                  onClick={() => onSectionChange('A')}
+                  className="px-3 py-1.5 bg-gray-100 text-gray-800 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
+                  title="Open template plans"
+                >
+                  Create Template Plans
+                </button>
+                <button
+                  onClick={() => onSectionChange('W')}
+                  className="px-3 py-1.5 bg-gray-100 text-gray-800 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
+                  title="Open weekly workouts structures"
+                >
+                  Weekly workouts structures
+                </button>
+              </>
+            )}
             {(activeSection === 'B' || activeSection === 'C') && onInsertActions && (
               <button
                 type="button"
@@ -417,51 +445,6 @@ export default function WorkoutSectionHeader({
                 <Plus className="w-4 h-4" />
                 {selectedAthlete ? `Viewing: ${selectedAthlete.name}` : 'Select Athlete'}
               </button>
-            )}
-            
-            {/* Save/Reset Buttons for Section B - Far Right */}
-            {activeSection === 'B' && (
-              <>
-                  <button
-                  onClick={async () => {
-                    try {
-                      const gridSettings = {
-                        savedAt: new Date().toISOString(),
-                        message: 'Grid settings saved successfully!'
-                      };
-                      localStorage.setItem('workoutGridSettings', JSON.stringify(gridSettings));
-                      alert('✅ Grid settings saved successfully!');
-                    } catch (error) {
-                      console.error('Error saving grid settings:', error);
-                      alert('❌ Failed to save grid settings');
-                    }
-                  }}
-                  className="px-3 py-1.5 bg-green-600 text-white hover:bg-green-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
-                  title="Save current grid settings"
-                  >
-                  <Download className="w-4 h-4" />
-                  Save Grid Settings
-                  </button>
-                  <button
-                  onClick={() => {
-                    if (confirm('Are you sure you want to reset grid settings to default?')) {
-                      try {
-                        localStorage.removeItem('workoutGridSettings');
-                        alert('✅ Grid settings reset to default!');
-                        window.location.reload();
-                      } catch (error) {
-                        console.error('Error resetting grid settings:', error);
-                        alert('❌ Failed to reset grid settings');
-                      }
-                    }
-                  }}
-                  className="px-3 py-1.5 bg-gray-600 text-white hover:bg-gray-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
-                  title="Reset grid settings to default"
-                  >
-                  <Calendar className="w-4 h-4" />
-                  Reset to Default
-                  </button>
-              </>
             )}
             
             {/* Import Button - Only for Section C (Done) */}
@@ -499,11 +482,9 @@ export default function WorkoutSectionHeader({
       {/* Section B - Second Row: Controls and Navigation */}
       {activeSection === 'B' && (
         <div className="bg-white px-4 py-3 border-b border-gray-200" style={{ position: 'relative', zIndex: 0 }}>
-          <div className="flex items-center justify-between gap-4">
-              {/* Left - Exclude checkbox, Display dropdown and navigation */}
+            <div className="flex items-center justify-between gap-4">
+              {/* Left - Display dropdown and navigation */}
               <div className="flex items-center gap-4">
-                {excludeStretchingCheckbox}
-                
                 <div className="flex items-center gap-3">
                   {viewMode !== 'calendar' && onWeeksPerPageChange && (
                     <div className="flex items-center gap-2" style={{ position: 'relative', zIndex: 0 }}>
@@ -598,19 +579,53 @@ export default function WorkoutSectionHeader({
                 <Calendar className="w-4 h-4" />
                 Calendar
               </button>
-              {onPlanGymWeek && (
-                <button
-                  onClick={onPlanGymWeek}
-                  className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-amber-500 text-white hover:bg-amber-600"
-                  title="Plan a routine (Q1–Q4, save to Archive or Yearly Plan)"
-                >
-                  <ClipboardList className="w-4 h-4" />
-                  Plan gym week
-                </button>
+              {/* Save/Reset Buttons for Section B - second controls row */}
+              {activeSection === 'B' && (
+                <>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const gridSettings = {
+                          savedAt: new Date().toISOString(),
+                          message: 'Grid settings saved successfully!'
+                        };
+                        localStorage.setItem('workoutGridSettings', JSON.stringify(gridSettings));
+                        alert('✅ Grid settings saved successfully!');
+                      } catch (error) {
+                        console.error('Error saving grid settings:', error);
+                        alert('❌ Failed to save grid settings');
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-green-600 text-white hover:bg-green-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
+                    title="Save current grid settings"
+                  >
+                    <Download className="w-4 h-4" />
+                    Save Grid Settings
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm('Are you sure you want to reset grid settings to default?')) {
+                        try {
+                          localStorage.removeItem('workoutGridSettings');
+                          alert('✅ Grid settings reset to default!');
+                          window.location.reload();
+                        } catch (error) {
+                          console.error('Error resetting grid settings:', error);
+                          alert('❌ Failed to reset grid settings');
+                        }
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-gray-600 text-white hover:bg-gray-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
+                    title="Reset grid settings to default"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    Reset to Default
+                  </button>
+                </>
               )}
           </div>
         </div>
-      </div>
+        </div>
       )}
 
       {/* Week Context Header - Show when viewing filtered weeks */}
