@@ -2,7 +2,6 @@
 
 import Image from 'next/image';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { interpolateBetweenAnchoredLevels } from '@/utils/trainingLevelInterpolation';
 
 // ─── types ──────────────────────────────────────────────────────────────────
 
@@ -32,7 +31,6 @@ const GOALS = [
   'Sport Performance',
 ] as const;
 type Goal = (typeof GOALS)[number];
-const WORKOUT_COLUMNS = [1, 2, 3, 4, 5] as const;
 const LEVEL_BANDS = ['Beginner', 'Intermediate', 'Advanced', 'Elite', 'Professional'] as const;
 
 interface GoalLoadParams {
@@ -87,19 +85,20 @@ function percentToReps(pct: number): number {
 }
 
 function buildDefaultGoalParams(): GoalLoadParams {
+  /** Indices 0–4 = Beginner … Professional; index 5 mirrors Professional for legacy 6-slot readers. */
   return {
-    volumeFrom: [20, 4, 5, 6, 7, 8],
-    volumeTo:   [40, 5, 6, 8, 10, 12],
+    volumeFrom: [20, 25, 30, 35, 40, 40],
+    volumeTo: [40, 43, 46, 49, 52, 52],
     repsFrom:   10, repsTo: 22,
     repsFromProfessional: 15, repsToProfessional: 30,
     pctFrom:    repsToPercent(10), pctTo: repsToPercent(22),
     displayInPercent: false,
-    pauseSeriesFrom: 60,    pauseSeriesTo: 100,
-    pauseSeriesFromProfessional: 60, pauseSeriesToProfessional: 100,
-    pauseExercisesFrom: 60, pauseExercisesTo: 180,
-    pauseExercisesFromProfessional: 60, pauseExercisesToProfessional: 180,
-    pauseAreasFrom: 60,    pauseAreasTo: 300,
-    pauseAreasFromProfessional: 60, pauseAreasToProfessional: 300,
+    pauseSeriesFrom: 60,    pauseSeriesTo: 90,
+    pauseSeriesFromProfessional: 60, pauseSeriesToProfessional: 90,
+    pauseExercisesFrom: 90, pauseExercisesTo: 120,
+    pauseExercisesFromProfessional: 90, pauseExercisesToProfessional: 120,
+    pauseAreasFrom: 120,    pauseAreasTo: 180,
+    pauseAreasFromProfessional: 120, pauseAreasToProfessional: 180,
   };
 }
 
@@ -112,6 +111,8 @@ function normalizeGoalParams(raw: Partial<GoalLoadParams> | undefined): GoalLoad
   };
   next.volumeFrom = Array.from({ length: 6 }, (_, i) => Number(next.volumeFrom?.[i] ?? d.volumeFrom[i]));
   next.volumeTo = Array.from({ length: 6 }, (_, i) => Number(next.volumeTo?.[i] ?? d.volumeTo[i]));
+  next.volumeFrom[5] = Number(next.volumeFrom[5] ?? next.volumeFrom[4]);
+  next.volumeTo[5] = Number(next.volumeTo[5] ?? next.volumeTo[4]);
   next.repsFrom = num(next.repsFrom, d.repsFrom);
   next.repsTo = num(next.repsTo, d.repsTo);
   next.repsFromProfessional = num(next.repsFromProfessional, d.repsFromProfessional);
@@ -190,88 +191,46 @@ function Spinner({ value, min, max, step = 1, onChange, display, width = 'w-16',
   );
 }
 
-// ─── Pauses by level (same interpolation as reps: ÷ (5 − 1) between Beginner & Pro) ─
+// ─── Pause row ───────────────────────────────────────────────────────────────
 
-function snapPauseSeconds(seconds: number, maxSec = 600): number {
-  const s = Math.round(seconds / 5) * 5;
-  return Math.max(5, Math.min(maxSec, s));
-}
-
-interface PauseByLevelBlockProps {
+interface PauseRowProps {
   label: string;
-  beginnerFrom: number;
-  beginnerTo: number;
-  professionalFrom: number;
-  professionalTo: number;
-  onBeginnerFromChange: (v: number) => void;
-  onBeginnerToChange: (v: number) => void;
-  onProfessionalFromChange: (v: number) => void;
-  onProfessionalToChange: (v: number) => void;
-  levelColors: Record<TrainingLevel, string>;
+  fromVal: number;
+  toVal: number;
+  onFromChange: (v: number) => void;
+  onToChange: (v: number) => void;
 }
-function PauseByLevelBlock({
-  label,
-  beginnerFrom,
-  beginnerTo,
-  professionalFrom,
-  professionalTo,
-  onBeginnerFromChange,
-  onBeginnerToChange,
-  onProfessionalFromChange,
-  onProfessionalToChange,
-  levelColors,
-}: PauseByLevelBlockProps) {
+function PauseRow({ label, fromVal, toVal, onFromChange, onToChange }: PauseRowProps) {
   return (
     <div className="flex items-start gap-6">
-      <div className="w-44 flex-shrink-0 pt-1">
-        <span className="block text-xs font-semibold border border-yellow-400 bg-yellow-50 text-gray-800 px-3 py-1 rounded">
+      {/* label */}
+      <div className="w-44 flex-shrink-0 flex items-start pt-1">
+        <span className="text-xs font-semibold border border-yellow-400 bg-yellow-50 text-gray-800 px-3 py-1 rounded">
           {label}
         </span>
       </div>
-      <div className="flex flex-col gap-2 pt-1 flex-1 min-w-0">
-        {LEVEL_BANDS.map((lv, idx) => {
-          const isBeginner = idx === 0;
-          const isProfessional = idx === 4;
-          const rawFrom = interpolateBetweenAnchoredLevels(beginnerFrom, professionalFrom, idx);
-          const rawTo = interpolateBetweenAnchoredLevels(beginnerTo, professionalTo, idx);
-          const fromSec = snapPauseSeconds(rawFrom);
-          const toSec = snapPauseSeconds(rawTo);
-          return (
-            <div key={lv} className="flex items-center gap-2 flex-wrap">
-              <span className={`w-28 text-[11px] font-bold px-2 py-0.5 rounded shrink-0 ${levelColors[lv]}`}>{lv}</span>
-              <span className="text-xs text-gray-500 w-8 text-right">from</span>
-              <Spinner
-                value={fromSec}
-                min={5}
-                max={600}
-                step={5}
-                onChange={(v) => {
-                  const snapped = snapPauseSeconds(v);
-                  if (isBeginner) onBeginnerFromChange(snapped);
-                  else if (isProfessional) onProfessionalFromChange(snapped);
-                }}
-                display={fmtSec(fromSec)}
-                width="w-[88px]"
-                disabled={!isBeginner && !isProfessional}
-              />
-              <span className="text-xs text-gray-500 w-8 text-right">to</span>
-              <Spinner
-                value={toSec}
-                min={5}
-                max={600}
-                step={5}
-                onChange={(v) => {
-                  const snapped = snapPauseSeconds(v);
-                  if (isBeginner) onBeginnerToChange(snapped);
-                  else if (isProfessional) onProfessionalToChange(snapped);
-                }}
-                display={fmtSec(toSec)}
-                width="w-[88px]"
-                disabled={!isBeginner && !isProfessional}
-              />
-            </div>
-          );
-        })}
+      {/* from / to */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500 w-8 text-right">from</span>
+          <Spinner
+            value={fromVal} min={5} max={300} step={5}
+            onChange={onFromChange}
+            display={fmtSec(fromVal)}
+            width="w-[72px]"
+          />
+          <span className="text-[10px] text-gray-400">{fmtSec(fromVal)}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500 w-8 text-right">to</span>
+          <Spinner
+            value={toVal} min={5} max={300} step={5}
+            onChange={onToChange}
+            display={fmtSec(toVal)}
+            width="w-[72px]"
+          />
+          <span className="text-[10px] text-gray-400">{fmtSec(toVal)}</span>
+        </div>
       </div>
     </div>
   );
@@ -338,20 +297,21 @@ export default function WorkoutsParametersSettings({ initialTab = 'changesVolume
   useEffect(() => { setActiveTab(initialTab); }, [initialTab]);
 
   // current goal params (with default fallback)
-  const goalParams: GoalLoadParams = normalizeGoalParams(allGoalParams[selectedGoal]);
+  const goalParams: GoalLoadParams = allGoalParams[selectedGoal] ?? buildDefaultGoalParams();
 
   const updateGoalParams = useCallback(<K extends keyof GoalLoadParams>(key: K, value: GoalLoadParams[K]) => {
     setAllGoalParams(prev => ({
       ...prev,
-      [selectedGoal]: { ...normalizeGoalParams(prev[selectedGoal]), [key]: value }
+      [selectedGoal]: { ...(prev[selectedGoal] ?? buildDefaultGoalParams()), [key]: value }
     }));
   }, [selectedGoal]);
 
   const updateVolume = useCallback((idx: number, field: 'volumeFrom' | 'volumeTo', value: number) => {
     setAllGoalParams(prev => {
-      const cur = normalizeGoalParams(prev[selectedGoal]);
+      const cur = prev[selectedGoal] ?? buildDefaultGoalParams();
       const arr = [...cur[field]];
       arr[idx] = value;
+      if (idx === 4) arr[5] = value;
       return { ...prev, [selectedGoal]: { ...cur, [field]: arr } };
     });
   }, [selectedGoal]);
@@ -561,47 +521,45 @@ export default function WorkoutsParametersSettings({ initialTab = 'changesVolume
             </button>
           </div>
 
-          {/* ── Volume serie ── */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-4">
+          {/* ── Volume serie (per training level; First/Last period = yearly window endpoints) ── */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-3">
             <div className="flex items-start gap-6">
-              {/* label */}
-              <div className="w-44 flex-shrink-0 pt-1">
-                <span className="text-sm font-semibold border border-yellow-400 bg-yellow-50 text-gray-900 px-3 py-1 rounded">
+              <div className="w-44 flex-shrink-0 pt-1 space-y-2">
+                <span className="inline-block text-sm font-semibold border border-yellow-400 bg-yellow-50 text-gray-900 px-3 py-1 rounded">
                   Volume serie
                 </span>
+                <p className="text-[11px] text-gray-500 leading-snug">
+                  Reference total series range by athlete level. &quot;from&quot; / &quot;to&quot; align with First period through Last period across the yearly plan (same idea as Load Repeated / Pauses).
+                </p>
               </div>
-              {/* column headers + spinners */}
-              <div className="flex-1 space-y-3 overflow-x-auto">
-                {/* session headers */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400 w-10 flex-shrink-0"/>
-                  {WORKOUT_COLUMNS.map(s => (
-                    <span key={s} className="flex-1 min-w-[72px] max-w-[90px] inline-flex items-center justify-center h-8 rounded-md bg-yellow-300 border border-yellow-400 font-bold text-gray-900 text-sm">
-                      {s}
-                    </span>
-                  ))}
-                </div>
-                {/* from row */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-10 flex-shrink-0 text-right">from</span>
-                  {WORKOUT_COLUMNS.map((s, i) => (
-                    <Spinner key={s}
-                      value={goalParams.volumeFrom[i] ?? 3} min={1} max={99}
-                      onChange={v => updateVolume(i, 'volumeFrom', v)}
-                      width="flex-1 min-w-[72px] max-w-[90px]"
+              <div className="flex flex-col gap-2 pt-1 flex-1 min-w-0">
+                {LEVEL_BANDS.map((lv, idx) => (
+                  <div key={lv} className="flex items-center gap-2 flex-wrap">
+                    <span className={`w-28 text-[11px] font-bold px-2 py-0.5 rounded shrink-0 ${levelColors[lv]}`}>{lv}</span>
+                    <span className="text-xs text-gray-500 w-8 text-right shrink-0">from</span>
+                    <Spinner
+                      value={goalParams.volumeFrom[idx] ?? 20}
+                      min={1}
+                      max={99}
+                      onChange={(v) => updateVolume(idx, 'volumeFrom', v)}
+                      width="w-[88px]"
                     />
-                  ))}
-                </div>
-                {/* to row */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-10 flex-shrink-0 text-right">to</span>
-                  {WORKOUT_COLUMNS.map((s, i) => (
-                    <Spinner key={s}
-                      value={goalParams.volumeTo[i] ?? 5} min={1} max={99}
-                      onChange={v => updateVolume(i, 'volumeTo', v)}
-                      width="flex-1 min-w-[72px] max-w-[90px]"
+                    <span className="text-xs text-gray-500 w-8 text-right shrink-0">to</span>
+                    <Spinner
+                      value={goalParams.volumeTo[idx] ?? 40}
+                      min={1}
+                      max={99}
+                      onChange={(v) => updateVolume(idx, 'volumeTo', v)}
+                      width="w-[88px]"
                     />
-                  ))}
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 flex-wrap border-t border-gray-100 pt-2 mt-1">
+                  <span className="w-28 shrink-0" aria-hidden />
+                  <span className="text-xs text-gray-500 w-8 shrink-0" aria-hidden />
+                  <span className="w-[88px] text-center text-[11px] font-semibold text-gray-800">First period</span>
+                  <span className="text-xs text-gray-500 w-8 shrink-0" aria-hidden />
+                  <span className="w-[88px] text-center text-[11px] font-semibold text-gray-800">Last period</span>
                 </div>
               </div>
             </div>
@@ -644,95 +602,39 @@ export default function WorkoutsParametersSettings({ initialTab = 'changesVolume
                   </>
                 ) : (
                   <>
-                    {LEVEL_BANDS.map((lv, idx) => {
-                      const isBeginner = idx === 0;
-                      const isProfessional = idx === 4;
-                      const fromVal = interpolateBetweenAnchoredLevels(goalParams.repsFrom, goalParams.repsFromProfessional, idx);
-                      const toVal = interpolateBetweenAnchoredLevels(goalParams.repsTo, goalParams.repsToProfessional, idx);
-                      const fromRounded = Math.round(fromVal);
-                      const toRounded = Math.round(toVal);
-                      return (
-                        <div key={lv} className="flex items-center gap-2 flex-wrap">
-                          <span className={`w-28 text-[11px] font-bold px-2 py-0.5 rounded shrink-0 ${levelColors[lv]}`}>{lv}</span>
-                          <span className="text-xs text-gray-500 w-8 text-right">from</span>
-                          <Spinner
-                            value={fromVal}
-                            min={1}
-                            max={99}
-                            step={0.25}
-                            onChange={(v) => {
-                              if (isBeginner) updateGoalParams('repsFrom', v);
-                              else if (isProfessional) updateGoalParams('repsFromProfessional', v);
-                            }}
-                            width="w-[88px]"
-                            disabled={!isBeginner && !isProfessional}
-                            display={Number(fromVal).toFixed(2).replace(/\.00$/, '')}
-                          />
-                          <span className="text-[10px] text-gray-400">≈ {repsToPercent(fromRounded)}% of max</span>
-                          <span className="text-xs text-gray-500 w-8 text-right">to</span>
-                          <Spinner
-                            value={toVal}
-                            min={1}
-                            max={99}
-                            step={0.25}
-                            onChange={(v) => {
-                              if (isBeginner) updateGoalParams('repsTo', v);
-                              else if (isProfessional) updateGoalParams('repsToProfessional', v);
-                            }}
-                            width="w-[88px]"
-                            disabled={!isBeginner && !isProfessional}
-                            display={Number(toVal).toFixed(2).replace(/\.00$/, '')}
-                          />
-                          <span className="text-[10px] text-gray-400">≈ {repsToPercent(toRounded)}% of max</span>
-                        </div>
-                      );
-                    })}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-8 text-right">from</span>
+                      <Spinner value={goalParams.repsFrom} min={1} max={99}
+                        onChange={v => updateGoalParams('repsFrom', v)}
+                        width="w-[80px]" />
+                      <span className="text-[10px] text-gray-400">≈ {repsToPercent(goalParams.repsFrom)}% of max</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-8 text-right">to</span>
+                      <Spinner value={goalParams.repsTo} min={1} max={99}
+                        onChange={v => updateGoalParams('repsTo', v)}
+                        width="w-[80px]" />
+                      <span className="text-[10px] text-gray-400">≈ {repsToPercent(goalParams.repsTo)}% of max</span>
+                    </div>
                   </>
                 )}
               </div>
             </div>
           </div>
 
-          {/* ── Pauses (interpolated per level like repetitions) ── */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-6">
-            <PauseByLevelBlock
-              label="Pause among the series"
-              beginnerFrom={goalParams.pauseSeriesFrom}
-              beginnerTo={goalParams.pauseSeriesTo}
-              professionalFrom={goalParams.pauseSeriesFromProfessional}
-              professionalTo={goalParams.pauseSeriesToProfessional}
-              onBeginnerFromChange={(v) => updateGoalParams('pauseSeriesFrom', v)}
-              onBeginnerToChange={(v) => updateGoalParams('pauseSeriesTo', v)}
-              onProfessionalFromChange={(v) => updateGoalParams('pauseSeriesFromProfessional', v)}
-              onProfessionalToChange={(v) => updateGoalParams('pauseSeriesToProfessional', v)}
-              levelColors={levelColors}
-            />
+          {/* ── Pauses ── */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-5">
+            <PauseRow label="Pause among the series"
+              fromVal={goalParams.pauseSeriesFrom}   onFromChange={v => updateGoalParams('pauseSeriesFrom', v)}
+              toVal={goalParams.pauseSeriesTo}        onToChange={v => updateGoalParams('pauseSeriesTo', v)} />
             <div className="border-t border-gray-100" />
-            <PauseByLevelBlock
-              label="Pause among exercises"
-              beginnerFrom={goalParams.pauseExercisesFrom}
-              beginnerTo={goalParams.pauseExercisesTo}
-              professionalFrom={goalParams.pauseExercisesFromProfessional}
-              professionalTo={goalParams.pauseExercisesToProfessional}
-              onBeginnerFromChange={(v) => updateGoalParams('pauseExercisesFrom', v)}
-              onBeginnerToChange={(v) => updateGoalParams('pauseExercisesTo', v)}
-              onProfessionalFromChange={(v) => updateGoalParams('pauseExercisesFromProfessional', v)}
-              onProfessionalToChange={(v) => updateGoalParams('pauseExercisesToProfessional', v)}
-              levelColors={levelColors}
-            />
+            <PauseRow label="Pause among exercises"
+              fromVal={goalParams.pauseExercisesFrom} onFromChange={v => updateGoalParams('pauseExercisesFrom', v)}
+              toVal={goalParams.pauseExercisesTo}     onToChange={v => updateGoalParams('pauseExercisesTo', v)} />
             <div className="border-t border-gray-100" />
-            <PauseByLevelBlock
-              label="Pause among areas"
-              beginnerFrom={goalParams.pauseAreasFrom}
-              beginnerTo={goalParams.pauseAreasTo}
-              professionalFrom={goalParams.pauseAreasFromProfessional}
-              professionalTo={goalParams.pauseAreasToProfessional}
-              onBeginnerFromChange={(v) => updateGoalParams('pauseAreasFrom', v)}
-              onBeginnerToChange={(v) => updateGoalParams('pauseAreasTo', v)}
-              onProfessionalFromChange={(v) => updateGoalParams('pauseAreasFromProfessional', v)}
-              onProfessionalToChange={(v) => updateGoalParams('pauseAreasToProfessional', v)}
-              levelColors={levelColors}
-            />
+            <PauseRow label="Pause among areas"
+              fromVal={goalParams.pauseAreasFrom}     onFromChange={v => updateGoalParams('pauseAreasFrom', v)}
+              toVal={goalParams.pauseAreasTo}         onToChange={v => updateGoalParams('pauseAreasTo', v)} />
           </div>
 
           {/* Save / Cancel */}

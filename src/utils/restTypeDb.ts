@@ -41,3 +41,18 @@ export function restTypeDisplayToDb(label: string | null | undefined): string | 
   if (DB_ENUM_STRINGS.has(key)) return key;
   return LABEL_TO_ENUM[key] ?? null;
 }
+
+/**
+ * Label for the pause value line in hover cards / summaries (matches fast-planner wording).
+ * Prisma returns enum names (SET_TIME) or clients may send display strings ("Set time").
+ */
+export function movelapPauseFieldLabel(restType: string | null | undefined): string {
+  if (restType == null || String(restType).trim() === '') return 'Pause';
+  const raw = String(restType).trim();
+  const upper = raw.toUpperCase();
+  if (upper === 'SET_TIME' || raw === 'Set time') return 'Rest time';
+  if (upper === 'RESTART_TIME' || raw === 'Restart time') return 'Restart to';
+  if (upper === 'RESTART_PULSE' || raw === 'Restart pulse') return 'Rest pulse';
+  if (upper === 'SET_METERS' || raw === 'Set meters') return 'Set meters';
+  return restTypeDbToDisplay(raw);
+}

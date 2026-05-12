@@ -11,6 +11,12 @@ function isPrismaEngineTransportError(error: unknown): boolean {
   return msg.includes('Engine was empty') || msg.includes('Engine is not yet connected');
 }
 
+/** MySQL 1054 — column exists in Prisma schema but DB not migrated yet */
+function isUnknownColumnError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg.includes('1054') || msg.includes('Unknown column');
+}
+
 // Helper function to safely parse JSON with fallback
 function safeJsonParse(jsonString: string | null, defaultValue: any = {}) {
   if (!jsonString) return defaultValue;
@@ -606,7 +612,11 @@ export async function PATCH(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error updating settings:', error);
-    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json(
+      { error: 'Failed to update settings', details: message },
+      { status: 500 }
+    );
   }
 }
 

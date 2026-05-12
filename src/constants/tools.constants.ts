@@ -6,6 +6,8 @@
 export type IconType = 'emoji' | 'bw_icons';
 export type ToolsTab =
   | 'periods'
+  | 'periodizationPlan'
+  | 'periodizationLibrary'
   | 'sections'
   | 'sports'
   | 'equipment'
@@ -20,7 +22,8 @@ export type ToolsTab =
   | 'commonDailyActions'
   | 'workMethods'
   | 'insertActions'
-  | 'sportMachines';
+  | 'sportMachines'
+  | 'pathologies';
 
 export interface Period {
   id: string;
@@ -70,6 +73,51 @@ export interface ExecutionTechnique {
 // Backward compatibility alias
 export type BodyBuildingTechnique = ExecutionTechnique;
 
+/** Catalog row for exercise contraindications (Technical Settings → Pathologies). */
+export interface ExercisePathologyCatalogItem {
+  id: string;
+  name: string;
+  order: number;
+}
+
+/** Named periodization presets (Super Admin defaults + user copies); stored in `toolsSettings` JSON. */
+export interface PeriodizationTemplate {
+  id: string;
+  name: string;
+  sport: string;
+  level: string;
+  tags: string[];
+  isUserCreated?: boolean;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function normalizePeriodizationTemplates(raw: unknown): PeriodizationTemplate[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row, i) => {
+    const o = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
+    const tagsRaw = o.tags;
+    let tags: string[] = [];
+    if (Array.isArray(tagsRaw)) {
+      tags = tagsRaw.map((t) => String(t).trim()).filter(Boolean);
+    } else if (typeof tagsRaw === 'string') {
+      tags = tagsRaw.split(',').map((t) => t.trim()).filter(Boolean);
+    }
+    return {
+      id: String(o.id ?? '').trim() || `pt-${Date.now()}-${i}`,
+      name: String(o.name ?? '').trim() || 'Untitled',
+      sport: String(o.sport ?? '').trim(),
+      level: String(o.level ?? '').trim(),
+      tags,
+      isUserCreated: Boolean(o.isUserCreated),
+      notes: o.notes != null ? String(o.notes) : undefined,
+      createdAt: o.createdAt != null ? String(o.createdAt) : undefined,
+      updatedAt: o.updatedAt != null ? String(o.updatedAt) : undefined,
+    };
+  });
+}
+
 export interface Sport {
   id: string;
   name: string;
@@ -97,6 +145,79 @@ export interface Equipment {
   };
 }
 
+/** Exercise bank typology (single choice in Section Exercises form). */
+export type ExerciseTypology =
+  | 'Strength'
+  | 'Aerobic'
+  | 'Stretching'
+  | 'Gymnic'
+  | 'Pilates'
+  | 'Calistenic'
+  | 'Spartan'
+  | 'Crossfit'
+  | 'Technical moves for sports';
+
+/** Label 6 — one muscular area with % involvement; exactly one row uses `isMain` in the saved list. */
+export type MuscleAreaPercentTag = {
+  area: string;
+  percent: number;
+  isMain: boolean;
+};
+
+/** Label 7 — one FAQ with question and answer per language (`SUPPORTED_LANGUAGES` codes). */
+export interface ExerciseFaqEntry {
+  id: string;
+  questionByLanguage: Record<string, string>;
+  answerByLanguage: Record<string, string>;
+}
+
+function newExerciseFaqId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `faq-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+}
+
+export function newExerciseFaqEntry(): ExerciseFaqEntry {
+  return {
+    id: newExerciseFaqId(),
+    questionByLanguage: {},
+    answerByLanguage: {},
+  };
+}
+
+/** Ensure each FAQ has a stable id and plain language maps (for JSON round-trips). */
+export function normalizeExerciseFaqs(raw: ExerciseFaqEntry[] | undefined | null): ExerciseFaqEntry[] {
+  if (!raw?.length) return [];
+  return raw.map((row) => {
+    const id =
+      row && typeof row.id === 'string' && row.id.trim() !== '' ? row.id.trim() : newExerciseFaqId();
+    const q =
+      row.questionByLanguage && typeof row.questionByLanguage === 'object'
+        ? { ...row.questionByLanguage }
+        : {};
+    const a =
+      row.answerByLanguage && typeof row.answerByLanguage === 'object' ? { ...row.answerByLanguage } : {};
+    return { id, questionByLanguage: q, answerByLanguage: a };
+  });
+}
+
+/** True if this FAQ has any non-empty question or answer in any language (used when saving or listing). */
+export function exerciseFaqEntryHasContent(entry: ExerciseFaqEntry): boolean {
+  const qHit = Object.values(entry.questionByLanguage || {}).some((v) => String(v || '').trim() !== '');
+  const aHit = Object.values(entry.answerByLanguage || {}).some((v) => String(v || '').trim() !== '');
+  return qHit || aHit;
+}
+
+/** Who can share / source of the exercise definition. */
+export type ExerciseSharedBy =
+  | 'MOVESBOOK'
+  | 'SINGLE_USER'
+  | 'COACH'
+  | 'TEAM_TRAINER'
+  | 'CLUB_TRAINER'
+  | 'MY_LIBRARY';
+
 export interface Exercise {
   id: string;
   name: string;
@@ -106,6 +227,273 @@ export interface Exercise {
   difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
   muscleGroups: string[];
   isUserCreated?: boolean; // Distinguish user-created from admin defaults
+
+  /** Section Exercises — extended fields (optional for legacy JSON rows). */
+  typology?: ExerciseTypology | '';
+  /** Sport names from the user’s sports list (multi). */
+  sportsIndicated?: string[];
+  /** Single equipment modality for this exercise. */
+  equipmentType?: string;
+  /** Technical Settings → Machines: catalogue rows usually used with this exercise (IDs from sport_machines). */
+  usualSportMachineIds?: string[];
+  /** Localized names keyed by `SUPPORTED_LANGUAGES` code (English uses `name`). */
+  nameByLanguage?: Record<string, string>;
+  /** Short catalog / reference code (optional). */
+  exerciseCode?: string;
+  /** Free text: conditions or pathologies for which the exercise is not recommended. */
+  contraindicatedPathologiesNote?: string;
+  /** IDs from Technical Settings → Pathologies — exercise is not suggested when these apply. */
+  contraindicatedPathologyIds?: string[];
+  /**
+   * How to execute the exercise — long text per language (same pattern as Language → Long texts / tools translations).
+   * English (`en`) is the primary reference; `description` may stay a short summary for lists.
+   */
+  executionByLanguage?: Record<string, string>;
+  /** Expert suggestions / coaching cues — long text per language (Language → Long texts pattern). */
+  expertSuggestionsByLanguage?: Record<string, string>;
+  /** Breathing pattern / cues — long text per language (Language → Long texts pattern). */
+  breathingByLanguage?: Record<string, string>;
+  /** Common mistakes / what to avoid — long text per language (Language → Long texts pattern). */
+  mistakesByLanguage?: Record<string, string>;
+  /** Label 7 — ordered FAQs (question + answer per language). */
+  exerciseFaqs?: ExerciseFaqEntry[];
+  /** Muscular areas with % (main + tagged others); percents should total 100. */
+  muscleAreaPercentTags?: MuscleAreaPercentTag[];
+  mainMuscleGroup?: string;
+  secondaryMuscleGroups?: string[];
+  /** Training levels 1–5 (multi). */
+  levels?: number[];
+  sharedBy?: ExerciseSharedBy | '';
+  /** Movesbook staff label or approved sharer username. */
+  sharedByUsername?: string;
+  pictureAMale?: string;
+  pictureAFemale?: string;
+  pictureBMale?: string;
+  pictureBFemale?: string;
+  officialVideoUrl?: string;
+  /** Optional inline video (small files only; prefer URL for production). */
+  officialVideoDataUrl?: string;
+  /** Female demo — URL (mirrors male official video fields). */
+  officialVideoUrlFemale?: string;
+  /** Female demo — optional inline video (same size limits as male). */
+  officialVideoDataUrlFemale?: string;
+  referenceUrl1?: string;
+  referenceUrl2?: string;
+  enabled?: boolean;
+  /**
+   * Optional secret the creator sets in the exercise form; deleting this exercise from the tools bank
+   * prompts for this exact string. Leave empty to use a normal confirm dialog only.
+   */
+  deleteGuardPassword?: string;
+}
+
+/** Defaults for the Section Exercises dialog; merge over legacy exercises when opening the editor. */
+export function createDefaultExercise(): Exercise {
+  return {
+    id: '',
+    name: '',
+    category: '',
+    description: '',
+    equipment: [],
+    difficulty: 'Beginner',
+    muscleGroups: [],
+    typology: '',
+    sportsIndicated: [],
+    equipmentType: '',
+    usualSportMachineIds: [],
+    nameByLanguage: {},
+    exerciseCode: '',
+    contraindicatedPathologiesNote: '',
+    contraindicatedPathologyIds: [],
+    executionByLanguage: {},
+    expertSuggestionsByLanguage: {},
+    breathingByLanguage: {},
+    mistakesByLanguage: {},
+    exerciseFaqs: [],
+    muscleAreaPercentTags: [{ area: '', percent: 0, isMain: true }],
+    mainMuscleGroup: '',
+    secondaryMuscleGroups: [],
+    levels: [1],
+    sharedBy: 'MY_LIBRARY',
+    sharedByUsername: '',
+    pictureAMale: '',
+    pictureAFemale: '',
+    pictureBMale: '',
+    pictureBFemale: '',
+    officialVideoUrl: '',
+    officialVideoDataUrl: '',
+    officialVideoUrlFemale: '',
+    officialVideoDataUrlFemale: '',
+    referenceUrl1: '',
+    referenceUrl2: '',
+    enabled: true,
+  };
+}
+
+/** Resolved official video src for Male vs Female columns (female falls back to male when unset — legacy data). */
+export function resolveExerciseOfficialVideoSrc(ex: Exercise, sex: 'male' | 'female'): string {
+  const male = (ex.officialVideoDataUrl || '').trim() || (ex.officialVideoUrl || '').trim();
+  const femaleOnly =
+    (ex.officialVideoDataUrlFemale || '').trim() || (ex.officialVideoUrlFemale || '').trim();
+  if (sex === 'male') return male;
+  return femaleOnly || male;
+}
+
+export function exerciseHasAnyOfficialVideo(ex: Exercise): boolean {
+  const male = (ex.officialVideoDataUrl || '').trim() || (ex.officialVideoUrl || '').trim();
+  const femaleOnly =
+    (ex.officialVideoDataUrlFemale || '').trim() || (ex.officialVideoUrlFemale || '').trim();
+  return !!(male || femaleOnly);
+}
+
+/** Sync legacy `category` / `muscleGroups` / `equipment` into extended fields when opening the form. */
+export function mergeExerciseWithDefaults(partial: Partial<Exercise>): Exercise {
+  const base = createDefaultExercise();
+  const merged: Exercise = {
+    ...base,
+    ...partial,
+    id: partial.id ?? '',
+    nameByLanguage: { ...base.nameByLanguage, ...partial.nameByLanguage },
+    executionByLanguage: { ...base.executionByLanguage, ...partial.executionByLanguage },
+    expertSuggestionsByLanguage: {
+      ...base.expertSuggestionsByLanguage,
+      ...partial.expertSuggestionsByLanguage,
+    },
+    breathingByLanguage: { ...base.breathingByLanguage, ...partial.breathingByLanguage },
+    mistakesByLanguage: { ...base.mistakesByLanguage, ...partial.mistakesByLanguage },
+    exerciseFaqs: normalizeExerciseFaqs(partial.exerciseFaqs ?? base.exerciseFaqs),
+    muscleAreaPercentTags:
+      partial.muscleAreaPercentTags && partial.muscleAreaPercentTags.length > 0
+        ? normalizeMuscleAreaPercentTags(partial.muscleAreaPercentTags)
+        : base.muscleAreaPercentTags,
+    usualSportMachineIds: Array.isArray(partial.usualSportMachineIds)
+      ? [...partial.usualSportMachineIds]
+      : base.usualSportMachineIds,
+    contraindicatedPathologyIds: Array.isArray(partial.contraindicatedPathologyIds)
+      ? [...partial.contraindicatedPathologyIds]
+      : base.contraindicatedPathologyIds,
+  };
+  const execVals = merged.executionByLanguage || {};
+  const hasAnyExecution = Object.values(execVals).some((v) => String(v || '').trim() !== '');
+  if (!hasAnyExecution && (merged.description || '').trim()) {
+    merged.executionByLanguage = { ...execVals, en: merged.description.trim() };
+  }
+  if (!merged.typology && merged.category) {
+    const c = merged.category;
+    const allowed: ExerciseTypology[] = [
+      'Strength',
+      'Aerobic',
+      'Stretching',
+      'Gymnic',
+      'Pilates',
+      'Calistenic',
+      'Spartan',
+      'Crossfit',
+      'Technical moves for sports',
+    ];
+    merged.typology = (allowed.includes(c as ExerciseTypology) ? c : '') as ExerciseTypology | '';
+  }
+  if (!merged.equipmentType && merged.equipment?.length === 1) merged.equipmentType = merged.equipment[0];
+  if (!merged.mainMuscleGroup && merged.muscleGroups?.length) merged.mainMuscleGroup = merged.muscleGroups[0];
+  if (!merged.secondaryMuscleGroups?.length && merged.muscleGroups && merged.muscleGroups.length > 1) {
+    merged.secondaryMuscleGroups = merged.muscleGroups.slice(1);
+  }
+  if (!merged.muscleAreaPercentTags?.some((t) => (t.area || '').trim()) && merged.mainMuscleGroup) {
+    const main = merged.mainMuscleGroup;
+    const secs = (merged.secondaryMuscleGroups || []).filter((s) => s && s !== main);
+    if (secs.length === 0) {
+      merged.muscleAreaPercentTags = [{ area: main, percent: 100, isMain: true }];
+    } else {
+      const n = 1 + secs.length;
+      const base = Math.floor(100 / n);
+      let rem = 100 - base * n;
+      const arr: MuscleAreaPercentTag[] = [
+        { area: main, percent: base + (rem > 0 ? 1 : 0), isMain: true },
+      ];
+      if (rem > 0) rem -= 1;
+      for (const s of secs) {
+        const extra = rem > 0 ? 1 : 0;
+        if (rem > 0) rem -= 1;
+        arr.push({ area: s, percent: base + extra, isMain: false });
+      }
+      merged.muscleAreaPercentTags = arr;
+    }
+  }
+  if (merged.enabled === undefined) merged.enabled = true;
+  return merged;
+}
+
+/** Ensure exactly one `isMain` row; keep areas and percents as entered. */
+export function normalizeMuscleAreaPercentTags(tags: MuscleAreaPercentTag[]): MuscleAreaPercentTag[] {
+  if (!tags?.length) return [{ area: '', percent: 0, isMain: true }];
+  const mi = tags.findIndex((t) => t.isMain);
+  const idx = mi >= 0 ? mi : 0;
+  return tags.map((t, i) => ({
+    area: typeof t.area === 'string' ? t.area : '',
+    percent: Number.isFinite(Number(t.percent)) ? Number(t.percent) : 0,
+    isMain: i === idx,
+  }));
+}
+
+export function muscleInvolvementPercentTotal(tags: MuscleAreaPercentTag[] | undefined | null): number {
+  if (!tags?.length) return 0;
+  return tags.reduce((sum, t) => sum + Math.max(0, Math.round(Number(t.percent) || 0)), 0);
+}
+
+/** Fill legacy `category`, `muscleGroups`, `equipment`, and `difficulty` from extended Section Exercises fields before save. */
+export function finalizeExerciseForStorage(e: Exercise): Exercise {
+  const typ = (e.typology || e.category || '').trim();
+  const tagRows = normalizeMuscleAreaPercentTags(e.muscleAreaPercentTags || []);
+  const withArea = tagRows.filter((t) => (t.area || '').trim() !== '');
+
+  let main = (e.mainMuscleGroup || '').trim();
+  let sec = (e.secondaryMuscleGroups || []).filter((m) => m && m.trim() && m.trim() !== main);
+  let muscleGroups = main ? [main, ...sec] : e.muscleGroups?.length ? [...e.muscleGroups] : [];
+
+  if (withArea.length > 0) {
+    const mainT = withArea.find((t) => t.isMain) ?? withArea[0];
+    main = mainT.area.trim();
+    sec = withArea
+      .filter((t) => t.area.trim() !== main)
+      .sort((a, b) => b.percent - a.percent)
+      .map((t) => t.area.trim());
+    muscleGroups = [main, ...sec];
+  }
+  const equipment = (e.equipmentType || '').trim() ? [(e.equipmentType || '').trim()] : [...e.equipment];
+  const lvRaw = (e.levels || []).filter((n) => n >= 1 && n <= 5);
+  const lv = lvRaw.length ? lvRaw : [1];
+  const maxLv = Math.max(...lv);
+  const difficulty: Exercise['difficulty'] =
+    maxLv <= 2 ? 'Beginner' : maxLv === 3 ? 'Intermediate' : 'Advanced';
+  const enHow = (e.executionByLanguage?.en || '').trim();
+  const description =
+    (e.description || '').trim() ||
+    (enHow ? enHow.slice(0, 500) : '');
+
+  const exerciseFaqs = normalizeExerciseFaqs(e.exerciseFaqs).filter(exerciseFaqEntryHasContent);
+
+  const usualSportMachineIds = Array.from(
+    new Set((e.usualSportMachineIds || []).map((x) => String(x).trim()).filter(Boolean))
+  );
+
+  const contraindicatedPathologyIds = Array.from(
+    new Set((e.contraindicatedPathologyIds || []).map((x) => String(x).trim()).filter(Boolean))
+  );
+
+  return {
+    ...e,
+    category: typ || e.category,
+    muscleGroups,
+    mainMuscleGroup: main,
+    secondaryMuscleGroups: sec,
+    equipment,
+    difficulty,
+    levels: lv,
+    description,
+    exerciseFaqs,
+    usualSportMachineIds,
+    contraindicatedPathologyIds,
+  };
 }
 
 export interface Device {
@@ -367,6 +755,8 @@ export const STORAGE_KEYS = {
   SPORTS: 'mainSports',
   EQUIPMENT: 'equipment',
   EXERCISES: 'exercises',
+  /** Exercise contraindication tags catalog (Technical Settings → Pathologies) */
+  EXERCISE_PATHOLOGY_CATALOG: 'exercisePathologyCatalog',
   DEVICES: 'compatibleDevices',
   EXECUTION_TECHNIQUES: 'executionTechniques',
   BODYBUILDING_TECHNIQUES: 'executionTechniques', // Backward compatibility alias

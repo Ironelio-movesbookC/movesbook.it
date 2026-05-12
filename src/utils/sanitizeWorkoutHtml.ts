@@ -10,6 +10,15 @@ export function stripInternalWorkoutTags(value: string): string {
     .replace(/\[FP_MODE\][\s\S]*/g, '');
 }
 
+/**
+ * Circuit moveframe descriptions sometimes append a compact movelap line
+ * (e.g. "12\\Normal+12\\Normal+…") after user text — strip that trailing segment for display.
+ */
+export function stripCircuitCompactExerciseTrail(value: string): string {
+  if (typeof value !== 'string') return '';
+  return value.replace(/\s+(\d+\\\S+)(?:\+\d+\\\S+)*$/i, '').trim();
+}
+
 function looksLikeJson(value: string): boolean {
   const s = value.trim();
   if (!s) return false;

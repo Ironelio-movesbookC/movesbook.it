@@ -1018,6 +1018,9 @@ export default function DayTableView({
                      Set periods of more weeks
                    </span>
                  </button>
+                {excludeStretchingCheckbox ? (
+                  <div className="ml-1 flex items-start">{excludeStretchingCheckbox}</div>
+                ) : null}
                </div>
               
                {/* Right side - Action Buttons for Section B */}

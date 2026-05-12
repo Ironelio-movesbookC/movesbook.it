@@ -94,7 +94,7 @@ import PlanGymWeekManualModal, {
   type PlanGymWeekRescanParams
 } from '@/components/workouts/modals/PlanGymWeekManualModal';
 import PlanGymWeekFastPlanModal from '@/components/workouts/modals/PlanGymWeekFastPlanModal';
-import PlanGymWeekWizard, { type LastWorkoutBySector, type PlanGymWeekResult } from '@/components/workouts/PlanGymWeekWizard';
+import { type LastWorkoutBySector } from '@/components/workouts/PlanGymWeekWizard';
 import { buildHelpedRoutines } from '@/utils/planGymWeekLogic';
 import DayOverviewModal from '@/components/workouts/DayOverviewModal';
 import WorkoutOverviewModal from '@/components/workouts/WorkoutOverviewModal';
@@ -251,7 +251,6 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   /** Modals / print flows only know legacy sections A–D (weekly-structure tab W maps to A for typing). */
   const activeSectionForModals = (activeSection === 'W' ? 'A' : activeSection) as 'A' | 'B' | 'C' | 'D';
 
-  const lastWorkoutBySector = React.useMemo(() => computeLastWorkoutBySector(workoutPlan), [workoutPlan]);
   
   // Reload data when subsection changes (for Section A only)
   useEffect(() => {
@@ -556,8 +555,6 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
   const [showMoveWeekModal, setShowMoveWeekModal] = useState(false);
   const [showWeekTotalsModal, setShowWeekTotalsModal] = useState(false);
-  const [showPlanGymWeekWizard, setShowPlanGymWeekWizard] = useState(false);
-  const [planJustCreated, setPlanJustCreated] = useState<PlanGymWeekResult | null>(null);
   const [isWeeklyInfoModalOpen, setIsWeeklyInfoModalOpen] = useState(false);
   const [currentWeek, setCurrentWeek] = useState<any>(null);
   const [autoPrintWeek, setAutoPrintWeek] = useState(false);
@@ -2055,25 +2052,6 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                />
             ) : (
               <>
-                {planJustCreated && (
-                  <div className="mx-2 mb-3 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start justify-between gap-4">
-                    <div>
-                      <p className="font-semibold text-amber-900">
-                        Plan created: {planJustCreated.numDays} day(s), {planJustCreated.helped ? 'guided' : 'manual'} selection.
-                      </p>
-                      <p className="text-sm text-amber-800 mt-1">
-                        To add and see your routines: in the table below, pick a <strong>week</strong> and a <strong>day</strong>, then click <strong>Add workout</strong> (or the + on a day). Choose <strong>Fast Plan</strong> or <strong>Battery</strong> to fill exercises, then save to Archive or Yearly Plan.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPlanJustCreated(null)}
-                      className="flex-shrink-0 px-3 py-1.5 text-sm font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 rounded border border-amber-300"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                )}
                 <StyledTableWrapper>
                 <DayTableView
                  excludeStretchingCheckbox={
@@ -2516,7 +2494,10 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   modalActions.setShowColumnSettingsModal(true);
                 }}
                  columnSettings={columnSettings}
-                 onPlanGymWeek={() => setShowPlanGymWeekWizard(true)}
+                onPlanGymWeek={() => {
+                  setPlanGymWeekWizardInitialStep(1);
+                  setShowPlanGymWeekModal(true);
+                }}
                  reloadWorkouts={async () => {
                    await loadWorkoutData(activeSection);
                  }}
@@ -2825,19 +2806,33 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                         const seconds = pauseValue % 60;
                         pauseValue = `${minutes}'${seconds.toString().padStart(2, '0')}"`;
                       }
-                      const hasExplicitMacro = activeMovelap.macroFinal !== null && activeMovelap.macroFinal !== undefined && activeMovelap.macroFinal !== '';
-                      const hasExplicitPause = activeMovelap.pause !== null && activeMovelap.pause !== undefined && activeMovelap.pause !== '';
                       let updatedPauseValue = pauseValue;
-                      let updatedMacroFinal = activeMovelap.macroFinal ?? null;
-                      if (hasExplicitMacro && !hasExplicitPause) {
-                        updatedPauseValue = null;
-                        updatedMacroFinal = pauseValue;
-                      } else if (hasExplicitPause && !hasExplicitMacro) {
-                        updatedPauseValue = pauseValue;
-                        updatedMacroFinal = null;
-                      } else if (!hasExplicitPause && !hasExplicitMacro) {
-                        updatedPauseValue = pauseValue;
-                        updatedMacroFinal = null;
+                      let updatedMacroFinal =
+                        matchedLap.macroFinal !== undefined && matchedLap.macroFinal !== null && matchedLap.macroFinal !== ''
+                          ? matchedLap.macroFinal
+                          : activeMovelap.macroFinal ?? null;
+
+                      // Circuit planner puts macro duration on both Pause (formatted rest) and macroFinal on the final lap.
+                      // The generic modal heuristic below swaps/clears pause when only macro was set — that wipes Pause on circuit saves.
+                      if (!matchedLap.circuitLetter) {
+                        const hasExplicitMacro =
+                          activeMovelap.macroFinal !== null &&
+                          activeMovelap.macroFinal !== undefined &&
+                          activeMovelap.macroFinal !== '';
+                        const hasExplicitPause =
+                          activeMovelap.pause !== null &&
+                          activeMovelap.pause !== undefined &&
+                          activeMovelap.pause !== '';
+                        if (hasExplicitMacro && !hasExplicitPause) {
+                          updatedPauseValue = null;
+                          updatedMacroFinal = pauseValue;
+                        } else if (hasExplicitPause && !hasExplicitMacro) {
+                          updatedPauseValue = pauseValue;
+                          updatedMacroFinal = null;
+                        } else if (!hasExplicitPause && !hasExplicitMacro) {
+                          updatedPauseValue = pauseValue;
+                          updatedMacroFinal = null;
+                        }
                       }
 
                       const existingNotes = typeof activeMovelap.notes === 'string' ? activeMovelap.notes : '';
@@ -3304,7 +3299,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
               daysCount: answers.daysCount,
               timesPerSector: answers.timesPerSector,
               distributionType: answers.distributionType,
-              constantSectors: answers.constantSectors
+              constantSectors: answers.constantSectors,
+              trainingLevel: answers.trainingLevel,
             });
             const plan = buildHelpedRoutines({
               daysCount: answers.daysCount,
@@ -4407,19 +4403,6 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           activeSection={activeSectionForModals}
         />
       )}
-
-      {/* Plan gym week wizard – plan routine (save to Archive or Yearly Plan) */}
-      <PlanGymWeekWizard
-        isOpen={showPlanGymWeekWizard}
-        onClose={() => setShowPlanGymWeekWizard(false)}
-        lastWorkoutBySector={lastWorkoutBySector}
-        onComplete={(result) => {
-          setShowPlanGymWeekWizard(false);
-          setViewMode('table');
-          setPlanJustCreated(result);
-          showMessage('success', `Plan created: ${result.numDays} day(s). Use the table below to add workouts and fill exercises (see the hint bar).`);
-        }}
-      />
 
       {/* Weekly Info Modal (Edit Week Description & Period) */}
       {isWeeklyInfoModalOpen && currentWeek && (

@@ -41,6 +41,8 @@ export async function GET(request: NextRequest) {
         OR: [
           { nameEnglish: { contains: filterName } },
           { originalName: { contains: filterName } },
+          { companyName: { contains: filterName } },
+          { code: { contains: filterName } },
         ],
       });
     }

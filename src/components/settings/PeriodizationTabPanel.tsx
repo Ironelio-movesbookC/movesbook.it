@@ -2,20 +2,22 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { ChevronDown, ChevronUp, FileText, GripVertical, Loader2, Paperclip, X } from 'lucide-react';
-import type { Period } from '@/constants/tools.constants';
+import { ChevronDown, Download, FileText, GripVertical, Loader2, Paperclip, Search, X } from 'lucide-react';
+import type { Period, PeriodizationTemplate } from '@/constants/tools.constants';
+import { normalizePeriodizationTemplates } from '@/constants/tools.constants';
 import {
   MAX_PERIOD_ATTACHMENTS,
   type PeriodizationAttachmentMeta
 } from '@/lib/periodizationAttachments';
 import { getAuthToken, getAuthHeaders } from '@/utils/auth.utils';
+import {
+  resolveProfileLanguageCodeForToolsLoad,
+  getToolsProfileLanguageDisplayName,
+} from '@/utils/toolsProfileLanguage';
 
 const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), { ssr: false });
 
 type PlanMode = 'yearly' | 'template';
-
-/** How to list assignments under "Periods and assigned weeks". */
-type PeriodWeekListMode = 'byPeriod' | 'byWeek';
 
 export interface PeriodizationPersisted {
   displayOrder?: string[];
@@ -37,30 +39,6 @@ function weekDateRangeLabel(week: any, includeDates: boolean): string {
     ? new Date(sorted[sorted.length - 1].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
   return startDate && endDate ? ` (${startDate} - ${endDate})` : '';
-}
-
-/** Calendar span across all days belonging to assigned week numbers (yearly plan only). */
-function periodCalendarSpanLabel(sortedWeeks: any[], weekNumbers: number[], includeDates: boolean): string {
-  if (!includeDates || !sortedWeeks?.length || weekNumbers.length === 0) return '';
-  const set = new Set(weekNumbers);
-  let minTime = Infinity;
-  let maxTime = -Infinity;
-  for (const w of sortedWeeks) {
-    if (!set.has(w.weekNumber)) continue;
-    const days = w.days || [];
-    for (const d of days) {
-      if (!d?.date) continue;
-      const t = new Date(d.date).getTime();
-      if (!Number.isFinite(t)) continue;
-      if (t < minTime) minTime = t;
-      if (t > maxTime) maxTime = t;
-    }
-  }
-  if (!Number.isFinite(minTime) || !Number.isFinite(maxTime)) return '';
-  const start = new Date(minTime);
-  const end = new Date(maxTime);
-  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
-  return `${start.toLocaleDateString(undefined, opts)} – ${end.toLocaleDateString(undefined, opts)}`;
 }
 
 function compressWeekRanges(weekNumbers: number[]): string {
@@ -249,7 +227,13 @@ function WeekPickerDropdown({
   );
 }
 
-export default function PeriodizationTabPanel({ periods }: { periods: Period[] }) {
+export default function PeriodizationTabPanel({
+  periods,
+  onPeriodizationTemplatesChanged,
+}: {
+  periods: Period[];
+  onPeriodizationTemplatesChanged?: () => void;
+}) {
   const [planMode, setPlanMode] = useState<PlanMode>('yearly');
   const [planLoading, setPlanLoading] = useState(true);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -268,9 +252,14 @@ export default function PeriodizationTabPanel({ periods }: { periods: Period[] }
   const [persistedSnapshot, setPersistedSnapshot] = useState<PeriodizationPersisted | null>(null);
   const [applyBusy, setApplyBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
-  const [assignmentSectionOpen, setAssignmentSectionOpen] = useState(true);
+
+
+  const [archiveModalOpen, setArchiveModalOpen] = useState(false);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveItems, setArchiveItems] = useState<PeriodizationTemplate[]>([]);
+  const [archiveSearch, setArchiveSearch] = useState('');
+  const [archiveFetchNote, setArchiveFetchNote] = useState<string | null>(null);
   const [periodNotesModalId, setPeriodNotesModalId] = useState<string | null>(null);
-  const [periodWeekListMode, setPeriodWeekListMode] = useState<PeriodWeekListMode>('byPeriod');
 
   const includeDates = planMode === 'yearly';
 
@@ -367,15 +356,6 @@ export default function PeriodizationTabPanel({ periods }: { periods: Period[] }
     setEditorHtml(notesByPeriodId[selectedPeriodId] || '');
   }, [selectedPeriodId, notesByPeriodId]);
 
-  useEffect(() => {
-    if (!periodNotesModalId) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setPeriodNotesModalId(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [periodNotesModalId]);
-
   const selectedPeriod = useMemo(
     () => periods.find((p) => p.id === selectedPeriodId) || null,
     [periods, selectedPeriodId]
@@ -389,83 +369,24 @@ export default function PeriodizationTabPanel({ periods }: { periods: Period[] }
       if (!byPeriod[pid]) byPeriod[pid] = [];
       byPeriod[pid].push(w.weekNumber);
     }
-    const rows: {
-      periodId: string;
-      title: string;
-      color: string;
-      weeksLabel: string;
-      minWeek: number;
-      calendarSpanLabel: string;
-    }[] = [];
+    const rows: { periodId: string; title: string; color: string; weeksLabel: string; minWeek: number }[] = [];
     for (const id of Object.keys(byPeriod)) {
       const nums = byPeriod[id];
       if (!nums?.length) continue;
       const p = periods.find((x) => x.id === id);
       if (!p) continue;
-      const uniqNums = Array.from(new Set(nums)).sort((a, b) => a - b);
       rows.push({
         periodId: id,
         title: p.title,
         color: p.color,
         weeksLabel: compressWeekRanges(nums),
-        minWeek: Math.min(...uniqNums),
-        calendarSpanLabel: periodCalendarSpanLabel(sortedWeeks, uniqNums, includeDates)
+        minWeek: Math.min(...nums)
       });
     }
     // Always sort by the first assigned week so the list is chronological
     rows.sort((a, b) => a.minWeek - b.minWeek);
     return rows;
-  }, [sortedWeeks, periods, includeDates]);
-
-  /**
-   * Display-by-week: chronological segments — consecutive weeks with the same period merge into one row
-   * (e.g. Weeks 2–6). Order follows week numbers; a new segment starts when the period changes or weeks are not consecutive.
-   */
-  const weekProgressiveSegments = useMemo(() => {
-    const sorted = [...sortedWeeks].sort((a: any, b: any) => a.weekNumber - b.weekNumber);
-    const out: {
-      startWeek: number;
-      endWeek: number;
-      periodId: string | null;
-      title: string;
-      color: string;
-      weeksLabel: string;
-      calendarSpanLabel: string;
-    }[] = [];
-
-    const periodMeta = (w: any) => {
-      const pid = (w.period?.id as string | undefined) ?? null;
-      const fromTools = pid ? periods.find((x) => x.id === pid) : undefined;
-      const title =
-        (fromTools?.title ?? (typeof w.period?.name === 'string' ? w.period.name : '')) || 'Not assigned';
-      const color = fromTools?.color ?? w.period?.color ?? '#94a3b8';
-      return { pid, title, color };
-    };
-
-    for (const w of sorted) {
-      const wn = w.weekNumber as number;
-      const { pid, title, color } = periodMeta(w);
-      const last = out[out.length - 1];
-      if (last && last.periodId === pid && wn === last.endWeek + 1) {
-        last.endWeek = wn;
-        last.weeksLabel =
-          last.startWeek === last.endWeek ? `Week ${last.startWeek}` : `Weeks ${last.startWeek}–${last.endWeek}`;
-        const nums = Array.from({ length: last.endWeek - last.startWeek + 1 }, (_, i) => last.startWeek + i);
-        last.calendarSpanLabel = periodCalendarSpanLabel(sortedWeeks, nums, includeDates);
-      } else {
-        out.push({
-          startWeek: wn,
-          endWeek: wn,
-          periodId: pid,
-          title,
-          color,
-          weeksLabel: `Week ${wn}`,
-          calendarSpanLabel: periodCalendarSpanLabel(sortedWeeks, [wn], includeDates)
-        });
-      }
-    }
-    return out;
-  }, [sortedWeeks, periods, includeDates]);
+  }, [sortedWeeks, periods]);
 
   // Periods sorted chronologically by their earliest assigned week (unassigned go last)
   const chronologicalPeriods = useMemo(() => {
@@ -609,15 +530,6 @@ export default function PeriodizationTabPanel({ periods }: { periods: Period[] }
       );
       if (!results.every((r) => r.ok)) {
         alert('Some weeks could not be updated. Please try again.');
-      } else {
-        // Persist notes for this period so Overview (and other views) load them from the server — same store as Save.
-        await patchPeriodizationMerge((prev) => ({
-          ...prev,
-          notesByPeriodId: {
-            ...((prev.notesByPeriodId as Record<string, string>) || {}),
-            [selectedPeriod.id]: editorHtml
-          }
-        }));
       }
       await loadPlan();
     } catch {
@@ -695,36 +607,253 @@ export default function PeriodizationTabPanel({ periods }: { periods: Period[] }
     }
   };
 
+  const loadMovesbookArchive = useCallback(async () => {
+    setArchiveLoading(true);
+    setArchiveFetchNote(null);
+    try {
+      const loadLang = resolveProfileLanguageCodeForToolsLoad();
+      let response = await fetch(
+        `/api/admin/tools-defaults/load?language=${encodeURIComponent(loadLang)}`
+      );
+      let data: { toolsData?: { periodizationTemplates?: unknown } } = await response.json().catch(() => ({}));
+      let usedEnglishFallback = false;
+      if ((!response.ok || !data.toolsData) && loadLang !== 'en') {
+        const enRes = await fetch(`/api/admin/tools-defaults/load?language=${encodeURIComponent('en')}`);
+        const enJson = await enRes.json().catch(() => ({}));
+        if (enRes.ok && enJson.toolsData) {
+          response = enRes;
+          data = enJson;
+          usedEnglishFallback = true;
+        }
+      }
+      if (!response.ok || !data.toolsData) {
+        setArchiveItems([]);
+        setArchiveFetchNote(
+          `No Movesbook archive found for ${getToolsProfileLanguageDisplayName(loadLang)}.`
+        );
+        return;
+      }
+      const list = normalizePeriodizationTemplates(data.toolsData.periodizationTemplates);
+      setArchiveItems(list);
+      if (usedEnglishFallback) {
+        setArchiveFetchNote(
+          `No defaults row for ${getToolsProfileLanguageDisplayName(loadLang)}; showing the English archive (${list.length} preset(s)).`
+        );
+      } else {
+        setArchiveFetchNote(
+          list.length === 0
+            ? `Archive is empty for ${getToolsProfileLanguageDisplayName(loadLang)} (${loadLang.toUpperCase()}).`
+            : `${list.length} preset(s) in ${getToolsProfileLanguageDisplayName(loadLang)} (${loadLang.toUpperCase()}) — your profile language.`
+        );
+      }
+    } catch {
+      setArchiveItems([]);
+      setArchiveFetchNote('Failed to load the Movesbook archive.');
+    } finally {
+      setArchiveLoading(false);
+    }
+  }, []);
 
-  if (!periods.length) {
-    return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 p-6 text-amber-900 dark:text-amber-200">
-        <p className="font-semibold mb-1">No periods defined</p>
-        <p className="text-sm">Create periods under the Period settings tab first.</p>
-      </div>
+  useEffect(() => {
+    if (!archiveModalOpen) return;
+    void loadMovesbookArchive();
+  }, [archiveModalOpen, loadMovesbookArchive]);
+
+  const appendPeriodizationTemplateToUserSettings = useCallback(
+    async (tpl: PeriodizationTemplate) => {
+      const res = await fetch('/api/user/settings', { headers: getAuthHeaders() });
+      if (!res.ok) {
+        alert('Could not read your settings.');
+        return false;
+      }
+      const settings = await res.json();
+      const prevTools = settings.toolsSettings || {};
+      const prevList = normalizePeriodizationTemplates(prevTools.periodizationTemplates);
+      const id = `pt-import-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const newEntry: PeriodizationTemplate = {
+        ...tpl,
+        id,
+        isUserCreated: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const nextList = [...prevList, newEntry];
+      const patch = await fetch('/api/user/settings', {
+        method: 'PATCH',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          toolsSettings: {
+            ...prevTools,
+            periodizationTemplates: nextList,
+          },
+        }),
+      });
+      if (!patch.ok) {
+        alert('Could not save import. Try again.');
+        return false;
+      }
+      return true;
+    },
+    []
+  );
+
+  const filteredArchiveItems = useMemo(() => {
+    const q = archiveSearch.trim().toLowerCase();
+    if (!q) return archiveItems;
+    return archiveItems.filter(
+      (tpl: PeriodizationTemplate) =>
+        tpl.name.toLowerCase().includes(q) ||
+        tpl.sport.toLowerCase().includes(q) ||
+        tpl.level.toLowerCase().includes(q) ||
+        (tpl.tags || []).some((t) => t.toLowerCase().includes(q))
     );
-  }
+  }, [archiveItems, archiveSearch]);
+
+  const profileLangCode = resolveProfileLanguageCodeForToolsLoad();
+  const profileLangLabel = getToolsProfileLanguageDisplayName(profileLangCode);
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3 justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Plan:</span>
-          <select
-            value={planMode}
-            onChange={(e) => setPlanMode(e.target.value as PlanMode)}
-            className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+      <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/90 dark:bg-violet-950/40 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">
+              Movesbook periodization archive
+            </p>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
+              Loads in <strong>{profileLangLabel}</strong> ({profileLangCode.toUpperCase()}) — your profile language
+              only. Open the archive to search Super Admin presets and import one into your library (also under
+              Favourites → Periodizations).
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setArchiveSearch('');
+              setArchiveModalOpen(true);
+            }}
+            className="inline-flex shrink-0 items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 shadow-sm transition"
           >
-            <option value="yearly">Yearly plan (52 weeks)</option>
-            <option value="template">Template weekly plan (3 weeks)</option>
-          </select>
+            <Download className="w-4 h-4" />
+            Load from Movesbook
+          </button>
         </div>
-        {planLoading && (
-          <span className="flex items-center gap-2 text-sm text-gray-500">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading plan…
-          </span>
-        )}
       </div>
+
+      {archiveModalOpen && (
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/60"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Movesbook periodization archive"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setArchiveModalOpen(false);
+          }}
+        >
+          <div
+            className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full max-h-[min(92vh,720px)] flex flex-col border border-gray-200 dark:border-gray-600"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Browse archive</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Language: {profileLangLabel} ({profileLangCode.toUpperCase()})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setArchiveModalOpen(false)}
+                className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-600">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="search"
+                  value={archiveSearch}
+                  onChange={(e) => setArchiveSearch(e.target.value)}
+                  placeholder="Search by name, sport, level, tag…"
+                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+              {archiveFetchNote && (
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">{archiveFetchNote}</p>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-[200px]">
+              {archiveLoading ? (
+                <p className="text-sm text-gray-500 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading Movesbook archive…
+                </p>
+              ) : filteredArchiveItems.length === 0 ? (
+                <p className="text-sm text-gray-500">No presets match your search.</p>
+              ) : (
+                filteredArchiveItems.map((tpl) => (
+                  <div
+                    key={tpl.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50/80 dark:bg-gray-800/80"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-gray-900 dark:text-white truncate">{tpl.name}</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                        {tpl.sport} · {tpl.level}
+                        {(tpl.tags || []).length > 0 ? ` · ${(tpl.tags || []).join(', ')}` : ''}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ok = await appendPeriodizationTemplateToUserSettings(tpl);
+                        if (ok) {
+                          alert(`Imported "${tpl.name}" into your periodization library.`);
+                          setArchiveModalOpen(false);
+                          onPeriodizationTemplatesChanged?.();
+                        }
+                      }}
+                      className="shrink-0 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      Import
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!periods.length ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 p-6 text-amber-900 dark:text-amber-200">
+          <p className="font-semibold mb-1">No periods defined</p>
+          <p className="text-sm">
+            Create periods under the Period settings tab first, then assign weeks below.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-3 justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Plan:</span>
+              <select
+                value={planMode}
+                onChange={(e) => setPlanMode(e.target.value as PlanMode)}
+                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              >
+                <option value="yearly">Yearly plan (52 weeks)</option>
+                <option value="template">Template weekly plan (3 weeks)</option>
+              </select>
+            </div>
+            {planLoading && (
+              <span className="flex items-center gap-2 text-sm text-gray-500">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading plan…
+              </span>
+            )}
+          </div>
 
       {planError && (
         <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
@@ -732,10 +861,9 @@ export default function PeriodizationTabPanel({ periods }: { periods: Period[] }
         </div>
       )}
 
-      {assignmentSectionOpen && (
       <div className="rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-600 flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
+        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-600 flex items-start justify-between gap-2">
+          <div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">
               Assign period to weeks
             </h3>
@@ -744,23 +872,12 @@ export default function PeriodizationTabPanel({ periods }: { periods: Period[] }
               workout planner).
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setAssignmentSectionOpen(false)}
-            className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/80 text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            aria-expanded={true}
-            aria-controls="period-assignment-section"
-            title="Hide assignment controls"
-          >
-            <ChevronUp className="w-4 h-4" />
-            Hide
-          </button>
         </div>
 
-        <div id="period-assignment-section" className="p-4 space-y-4">
+        <div className="p-4 space-y-4">
           <div>
             <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
-              Select a period
+              Period
             </label>
             <PeriodPickerDropdown
               periods={chronologicalPeriods}
@@ -918,153 +1035,37 @@ export default function PeriodizationTabPanel({ periods }: { periods: Period[] }
           </div>
         </div>
       </div>
-      )}
 
       <div>
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <div className="flex flex-wrap items-center gap-2 min-w-0">
-            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 whitespace-nowrap">
-              Periods and assigned weeks
-            </p>
-            <div
-              className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600 p-0.5 bg-gray-100 dark:bg-gray-900/80 shadow-inner"
-              role="group"
-              aria-label="Display mode"
-            >
-              <button
-                type="button"
-                onClick={() => setPeriodWeekListMode('byPeriod')}
-                aria-pressed={periodWeekListMode === 'byPeriod'}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                  periodWeekListMode === 'byPeriod'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200/80 dark:hover:bg-gray-700'
-                }`}
-              >
-                Display by period
-              </button>
-              <button
-                type="button"
-                onClick={() => setPeriodWeekListMode('byWeek')}
-                aria-pressed={periodWeekListMode === 'byWeek'}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                  periodWeekListMode === 'byWeek'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200/80 dark:hover:bg-gray-700'
-                }`}
-              >
-                Display by week
-              </button>
-            </div>
-          </div>
-          {!assignmentSectionOpen && (
-            <button
-              type="button"
-              onClick={() => setAssignmentSectionOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-400 dark:border-blue-600 bg-white dark:bg-gray-800 text-blue-800 dark:text-blue-100 hover:bg-blue-50 dark:hover:bg-blue-950/50 shadow-sm flex-shrink-0"
-              aria-controls="period-assignment-section"
-              title="Show assignment to weeks"
-            >
-              <ChevronDown className="w-3.5 h-3.5" />
-              Show assignment
-            </button>
-          )}
-        </div>
+        <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">
+          Periods and assigned weeks
+        </p>
         <div className="space-y-2">
-          {sortedWeeks.length === 0 && !planLoading && (
+          {periodWeekSummary.length === 0 && !planLoading && (
             <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
-              Load a plan to see week assignments.
+              No assignments yet. Choose a period, set From/To weeks, and press Apply.
             </p>
           )}
-          {sortedWeeks.length > 0 &&
-            periodWeekListMode === 'byPeriod' &&
-            periodWeekSummary.length === 0 &&
-            !planLoading && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
-                {assignmentSectionOpen
-                  ? 'No assignments yet. Choose a period, set From/To weeks, and press Apply.'
-                  : 'No assignments yet. Click Show assignment to open the form, then choose a period and Apply.'}
-              </p>
-            )}
-          {periodWeekListMode === 'byPeriod' &&
-            periodWeekSummary.map((row, idx) => (
-              <div
-                key={row.periodId}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
-              >
-                <span className="w-5 h-5 flex-shrink-0 text-xs font-bold text-gray-400 dark:text-gray-500 text-center leading-5">
-                  {idx + 1}
+          {periodWeekSummary.map((row, idx) => (
+            <div
+              key={row.periodId}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+            >
+              <span className="w-5 h-5 flex-shrink-0 text-xs font-bold text-gray-400 dark:text-gray-500 text-center leading-5">
+                {idx + 1}
+              </span>
+              <span
+                className="w-4 h-4 rounded-full flex-shrink-0 border border-gray-300"
+                style={{ backgroundColor: row.color }}
+              />
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-gray-900 dark:text-white">{row.title}</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
+                  — {row.weeksLabel}
                 </span>
-                <span
-                  className="w-4 h-4 rounded-full flex-shrink-0 border border-gray-300"
-                  style={{ backgroundColor: row.color }}
-                />
-                <div className="flex-1 min-w-0 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                  <div className="min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => setPeriodNotesModalId(row.periodId)}
-                      className="font-semibold text-gray-900 dark:text-white text-left hover:underline hover:text-blue-700 dark:hover:text-blue-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
-                    >
-                      {row.title}
-                    </button>
-                    <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
-                      — {row.weeksLabel}
-                    </span>
-                  </div>
-                  {row.calendarSpanLabel ? (
-                    <span
-                      className="text-xs text-gray-500 dark:text-gray-400 shrink-0 tabular-nums"
-                      title="Calendar span for assigned weeks"
-                    >
-                      {row.calendarSpanLabel}
-                    </span>
-                  ) : null}
-                </div>
               </div>
-            ))}
-          {periodWeekListMode === 'byWeek' &&
-            weekProgressiveSegments.map((seg, idx) => (
-              <div
-                key={`${seg.startWeek}-${seg.endWeek}-${seg.periodId ?? 'na'}-${idx}`}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
-              >
-                <span className="w-5 h-5 flex-shrink-0 text-xs font-bold text-gray-400 dark:text-gray-500 text-center leading-5">
-                  {idx + 1}
-                </span>
-                <span
-                  className="w-4 h-4 rounded-full flex-shrink-0 border border-gray-300"
-                  style={{ backgroundColor: seg.color }}
-                />
-                <div className="flex-1 min-w-0 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                  <div className="min-w-0">
-                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">{seg.weeksLabel}</span>
-                    <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
-                      —{' '}
-                      {seg.periodId ? (
-                        <button
-                          type="button"
-                          onClick={() => setPeriodNotesModalId(seg.periodId!)}
-                          className="font-semibold text-gray-900 dark:text-white text-left hover:underline hover:text-blue-700 dark:hover:text-blue-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded inline"
-                        >
-                          {seg.title}
-                        </button>
-                      ) : (
-                        <span className="italic text-gray-500 dark:text-gray-400">Not assigned</span>
-                      )}
-                    </span>
-                  </div>
-                  {seg.calendarSpanLabel ? (
-                    <span
-                      className="text-xs text-gray-500 dark:text-gray-400 shrink-0 tabular-nums"
-                      title="Calendar span for these weeks"
-                    >
-                      {seg.calendarSpanLabel}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+            </div>
+          ))}
         </div>
       </div>
 
@@ -1130,6 +1131,8 @@ export default function PeriodizationTabPanel({ periods }: { periods: Period[] }
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

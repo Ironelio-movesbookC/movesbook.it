@@ -59,15 +59,14 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Update each moveframe's letter in a transaction
-    await prisma.$transaction(
-      moveframes.map((mf: any) => 
-        prisma.moveframe.update({
+    await prisma.$transaction(async (tx) => {
+      for (const mf of moveframes as { id: string; letter: string }[]) {
+        await tx.moveframe.update({
           where: { id: mf.id },
-          data: { letter: mf.letter }
-        })
-      )
-    );
+          data: { letter: mf.letter },
+        });
+      }
+    });
 
     // Note: Movelap letters are dynamically derived from parent moveframe
     // No need to update movelaps separately - they will automatically 

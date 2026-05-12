@@ -228,7 +228,7 @@ export const DEFAULT_MOVEFRAME_COLUMNS: ColumnConfig[] = [
   },
   {
     id: 'macro',
-    label: 'Macro',
+    label: 'Ave pause',
     align: 'center',
     visible: false,
     dataKey: 'macro'

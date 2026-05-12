@@ -28,7 +28,13 @@ export const CIRCUIT_STATION_PAUSE_OPTIONS: { label: string; value: number }[] =
   { label: '50"', value: 50 },
   { label: "1'", value: 60 },
   { label: '1\'30"', value: 90 },
-  { label: "2'", value: 120 }
+  { label: '2\'00"', value: 120 },
+  { label: '2\'30"', value: 150 },
+  { label: '3\'00"', value: 180 },
+  { label: '3\'30"', value: 210 },
+  { label: '4\'00"', value: 240 },
+  { label: '5\'00"', value: 300 },
+  { label: '6\'00"', value: 360 },
 ];
 
 /**
@@ -37,12 +43,16 @@ export const CIRCUIT_STATION_PAUSE_OPTIONS: { label: string; value: number }[] =
  */
 export const CIRCUIT_SERIES_PAUSE_OPTIONS: { label: string; value: number }[] = [
   { label: '0"', value: 0 },
+  { label: '20"', value: 20 },
   { label: '30"', value: 30 },
+  { label: '40"', value: 40 },
+  { label: '50"', value: 50 },
   { label: "1'", value: 60 },
   { label: '1\'30"', value: 90 },
   { label: "2'", value: 120 },
   { label: '2\'30"', value: 150 },
   { label: "3'", value: 180 },
+  { label: '3\'30"', value: 210 },
   { label: "4'", value: 240 },
   { label: "5'", value: 300 },
   { label: "6'", value: 360 },
@@ -52,12 +62,24 @@ export const CIRCUIT_SERIES_PAUSE_OPTIONS: { label: string; value: number }[] = 
   { label: "10'", value: 600 }
 ];
 
+/** Sports that use the official indoor / structured tools layout (extend when wiring sport configs). */
+export function isOfficialIndoorToolsLayoutSport(_sport: string): boolean {
+  return false;
+}
+
+/** Optional map of pause UI mode → whether pace fields apply (placeholder for sport-specific tools). */
+export const PAUSE_PACE_BY_MODE: Record<string, boolean> = {};
+
 /** Rest / pause between sets — fast planner toolbars, bulk Pause apply, Plan gym week manual tables */
 export const FAST_PLANNER_REST_PAUSE_OPTIONS: string[] = [
   '0"',
+  '15"',
   '30"',
+  '45"',
   "1'",
+  "1'30\"",
   "2'",
+  "2'30\"",
   "3'",
   "4'",
   "5'",
@@ -67,6 +89,12 @@ export const FAST_PLANNER_REST_PAUSE_OPTIONS: string[] = [
   "9'",
   "10'"
 ];
+
+/** Plan gym week — Macro exercise & Macro sector dropdowns: whole minutes 1′…10′ only (circuit-scale macros). */
+export const PLAN_GYM_WEEK_MACRO_MINUTE_LABELS: string[] = Array.from(
+  { length: 10 },
+  (_, i) => `${i + 1}'`
+);
 
 // Muscular sectors for BODY_BUILDING (WEIGHTS)
 export const MUSCULAR_SECTORS = [
@@ -91,19 +119,7 @@ export const MUSCULAR_SECTORS = [
 export const REST_TYPES = {
   SET_TIME: 'Set time',
   RESTART_TIME: 'Restart time',
-  SET_METERS: 'Set meters',
   RESTART_PULSE: 'Restart pulse'
-} as const;
-
-/**
- * Pause section — Pace field vs Mode (Stopped / Speed / Watts).
- * Stopped: fixed 0, disabled. Speed: decimal pace/speed. Watts: 0–999.
- */
-export const PAUSE_PACE_BY_MODE = {
-  speedPlaceholder: 'Min/km · Vel/h…',
-  speedTitle: 'Min/km or Vel/h (bike, mtb, ski)',
-  wattsPlaceholder: '0–999',
-  wattsTitle: 'from 0 to 999'
 } as const;
 
 // Reps type options (for non-distance sports)
@@ -932,28 +948,11 @@ export const DISTANCE_BASED_SPORTS = [
   'SKI',
   'SNOWBOARD',
   'WALKING',
-  'HIKING'
-] as const;
-
-/** Official moveframe UI: muscular dropdown + reps/tools table (not top-level series/reps/speed). */
-export const OFFICIAL_INDOOR_TOOLS_LAYOUT_SPORTS = [
+  'HIKING',
   'STRETCHING',
-  'GYMNASTIC',
-  'PILATES',
-  'YOGA',
-  'CALISTENIC',
-  'SPARTAN',
-  'CROSSFIT'
+  'CROSSFIT',
+  'SPARTAN'
 ] as const;
-
-export function isOfficialIndoorToolsLayoutSport(sport: string): boolean {
-  return (OFFICIAL_INDOOR_TOOLS_LAYOUT_SPORTS as readonly string[]).includes(sport);
-}
-
-/** Shared muscular-sector dropdown list (BODY BUILDING + official indoor tools). */
-export function isMuscularSectorDropdownSport(sport: string): boolean {
-  return sport === 'BODY_BUILDING' || isOfficialIndoorToolsLayoutSport(sport);
-}
 
 // Aerobic sports (use "reps" terminology)
 export const AEROBIC_SPORTS = [
@@ -972,7 +971,49 @@ export const AEROBIC_SPORTS = [
   'HIKING'
 ] as const;
 
-/** Category B: gym / strength-style sports that get Not Aerobic fast plan + Circuits (not in A). */
+/**
+ * Aerobic sport dropdown: logical subgroups (horizontal rule between groups in the native sport select).
+ * Order within a group follows this list, intersected with sports available in the build.
+ */
+export const AEROBIC_SELECT_GROUPS: string[][] = [
+  ['SWIM', 'BIKE', 'CYCLING_TOURISM', 'CYCLOCROSS', 'MTB', 'SPINNING'],
+  ['RUN', 'WALKING'],
+  ['ROWING', 'CANOEING'],
+  ['SKATE'],
+  ['SKI', 'SNOWBOARD'],
+];
+
+const AEROBIC_OPT_SEP_PREFIX = '__aerobicSep__';
+
+export type AerobicSportSelectRow =
+  | { type: 'sport'; code: string }
+  | { type: 'sep'; id: string };
+
+/** Build rows for the “Aerobic sports” optgroup: real sports plus disabled separator lines between groups. */
+export function buildAerobicSportSelectRows(aerobicCodesOrdered: string[]): AerobicSportSelectRow[] {
+  const available = new Set(aerobicCodesOrdered);
+  const rows: AerobicSportSelectRow[] = [];
+  let first = true;
+  for (const group of AEROBIC_SELECT_GROUPS) {
+    const present = group.filter((c) => available.has(c));
+    if (present.length === 0) continue;
+    if (!first) rows.push({ type: 'sep', id: `${AEROBIC_OPT_SEP_PREFIX}${rows.length}` });
+    first = false;
+    for (const code of present) rows.push({ type: 'sport', code });
+  }
+  return rows;
+}
+
+/** Ignore separator pseudo-values if a select onChange ever receives them. */
+export function isAerobicSportSelectSeparatorValue(value: string): boolean {
+  return value.startsWith(AEROBIC_OPT_SEP_PREFIX);
+}
+
+/**
+ * Category B: gym / strength-style sports that get the BATTERY “fast” row planners
+ * (anaerobic-style grids) **and** the separate **circuit** planner under the same type tab
+ * (see Add Moveframe: “Fast & circuits” + Circuits). Not the same as category A aerobic grids.
+ */
 export const NOT_AEROBIC_FAST_PLAN_SPORTS = [
   'BODY_BUILDING',
   'CALISTENIC',
@@ -1093,9 +1134,9 @@ export const shouldShowPaceField = (sport: string): boolean => {
 export const getSportDisplayName = (sport: string): string => {
   const displayNames: Record<string, string> = {
     'MTB': 'MTB',
-    'BODY_BUILDING': 'BODY BUILDING',
-    'TECHNICAL_MOVES': 'TECHNICAL MOVES',
-    'FREE_MOVES': 'FREE MOVES',
+    'BODY_BUILDING': 'Body Building\\Training with loads',
+    'TECHNICAL_MOVES': '* Technical moves',
+    'FREE_MOVES': '* Free moves',
     'AMERICAN_FOOTBALL': 'American Football',
     'ARCHERY': 'Archery',
     'ARTISTIC_GYMNASTICS': 'Artistic Gymnastics',
@@ -1250,9 +1291,13 @@ export function getPauseOptions(sport: string, restType: string): readonly strin
   const config = getSportConfig(sport);
   if ('pauses' in config) {
     if (typeof config.pauses === 'object' && !Array.isArray(config.pauses)) {
-      return config.pauses[restType as keyof typeof config.pauses] || [];
+      const keyed = config.pauses[restType as keyof typeof config.pauses];
+      if (keyed === 'input') return 'input';
+      if (Array.isArray(keyed)) return keyed;
+      return [];
     }
-    return config.pauses;
+    const top = config.pauses;
+    return Array.isArray(top) ? top : [];
   }
   return [];
 }
