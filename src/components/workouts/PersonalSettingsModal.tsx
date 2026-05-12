@@ -235,17 +235,9 @@ export default function PersonalSettingsModal({
           {/* Settings Content */}
           <div className="flex-1 overflow-y-auto p-6 bg-white">
             {activeSection === 'backgrounds' && <BackgroundsColorsSettings />}
-<<<<<<< HEAD
             {activeSection === 'tools' && (
-              <ToolsSettings
-                isAdmin={toolsIsAdmin}
-                userType={sessionUser?.userType ?? 'ATHLETE'}
-                mode="tools"
-              />
+              <ToolsSettings isAdmin={false} userType="ATHLETE" mode="tools" />
             )}
-=======
-            {activeSection === 'tools' && <ToolsSettings isAdmin={false} userType="ATHLETE" />}
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
             {activeSection === 'favourites' && <FavouritesSettings />}
             {activeSection === 'mybest' && <MyBestSettings />}
             {activeSection === 'grid' && <GridDisplaySettings />}

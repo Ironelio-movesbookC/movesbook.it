@@ -31,25 +31,30 @@ const GOALS = [
   'Sport Performance',
 ] as const;
 type Goal = (typeof GOALS)[number];
-<<<<<<< HEAD
 const LEVEL_BANDS = ['Beginner', 'Intermediate', 'Advanced', 'Elite', 'Professional'] as const;
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
 interface GoalLoadParams {
   volumeFrom: number[];        
   volumeTo:   number[];
   repsFrom:   number;          
   repsTo:     number;
+  repsFromProfessional: number;
+  repsToProfessional: number;
   pctFrom:    number;          
   pctTo:      number;
   displayInPercent: boolean;
   pauseSeriesFrom:     number; 
   pauseSeriesTo:       number;
+  pauseSeriesFromProfessional: number;
+  pauseSeriesToProfessional: number;
   pauseExercisesFrom:  number;
   pauseExercisesTo:    number;
+  pauseExercisesFromProfessional: number;
+  pauseExercisesToProfessional: number;
   pauseAreasFrom:      number;
   pauseAreasTo:        number;
+  pauseAreasFromProfessional: number;
+  pauseAreasToProfessional: number;
 }
 
 type AllGoalParams = Partial<Record<Goal, GoalLoadParams>>;
@@ -82,26 +87,21 @@ function percentToReps(pct: number): number {
 function buildDefaultGoalParams(): GoalLoadParams {
   /** Indices 0–4 = Beginner … Professional; index 5 mirrors Professional for legacy 6-slot readers. */
   return {
-<<<<<<< HEAD
     volumeFrom: [20, 25, 30, 35, 40, 40],
     volumeTo: [40, 43, 46, 49, 52, 52],
     repsFrom:   10, repsTo: 22,
     repsFromProfessional: 15, repsToProfessional: 30,
     pctFrom:    repsToPercent(10), pctTo: repsToPercent(22),
-=======
-    volumeFrom: [3, 4, 5, 6, 7, 8],
-    volumeTo:   [4, 5, 6, 8, 10, 12],
-    repsFrom:   12, repsTo: 8,
-    pctFrom:    repsToPercent(12), pctTo: repsToPercent(8),
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
     displayInPercent: false,
     pauseSeriesFrom: 60,    pauseSeriesTo: 90,
+    pauseSeriesFromProfessional: 60, pauseSeriesToProfessional: 90,
     pauseExercisesFrom: 90, pauseExercisesTo: 120,
+    pauseExercisesFromProfessional: 90, pauseExercisesToProfessional: 120,
     pauseAreasFrom: 120,    pauseAreasTo: 180,
+    pauseAreasFromProfessional: 120, pauseAreasToProfessional: 180,
   };
 }
 
-<<<<<<< HEAD
 function normalizeGoalParams(raw: Partial<GoalLoadParams> | undefined): GoalLoadParams {
   const d = buildDefaultGoalParams();
   const next = { ...d, ...(raw || {}) } as GoalLoadParams;
@@ -134,8 +134,6 @@ function normalizeGoalParams(raw: Partial<GoalLoadParams> | undefined): GoalLoad
   return next;
 }
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 // ─── storage helpers ─────────────────────────────────────────────────────────
 
 function loadLS<T>(key: string, fallback: T): T {
@@ -531,10 +529,9 @@ export default function WorkoutsParametersSettings({ initialTab = 'changesVolume
                   Volume serie
                 </span>
                 <p className="text-[11px] text-gray-500 leading-snug">
-                  Reference total series range by athlete level. &quot;from&quot; / &quot;to&quot; align with First period → Last period across the yearly plan (same idea as Load Repeated / Pauses).
+                  Reference total series range by athlete level. &quot;from&quot; / &quot;to&quot; align with First period through Last period across the yearly plan (same idea as Load Repeated / Pauses).
                 </p>
               </div>
-<<<<<<< HEAD
               <div className="flex flex-col gap-2 pt-1 flex-1 min-w-0">
                 {LEVEL_BANDS.map((lv, idx) => (
                   <div key={lv} className="flex items-center gap-2 flex-wrap">
@@ -554,38 +551,6 @@ export default function WorkoutsParametersSettings({ initialTab = 'changesVolume
                       max={99}
                       onChange={(v) => updateVolume(idx, 'volumeTo', v)}
                       width="w-[88px]"
-=======
-              {/* column headers + spinners */}
-              <div className="flex-1 space-y-3 overflow-x-auto">
-                {/* session headers */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400 w-10 flex-shrink-0"/>
-                  {SESSIONS.map(s => (
-                    <span key={s} className="flex-1 min-w-[72px] max-w-[90px] inline-flex items-center justify-center h-8 rounded-md bg-yellow-300 border border-yellow-400 font-bold text-gray-900 text-sm">
-                      {s}
-                    </span>
-                  ))}
-                </div>
-                {/* from row */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-10 flex-shrink-0 text-right">from</span>
-                  {SESSIONS.map((s, i) => (
-                    <Spinner key={s}
-                      value={goalParams.volumeFrom[i] ?? 3} min={1} max={99}
-                      onChange={v => updateVolume(i, 'volumeFrom', v)}
-                      width="flex-1 min-w-[72px] max-w-[90px]"
-                    />
-                  ))}
-                </div>
-                {/* to row */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-10 flex-shrink-0 text-right">to</span>
-                  {SESSIONS.map((s, i) => (
-                    <Spinner key={s}
-                      value={goalParams.volumeTo[i] ?? 5} min={1} max={99}
-                      onChange={v => updateVolume(i, 'volumeTo', v)}
-                      width="flex-1 min-w-[72px] max-w-[90px]"
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                     />
                   </div>
                 ))}

@@ -30,22 +30,17 @@ import {
   formatPercentLoad1MR,
   type PyramidalMode
 } from '@/utils/pyramidalReps';
-<<<<<<< HEAD
 import {
   percentOf1RmFromReps,
   repsFromPercentOf1Rm,
   formatPercentLoad1MRFromReps,
   PCT_1RM_FORMULA_COUNT,
-} from '@/utils/percent1RmFormulas';
+} from '../../../utils/percent1RmFormulas';
 import {
   INFO_REPS_DEFAULT_EN,
   resolveInfoRepsText,
-} from '@/constants/infoRepsLongText';
-import {
-  AUTO_PROCESS_INFO_DEFAULT_EN,
-  parseAutoProcessInfo,
-  resolveAutoProcessInfoText,
-} from '@/constants/autoProcessInfoLongText';
+} from '../../../constants/infoRepsLongText';
+
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
   FAST_PLANNER_REST_PAUSE_OPTIONS,
@@ -55,15 +50,14 @@ import {
   interpolateByPeriod,
   computePlanGymWeekScalarDefaults,
   levelIndex,
-} from '@/utils/planGymWeekGoalScalars';
+  readVolumeDeltaPctFromWorkoutSettings,
+} from '../../../utils/planGymWeekGoalScalars';
 import {
   interpolatedPauseForPeriod,
   interpolatePeriodIntRounded,
   PLAN_YEAR_TOTAL_PERIODS_MAX,
   PLAN_YEAR_TOTAL_PERIODS_MIN,
 } from '@/utils/planPeriodInterpolation';
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -98,7 +92,6 @@ export function wizardConstantLabelsToSectorIds(raw: string[] | undefined | null
 
 const SECTOR_REORDER_DRAG_MIME = 'application/x-movesbook-sector-reorder';
 
-<<<<<<< HEAD
 const PAUSE_OPTIONS = FAST_PLANNER_REST_PAUSE_OPTIONS;
 
 /** Select value meaning row pause follows header + exercise-block calculation. */
@@ -108,9 +101,6 @@ const SERIES_ROW_PAUSE_INHERIT = '__inherit__';
 const INFO_REPS_BTN_TITLE = 'Learn how reps relate to % of 1RM';
 const INFO_REPS_BTN_ARIA =
   'Open help: repetitions and percentage of one-rep max (full article from language settings).';
-=======
-const PAUSE_OPTIONS = ['0', '15"', '30"', "45\"", "1'", "1'15\"", "1'30\"", "1'45\"", "2'", "2'30\"", "3'", "4'", "5'"];
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
 const PYRAMIDAL_OPTIONS: { value: PyramidalMode; label: string }[] = [
   { value: 'flat',       label: 'Flat (default)' },
@@ -153,7 +143,6 @@ function avgPauseStr(pauses: string[]): string {
   return `${m}'${String(s).padStart(2, '0')}"`;
 }
 
-<<<<<<< HEAD
 /** Reps for day-level stats: table raw first; else per-row seriesReps (not sector header `reps`). */
 function rowRepsForDayStats(sec: ManualDaySector, rowIdx: number): number {
   const raw = sec.seriesRepsRaw?.[rowIdx];
@@ -178,8 +167,6 @@ function rowPauseStrForDayStats(
   return d !== '' ? d : '0';
 }
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 // ─── interfaces ──────────────────────────────────────────────────────────────
 
 export interface ManualDaySector {
@@ -202,12 +189,24 @@ export interface ManualDaySector {
   seriesWeights:     string[];
  
   seriesRepsRaw?:    string[];
+  /** Index into %1RM formula table (Tools); defaults to 0. */
+  pctFormulaIndex?:  number;
   typeByPercent?:    boolean;
   seriesPcts?:       number[];
   /** Per-series pause; empty = follow calculated default (between-series / macro exercise / macro end by row). */
   seriesRowPauses?:  string[];
   /** Per-series notes / alert (e.g. RPE, cues) */
   seriesRowAlerts?:  string[];
+}
+
+function sectorPctFromReps(sec: ManualDaySector, reps: number): number {
+  const fi = sec.pctFormulaIndex ?? 0;
+  return percentOf1RmFromReps(reps, fi);
+}
+
+function sectorRepsFromPct(sec: ManualDaySector, pct: number): number {
+  const fi = sec.pctFormulaIndex ?? 0;
+  return repsFromPercentOf1Rm(pct, fi);
 }
 
 /** %1MR mode with a non-flat pyramid: header reps / row-1 reps only touch row 0 until Pyramidal changes. */
@@ -273,7 +272,6 @@ export interface ManualDayPlan {
   sectors:     ManualDaySector[];
 }
 
-<<<<<<< HEAD
 export type YearlyPeriodScalarsSource = 'calculated' | 'manual';
 
 /** Declares how many macro periods the yearly plan has and which period this week belongs to; drives From→To interpolation. */
@@ -342,11 +340,10 @@ function manualYearlyPeriodRangesComplete(s: PlanGymWeekYearlyPeriodSettings): b
   return true;
 }
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 export interface PlanGymWeekManualResult {
   daysCount: number;
   days:      ManualDayPlan[];
+  yearlyPeriodSettings?: PlanGymWeekYearlyPeriodSettings;
 }
 
 /**
@@ -377,9 +374,10 @@ export function suggestedRoutineTotalSeriesForDistMask(params: {
   trainingLevel: TrainingLevel | null | undefined;
   daysCount: number;
   goalId: GoalId | undefined;
+  currentPeriod?: number;
+  totalPeriods?: number;
 }): number {
   const d = Math.min(6, Math.max(1, params.daysCount || 1));
-<<<<<<< HEAD
   const fromSettings = readGoalParamsFromWorkoutSettings(params.goalId);
   if (fromSettings) {
     const idx = Math.min(4, Math.max(0, levelIndex(params.trainingLevel)));
@@ -394,8 +392,6 @@ export function suggestedRoutineTotalSeriesForDistMask(params: {
       return Math.max(16, Math.min(100, adjusted));
     }
   }
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   const level = params.trainingLevel;
   let base = 36;
   if (level === 'beginner') base = 30;
@@ -511,7 +507,6 @@ export function ensureManualSectorShape(sec: ManualDaySector): ManualDaySector {
   };
 }
 
-<<<<<<< HEAD
 /** Exercises count per muscular area from `DIST_TABLE` in seriesDistribution.ts (level low/mid/high from athlete training level). */
 function exercisesFromLevelTable(
   series: number,
@@ -578,8 +573,6 @@ function materializeSeriesRowPausesForHeaders(
   });
 }
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 function ensureManualDayPlan(day: ManualDayPlan): ManualDayPlan {
   return { ...day, sectors: day.sectors.map(ensureManualSectorShape) };
 }
@@ -628,22 +621,17 @@ function applySectorScalarUpdate(
         seriesRowAlerts: [],
       };
     }
+    const oldSeries = Math.max(0, Math.min(20, sec.series ?? 0));
     const series = Math.min(20, parsed);
     const seriesReps = computeSeriesRepsBulk(sec.reps, series, sec.pyramidal);
-<<<<<<< HEAD
     const seriesPcts = seriesReps.map((r) => percentOf1RmFromReps(r, sec.pctFormulaIndex ?? 0));
     const seriesRepsRaw = seriesReps.map((r) => (r > 0 ? String(r) : ''));
     const merged: ManualDaySector = {
-=======
-    const seriesPcts = seriesReps.map(repsToPercent);
-    return {
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
       ...sec,
       series,
       seriesReps,
       seriesPcts,
       seriesWeights: resizeSeriesWeights(sec.seriesWeights, series),
-<<<<<<< HEAD
       seriesRepsRaw,
     };
     let seriesRowPauses = resizeSeriesRowStrings(sec.seriesRowPauses, series);
@@ -660,10 +648,6 @@ function applySectorScalarUpdate(
     return {
       ...merged,
       seriesRowPauses,
-=======
-      seriesRepsRaw: resizeSeriesRepsRaw(sec.seriesRepsRaw, series),
-      seriesRowPauses: resizeSeriesRowStrings(sec.seriesRowPauses, series),
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
       seriesRowAlerts: resizeSeriesRowStrings(sec.seriesRowAlerts, series),
     };
   }
@@ -690,7 +674,6 @@ function applySectorScalarUpdate(
     const seriesPcts = seriesReps.map(repsToPercent);
     return { ...sec, pyramidal, seriesReps, seriesPcts, seriesWeights: resizeSeriesWeights(sec.seriesWeights, sec.series) };
   }
-<<<<<<< HEAD
   if (field === 'pause') {
     const pauseVal = str;
     const n = Math.max(0, Math.min(20, sec.series));
@@ -710,10 +693,6 @@ function applySectorScalarUpdate(
       };
     }
     return nextSec;
-=======
-  if (field === 'pause' || field === 'macroExercise' || field === 'macroEndOfSector') {
-    return { ...sec, [field]: String(value) };
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   }
   return sec;
 }
@@ -1704,15 +1683,15 @@ export default function PlanGymWeekManualModal({
     Array.from({ length: 6 }, () => null)
   );
 
-<<<<<<< HEAD
   const [yearlyPeriodSettings, setYearlyPeriodSettings] = useState<PlanGymWeekYearlyPeriodSettings>(() =>
     defaultPlanGymWeekYearlyPeriodSettings()
   );
   /** Pause / macro / series / reps yearly From→To — hidden until user opens manual entry. */
   const [manualPeriodStartEndOpen, setManualPeriodStartEndOpen] = useState(false);
+  const [infoRepsModalOpen, setInfoRepsModalOpen] = useState(false);
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
+  const { currentLanguage: language } = useLanguage();
+
   const wizardConstantSectorIds = useMemo(
     () => wizardConstantLabelsToSectorIds(rescanParams?.constantSectors),
     [rescanParams?.constantSectors]
@@ -1766,11 +1745,8 @@ export default function PlanGymWeekManualModal({
       setShowSeriesDist(false);
       setShowAutoWarn(false);
       setSelectedSectorFrameIndex(null);
-<<<<<<< HEAD
       setInfoRepsModalOpen(false);
       setManualPeriodStartEndOpen(false);
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
     }
   }, [isOpen, initialDaysCount, initialPlan, goals, trainingLevel, wizardConstantSectorIds]);
 
@@ -1852,7 +1828,6 @@ export default function PlanGymWeekManualModal({
   ]);
 
   // ── stats (for active day) ──
-<<<<<<< HEAD
   const sumSeriesInAreas = activeDay.sectors.reduce((s, sec) => s + sec.series, 0);
   const activeGoalForStats = goals[effectiveActiveDayIndex];
   const hasSavedGoalParams = readGoalParamsFromWorkoutSettings(activeGoalForStats) != null;
@@ -1879,12 +1854,6 @@ export default function PlanGymWeekManualModal({
       allPauses.push(rowPauseStrForDayStats(sec, i, trainingLevel));
     }
   }
-=======
-  const totalSeries = activeDay.sectors.reduce((s, sec) => s + sec.series, 0);
-  const avgSeriesPerArea = activeDay.sectors.length > 0
-    ? Math.round((totalSeries / activeDay.sectors.length) * 10) / 10 : 0;
-  const allReps = activeDay.sectors.flatMap((sec) => sec.seriesReps ?? []);
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   const avgReps = allReps.length > 0
     ? Math.round((allReps.reduce((s, r) => s + r, 0) / allReps.length) * 10) / 10 : 0;
   const breakAvg = avgPauseStr(activeDay.sectors.map((s) => s.pause));
@@ -2065,7 +2034,6 @@ export default function PlanGymWeekManualModal({
     setStableDays((prev) => {
       const next = [...prev];
       const sectors = [...next[dayIdx].sectors];
-<<<<<<< HEAD
       const cur = sectors[sectorIndex];
       let patched: ManualDaySector;
       /** Header Pause (series): one choice applies to every series row (until a row picks Calc to inherit again). */
@@ -2102,9 +2070,6 @@ export default function PlanGymWeekManualModal({
         patched = syncSectorExercisesFromLevelTable(patched, trainingLevel);
       }
       sectors[sectorIndex] = ensureManualSectorShape(patched);
-=======
-      sectors[sectorIndex] = applySectorScalarUpdate(sectors[sectorIndex], field, value);
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
       next[dayIdx] = { ...next[dayIdx], sectors };
       return next;
     });
@@ -2153,16 +2118,13 @@ export default function PlanGymWeekManualModal({
     });
   };
 
-<<<<<<< HEAD
   // ── series reps (% mode): row 1 ↔ header reps / %; non-flat pyramid leaves rows 2+ to Pyramidal changes ──
-=======
-  // ── series reps (% mode): user edits reps in % mode (validation: red if > calc) ──
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   const updateSeriesRepAtPctMode = (dayIdx: number, secIdx: number, rowIdx: number, raw: string) => {
     setStableDays((prev) => {
       const next = [...prev];
       const sectors = [...next[dayIdx].sectors];
       const sec = { ...sectors[secIdx] };
+      const n = Math.max(0, Math.min(20, sec.series ?? 0));
       // Always update raw (blank allowed)
       const seriesRepsRaw = resizeSeriesRepsRaw(sec.seriesRepsRaw, sec.series);
       seriesRepsRaw[rowIdx] = raw;
@@ -2170,7 +2132,6 @@ export default function PlanGymWeekManualModal({
       const parsed = parseInt(raw, 10);
       if (!Number.isNaN(parsed)) {
         const v = Math.max(1, Math.min(99, parsed));
-<<<<<<< HEAD
         if (rowIdx === 0) {
           sec.reps = v;
           if (sec.pyramidal === 'flat') {
@@ -2207,11 +2168,6 @@ export default function PlanGymWeekManualModal({
           seriesPcts[rowIdx] = sectorPctFromReps(sec, v);
           sec.seriesPcts = seriesPcts;
         }
-=======
-        const seriesReps = [...(sec.seriesReps ?? [])];
-        seriesReps[rowIdx] = v;
-        sec.seriesReps = seriesReps;
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
       }
       sectors[secIdx] = sec;
       next[dayIdx] = { ...next[dayIdx], sectors };
@@ -2219,11 +2175,7 @@ export default function PlanGymWeekManualModal({
     });
   };
 
-<<<<<<< HEAD
   // ── series pct (% mode): row-0 % ↔ header reps (non-flat: only row 1); row 2+ % edits that row only ──
-=======
-  // ── series pct (% mode): user edits % → auto-calc reps ──
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   const updateSeriesPctAt = (dayIdx: number, secIdx: number, rowIdx: number, raw: string) => {
     const pct = parseFloat(raw);
     if (Number.isNaN(pct)) return;
@@ -2233,7 +2185,6 @@ export default function PlanGymWeekManualModal({
       const next = [...prev];
       const sectors = [...next[dayIdx].sectors];
       const sec = { ...sectors[secIdx] };
-<<<<<<< HEAD
       const n = sec.series;
       if (rowIdx === 0) {
         const baseReps = sectorRepsFromPct(sec, clampedPct);
@@ -2279,15 +2230,6 @@ export default function PlanGymWeekManualModal({
         srRaw[rowIdx] = calcReps > 0 ? String(calcReps) : '';
         sec.seriesRepsRaw = srRaw;
       }
-=======
-      const seriesPcts = [...(sec.seriesPcts ?? sec.seriesReps.map(repsToPercent))];
-      seriesPcts[rowIdx] = clampedPct;
-      const seriesReps = [...(sec.seriesReps ?? [])];
-      seriesReps[rowIdx] = calcReps;
-      sec.seriesPcts = seriesPcts;
-      sec.seriesReps = seriesReps;
-      if (rowIdx === 0) sec.reps = calcReps;
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
       sectors[secIdx] = sec;
       next[dayIdx] = { ...next[dayIdx], sectors };
       return next;
@@ -2402,7 +2344,6 @@ export default function PlanGymWeekManualModal({
   const cancelRoutineNameEdit = () => { setEditingRoutineName(null); setDraftRoutineName(activeDay.routineName); };
   const startEditRoutineName  = () => { setDraftRoutineName(activeDay.routineName); setEditingRoutineName('active'); };
 
-<<<<<<< HEAD
   const handleCreate = () => {
     onCreateRoutines({
       daysCount,
@@ -2495,9 +2436,6 @@ export default function PlanGymWeekManualModal({
       }))
     );
   }, [yearlyPeriodSettings, trainingLevel, goals]);
-=======
-  const handleCreate = () => { onCreateRoutines({ daysCount, days: stableDays }); onClose(); };
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   const handleReset  = () => {
     if (window.confirm('Reset all days and sectors and close? This cannot be undone.')) {
       setDays(padManualDaysToMaxSlots(buildInitialDays(MANUAL_PLAN_MAX_DAY_SLOTS)));
@@ -2547,7 +2485,6 @@ export default function PlanGymWeekManualModal({
     );
     setActiveDayIndex((i) => Math.min(i, Math.max(0, plan.days.length - 1)));
     setEditingRoutineName(null);
-<<<<<<< HEAD
   }, [
     rescanParams,
     daysCount,
@@ -2558,9 +2495,6 @@ export default function PlanGymWeekManualModal({
     wizardConstantSectorIds,
     manualDistConstantByDay,
   ]);
-=======
-  }, [rescanParams, daysCount, constantSectorsAtBeginning]);
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
   const onToggleConstantPlacement = (checked: boolean) => {
     setConstantSectorsAtBeginning(checked);
@@ -2577,23 +2511,18 @@ export default function PlanGymWeekManualModal({
           const n = newSeriesCounts[si];
           if (n === undefined || Number.isNaN(n)) return ensureManualSectorShape(sec);
           const capped = Math.min(20, Math.max(0, Math.round(n)));
-<<<<<<< HEAD
           const updated = syncSectorExercisesFromLevelTable(
             applySectorScalarUpdate(sec, 'series', String(capped), trainingLevel),
             trainingLevel
           );
-=======
-          const updated = applySectorScalarUpdate(sec, 'series', String(capped));
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           return ensureManualSectorShape(updated);
         }),
       };
     }));
-  }, []);
+  }, [trainingLevel]);
 
   const applyManualAutoProcess = useCallback(() => {
     setShowAutoWarn(false);
-<<<<<<< HEAD
     const onlySecIdx = selectedSectorFrameIndex;
     const curPeriod = Math.max(1, Math.floor(yearlyPeriodSettings.currentPeriod || 1));
     const totalPeriods = Math.max(curPeriod, Math.floor(yearlyPeriodSettings.totalPeriods || 1));
@@ -2638,32 +2567,11 @@ export default function PlanGymWeekManualModal({
     wizardConstantSectorIds,
     manualDistConstantByDay,
   ]);
-=======
-    const levelCat = trainingLevelToCategory(trainingLevel);
-    setStableDays((prev) => prev.map((day, di) => {
-      if (di !== activeDayIndex) return day;
-      return {
-        ...day,
-        sectors: day.sectors.map((sec) => {
-          if (sec.series <= 0) return ensureManualSectorShape(sec);
-          const dist = getSeriesDistribution(sec.series, levelCat);
-          const exCount = dist.length;
-          let s = applySectorScalarUpdate(sec, 'exercises', String(exCount));
-          if (!String(s.pause ?? '').trim()) s = { ...s, pause: "1'30\"" };
-          if (!String(s.macroExercise ?? '').trim()) s = { ...s, macroExercise: "2'" };
-          if (!String(s.macroEndOfSector ?? '').trim()) s = { ...s, macroEndOfSector: "3'" };
-          return ensureManualSectorShape(s);
-        }),
-      };
-    }));
-  }, [activeDayIndex, trainingLevel]);
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
   const trainingLevelPhotoSrc = trainingLevel != null
     ? getPlanGymWeekTrainingLevelImageSrc(trainingLevel, trainingLevelImages) : headerImage ?? null;
   const trainingLevelDetail = trainingLevel != null ? getPlanGymWeekTrainingLevelLabel(trainingLevel) : null;
 
-<<<<<<< HEAD
   const yearlyPeriodPreview = useMemo(() => {
     const s = yearlyPeriodSettings;
     const tp = Math.min(
@@ -2772,8 +2680,6 @@ export default function PlanGymWeekManualModal({
     yearlyPeriodSettings.periodScalarsSource ?? 'calculated';
   const yearlyManualRangesActive = yearlyScalarSource === 'manual';
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
@@ -2901,7 +2807,6 @@ export default function PlanGymWeekManualModal({
             </div>
           </div>
 
-<<<<<<< HEAD
           {/* Yearly plan period: total periods + current week slot; From/To drives interpolated pauses (and optional series/reps). */}
           <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-4 space-y-3">
             <div className="font-semibold text-sky-950">Yearly plan vs this week</div>
@@ -3288,8 +3193,6 @@ export default function PlanGymWeekManualModal({
             </button>
           </div>
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           {/* Primary action buttons */}
           <div className="flex flex-wrap gap-2 items-center">
             <button type="button" onClick={handleCreate} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">
@@ -3575,7 +3478,6 @@ export default function PlanGymWeekManualModal({
                 {/* ── Stats bar ── */}
                 {activeDay.sectors.length > 0 && (
                   <div className="flex flex-wrap gap-x-5 gap-y-1 rounded-lg bg-gray-100 border border-gray-200 px-4 py-2 text-sm">
-<<<<<<< HEAD
                     <span>Total exercises <strong className="text-gray-900">{totalExercises}</strong></span>
                     <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
                       <span className="text-gray-800">Total series</span>
@@ -3595,9 +3497,6 @@ export default function PlanGymWeekManualModal({
                         </span>
                       ) : null}
                     </span>
-=======
-                    <span>Total series <strong className="text-gray-900">{totalSeries}</strong></span>
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                     <span>Average for area <strong className="text-gray-900">{avgSeriesPerArea}</strong></span>
                     <span>Average repetitions <strong className="text-gray-900">{avgReps}</strong></span>
                     <span>Break average <strong className="text-gray-900">{breakAvg}</strong></span>
@@ -3849,7 +3748,6 @@ export default function PlanGymWeekManualModal({
                             </div>
                           </div>
 
-<<<<<<< HEAD
                           {/* Sector controls — macros grouped on the right */}
                     <div
                       className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-2"
@@ -3864,22 +3762,12 @@ export default function PlanGymWeekManualModal({
                         <span className="inline-flex min-w-[2.75rem] justify-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-sm font-semibold tabular-nums text-gray-900">
                           {sec.series <= 0 ? '—' : exercisesFromLevelTable(sec.series, trainingLevel)}
                         </span>
-=======
-                          {/* Sector controls */}
-                    <div className="flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                      <label className="text-xs text-gray-600 flex items-center gap-1">
-                        Exercises
-                              <input type="number" min={0} max={20} value={sec.exercises === 0 ? '' : sec.exercises}
-                                onChange={(e) => updateSector(activeDayIndex, secIdx, 'exercises', e.target.value)}
-                                className="w-14 px-1 py-0.5 border border-gray-300 rounded text-sm" />
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                       </label>
                       <label
                         className="flex items-center gap-1 text-xs text-gray-600"
                         title="Series in this area come from Series distribution settings (percent split and routine total). Use that dialog to change them."
                       >
                         Series
-<<<<<<< HEAD
                         <span className="inline-flex min-w-[2.75rem] justify-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-sm font-semibold tabular-nums text-gray-900">
                           {sec.series > 0 ? sec.series : '—'}
                         </span>
@@ -3910,17 +3798,6 @@ export default function PlanGymWeekManualModal({
                                     : 'border-gray-300'
                                 }`}
                               />
-=======
-                              <input type="number" min={0} max={20} value={sec.series === 0 ? '' : sec.series}
-                                onChange={(e) => updateSector(activeDayIndex, secIdx, 'series', e.target.value)}
-                                className="w-14 px-1 py-0.5 border border-gray-300 rounded text-sm" />
-                      </label>
-                            <label className="text-xs text-gray-600 flex items-center gap-1" title="Reps for series 1 (start of pyramid)">
-                              Reps
-                              <input type="number" min={0} max={99} value={sec.reps === 0 ? '' : sec.reps}
-                                onChange={(e) => updateSector(activeDayIndex, secIdx, 'reps', e.target.value)}
-                                className="w-14 px-1 py-0.5 border border-gray-300 rounded text-sm" />
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             </label>
                             <label className="text-xs text-gray-600 flex items-center gap-1">
                               Pyramidal
@@ -3929,7 +3806,6 @@ export default function PlanGymWeekManualModal({
                                 className="border border-gray-300 rounded text-sm py-0.5 min-w-[7rem]">
                                 {PYRAMIDAL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                               </select>
-<<<<<<< HEAD
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -3941,15 +3817,11 @@ export default function PlanGymWeekManualModal({
                               >
                                 Info Reps
                               </button>
-                            </div>
+                            </label>
                       <label
                         className="text-xs text-gray-600 flex items-center gap-1"
                         title="Pause between series (sets). Changing this sets every series row’s Pause to the same value; pick Calc (…) on a row to follow the sector headers and exercise split again."
                       >
-=======
-                      </label>
-                      <label className="text-xs text-gray-600 flex items-center gap-1">
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                         Pause
                         {(() => {
                           const raw = String(sec.pause ?? '').trim();
@@ -4132,7 +4004,6 @@ export default function PlanGymWeekManualModal({
                                     const hasReps = repsCellValue !== '';
                                     const currentReps = sec.seriesReps?.[rowIdx] ?? (sec.reps > 0 ? sec.reps : 0);
 
-<<<<<<< HEAD
                                     const pctRow = sec.seriesPcts?.[rowIdx];
                                     const calcRepsFromPct =
                                       isPctMode && pctRow != null && !Number.isNaN(pctRow)
@@ -4149,12 +4020,6 @@ export default function PlanGymWeekManualModal({
                                       typedRepsParsed !== null &&
                                       calcRepsFromPct !== null &&
                                       typedRepsParsed > calcRepsFromPct;
-=======
-                                    const calcReps = isPctMode
-                                      ? percentToReps(sec.seriesPcts?.[rowIdx] ?? repsToPercent(currentReps))
-                                      : null;
-                                    const repsAboveCalc = isPctMode && hasReps && calcReps !== null && currentReps > calcReps;
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
                                     return (
                                       <tr key={rowIdx} className="hover:bg-blue-50/50">
@@ -4175,7 +4040,7 @@ export default function PlanGymWeekManualModal({
                                                 ? 'border-red-400 bg-red-50 text-red-700 font-bold'
                                                 : 'border-gray-300'
                                             }`}
-                                            title={repsAboveCalc ? `⚠️ Reps (${currentReps}) > calculated (${calcReps}). Will be highlighted.` : undefined}
+                                            title={repsAboveCalc ? `⚠️ Reps (${currentReps}) > calculated (${calcRepsFromPct}). Will be highlighted.` : undefined}
                                           />
 
                                         </td>
@@ -4209,7 +4074,6 @@ export default function PlanGymWeekManualModal({
                                           />
                                         </td>
 
-<<<<<<< HEAD
                                         <td className="border border-gray-300 px-0.5 py-0.5">
                                           {(() => {
                                             const rawRowPause = sec.seriesRowPauses?.[rowIdx] ?? '';
@@ -4253,16 +4117,6 @@ export default function PlanGymWeekManualModal({
                                               </select>
                                             );
                                           })()}
-=======
-                                        <td className="border border-gray-300 px-1 py-1">
-                                          <select
-                                            value={sec.seriesRowPauses?.[rowIdx] ?? ''}
-                                            onChange={(e) => updateSeriesRowPauseAt(activeDayIndex, secIdx, rowIdx, e.target.value)}
-                                            title="Leave on Sector default to use the sector pause above"
-                                            className="w-full min-w-[4.5rem] max-w-[6rem] border border-gray-300 rounded py-0.5 text-[11px] bg-white">
-                                            {PAUSE_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
-                                          </select>
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                                         </td>
 
                                         {/* Alert note */}
@@ -4294,7 +4148,6 @@ export default function PlanGymWeekManualModal({
                                 </tbody>
                               </table>
                     </div>
-<<<<<<< HEAD
                             <p className="flex items-center gap-1.5 bg-blue-50/80 px-1.5 py-1 text-[9px] text-blue-600">
                               <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded-sm bg-blue-600 text-[8px] font-bold text-white">i</span>
                               <span>
@@ -4310,11 +4163,6 @@ export default function PlanGymWeekManualModal({
                                   </>
                                 ) : null}
                               </span>
-=======
-                            <p className="text-[10px] text-blue-600 px-2 py-1.5 flex items-center gap-1.5 bg-blue-50/80">
-                              <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-sm bg-blue-600 text-[9px] font-bold text-white">i</span>
-                              <span>Scroll to view all {sec.series} series. Per-row pause can override the sector default; alerts are notes (e.g. RPE).</span>
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             </p>
                           </div>
 
@@ -4330,6 +4178,34 @@ export default function PlanGymWeekManualModal({
       </div>
 
     </div>
+
+      {infoRepsModalOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="info-reps-title"
+        >
+          <div className="max-h-[85vh] w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-xl">
+            <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+              <h3 id="info-reps-title" className="text-base font-bold text-gray-900">
+                Info: reps &amp; %1RM
+              </h3>
+              <button
+                type="button"
+                className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                onClick={() => setInfoRepsModalOpen(false)}
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="max-h-[calc(85vh-4rem)] overflow-y-auto px-4 py-3 text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">
+              {resolveInfoRepsText(language, 'InfoReps') || INFO_REPS_DEFAULT_EN}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAutoWarn && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">

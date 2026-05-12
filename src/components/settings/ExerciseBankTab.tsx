@@ -1,5 +1,7 @@
 'use client';
 
+// Exercise bank grid — column order, filters, bulk actions: cross-check with `src/constants/exerciseEditorLayoutReference.ts` wireframe list view.
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,

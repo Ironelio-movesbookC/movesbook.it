@@ -31,44 +31,6 @@ function safeJsonParse(jsonString: string | null, defaultValue: any = {}) {
   }
 }
 
-<<<<<<< HEAD
-async function getUserYoutubeChannelUrl(userId: string): Promise<string | null> {
-  try {
-    const row = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { youtubeChannelUrl: true },
-    });
-    return row?.youtubeChannelUrl ?? null;
-  } catch (e) {
-    if (isUnknownColumnError(e)) {
-      console.warn(
-        '[user/settings] users_new.youtubeChannelUrl column missing; run prisma migrate. Returning null.'
-      );
-      return null;
-    }
-    throw e;
-  }
-}
-
-async function setUserYoutubeChannelUrl(userId: string, value: string | null): Promise<void> {
-  try {
-    await prisma.user.update({
-      where: { id: userId },
-      data: { youtubeChannelUrl: value },
-    });
-  } catch (e) {
-    if (isUnknownColumnError(e)) {
-      console.warn(
-        '[user/settings] users_new.youtubeChannelUrl column missing; run prisma migrate. Skipping YouTube URL persist.'
-      );
-      return;
-    }
-    throw e;
-  }
-}
-
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 // GET - Fetch user settings (with safe JSON parsing and auto-recovery)
 
 export async function GET(request: NextRequest) {

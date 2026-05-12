@@ -231,24 +231,6 @@ function partitionBySizes<T>(arr: T[], sizes: number[]): T[][] {
   return out;
 }
 
-<<<<<<< HEAD
-/** Series per area assigned when the gym-week wizard builds sectors (before distribution dialog). */
-export const PLAN_GYM_WEEK_WIZARD_DEFAULT_SERIES_PER_SECTOR = 4;
-/** Wizard defaults before workout-parameter scalars are applied. */
-export const PLAN_GYM_WEEK_WIZARD_DEFAULT_REPS = 12;
-export const PLAN_GYM_WEEK_WIZARD_DEFAULT_PAUSE_LABEL = "1'30\"";
-export const PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_EX_LABEL = "1'";
-export const PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_END_LABEL = "2'";
-
-/** Default series/reps for wizard-built sectors; exercise count comes from `seriesDistribution` + training level. */
-const DEFAULT_SECTOR_PARAMS = {
-  series: PLAN_GYM_WEEK_WIZARD_DEFAULT_SERIES_PER_SECTOR,
-  reps: PLAN_GYM_WEEK_WIZARD_DEFAULT_REPS,
-  pause: PLAN_GYM_WEEK_WIZARD_DEFAULT_PAUSE_LABEL,
-  macroExercise: PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_EX_LABEL,
-  macroEndOfSector: PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_END_LABEL,
-  pyramidal: 'flat' as PyramidalMode,
-=======
 const DEFAULT_SECTOR_PARAMS = {
   exercises: 3,
   series: 4,
@@ -257,8 +239,13 @@ const DEFAULT_SECTOR_PARAMS = {
   macroExercise: "1'",
   macroEndOfSector: "2'",
   pyramidal: 'flat' as PyramidalMode
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 };
+
+export const PLAN_GYM_WEEK_WIZARD_DEFAULT_SERIES_PER_SECTOR = DEFAULT_SECTOR_PARAMS.series;
+export const PLAN_GYM_WEEK_WIZARD_DEFAULT_REPS = DEFAULT_SECTOR_PARAMS.reps;
+export const PLAN_GYM_WEEK_WIZARD_DEFAULT_PAUSE_LABEL = DEFAULT_SECTOR_PARAMS.pause;
+export const PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_EX_LABEL = DEFAULT_SECTOR_PARAMS.macroExercise;
+export const PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_END_LABEL = DEFAULT_SECTOR_PARAMS.macroEndOfSector;
 
 function toManualDaySector(sectorId: string): ManualDaySector {
   const { pyramidal, series, reps, ...rest } = DEFAULT_SECTOR_PARAMS;

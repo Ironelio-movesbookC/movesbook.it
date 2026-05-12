@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { closestCenter, DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { getPauseOptions, getSportConfig, REST_TYPES } from '@/constants/moveframe.constants';
+import { FAST_PLANNER_REST_PAUSE_OPTIONS, getPauseOptions, getSportConfig, REST_TYPES } from '@/constants/moveframe.constants';
 
 type RestChoice = 'rest_time' | 'restart_to' | 'reset_pulse';
 type BreakChoice = 'stopped' | 'speed' | 'watts';
@@ -198,22 +198,12 @@ const formatTimeFromSeconds = (totalSeconds: number): string => {
   return `${m}'${String(s).padStart(2, '0')}"`;
 };
 
-const escapeHtml = (value: string) =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-<<<<<<< HEAD
-/** Format: 12345 → 12'34"5 (mm'ss"d); 123456 → 1h23'45"6 */
-const formatAerobicPlannerTime = (value: unknown): string => {
-  const raw = typeof value === 'string' ? value : value == null ? '' : String(value);
-  if (!raw) return '';
-  if (/^\d+h\d{2}'\d{2}"\d$/.test(raw)) return raw;
-  if (/^\d{1,2}'\d{2}"\d$/.test(raw)) return raw;
-  const digits = raw.replace(/\D/g, '');
+/** Format: 12345 → 12'34"5 (mm'ss"d); 123456 → 1h23'45"6 — used by aerobic fast planner cells */
+const formatAerobicCellTime = (value: string): string => {
+  if (!value) return '';
+  if (/^\d+h\d{2}'\d{2}"\d$/.test(value)) return value;
+  if (/^\d{1,2}'\d{2}"\d$/.test(value)) return value;
+  const digits = value.replace(/\D/g, '');
   if (!digits) return '';
   const len = digits.length;
   if (len === 1) return `0'00"${digits}`;
@@ -225,274 +215,57 @@ const formatAerobicPlannerTime = (value: unknown): string => {
   return `${digits.slice(0, -5)}h${digits.slice(-5, -3)}'${digits.slice(-3, -1)}"${digits.slice(-1)}`;
 };
 
-const formatAerobicPauseInput = (value: unknown): string => {
-  const raw = typeof value === 'string' ? value : value == null ? '' : String(value);
-  const digits = raw.replace(/\D/g, '');
-  if (!digits) return '';
-  if (digits.length === 1) return `0'${digits}`;
-  if (digits.length === 2) return `0'${digits}"`;
-  if (digits.length === 3) return `${digits[0]}'${digits.slice(1, 3)}"`;
-  const mins = digits.slice(0, -2);
-  const secs = digits.slice(-2);
-  return `${mins}'${secs}"`;
-};
-
-/** Parse Rest Time modality cell (after formatAerobicPauseInput) to seconds. */
-const parseAerobicRestTimePauseToSeconds = (raw: string): number => {
-  const f = formatAerobicPauseInput(raw).trim();
-  if (!f) return 0;
-  const withDeci = f.match(/^(\d{1,2})'(\d{2})"(\d)$/);
-  if (withDeci) {
-    return parseInt(withDeci[1], 10) * 60 + parseInt(withDeci[2], 10) + parseInt(withDeci[3], 10) / 10;
+const parseAerobicCellTimeToDeciseconds = (value: string): number | null => {
+  if (!value) return null;
+  const formatted = formatAerobicCellTime(value);
+  const fullMatch = formatted.match(/^(\d+)h(\d{2})'(\d{2})"(\d)$/);
+  if (fullMatch) {
+    const hours = parseInt(fullMatch[1]);
+    const minutes = parseInt(fullMatch[2]);
+    const seconds = parseInt(fullMatch[3]);
+    const deci = parseInt(fullMatch[4]);
+    return ((hours * 3600 + minutes * 60 + seconds) * 10) + deci;
   }
-  const noDeci = f.match(/^(\d{1,2})'(\d{2})"$/);
-  if (noDeci) return parseInt(noDeci[1], 10) * 60 + parseInt(noDeci[2], 10);
-  const secOnly = f.match(/^(\d+)\s*"$/);
-  if (secOnly) return parseInt(secOnly[1], 10);
-  return parseRestToSeconds(f);
+  const shortMatch = formatted.match(/^(\d{1,2})'(\d{2})"(\d)$/);
+  if (shortMatch) {
+    const minutes = parseInt(shortMatch[1]);
+    const seconds = parseInt(shortMatch[2]);
+    const deci = parseInt(shortMatch[3]);
+    return ((minutes * 60 + seconds) * 10) + deci;
+  }
+  return null;
 };
 
-const restChoiceLabelStatic = (choice: RestChoice) => {
-  if (choice === 'restart_to') return 'Restart to';
-  if (choice === 'reset_pulse') return 'Rest. pulse';
-  return 'Rest Time';
+/** Parse rest_time string (e.g. "1'30\"", "0'45\"") to seconds for summary */
+const parseAerobicRestPauseToSeconds = (s: string): number => {
+  if (!s || typeof s !== 'string') return 0;
+  const t = s.trim();
+  const m = t.match(/^(\d+)\s*'?\s*(\d*)\s*"?\s*$/);
+  if (m) {
+    const mins = parseInt(m[1], 10) || 0;
+    const secs = m[2] ? parseInt(m[2], 10) : 0;
+    return mins * 60 + secs;
+  }
+  const secOnly = t.match(/^(\d+)\s*"?\s*$/);
+  if (secOnly) return parseInt(secOnly[1], 10) || 0;
+  return 0;
 };
 
-const breakChoiceLabelStatic = (choice: BreakChoice) => {
-  if (choice === 'speed') return 'Speed';
-  if (choice === 'watts') return 'Watts';
-  return 'Stopped';
+const formatAerobicRestFromSeconds = (sec: number): string => {
+  if (sec < 60) return `${sec}"`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s > 0 ? `${m}'${s}"` : `${m}'`;
 };
 
-type WorkoutSectionOption = { id: string; name: string; color?: string | null; code?: string | null };
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
-type AerobicPlannerSortableRowProps = {
-  row: AerobicPlannerRow;
-  rowIndex: number;
-  selectedRowId: number | null;
-  /** When set, draws a stronger bottom border after every Nth row (series blocks after Apply). */
-  seriesBlockSize: number | null;
-  onCellClick: (rowId: number, field: keyof AerobicPlannerRow) => void;
-  setIsNoteEditing: (v: boolean) => void;
-  setRows: React.Dispatch<React.SetStateAction<AerobicPlannerRow[]>>;
-  copyRowOnce: (rowId: number) => void;
-  copyRowToAllSubsequent: (rowId: number) => void;
-  deleteRow: (rowId: number) => void;
-  workoutSections: WorkoutSectionOption[];
-  onWorkoutSectionChange: (rowId: number, sectionId: string) => void;
-};
-
-/** Must stay outside the planner component so row identity is stable and the scroll area does not reset on each click. */
-function AerobicPlannerSortableRow({
-  row,
-  rowIndex,
-  selectedRowId,
-  seriesBlockSize,
-  onCellClick,
-  setIsNoteEditing,
-  setRows,
-  copyRowOnce,
-  copyRowToAllSubsequent,
-  deleteRow,
-  workoutSections,
-  onWorkoutSectionChange,
-}: AerobicPlannerSortableRowProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging, setActivatorNodeRef } = useSortable({
-    id: row.id
-  });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.6 : undefined
-  };
-
-  const seriesSepBelow =
-    seriesBlockSize != null &&
-    seriesBlockSize > 0 &&
-    (rowIndex + 1) % seriesBlockSize === 0;
-
-  return (
-    <tr
-      ref={setNodeRef}
-      style={style}
-      className={`${selectedRowId === row.id ? 'bg-blue-50' : ''} ${seriesSepBelow ? 'border-b-2 border-slate-400' : ''}`}
-    >
-      <td className="border-t border-gray-200 px-1 py-0.5 align-middle">
-        <div className="flex items-center gap-1 min-w-0">
-          <button
-            ref={setActivatorNodeRef}
-            type="button"
-            onClick={() => onCellClick(row.id, 'distance')}
-            {...attributes}
-            {...listeners}
-            data-dnd-handle="true"
-            className="w-5 h-5 shrink-0 border border-gray-300 rounded bg-white hover:bg-gray-50 cursor-grab active:cursor-grabbing flex items-center justify-center select-none"
-            aria-label="Drag to reorder row"
-          >
-            ⠿
-          </button>
-          <span className="text-[10px] text-gray-500 shrink-0 w-3.5 text-center" title="Row">
-            {rowIndex + 1}
-          </span>
-          <select
-            value={row.workoutSectionId || ''}
-            onChange={(e) => onWorkoutSectionChange(row.id, e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            className="min-w-0 flex-1 max-w-[10rem] truncate rounded border border-gray-300 bg-white px-0.5 py-0.5 text-left text-[10px] text-gray-900"
-            title="Workout section for this rehearsal"
-          >
-            <option value="">Section…</option>
-            {workoutSections.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-                {s.code ? ` (${s.code})` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-      </td>
-      <td className="border-t border-gray-200 px-1 py-1 text-center">
-        <button
-          type="button"
-          onClick={() => onCellClick(row.id, 'distance')}
-          className="w-full border border-gray-300 rounded px-1.5 py-0.5 bg-white text-left truncate"
-        >
-          {row.distance || ''}
-        </button>
-      </td>
-      <td className="border-t border-gray-200 px-1 py-1 text-center">
-        <button
-          type="button"
-          onClick={() => onCellClick(row.id, 'style')}
-          className="w-full border border-gray-300 rounded px-1.5 py-0.5 bg-white text-left truncate"
-        >
-          {row.style || ''}
-        </button>
-      </td>
-      <td className="border-t border-gray-200 px-1 py-1 text-center">
-        <button
-          type="button"
-          onClick={() => onCellClick(row.id, 'speed')}
-          className="w-full border border-gray-300 rounded px-1.5 py-0.5 bg-white text-left truncate"
-        >
-          {row.speed || ''}
-        </button>
-      </td>
-      <td className="border-t border-gray-200 px-1 py-1 text-center">
-        <button
-          type="button"
-          onClick={() => onCellClick(row.id, 'strokes')}
-          className="w-full border border-gray-300 rounded px-1.5 py-0.5 bg-white text-left truncate"
-        >
-          {row.strokes || ''}
-        </button>
-      </td>
-      <td className="border-t border-gray-200 px-1 py-1 text-center">
-        <button
-          type="button"
-          onClick={() => onCellClick(row.id, 'watts')}
-          className="w-full border border-gray-300 rounded px-1.5 py-0.5 bg-white text-left truncate"
-        >
-          {row.watts || ''}
-        </button>
-      </td>
-      <td className="border-t border-gray-200 px-1 py-1 text-center">
-        <button
-          type="button"
-          onClick={() => onCellClick(row.id, 'time')}
-          className="w-full border border-gray-300 rounded px-1.5 py-0.5 bg-white text-left font-mono truncate"
-        >
-          {row.time || ''}
-        </button>
-      </td>
-      <td className="border-t border-gray-200 px-1 py-1 text-center">
-        <button
-          type="button"
-          onClick={() => onCellClick(row.id, 'restChoice')}
-          className="w-full border border-gray-300 rounded px-1.5 py-0.5 bg-white text-left truncate"
-        >
-          {restChoiceLabelStatic(row.restChoice)}
-        </button>
-      </td>
-      <td className="border-t border-gray-200 px-1 py-1 text-center">
-        <button
-          type="button"
-          onClick={() => onCellClick(row.id, 'rest')}
-          className="w-full border border-gray-300 rounded px-1.5 py-0.5 bg-white text-left font-mono truncate"
-        >
-          {row.restChoice === 'restart_to'
-            ? formatAerobicPlannerTime(row.rest || '')
-            : row.restChoice === 'rest_time'
-              ? formatAerobicPauseInput(row.rest || '')
-              : row.rest || ''}
-        </button>
-      </td>
-      <td className="border-t border-gray-200 px-1 py-1 text-center">
-        <button
-          type="button"
-          onClick={() => onCellClick(row.id, 'breakChoice')}
-          className="w-full border border-gray-300 rounded px-1.5 py-0.5 bg-white text-left truncate"
-        >
-          {breakChoiceLabelStatic(row.breakChoice)}
-        </button>
-      </td>
-      <td className="border-t border-gray-200 px-1 py-1 text-center">
-        <button
-          type="button"
-          onClick={() => onCellClick(row.id, 'break')}
-          className="w-full border border-gray-300 rounded px-1.5 py-0.5 bg-white text-left truncate"
-        >
-          {row.break || ''}
-        </button>
-      </td>
-      <td className="border-t border-gray-200 px-2 py-1.5 bg-amber-50/80 align-top">
-        <input
-          type="text"
-          value={row.note}
-          onChange={(e) => {
-            const nextValue = e.target.value;
-            setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, note: nextValue } : x)));
-          }}
-          onFocus={() => {
-            setIsNoteEditing(true);
-          }}
-          onBlur={() => {
-            setIsNoteEditing(false);
-          }}
-          className="w-full border-2 border-amber-500 bg-amber-50 rounded px-2 py-1.5 text-sm font-medium focus:ring-2 focus:ring-amber-400 focus:border-amber-600 min-h-[36px]"
-          placeholder=""
-          autoComplete="off"
-          aria-label="Row notes"
-        />
-      </td>
-      <td className="border-t border-gray-200 px-1 py-1.5 text-center align-center bg-gray-50">
-        <div className="flex items-center justify-center gap-1">
-          <button
-            type="button"
-            onClick={() => copyRowOnce(row.id)}
-            onDoubleClick={() => copyRowToAllSubsequent(row.id)}
-            className="w-7 h-7 border border-gray-300 rounded bg-slate-600 text-white hover:bg-slate-700 text-xs"
-            title="Copy row once. Double click to copy to all subsequent rows."
-          >
-            ⧉
-          </button>
-          <button
-            type="button"
-            onClick={() => deleteRow(row.id)}
-            className="w-7 h-7 flex items-center justify-center shrink-0 rounded border border-red-700 bg-red-600 text-white hover:bg-red-700"
-            title="Delete this row"
-          >
-            <Trash2 className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, AerobicFastPlannerProps>(
   function AerobicFastPlannerOfMoveframes(
     { sport, sectionId, workoutSections = [], workout: _workout, day: _day, mode, existingMoveframe, onSave, onCancel, fullView },
@@ -574,10 +347,10 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
             return { ...r, rest: value };
           }
           if (field === 'time') {
-            const timeDeci = parseTimeToDeciseconds(value);
+            const timeDeci = parseAerobicCellTimeToDeciseconds(value);
             const newRow = { ...r, time: value } as AerobicPlannerRow;
             if (timeDeci != null && r.restChoice === 'restart_to' && (r.rest || '').trim()) {
-              const restDeci = parseTimeToDeciseconds(r.rest);
+              const restDeci = parseAerobicCellTimeToDeciseconds(r.rest);
               if (restDeci != null && restDeci < timeDeci + 30) {
                 newRow.rest = formatDeciseconds(timeDeci + 30);
               }
@@ -736,22 +509,6 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       setSelectedCell({ rowId: fallbackRowId, field: targetField as keyof AerobicPlannerRow });
     };
 
-    // Format: 12345 → 12'34"5 (mm'ss"d); 123456 → 1h23'45"6
-    const formatTime = (value: string): string => {
-      if (!value) return '';
-      if (/^\d+h\d{2}'\d{2}"\d$/.test(value)) return value;
-      if (/^\d{1,2}'\d{2}"\d$/.test(value)) return value;
-      const digits = value.replace(/\D/g, '');
-      if (!digits) return '';
-      const len = digits.length;
-      if (len === 1) return `0'00"${digits}`;
-      if (len === 2) return `0'0${digits[0]}"${digits[1]}`;
-      if (len === 3) return `0'${digits.slice(0, 2)}"${digits[2]}`;
-      if (len === 4) return `${digits[0]}'${digits.slice(1, 3)}"${digits[3]}`;
-      if (len === 5) return `${digits.slice(0, 2)}'${digits.slice(2, 4)}"${digits[4]}`;
-      if (len === 6) return `${digits[0]}h${digits.slice(1, 3)}'${digits.slice(3, 5)}"${digits[5]}`;
-      return `${digits.slice(0, -5)}h${digits.slice(-5, -3)}'${digits.slice(-3, -1)}"${digits.slice(-1)}`;
-    };
     const formatPauseInput = (value: string): string => {
       const digits = value.replace(/\D/g, '');
       if (!digits) return '';
@@ -762,27 +519,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       const secs = digits.slice(-2);
       return `${mins}'${secs}"`;
     };
-
-    const parseTimeToDeciseconds = (value: string): number | null => {
-      if (!value) return null;
-      const formatted = formatTime(value);
-      const fullMatch = formatted.match(/^(\d+)h(\d{2})'(\d{2})"(\d)$/);
-      if (fullMatch) {
-        const hours = parseInt(fullMatch[1]);
-        const minutes = parseInt(fullMatch[2]);
-        const seconds = parseInt(fullMatch[3]);
-        const deci = parseInt(fullMatch[4]);
-        return ((hours * 3600 + minutes * 60 + seconds) * 10) + deci;
-      }
-      const shortMatch = formatted.match(/^(\d{1,2})'(\d{2})"(\d)$/);
-      if (shortMatch) {
-        const minutes = parseInt(shortMatch[1]);
-        const seconds = parseInt(shortMatch[2]);
-        const deci = parseInt(shortMatch[3]);
-        return ((minutes * 60 + seconds) * 10) + deci;
-      }
-      return null;
-    };
+    const formatAerobicPauseInput = formatPauseInput;
 
     const formatDeciseconds = (value: number): string => {
       const totalSeconds = Math.max(0, Math.floor(value / 10));
@@ -871,10 +608,10 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
     };
 
     const handleRestartToBlur = (rowId: number, value: string) => {
-      const formatted = formatTime(value);
+      const formatted = formatAerobicCellTime(value);
       const row = rows.find((r) => r.id === rowId);
-      const timeDeci = row?.time ? parseTimeToDeciseconds(row.time) : null;
-      const restDeci = parseTimeToDeciseconds(formatted);
+      const timeDeci = row?.time ? parseAerobicCellTimeToDeciseconds(row.time) : null;
+      const restDeci = parseAerobicCellTimeToDeciseconds(formatted);
       let finalValue = formatted;
       if (timeDeci != null && restDeci != null) {
         const minDeci = timeDeci + 30; // Rest must be > Time by at least 3"
@@ -907,7 +644,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       /** Sum of Time column (all rows; empty parses as 0). */
       let totalTimeSec = 0;
       for (const r of rows) {
-        const d = parseTimeToDeciseconds(r.time || '');
+        const d = parseAerobicCellTimeToDeciseconds(r.time || '');
         if (d != null) totalTimeSec += d / 10;
       }
 
@@ -918,10 +655,10 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       let totalRestSec = 0;
       for (const r of rows) {
         if (r.restChoice === 'rest_time') {
-          totalRestSec += parseAerobicRestTimePauseToSeconds(r.rest || '');
+          totalRestSec += parseAerobicRestPauseToSeconds(r.rest || '');
         } else if (r.restChoice === 'restart_to') {
-          const timeDeci = parseTimeToDeciseconds(r.time || '');
-          const restDeci = parseTimeToDeciseconds(r.rest || '');
+          const timeDeci = parseAerobicCellTimeToDeciseconds(r.time || '');
+          const restDeci = parseAerobicCellTimeToDeciseconds(r.rest || '');
           if (timeDeci != null && restDeci != null) {
             totalRestSec += Math.max(0, (restDeci - timeDeci) / 10);
           }
@@ -937,8 +674,8 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
         `Average Distance ${withDistance.length > 0 ? avgDistance.toFixed(1) : '-'}`,
         `Total Time ${totalTimeSec > 0 ? formatTimeFromSeconds(Math.round(totalTimeSec)) : '-'}`,
         `Average speed ${avgTimeSec != null ? formatTimeFromSeconds(Math.round(avgTimeSec)) : '-'}`,
-        `Total Time Rest ${formatRestFromSeconds(Math.round(totalRestSec))}`,
-        `Average Rest ${avgRestSec != null ? formatRestFromSeconds(Math.round(avgRestSec)) : '-'}`
+        `Total Time Rest ${formatAerobicRestFromSeconds(Math.round(totalRestSec))}`,
+        `Average Rest ${avgRestSec != null ? formatAerobicRestFromSeconds(Math.round(avgRestSec)) : '-'}`
       ].join(' | ');
     }, [rows]);
 
@@ -971,7 +708,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
         const restType = restTypeFromChoice(r.restChoice);
         const restValue =
           r.restChoice === 'restart_to'
-            ? formatTime(r.rest || '')
+            ? formatAerobicCellTime(r.rest || '')
             : r.restChoice === 'rest_time'
             ? formatPauseInput(r.rest || '')
             : r.rest || '';
@@ -990,27 +727,6 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
           notes: notes || null
         };
       });
-    };
-
-    // Parse rest_time string (e.g. "1'30\"", "0'45\"") to seconds for summary
-    const parseRestToSeconds = (s: string): number => {
-      if (!s || typeof s !== 'string') return 0;
-      const t = s.trim();
-      const m = t.match(/^(\d+)\s*'?\s*(\d*)\s*"?\s*$/);
-      if (m) {
-        const mins = parseInt(m[1], 10) || 0;
-        const secs = m[2] ? parseInt(m[2], 10) : 0;
-        return mins * 60 + secs;
-      }
-      const secOnly = t.match(/^(\d+)\s*"?\s*$/);
-      if (secOnly) return parseInt(secOnly[1], 10) || 0;
-      return 0;
-    };
-    const formatRestFromSeconds = (sec: number): string => {
-      if (sec < 60) return `${sec}"`;
-      const m = Math.floor(sec / 60);
-      const s = sec % 60;
-      return s > 0 ? `${m}'${s}"` : `${m}'`;
     };
 
     const handleSaveMoveframe = (uploadToWorkout: boolean) => {
@@ -1040,16 +756,16 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
         )
         .map((r) => {
           if (r.restChoice !== 'restart_to' || !r.time || !r.rest) return r;
-          const timeDeci = parseTimeToDeciseconds(r.time);
-          const restDeci = parseTimeToDeciseconds(r.rest);
+          const timeDeci = parseAerobicCellTimeToDeciseconds(r.time);
+          const restDeci = parseAerobicCellTimeToDeciseconds(r.rest);
           if (timeDeci == null || restDeci == null || restDeci >= timeDeci + 30) return r;
           return { ...r, rest: formatDeciseconds(timeDeci + 30) };
         });
 
       for (const r of filledRows) {
         if (r.restChoice === 'restart_to' && (r.time || '').trim() && (r.rest || '').trim()) {
-          const timeDeci = parseTimeToDeciseconds(r.time);
-          const restDeci = parseTimeToDeciseconds(r.rest);
+          const timeDeci = parseAerobicCellTimeToDeciseconds(r.time);
+          const restDeci = parseAerobicCellTimeToDeciseconds(r.rest);
           if (timeDeci != null && restDeci != null) {
             const minRestDeci = timeDeci + 30; // At least 3" longer than Time
             if (restDeci < minRestDeci) {
@@ -1467,7 +1183,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
               className="w-full border border-gray-300 rounded px-1.5 py-0.5 bg-white text-left font-mono truncate"
             >
               {row.restChoice === 'restart_to'
-                ? formatTime(row.rest || '')
+                ? formatAerobicCellTime(row.rest || '')
                 : row.restChoice === 'rest_time'
                 ? formatPauseInput(row.rest || '')
                 : row.rest || ''}
@@ -1581,16 +1297,10 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
         )}
         <div className={`border border-gray-200 rounded bg-white`}>
         {fullView ? (
-<<<<<<< HEAD
-          <div className="min-h-[200px] max-h-[min(78vh,920px)] overflow-auto border border-gray-200 rounded bg-white">
-            <div className="border border-gray-300 bg-white rounded min-w-0">
-              <table className="w-full text-[11px] table-fixed min-w-0 border-separate border-spacing-0">
-=======
           <div className="min-h-[200px] overflow-x-hidden border border-gray-200 rounded bg-white overflow-y-visible">
             <div className="border border-gray-300 bg-white rounded">
               <div className="overflow-x-hidden">
                 <table className="w-full text-[11px] table-fixed min-w-0">
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                   <colgroup>
                     <col className="w-[132px]" />
                     <col className="w-[60px]" />
@@ -1649,25 +1359,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
                       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                         <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
                           {rows.map((r, rowIndex) => (
-<<<<<<< HEAD
-                            <AerobicPlannerSortableRow
-                              key={r.id}
-                              row={r}
-                              rowIndex={rowIndex}
-                              selectedRowId={selectedRow?.id ?? null}
-                              seriesBlockSize={seriesBlockVisualSize}
-                              onCellClick={onCellClick}
-                              setIsNoteEditing={setIsNoteEditing}
-                              setRows={setRows}
-                              copyRowOnce={copyRowOnce}
-                              copyRowToAllSubsequent={copyRowToAllSubsequent}
-                              deleteRow={deleteRow}
-                              workoutSections={workoutSections}
-                              onWorkoutSectionChange={onWorkoutSectionChange}
-                            />
-=======
                             <SortableRow key={r.id} row={r} rowIndex={rowIndex} />
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                           ))}
                         </SortableContext>
                       </DndContext>
@@ -1675,6 +1367,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
                   </tbody>
                 </table>
             </div>
+          </div>
           </div>
         ) : (
           <>
@@ -1810,7 +1503,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
                           type="text"
                           value={selectedRow?.time || ''}
                           onChange={(e) => applyInputToSelection(e.target.value)}
-                          onBlur={(e) => applyInputToSelection(formatTime(e.target.value))}
+                          onBlur={(e) => applyInputToSelection(formatAerobicCellTime(e.target.value))}
                           className="w-40 border border-gray-300 rounded px-2 py-1 text-xs font-mono"
                           placeholder="e.g. 12345 → 12'34&quot;5"
                         />
@@ -1898,14 +1591,9 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
               </div>
 
               <div className="border-t border-gray-200 bg-white">
-<<<<<<< HEAD
-                <div className="max-h-[46vh] min-h-[260px] overflow-y-auto overflow-x-auto min-w-0">
-                  <table className="w-full text-[11px] table-fixed min-w-0 border-separate border-spacing-0">
-=======
                 <div className="max-h-[46vh] min-h-[260px] overflow-y-auto">
                   <div className="overflow-x-hidden min-w-0">
                   <table className="w-full text-[11px] table-fixed min-w-0">
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                     <colgroup>
                       <col className="w-[132px]" />
                       <col className="w-[60px]" />
@@ -1964,31 +1652,14 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
                         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                           <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
                             {rows.map((r, rowIndex) => (
-<<<<<<< HEAD
-                              <AerobicPlannerSortableRow
-                                key={r.id}
-                                row={r}
-                                rowIndex={rowIndex}
-                                selectedRowId={selectedRow?.id ?? null}
-                                seriesBlockSize={seriesBlockVisualSize}
-                                onCellClick={onCellClick}
-                                setIsNoteEditing={setIsNoteEditing}
-                                setRows={setRows}
-                                copyRowOnce={copyRowOnce}
-                                copyRowToAllSubsequent={copyRowToAllSubsequent}
-                                deleteRow={deleteRow}
-                                workoutSections={workoutSections}
-                                onWorkoutSectionChange={onWorkoutSectionChange}
-                              />
-=======
                               <SortableRow key={r.id} row={r} rowIndex={rowIndex} />
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             ))}
                           </SortableContext>
                         </DndContext>
                       )}
                     </tbody>
                   </table>
+                </div>
                 </div>
 
                   {restartTimeValidationError && (
@@ -2017,7 +1688,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
                       placeholder="Write descriptions and instructions..."
                     />
                   </div>
-              </div>
+                </div>
             </div>
           </>
         )}

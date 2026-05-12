@@ -17,7 +17,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import ReactDOM from 'react-dom';
 import { X, Settings, RotateCw, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { MUSCULAR_SECTORS, circuitLoadOfWorkToMacroFinal } from '@/constants/moveframe.constants';
+import { MUSCULAR_SECTORS, circuitLoadOfWorkToMacroFinal, MACRO_FINAL_OPTIONS } from '@/constants/moveframe.constants';
 import CircuitPreferencesModal, { ExercisePreferences } from './CircuitPreferencesModal';
 // 2026-01-22 11:45 UTC - Import mock exercise database
 import {
@@ -171,49 +171,13 @@ const MUSCULAR_SECTOR_IMAGES: Record<string, string> = {
 
 const CIRCUIT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
 
-<<<<<<< HEAD
-/** Pause among / between circuits — dropdown only 1′ … 10′ (values in seconds). */
+/** Between-circuit / Continuous Time macro dropdown — 1′…10′ as seconds (60…600). */
 const CIRCUIT_PAUSE_OPTIONS = Array.from({ length: 10 }, (_, i) => {
   const minutes = i + 1;
   return { label: `${minutes}'`, value: minutes * 60 };
 });
-
 const CIRCUIT_PAUSE_VALUE_SET = new Set(CIRCUIT_PAUSE_OPTIONS.map((o) => o.value));
 
-/** Legacy Macro stored one digit 0–9 (minutes). Current Macro uses `CIRCUIT_PAUSE_OPTIONS` seconds (60…600). */
-function parseMacroLoadToPauseSeconds(load: unknown): number {
-  const t = String(load ?? '').trim();
-  if (!t) return 0;
-  if (/^[0-9]$/.test(t)) return parseInt(t, 10) * 60;
-  const sec = parseInt(t, 10);
-  if (Number.isFinite(sec) && CIRCUIT_PAUSE_VALUE_SET.has(sec)) return sec;
-  return 0;
-}
-
-/** Saved movelap `macroFinal`: digit → 0′…9′; circuit pause seconds → 1′…10′. */
-function macroLoadToMovelapMacroFinal(load: unknown): string | null {
-  const t = String(load ?? '').trim();
-  if (!t) return null;
-  if (/^[0-9]$/.test(t)) return circuitLoadOfWorkToMacroFinal(t);
-  const sec = parseInt(t, 10);
-  if (Number.isFinite(sec) && CIRCUIT_PAUSE_VALUE_SET.has(sec)) return `${sec / 60}'`;
-  return null;
-}
-
-function snapToNearestStationPauseSeconds(targetSec: number): number {
-  let best = STATION_PAUSE_OPTIONS[0]!.value;
-  let bestDist = Infinity;
-  const t = Math.max(0, targetSec);
-  for (const o of STATION_PAUSE_OPTIONS) {
-    const d = Math.abs(o.value - t);
-    if (d < bestDist) {
-      bestDist = d;
-      best = o.value;
-    }
-  }
-  return best;
-}
-=======
 // Pause options in seconds (converted from time format)
 const STATION_PAUSE_OPTIONS = [
   { label: '0"', value: 0 },
@@ -229,7 +193,6 @@ const STATION_PAUSE_OPTIONS = [
   { label: '1\'30"', value: 90 },
   { label: '2\'', value: 120 }
 ];
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
 /** Rip value written when applying Macro (minute count as string 1–10, or legacy digit 0–9). */
 function macroLoadToRepsString(load: unknown): string | null {
@@ -383,6 +346,47 @@ function parsePauseFromMovelap(value: unknown): number {
   }
   const secOnly = s.replace(/\D/g, '');
   return secOnly ? parseInt(secOnly.slice(0, 3), 10) || 0 : 0;
+}
+
+function parseMacroLoadToPauseSeconds(load: unknown): number {
+  const s = String(load ?? '').trim();
+  if (!s) return 0;
+  if (/^[0-9]$/.test(s)) return parseInt(s, 10) * 60;
+  const sec = parseInt(s, 10);
+  if (!Number.isFinite(sec)) return 0;
+  if (sec >= 60 && sec <= 600) return sec;
+  if (CIRCUIT_PAUSE_VALUE_SET.has(sec)) return sec;
+  return CIRCUIT_PAUSE_OPTIONS[0]?.value ?? 60;
+}
+
+function macroLoadToMovelapMacroFinal(load: unknown): string | null {
+  const s = String(load ?? '').trim();
+  if (/^[0-9]$/.test(s)) return circuitLoadOfWorkToMacroFinal(s);
+  const sec = parseMacroLoadToPauseSeconds(load);
+  if (sec <= 0) return null;
+  const idx = Math.min(9, Math.max(0, Math.round(sec / 60)));
+  return MACRO_FINAL_OPTIONS[idx] ?? null;
+}
+
+function generatePreviewStructurePlanned(circuitsData: Circuit[]): string {
+  const n = circuitsData?.length ?? 0;
+  if (!n) return '0 circuits';
+  const letters = circuitsData.map((c) => c.letter).filter(Boolean);
+  return `${n} circuit(s)${letters.length ? ` (${letters.join(', ')})` : ''}`;
+}
+
+function generatePreviewRealData(circuitsData: Circuit[]): string {
+  let slots = 0;
+  for (const c of circuitsData || []) {
+    const rows = c.stationsBySeries || [];
+    for (const row of rows) {
+      if (!Array.isArray(row)) continue;
+      for (const st of row) {
+        if (circuitStationProducesMovelap(st)) slots++;
+      }
+    }
+  }
+  return `${slots} filled station slot(s)`;
 }
 
 // ============================================================================
@@ -1581,14 +1585,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
           const isLastSeriesOfCircuit = seriesIdx === seriesRows.length - 1;
 
           let effectivePause: number;
-<<<<<<< HEAD
-          if (!isLastProducingStationInSeries) {
-            effectivePause = station.pause || pauseAmongStationsBase;
-          } else if (isLastSeriesOfCircuit) {
-            if (isLastCircuit) {
-              effectivePause = finalMacroPauseSeconds;
-=======
-          if (isLastStationOfSeries) {
+          if (isLastProducingStationInSeries) {
             if (isLastSeriesOfCircuit) {
               effectivePause = isLastCircuit
                 ? finalMacroPauseSeconds
@@ -1596,13 +1593,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
             } else if (seriesMode === 'time') {
               effectivePause =
                 circuit.seriesPauses?.[seriesIdx] ?? circuit.pauseAfterCircuit ?? pauseCircuits;
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
             } else {
-              // Continuous Time: yellow Between Circuits + synced seriesPauses[last]; Count: pauseAfterCircuit only
-              effectivePause =
-                seriesMode === 'time'
-                  ? (circuit.seriesPauses?.[seriesIdx] ?? circuit.pauseAfterCircuit ?? pauseCircuits)
-                  : (circuit.pauseAfterCircuit ?? pauseCircuits);
+              effectivePause = circuit.pauseAfterCircuit ?? pauseCircuits;
             }
           } else {
             effectivePause =
@@ -1678,22 +1670,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       );
       return;
     }
-<<<<<<< HEAD
     const description = `${generatePreviewStructurePlanned(circuitsWithPauses)} | ${generatePreviewRealData(circuitsWithPauses)}`;
-=======
-    const description = generatePreview(circuitsToSave);
-    // Normalize circuits so each explicitly has pauseAfterCircuit and pauseBetweenSeries (grid-edited values)
-    const circuitsWithPauses = circuitsToSave.map((c) => {
-      const after = typeof c.pauseAfterCircuit === 'number' ? c.pauseAfterCircuit : pauseCircuits;
-      const between =
-        seriesMode === 'time'
-          ? after
-          : typeof c.pauseBetweenSeries === 'number'
-            ? c.pauseBetweenSeries
-            : pauseSeries;
-      return { ...c, pauseBetweenSeries: between, pauseAfterCircuit: after };
-    });
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
     
     console.log('💾 [handleSave] Generated movelaps:', movelaps);
     console.log('💾 [handleSave] Description to save:', description);
@@ -2512,41 +2489,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     setActionLog((prev) => [...prev, logLabel]);
   };
 
-<<<<<<< HEAD
-  /** Macro (1′–10′, same as Pause among circuits) → Rip (`reps` shows minutes). Continuous Time: presets footer Pause (snap to station options) and sets last cell Pause to macro duration. */
-  const applyMacroToAllCells = () => {
-    const repsStr = macroLoadToRepsString(loadOfWork);
-    if (!repsStr) return;
-    let logLabel = `Macro applied to Rip: "${repsStr}"`;
-    if (seriesMode === 'time') {
-      const pauseSec = parseMacroLoadToPauseSeconds(loadOfWork);
-      const snappedFooter =
-        pauseSec > 0 ? snapToNearestStationPauseSeconds(Math.min(pauseSec, 120)) : 0;
-      setBulkPauseFooterSeconds(snappedFooter ? String(snappedFooter) : '');
-      const footerLab =
-        STATION_PAUSE_OPTIONS.find((o) => o.value === snappedFooter)?.label ?? `${snappedFooter}s`;
-      const macroLab =
-        CIRCUIT_PAUSE_OPTIONS.find((o) => o.value === pauseSec)?.label ?? `${pauseSec}s`;
-      setCircuits((prevCircuits) => {
-        if (!Array.isArray(prevCircuits) || prevCircuits.length === 0) return prevCircuits;
-        const next = JSON.parse(JSON.stringify(prevCircuits)) as Circuit[];
-        const lastCircuit = next[next.length - 1];
-        if (!lastCircuit || !Array.isArray(lastCircuit.stationsBySeries) || lastCircuit.stationsBySeries.length === 0) {
-          return next;
-        }
-        const lastSeries = lastCircuit.stationsBySeries[lastCircuit.stationsBySeries.length - 1];
-        if (!Array.isArray(lastSeries) || lastSeries.length === 0) return next;
-        const lastStation = lastSeries[lastSeries.length - 1];
-        if (!lastStation) return next;
-        lastStation.pause = pauseSec;
-        return next;
-      });
-      logLabel += `; footer Pause preset ${footerLab}; last cell Pause ${macroLab} (last station of last serie of last circuit)`;
-    } else {
-      logLabel += ' (Pause footer unchanged)';
-    }
-    applyRepsValueToAllStations(repsStr, logLabel);
-=======
   const applyMacroToAllCells = () => {
     const macroValue = (loadOfWork || '').trim();
     if (!macroValue) return;
@@ -2554,7 +2496,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       String(macroValue),
       `Macro applied: Rip (repetitions) "${macroValue}" set for all stations`
     );
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   };
 
   const applyBulkRepsLoadToAllCells = () => {
@@ -3022,73 +2963,6 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         }
       }
     });
-<<<<<<< HEAD
-    if (circPauseCount === 0) {
-      sumPauseAfterCirc = coerceBetweenCircuitsSeconds(pauseCircuits ?? 120, 120) * fallbackCircuits;
-      circPauseCount = fallbackCircuits;
-    }
-    const avgPauseCircSeconds = sumPauseAfterCirc / Math.max(1, circPauseCount);
-    const pauseCircStr = formatPauseSeconds(CIRCUIT_PAUSE_OPTIONS, avgPauseCircSeconds);
-
-    // Pause among series: sum pauses on each structural between-series slot (blue rows in Count mode)
-    // divided by the count of those rows — same cardinality as rendered “Between series” separators (n−1 per circuit).
-    let sumPauseSeries = 0;
-    let seriesGapCount = 0;
-    circuitsToUse.forEach((c) => {
-      const rows = c.stationsBySeries ?? [];
-      const n = rows.length;
-      const fb = c.pauseBetweenSeries ?? pauseSeries;
-      for (let s = 0; s < n - 1; s++) {
-        const raw = c.seriesPauses?.[s] ?? fb;
-        const sec =
-          seriesMode === 'time'
-            ? coerceBetweenCircuitsSeconds(typeof raw === 'number' ? raw : fb, fb)
-            : coerceCountSeriesPauseSeconds(typeof raw === 'number' ? raw : fb, fb);
-        sumPauseSeries += sec;
-        seriesGapCount += 1;
-      }
-    });
-    const avgPauseSeriesSeconds =
-      seriesGapCount > 0
-        ? sumPauseSeries / seriesGapCount
-        : pauseSeries;
-    const pauseSerStr = formatPauseSeconds(SERIES_PAUSE_OPTIONS, avgPauseSeriesSeconds);
-
-    // Pause among stations:
-    // Sum effective pause for slots with an exercise selected, excluding “look down here” only where that hint appears.
-    // Vertical: last station column is never inter-station Pause in Count mode.
-    // Horizontal + Count: last station column shows series Pause until the bottom-right cell (last serie × last station).
-    const horizCountStationAvg = executionMode === 'horizontal' && seriesMode === 'count';
-    let sumPauseStat = 0;
-    let exerciseRowCount = 0;
-    circuitsToUse.forEach((c) => {
-      const seriesArr = c.stationsBySeries ?? [];
-      const numSeries = seriesArr.length;
-      seriesArr.forEach((seriesStations, serieIdx) => {
-        const nSta = seriesStations.length;
-        seriesStations.forEach((station, stationIndex) => {
-          const isHorizCornerLookDown =
-            horizCountStationAvg &&
-            serieIdx === numSeries - 1 &&
-            stationIndex === nSta - 1;
-          const isVertLastColLookDown = !horizCountStationAvg && stationIndex === nSta - 1;
-          if (isHorizCornerLookDown || isVertLastColLookDown) return;
-          if (!stationHasNonBlankExercise(station)) return;
-
-          let pauseSec: number;
-          if (horizCountStationAvg) {
-            const fb = c.pauseBetweenSeries ?? pauseSeries;
-            if (serieIdx < numSeries - 1) {
-              const raw = c.seriesPauses?.[serieIdx] ?? fb;
-              pauseSec = coerceCountSeriesPauseSeconds(typeof raw === 'number' ? raw : fb, fb);
-            } else {
-              pauseSec = station.pause ?? pauseHorizontalSeries;
-            }
-          } else {
-            pauseSec = station.pause ?? pauseAmongStationsBase;
-          }
-          sumPauseStat += pauseSec;
-=======
     const denomSeriesPause = Math.max(1, totalSeries - 1);
     const avgPauseSeriesSeconds =
       totalSeries > 1 || sumPauseSeries > 0
@@ -3108,47 +2982,21 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
         seriesStations.forEach((station) => {
           if (!stationHasNonBlankExercise(station)) return;
           sumPauseStat += station.pause ?? pauseAmongStationsBase;
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           exerciseRowCount += 1;
         });
       });
     });
     const avgPauseStatSeconds =
       exerciseRowCount > 0 ? sumPauseStat / exerciseRowCount : pauseAmongStationsBase;
-<<<<<<< HEAD
-    const pauseStatStr = formatPauseSeconds(STATION_PAUSE_OPTIONS, avgPauseStatSeconds);
-
-    // M… : Macro (same minute labels as Pause among circuits) or footer Pause preset → MX′.
-    let mSegment = '';
-    const macroMF = macroLoadToMovelapMacroFinal(loadOfWorkTrimmed);
-    if (macroMF) mSegment = `M${macroMF}`;
-    if (!mSegment) {
-      const bulkRaw = (bulkPauseFooterSeconds || '').trim();
-      if (bulkRaw !== '') {
-        const sec = parseInt(bulkRaw, 10);
-        if (Number.isFinite(sec) && sec >= 0) {
-          const d = Math.min(9, Math.max(0, Math.round(sec / 10)));
-          mSegment = `M${d}'`;
-        }
-      }
-    }
-=======
     const pauseStatStr = formatPauseSeconds(STATION_PAUSE_OPTIONS, Math.round(avgPauseStatSeconds));
     const mSafe = /^[0-9]$/.test(loadOfWorkTrimmed) ? loadOfWorkTrimmed : '0';
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
     const timeSuffix =
       seriesMode === 'time' ? ` (${seriesTime}' continuous)` : '';
 
     return (
-<<<<<<< HEAD
-      `Circuit: ${totalStationsWithExercise} total stations (${circuitCountDisplay} circuits, avg ${fmtAvg(avgStationsSerie)} stations/serie, avg ${fmtAvg(avgSeriesCircuit)} series/circuit)${timeSuffix} ` +
-      `Pause circ. ${pauseCircStr} - stations ${pauseStatStr} - series ${pauseSerStr}` +
-      (mSegment ? ` ${mSegment}` : '')
-=======
       `Circuit: ${totalStationSlots} total stations (${circuitCountDisplay} circuits, avg ${avgStations} stations/serie, avg ${avgSeries} series/circuit)${timeSuffix} ` +
       `Pause circ. ${pauseCircStr} - stations ${pauseStatStr} - series ${pauseSerStr} M${mSafe}'`
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
     );
   };
   
@@ -3961,13 +3809,8 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 className="px-4 py-2 text-sm font-medium bg-purple-600 text-white rounded-md hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 shrink-0"
                 title={
                   seriesMode === 'time'
-<<<<<<< HEAD
                     ? 'Apply Macro (1′–10′, same as Pause among circuits) to Rip (minutes); presets footer Pause (snap to station options) and last-cell Pause to this macro.'
                     : 'Apply Load of work to Rip column only (never Pause)'
-=======
-                    ? 'Apply Macro to all Rip cells'
-                    : 'Apply Load of work to all Rip cells (does not change Macro)'
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                 }
               >
                 Apply
@@ -4802,26 +4645,18 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
                 );
               })}
             </tbody>
-<<<<<<< HEAD
             {/* Bulk-fill inter-station Pause column. Continuous Time: Macro Apply presets this dropdown (snap near macro); Apply here fills station Pause cells. */}
-=======
-            {/* Pause (macro rest between stations) — bulk fill the Pause column; Rip/Macro uses the panel above. */}
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
             <tfoot>
               <tr className="bg-purple-50" style={{height: '40px'}}>
                 <td colSpan={8} className="border-l border-r border-t border-b border-gray-300 px-4 py-2">
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     <span
                       className="text-sm font-semibold text-purple-700"
-<<<<<<< HEAD
                       title={
                         seriesMode === 'time'
                           ? 'Rest between stations. Macro Apply above presets this value (snapped to station pause options); click Apply here to write Pause cells. Rip unchanged by this row.'
                           : 'Rest between stations — applies this Pause value only. Macro / Load of work affects Rip, not these Pause cells.'
                       }
-=======
-                      title="Rest between stations — same values as each row’s Pause column (pause / macro pause)."
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                     >
                       Pause
                     </span>

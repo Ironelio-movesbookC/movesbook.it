@@ -268,6 +268,54 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return opt ? opt.label.replace(' (default)', '') : v;
   };
 
+  type PyramidalUiValue = (typeof PLAN_PYRAMIDAL_OPTIONS)[number]['value'];
+
+  const parsePyramidalMode = (pyramidal: string | undefined): PyramidalUiValue | 'flat' => {
+    const v = (pyramidal || 'flat').trim();
+    return PLAN_PYRAMIDAL_OPTIONS.some((o) => o.value === v) ? (v as PyramidalUiValue) : 'flat';
+  };
+
+  const clampSeriesCount = (row: FastPlannerRow): number => {
+    const n = parseInt(String(row.series || '').trim(), 10);
+    if (!Number.isFinite(n) || n < 1) return 0;
+    return Math.min(40, n);
+  };
+
+  const resolveFastPlannerRowSeriesReps = (row: FastPlannerRow): string[] => {
+    const mode = parsePyramidalMode(row.pyramidal);
+    const count = clampSeriesCount(row);
+    if (mode === 'flat' || count <= 0) return [];
+    const raw = (row.ripTime || '').trim();
+    const parts = raw.split(/\s*\/\s*/).map((s) => s.trim()).filter(Boolean);
+    if (parts.length >= count) return parts.slice(0, count);
+    const fill = parts[parts.length - 1] ?? '';
+    return Array.from({ length: count }, (_, i) => parts[i] ?? fill);
+  };
+
+  const afterSeriesRipTimeOrPyramidalChange = (next: FastPlannerRow): FastPlannerRow => {
+    if (parsePyramidalMode(next.pyramidal) === 'flat') {
+      const parts = (next.ripTime || '').split(/\s*\/\s*/).map((s) => s.trim()).filter(Boolean);
+      return { ...next, ripTime: parts[0] ?? next.ripTime ?? '' };
+    }
+    return next;
+  };
+
+  const updatePlannerSeriesRep = (rowId: number, seriesIndex: number, value: string) => {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.id !== rowId) return r;
+        const mode = parsePyramidalMode(r.pyramidal);
+        const count = clampSeriesCount(r);
+        if (mode === 'flat' || count <= 0) return { ...r, ripTime: value };
+        const reps = resolveFastPlannerRowSeriesReps(r);
+        const next = [...reps];
+        while (next.length < count) next.push(next[next.length - 1] ?? '');
+        if (seriesIndex >= 0 && seriesIndex < count) next[seriesIndex] = value;
+        return { ...r, ripTime: next.join(' / ') };
+      }),
+    );
+  };
+
   // Mode options - Breaking modality among series
   const MODE_OPTIONS = [
     { id: 'stopped', label: 'Stopped', icon: '/icons/stopped.png' },
@@ -615,7 +663,6 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return `${m}'${String(s).padStart(2, '0')}"`;
   }, []);
 
-<<<<<<< HEAD
   /** Per muscle card: total series and exercise count (for strip totals). */
   const muscleGroupAggregates = useMemo(() => {
     const byId: Record<string, { series: number; exercises: number }> = {};
@@ -646,87 +693,6 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         .filter((item) => item.series > 0 || item.exercises > 0),
     [muscleGroupAggregates]
   );
-=======
-  type FastPlannerSummaryStats = {
-    sectorCount: number;
-    totalSeries: number;
-    avgSeriesPerSector: string;
-    totalExercises: number;
-    avgExercisesPerSector: string;
-    totalReps: number;
-    kgTot: string;
-    avgPause: string;
-  };
-
-  const filledRowsForSummary = useMemo(
-    () => rows.map(r => ({ ...r, exercise: (r.exercise || '').trim() })).filter(r => r.exercise !== ''),
-    [rows]
-  );
-
-  const { summaryStats, summaryText } = useMemo(() => {
-    const filledRows = filledRowsForSummary;
-    if (filledRows.length === 0) {
-      return { summaryStats: null as FastPlannerSummaryStats | null, summaryText: '' };
-    }
-    const sectors = new Set<string>();
-    for (const r of filledRows) {
-      if (r.exercise) {
-        const sector = getSectorForExercise(r.exercise);
-        if (sector) sectors.add(sector);
-        else sectors.add(r.exercise.split(/\s/)[0] || 'Other');
-      }
-    }
-    const X = sectors.size;
-    const Y1 = filledRows.reduce((sum, r) => sum + (parseInt(String(r.series || '0'), 10) || 0), 0);
-    const W1 = filledRows.length;
-    const avgSeriesPerSector = X > 0 ? (Y1 / X).toFixed(1) : '0';
-    const avgExercisesPerSector = X > 0 ? (W1 / X).toFixed(1) : '0';
-
-    let Z = 0;
-    let kgTot = 0;
-    const pauseSeconds: number[] = [];
-    for (const r of filledRows) {
-      const series = parseInt(String(r.series || '0'), 10) || 0;
-      const repsPerSet = parseInt(String(r.ripTime || '0'), 10) || 0;
-      const reps = series * repsPerSet;
-      Z += reps;
-      const weightKg = parseFloat(String(r.weight || '0').replace(',', '.')) || 0;
-      kgTot += weightKg * reps;
-      const sec = parsePauseToSeconds(r.break || '');
-      if (sec > 0 || r.break?.trim()) pauseSeconds.push(sec);
-    }
-    const avgPauseSeconds = pauseSeconds.length > 0
-      ? pauseSeconds.reduce((a, b) => a + b, 0) / pauseSeconds.length
-      : 0;
-    const avgPauseStr = formatPauseFromSeconds(Math.round(avgPauseSeconds));
-
-    const stats: FastPlannerSummaryStats = {
-      sectorCount: X,
-      totalSeries: Y1,
-      avgSeriesPerSector,
-      totalExercises: W1,
-      avgExercisesPerSector,
-      totalReps: Z,
-      kgTot: kgTot.toFixed(1),
-      avgPause: avgPauseStr,
-    };
-
-    const lines = [
-      'Summary (here in automatic):',
-      `No. sectors (X) ${X}`,
-      `No. Total series (Y1) ${Y1}`,
-      `Average series/sector (Y2) ${avgSeriesPerSector}`,
-      `No. Total exercises (W1) ${W1}`,
-      `Average exercises/sector (W2) ${avgExercisesPerSector}`,
-      `No. Total Repetitions (Z) ${Z}`,
-      `Kg Tot. (kg x no.reps) ${kgTot.toFixed(1)}`,
-      `Average Pause ${avgPauseStr}`,
-      '',
-      'User can edit here (but not the Summary).'
-    ];
-    return { summaryStats: stats, summaryText: lines.join('\n') };
-  }, [filledRowsForSummary, getSectorForExercise, parsePauseToSeconds, formatPauseFromSeconds]);
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
   useEffect(() => {
     if (mode !== 'edit') return;
@@ -2011,13 +1977,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                     </button>
                     <div
                       ref={sectorListScrollRef}
-<<<<<<< HEAD
                       className="min-w-0 w-full flex-1 overflow-x-auto overflow-y-hidden scroll-smooth pb-1 [scrollbar-gutter:stable]"
                       title="All available width is used for sector cards; scroll only when needed."
-=======
-                      className="max-w-full min-w-0 flex-1 overflow-x-auto overflow-y-hidden scroll-smooth pb-1 [scrollbar-gutter:stable]"
-                      title="Scroll horizontally: arrows, scrollbar, trackpad, or wheel"
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                       onWheel={(e) => {
                         const el = e.currentTarget;
                         if (el.scrollWidth <= el.clientWidth) return;
@@ -2367,7 +2328,6 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                         }`}
                     />
                   </td>
-<<<<<<< HEAD
                   <td className="px-0.5 py-1 border-r bg-emerald-50/90 align-middle">
                     <div className="flex min-h-[40px] items-center">
                       <select
@@ -2446,21 +2406,6 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                     )}
                   </td>
                   <td className="border-r bg-gray-100/90 px-1 py-1">
-=======
-                  <td className="px-1 py-1 border-r bg-green-50">
-                    <input
-                      type="text"
-                      value={row.ripTime}
-                      onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, ripTime: e.target.value } : r))}
-                      onClick={() => handleCellClick(row.id, 'ripTime')}
-                      className={`w-full px-2 py-1 text-sm border rounded bg-green-50 ${selectedCell?.rowId === row.id && selectedCell?.field === 'ripTime'
-                        ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
-                        : 'border-green-200'
-                        }`}
-                    />
-                  </td>
-                  <td className="px-1 py-1 border-r">
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                     <input
                       type="text"
                       value={row.weight}
@@ -2559,7 +2504,6 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       </div>
 
       <div
-<<<<<<< HEAD
         className={`mt-1.5 flex-shrink-0 rounded-lg bg-green-50 p-2 ${
           fullView ? 'border-2 border-green-600' : 'border border-green-300'
         }`}
@@ -2569,53 +2513,6 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
           onChange={(e) => setUserDescription(e.target.value)}
           className="w-full resize-y rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
           rows={2}
-=======
-        className={`mt-2 flex-shrink-0 space-y-2 rounded-lg bg-green-50 p-3 ${
-          fullView ? 'border-2 border-green-600' : 'max-h-[220px] overflow-y-auto border border-green-300'
-        }`}
-      >
-        {fullView && (
-          <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-            ℹ️ Scroll to view all repetitions. Each can have unique speed, time, and pause values.
-          </div>
-        )}
-        <label className="mb-1 block text-sm font-bold text-gray-700">Descriptions & Instructions</label>
-        {summaryStats ? (
-          fullView ? (
-            <div className="flex flex-nowrap items-center gap-x-3 gap-y-1 overflow-x-auto whitespace-nowrap rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-xs font-medium text-gray-800">
-              <span className="shrink-0 font-bold text-green-800">Summary</span>
-              <span className="text-gray-400">|</span>
-              <span className="shrink-0">No. sectors {summaryStats.sectorCount}</span>
-              <span className="text-gray-400">|</span>
-              <span className="shrink-0">Total series {summaryStats.totalSeries}</span>
-              <span className="text-gray-400">|</span>
-              <span className="shrink-0">Avg series/sector {summaryStats.avgSeriesPerSector}</span>
-              <span className="text-gray-400">|</span>
-              <span className="shrink-0">Total exercises {summaryStats.totalExercises}</span>
-              <span className="text-gray-400">|</span>
-              <span className="shrink-0">Avg ex./sector {summaryStats.avgExercisesPerSector}</span>
-              <span className="text-gray-400">|</span>
-              <span className="shrink-0">Total reps {summaryStats.totalReps}</span>
-              <span className="text-gray-400">|</span>
-              <span className="shrink-0">Kg tot. {summaryStats.kgTot}</span>
-              <span className="text-gray-400">|</span>
-              <span className="shrink-0">Avg pause {summaryStats.avgPause}</span>
-            </div>
-          ) : (
-            <pre
-              className="mb-2 max-h-24 w-full overflow-y-auto whitespace-pre-wrap rounded border border-gray-300 bg-gray-100 px-3 py-2 font-sans text-xs text-gray-700"
-              aria-readonly
-            >
-              {summaryText}
-            </pre>
-          )
-        ) : null}
-        <textarea
-          value={userDescription}
-          onChange={(e) => setUserDescription(e.target.value)}
-          className="w-full resize-none rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-          rows={fullView ? 3 : 2}
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           placeholder="Add descriptions or instructions here..."
           aria-label="Descriptions and instructions"
         />

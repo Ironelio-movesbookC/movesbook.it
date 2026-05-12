@@ -30,6 +30,7 @@ type Props = {
   onSave: (ids: string[]) => void;
 };
 
+/** “Machines usually used” — wireframe: violet header, Reset, page chips, checklist + preview. See `src/constants/exerciseEditorLayoutReference.ts`. */
 export default function ExerciseMachinesUsuallyUsedModal({
   open,
   initialSelectedIds,

@@ -36,6 +36,8 @@ import {
   SECTION_EXERCISE_TYPOLOGY_OPTIONS,
 } from '@/constants/sectionExercise.constants';
 
+// UX wireframes (layout reference): `src/constants/exerciseEditorLayoutReference.ts` — PNGs in `public/design/exercise-editor/`.
+
 const VIDEO_INLINE_MAX_BYTES = 8 * 1024 * 1024;
 
 /** Matches sticky top pills + lower tabs so the bar reflects the section you jumped to. */
@@ -114,6 +116,11 @@ type Props = {
   title?: string;
 };
 
+/**
+ * Add / edit exercise — main shell for Section Exercise (Label 1 + official media + lower tabs).
+ * Layout targets the product wireframes: two-column basics, sticky nav mirroring tabs, red primary Save.
+ * Checklist and wireframe asset filenames: `src/constants/exerciseEditorLayoutReference.ts` (PNG mockups in `public/design/exercise-editor/`).
+ */
 export default function SectionExerciseDialog({
   exercise: e,
   onChange,
@@ -466,7 +473,7 @@ export default function SectionExerciseDialog({
     'rounded-full border border-blue-600 bg-blue-600 px-3 py-1 text-xs font-semibold text-white shadow-sm';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
       <div className="my-8 w-full max-w-5xl rounded-2xl bg-white p-6 shadow-xl max-h-[min(92vh,900px)] flex flex-col">
         <div className="flex-shrink-0 mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-4">
           <h3 className="text-2xl font-bold text-gray-900">{title ?? ui('SectionExercise_DialogTitleDefault')}</h3>
@@ -1306,14 +1313,14 @@ export default function SectionExerciseDialog({
           <button
             type="button"
             onClick={onSave}
-            className="flex-1 min-w-[8rem] rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700"
+            className="flex-1 min-w-[8rem] rounded-lg bg-red-600 px-6 py-3 font-semibold text-white shadow-sm hover:bg-red-700"
           >
             {e.id ? ui('SectionExercise_BtnSave') : ui('SectionExercise_BtnAdd')}
           </button>
           <button
             type="button"
             onClick={onCancel}
-            className="flex-1 min-w-[8rem] rounded-lg bg-gray-200 px-6 py-3 font-semibold text-gray-800 hover:bg-gray-300"
+            className="flex-1 min-w-[8rem] rounded-lg bg-slate-800 px-6 py-3 font-semibold text-white hover:bg-slate-900"
           >
             {ui('SectionExercise_BtnCancel')}
           </button>

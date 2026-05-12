@@ -1,12 +1,8 @@
 'use client';
 
-<<<<<<< HEAD
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-=======
-import React, { useState, useCallback, useEffect } from 'react';
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 import Image from 'next/image';
-import { X, Settings, RefreshCw, CheckCircle, Clock, ChevronUp, ChevronDown } from 'lucide-react';
+import { X, Settings, RefreshCw, CheckCircle, Clock, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 import type { PlanGymWeekManualResult, ManualDaySector, ManualDayPlan } from './PlanGymWeekManualModal';
 import {
   ensureManualSectorShape,
@@ -21,15 +17,12 @@ import {
   type SeriesLevelCategory,
 } from '@/utils/seriesDistribution';
 import { GYM_WEEK_MUSCLE_GROUPS, type GymWeekMuscleGroup } from '@/constants/gymWeekMuscleGroups';
-<<<<<<< HEAD
 import {
   readGoalParamsFromWorkoutSettings,
   computePlanGymWeekScalarDefaults,
 } from '@/utils/planGymWeekGoalScalars';
 import { GYM_WEEK_CATALOG_EXERCISES, pickRandomCatalogExerciseNamesForMuscleGroup } from '@/data/gymWeekExerciseCatalog';
 import { useFreeMoveExercises } from '@/hooks/useFreeMoveExercises';
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 const GYM_PLAN_STORAGE_KEY = 'gym_weekly_plan_saved_v1';
@@ -86,6 +79,27 @@ function pauseToSec(p: string): number {
   if (m) return parseInt(m[1]) * 60 + parseInt(m[2]);
   const s = parseFloat(p);
   return isNaN(s) ? 90 : s;
+}
+
+type FastPlanSectionTab = 'execution' | 'intensity' | 'break';
+type FastPlanToneCol = 'speed' | 'series' | 'rips' | 'weight' | 'brk' | 'mode';
+
+/** Subtle column emphasis matching Execution / Intensity / Break tab hints. */
+function toneCell(tab: FastPlanSectionTab, col: FastPlanToneCol): string {
+  const muted = ' opacity-40';
+  const hot = ' bg-amber-50 ring-1 ring-inset ring-amber-100';
+  if (tab === 'execution') {
+    if (col === 'brk') return muted;
+    if (col === 'series' || col === 'speed' || col === 'rips' || col === 'weight' || col === 'mode') return hot;
+    return '';
+  }
+  if (tab === 'intensity') {
+    if (col === 'weight' || col === 'speed' || col === 'mode') return hot;
+    if (col === 'brk') return muted;
+    return muted;
+  }
+  if (col === 'brk') return hot;
+  return muted;
 }
 
 function initPlanDay(day: ManualDayPlan, levelCat: SeriesLevelCategory = 'mid'): PlanDay {
@@ -186,7 +200,6 @@ export default function PlanGymWeekFastPlanModal({
   const [fullPage,          setFullPage]           = useState(false);
   const [showAutoWarn,      setShowAutoWarn]      = useState(false);
   const [openShuffleMenuFor, setOpenShuffleMenuFor] = useState<string | null>(null);
-<<<<<<< HEAD
   /** Summary metrics, muscle chips, toolbar, Execution tabs, muscle picker & table header row */
   const [planDetailsExpanded, setPlanDetailsExpanded] = useState(true);
   /** Mirrors legacy UI: naming rows vs distribution-led series display */
@@ -213,18 +226,12 @@ export default function PlanGymWeekFastPlanModal({
       setFastPlanExercisePick(null);
       prevFastPlanModeRef.current = 'plan-series';
     }
-=======
-
-  useEffect(() => {
-    if (isOpen) setFullPage(false);
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) setOpenShuffleMenuFor(null);
   }, [isOpen]);
 
-<<<<<<< HEAD
   useEffect(() => {
     setFastPlanToolbarNotice(null);
     setFastPlanExercisePick(null);
@@ -257,8 +264,6 @@ export default function PlanGymWeekFastPlanModal({
     return () => window.clearTimeout(id);
   }, [fastPlanToolbarNotice]);
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   // ── Updaters ───────────────────────────────────────────────────────────────
   const updateExercise = useCallback((secIdx: number, exIdx: number, field: keyof PlanExercise, value: string) => {
     setPlanDays(prev => prev.map((d, di) => {
@@ -427,6 +432,14 @@ export default function PlanGymWeekFastPlanModal({
     }));
   }, [activeDayIdx]);
 
+  const removeSectorAt = useCallback((secIdx: number) => {
+    setPlanDays(prev => prev.map((d, di) => {
+      if (di !== activeDayIdx) return d;
+      if (d.sectors.length <= 1) return d;
+      return { ...d, sectors: d.sectors.filter((_, si) => si !== secIdx) };
+    }));
+  }, [activeDayIdx]);
+
   const updateMacro = useCallback((secIdx: number, field: 'macroExercise' | 'macroEndOfSector', val: string) => {
     setPlanDays(prev => prev.map((d, di) => {
       if (di !== activeDayIdx) return d;
@@ -591,19 +604,6 @@ export default function PlanGymWeekFastPlanModal({
     setSaved(true);
   };
 
-<<<<<<< HEAD
-  const handleBackToManual = () => {
-    const days = planDaysToManual(planDays).map((d) => ({
-      routineName: d.routineName,
-      sectors: d.sectors.map((s) => ensureManualSectorShape(s)),
-    }));
-    onBack?.({
-      daysCount: plan.daysCount,
-      days,
-      yearlyPeriodSettings: plan.yearlyPeriodSettings ?? null,
-    });
-  };
-
   const manualDaysForSeriesDist = useMemo(() => planDaysToManual(planDays), [planDays]);
 
   const fastPlanCatalogFiltered = useMemo(() => {
@@ -616,8 +616,6 @@ export default function PlanGymWeekFastPlanModal({
     return list;
   }, [fastPlanCatalogFilterId, fastPlanCatalogSearch]);
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   if (!isOpen) return null;
 
   const activeDay      = planDays[activeDayIdx];
@@ -641,7 +639,6 @@ export default function PlanGymWeekFastPlanModal({
   })();
   const breakAvgStr   = `${Math.floor(breakAvgSec / 60)}'${String(breakAvgSec % 60).padStart(2, '0')}"`;
 
-<<<<<<< HEAD
   const onMuscleStripAll = () => {
     setFilterSector(null);
     if (fastPlanMode === 'select-exercises') setFastPlanCatalogFilterId('all');
@@ -678,8 +675,6 @@ export default function PlanGymWeekFastPlanModal({
         ? 'Intensity — Focus on load (weight), speed and effort mode.'
         : 'Break — Edit rests in the Break column; macros under each sector set pauses after exercises or the whole area.';
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   // ── Success screen ────────────────────────────────────────────────────────
   if (saved) {
     return (
@@ -756,7 +751,6 @@ export default function PlanGymWeekFastPlanModal({
     </div>
   );
 
-<<<<<<< HEAD
   type SectorSortableBag = {
     setSortableRef: (el: HTMLElement | null) => void;
     style:          React.CSSProperties;
@@ -776,7 +770,7 @@ export default function PlanGymWeekFastPlanModal({
         >
           <button
             type="button"
-            onClick={() => requestRemoveSector(secIdx)}
+            onClick={() => removeSectorAt(secIdx)}
             className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 hover:bg-red-50"
             title="Remove this muscular area"
           >
@@ -1009,7 +1003,7 @@ export default function PlanGymWeekFastPlanModal({
               <div className="flex items-center justify-center gap-1.5 px-1 py-2">
                 <button
                   type="button"
-                  onClick={() => requestRemoveExercise(secIdx, exIdx)}
+                  onClick={() => removeExerciseAt(secIdx, exIdx)}
                   disabled={sec.exercises.length <= 1}
                   className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-35"
                   title="Remove exercise"
@@ -1031,8 +1025,6 @@ export default function PlanGymWeekFastPlanModal({
     );
   };
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   const fullPlanScrollBody = (
     <>
       <div className="mx-3 mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 rounded border border-gray-300 bg-white px-4 py-2 text-sm">
@@ -1268,7 +1260,6 @@ export default function PlanGymWeekFastPlanModal({
                 </div>
               </div>
 
-<<<<<<< HEAD
           {fastPlanMode === 'select-exercises' ? (
             <div className="mx-3 mt-2 rounded-lg border border-yellow-200 bg-yellow-50/95 px-2 py-2 text-black shadow-inner">
               <div className="mb-2 flex flex-wrap items-end gap-2">
@@ -1396,76 +1387,129 @@ export default function PlanGymWeekFastPlanModal({
                 : 'Use the catalog above (same layout as the moveframe fast planner): tap a muscle to filter cards, focus a table row (# or Exercise), then tap a card or pick from your library. You can still type names and edit series per row.'}
             </p>
           </div>
-          </div>
-=======
-              {sec.exercises.map((ex, exIdx) => {
-                const seriesCount = ex.distributedSeries ?? seriesDist[exIdx] ?? 1;
-                return (
-                  <div key={ex.id}
-                    className={`grid grid-cols-[40px_1fr_88px_64px_72px_76px_76px_88px_56px] border-b border-gray-200 text-xs ${
-                      exIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-                    }`}>
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
-
-                    <div className="flex items-center justify-center border-r border-gray-200 px-2 py-2 font-medium text-gray-500">
-                      {exIdx + 1}
-                    </div>
-                    <div className="flex items-center border-r border-gray-200 px-2 py-2">
-                      <input type="text" value={ex.name}
-                        onChange={e => updateExercise(secIdx, exIdx, 'name', e.target.value)}
-                        placeholder={`${sec.sectorLabel} Exercise ${exIdx + 1}`}
-                        className="w-full bg-transparent text-gray-600 outline-none placeholder:italic placeholder:text-gray-400" />
-                    </div>
-                    <div className="flex items-center justify-center border-r border-gray-200 px-1 py-2">
-                      <select value={ex.speed}
-                        onChange={e => updateExercise(secIdx, exIdx, 'speed', e.target.value)}
-                        className="w-full cursor-pointer bg-transparent text-center text-xs text-gray-800 outline-none">
-                        {SPEED_OPTIONS.map(o => <option key={o}>{o}</option>)}
-                      </select>
-                    </div>
-                    <div className="flex items-center justify-center border-r border-gray-200 px-2 py-2 font-semibold tabular-nums text-gray-900">
-                      {seriesCount}
-                    </div>
-                    <div className="flex items-center justify-center border-r border-gray-200 px-1 py-2">
-                      <input type="text" value={ex.ripsTime}
-                        onChange={e => updateExercise(secIdx, exIdx, 'ripsTime', e.target.value)}
-                        className="w-full bg-transparent text-center text-gray-800 outline-none" />
-                    </div>
-                    <div className="flex items-center justify-center border-r border-gray-200 px-1 py-2">
-                      <input type="text" value={ex.weight}
-                        onChange={e => updateExercise(secIdx, exIdx, 'weight', e.target.value)}
-                        placeholder="—"
-                        className="w-full bg-transparent text-center text-gray-500 outline-none placeholder:text-gray-400" />
-                    </div>
-                    <div className="flex items-center justify-center border-r border-gray-200 px-1 py-2">
-                      <input type="text" value={ex.breakTime}
-                        onChange={e => updateExercise(secIdx, exIdx, 'breakTime', e.target.value)}
-                        className="w-full bg-transparent text-center text-gray-800 outline-none" />
-                    </div>
-                    <div className="flex items-center justify-center border-r border-gray-200 px-1 py-2">
-                      <select value={ex.mode}
-                        onChange={e => updateExercise(secIdx, exIdx, 'mode', e.target.value)}
-                        className="w-full cursor-pointer bg-transparent text-center text-xs text-gray-800 outline-none">
-                        {MODE_OPTIONS.map(o => <option key={o}>{o}</option>)}
-                      </select>
-                    </div>
-                    <div className="flex items-center justify-center gap-1.5 px-1 py-2">
-                      <button type="button"
-                        onClick={() => removeExerciseAt(secIdx, exIdx)}
-                        disabled={sec.exercises.length <= 1}
-                        className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-35"
-                        title="Remove exercise">
-                        <X className="h-3.5 w-3.5 text-gray-600" />
-                      </button>
-                      <button type="button"
-                        className="flex h-6 w-6 items-center justify-center rounded-full border border-orange-300 bg-orange-50 hover:bg-orange-100"
-                        title="Time options (coming soon)">
-                        <Clock className="h-3.5 w-3.5 text-orange-500" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+        {sec.exercises.map((ex, exIdx) => {
+          const seriesCount = ex.distributedSeries ?? seriesDist[exIdx] ?? 1;
+          const rowPicked =
+            fastPlanMode === 'select-exercises' &&
+            fastPlanExercisePick?.secIdx === secIdx &&
+            fastPlanExercisePick?.exIdx === exIdx;
+          return (
+            <div
+              key={ex.id}
+              className={`grid grid-cols-[40px_1fr_88px_64px_72px_76px_76px_88px_56px] border-b border-gray-200 text-xs ${
+                exIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+              }${rowPicked ? ' ring-2 ring-inset ring-blue-400' : ''}`}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (fastPlanMode === 'select-exercises') setFastPlanExercisePick({ secIdx, exIdx });
+                }}
+                className={`flex items-center justify-center border-r border-gray-200 px-2 py-2 font-medium tabular-nums ${
+                  fastPlanMode === 'select-exercises'
+                    ? 'cursor-pointer text-blue-700 hover:bg-blue-50/80'
+                    : 'cursor-default text-gray-500'
+                }`}
+              >
+                {exIdx + 1}
+              </button>
+              <div className="flex items-center border-r border-gray-200 px-2 py-2">
+                <input
+                  type="text"
+                  value={ex.name}
+                  onChange={e => updateExercise(secIdx, exIdx, 'name', e.target.value)}
+                  onFocus={() => {
+                    if (fastPlanMode === 'select-exercises') setFastPlanExercisePick({ secIdx, exIdx });
+                  }}
+                  placeholder={`${sec.sectorLabel} Exercise ${exIdx + 1}`}
+                  className="w-full bg-transparent text-gray-600 outline-none placeholder:italic placeholder:text-gray-400"
+                />
+              </div>
+              <div className={`flex items-center justify-center border-r border-gray-200 px-1 py-2${toneCell(sectionTab, 'speed')}`}>
+                <select
+                  value={ex.speed}
+                  onChange={e => updateExercise(secIdx, exIdx, 'speed', e.target.value)}
+                  className="w-full cursor-pointer bg-transparent text-center text-xs text-gray-800 outline-none"
+                >
+                  {SPEED_OPTIONS.map(o => (
+                    <option key={o}>{o}</option>
+                  ))}
+                </select>
+              </div>
+              <div className={`flex items-center justify-center border-r border-gray-200 px-1 py-2 font-semibold tabular-nums text-gray-900${toneCell(sectionTab, 'series')}`}>
+                {fastPlanMode === 'select-exercises' ? (
+                  <input
+                    type="number"
+                    min={1}
+                    max={40}
+                    value={seriesCount}
+                    onChange={e => {
+                      const v = parseInt(e.target.value, 10);
+                      if (!Number.isNaN(v)) updateExerciseDistributedSeries(secIdx, exIdx, v);
+                    }}
+                    className="w-full min-w-0 bg-transparent text-center text-xs font-semibold tabular-nums text-gray-900 outline-none"
+                  />
+                ) : (
+                  <span>{seriesCount}</span>
+                )}
+              </div>
+              <div className={`flex items-center justify-center border-r border-gray-200 px-1 py-2${toneCell(sectionTab, 'rips')}`}>
+                <input
+                  type="text"
+                  value={ex.ripsTime}
+                  onChange={e => updateExercise(secIdx, exIdx, 'ripsTime', e.target.value)}
+                  className="w-full bg-transparent text-center text-gray-800 outline-none"
+                />
+              </div>
+              <div className={`flex items-center justify-center border-r border-gray-200 px-1 py-2${toneCell(sectionTab, 'weight')}`}>
+                <input
+                  type="text"
+                  value={ex.weight}
+                  onChange={e => updateExercise(secIdx, exIdx, 'weight', e.target.value)}
+                  placeholder="—"
+                  className="w-full bg-transparent text-center text-gray-500 outline-none placeholder:text-gray-400"
+                />
+              </div>
+              <div className={`flex items-center justify-center border-r border-gray-200 px-1 py-2${toneCell(sectionTab, 'brk')}`}>
+                <input
+                  type="text"
+                  value={ex.breakTime}
+                  onChange={e => updateExercise(secIdx, exIdx, 'breakTime', e.target.value)}
+                  className="w-full bg-transparent text-center text-gray-800 outline-none"
+                />
+              </div>
+              <div className={`flex items-center justify-center border-r border-gray-200 px-1 py-2${toneCell(sectionTab, 'mode')}`}>
+                <select
+                  value={ex.mode}
+                  onChange={e => updateExercise(secIdx, exIdx, 'mode', e.target.value)}
+                  className="w-full cursor-pointer bg-transparent text-center text-xs text-gray-800 outline-none"
+                >
+                  {MODE_OPTIONS.map(o => (
+                    <option key={o}>{o}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center justify-center gap-1.5 px-1 py-2">
+                <button
+                  type="button"
+                  onClick={() => removeExerciseAt(secIdx, exIdx)}
+                  disabled={sec.exercises.length <= 1}
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-35"
+                  title="Remove exercise"
+                >
+                  <X className="h-3.5 w-3.5 text-gray-600" />
+                </button>
+                <button
+                  type="button"
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-orange-300 bg-orange-50 hover:bg-orange-100"
+                  title="Time options (coming soon)"
+                >
+                  <Clock className="h-3.5 w-3.5 text-orange-500" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
             </React.Fragment>
           );
         })}

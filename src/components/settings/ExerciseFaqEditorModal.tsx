@@ -40,6 +40,7 @@ type Props = {
   onCancel: () => void;
 };
 
+/** FAQs editor — Question uses per-language short fields; Answers use long RTE per locale (wireframe label 7). See `src/constants/exerciseEditorLayoutReference.ts`. */
 export default function ExerciseFaqEditorModal({ open, mode, initialFaq, onSave, onCancel }: Props) {
   const [draft, setDraft] = useState<ExerciseFaqEntry>(() => cloneFaq(initialFaq));
   const [questionLocalesOpen, setQuestionLocalesOpen] = useState(false);

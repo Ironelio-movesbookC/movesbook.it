@@ -1,16 +1,10 @@
 'use client';
 
-<<<<<<< HEAD
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Star, Plus, Edit2, Trash2, Calendar, Dumbbell, Target, Clock, Search, Copy, Eye, Download, Globe, Layers } from 'lucide-react';
-import { SPORTS_LIST, getSportDisplayName } from '@/constants/moveframe.constants';
-=======
-import { useState, useEffect, useRef } from 'react';
-import { Star, Plus, Edit2, Trash2, Calendar, Dumbbell, Target, Clock, Search, Filter, Copy, Eye, Download, Globe } from 'lucide-react';
+import { Star, Plus, Edit2, Trash2, Calendar, Dumbbell, Target, Clock, Search, Filter, Copy, Eye, Download, Globe, Layers } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { SPORTS_LIST } from '@/constants/moveframe.constants';
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
+import { SPORTS_LIST, getSportDisplayName } from '@/constants/moveframe.constants';
 import { getSportIcon } from '@/utils/sportIcons';
 import { useSportIconType } from '@/hooks/useSportIconType';
 import Image from 'next/image';
@@ -19,6 +13,14 @@ import WorkoutOverviewModal from '@/components/workouts/WorkoutOverviewModal';
 import UseInPlannerModal from '@/components/workouts/UseInPlannerModal';
 import type { PeriodizationTemplate } from '@/constants/tools.constants';
 import { normalizePeriodizationTemplates } from '@/constants/tools.constants';
+
+function pickSportLang(byLang: Record<string, string> | undefined, code: string): string {
+  if (!byLang || typeof byLang !== 'object') return '';
+  const v = byLang[code];
+  if (typeof v === 'string' && v.trim()) return v.trim();
+  const en = byLang.en;
+  return typeof en === 'string' ? en.trim() : '';
+}
 
 interface WeeklyPlan {
   id: string;
@@ -59,9 +61,12 @@ interface Moveframe {
 }
 
 export default function FavouritesSettings() {
+  const router = useRouter();
   const { t, currentLanguage } = useLanguage();
   const iconType = useSportIconType();
-  const [activeTab, setActiveTab] = useState<'plans' | 'workouts' | 'moveframes' | 'sports'>('sports');
+  const [activeTab, setActiveTab] = useState<
+    'plans' | 'workouts' | 'moveframes' | 'sports' | 'periodizations'
+  >('sports');
   
   // Favorite Sports State
   const [selectedSports, setSelectedSports] = useState<string[]>([]);
@@ -151,7 +156,43 @@ export default function FavouritesSettings() {
       return false;
     }
   }, []);
-  
+
+  const persistSportTranslationsServer = useCallback(
+    async (next: Record<string, Record<string, string>>) => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      try {
+        const cur = await fetch('/api/user/settings', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!cur.ok) return;
+        const body = await cur.json();
+        const prev =
+          body.favouritesSettings &&
+          typeof body.favouritesSettings === 'object' &&
+          !Array.isArray(body.favouritesSettings)
+            ? body.favouritesSettings
+            : {};
+        await fetch('/api/user/settings', {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            favouritesSettings: {
+              ...(prev as Record<string, unknown>),
+              sportTranslations: next,
+            },
+          }),
+        });
+      } catch {
+        /* ignore network errors — localStorage already holds a copy */
+      }
+    },
+    [],
+  );
+
   // Filter & Search State
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTag, setFilterTag] = useState('all');
@@ -965,7 +1006,7 @@ export default function FavouritesSettings() {
             ))}
           </select>
         </div>
-      )}
+      </div>
 
       {/* Action Bar */}
       <div className="flex justify-between items-center">
@@ -1051,6 +1092,9 @@ export default function FavouritesSettings() {
               className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="name">Name</option>
+              <option value="lastUsed">
+                {activeTab === 'periodizations' ? 'Recently added' : 'Recently Used'}
+              </option>
               {activeTab === 'moveframes' && <option value="popular">Most Popular</option>}
             </select>
           </div>

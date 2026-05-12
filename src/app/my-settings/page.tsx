@@ -10,37 +10,10 @@ import MyBestSettings from '@/components/settings/MyBestSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
 
 type SettingsSection = 'backgrounds' | 'tools' | 'favourites' | 'mybest' | 'grid';
-<<<<<<< HEAD
-
-const VALID_MY_SETTINGS_SECTIONS: SettingsSection[] = [
-  'grid',
-  'backgrounds',
-  'tools',
-  'favourites',
-  'mybest',
-];
-
-export default function PersonalSettingsPage() {
-  const router = useRouter();
-  const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
-    if (typeof window === 'undefined') return 'backgrounds';
-    const raw = localStorage.getItem('my_settings_active_section');
-    if (raw === 'periodization') {
-      localStorage.setItem('my_settings_active_section', 'tools');
-      localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
-      return 'tools';
-    }
-    const saved = raw as SettingsSection | null;
-    return saved && VALID_MY_SETTINGS_SECTIONS.includes(saved) ? saved : 'backgrounds';
-  });
-  /** Mirrors /settings: staff/super-admin users have userType ADMIN and get full Tools controls. */
-  const [sessionUser, setSessionUser] = useState<{ userType?: string } | null>(null);
-=======
 
 export default function PersonalSettingsPage() {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<SettingsSection>('backgrounds');
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   const [loading, setLoading] = useState(false);
   const [userSettings, setUserSettings] = useState<any>(null);
   const [userLanguage, setUserLanguage] = useState('en');
@@ -263,17 +236,7 @@ export default function PersonalSettingsPage() {
             {/* Settings Content */}
             <div className="flex-1 p-8 bg-white overflow-y-auto" style={{ maxHeight: 'calc(100vh - 280px)' }}>
               {activeSection === 'backgrounds' && <BackgroundsColorsSettings />}
-<<<<<<< HEAD
-              {activeSection === 'tools' && (
-                <ToolsSettings
-                  isAdmin={toolsIsAdmin}
-                  userType={sessionUser?.userType ?? 'ATHLETE'}
-                  mode="tools"
-                />
-              )}
-=======
               {activeSection === 'tools' && <ToolsSettings isAdmin={false} userType="ATHLETE" />}
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
               {activeSection === 'favourites' && <FavouritesSettings />}
               {activeSection === 'mybest' && <MyBestSettings />}
               {activeSection === 'grid' && <GridDisplaySettings />}

@@ -589,7 +589,6 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                     )}
                   </td>
 
-<<<<<<< HEAD
                   <td
                     className="border border-gray-300 px-2 py-1 text-center align-middle bg-slate-50"
                     title="Horizontal mode: set Pause between series and after each station in the full-width blue and green rows directly below — not in this column."
@@ -597,39 +596,6 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                     <span className="text-[11px] font-semibold leading-tight text-blue-700">
                       ↓ look down here
                     </span>
-=======
-                  <td className="border border-gray-300 px-2 py-1">
-                    {seriesIdx < seriesCountToRender - 1 ? (
-                      <div
-                        className="flex min-h-[38px] items-center justify-center rounded border border-gray-200 bg-blue-50/60 px-2 text-sm font-medium text-blue-900"
-                        title="Pause between series at this station (Pause\\series)"
-                      >
-                        {formatPauseSeconds(
-                          SERIES_PAUSE_OPTIONS,
-                          circuit.seriesPauses?.[seriesIdx] ??
-                            circuit.pauseBetweenSeries ??
-                            pauseSeries
-                        )}
-                      </div>
-                    ) : seriesIdx === seriesCountToRender - 1 && !isLastStationCol ? (
-                      <div
-                        className="flex min-h-[38px] items-center justify-center rounded border border-gray-200 bg-gray-100 px-2 text-sm font-medium text-gray-700"
-                        title="After all series here — rest before next station (Horizontal Series)"
-                      >
-                        {formatPauseSeconds(
-                          STATION_PAUSE_OPTIONS,
-                          station.pause ?? pauseHorizontalSeries
-                        )}
-                      </div>
-                    ) : (
-                      <div
-                        className="flex min-h-[38px] items-center justify-center px-2 text-xs text-center font-semibold text-blue-600"
-                        title="End of station column — see Between Circuits or workout end"
-                      >
-                        ↓ look down here
-                      </div>
-                    )}
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                   </td>
 
                   <td className="border border-gray-300 px-2 py-1">
@@ -674,13 +640,8 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                             setCopyClickTimer(timer);
                           }
                         }}
-<<<<<<< HEAD
                         className="p-1.5 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-40"
                         title="Single click: copy Rip & Pause to the next serie (same station). Double click: copy to all following series for this station."
-=======
-                        className="p-1.5 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
-                        title="Copy Rip & Pause"
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                       >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"

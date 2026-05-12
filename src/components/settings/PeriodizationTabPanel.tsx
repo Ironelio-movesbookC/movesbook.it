@@ -2,14 +2,9 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-<<<<<<< HEAD
-import { ChevronDown, ChevronUp, FileText, GripVertical, Loader2, Paperclip, X, Search, Download } from 'lucide-react';
+import { ChevronDown, Download, FileText, GripVertical, Loader2, Paperclip, Search, X } from 'lucide-react';
 import type { Period, PeriodizationTemplate } from '@/constants/tools.constants';
 import { normalizePeriodizationTemplates } from '@/constants/tools.constants';
-=======
-import { ChevronDown, FileText, GripVertical, Loader2, Paperclip, X } from 'lucide-react';
-import type { Period } from '@/constants/tools.constants';
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 import {
   MAX_PERIOD_ATTACHMENTS,
   type PeriodizationAttachmentMeta
@@ -264,6 +259,7 @@ export default function PeriodizationTabPanel({
   const [archiveItems, setArchiveItems] = useState<PeriodizationTemplate[]>([]);
   const [archiveSearch, setArchiveSearch] = useState('');
   const [archiveFetchNote, setArchiveFetchNote] = useState<string | null>(null);
+  const [periodNotesModalId, setPeriodNotesModalId] = useState<string | null>(null);
 
   const includeDates = planMode === 'yearly';
 
@@ -705,7 +701,7 @@ export default function PeriodizationTabPanel({
     const q = archiveSearch.trim().toLowerCase();
     if (!q) return archiveItems;
     return archiveItems.filter(
-      (tpl) =>
+      (tpl: PeriodizationTemplate) =>
         tpl.name.toLowerCase().includes(q) ||
         tpl.sport.toLowerCase().includes(q) ||
         tpl.level.toLowerCase().includes(q) ||
@@ -1090,7 +1086,6 @@ export default function PeriodizationTabPanel({
           {saveBusy ? 'Saving…' : 'Save'}
         </button>
       </div>
-<<<<<<< HEAD
 
       {periodNotesModalId && (
         <div
@@ -1137,10 +1132,8 @@ export default function PeriodizationTabPanel({
           </div>
         </div>
       )}
-    </>
+        </>
       )}
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
     </div>
   );
 }

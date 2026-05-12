@@ -16,12 +16,7 @@ import {
   parseJsonRecord,
   parseStringArrayJson,
 } from '@/lib/sportMachineHelpers';
-<<<<<<< HEAD
-import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
-import { MUSCULAR_SECTORS } from '@/constants/moveframe.constants';
-import { getAuthHeaders, getAuthToken } from '@/utils/auth.utils';
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
+import { getAuthToken, getAuthHeaders, getJsonAuthHeaders } from '@/utils/auth.utils';
 
 type CompanyOpt = { id: string; name: string; country: string | null; logoUrl: string | null };
 
@@ -44,25 +39,11 @@ type MachineRow = {
 
 const LANG_CODES = ['en', 'it', 'de', 'fr', 'es'];
 
-<<<<<<< HEAD
-/** JSON requests: Bearer + Content-Type. FormData uploads: Bearer only (browser sets multipart boundary). */
-function jsonAuthHeaders(): HeadersInit {
-  const auth = getAuthHeaders();
-  return {
-    'Content-Type': 'application/json',
-    ...auth,
-  };
-}
-
-function bearerAuthHeaders(): HeadersInit {
-  return getAuthHeaders();
-=======
 function authHeaders(): HeadersInit {
   const token =
     typeof window !== 'undefined' ? localStorage.getItem('token') : null;
   if (!token) return {};
   return { Authorization: `Bearer ${token}` };
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 }
 
 export default function SportMachinesSection() {
@@ -99,32 +80,11 @@ export default function SportMachinesSection() {
   const [descByLang, setDescByLang] = useState<Record<string, string>>({});
 
   const loadCompanies = useCallback(async () => {
-<<<<<<< HEAD
-    try {
-      const res = await fetch('/api/workouts/machine-companies-catalog', {
-        headers: bearerAuthHeaders(),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setCompanies(data.companies || []);
-        setCatalogError('');
-      } else {
-        setCompanies([]);
-        setCatalogError(
-          typeof data.error === 'string' ? data.error : `Could not load companies (${res.status})`
-        );
-      }
-    } catch {
-      setCompanies([]);
-      setCatalogError('Could not load companies');
-    }
-=======
     const res = await fetch('/api/workouts/machine-companies-catalog', {
       headers: authHeaders(),
     });
     const data = await res.json();
     if (res.ok) setCompanies(data.companies || []);
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   }, []);
 
   const loadMachines = useCallback(async () => {
@@ -137,7 +97,7 @@ export default function SportMachinesSection() {
         filterCompany: appliedCompany,
       });
       const res = await fetch(`/api/workouts/sport-machines?${q}`, {
-        headers: bearerAuthHeaders(),
+        headers: getAuthHeaders(),
       });
       const data = await res.json();
       if (res.ok) setMachines(data.machines || []);
@@ -165,7 +125,7 @@ export default function SportMachinesSection() {
     fd.append('type', type);
     const res = await fetch('/api/workouts/sport-machines/upload', {
       method: 'POST',
-      headers: bearerAuthHeaders(),
+      headers: getAuthHeaders(),
       body: fd,
     });
     const data = await res.json();
@@ -250,7 +210,7 @@ export default function SportMachinesSection() {
       if (editingId) {
         const res = await fetch(`/api/workouts/sport-machines/${editingId}`, {
           method: 'PATCH',
-          headers: jsonAuthHeaders(),
+          headers: getJsonAuthHeaders(),
           body: JSON.stringify(body),
         });
         if (!res.ok) {
@@ -269,7 +229,7 @@ export default function SportMachinesSection() {
       } else {
         const res = await fetch('/api/workouts/sport-machines', {
           method: 'POST',
-          headers: jsonAuthHeaders(),
+          headers: getJsonAuthHeaders(),
           body: JSON.stringify(body),
         });
         if (!res.ok) {
@@ -297,7 +257,7 @@ export default function SportMachinesSection() {
     if (!confirm('Delete this machine?')) return;
     const res = await fetch(`/api/workouts/sport-machines/${id}`, {
       method: 'DELETE',
-      headers: bearerAuthHeaders(),
+      headers: getAuthHeaders(),
     });
     if (res.ok) {
       if (editingId === id) resetForm();
@@ -310,7 +270,7 @@ export default function SportMachinesSection() {
     if (!confirm(`Delete ${selected.size} machine(s)?`)) return;
     const res = await fetch('/api/workouts/sport-machines/bulk-delete', {
       method: 'POST',
-      headers: jsonAuthHeaders(),
+      headers: getJsonAuthHeaders(),
       body: JSON.stringify({ ids: Array.from(selected) }),
     });
     if (res.ok) {

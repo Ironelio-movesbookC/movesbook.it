@@ -15,7 +15,6 @@ export function circuitLoadOfWorkToMacroFinal(load: unknown): string | null {
   return MACRO_FINAL_OPTIONS[parseInt(s, 10)] ?? null;
 }
 
-<<<<<<< HEAD
 /** Inter-station pause in circuit planner grid and Add/Edit station modal (seconds). */
 export const CIRCUIT_STATION_PAUSE_OPTIONS: { label: string; value: number }[] = [
   { label: '0"', value: 0 },
@@ -63,6 +62,14 @@ export const CIRCUIT_SERIES_PAUSE_OPTIONS: { label: string; value: number }[] = 
   { label: "10'", value: 600 }
 ];
 
+/** Sports that use the official indoor / structured tools layout (extend when wiring sport configs). */
+export function isOfficialIndoorToolsLayoutSport(_sport: string): boolean {
+  return false;
+}
+
+/** Optional map of pause UI mode → whether pace fields apply (placeholder for sport-specific tools). */
+export const PAUSE_PACE_BY_MODE: Record<string, boolean> = {};
+
 /** Rest / pause between sets — fast planner toolbars, bulk Pause apply, Plan gym week manual tables */
 export const FAST_PLANNER_REST_PAUSE_OPTIONS: string[] = [
   '0"',
@@ -89,8 +96,6 @@ export const PLAN_GYM_WEEK_MACRO_MINUTE_LABELS: string[] = Array.from(
   (_, i) => `${i + 1}'`
 );
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 // Muscular sectors for BODY_BUILDING (WEIGHTS)
 export const MUSCULAR_SECTORS = [
   'Shoulders',

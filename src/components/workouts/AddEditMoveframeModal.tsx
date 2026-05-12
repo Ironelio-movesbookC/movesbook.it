@@ -2,11 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Star, ChevronsDown, ChevronUp } from 'lucide-react';
-<<<<<<< HEAD
 import { SPORTS_LIST, MACRO_FINAL_OPTIONS, MUSCULAR_SECTORS, getPaceLabel, shouldShowPaceField, getSportConfig, getPauseOptions, REST_TYPES, REPS_TYPES, hasRepsTypeSelection, getSportDisplayName, DISTANCE_BASED_SPORTS, sportNeedsExerciseName, AEROBIC_SPORTS, isCircuitFeatureSport, getSportFastPlanningCategory, showFastPlanningsForSport, circuitLoadOfWorkToMacroFinal, isOfficialIndoorToolsLayoutSport, PAUSE_PACE_BY_MODE, FAST_PLANNER_REST_PAUSE_OPTIONS, buildAerobicSportSelectRows, isAerobicSportSelectSeparatorValue } from '@/constants/moveframe.constants';
-=======
-import { SPORTS_LIST, MACRO_FINAL_OPTIONS, MUSCULAR_SECTORS, getPaceLabel, shouldShowPaceField, getSportConfig, getPauseOptions, REST_TYPES, REPS_TYPES, hasRepsTypeSelection, getSportDisplayName, DISTANCE_BASED_SPORTS, sportNeedsExerciseName, AEROBIC_SPORTS, isCircuitFeatureSport, getSportFastPlanningCategory, showFastPlanningsForSport, circuitLoadOfWorkToMacroFinal } from '@/constants/moveframe.constants';
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 import { useMoveframeForm } from '@/hooks/useMoveframeForm';
 import { formatPercentLoad1MR, type PyramidalMode } from '@/utils/pyramidalReps';
 import { getSportIcon } from '@/utils/sportIcons';
@@ -64,6 +60,9 @@ export default function AddEditMoveframeModal({
   
   // 2026-01-22 14:30 UTC - Battery submenu selection
   const [batterySubmenu, setBatterySubmenu] = React.useState<'circuits' | 'fast' | 'ai'>('circuits');
+  const [batteryFastPlannerVariant, setBatteryFastPlannerVariant] = React.useState<'aerobic' | 'anaerobic'>(
+    'anaerobic',
+  );
   
   // Debug: Log mode changes only
   React.useEffect(() => {
@@ -1054,145 +1053,28 @@ export default function AddEditMoveframeModal({
     effectiveType === 'BATTERY' &&
     batterySubmenu === 'fast' &&
     fpCategory === 'A';
-  /** Let the fast planner be the scroll container so muscle strip and table are not covered by the footer. */
-  const compactFastPlannerModalBody = isFastPlannerShown && !isFastPlannerFullViewActive;
-<<<<<<< HEAD
-  /** Category A/B fast planner: sport/type/section chrome is hidden — also hide mode bar and show grid first. */
-  const streamlinedBatteryFastPlanner =
-    hideTopChromeForBatteryPlannerForms &&
-    batterySubmenu === 'fast' &&
-    !showBatteryPlannerSetup;
+  const hideTopChromeForBatteryPlannerForms =
+    hideTopChromeForNotAerobicFast ||
+    hideTopChromeForAerobicFastEdit ||
+    (effectiveType === 'BATTERY' &&
+      batterySubmenu === 'fast' &&
+      fpCategory === 'A' &&
+      mode === 'add');
   const hideBatteryAerobicFastSectionPickers =
-    mode === 'add' &&
     effectiveType === 'BATTERY' &&
     batterySubmenu === 'fast' &&
-    batteryFastPlannerVariant === 'aerobic' &&
-    Boolean(sectionId) &&
-    !hideTopChromeForBatteryPlannerForms;
-
-  /** Edit mode: sport / type / planning-mode / workout-section row is fixed — hide so the planner grid uses the space. */
-  const hideMoveframeTopMetaInEdit = String(mode) === 'edit';
-
-  const renderBatteryFastPlannerGrids = () => (
-    <>
-      {effectiveType === 'BATTERY' && canUseCircuitPlanner && batterySubmenu === 'circuits' && (
-        <BatteryCircuitPlanner
-          sectionId={workout?.id || ''}
-          sport={sport}
-          workout={workout}
-          day={day}
-          existingMoveframe={existingMoveframe}
-          startInSecondView={!!editingFromMovelap || !!startInSecondView}
-          editingMovelapTarget={editingMovelapTarget}
-          targetMovelap={targetMovelap}
-          onCreateCircuit={async (circuitData) => {
-            console.log('✅ [AddEditMoveframeModal] Circuit data received:', circuitData);
-            console.log('✅ [AddEditMoveframeModal] Circuit description:', circuitData.description);
-            console.log('✅ [AddEditMoveframeModal] Description length:', circuitData.description?.length || 0);
-
-            const moveframeData = buildMoveframeData();
-
-            const serializedCircuitData = JSON.stringify({
-              config: circuitData.settings ?? circuitData.config,
-              circuits: circuitData.circuits
-            });
-            const notesWithCircuitData = `[CIRCUIT_DATA]${serializedCircuitData}[/CIRCUIT_DATA]`;
-
-            const circuitMacro =
-              circuitLoadOfWorkToMacroFinal(circuitData.config?.loadOfWork ?? circuitData.settings?.loadOfWork);
-            const lapCount = (circuitData.movelaps || []).length;
-            const finalData = {
-              ...moveframeData,
-              description: circuitData.description || '',
-              notes: notesWithCircuitData,
-              circuitConfig: circuitData.settings ?? circuitData.config,
-              circuits: circuitData.circuits,
-              rows: circuitData.rows,
-              movelaps: circuitData.movelaps || [],
-              isCircuitBased: true,
-              repetitions: lapCount > 0 ? lapCount : moveframeData.repetitions,
-              macroFinal: circuitMacro ?? moveframeData.macroFinal ?? "0'"
-            };
-
-            console.log('✅ [AddEditMoveframeModal] Final moveframe data:', finalData);
-            console.log('✅ [AddEditMoveframeModal] Final description:', finalData.description);
-            try {
-              await onSave(finalData);
-              onClose();
-            } catch (error) {
-              console.error('❌ [AddEditMoveframeModal] Circuit save failed:', error);
-              alert('Failed to save moveframe: ' + (error instanceof Error ? error.message : String(error)));
-            }
-          }}
-          onCancel={onClose}
-        />
-      )}
-
-      {effectiveType === 'BATTERY' &&
-        batterySubmenu === 'fast' &&
-        batteryFastPlannerVariant === 'anaerobic' && (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <FastPlannerOfMoveframes
-            ref={fastPlannerRef}
-            sport={sport}
-            sectionId={sectionId}
-            workout={workout}
-            day={day}
-            mode={mode}
-            existingMoveframe={existingMoveframe}
-            fullView={isFastPlannerFullViewActive}
-            onSave={async (moveframeData: any) => {
-              try {
-                await onSave(moveframeData);
-                onClose();
-              } catch (error) {
-                console.error('❌ [AddEditMoveframeModal] Fast Planner save failed:', error);
-                alert('Failed to save moveframe: ' + (error instanceof Error ? error.message : String(error)));
-              }
-            }}
-            onCancel={onClose}
-          />
-        </div>
-      )}
-
-      {effectiveType === 'BATTERY' && canUseAiMoveframePlan && batterySubmenu === 'ai' && (
-        <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-8 text-center">
-          <h3 className="mb-2 text-lg font-bold text-gray-700">Plan of Moveframes with AI</h3>
-          <p className="text-gray-600">Coming soon...</p>
-        </div>
-      )}
-
-      {effectiveType === 'BATTERY' && AEROBIC_SPORTS.includes(sport as any) && batterySubmenu === 'fast' && (
-        <div className="flex min-h-[500px] flex-1 flex-col">
-          <AerobicFastPlannerOfMoveframes
-            ref={fastPlannerRef}
-            sport={sport}
-            sectionId={sectionId}
-            workoutSections={workoutSections}
-            workout={workout}
-            day={day}
-            mode={mode}
-            existingMoveframe={existingMoveframe}
-            fullView={isFastPlannerFullViewActive}
-            onSave={async (moveframeData: any) => {
-              try {
-                await onSave(moveframeData);
-                onClose();
-              } catch (error) {
-                console.error('❌ [AddEditMoveframeModal] Aerobic Fast Planner save failed:', error);
-                alert('Failed to save moveframe: ' + (error instanceof Error ? error.message : String(error)));
-              }
-            }}
-            onCancel={onClose}
-          />
-        </div>
-      )}
-    </>
-  );
-
-=======
+    fpCategory === 'A' &&
+    batteryFastPlannerVariant === 'aerobic';
+  const hideMoveframeTopMetaInEdit =
+    mode === 'edit' && effectiveType === 'BATTERY' && batterySubmenu === 'fast';
+  const streamlinedBatteryFastPlanner =
+    effectiveType === 'BATTERY' &&
+    batterySubmenu === 'fast' &&
+    fpCategory === 'A' &&
+    batteryFastPlannerVariant === 'aerobic';
+  /** Let the fast planner be the scroll container so muscle strip and table are not covered by the footer. */
+  const compactFastPlannerModalBody = isFastPlannerShown && !isFastPlannerFullViewActive;
   
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   // For manual mode moveframes, force manual tab and disable other tabs
   // Only restrict tabs if editing an EXISTING manual moveframe (not when creating new one)
   const isEditingManualMoveframe = mode === 'edit' && existingMoveframe?.manualMode;
@@ -1464,11 +1346,7 @@ export default function AddEditMoveframeModal({
               )}
 
               {/* Favorite Sports Quick Selection - hidden when editing circuit moveframe */}
-<<<<<<< HEAD
-              {!hideTopChromeForBatteryPlannerForms && !isEditingCircuitMoveframe && !hideMoveframeTopMetaInEdit && loadingFavorites && (
-=======
               {!hideTopChromeForNotAerobicFast && !isEditingCircuitMoveframe && loadingFavorites && (
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                 <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-300">
                   <div className="text-xs text-gray-600 flex items-center gap-2">
                     <div className="animate-spin">⏳</div>
@@ -1477,11 +1355,7 @@ export default function AddEditMoveframeModal({
                 </div>
               )}
               
-<<<<<<< HEAD
-              {!hideTopChromeForBatteryPlannerForms && !isEditingCircuitMoveframe && !hideMoveframeTopMetaInEdit && !loadingFavorites && favoriteSports.length === 0 && (
-=======
               {!hideTopChromeForNotAerobicFast && !isEditingCircuitMoveframe && !loadingFavorites && favoriteSports.length === 0 && (
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                 <div className="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
                   <div className="text-xs text-blue-700">
                     💡 <strong>No favorite sports set.</strong> Go to Personal Settings → Favorite Sports to select up to 5 favorite sports for quick access!
@@ -1489,11 +1363,7 @@ export default function AddEditMoveframeModal({
                 </div>
               )}
               
-<<<<<<< HEAD
               {!hideTopChromeForBatteryPlannerForms && !isEditingCircuitMoveframe && !hideMoveframeTopMetaInEdit && !loadingFavorites && favoriteSports.length > 0 && (
-=======
-              {!hideTopChromeForNotAerobicFast && !isEditingCircuitMoveframe && !loadingFavorites && favoriteSports.length > 0 && (
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                 <div className={`mb-3 p-3 bg-gradient-to-r from-yellow-50 to-amber-50 rounded-lg border border-yellow-200 ${mode === 'edit' ? 'relative' : ''}`}>
                   {mode === 'edit' && (
                     <div 
@@ -1616,11 +1486,7 @@ export default function AddEditMoveframeModal({
           )}
 
           {/* Sport Selection - hidden when editing circuit moveframe (streamlined Part 1 view) */}
-<<<<<<< HEAD
           {!hideTopChromeForBatteryPlannerForms && !isEditingCircuitMoveframe && !hideMoveframeTopMetaInEdit && (
-=======
-          {!hideTopChromeForNotAerobicFast && !hideTopChromeForAerobicFastEdit && !isEditingCircuitMoveframe && (
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           <div className={`mb-3 ${mode === 'edit' ? 'relative' : ''}`}>
             {mode === 'edit' && (
               <div 
@@ -1776,11 +1642,7 @@ export default function AddEditMoveframeModal({
           )}
 
           {/* Type Selection */}
-<<<<<<< HEAD
           {!hideTopChromeForBatteryPlannerForms && !hideMoveframeTopMetaInEdit && (
-=======
-          {!hideTopChromeForNotAerobicFast && !hideTopChromeForAerobicFastEdit && (
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           <div className={`mb-3 ${mode === 'edit' ? 'relative' : ''}`}>
             {mode === 'edit' && (
               <div 
@@ -1909,7 +1771,6 @@ export default function AddEditMoveframeModal({
           </div>
           )}
 
-<<<<<<< HEAD
           {effectiveType === 'BATTERY' &&
             showFastPlanningsTypeButton &&
             !isFastPlannerFullViewActive &&
@@ -2006,12 +1867,6 @@ export default function AddEditMoveframeModal({
             !hideBatteryAerobicFastSectionPickers &&
             !hideMoveframeTopMetaInEdit && (
           <>
-=======
-
-          {/* Workout Section Selection - Only for STANDARD and BATTERY modes */}
-          {/* 2026-01-22 15:30 UTC - Reduced width to 50% and centered */}
-          {(effectiveType === 'STANDARD' || effectiveType === 'BATTERY') && !hideTopChromeForNotAerobicFast && !hideTopChromeForAerobicFastEdit && (
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           <div className="mb-3 w-1/2 mx-auto">
               {mode === 'edit' && (
                 <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
@@ -2087,6 +1942,7 @@ export default function AddEditMoveframeModal({
                 </p>
               )}
           </div>
+          </>
           )}
           
           {/* Annotation Section - Show when type is ANNOTATION, or optional for other types */}
@@ -5029,11 +4885,11 @@ export default function AddEditMoveframeModal({
                   {macroFinal && macroFinal !== "0'" && (
                     <div>• Macro Final: {macroFinal}</div>
                   )}
-                    </div>
+                </div>
+              )}
+            </div>
           )}
-                  </div>
-          )}
-                    </div>
+          </div>
           )}
 
           {/* Manual Mode Tab */}

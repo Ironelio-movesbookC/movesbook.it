@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { GripVertical, Trash2, Info } from 'lucide-react';
 import { SPORTS_LIST } from '@/constants/moveframe.constants';
 import { getSportIcon } from '@/utils/sportIcons';
+import { useFavoriteSports } from '@/hooks/useFavoriteSports';
 
 const PLAN_KEYS = ['A', 'B', 'C', 'D', 'E'] as const;
 type PlanKey = (typeof PLAN_KEYS)[number];
@@ -217,6 +218,9 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
   const [savingRemote, setSavingRemote] = useState(false);
   const [planMetaModalOpen, setPlanMetaModalOpen] = useState(false);
   const [planMetaDraft, setPlanMetaDraft] = useState({ name: '', color: '#f97316', periodId: '' });
+
+  const { favoriteSports } = useFavoriteSports();
+  const favoriteSportsSet = useMemo(() => new Set(favoriteSports), [favoriteSports]);
 
   useEffect(() => {
     const syncSportIconType = () => {
@@ -918,7 +922,6 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                   const globalIdx = planned.findIndex((p) => p.id === row.id);
                   const ord = sportOrdinalInList(row, globalIdx);
                   const isAssigned = assigned.has(row.id);
-<<<<<<< HEAD
                   const prevRow = displayIdx > 0 ? plannedRowsForTable[displayIdx - 1] : null;
                   const newSportGroup = prevRow != null && prevRow.sportKey !== row.sportKey;
                   let groupStart = displayIdx;
@@ -945,9 +948,6 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                     e.dataTransfer.effectAllowed = 'copyMove';
                   };
 
-=======
-                  const rowBg = displayIdx % 2 === 0 ? 'bg-[#f2f2f2]' : 'bg-white';
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                   return (
                     <React.Fragment key={row.id}>
                       <tr
@@ -956,7 +956,7 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                           e.dataTransfer.setData('application/ws-planned', row.id);
                           e.dataTransfer.effectAllowed = 'move';
                         }}
-                        className={`border-b border-gray-200 ${rowBg} hover:bg-emerald-50/40`}
+                        className={`border-b border-gray-200 ${rowBg} ${rowHover}`}
                       >
                         <td className="align-middle border-r border-gray-200 px-1 py-2">
                           <div className="flex flex-col items-center gap-1">
@@ -1275,7 +1275,6 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                 };
                 const handleSportDragOver = (e: React.DragEvent) => {
                   if (!avail) return;
-<<<<<<< HEAD
                   const types = Array.from(e.dataTransfer.types);
                   if (types.includes('Files')) return;
                   const fromSport = types.includes('application/ws-sport');
@@ -1284,22 +1283,14 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
                   if (!fromSport && !fromPlannedMime && !fromPlannedPlain) return;
                   e.preventDefault();
                   e.dataTransfer.dropEffect = fromSport ? 'copy' : 'move';
-=======
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'copy';
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                 };
                 const handleSportDrop = (e: React.DragEvent) => {
                   e.preventDefault();
                   if (!avail) return;
-<<<<<<< HEAD
                   const pidRaw =
                     e.dataTransfer.getData('application/ws-planned') ||
                     e.dataTransfer.getData('text/plain');
                   const pidDrag = pidRaw.trim();
-=======
-                  const pidDrag = e.dataTransfer.getData('application/ws-planned');
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                   const sportDrag = e.dataTransfer.getData('application/ws-sport');
                   if (pidDrag) onDropOnCell(d, sn, { type: 'planned', id: pidDrag });
                   else if (sportDrag) onDropOnCell(d, sn, { type: 'new', sport: sportDrag });

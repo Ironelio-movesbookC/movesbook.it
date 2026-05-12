@@ -5,7 +5,7 @@ import { GripVertical, Volume2, VolumeX, Bell, BellOff, MoreVertical } from 'luc
 import { DndContext, closestCenter, DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { MACRO_FINAL_OPTIONS, getSportConfig, REST_TYPES } from '@/constants/moveframe.constants';
+import { MACRO_FINAL_OPTIONS, getSportConfig, REST_TYPES, circuitLoadOfWorkToMacroFinal } from '@/constants/moveframe.constants';
 import { getExercisesBySector, getExerciseMedia, getMockExerciseThumbnail } from '@/data/mockExercises';
 import ExerciseGalleryModal from '@/components/workouts/ExerciseGalleryModal';
 import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
@@ -95,6 +95,22 @@ function parseMovelapPauseToSeconds(value: unknown): number {
   const secOnly = s.match(/^(\d+)\s*"?$/);
   if (secOnly) return Math.max(0, parseInt(secOnly[1], 10));
   return 0;
+}
+
+type CircuitTableLayoutHint = { letter: string; localSeries: number; station: number };
+
+function readCircuitLayoutFromMovelap(ml: any | null | undefined): CircuitTableLayoutHint | null {
+  if (!ml || typeof ml !== 'object') return null;
+  const letter =
+    typeof ml.circuitLetter === 'string' ? ml.circuitLetter.trim().toUpperCase() : '';
+  const localSeries =
+    typeof ml.localSeriesNumber === 'number' && Number.isFinite(ml.localSeriesNumber)
+      ? ml.localSeriesNumber
+      : 0;
+  const station =
+    typeof ml.stationNumber === 'number' && Number.isFinite(ml.stationNumber) ? ml.stationNumber : 0;
+  if (!letter && typeof ml.circuitIndex !== 'number') return null;
+  return { letter, localSeries, station };
 }
 
 const extractFastPlannerModeFromNotes = (notes: unknown): { mode: string | null; notes: string } => {
@@ -310,7 +326,9 @@ function SortableMovelapRow({
   pauseByCircuitIndex,
   onRefresh,
   isCircuitBased: isCircuitBasedProp,
-  circuitExecutionMode
+  circuitExecutionMode,
+  nextMovelapInTable = null,
+  circuitMacroFromConfig = null
 }: {
   movelap: any;
   isNewlyAdded?: boolean;
@@ -346,6 +364,10 @@ function SortableMovelapRow({
   isCircuitBased?: boolean;
   /** From saved circuit config — drives thick row separator between series blocks in the movelap list. */
   circuitExecutionMode?: 'vertical' | 'horizontal';
+  /** Next movelap in table order (same moveframe list); used for circuit serie boundaries in sparse grids. */
+  nextMovelapInTable?: any | null;
+  /** Macro rest derived from saved circuit `loadOfWork` / config for final-row fallback. */
+  circuitMacroFromConfig?: string | null;
 }) {
   const isCircuitBasedRow = isCircuitBasedProp ?? moveframe?.isCircuitBased;
   const [exerciseGallery, setExerciseGallery] = useState<{
@@ -410,7 +432,18 @@ function SortableMovelapRow({
     typeof movelap.localSeriesNumber === 'number' ? movelap.localSeriesNumber : 0;
   const stationNum = typeof movelap.stationNumber === 'number' ? movelap.stationNumber : 0;
   const execMode = circuitExecutionMode ?? 'vertical';
-<<<<<<< HEAD
+  const macroFromLap =
+    movelap?.macroFinal != null && String(movelap.macroFinal).trim() !== '' && String(movelap.macroFinal).trim() !== '—'
+      ? String(movelap.macroFinal).trim()
+      : null;
+  const circuitMacroFallback =
+    circuitMacroFromConfig != null && String(circuitMacroFromConfig).trim() !== ''
+      ? String(circuitMacroFromConfig).trim()
+      : null;
+  const moveframeMacroFallback =
+    moveframe?.macroFinal != null && String(moveframe.macroFinal).trim() !== ''
+      ? String(moveframe.macroFinal).trim()
+      : null;
   /** Vertical list order: thick line after the last row of serie N when the next row is same circuit and serie N+1 — not only when serie N fills `stationsPerSeries` (e.g. serie 1 with one station). */
   const nextLayout = nextMovelapInTable ? readCircuitLayoutFromMovelap(nextMovelapInTable) : null;
   const sameCircuitNext =
@@ -452,8 +485,6 @@ function SortableMovelapRow({
     nextLayout.localSeries > localSeriesNum &&
     localSeriesNum > 0 &&
     (seriesCount <= 0 || localSeriesNum < seriesCount);
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   /** Vertical: after last station of a serie, except the last serie of the circuit. Horizontal: after last serie at a station, except the last station of the circuit. */
   const classicVerticalSerieEnd =
     execMode === 'vertical' &&
@@ -484,17 +515,11 @@ function SortableMovelapRow({
     !!hasCircuitIdentity &&
     localSeriesNum > 0 &&
     stationNum > 0 &&
-<<<<<<< HEAD
     (listShowsNextSerieSameCircuit ||
       classicVerticalSerieEnd ||
       classicHorizontalSerieEnd ||
       listDetectsVerticalSeriesEnd ||
       listDetectsHorizontalSeriesEnd);
-=======
-    (execMode === 'horizontal'
-      ? localSeriesNum === seriesCount && stationNum < stationsPerSeries
-      : stationNum === stationsPerSeries && localSeriesNum < seriesCount);
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -544,7 +569,6 @@ function SortableMovelapRow({
     !movelap.macroFinal &&
     storedPauseSeconds + 2 < finalRestSeconds;
 
-<<<<<<< HEAD
   // Same pause→macro mapping as non-final rows: after last serie of a circuit use pause-after-circuit; else end-of-serie uses pause-between-series.
   const macroFromCircuitPauses = !hasCircuitIdentity
     ? null
@@ -570,19 +594,6 @@ function SortableMovelapRow({
     ? macroFromLap
     : hasCircuitIdentity && isWorkoutFinalRestRow
       ? circuitMacroFallback ?? moveframeMacroFallback ?? macroFromCircuitPauses
-=======
-  // Macro: between series, or between circuits (not after last exercise — that is Pause / end-of-workout rest).
-  const macroValue = movelap.macroFinal
-    ? movelap.macroFinal
-    : hasCircuitIdentity
-      ? isWorkoutFinalRestRow
-        ? null
-        : isEndOfCircuit && (circuitPauseFromCircuit ?? pauseCircuitsSeconds) != null
-          ? formatPause((circuitPauseFromCircuit ?? pauseCircuitsSeconds) as number)
-          : isEndOfSeries && (seriesPauseFromCircuit ?? pauseSeriesSeconds) != null
-            ? formatPause((seriesPauseFromCircuit ?? pauseSeriesSeconds) as number)
-            : null
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
       : null;
   const pauseValue = macroValue
     ? null
@@ -724,7 +735,6 @@ function SortableMovelapRow({
       
        {isAnaerobicFastPlanner && (
          <>
-<<<<<<< HEAD
            <td className={`border border-gray-300 px-1 py-1 align-middle ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {(() => {
                const exName = (movelap.exercise || '').trim();
@@ -790,9 +800,6 @@ function SortableMovelapRow({
              })()}
            </td>
            <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
-=======
-           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
              {(() => {
                const s = typeof movelap.speed === 'string' ? movelap.speed.trim() : (movelap.speed != null ? String(movelap.speed).trim() : '');
                if (!s) return '—';
@@ -817,7 +824,7 @@ function SortableMovelapRow({
              {movelap._fastPlannerMode || '—'}
            </td>
            <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
-             {macroValue === 0 ? '0' : macroValue || '—'}
+             {macroValue != null && parseMovelapPauseToSeconds(macroValue) === 0 ? '0' : macroValue || '—'}
            </td>
          </>
        )}
@@ -1018,7 +1025,6 @@ function SortableMovelapRow({
        {/* OTHER SPORTS WITH TOOLS (Gymnastic, Stretching, Pilates, Yoga, etc.) */}
        {hasTools && !isAerobicFastPlanner && (
          <>
-<<<<<<< HEAD
            <td
              className={`border border-gray-300 px-1 py-1 text-center align-middle ${isNewlyAdded ? 'text-red-600' : ''}`}
            >
@@ -1124,10 +1130,6 @@ function SortableMovelapRow({
              })()}
            </td>
            <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
-=======
-           {/* Reps */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
              {movelap.reps || '—'}
            </td>
            {/* Tools */}
@@ -1198,13 +1200,8 @@ function SortableMovelapRow({
        
        {/* Pause/Recovery */}
      {!isAnaerobicFastPlanner && !isAerobicFastPlanner && (
-<<<<<<< HEAD
       <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
         {pauseColumnDisplay}
-=======
-      <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
-        {pauseValue === 0 ? '0' : pauseValue || '—'}
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
        </td>
       )}
        
@@ -1212,7 +1209,7 @@ function SortableMovelapRow({
        {/* 2026-01-22 15:35 UTC - Calculate pause for each movelap individually */}
      {!isAnaerobicFastPlanner && !isAerobicFastPlanner && (
       <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
-        {macroValue === 0 ? '0' : macroValue || '—'}
+        {macroValue != null && parseMovelapPauseToSeconds(macroValue) === 0 ? '0' : macroValue || '—'}
        </td>
       )}
        
@@ -1404,6 +1401,11 @@ export default function MovelapDetailTable({
   onAnaerobicFastPlannerModalOpenChange
 }: MovelapDetailTableProps) {
   const [movelaps, setMovelaps] = useState(moveframe.movelaps || []);
+  const [pendingStationMove, setPendingStationMove] = useState<{
+    sourceId: string;
+    targetId: string;
+  } | null>(null);
+  const [isApplyingStationMove, setIsApplyingStationMove] = useState(false);
   const moveframeLetter = moveframe.letter || 'A'; // Parent moveframe letter
   const sectionColor = moveframe.section?.color || '#5b8def';
   const sectionName = moveframe.section?.name || 'Default';
@@ -2018,7 +2020,6 @@ export default function MovelapDetailTable({
     }
   };
 
-<<<<<<< HEAD
   const extractUserNotesOnly = (rawNotes: unknown): string => {
     if (typeof rawNotes !== 'string') return '';
     return stripInternalWorkoutTags(rawNotes).trim();
@@ -2113,8 +2114,6 @@ export default function MovelapDetailTable({
     }
   };
 
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   // Handle copy movelap
   const handleCopyMovelap = (movelap: any) => {
     setCopiedMovelap(movelap);
@@ -4004,11 +4003,7 @@ export default function MovelapDetailTable({
                     </div>
                   </div>
                   <div className="col-span-2">
-<<<<<<< HEAD
                     <span className="sr-only">Notes for this repetition</span>
-=======
-                    <label className="block text-xs font-semibold text-gray-800 mb-1">Note</label>
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                     <input
                       type="text"
                       value={aerobicFastPlannerDraft.note}
@@ -4160,11 +4155,7 @@ export default function MovelapDetailTable({
 
           {/* 2026-01-24 - Scrollable wrapper for sticky Options column */}
           <div className="overflow-x-auto overflow-y-visible table-scrollbar">
-<<<<<<< HEAD
             <table className="text-sm bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: isAnaerobicFastPlanner ? '1700px' : (moveframe.isCircuitBased ? '1560px' : '1600px'), width: '100%' }}>
-=======
-            <table className="text-xs bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: isAnaerobicFastPlanner ? '1500px' : (moveframe.isCircuitBased ? '1560px' : '1600px'), width: '100%' }}>
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
             {/* Render sport-specific column headers */}
             {(() => {
               const sport = moveframe.sport || 'SWIM';
@@ -4206,7 +4197,6 @@ export default function MovelapDetailTable({
                     </colgroup>
                     <thead className="bg-gray-200">
                       <tr>
-<<<<<<< HEAD
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm" title="Drag to reorder">Move</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm">MF</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm">#</th>
@@ -4222,22 +4212,6 @@ export default function MovelapDetailTable({
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm">Macro</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm" style={{ width: '300px' }}>Notes</th>
                         <th className="border border-gray-300 px-1 py-1 text-center text-sm sticky-options-header bg-gray-200" style={{ width: '110px', minWidth: '110px' }}>Options</th>
-=======
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" title="Drag to reorder">Move</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">MF</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">#</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Workout section</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Sport</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Speed</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Series</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Rip\time</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Weight</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Break</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Mode</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Macro</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" style={{ width: '300px' }}>Notes</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px] sticky-options-header bg-gray-200" style={{ width: '110px', minWidth: '110px' }}>Options</th>
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                       </tr>
                     </thead>
                   </>
@@ -4553,7 +4527,6 @@ export default function MovelapDetailTable({
                       circuitExecutionMode={
                         circuitConfig?.executionMode === 'horizontal' ? 'horizontal' : 'vertical'
                       }
-<<<<<<< HEAD
                       circuitMacroFromConfig={(() => {
                         const lw = circuitConfig?.loadOfWork;
                         const fromDigit = circuitLoadOfWorkToMacroFinal(lw);
@@ -4566,8 +4539,6 @@ export default function MovelapDetailTable({
                         return null;
                       })()}
                       nextMovelapInTable={displayMovelaps[index + 1] ?? null}
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                     />
                   </React.Fragment>
                 );
@@ -4581,15 +4552,9 @@ export default function MovelapDetailTable({
               return (
                 <tfoot className="bg-gray-100">
                   <tr>
-<<<<<<< HEAD
                     <td colSpan={12} className="border border-gray-300 px-2 py-1 text-right text-sm font-semibold text-gray-700">AvePause (avg)</td>
                     <td className="border border-gray-300 px-1 py-1 text-center text-sm font-semibold">{avgPause}</td>
                     <td colSpan={2} className="border border-gray-300" />
-=======
-                    <td colSpan={10} className="border border-gray-300 px-2 py-1 text-right text-[10px] font-semibold text-gray-700">Macro (avg)</td>
-                    <td className="border border-gray-300 px-1 py-1 text-center text-xs font-semibold">{avgMacro}</td>
-                    <td colSpan={3} className="border border-gray-300" />
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                   </tr>
                 </tfoot>
               );
@@ -5020,15 +4985,9 @@ export default function MovelapDetailTable({
                       return (
                         <div className="col-span-2 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 bg-slate-50 p-3">
                           <div className="min-w-0 flex-1">
-<<<<<<< HEAD
                             <div className="mb-1 text-sm font-semibold text-gray-800">Preview</div>
                             <p className="text-sm text-gray-600">
                               Uses exercise image when available. Click to open A/B gallery.
-=======
-                            <div className="mb-1 text-xs font-semibold text-gray-800">Preview</div>
-                            <p className="text-[10px] text-gray-600">
-                              Uses mock bank image when available; otherwise the sector diagram. Click to open A/B gallery.
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             </p>
                           </div>
                           <button

@@ -10,7 +10,7 @@ import {
   SECTION_EXERCISE_UI_DEFAULTS_EN,
 } from '@/constants/sectionExerciseUiTranslations';
 
-/** Bottom tab strip on the exercise input form (matches wireframe order). */
+/** Bottom tab strip on the exercise input form (matches wireframe order). See `src/constants/exerciseEditorLayoutReference.ts`. */
 export type LowerFormTabId =
   | 'multimedia'
   | 'execution'

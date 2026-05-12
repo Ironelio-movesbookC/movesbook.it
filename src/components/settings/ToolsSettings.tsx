@@ -22,11 +22,6 @@ import {
   CheckCircle,
   Building2,
   LogIn,
-  Search,
-  Copy,
-  Eye,
-  Layers,
-  Star,
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToolsData } from '@/hooks/useToolsData';
@@ -37,23 +32,18 @@ import {
   Sport,
   Equipment,
   Exercise,
-  type ExercisePathologyCatalogItem,
+  ExercisePathologyCatalogItem,
   Device,
   IconType,
   ToolsTab,
-  type PeriodizationTemplate,
-  normalizePeriodizationTemplates,
   SUPPORTED_LANGUAGES,
   supportedLanguagesPeriodAdminOrder,
   DEFAULT_SPORTS,
   filterBySearch,
   filterByCategory,
   reorderItems,
-  createDefaultExercise,
   mergeExerciseWithDefaults,
   finalizeExerciseForStorage,
-  normalizeMuscleAreaPercentTags,
-  muscleInvolvementPercentTotal,
 } from '@/constants/tools.constants';
 import { SPORTS_LIST, getSportDisplayName } from '@/constants/moveframe.constants';
 import PeriodizationTabPanel from '@/components/settings/PeriodizationTabPanel';
@@ -61,148 +51,19 @@ import PeriodizationOverviewPanel from '@/components/settings/PeriodizationOverv
 import PlannedActionTemplatesEditor from '@/components/settings/PlannedActionTemplatesEditor';
 import SportMachinesSection from '@/components/settings/SportMachinesSection';
 import SuperAdminCompaniesSection from '@/components/settings/SuperAdminCompaniesSection';
-import SectionExerciseDialog from '@/components/settings/SectionExerciseDialog';
-import ExercisePathologiesCatalogSection from '@/components/settings/ExercisePathologiesCatalogSection';
 import ExerciseBankTab from '@/components/settings/ExerciseBankTab';
+import ExercisePathologiesCatalogSection from '@/components/settings/ExercisePathologiesCatalogSection';
+import SectionExerciseDialog from '@/components/settings/SectionExerciseDialog';
 import { useCanManageSportMachineCompanies } from '@/hooks/useCanManageSportMachineCompanies';
-import {
-  normalizeToolsLanguage,
-  resolveProfileLanguageCodeForToolsLoad,
-} from '@/utils/toolsProfileLanguage';
 
-/**
- * Read one language from `titleByLanguage` / `descriptionByLanguage` maps.
- * Keys in older data may not match `SUPPORTED_LANGUAGES` codes exactly (casing, locale tags).
- */
-function toolsTranslationFromMap(
-  map: Record<string, string> | undefined | null,
-  langCode: string
-): string {
-  if (!map || typeof map !== 'object') return '';
-  const want = normalizeToolsLanguage(langCode);
-  const direct = map[want];
-  if (typeof direct === 'string' && direct.trim()) return direct.trim();
-  for (const [k, v] of Object.entries(map)) {
-    if (typeof v !== 'string' || !v.trim()) continue;
-    if (normalizeToolsLanguage(k) === want) return v.trim();
-  }
-  return '';
+function normalizeToolsLanguage(code: string | undefined): string {
+  if (!code) return 'en';
+  const lower = code.toLowerCase().trim();
+  if (SUPPORTED_LANGUAGES.some((l) => l.code === lower)) return lower;
+  const two = lower.split('-')[0] || 'en';
+  return SUPPORTED_LANGUAGES.some((l) => l.code === two) ? two : 'en';
 }
 
-<<<<<<< HEAD
-/** Admin toolsDefaults JSON may be flat `{ commonDailyActions }` or nested `{ toolsSettings: { commonDailyActions } }`. */
-function extractCommonDailyActionsFromToolsDefaultsPayload(toolsData: unknown): WorkoutSection[] {
-  if (!toolsData || typeof toolsData !== 'object' || Array.isArray(toolsData)) return [];
-  const td = toolsData as Record<string, unknown>;
-  const top = td.commonDailyActions;
-  if (Array.isArray(top)) return top as WorkoutSection[];
-  const ts = td.toolsSettings;
-  if (ts && typeof ts === 'object' && !Array.isArray(ts)) {
-    const inner = (ts as Record<string, unknown>).commonDailyActions;
-    if (Array.isArray(inner)) return inner as WorkoutSection[];
-  }
-  return [];
-}
-
-function resolveToolsStorageItemType(
-  tab: ToolsTab
-): 'periods' | 'sections' | 'bodyBuildingTechniques' | 'commonDailyActions' | 'workMethods' {
-  if (tab === 'periods' || tab === 'periodizationPlan') return 'periods';
-  if (tab === 'bodyBuildingTechniques') return 'bodyBuildingTechniques';
-  if (tab === 'commonDailyActions') return 'commonDailyActions';
-  if (tab === 'workMethods') return 'workMethods';
-  return 'sections';
-}
-
-/** Stable list order for drag/save: one record set; display language must not reshuffle. */
-function sortToolsItemsByOrder<T extends { order?: number; id: string }>(items: T[]): T[] {
-  return [...items].sort((a, b) => {
-    const ao = a.order ?? 0;
-    const bo = b.order ?? 0;
-    if (ao !== bo) return ao - bo;
-    return a.id.localeCompare(b.id);
-  });
-}
-
-/** Keep first occurrence only — duplicate ids corrupt drag/delete (cards look "cloned"). */
-function dedupeToolsItemsById<T extends { id: string }>(items: T[]): T[] {
-  const seen = new Set<string>();
-  const out: T[] = [];
-  for (const item of items) {
-    const key = String(item.id);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-  }
-  return out;
-}
-
-/**
- * For admin tools with English fallback: show a non-EN field's own value, or the English value when the slot is empty.
- * Trimming decides "empty" so spaces-only does not count as a real translation.
- */
-function getToolsAdminTranslationFieldDisplay(
-  translations: Record<string, { title: string; description: string }>,
-  langCode: string,
-  field: 'title' | 'description',
-  useEnglishFallbackRules: boolean
-): string {
-  if (!useEnglishFallbackRules) {
-    return translations[langCode]?.[field] ?? '';
-  }
-  const raw = translations[langCode]?.[field];
-  const str = raw === undefined || raw === null ? '' : String(raw);
-  if (langCode === 'en') {
-    return str;
-  }
-  if (str.trim() !== '') {
-    return str;
-  }
-  return translations['en']?.[field] ?? '';
-}
-
-/** True when non-EN field is visually showing English fallback (empty own value, English has text). */
-function isToolsAdminTranslationFieldInherited(
-  translations: Record<string, { title: string; description: string }>,
-  langCode: string,
-  field: 'title' | 'description',
-  useEnglishFallbackRules: boolean
-): boolean {
-  if (!useEnglishFallbackRules || langCode === 'en') {
-    return false;
-  }
-  const raw = translations[langCode]?.[field];
-  const str = raw === undefined || raw === null ? '' : String(raw);
-  if (str.trim() !== '') {
-    return false;
-  }
-  const enRaw = translations['en']?.[field];
-  const enStr = enRaw === undefined || enRaw === null ? '' : String(enRaw);
-  return enStr.trim() !== '';
-}
-
-/** Same `/api/translate` flow as Language → Long texts (English source → all tools-supported languages). */
-const TOOLS_TRANSLATION_TARGET_LANG_CODES = SUPPORTED_LANGUAGES.filter((l) => l.code !== 'en').map((l) => l.code);
-
-async function fetchToolsLineTranslations(text: string): Promise<Record<string, string>> {
-  const response = await fetch('/api/translate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      text,
-      targetLanguages: TOOLS_TRANSLATION_TARGET_LANG_CODES,
-    }),
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Translation API returned ${response.status}: ${errorText.substring(0, 120)}`);
-  }
-  const data = await response.json();
-  return data.translations && typeof data.translations === 'object' ? (data.translations as Record<string, string>) : {};
-}
-
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 type PeriodizationSubview = 'periodSettings' | 'periodization' | 'overview';
 
 interface ToolsSettingsProps {
@@ -221,47 +82,28 @@ function getAllowedTabs(isAdmin: boolean, mode: 'tools' | 'technical'): ToolsTab
       'muscles',
       'sportsEquipment',
       'sportMachines',
-      'pathologies',
       'exercises',
+      'pathologies',
       'myLibrary',
       'devices',
     ];
   }
   if (isAdmin) {
-<<<<<<< HEAD
-    // Common daily actions (multi-language) + planned action types live on the same tab (see below).
-    return [
-      'periods',
-      'periodizationPlan',
-      'periodizationLibrary',
-      'sections',
-      'workMethods',
-      'bodyBuildingTechniques',
-      'commonDailyActions',
-    ];
-  }
-  // Personal Settings (all users): keep official user tabs only
-  // and exclude technical/admin tabs (factories, muscles, sports-equipment).
-  // Daily actions use the same Common daily actions form as Super Admin, single language only.
-  return [
-    'periods',
-    'periodizationPlan',
-    'sections',
-    'workMethods',
-    'bodyBuildingTechniques',
-    'equipment',
-    'exercises',
-    'myLibrary',
-    'devices',
-    'commonDailyActions',
-  ];
-=======
     return ['periods', 'sections', 'bodyBuildingTechniques', 'commonDailyActions', 'insertActions'];
   }
   // Personal Settings (all users): keep official user tabs only
   // and exclude technical/admin tabs (factories, muscles, sports-equipment).
-  return ['periods', 'sections', 'bodyBuildingTechniques', 'equipment', 'exercises', 'myLibrary', 'devices', 'insertActions'];
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
+  return [
+    'periods',
+    'sections',
+    'bodyBuildingTechniques',
+    'equipment',
+    'exercises',
+    'pathologies',
+    'myLibrary',
+    'devices',
+    'insertActions',
+  ];
 }
 
 export default function ToolsSettings({
@@ -282,7 +124,6 @@ export default function ToolsSettings({
     equipment,
     exercises,
     exercisePathologyCatalog,
-    periodizationTemplates,
     devices,
     iconType,
     isLoadingIconPreference,
@@ -295,7 +136,6 @@ export default function ToolsSettings({
     setEquipment,
     setExercises,
     setExercisePathologyCatalog,
-    setPeriodizationTemplates,
     setDevices,
     setIconType,
     setIsSavingToDatabase,
@@ -339,13 +179,7 @@ export default function ToolsSettings({
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
   const [editingSport, setEditingSport] = useState<Sport | null>(null);
   const [showEditSportDialog, setShowEditSportDialog] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [periodizationLibTagFilter, setPeriodizationLibTagFilter] = useState('all');
-  const [showPeriodizationTemplateDialog, setShowPeriodizationTemplateDialog] = useState(false);
-  const [editingPeriodizationTemplate, setEditingPeriodizationTemplate] =
-    useState<PeriodizationTemplate | null>(null);
-  const [periodizationTagsInput, setPeriodizationTagsInput] = useState('');
   
   // Equipment view and sort state
   const [equipmentViewMode, setEquipmentViewMode] = useState<'cards' | 'table'>('cards');
@@ -380,14 +214,8 @@ export default function ToolsSettings({
 
   useEffect(() => {
     if (!periodizationOnly) return;
-<<<<<<< HEAD
-    const code = resolveProfileLanguageCodeForToolsLoad();
-    setSelectedLanguage(code);
-  }, [periodizationOnly]);
-=======
     setSelectedLanguage(normalizeToolsLanguage(currentLanguage));
   }, [periodizationOnly, currentLanguage]);
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   const useEnglishFallbackRules =
     activeTab === 'periods' || activeTab === 'sections' || activeTab === 'bodyBuildingTechniques';
 
@@ -396,36 +224,6 @@ export default function ToolsSettings({
     return SUPPORTED_LANGUAGES;
   }, [isAdmin, activeTab]);
 
-<<<<<<< HEAD
-  const profileLanguageLabel = useMemo(() => {
-    const code = normalizeToolsLanguage(
-      !isAdmin ? resolveProfileLanguageCodeForToolsLoad() : selectedLanguage
-    );
-    return SUPPORTED_LANGUAGES.find((l) => l.code === code)?.name || code.toUpperCase();
-  }, [isAdmin, selectedLanguage]);
-
-  const periodizationLibAllTags = useMemo(
-    () => Array.from(new Set(periodizationTemplates.flatMap((t) => t.tags || []))).sort(),
-    [periodizationTemplates]
-  );
-
-  const filteredPeriodizationTemplates = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return periodizationTemplates.filter((t) => {
-      const matchQ =
-        !q ||
-        t.name.toLowerCase().includes(q) ||
-        t.sport.toLowerCase().includes(q) ||
-        t.level.toLowerCase().includes(q) ||
-        (t.tags || []).some((tag) => tag.toLowerCase().includes(q));
-      const matchTag =
-        periodizationLibTagFilter === 'all' || (t.tags || []).includes(periodizationLibTagFilter);
-      return matchQ && matchTag;
-    });
-  }, [periodizationTemplates, searchQuery, periodizationLibTagFilter]);
-
-=======
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
   useEffect(() => {
     if (!allowedTabs.includes(activeTab)) {
       setActiveTab(allowedTabs[0]);
@@ -453,14 +251,6 @@ export default function ToolsSettings({
   useEffect(() => {
     localStorage.setItem('settings_periodization_subview', periodizationSubview);
   }, [periodizationSubview]);
-
-  /** Plan + Overview live under Tools → Periodization; Period settings stay on the Periods tab. */
-  useEffect(() => {
-    if (activeTab !== 'periodizationPlan') return;
-    if (periodizationSubview === 'periodSettings') {
-      setPeriodizationSubview('periodization');
-    }
-  }, [activeTab, periodizationSubview]);
   
   // Get current user ID for ownership checking
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -555,6 +345,12 @@ export default function ToolsSettings({
   // Data loading is now handled by useToolsData hook
   // All loading functions removed - handled by useToolsData hook
 
+  // Manual save handler (uses hook)
+  const handleManualSave = async () => {
+    await saveToDatabase();
+    alert('✅ All tools settings saved to database successfully!');
+  };
+
   // Use refs to track previous values and prevent unnecessary re-renders
   const prevPeriodsRef = useRef<Period[]>([]);
   const prevSectionsRef = useRef<WorkoutSection[]>([]);
@@ -564,7 +360,6 @@ export default function ToolsSettings({
   const prevExercisesRef = useRef<Exercise[]>([]);
   const prevExercisePathologyCatalogRef = useRef<ExercisePathologyCatalogItem[]>([]);
   const prevDevicesRef = useRef<Device[]>([]);
-  const prevPeriodizationTemplatesRef = useRef<PeriodizationTemplate[]>([]);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Debounced auto-save (uses hook)
@@ -581,17 +376,11 @@ export default function ToolsSettings({
       prevExercisesRef.current = exercises;
       prevExercisePathologyCatalogRef.current = exercisePathologyCatalog;
       prevDevicesRef.current = devices;
-      prevPeriodizationTemplatesRef.current = periodizationTemplates;
       return;
     }
     
     // Don't auto-save if data is being loaded initially
-    if (
-      periods.length === 0 &&
-      sections.length === 0 &&
-      sports.length === 0 &&
-      periodizationTemplates.length === 0
-    ) {
+    if (periods.length === 0 && sections.length === 0 && sports.length === 0) {
       return;
     }
     
@@ -602,29 +391,20 @@ export default function ToolsSettings({
     const sportsChanged = JSON.stringify(sports) !== JSON.stringify(prevSportsRef.current);
     const equipmentChanged = JSON.stringify(equipment) !== JSON.stringify(prevEquipmentRef.current);
     const exercisesChanged = JSON.stringify(exercises) !== JSON.stringify(prevExercisesRef.current);
-    const pathologyCatalogChanged =
+    const exercisePathologyCatalogChanged =
       JSON.stringify(exercisePathologyCatalog) !== JSON.stringify(prevExercisePathologyCatalogRef.current);
     const devicesChanged = JSON.stringify(devices) !== JSON.stringify(prevDevicesRef.current);
-    const periodizationTemplatesChanged =
-      JSON.stringify(periodizationTemplates) !== JSON.stringify(prevPeriodizationTemplatesRef.current);
     
-<<<<<<< HEAD
     if (
       !periodsChanged &&
       !sectionsChanged &&
-      !commonDailyChanged &&
-      !workMethodsChanged &&
       !techniquesChanged &&
       !sportsChanged &&
       !equipmentChanged &&
       !exercisesChanged &&
-      !pathologyCatalogChanged &&
-      !devicesChanged &&
-      !periodizationTemplatesChanged
+      !exercisePathologyCatalogChanged &&
+      !devicesChanged
     ) {
-=======
-    if (!periodsChanged && !sectionsChanged && !techniquesChanged && !sportsChanged && !equipmentChanged && !exercisesChanged && !devicesChanged) {
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
       console.log('⏭️ Skipping auto-save: no changes detected');
       return;
     }
@@ -641,22 +421,16 @@ export default function ToolsSettings({
     if (techniquesChanged) console.log('  - Techniques changed');
     
     // Save to localStorage immediately (backup)
-<<<<<<< HEAD
-      saveToLocalStorage(
-        periods,
-        sections,
-        bodyBuildingTechniques,
-        sports,
-        equipment,
-        exercises,
-        devices,
-        commonDailyActions,
-        workMethods,
-        exercisePathologyCatalog
-      );
-=======
-    saveToLocalStorage(periods, sections, bodyBuildingTechniques, sports, equipment, exercises, devices);
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
+    saveToLocalStorage(
+      periods,
+      sections,
+      bodyBuildingTechniques,
+      sports,
+      equipment,
+      exercises,
+      devices,
+      exercisePathologyCatalog
+    );
     
     // Clear any pending save timeout
     if (saveTimeoutRef.current) {
@@ -685,7 +459,6 @@ export default function ToolsSettings({
     prevExercisesRef.current = exercises;
     prevExercisePathologyCatalogRef.current = exercisePathologyCatalog;
     prevDevicesRef.current = devices;
-    prevPeriodizationTemplatesRef.current = periodizationTemplates;
     
     // Cleanup function - only clear timeout, don't return it
     return () => {
@@ -696,25 +469,7 @@ export default function ToolsSettings({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-<<<<<<< HEAD
-  }, [
-    periods,
-    sections,
-    commonDailyActions,
-    workMethods,
-    bodyBuildingTechniques,
-    sports,
-    equipment,
-    exercises,
-    exercisePathologyCatalog,
-    devices,
-    periodizationTemplates,
-    isInitialLoad,
-    isSavingToDatabase
-  ]);
-=======
-  }, [periods, sections, bodyBuildingTechniques, sports, equipment, exercises, devices, isInitialLoad, isSavingToDatabase]);
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
+  }, [periods, sections, bodyBuildingTechniques, sports, equipment, exercises, exercisePathologyCatalog, devices, isInitialLoad, isSavingToDatabase]);
 
   const getActiveItems = () => {
     if (activeTab === 'periods') return periods;
@@ -791,21 +546,7 @@ export default function ToolsSettings({
     if (isSuperAdminPeriods) {
       const m: Record<string, string> = {};
       SUPPORTED_LANGUAGES.forEach((lang) => {
-<<<<<<< HEAD
-        let d = (newItemTranslations[lang.code]?.description ?? '').trim();
-        let tit = (newItemTranslations[lang.code]?.title ?? '').trim();
-        if (
-          lang.code !== 'en' &&
-          tit === enT &&
-          d === enD &&
-          (tit !== '' || d !== '')
-        ) {
-          tit = '';
-          d = '';
-        }
-=======
         const d = (newItemTranslations[lang.code]?.description || '').trim();
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
         if (d) m[lang.code] = d;
       });
       descriptionByLanguage = Object.keys(m).length > 0 ? m : undefined;
@@ -998,21 +739,7 @@ export default function ToolsSettings({
         editingItem.description = (enT?.description || '').trim();
         const descByLang: Record<string, string> = {};
         SUPPORTED_LANGUAGES.forEach((lang) => {
-<<<<<<< HEAD
-          let d = (editItemTranslations[lang.code]?.description ?? '').trim();
-          let t = (editItemTranslations[lang.code]?.title ?? '').trim();
-          if (
-            lang.code !== 'en' &&
-            t === enPrimaryT &&
-            d === enPrimaryD &&
-            (t !== '' || d !== '')
-          ) {
-            t = '';
-            d = '';
-          }
-=======
           const d = (editItemTranslations[lang.code]?.description || '').trim();
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           if (d) descByLang[lang.code] = d;
         });
         (editingItem as Period).descriptionByLanguage =
@@ -1253,8 +980,7 @@ export default function ToolsSettings({
         sports,
         equipment,
         exercises,
-        devices,
-        periodizationTemplates: normalizePeriodizationTemplates(periodizationTemplates),
+        devices
       };
 
       if (isAdmin) {
@@ -1272,16 +998,8 @@ export default function ToolsSettings({
         const data = await response.json();
         
         if (response.ok) {
-<<<<<<< HEAD
-          alert(
-            '✅ Success! Movesbook default settings saved.\n\n' +
-              '📋 Included: Periods, Sections, Sports, Equipment, Exercises, Library, Devices, Periodization library — with every translation you entered on each item.\n\n' +
-              '👥 Users who use Load in Language Defaults get these defaults in their profile language. Ensure each user\'s language is set in their profile.'
-          );
-=======
           const languageName = SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name || selectedLanguage;
           alert(`✅ Success! ALL settings saved as ${languageName.toUpperCase()} defaults!\n\n📋 Saved to ${languageName.toUpperCase()}:\n✓ Periods, Sections, Sports\n✓ Equipment, Exercises, Library, Devices\n\n👥 These settings are now available for ${languageName}-speaking users when they click "Load Admin Defaults" button.`);
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           setShowPasswordDialog(false);
           setSuperAdminPassword('');
         } else {
@@ -1388,134 +1106,47 @@ export default function ToolsSettings({
 
   // Handle Load from Movesbook (for non-admin users)
   const handleLoadAdminDefaults = async () => {
-    const loadLang = normalizeToolsLanguage(
-      isAdmin ? selectedLanguage : resolveProfileLanguageCodeForToolsLoad()
-    );
-    const languageName = SUPPORTED_LANGUAGES.find((l) => l.code === loadLang)?.name || loadLang;
-
+    const languageName = SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name || selectedLanguage;
+    
     const confirmed = window.confirm(
-      isAdmin
-        ? 'Do you want to continue?'
-        : `Load Movesbook defaults from Super Admin (periods, sections, equipment, …) in ${languageName} (${loadLang})? Items you created yourself are kept.`
+      "Do you want to continue?"
     );
-
+    
     if (!confirmed) return;
-
+    
     try {
-<<<<<<< HEAD
-      let response = await fetch(
-        `/api/admin/tools-defaults/load?language=${encodeURIComponent(loadLang)}`
-      );
-      let data = await response.json();
-
-      if ((!response.ok || !data.toolsData) && !isAdmin && loadLang !== 'en') {
-        try {
-          const enRes = await fetch(`/api/admin/tools-defaults/load?language=${encodeURIComponent('en')}`);
-          const enJson = await enRes.json();
-          if (enRes.ok && enJson.toolsData) {
-            response = enRes;
-            data = enJson;
-            console.warn(
-              `[tools] No Movesbook toolsDefaults row for profile language "${loadLang}"; loaded English Super Admin defaults instead.`
-            );
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-=======
       const response = await fetch(`/api/admin/tools-defaults/load?language=${selectedLanguage}`);
       const data = await response.json();
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
 
       if (response.ok && data.toolsData) {
-        const toolsPayload: Record<string, any> = { ...data.toolsData };
-
-        if (
-          !isAdmin &&
-          loadLang !== 'en' &&
-          (!Array.isArray(toolsPayload.periods) || toolsPayload.periods.length === 0)
-        ) {
-          try {
-            const enRes = await fetch(`/api/admin/tools-defaults/load?language=${encodeURIComponent('en')}`);
-            const enJson = await enRes.json();
-            if (enRes.ok && enJson.toolsData?.periods?.length) {
-              toolsPayload.periods = enJson.toolsData.periods;
-              console.warn(
-                `[tools] Super Admin defaults for "${loadLang}" contained no periods; merged periods from the English defaults row.`
-              );
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-
         // Get current user-created items (items with isUserCreated flag)
         const userPeriods = periods.filter((p: any) => p.isUserCreated);
         const userSections = sections.filter((s: any) => s.isUserCreated);
         const userEquipment = equipment.filter((e: any) => e.isUserCreated);
         const userExercises = exercises.filter((ex: any) => ex.isUserCreated);
         const userDevices = devices.filter((d: any) => d.isUserCreated);
-        const userPeriodizationTemplates = periodizationTemplates.filter((t) => t.isUserCreated);
-
+        
         // Load admin defaults and merge with user-created items
-        if (toolsPayload.periods) {
-          setPeriods([...toolsPayload.periods, ...userPeriods]);
+        if (data.toolsData.periods) {
+          setPeriods([...data.toolsData.periods, ...userPeriods]);
         }
-        if (toolsPayload.sections) {
-          setSections([...toolsPayload.sections, ...userSections]);
+        if (data.toolsData.sections) {
+          setSections([...data.toolsData.sections, ...userSections]);
         }
-<<<<<<< HEAD
-        if (toolsPayload.workMethods && Array.isArray(toolsPayload.workMethods)) {
-          setWorkMethods([...toolsPayload.workMethods, ...userWorkMethods]);
-        }
-        let adminCommonDaily = extractCommonDailyActionsFromToolsDefaultsPayload(toolsPayload);
-        if (adminCommonDaily.length === 0 && loadLang !== 'en') {
-          try {
-            const enRes = await fetch(
-              `/api/admin/tools-defaults/load?language=${encodeURIComponent('en')}`
-            );
-            const enJson = await enRes.json();
-            if (enRes.ok && enJson.toolsData) {
-              const fromEn = extractCommonDailyActionsFromToolsDefaultsPayload(enJson.toolsData);
-              if (fromEn.length > 0) {
-                adminCommonDaily = fromEn;
-                console.warn(
-                  `[tools] No common daily actions in Movesbook defaults for "${loadLang}"; loaded English catalog as fallback. Re-save Super Admin defaults for ${loadLang} to include daily actions in that language.`
-                );
-              }
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-        setCommonDailyActions([...adminCommonDaily, ...userCommonDaily]);
-        if (toolsPayload.sports) {
-          setSports([...toolsPayload.sports]); // Sports are read-only for users
-=======
         if (data.toolsData.sports) {
           setSports([...data.toolsData.sports]); // Sports are read-only for users
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
         }
-        if (toolsPayload.equipment) {
-          setEquipment([...toolsPayload.equipment, ...userEquipment]);
+        if (data.toolsData.equipment) {
+          setEquipment([...data.toolsData.equipment, ...userEquipment]);
         }
-        if (toolsPayload.exercises) {
-          setExercises([...toolsPayload.exercises, ...userExercises]);
+        if (data.toolsData.exercises) {
+          setExercises([...data.toolsData.exercises, ...userExercises]);
         }
-        if (toolsPayload.devices) {
-          setDevices([...toolsPayload.devices, ...userDevices]);
+        if (data.toolsData.devices) {
+          setDevices([...data.toolsData.devices, ...userDevices]);
         }
-        if (Object.prototype.hasOwnProperty.call(toolsPayload, 'periodizationTemplates')) {
-          setPeriodizationTemplates([
-            ...normalizePeriodizationTemplates(toolsPayload.periodizationTemplates),
-            ...userPeriodizationTemplates,
-          ]);
-        }
-
-        alert(
-          `✅ Success!\n\nMovesbook Super Admin settings for ${languageName} have been loaded and merged into your lists.\n\nYour manually created items are preserved.`
-        );
+        
+        alert(`✅ Success!\n\nMovesbook settings for ${languageName} have been loaded and added to your current list.\n\nYour manually created items are preserved.`);
       } else {
         alert(`❌ No admin defaults found for ${languageName}`);
       }
@@ -1524,97 +1155,6 @@ export default function ToolsSettings({
     }
   };
 
-<<<<<<< HEAD
-  /** Periods/sections/etc. cards: respect Display language for every user (not only admin). */
-  const useTranslatedEntityCards =
-    useEnglishFallbackRules &&
-    (activeTab === 'periods' ||
-      activeTab === 'sections' ||
-      activeTab === 'workMethods' ||
-      activeTab === 'commonDailyActions' ||
-      activeTab === 'bodyBuildingTechniques');
-
-  /** Same gate as `handleEdit` `useDbTranslations` — admin + translated tools from DB. */
-  const useDbBackedTranslationMaps =
-    isAdmin &&
-    (activeTab === 'periods' ||
-      activeTab === 'sections' ||
-      activeTab === 'workMethods' ||
-      activeTab === 'commonDailyActions' ||
-      activeTab === 'bodyBuildingTechniques');
-
-  /**
-   * English row text for list cards — must match how `handleEdit` fills the EN block:
-   * - Admin + DB-backed tabs: use `titleByLanguage.en` when set, else primary `item.title`.
-   * - Otherwise: primary `item.title` first (same as non-admin EN field), else `titleByLanguage.en`.
-   */
-  const primaryEnglishTitle = (item: any): string => {
-    if (useDbBackedTranslationMaps) {
-      const fromMap = toolsTranslationFromMap(item.titleByLanguage, 'en');
-      if (fromMap) return fromMap;
-      return ((item.title || '') as string).trim();
-    }
-    const primary = ((item.title || '') as string).trim();
-    if (primary) return primary;
-    return toolsTranslationFromMap(item.titleByLanguage, 'en');
-  };
-
-  const primaryEnglishDescription = (item: any): string => {
-    if (useDbBackedTranslationMaps) {
-      const fromMap = toolsTranslationFromMap(item.descriptionByLanguage, 'en');
-      if (fromMap) return fromMap;
-      return ((item.description || '') as string).trim();
-    }
-    const primary = ((item.description || '') as string).trim();
-    if (primary) return primary;
-    return toolsTranslationFromMap(item.descriptionByLanguage, 'en');
-  };
-
-  const getDisplayTitle = (item: any): { text: string; isRed: boolean } => {
-    const lang = normalizeToolsLanguage(selectedLanguage);
-    const englishTitle = primaryEnglishTitle(item);
-
-    if (useTranslatedEntityCards) {
-      if (lang === 'en') {
-        return { text: englishTitle || 'Untitled', isRed: false };
-      }
-      const t = toolsTranslationFromMap(item.titleByLanguage, lang);
-      const d = toolsTranslationFromMap(item.descriptionByLanguage, lang);
-      const enPrimaryT = ((item.title || '') as string).trim();
-      const enPrimaryD = ((item.description || '') as string).trim();
-      const isPhantomStoredCopy =
-        t !== '' && t === enPrimaryT && d === enPrimaryD;
-
-      if (t && !isPhantomStoredCopy) {
-        return { text: t, isRed: false };
-      }
-      return { text: englishTitle || 'Untitled', isRed: !!englishTitle };
-    }
-
-    const title = ((item.title || '') as string).trim();
-    return { text: title || 'Untitled', isRed: false };
-  };
-
-  const getDisplayDescription = (item: any): { text: string; isRed: boolean } => {
-    const lang = normalizeToolsLanguage(selectedLanguage);
-    const englishDesc = primaryEnglishDescription(item);
-
-    if (useTranslatedEntityCards) {
-      if (lang === 'en') {
-        return { text: englishDesc, isRed: false };
-      }
-      const d = toolsTranslationFromMap(item.descriptionByLanguage, lang);
-      const t = toolsTranslationFromMap(item.titleByLanguage, lang);
-      const enPrimaryT = ((item.title || '') as string).trim();
-      const enPrimaryD = ((item.description || '') as string).trim();
-      const isPhantomStoredCopy =
-        t !== '' && t === enPrimaryT && d === enPrimaryD;
-
-      if (d && !isPhantomStoredCopy) {
-        return { text: d, isRed: false };
-      }
-      return { text: englishDesc, isRed: !!englishDesc };
-=======
   const getDisplayTitle = (item: any): { text: string; isRed: boolean } => {
     if (item.title && item.title.trim() !== '') {
       return { text: item.title, isRed: false };
@@ -1754,7 +1294,6 @@ export default function ToolsSettings({
     } catch (error) {
       console.error('Error:', error);
       alert('❌ Error loading defaults');
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
     }
   };
 
@@ -1893,110 +1432,6 @@ export default function ToolsSettings({
     }
   };
 
-  const showLanguageDefaultsToolbarInMainTools =
-    !periodizationOnly &&
-    ((useEnglishFallbackRules &&
-      (activeTab === 'periods' ||
-        activeTab === 'sections' ||
-        activeTab === 'workMethods' ||
-        activeTab === 'commonDailyActions' ||
-        activeTab === 'bodyBuildingTechniques')) ||
-      (isAdmin && activeTab === 'periodizationLibrary'));
-
-  const languageDefaultsToolbar = (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-3 py-3 px-2 sm:px-4 bg-white dark:bg-gray-900/40 border border-gray-200 dark:border-gray-600 rounded-lg">
-        <div className="flex flex-wrap items-center gap-3 min-w-0">
-          {isAdmin ? (
-            <>
-              <Globe className="w-5 h-5 text-violet-600 dark:text-violet-400 shrink-0" aria-hidden />
-              <span className="text-sm font-semibold text-gray-800 dark:text-gray-100 whitespace-nowrap">
-                Language Defaults:
-              </span>
-              <select
-                value={selectedLanguage}
-                onChange={(e) => setSelectedLanguage(e.target.value)}
-                disabled={!isAdmin}
-                className="px-3 py-2 text-sm font-medium border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500 min-w-[10.5rem] disabled:opacity-70 disabled:cursor-not-allowed"
-                aria-label="Language defaults — updates card labels for periods, sections, and related lists"
-              >
-                {SUPPORTED_LANGUAGES.map((lang) => (
-                  <option key={lang.code} value={lang.code}>
-                    {lang.name}
-                  </option>
-                ))}
-              </select>
-            </>
-          ) : (
-            <p className="text-sm text-gray-700 dark:text-gray-200 m-0 leading-snug">
-              <span className="font-semibold text-gray-900 dark:text-white">Profile language:</span>{' '}
-              {profileLanguageLabel}{' '}
-              <span className="text-gray-500 dark:text-gray-400">
-                ({normalizeToolsLanguage(selectedLanguage).toUpperCase()})
-              </span>
-              <span className="text-gray-600 dark:text-gray-400">
-                {' '}
-                — Load from Movesbook copies Super Admin defaults only in this language.
-              </span>
-            </p>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={() => void saveLanguageDefaults()}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg border-2 border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800 hover:bg-orange-50 dark:hover:bg-gray-700 transition shadow-sm"
-              title="Save current tools as Movesbook defaults for the selected language"
-            >
-              <Save className="w-4 h-4" />
-              Save defaults
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => void handleLoadAdminDefaults()}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg text-white bg-violet-600 hover:bg-violet-700 shadow-md transition"
-            title={
-              isAdmin
-                ? 'Load Movesbook defaults for the selected language (merges with your current list)'
-                : 'Load Super Admin Movesbook defaults for your profile language (merges with your current list)'
-            }
-          >
-            <Download className="w-4 h-4" />
-            {isAdmin ? 'Load' : 'Load from Movesbook'}
-          </button>
-        </div>
-      </div>
-      {isAdmin &&
-        ((useEnglishFallbackRules &&
-          (activeTab === 'periods' ||
-            activeTab === 'sections' ||
-            activeTab === 'workMethods' ||
-            activeTab === 'commonDailyActions' ||
-            activeTab === 'bodyBuildingTechniques')) ||
-          activeTab === 'periodizationLibrary') && (
-          <p className="text-xs text-gray-600 dark:text-gray-400 px-1 sm:px-2 leading-relaxed max-w-4xl">
-            {activeTab === 'periodizationLibrary' ? (
-              <>
-                Presets below are stored in Movesbook defaults for the language you select above. Use{' '}
-                <span className="font-medium text-gray-700 dark:text-gray-300">Save defaults</span> after editing.
-                Athletes merge them with <span className="font-medium text-gray-700 dark:text-gray-300">Load from Movesbook</span>{' '}
-                (Tools or Favourites); templates they add themselves are kept on merge.
-              </>
-            ) : (
-              <>
-                Choosing a language updates the cards below immediately: each title and description matches what you would
-                see in the edit dialog for that language (saved translation in normal text; English reference in red when that
-                language is still empty). <span className="font-medium text-gray-700 dark:text-gray-300">Load</span> is only
-                for merging Movesbook defaults from the server — it does not switch preview language by itself.
-              </>
-            )}
-          </p>
-        )}
-    </div>
-  );
-
   return (
     <div className="space-y-6">
       {periodizationOnly && (
@@ -2018,10 +1453,6 @@ export default function ToolsSettings({
             </button>
           ))}
         </div>
-      )}
-
-      {periodizationOnly && periodizationSubview === 'periodSettings' && (
-        <div className="mt-2">{languageDefaultsToolbar}</div>
       )}
 
       {/* Header (Tools / Technical only — Periodization uses sidebar title + sub-tabs) */}
@@ -2056,33 +1487,6 @@ export default function ToolsSettings({
             }`}
           >
             Periods
-          </button>
-        )}
-        {allowedTabs.includes('periodizationPlan') && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('periodizationPlan')}
-            className={`px-6 py-3 font-semibold transition ${
-              activeTab === 'periodizationPlan'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            {t('settings_periodization')}
-          </button>
-        )}
-        {allowedTabs.includes('periodizationLibrary') && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('periodizationLibrary')}
-            className={`px-6 py-3 font-semibold transition ${
-              activeTab === 'periodizationLibrary'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <Layers className="w-4 h-4 inline mr-2" />
-            Periodization library ({periodizationTemplates.length})
           </button>
         )}
         {allowedTabs.includes('sections') && (
@@ -2181,18 +1585,6 @@ export default function ToolsSettings({
             Machines
           </button>
         )}
-        {allowedTabs.includes('pathologies') && (
-          <button
-            onClick={() => setActiveTab('pathologies')}
-            className={`px-6 py-3 font-semibold transition ${
-              activeTab === 'pathologies'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Pathologies
-          </button>
-        )}
         {allowedTabs.includes('exercises') && (
           <button
             onClick={() => setActiveTab('exercises')}
@@ -2203,6 +1595,18 @@ export default function ToolsSettings({
             }`}
           >
             Exercise Bank
+          </button>
+        )}
+        {allowedTabs.includes('pathologies') && (
+          <button
+            onClick={() => setActiveTab('pathologies')}
+            className={`px-6 py-3 font-semibold transition ${
+              activeTab === 'pathologies'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Pathologies
           </button>
         )}
         {allowedTabs.includes('myLibrary') && (
@@ -2248,45 +1652,8 @@ export default function ToolsSettings({
       </div>
       )}
 
-      {/* Language defaults + load (main Tools — translated lists only; other tabs keep a compact language picker) */}
+      {/* Language selector + load (hidden in Periodization — language follows profile) */}
       {!periodizationOnly && (
-<<<<<<< HEAD
-        <div className="grid grid-cols-1 gap-3">
-          {/* Instructions Banner - HIDDEN (code preserved for future use) */}
-          <div className="hidden bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
-            <h4 className="font-semibold text-indigo-900 mb-2 flex items-center gap-2">
-              <Globe className="w-5 h-5" />
-              {isAdmin ? 'Multi-Language Settings Workflow (Admin)' : 'Personal Settings Workflow'}
-            </h4>
-            {isAdmin ? (
-              <>
-                <ol className="text-sm text-indigo-800 space-y-1 ml-6 list-decimal">
-                  <li><strong>Select Language:</strong> Choose display language — labels update; missing translations show English in red</li>
-                  <li><strong>Add/Edit:</strong> Fill English (required) and any other languages; blanks use English as fallback</li>
-                  <li><strong>Required:</strong> ⚠️ <span className="font-bold text-red-600">English</span> title is mandatory</li>
-                  <li><strong>Missing translations:</strong> In the selected display language, missing text shows the English value in <span className="font-bold text-red-600">RED</span></li>
-                </ol>
-                <p className="text-xs text-indigo-600 mt-2 italic">
-                  <strong>💡 Example:</strong> Add "Special Period" with EN/FR/IT → Select RU → Item appears in RED (needs Russian translation)
-                </p>
-              </>
-            ) : (
-              <>
-                <ol className="text-sm text-indigo-800 space-y-1 ml-6 list-decimal">
-                  <li><strong>Select Language:</strong> Choose display language — labels update from your saved settings</li>
-                  <li><strong>Load Defaults:</strong> Click "Load Admin Defaults" to get Movesbook's settings in your language</li>
-                  <li><strong>Add/Edit:</strong> Create or edit items in your language - they're automatically saved</li>
-                  <li><strong>Your Items:</strong> Items you create manually are preserved when loading admin defaults</li>
-                </ol>
-                <p className="text-xs text-indigo-600 mt-2 italic">
-                  <strong>💡 Tip:</strong> All settings are automatically available in your workout panels - no save button needed!
-                </p>
-              </>
-            )}
-            <p className="text-xs text-purple-600 mt-2 font-semibold">
-              This applies to: Periods, Sections, {isAdmin ? 'Sports, ' : ''}Equipment, Exercises, Library, Devices
-            </p>
-=======
       <div className="grid grid-cols-1 gap-3">
         
         {/* Instructions Banner - HIDDEN (code preserved for future use) */}
@@ -2344,22 +1711,20 @@ export default function ToolsSettings({
                 <option key={lang.code} value={lang.code}>{lang.name} ({lang.code.toUpperCase()})</option>
               ))}
             </select>
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
           </div>
+          
+          {/* For non-admin: Show Load from Movesbook button */}
+          {!isAdmin && (
+            <button
+              onClick={handleLoadAdminDefaults}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-md font-medium"
+              title="Load period settings from Movesbook in your language"
+            >
+              <Download className="w-4 h-4" />
+              Load from Movesbook
+            </button>
+          )}
 
-<<<<<<< HEAD
-          {showLanguageDefaultsToolbarInMainTools ? (
-            languageDefaultsToolbar
-          ) : isAdmin ? (
-            <div className="flex flex-wrap items-center gap-3 p-3 bg-white dark:bg-gray-900/40 border border-gray-200 dark:border-gray-600 rounded-lg">
-              <Globe className="w-5 h-5 text-indigo-500 shrink-0" aria-hidden />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Display language</span>
-              <select
-                value={selectedLanguage}
-                onChange={(e) => setSelectedLanguage(e.target.value)}
-                className="px-3 py-2 text-sm font-medium border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[10.5rem]"
-                aria-label="Display language"
-=======
         </div>
       </div>
       )}
@@ -2382,233 +1747,42 @@ export default function ToolsSettings({
                 onClick={() => saveLanguageDefaults()}
                 className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg text-white bg-orange-500 hover:bg-orange-600 shadow-md transition"
                 title="Save current tools as language defaults (super admin)"
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
               >
-                {SUPPORTED_LANGUAGES.map((lang) => (
-                  <option key={lang.code} value={lang.code}>
-                    {lang.name} ({lang.code.toUpperCase()})
-                  </option>
-                ))}
-              </select>
-            </div>
+                <Save className="w-4 h-4" />
+                Save
+              </button>
+            </>
           ) : (
-            <div className="flex flex-wrap items-center gap-3 p-3 bg-white dark:bg-gray-900/40 border border-gray-200 dark:border-gray-600 rounded-lg">
-              <span className="text-sm text-gray-700 dark:text-gray-200">
-                <span className="font-medium text-gray-900 dark:text-white">Profile language:</span>{' '}
-                {profileLanguageLabel}{' '}
-                <span className="text-gray-500">({normalizeToolsLanguage(selectedLanguage).toUpperCase()})</span>
-              </span>
-            </div>
+            <>
+              <button
+                type="button"
+                onClick={handleLoadAdminDefaults}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg text-white bg-violet-600 hover:bg-violet-700 shadow-md transition"
+                title="Load period settings from Movesbook in your profile language only"
+              >
+                <Download className="w-4 h-4" />
+                Load from Movesbook
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleManualSave()}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg text-white bg-orange-500 hover:bg-orange-600 shadow-md transition"
+                title="Save your personal period settings"
+              >
+                <Save className="w-4 h-4" />
+                Save
+              </button>
+            </>
           )}
         </div>
       )}
 
       {periodizationOnly && periodizationSubview === 'periodization' && (
-        <PeriodizationTabPanel
-          periods={periods}
-          onPeriodizationTemplatesChanged={() => void loadToolsSettingsFromDatabase()}
-        />
+        <PeriodizationTabPanel periods={periods} />
       )}
 
       {periodizationOnly && periodizationSubview === 'overview' && (
         <PeriodizationOverviewPanel periods={periods} />
-      )}
-
-      {!periodizationOnly && activeTab === 'periodizationPlan' && (
-        <div className="space-y-4 mt-2">
-          <p className="text-sm text-gray-600 dark:text-gray-400 px-1 max-w-4xl leading-relaxed">
-            {t('settings_periodization_panel_help')}
-          </p>
-          <div className="flex gap-1 sm:gap-2 border-b border-gray-200 dark:border-gray-600 overflow-x-auto pb-0">
-            {(['periodization', 'overview'] as const).map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setPeriodizationSubview(key)}
-                className={`px-4 sm:px-6 py-3 font-semibold transition whitespace-nowrap ${
-                  periodizationSubview === key
-                    ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
-              >
-                {key === 'periodization' && t('settings_periodization_tab_periodization')}
-                {key === 'overview' && t('settings_periodization_tab_overview')}
-              </button>
-            ))}
-          </div>
-          {periodizationSubview === 'periodization' && (
-            <PeriodizationTabPanel
-              periods={periods}
-              onPeriodizationTemplatesChanged={() => void loadToolsSettingsFromDatabase()}
-            />
-          )}
-          {periodizationSubview === 'overview' && <PeriodizationOverviewPanel periods={periods} />}
-        </div>
-      )}
-
-      {!periodizationOnly && activeTab === 'periodizationLibrary' && (
-        <div className="space-y-4 mt-2">
-          <p className="text-sm text-gray-600 dark:text-gray-400 px-1 max-w-3xl leading-relaxed">
-            Create named periodization presets for Movesbook (name, sport, level, tags). Save defaults stores them for
-            the selected language. Users see the same cards under Favourites → Periodizations after they load Movesbook
-            defaults.
-          </p>
-          <div className="flex flex-wrap justify-between items-center gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                setEditingPeriodizationTemplate({
-                  id: '',
-                  name: '',
-                  sport: '',
-                  level: '',
-                  tags: [],
-                });
-                setPeriodizationTagsInput('');
-                setShowPeriodizationTemplateDialog(true);
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-            >
-              <Plus className="w-4 h-4" />
-              Add periodization
-            </button>
-            <div className="flex flex-wrap gap-3 items-center">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <select
-                value={periodizationLibTagFilter}
-                onChange={(e) => setPeriodizationLibTagFilter(e.target.value)}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">All Tags</option>
-                {periodizationLibAllTags.map((tag) => (
-                  <option key={tag} value={tag}>
-                    {tag}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredPeriodizationTemplates.map((tpl) => (
-              <div
-                key={tpl.id}
-                className="bg-white dark:bg-gray-900 rounded-xl border-2 border-gray-200 dark:border-gray-600 p-6 hover:border-blue-300 hover:shadow-lg transition"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Star className="w-5 h-5 text-yellow-500 fill-yellow-500 shrink-0" />
-                    <h3 className="font-bold text-gray-900 dark:text-white truncate">{tpl.name}</h3>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingPeriodizationTemplate({ ...tpl });
-                        setPeriodizationTagsInput((tpl.tags || []).join(', '));
-                        setShowPeriodizationTemplateDialog(true);
-                      }}
-                      className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition"
-                      title="Edit"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (confirm('Delete this periodization preset?')) {
-                          setPeriodizationTemplates((prev) => prev.filter((p) => p.id !== tpl.id));
-                        }
-                      }}
-                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between text-sm gap-2">
-                    <span className="text-gray-500 shrink-0">Sport</span>
-                    <span className="font-semibold text-gray-900 dark:text-white text-right">{tpl.sport || '—'}</span>
-                  </div>
-                  <div className="flex justify-between text-sm gap-2">
-                    <span className="text-gray-500 shrink-0">Level</span>
-                    <span className="font-semibold text-gray-900 dark:text-white text-right">{tpl.level || '—'}</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {(tpl.tags || []).map((tag) => (
-                    <span
-                      key={`${tpl.id}-${tag}`}
-                      className="px-2 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 text-xs font-semibold rounded"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveTab('periodizationPlan');
-                      setPeriodizationSubview('periodization');
-                    }}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition"
-                  >
-                    Use in periodization
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPeriodizationTemplates((prev) => [
-                        ...prev,
-                        {
-                          ...tpl,
-                          id: `pt-${Date.now()}`,
-                          name: `${tpl.name} (copy)`,
-                        },
-                      ]);
-                    }}
-                    className="px-4 py-2 border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-semibold rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-                    title="Duplicate"
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      window.alert(
-                        `${tpl.name}\n\nSport: ${tpl.sport}\nLevel: ${tpl.level}\nTags: ${(tpl.tags || []).join(', ') || '—'}`
-                      );
-                    }}
-                    className="px-4 py-2 border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-semibold rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-                    title="View"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          {filteredPeriodizationTemplates.length === 0 && (
-            <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">
-              No periodization presets match your search. Use Add periodization to create one.
-            </p>
-          )}
-        </div>
       )}
 
       {/* Periods, Sections & Execution Techniques Tab Content */}
@@ -2691,13 +1865,7 @@ export default function ToolsSettings({
                         className="w-4 h-4 rounded-full flex-shrink-0"
                         style={{ backgroundColor: item.color }}
                       />
-                      <h3
-                        className={`font-semibold truncate ${
-                          getDisplayTitle(item).isRed
-                            ? 'text-red-600 dark:text-red-400'
-                            : 'text-gray-900 dark:text-gray-100'
-                        }`}
-                      >
+                      <h3 className={`font-semibold truncate ${getDisplayTitle(item).isRed ? 'text-red-600' : 'text-gray-900'}`}>
                         {getDisplayTitle(item).text}
                       </h3>
                       {currentUserId && item.userId && item.userId !== currentUserId && (
@@ -2706,19 +1874,7 @@ export default function ToolsSettings({
                         </span>
                       )}
                     </div>
-<<<<<<< HEAD
-                    <p
-                      className={`text-sm line-clamp-2 ${
-                        getDisplayDescription(item).isRed
-                          ? 'text-red-600 dark:text-red-400'
-                          : 'text-gray-600 dark:text-gray-400'
-                      }`}
-                    >
-                      {getDisplayDescription(item).text}
-                    </p>
-=======
                     <p className="text-sm text-gray-600 line-clamp-2">{item.description}</p>
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                   </div>
 
                   <div className="flex gap-2 flex-shrink-0">
@@ -3202,22 +2358,37 @@ export default function ToolsSettings({
         />
       )}
 
-      {/* Exercises Tab — Label 1 grid + filters; labels 2–6 + FAQs in detail panel / quick view */}
+      {/* Exercises Tab — Exercise Bank + full Section Exercise editor */}
       {activeTab === 'exercises' && (
-        <ExerciseBankTab
-          exercises={exercises}
-          setExercises={setExercises}
-          sports={sports}
-          pathologyCatalog={exercisePathologyCatalog}
-          onAddExercise={() => {
-            setEditingExercise(createDefaultExercise());
-            setShowExerciseDialog(true);
-          }}
-          onEditExercise={(ex) => {
-            setEditingExercise(mergeExerciseWithDefaults(ex));
-            setShowExerciseDialog(true);
-          }}
-        />
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-4 text-sm text-slate-700">
+            <p className="font-semibold text-slate-900">Exercise bank</p>
+            <p className="mt-1 text-xs text-slate-600">
+              Use the grid to filter and manage exercises. Add or Edit opens the full catalog form (typology, sports,
+              equipment, multilingual text, FAQs, machines, pathologies). Save there updates this list; use Save in Tools
+              when you are ready to persist to the server.
+            </p>
+          </div>
+          <ExerciseBankTab
+            exercises={exercises}
+            setExercises={setExercises}
+            sports={sports}
+            pathologyCatalog={exercisePathologyCatalog}
+            onAddExercise={() => {
+              setEditingExercise(
+                mergeExerciseWithDefaults({
+                  id: '',
+                  isUserCreated: !isAdmin,
+                })
+              );
+              setShowExerciseDialog(true);
+            }}
+            onEditExercise={(ex) => {
+              setEditingExercise(mergeExerciseWithDefaults(ex));
+              setShowExerciseDialog(true);
+            }}
+          />
+        </div>
       )}
 
       {/* My Library of Exercises Tab */}
@@ -3569,55 +2740,44 @@ export default function ToolsSettings({
                         </label>
                         <input
                           type="text"
-                          value={getToolsAdminTranslationFieldDisplay(
-                            newItemTranslations,
-                            lang.code,
-                            'title',
+                          value={
                             useEnglishFallbackRules
-                          )}
+                              ? (
+                                  newItemTranslations[lang.code]?.title ||
+                                  (lang.code !== 'en' ? (newItemTranslations['en']?.title || '') : '')
+                                )
+                              : (newItemTranslations[lang.code]?.title || '')
+                          }
                           onChange={(e) => {
                             const value = e.target.value.slice(0, 30);
-<<<<<<< HEAD
-                            setNewItemTranslations((prev) => {
-                              const cur = prev[lang.code] ?? { title: '', description: '' };
-                              return {
-                                ...prev,
-                                [lang.code]: {
-                                  ...cur,
-                                  title: value,
-                                },
-                              };
-=======
                             setNewItemTranslations({
                               ...newItemTranslations,
                               [lang.code]: {
                                 title: value,
                                 description: newItemTranslations[lang.code]?.description || ''
                               }
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             });
                           }}
                           placeholder={`Enter ${lang.name} title...`}
                           className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
-                            isToolsAdminTranslationFieldInherited(
-                              newItemTranslations,
-                              lang.code,
-                              'title',
-                              useEnglishFallbackRules
-                            )
+                            useEnglishFallbackRules &&
+                            lang.code !== 'en' &&
+                            !(newItemTranslations[lang.code]?.title || '').trim() &&
+                            !!(newItemTranslations['en']?.title || '').trim()
                               ? 'text-red-600'
                               : 'text-gray-900'
                           }`}
                           maxLength={30}
                         />
                         <div className="text-xs text-gray-400 mt-0.5">
-                          {getToolsAdminTranslationFieldDisplay(
-                            newItemTranslations,
-                            lang.code,
-                            'title',
+                          {(
                             useEnglishFallbackRules
-                          ).length}
-                          /30
+                              ? (
+                                  newItemTranslations[lang.code]?.title ||
+                                  (lang.code !== 'en' ? (newItemTranslations['en']?.title || '') : '')
+                                )
+                              : (newItemTranslations[lang.code]?.title || '')
+                          ).length}/30
                         </div>
                       </div>
 
@@ -3626,56 +2786,45 @@ export default function ToolsSettings({
                           Description <span className="text-gray-400">(max 255 chars)</span>
                         </label>
                         <textarea
-                          value={getToolsAdminTranslationFieldDisplay(
-                            newItemTranslations,
-                            lang.code,
-                            'description',
+                          value={
                             useEnglishFallbackRules
-                          )}
+                              ? (
+                                  newItemTranslations[lang.code]?.description ||
+                                  (lang.code !== 'en' ? (newItemTranslations['en']?.description || '') : '')
+                                )
+                              : (newItemTranslations[lang.code]?.description || '')
+                          }
                           onChange={(e) => {
                             const value = e.target.value.slice(0, 255);
-<<<<<<< HEAD
-                            setNewItemTranslations((prev) => {
-                              const cur = prev[lang.code] ?? { title: '', description: '' };
-                              return {
-                                ...prev,
-                                [lang.code]: {
-                                  ...cur,
-                                  description: value,
-                                },
-                              };
-=======
                             setNewItemTranslations({
                               ...newItemTranslations,
                               [lang.code]: {
                                 title: newItemTranslations[lang.code]?.title || '',
                                 description: value
                               }
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             });
                           }}
                           placeholder={`Enter ${lang.name} description...`}
                           rows={2}
                           className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
-                            isToolsAdminTranslationFieldInherited(
-                              newItemTranslations,
-                              lang.code,
-                              'description',
-                              useEnglishFallbackRules
-                            )
+                            useEnglishFallbackRules &&
+                            lang.code !== 'en' &&
+                            !(newItemTranslations[lang.code]?.description || '').trim() &&
+                            !!(newItemTranslations['en']?.description || '').trim()
                               ? 'text-red-600'
                               : 'text-gray-900'
                           }`}
                           maxLength={255}
                         />
                         <div className="text-xs text-gray-400 mt-0.5">
-                          {getToolsAdminTranslationFieldDisplay(
-                            newItemTranslations,
-                            lang.code,
-                            'description',
+                          {(
                             useEnglishFallbackRules
-                          ).length}
-                          /255
+                              ? (
+                                  newItemTranslations[lang.code]?.description ||
+                                  (lang.code !== 'en' ? (newItemTranslations['en']?.description || '') : '')
+                                )
+                              : (newItemTranslations[lang.code]?.description || '')
+                          ).length}/255
                         </div>
                       </div>
                     </div>
@@ -3880,55 +3029,44 @@ export default function ToolsSettings({
                         </label>
                         <input
                           type="text"
-                          value={getToolsAdminTranslationFieldDisplay(
-                            editItemTranslations,
-                            lang.code,
-                            'title',
+                          value={
                             useEnglishFallbackRules
-                          )}
+                              ? (
+                                  editItemTranslations[lang.code]?.title ||
+                                  (lang.code !== 'en' ? (editItemTranslations['en']?.title || '') : '')
+                                )
+                              : (editItemTranslations[lang.code]?.title || '')
+                          }
                           onChange={(e) => {
                             const value = e.target.value.slice(0, 30);
-<<<<<<< HEAD
-                            setEditItemTranslations((prev) => {
-                              const cur = prev[lang.code] ?? { title: '', description: '' };
-                              return {
-                                ...prev,
-                                [lang.code]: {
-                                  ...cur,
-                                  title: value,
-                                },
-                              };
-=======
                             setEditItemTranslations({
                               ...editItemTranslations,
                               [lang.code]: {
                                 title: value,
                                 description: editItemTranslations[lang.code]?.description || ''
                               }
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             });
                           }}
                           placeholder={`Enter ${lang.name} title...`}
                           className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
-                            isToolsAdminTranslationFieldInherited(
-                              editItemTranslations,
-                              lang.code,
-                              'title',
-                              useEnglishFallbackRules
-                            )
+                            useEnglishFallbackRules &&
+                            lang.code !== 'en' &&
+                            !(editItemTranslations[lang.code]?.title || '').trim() &&
+                            !!(editItemTranslations['en']?.title || '').trim()
                               ? 'text-red-600'
                               : 'text-gray-900'
                           }`}
                           maxLength={30}
                         />
                         <div className="text-xs text-gray-400 mt-0.5">
-                          {getToolsAdminTranslationFieldDisplay(
-                            editItemTranslations,
-                            lang.code,
-                            'title',
+                          {(
                             useEnglishFallbackRules
-                          ).length}
-                          /30
+                              ? (
+                                  editItemTranslations[lang.code]?.title ||
+                                  (lang.code !== 'en' ? (editItemTranslations['en']?.title || '') : '')
+                                )
+                              : (editItemTranslations[lang.code]?.title || '')
+                          ).length}/30
                         </div>
                       </div>
 
@@ -3937,56 +3075,45 @@ export default function ToolsSettings({
                           Description <span className="text-gray-400">(max 255 chars)</span>
                         </label>
                         <textarea
-                          value={getToolsAdminTranslationFieldDisplay(
-                            editItemTranslations,
-                            lang.code,
-                            'description',
+                          value={
                             useEnglishFallbackRules
-                          )}
+                              ? (
+                                  editItemTranslations[lang.code]?.description ||
+                                  (lang.code !== 'en' ? (editItemTranslations['en']?.description || '') : '')
+                                )
+                              : (editItemTranslations[lang.code]?.description || '')
+                          }
                           onChange={(e) => {
                             const value = e.target.value.slice(0, 255);
-<<<<<<< HEAD
-                            setEditItemTranslations((prev) => {
-                              const cur = prev[lang.code] ?? { title: '', description: '' };
-                              return {
-                                ...prev,
-                                [lang.code]: {
-                                  ...cur,
-                                  description: value,
-                                },
-                              };
-=======
                             setEditItemTranslations({
                               ...editItemTranslations,
                               [lang.code]: {
                                 title: editItemTranslations[lang.code]?.title || '',
                                 description: value
                               }
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
                             });
                           }}
                           placeholder={`Enter ${lang.name} description...`}
                           rows={2}
                           className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
-                            isToolsAdminTranslationFieldInherited(
-                              editItemTranslations,
-                              lang.code,
-                              'description',
-                              useEnglishFallbackRules
-                            )
+                            useEnglishFallbackRules &&
+                            lang.code !== 'en' &&
+                            !(editItemTranslations[lang.code]?.description || '').trim() &&
+                            !!(editItemTranslations['en']?.description || '').trim()
                               ? 'text-red-600'
                               : 'text-gray-900'
                           }`}
                           maxLength={255}
                         />
                         <div className="text-xs text-gray-400 mt-0.5">
-                          {getToolsAdminTranslationFieldDisplay(
-                            editItemTranslations,
-                            lang.code,
-                            'description',
+                          {(
                             useEnglishFallbackRules
-                          ).length}
-                          /255
+                              ? (
+                                  editItemTranslations[lang.code]?.description ||
+                                  (lang.code !== 'en' ? (editItemTranslations['en']?.description || '') : '')
+                                )
+                              : (editItemTranslations[lang.code]?.description || '')
+                          ).length}/255
                         </div>
                       </div>
                     </div>
@@ -4045,141 +3172,6 @@ export default function ToolsSettings({
                 className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-semibold flex items-center justify-center gap-2"
               >
                 <X className="w-4 h-4" />
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Periodization template dialog (Super Admin library) */}
-      {showPeriodizationTemplateDialog && editingPeriodizationTemplate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl p-8 max-w-lg w-full my-8 border border-gray-200 dark:border-gray-600">
-            <h3 className="text-2xl font-bold mb-6 text-gray-900 dark:text-white">
-              {editingPeriodizationTemplate.id ? 'Edit periodization' : 'Add periodization'}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">Name *</label>
-                <input
-                  type="text"
-                  value={editingPeriodizationTemplate.name}
-                  onChange={(e) =>
-                    setEditingPeriodizationTemplate({
-                      ...editingPeriodizationTemplate,
-                      name: e.target.value,
-                    })
-                  }
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. Off-season base"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">Sport *</label>
-                <select
-                  value={editingPeriodizationTemplate.sport}
-                  onChange={(e) =>
-                    setEditingPeriodizationTemplate({
-                      ...editingPeriodizationTemplate,
-                      sport: e.target.value,
-                    })
-                  }
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select sport</option>
-                  {SPORTS_LIST.map((s) => {
-                    const label = getSportDisplayName(s);
-                    return (
-                      <option key={s} value={label}>
-                        {label}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">Level *</label>
-                <input
-                  type="text"
-                  value={editingPeriodizationTemplate.level}
-                  onChange={(e) =>
-                    setEditingPeriodizationTemplate({
-                      ...editingPeriodizationTemplate,
-                      level: e.target.value,
-                    })
-                  }
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. Intermediate, Club, Elite"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
-                  Tags (comma-separated)
-                </label>
-                <input
-                  type="text"
-                  value={periodizationTagsInput}
-                  onChange={(e) => setPeriodizationTagsInput(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="strength, prep, mesocycle 1"
-                />
-              </div>
-            </div>
-            <div className="flex gap-3 mt-8">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!editingPeriodizationTemplate.name.trim()) {
-                    alert('Please enter a name.');
-                    return;
-                  }
-                  if (!editingPeriodizationTemplate.sport.trim()) {
-                    alert('Please select a sport.');
-                    return;
-                  }
-                  if (!editingPeriodizationTemplate.level.trim()) {
-                    alert('Please enter a level.');
-                    return;
-                  }
-                  const tags = periodizationTagsInput
-                    .split(',')
-                    .map((x) => x.trim())
-                    .filter(Boolean);
-                  const existingId = editingPeriodizationTemplate.id;
-                  const id =
-                    existingId && periodizationTemplates.some((p) => p.id === existingId)
-                      ? existingId
-                      : `pt-${Date.now()}`;
-                  const entry: PeriodizationTemplate = {
-                    ...editingPeriodizationTemplate,
-                    id,
-                    tags,
-                  };
-                  setPeriodizationTemplates((prev) => {
-                    const idx = prev.findIndex((p) => p.id === id);
-                    if (idx >= 0) {
-                      const next = [...prev];
-                      next[idx] = entry;
-                      return next;
-                    }
-                    return [...prev, entry];
-                  });
-                  setShowPeriodizationTemplateDialog(false);
-                  setEditingPeriodizationTemplate(null);
-                }}
-                className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPeriodizationTemplateDialog(false);
-                  setEditingPeriodizationTemplate(null);
-                }}
-                className="flex-1 px-6 py-3 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition font-semibold"
-              >
                 Cancel
               </button>
             </div>
@@ -4469,70 +3461,41 @@ export default function ToolsSettings({
         </div>
       )}
 
-      {/* Exercise Dialog — Section Exercises (extended bank form) */}
+      {/* Full Section Exercise editor (replaces legacy simple modal) */}
       {showExerciseDialog && editingExercise && (
         <SectionExerciseDialog
           exercise={editingExercise}
-          onChange={setEditingExercise}
+          onChange={(next) => setEditingExercise(next)}
           sports={sports}
           pathologyCatalog={exercisePathologyCatalog}
-          title={
-            editingExercise.id
-              ? 'Edit Exercise'
-              : 'SECTION EXERCISES — Add New Exercise'
-          }
           onSave={() => {
-            const ex = editingExercise;
-            if (!ex.name?.trim()) {
-              window.alert('Please enter the exercise name in English.');
+            const nameOk = (editingExercise.name || '').trim();
+            const codeOk = (editingExercise.exerciseCode || '').trim();
+            if (!nameOk) {
+              alert('Please enter the exercise name in English.');
               return;
             }
-            if (!(ex.exerciseCode || '').trim()) {
-              window.alert('Please enter the exercise code (reference).');
+            if (!codeOk) {
+              alert('Please enter a reference code for this exercise.');
               return;
             }
-            if (!ex.typology) {
-              window.alert('Please select a typology.');
-              return;
-            }
-            if (!ex.sportsIndicated?.length) {
-              window.alert('Please select at least one sport (or add sports in the Sports tab).');
-              return;
-            }
-            if (!ex.equipmentType) {
-              window.alert('Please select a type of equipment.');
-              return;
-            }
-            const mTags = normalizeMuscleAreaPercentTags(ex.muscleAreaPercentTags || []);
-            const mainEntry = mTags.find((t) => t.isMain);
-            if (!(mainEntry?.area || '').trim()) {
-              window.alert('Please select the main muscular area with a percentage (Label 6).');
-              return;
-            }
-            const totalPct = muscleInvolvementPercentTotal(mTags);
-            if (totalPct !== 100) {
-              window.alert(
-                `Muscular area percentages must total exactly 100% (currently ${totalPct}%). Adjust Label 6.`
-              );
-              return;
-            }
-            const areasUsed = mTags.filter((t) => (t.area || '').trim()).map((t) => t.area.trim());
-            if (new Set(areasUsed).size !== areasUsed.length) {
-              window.alert('Each muscular area can appear only once.');
-              return;
-            }
-            if (!ex.levels?.length) {
-              window.alert('Please select at least one level (1–5).');
-              return;
-            }
-            const finalized = finalizeExerciseForStorage(ex);
-            if (finalized.id) {
-              setExercises(exercises.map((row) => (row.id === finalized.id ? finalized : row)));
+            const finalized = finalizeExerciseForStorage(editingExercise);
+            const existingId = (finalized.id || '').trim();
+            const id =
+              existingId && exercises.some((x) => x.id === existingId)
+                ? existingId
+                : existingId || `ex-${Date.now()}`;
+            const toSave: Exercise = {
+              ...finalized,
+              id,
+              isUserCreated:
+                finalized.isUserCreated !== undefined ? finalized.isUserCreated : !isAdmin,
+            };
+            const exists = exercises.some((e) => e.id === id);
+            if (exists) {
+              setExercises((prev) => prev.map((e) => (e.id === id ? toSave : e)));
             } else {
-              setExercises([
-                ...exercises,
-                { ...finalized, id: Date.now().toString(), isUserCreated: !isAdmin },
-              ]);
+              setExercises((prev) => [...prev, toSave]);
             }
             setShowExerciseDialog(false);
             setEditingExercise(null);
@@ -4757,14 +3720,7 @@ export default function ToolsSettings({
                   <li><strong>Library:</strong> All exercises from My Library tab</li>
                   <li><strong>Devices:</strong> All devices from Device Enabled tab</li>
                 </ul>
-<<<<<<< HEAD
-                <p className="pt-2">
-                  <strong>👥 For users:</strong> When they use <strong>Load</strong> in Language Defaults (Load admin defaults), those defaults are applied{' '}
-                  <strong>in their profile language</strong>. Each user should set <strong>language</strong> in their profile so the system knows which locale to load.
-                </p>
-=======
                 <p className="pt-2 font-semibold"><strong>👥 For users:</strong> All these settings will be available when they click "Load Admin Defaults" button.</p>
->>>>>>> 4d8b65344826299ede7cbe74a55201e20258431b
               </div>
             )}
             {!isAdmin && (
@@ -4886,8 +3842,7 @@ export default function ToolsSettings({
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <p className="text-xs text-blue-700">
-                  <strong>💡 Tip:</strong> After translating all sports, use <strong>Save defaults</strong> in the Language Defaults bar to publish them for{' '}
-                  {SUPPORTED_LANGUAGES.find((l) => l.code === selectedLanguage)?.name}
+                  <strong>💡 Tip:</strong> After translating all sports, click "Save as DEFAULT" at the top to save them for {SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name}
                 </p>
               </div>
             </div>
