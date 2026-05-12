@@ -8,7 +8,7 @@ import { prisma } from '@/lib/prisma';
 export const dynamic = 'force-dynamic';
 
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
-const DOCUMENT_LOGO_DIR = ['img', 'document_logo'];
+const DOCUMENT_LOGO_DIR = ['uploads', 'document_logo'];
 const TABLE_NAME = 'club_reader_other_settings';
 const ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']);
 const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
@@ -245,14 +245,15 @@ export async function POST(request: NextRequest) {
 
     const fileName = `Logo_${Date.now()}_${safeBaseName(file.name)}${extension}`;
     await writeFile(join(uploadDir, fileName), buffer, { flag: 'wx' });
-    await saveLogoFilename(String(decoded.userId), fileName, slot, selected);
+    const publicPath = `/uploads/document_logo/${fileName}`;
+    await saveLogoFilename(String(decoded.userId), publicPath, slot, selected);
 
     return NextResponse.json({
       success: true,
-      image: fileName,
+      image: publicPath,
       fileName,
-      url: `/img/document_logo/${fileName}`,
-      path: `/img/document_logo/${fileName}`
+      url: publicPath,
+      path: publicPath
     });
   } catch (error) {
     console.error('POST /api/club/settings/other-settings/logo:', error);

@@ -233,6 +233,51 @@ function getLogoPreviewUrl(value: string) {
   return `/img/document_logo/${encodeURIComponent(logo)}`;
 }
 
+const closingDatePairs = [
+  { label: 'Closing time 1', start: 'closingTimeStart1', end: 'closingTimeEnd1' },
+  { label: 'Closing time 2', start: 'closingTimeStart2', end: 'closingTimeEnd2' },
+  { label: 'Closing time 3', start: 'closingTimeStart3', end: 'closingTimeEnd3' }
+] as const;
+
+const dependentErrorFields: Record<string, string[]> = {
+  closingTimeStart1: ['closingTimeEnd1'],
+  closingTimeStart2: ['closingTimeEnd2'],
+  closingTimeStart3: ['closingTimeEnd3']
+};
+
+function getComparableDateKey(value: string) {
+  const trimmed = value.trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (iso) return `${iso[1]}${iso[2]}${iso[3]}`;
+
+  const legacy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(trimmed);
+  if (legacy) return `${legacy[3]}${legacy[2]}${legacy[1]}`;
+
+  return '';
+}
+
+function validateClosingDates(settings: OtherSettings, nextErrors: FormErrors) {
+  for (const pair of closingDatePairs) {
+    const start = settings[pair.start].trim();
+    const end = settings[pair.end].trim();
+
+    if (!start) {
+      continue;
+    }
+
+    if (!end) {
+      nextErrors[pair.end] = `Please select end date for ${pair.label}.`;
+      continue;
+    }
+
+    const startKey = getComparableDateKey(start);
+    const endKey = getComparableDateKey(end);
+    if (startKey && endKey && endKey <= startKey) {
+      nextErrors[pair.end] = `End date must be later than start date for ${pair.label}.`;
+    }
+  }
+}
+
 function validateSettingsForSave(settings: OtherSettings): FormErrors {
   const nextErrors: FormErrors = {};
   const hasLetter = /[a-zA-Z]/;
@@ -261,6 +306,8 @@ function validateSettingsForSave(settings: OtherSettings): FormErrors {
   if (!installments || !Number.isInteger(installmentValue) || installmentValue < 1 || installmentValue > 3) {
     nextErrors.installmentDefault = 'Please enter valid value number for Installments default (1 to 3).';
   }
+
+  validateClosingDates(settings, nextErrors);
 
   return nextErrors;
 }
@@ -324,11 +371,14 @@ export default function OtherSettingsPage() {
     fieldRefs.current[field] = node;
   };
 
-  const clearFieldError = (field: string) => {
+  const clearFieldError = (field: string, relatedFields: string[] = []) => {
     setErrors((current) => {
-      if (!current[field]) return current;
+      const fields = [field, ...relatedFields];
+      if (!fields.some((fieldName) => current[fieldName])) return current;
       const next = { ...current };
-      delete next[field];
+      for (const fieldName of fields) {
+        delete next[fieldName];
+      }
       return next;
     });
   };
@@ -355,7 +405,8 @@ export default function OtherSettingsPage() {
 
   const updateField = <K extends keyof OtherSettings>(key: K, value: OtherSettings[K]) => {
     setSettings((current) => ({ ...current, [key]: value }));
-    clearFieldError(String(key));
+    const field = String(key);
+    clearFieldError(field, dependentErrorFields[field] ?? []);
     setSuccess(null);
   };
 
@@ -650,13 +701,25 @@ export default function OtherSettingsPage() {
 
           <Section title="Documents" accent="bg-emerald-600" icon={<FileText className="h-4 w-4" />}>
             <Panel title="Printable documents">
-              <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-                <div className="space-y-3">
+              <div className="space-y-4">
+                <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_180px]">
+                  <SelectField label="Document type" value={settings.documentType} options={documentTypes} onChange={(value) => updateField('documentType', value)} />
+                  <TextField label="Number of copies" type="number" min={0} step={1} value={settings.numberCopies} onChange={(value) => updateField('numberCopies', value)} />
+                  <TextField label="Rate" type="number" min={0} step="any" value={settings.rate} onChange={(value) => updateField('rate', value)} />
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <CheckboxField label="Not enter the customer data in the document tax" checked={settings.notEnterCustData} onChange={(value) => updateField('notEnterCustData', value)} />
+                  <CheckboxField label="Put code of badge federation and data expiring" checked={settings.badgeFedaration} onChange={(value) => updateField('badgeFedaration', value)} />
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-2">
                   <LogoOption
                     label="Primary logo"
                     slot="documentLogo1"
                     checked={settings.printInDocument === 'Y'}
                     value={settings.documentLogo1}
+                    wide
                     onChecked={() => updateField('printInDocument', 'Y')}
                     onChange={(value) => updateField('documentLogo1', value)}
                   />
@@ -669,15 +732,6 @@ export default function OtherSettingsPage() {
                     onChecked={() => updateField('printInDocument', 'N')}
                     onChange={(value) => updateField('documentLogo2', value)}
                   />
-                </div>
-                <div className="grid gap-3">
-                  <SelectField label="Document type" value={settings.documentType} options={documentTypes} onChange={(value) => updateField('documentType', value)} />
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <TextField label="Number of copies" type="number" min={0} step={1} value={settings.numberCopies} onChange={(value) => updateField('numberCopies', value)} />
-                    <TextField label="Rate" type="number" min={0} step="any" value={settings.rate} onChange={(value) => updateField('rate', value)} />
-                  </div>
-                  <CheckboxField label="Not enter the customer data in the document tax" checked={settings.notEnterCustData} onChange={(value) => updateField('notEnterCustData', value)} />
-                  <CheckboxField label="Put code of badge federation and data expiring" checked={settings.badgeFedaration} onChange={(value) => updateField('badgeFedaration', value)} />
                 </div>
               </div>
             </Panel>
@@ -771,6 +825,8 @@ export default function OtherSettingsPage() {
                   onChecked={(value) => updateField('closingTimeStartStatus1', value)}
                   onStart={(value) => updateField('closingTimeStart1', value)}
                   onEnd={(value) => updateField('closingTimeEnd1', value)}
+                  endError={errors.closingTimeEnd1}
+                  endRef={registerField('closingTimeEnd1')}
                 />
                 <ClosingRow
                   checked={settings.closingTimeStartStatus2}
@@ -779,6 +835,8 @@ export default function OtherSettingsPage() {
                   onChecked={(value) => updateField('closingTimeStartStatus2', value)}
                   onStart={(value) => updateField('closingTimeStart2', value)}
                   onEnd={(value) => updateField('closingTimeEnd2', value)}
+                  endError={errors.closingTimeEnd2}
+                  endRef={registerField('closingTimeEnd2')}
                 />
                 <ClosingRow
                   checked={settings.closingTimeStartStatus3}
@@ -787,6 +845,8 @@ export default function OtherSettingsPage() {
                   onChecked={(value) => updateField('closingTimeStartStatus3', value)}
                   onStart={(value) => updateField('closingTimeStart3', value)}
                   onEnd={(value) => updateField('closingTimeEnd3', value)}
+                  endError={errors.closingTimeEnd3}
+                  endRef={registerField('closingTimeEnd3')}
                 />
               </div>
             </Panel>
@@ -1169,14 +1229,16 @@ function LogoOption({
         throw new Error(data?.error || 'Unable to upload logo.');
       }
 
-      const fileName = String(data?.image || data?.fileName || '').trim();
-      if (!fileName) {
-        throw new Error('The uploaded logo did not return a valid filename.');
+      const publicPath = String(data?.path || data?.url || data?.image || '').trim();
+      const fileName = String(data?.fileName || '').trim();
+      const storedValue = publicPath || fileName;
+      if (!storedValue) {
+        throw new Error('The uploaded logo did not return a valid path.');
       }
 
-      const url = String(data?.url || `/img/document_logo/${encodeURIComponent(fileName)}`);
-      setPreview({ name: fileName, url });
-      onChange(fileName);
+      const url = publicPath || `/uploads/document_logo/${encodeURIComponent(fileName)}`;
+      setPreview({ name: storedValue, url });
+      onChange(storedValue);
     } catch (error) {
       setLogoError(error instanceof Error ? error.message : 'Unable to upload logo.');
     } finally {
@@ -1288,7 +1350,9 @@ function ClosingRow({
   end,
   onChecked,
   onStart,
-  onEnd
+  onEnd,
+  endError,
+  endRef
 }: {
   checked: boolean;
   start: string;
@@ -1296,12 +1360,14 @@ function ClosingRow({
   onChecked: (value: boolean) => void;
   onStart: (value: string) => void;
   onEnd: (value: string) => void;
+  endError?: string;
+  endRef?: (node: HTMLElement | null) => void;
 }) {
   return (
     <div className="grid gap-3 rounded-md border border-gray-200 bg-white p-3 md:grid-cols-[120px_1fr_1fr] md:items-end">
       <CheckboxField label="Start" checked={checked} onChange={onChecked} />
       <TextField label="Start date" type="date" value={start} onChange={onStart} />
-      <TextField label="End date" type="date" value={end} onChange={onEnd} />
+      <TextField label="End date" type="date" value={end} onChange={onEnd} error={endError} fieldRef={endRef} />
     </div>
   );
 }
