@@ -2980,6 +2980,7 @@ export default function DarkSidebar({
                                     {
                                       Icon: Import,
                                       label: 'Load dbase from other apps',
+                                      path: '/club/settings/preset_settings',
                                     },
                                     {
                                       Icon: Check,
