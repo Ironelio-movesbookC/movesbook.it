@@ -2968,7 +2968,11 @@ export default function DarkSidebar({
                                       path: '/club/settings/typology_subscription',
                                     },
                                     { Icon: Settings, label: 'System settings' },
-                                    { Icon: CreditCard, label: 'Accesses controls' },
+                                    {
+                                      Icon: CreditCard,
+                                      label: 'Accesses controls',
+                                      path: '/club/settings/access_settings',
+                                    },
                                     {
                                       Icon: Settings2,
                                       label: 'Other settings',
@@ -2980,6 +2984,7 @@ export default function DarkSidebar({
                                     {
                                       Icon: Import,
                                       label: 'Load dbase from other apps',
+                                      path: '/club/settings/preset_settings',
                                     },
                                     {
                                       Icon: Check,

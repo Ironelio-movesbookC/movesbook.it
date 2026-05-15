@@ -324,6 +324,45 @@ function parseSettingsBody(body: unknown): OtherSettings {
   return settings;
 }
 
+const closingDatePairs = [
+  { label: 'Closing time 1', start: 'closingTimeStart1', end: 'closingTimeEnd1' },
+  { label: 'Closing time 2', start: 'closingTimeStart2', end: 'closingTimeEnd2' },
+  { label: 'Closing time 3', start: 'closingTimeStart3', end: 'closingTimeEnd3' }
+] as const;
+
+function getComparableDateKey(value: string) {
+  const trimmed = value.trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (iso) return `${iso[1]}${iso[2]}${iso[3]}`;
+
+  const legacy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(trimmed);
+  if (legacy) return `${legacy[3]}${legacy[2]}${legacy[1]}`;
+
+  return '';
+}
+
+function validateClosingDates(settings: OtherSettings, fieldErrors: FieldErrors) {
+  for (const pair of closingDatePairs) {
+    const start = String(settings[pair.start] || '').trim();
+    const end = String(settings[pair.end] || '').trim();
+
+    if (!start) {
+      continue;
+    }
+
+    if (!end) {
+      fieldErrors[pair.end] = `Please select end date for ${pair.label}.`;
+      continue;
+    }
+
+    const startKey = getComparableDateKey(start);
+    const endKey = getComparableDateKey(end);
+    if (startKey && endKey && endKey <= startKey) {
+      fieldErrors[pair.end] = `End date must be later than start date for ${pair.label}.`;
+    }
+  }
+}
+
 function validateSettings(settings: OtherSettings): FieldErrors {
   const fieldErrors: FieldErrors = {};
   const hasLetter = /[a-zA-Z]/;
@@ -352,6 +391,8 @@ function validateSettings(settings: OtherSettings): FieldErrors {
   if (!installments || !Number.isInteger(value) || value < 1 || value > 3) {
     fieldErrors.installmentDefault = 'Please enter valid value number for Installments default (1 to 3).';
   }
+
+  validateClosingDates(settings, fieldErrors);
 
   return fieldErrors;
 }
