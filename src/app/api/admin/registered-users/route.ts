@@ -1,0 +1,200 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { Prisma, SportType, UserType } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
+import { requireAdmin } from '@/lib/adminAuth';
+
+export const dynamic = 'force-dynamic';
+
+const SEGMENT_TYPES: Record<string, UserType[]> = {
+  'single-user': [UserType.ATHLETE],
+  coaches: [UserType.COACH],
+  groups: [UserType.GROUP, UserType.GROUP_ADMIN],
+  teams: [UserType.TEAM, UserType.TEAM_MANAGER],
+  clubs: [UserType.CLUB, UserType.CLUB_TRAINER],
+};
+
+function versionLabel(userType: UserType): string {
+  switch (userType) {
+    case UserType.ATHLETE:
+      return 'User — base version';
+    case UserType.COACH:
+      return 'Coach — base';
+    case UserType.TEAM:
+    case UserType.TEAM_MANAGER:
+      return 'Team account';
+    case UserType.CLUB:
+    case UserType.CLUB_TRAINER:
+      return 'Club account';
+    case UserType.GROUP:
+    case UserType.GROUP_ADMIN:
+      return 'Group account';
+    default:
+      return userType;
+  }
+}
+
+function parseOrder(
+  raw: string | null,
+): Prisma.UserOrderByWithRelationInput | Prisma.UserOrderByWithRelationInput[] {
+  switch (raw) {
+    case 'username':
+      return { username: 'asc' };
+    case 'fullname':
+      return [{ surname: 'asc' }, { firstName: 'asc' }, { name: 'asc' }];
+    case 'date':
+      return { createdAt: 'desc' };
+    case 'date_end':
+      return { updatedAt: 'desc' };
+    default:
+      return { createdAt: 'desc' };
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  const url = new URL(request.url);
+  const segment = url.searchParams.get('segment') || 'single-user';
+  const types = SEGMENT_TYPES[segment];
+  if (!types) {
+    return NextResponse.json({ error: 'Invalid segment' }, { status: 400 });
+  }
+
+  const search = (url.searchParams.get('q') || '').trim();
+  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get('pageSize') || '25', 10) || 25));
+  const orderParam = url.searchParams.get('order') || '';
+  const country = (url.searchParams.get('country') || '').trim();
+  const sportRaw = (url.searchParams.get('sport') || '').trim();
+  const version = (url.searchParams.get('version') || '').trim();
+  const login = (url.searchParams.get('login') || 'all').trim();
+  const subDay = (url.searchParams.get('subDay') || '').trim();
+  const subMonth = (url.searchParams.get('subMonth') || '').trim();
+  const subYear = (url.searchParams.get('subYear') || '').trim();
+  const createdFrom = (url.searchParams.get('createdFrom') || '').trim();
+  const createdTo = (url.searchParams.get('createdTo') || '').trim();
+
+  let finalTypes = types;
+  if (version) {
+    finalTypes = types.filter((t) => versionLabel(t) === version);
+  }
+  if (finalTypes.length === 0) {
+    return NextResponse.json({
+      total: 0,
+      page,
+      pageSize,
+      users: [],
+    });
+  }
+
+  const andClauses: Prisma.UserWhereInput[] = [{ userType: { in: finalTypes } }];
+
+  if (search) {
+    andClauses.push({
+      OR: [
+        { username: { contains: search } },
+        { email: { contains: search } },
+        { name: { contains: search } },
+        { firstName: { contains: search } },
+        { surname: { contains: search } },
+      ],
+    });
+  }
+
+  if (country) {
+    andClauses.push({ country });
+  }
+
+  if (sportRaw && Object.values(SportType).includes(sportRaw as SportType)) {
+    andClauses.push({
+      mainSports: { some: { sport: sportRaw as SportType } },
+    });
+  }
+
+  if (login === 'never') {
+    andClauses.push({ lastSeenAt: null });
+  } else if (login === 'active7') {
+    andClauses.push({
+      lastSeenAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+    });
+  } else if (login === 'active24h') {
+    andClauses.push({
+      lastSeenAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    });
+  }
+
+  const d = parseInt(subDay, 10);
+  const m = parseInt(subMonth, 10);
+  const y = parseInt(subYear, 10);
+  if (!Number.isNaN(d) && !Number.isNaN(m) && !Number.isNaN(y) && m >= 1 && m <= 12) {
+    const start = new Date(y, m - 1, d);
+    const end = new Date(y, m - 1, d + 1);
+    if (!Number.isNaN(start.getTime())) {
+      andClauses.push({ createdAt: { gte: start, lt: end } });
+    }
+  }
+
+  if (createdFrom) {
+    const from = new Date(createdFrom);
+    if (!Number.isNaN(from.getTime())) {
+      andClauses.push({ createdAt: { gte: from } });
+    }
+  }
+  if (createdTo) {
+    const to = new Date(createdTo);
+    if (!Number.isNaN(to.getTime())) {
+      to.setHours(23, 59, 59, 999);
+      andClauses.push({ createdAt: { lte: to } });
+    }
+  }
+
+  const where: Prisma.UserWhereInput = { AND: andClauses };
+  const orderBy = parseOrder(orderParam);
+
+  const [total, rows] = await Promise.all([
+    prisma.user.count({ where }),
+    prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        name: true,
+        firstName: true,
+        surname: true,
+        userType: true,
+        country: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  return NextResponse.json({
+    total,
+    page,
+    pageSize,
+    users: rows.map((u: (typeof rows)[number]) => {
+      const displayName = [u.firstName, u.surname].filter(Boolean).join(' ').trim() || u.name;
+      return {
+        id: u.id,
+        username: u.username,
+        email: u.email,
+        displayName,
+        userType: u.userType,
+        country: u.country,
+        dateStart: u.createdAt.toISOString().slice(0, 10),
+        dateEnd: null as string | null,
+        version: versionLabel(u.userType),
+        amount: '—',
+        status: 'Active',
+      };
+    }),
+  });
+}

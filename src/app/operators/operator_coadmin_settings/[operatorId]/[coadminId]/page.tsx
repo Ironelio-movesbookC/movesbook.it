@@ -1,7 +1,6 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { useState } from 'react';
 import {
   User,
@@ -20,23 +19,7 @@ import {
   Info,
   MessageCircle,
 } from 'lucide-react';
-
-const PRIMARY_TABS = [
-  { id: 'profile', label: 'Profile' },
-  { id: 'curriculum', label: 'curriculum' },
-  { id: 'settings', label: 'Settings' },
-  { id: 'super-admin', label: 'Super Admin settings' },
-  { id: 'assign-coadmin', label: 'Assign a new Co-admin' },
-  { id: 'customers', label: 'My Customers' },
-  { id: 'orders', label: 'Orders' },
-];
-
-const SECONDARY_TABS = [
-  { id: 'payments', label: 'Payments' },
-  { id: 'visits', label: 'Visits' },
-  { id: 'mylist', label: 'My list' },
-  { id: 'logins', label: 'Logins' },
-];
+import { OperatorNavBar } from '@/components/operators/OperatorNavBar';
 
 type ToggleValue = 'OY' | 'ON'; // OY = Off, ON = On
 type YesNo = 'Yes' | 'No';
@@ -98,7 +81,6 @@ export default function OperatorCoadminSettingsPage() {
   const operatorId = params?.operatorId as string;
   const coadminId = params?.coadminId as string;
 
-  const [activeSecondary, setActiveSecondary] = useState('payments');
   const [country, setCountry] = useState('Andorra');
   const [language, setLanguage] = useState('English');
   const [idCardCode, setIdCardCode] = useState('');
@@ -137,40 +119,11 @@ export default function OperatorCoadminSettingsPage() {
 
   return (
     <div className="min-h-full bg-gray-100">
-      {/* Primary tabs */}
-      <div className="flex flex-wrap gap-0 bg-[#4f4f4f] border-b border-gray-600">
-        {PRIMARY_TABS.map((tab) => {
-          const href =
-            tab.id === 'profile' ? `/operators/profile/${operatorId}` :
-            tab.id === 'settings' ? `/operators/settings/${operatorId}` :
-            tab.id === 'super-admin' ? `/operators/operator_coadmin_settings/${operatorId}/${coadminId}` :
-            tab.id === 'customers' ? `/operators/myCustomers/${operatorId}` : '#';
-          const isActive = tab.id === 'super-admin';
-          return (
-            <Link
-              key={tab.id}
-              href={href}
-              className={`px-4 py-2.5 text-sm font-medium transition ${isActive ? 'bg-black text-white' : 'text-gray-300 hover:text-white hover:bg-gray-600'}`}
-            >
-              {tab.label}
-            </Link>
-          );
-        })}
-      </div>
-
-      {/* Secondary tabs */}
-      <div className="flex flex-wrap gap-0 bg-[#4f4f4f] border-b border-gray-600">
-        {SECONDARY_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            className={`px-4 py-2 text-sm font-medium transition ${activeSecondary === tab.id ? 'bg-black text-white' : 'text-gray-300 hover:text-white hover:bg-gray-600'}`}
-            onClick={() => setActiveSecondary(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <OperatorNavBar
+        operatorId={operatorId}
+        activeTabId="super-admin"
+        variant={{ kind: 'coadmin', coadminId }}
+      />
 
       <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
         {/* Co-Admin profile header */}
