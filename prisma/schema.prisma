@@ -801,6 +801,80 @@ model SuperAdminSettings {
   @@map("super_admin_settings")
 }
 
+/// Operator and Co-Admin accounts managed from the admin console (separate from `User` / `users_new`).
+model StaffAccount {
+  id                   String           @id @default(cuid())
+  kind                 StaffAccountKind
+  username             String           @unique
+  email                String           @unique
+  password             String
+  name                 String
+  surname              String
+  country              String?
+  operatorLanguage     String?
+  idCardCode           String?
+  commissionPct        String?
+  commissionAutoAssign Boolean          @default(false)
+  regions              String?
+  roleLabel            String?
+  alternateEmail       String?
+  phonePrefix          String?
+  phoneNumber          String?
+  cellularPrefix       String?
+  cellularNumber       String?
+  facebook             String?
+  twitter              String?
+  website              String?
+  blogsite             String?
+  otherSite            String?
+  otherInfos           String?          @db.LongText
+  imageUrl             String?          @db.LongText
+  lastLogin            DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  assignedUsers        StaffAssignedUser[]
+  loginLogs            StaffAccountLoginLog[]
+
+  @@map("staff_accounts")
+}
+
+/// Login / logout audit rows for an operator or co-admin (admin "Logins" tab).
+model StaffAccountLoginLog {
+  id             String       @id @default(cuid())
+  staffAccountId String
+  loginAt        DateTime
+  logoutAt       DateTime?
+  createdAt      DateTime     @default(now())
+  staffAccount   StaffAccount @relation(fields: [staffAccountId], references: [id], onDelete: Cascade)
+
+  @@index([staffAccountId, loginAt])
+  @@index([staffAccountId, logoutAt])
+  @@map("staff_account_login_logs")
+}
+
+/// Users assigned to an operator or co-admin from the admin "My Customers" screen.
+model StaffAssignedUser {
+  id             String       @id @default(cuid())
+  staffAccountId String
+  username       String
+  name           String
+  country        String?
+  language       String?
+  lastLogin      DateTime?
+  imageUrl       String?      @db.LongText
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  staffAccount   StaffAccount @relation(fields: [staffAccountId], references: [id], onDelete: Cascade)
+
+  @@index([staffAccountId])
+  @@map("staff_assigned_users")
+}
+
+enum StaffAccountKind {
+  OPERATOR
+  CO_ADMIN
+}
+
 /// Manufacturers / brands that build sport and fitness machines (Super Admin catalog).
 model SportMachineCompany {
   id          String   @id @default(cuid())
