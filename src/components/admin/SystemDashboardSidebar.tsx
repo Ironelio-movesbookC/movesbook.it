@@ -62,7 +62,8 @@ import {
   QrCode,
   CreditCard,
   Triangle,
-  Gift
+  Gift,
+  Users2
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -154,6 +155,7 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
       items: [
         { label: 'Super Admin', icon: User, href: '/settings/admin-management' },
         { label: 'Co-administrators', icon: Users, href: '/operators/usersAssignedStaff' },
+        { label: 'All staff', icon: Users2, href: '/admin/all-staff' },
         { label: 'Operators', icon: Headphones, href: '/operators' }
       ]
     },

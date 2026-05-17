@@ -3,7 +3,6 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Key, ChevronRight, User } from 'lucide-react';
-import { OperatorNavBar } from '@/components/operators/OperatorNavBar';
 
 type HeaderInfo = {
   fullName: string;
@@ -143,8 +142,6 @@ export default function OperatorPasswordSettingsPage() {
 
   return (
     <div className="min-h-full bg-gray-100">
-      <OperatorNavBar operatorId={id} activeTabId="settings" variant={{ kind: 'standard' }} />
-
       <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
         {(loadError || success || loading) && (
           <div

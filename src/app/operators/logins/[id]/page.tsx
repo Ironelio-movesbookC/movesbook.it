@@ -4,8 +4,6 @@ import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from 'lucide-react';
-import { OperatorNavBar } from '@/components/operators/OperatorNavBar';
-import type { OperatorNavVariant } from '@/lib/operatorNavTabs';
 
 type LogType = 'in' | 'out' | 'both';
 
@@ -51,23 +49,6 @@ function toDatetimeLocalValue(d: Date): string {
 export default function OperatorLoginsPage() {
   const params = useParams();
   const id = params?.id as string;
-
-  const [variant, setVariant] = useState<OperatorNavVariant>({ kind: 'standard' });
-
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem('operatorNavVariant');
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as OperatorNavVariant;
-      if (parsed?.kind === 'standard' || parsed?.kind === 'myCustomers') {
-        setVariant(parsed);
-      } else if (parsed?.kind === 'coadmin' && typeof parsed.coadminId === 'string') {
-        setVariant(parsed);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
 
   const [dateFrom, setDateFrom] = useState(() => {
     const t = new Date();
@@ -162,8 +143,6 @@ export default function OperatorLoginsPage() {
 
   return (
     <div className="min-h-full bg-gray-100">
-      <OperatorNavBar operatorId={id} activeTabId="logins" variant={variant} />
-
       <div className="max-w-6xl mx-auto px-6 py-6 space-y-4">
         <div className="bg-white border border-gray-300 rounded-lg p-4 shadow-sm">
           <h1 className="text-lg font-semibold text-gray-900 mb-3">Login history</h1>

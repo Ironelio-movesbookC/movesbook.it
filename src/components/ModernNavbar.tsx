@@ -544,17 +544,16 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
         data = await response.json();
 
         if (response.ok && data.user) {
-          // Admin login successful
           localStorage.setItem('adminToken', data.token);
           localStorage.setItem('adminUser', JSON.stringify(data.user));
-          
-          // Clear form
           setLoginUsername('');
           setLoginPassword('');
           setLoginError('');
-          
-          // Redirect to admin dashboard
-          router.push('/admin/dashboard');
+          if (data.user.isStaff) {
+            router.push(`/operators/profile/${data.user.id}`);
+          } else {
+            router.push('/admin/dashboard');
+          }
           return;
         }
       }
@@ -585,17 +584,16 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
         data = await response.json();
 
         if (response.ok && data.user) {
-          // Admin login successful
           localStorage.setItem('adminToken', data.token);
           localStorage.setItem('adminUser', JSON.stringify(data.user));
-          
-          // Clear form
           setLoginUsername('');
           setLoginPassword('');
           setLoginError('');
-          
-          // Redirect to admin dashboard
-          router.push('/admin/dashboard');
+          if (data.user.isStaff) {
+            router.push(`/operators/profile/${data.user.id}`);
+          } else {
+            router.push('/admin/dashboard');
+          }
           return;
         }
       }

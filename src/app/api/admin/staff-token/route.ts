@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken, generateToken, hashPassword } from '@/lib/auth';
+import { isStaffUserType } from '@/lib/panelAuth';
 
 /**
  * POST /api/admin/staff-token
@@ -23,6 +24,10 @@ export async function POST(request: NextRequest) {
     const decoded = verifyToken(adminToken);
     if (!decoded?.userId) {
       return NextResponse.json({ error: 'Invalid admin token' }, { status: 401 });
+    }
+
+    if (isStaffUserType(decoded.userType)) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     // The dedicated staff user account used for creating shared content

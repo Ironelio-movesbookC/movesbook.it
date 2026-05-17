@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin } from '@/lib/adminAuth';
+import { requireAdminPanel, requireStaffSelfOrAdminPanel } from '@/lib/panelAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,12 +21,11 @@ function normalizeUsername(value: unknown): string {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const id = getIdFromRequest(request);
+  const auth = await requireStaffSelfOrAdminPanel(request, id);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
-
-  const id = getIdFromRequest(request);
 
   if (!id) {
     return NextResponse.json({ error: 'Operator id is required' }, { status: 400 });
@@ -74,12 +73,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const id = getIdFromRequest(request);
+  const auth = await requireStaffSelfOrAdminPanel(request, id);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const id = getIdFromRequest(request);
   if (!id) {
     return NextResponse.json({ error: 'Operator id is required' }, { status: 400 });
   }
@@ -119,38 +118,63 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'Username or email already exists' }, { status: 409 });
   }
 
+  const isStaffSelf = auth.ok && auth.role === 'staff';
+  const updateData = isStaffSelf
+    ? {
+        username,
+        email,
+        name,
+        surname,
+        country: body.country ? String(body.country).trim() : null,
+        regions: body.regions ? String(body.regions).trim() : null,
+        alternateEmail: body.alternateEmail ? normalizeEmail(body.alternateEmail) : null,
+        phonePrefix: body.phonePrefix ? String(body.phonePrefix).trim() : null,
+        phoneNumber: body.phoneNumber ? String(body.phoneNumber).trim() : null,
+        cellularPrefix: body.cellularPrefix ? String(body.cellularPrefix).trim() : null,
+        cellularNumber: body.cellularNumber ? String(body.cellularNumber).trim() : null,
+        facebook: body.facebook ? String(body.facebook).trim() : null,
+        twitter: body.twitter ? String(body.twitter).trim() : null,
+        website: body.website ? String(body.website).trim() : null,
+        blogsite: body.blogsite ? String(body.blogsite).trim() : null,
+        otherSite: body.otherSite ? String(body.otherSite).trim() : null,
+        otherInfos: body.otherInfos ? String(body.otherInfos) : null,
+      }
+    : {
+        username,
+        email,
+        name,
+        surname,
+        country: body.country ? String(body.country).trim() : null,
+        operatorLanguage:
+          body.operatorLanguage !== undefined
+            ? String(body.operatorLanguage ?? '').trim() || null
+            : undefined,
+        idCardCode:
+          body.idCardCode !== undefined ? String(body.idCardCode ?? '').trim() || null : undefined,
+        commissionPct:
+          body.commissionPct !== undefined
+            ? String(body.commissionPct ?? '').trim() || null
+            : undefined,
+        commissionAutoAssign:
+          body.commissionAutoAssign !== undefined ? Boolean(body.commissionAutoAssign) : undefined,
+        regions: body.regions ? String(body.regions).trim() : null,
+        alternateEmail: body.alternateEmail ? normalizeEmail(body.alternateEmail) : null,
+        phonePrefix: body.phonePrefix ? String(body.phonePrefix).trim() : null,
+        phoneNumber: body.phoneNumber ? String(body.phoneNumber).trim() : null,
+        cellularPrefix: body.cellularPrefix ? String(body.cellularPrefix).trim() : null,
+        cellularNumber: body.cellularNumber ? String(body.cellularNumber).trim() : null,
+        facebook: body.facebook ? String(body.facebook).trim() : null,
+        twitter: body.twitter ? String(body.twitter).trim() : null,
+        website: body.website ? String(body.website).trim() : null,
+        blogsite: body.blogsite ? String(body.blogsite).trim() : null,
+        otherSite: body.otherSite ? String(body.otherSite).trim() : null,
+        otherInfos: body.otherInfos ? String(body.otherInfos) : null,
+        roleLabel: body.roleLabel ? String(body.roleLabel).trim() : null,
+      };
+
   const updated = await prisma.staffAccount.update({
     where: { id },
-    data: {
-      username,
-      email,
-      name,
-      surname,
-      country: body.country ? String(body.country).trim() : null,
-      operatorLanguage:
-        body.operatorLanguage !== undefined
-          ? String(body.operatorLanguage ?? '').trim() || null
-          : undefined,
-      idCardCode:
-        body.idCardCode !== undefined ? String(body.idCardCode ?? '').trim() || null : undefined,
-      commissionPct:
-        body.commissionPct !== undefined ? String(body.commissionPct ?? '').trim() || null : undefined,
-      commissionAutoAssign:
-        body.commissionAutoAssign !== undefined ? Boolean(body.commissionAutoAssign) : undefined,
-      regions: body.regions ? String(body.regions).trim() : null,
-      alternateEmail: body.alternateEmail ? normalizeEmail(body.alternateEmail) : null,
-      phonePrefix: body.phonePrefix ? String(body.phonePrefix).trim() : null,
-      phoneNumber: body.phoneNumber ? String(body.phoneNumber).trim() : null,
-      cellularPrefix: body.cellularPrefix ? String(body.cellularPrefix).trim() : null,
-      cellularNumber: body.cellularNumber ? String(body.cellularNumber).trim() : null,
-      facebook: body.facebook ? String(body.facebook).trim() : null,
-      twitter: body.twitter ? String(body.twitter).trim() : null,
-      website: body.website ? String(body.website).trim() : null,
-      blogsite: body.blogsite ? String(body.blogsite).trim() : null,
-      otherSite: body.otherSite ? String(body.otherSite).trim() : null,
-      otherInfos: body.otherInfos ? String(body.otherInfos) : null,
-      roleLabel: body.roleLabel ? String(body.roleLabel).trim() : null,
-    },
+    data: updateData,
     select: {
       id: true,
       username: true,
@@ -184,12 +208,12 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const id = getIdFromRequest(request);
+  const auth = await requireAdminPanel(request);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const id = getIdFromRequest(request);
   if (!id) {
     return NextResponse.json({ error: 'Operator id is required' }, { status: 400 });
   }

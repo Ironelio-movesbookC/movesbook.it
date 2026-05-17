@@ -4,9 +4,13 @@ import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
 import { User, Globe } from 'lucide-react';
-import { OperatorNavBar } from '@/components/operators/OperatorNavBar';
+import { usePanelSession } from '@/hooks/usePanelSession';
 import { COUNTRIES, COUNTRIES_WITH_CODES } from '@/lib/news/countries';
 import { getRegionsForCountry } from '@/constants/countryRegions.constants';
+import {
+  canDeleteStaffProfile,
+  canEditStaffProfile,
+} from '@/lib/staffProfileAccess';
 
 type OperatorProfileState = {
   username: string;
@@ -75,11 +79,16 @@ export default function OperatorProfilePage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
+  const { session, staffKind } = usePanelSession();
+  const canEdit = canEditStaffProfile(session, id);
+  const canDelete = canDeleteStaffProfile(session);
   const [profile, setProfile] = useState<OperatorProfileState>(EMPTY_PROFILE);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
-  const [busyAction, setBusyAction] = useState<'delete' | 'photo' | ''>('');
+  const [busyAction, setBusyAction] = useState<'delete' | 'photo' | 'save' | ''>('');
+  const fieldDisabled = !canEdit || busyAction !== '' || loading;
+  const roleFieldDisabled = fieldDisabled || Boolean(staffKind);
   const regionOptions = useMemo(
     () => getRegionsForCountry(profile.country),
     [profile.country],
@@ -154,8 +163,9 @@ export default function OperatorProfilePage() {
     };
   }, [id]);
 
-  const handleReset = async () => {
-    setBusyAction('photo'); // reuse "busy" to disable controls
+  const handleSave = async () => {
+    if (!canEdit) return;
+    setBusyAction('save');
     setLoadError('');
     setSuccess('');
     try {
@@ -204,6 +214,7 @@ export default function OperatorProfilePage() {
   };
 
   const handleDelete = async () => {
+    if (!canDelete) return;
     const ok = window.confirm('Delete this operator profile? This cannot be undone.');
     if (!ok) return;
 
@@ -232,7 +243,7 @@ export default function OperatorProfilePage() {
   };
 
   const handlePhotoSelected = async (file: File | null) => {
-    if (!file) return;
+    if (!file || !canEdit) return;
 
     setBusyAction('photo');
     setLoadError('');
@@ -264,6 +275,7 @@ export default function OperatorProfilePage() {
   };
 
   const handleCountryChange = (value: string) => {
+    if (!canEdit) return;
     setProfile((prev) => {
       const country = value;
       const opts = country ? getRegionsForCountry(country) : [];
@@ -282,9 +294,13 @@ export default function OperatorProfilePage() {
 
   return (
     <div className="min-h-full bg-gray-100">
-      <OperatorNavBar operatorId={id} activeTabId="profile" variant={{ kind: 'standard' }} />
-
       <div className="max-w-4xl mx-auto px-6 py-6 space-y-6">
+        {!canEdit && !loading && (
+          <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            View only — you can open your own profile to make changes.
+          </div>
+        )}
+
         {(loadError || success || loading) && (
           <div
             className={`rounded border px-4 py-3 text-sm ${
@@ -329,36 +345,42 @@ export default function OperatorProfilePage() {
             </div>
             <p className="mt-2 text-lg font-bold text-gray-900">{profile.username}</p>
             <p className="text-sm text-red-600 font-medium">{profile.role}</p>
+            {canEdit ? (
             <label className="mt-2 px-3 py-1.5 bg-gray-500 hover:bg-gray-600 text-white text-sm rounded cursor-pointer select-none">
               {busyAction === 'photo' ? 'Uploading...' : 'Change photo'}
               <input
                 type="file"
                 accept="image/*"
                 className="hidden"
-                disabled={busyAction !== '' || loading}
+                disabled={fieldDisabled}
                 onChange={(e) => handlePhotoSelected(e.target.files?.[0] ?? null)}
               />
             </label>
+            ) : null}
           </div>
           <div className="flex-1" />
+          {canEdit ? (
           <div className="flex flex-col gap-2">
+            {canDelete ? (
             <button
               type="button"
               onClick={handleDelete}
-              disabled={busyAction !== '' || loading}
+              disabled={fieldDisabled}
               className="px-4 py-2 bg-[#4f4f4f] hover:bg-[#3d3d3d] disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm rounded"
             >
               Delete Profile
             </button>
+            ) : null}
             <button
               type="button"
-              onClick={handleReset}
-              disabled={busyAction !== '' || loading}
-              className="px-4 py-2 bg-[#4f4f4f] hover:bg-[#3d3d3d] disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm rounded"
+              onClick={handleSave}
+              disabled={fieldDisabled}
+              className="px-4 py-2 bg-[#005c99] hover:bg-[#004d80] disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm rounded"
             >
-              Reset Profile
+              {busyAction === 'save' ? 'Saving...' : 'Save profile'}
             </button>
           </div>
+          ) : null}
         </section>
 
         {/* Section 2: Personal information */}
@@ -370,28 +392,32 @@ export default function OperatorProfilePage() {
               type="text"
               value={profile.username}
               onChange={(e) => setProfile({ ...profile, username: e.target.value })}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
+              disabled={fieldDisabled}
+              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <label className="text-sm text-gray-700 sm:text-right">Name</label>
             <input
               type="text"
               value={profile.name}
               onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
+              disabled={fieldDisabled}
+              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <label className="text-sm text-gray-700 sm:text-right">SurName</label>
             <input
               type="text"
               value={profile.surname}
               onChange={(e) => setProfile({ ...profile, surname: e.target.value })}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
+              disabled={fieldDisabled}
+              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <label className="text-sm text-gray-700 sm:text-right">Country</label>
             <div className="flex items-center gap-2">
               <select
                 value={profile.country}
                 onChange={(e) => handleCountryChange(e.target.value)}
-                className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 flex-1"
+                disabled={fieldDisabled}
+                className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 flex-1 disabled:bg-gray-100 disabled:cursor-not-allowed"
               >
                 <option value="">Select country</option>
                 {COUNTRIES.map((c) => (
@@ -408,7 +434,8 @@ export default function OperatorProfilePage() {
             <select
               value={profile.roleOption}
               onChange={(e) => setProfile({ ...profile, roleOption: e.target.value })}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
+              disabled={roleFieldDisabled}
+              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             >
               <option>Movesbook staff</option>
               <option>Operator</option>
@@ -426,7 +453,8 @@ export default function OperatorProfilePage() {
                     region: e.target.checked ? prev.region : '',
                   }))
                 }
-                className="rounded border-gray-400"
+                disabled={fieldDisabled}
+                className="rounded border-gray-400 disabled:cursor-not-allowed"
               />
               <select
                 value={profile.region}
@@ -437,8 +465,8 @@ export default function OperatorProfilePage() {
                     regionsManaged: Boolean(e.target.value),
                   }))
                 }
-                className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
-                disabled={!profile.country}
+                className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                disabled={fieldDisabled || !profile.country}
               >
                 <option value="">
                   {profile.country ? 'Select region' : 'Select country first'}
@@ -463,14 +491,16 @@ export default function OperatorProfilePage() {
               type="email"
               value={profile.email}
               onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
+              disabled={fieldDisabled}
+              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <label className="text-sm text-gray-700 sm:text-right">Alternate Email</label>
             <input
               type="email"
               value={profile.alternateEmail}
               onChange={(e) => setProfile({ ...profile, alternateEmail: e.target.value })}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
+              disabled={fieldDisabled}
+              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <label className="text-sm text-gray-700 sm:text-right">Phone</label>
             <div className="flex gap-2">
@@ -508,7 +538,8 @@ export default function OperatorProfilePage() {
               type="text"
               value={profile.facebook}
               onChange={(e) => setProfile({ ...profile, facebook: e.target.value })}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
+              disabled={fieldDisabled}
+              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <label className="text-sm text-gray-700 sm:text-right">Twitter</label>
             <input
@@ -516,14 +547,16 @@ export default function OperatorProfilePage() {
               value={profile.twitter}
               onChange={(e) => setProfile({ ...profile, twitter: e.target.value })}
               placeholder=""
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
+              disabled={fieldDisabled}
+              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <label className="text-sm text-gray-700 sm:text-right">My Website</label>
             <input
               type="text"
               value={profile.website}
               onChange={(e) => setProfile({ ...profile, website: e.target.value })}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
+              disabled={fieldDisabled}
+              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <label className="text-sm text-gray-700 sm:text-right">My Blogsite</label>
             <input
@@ -531,21 +564,24 @@ export default function OperatorProfilePage() {
               value={profile.blogsite}
               onChange={(e) => setProfile({ ...profile, blogsite: e.target.value })}
               placeholder=""
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
+              disabled={fieldDisabled}
+              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <label className="text-sm text-gray-700 sm:text-right">Other Site</label>
             <input
               type="text"
               value={profile.otherSite}
               onChange={(e) => setProfile({ ...profile, otherSite: e.target.value })}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
+              disabled={fieldDisabled}
+              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <label className="text-sm text-gray-700 sm:text-right">Location</label>
             <input
               type="text"
               value={profile.location}
               onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900"
+              disabled={fieldDisabled}
+              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
           </div>
         </section>

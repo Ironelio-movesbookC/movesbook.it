@@ -7,6 +7,12 @@ import ModernNavbar from '@/components/ModernNavbar';
 import ModernFooter from '@/components/ModernFooter';
 import AdminManagement from '@/components/settings/AdminManagement';
 import { useAuth } from '@/hooks/useAuth';
+import {
+  isFullAdminPanelSession,
+  isStaffPanelSession,
+  readPanelSession,
+  staffHomePath,
+} from '@/lib/panelSession';
 
 export default function AdminManagementPage() {
   const router = useRouter();
@@ -15,7 +21,13 @@ export default function AdminManagementPage() {
 
   useEffect(() => {
     const adminData = localStorage.getItem('adminUser');
-    if (adminData) {
+    const adminToken = localStorage.getItem('adminToken');
+    const session = readPanelSession();
+    if (isStaffPanelSession(session) && session?.id) {
+      router.replace(staffHomePath(session.id));
+      return;
+    }
+    if (adminData && adminToken && isFullAdminPanelSession(session)) {
       try {
         JSON.parse(adminData);
         setIsAdmin(true);
