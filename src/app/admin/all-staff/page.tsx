@@ -36,7 +36,7 @@ export default function AllStaffPage() {
   const [loadError, setLoadError] = useState('');
 
   const openProfile = (id: string) => router.push(`/operators/profile/${id}`);
-  const openSettings = (id: string) => router.push(`/operators/settings/${id}`);
+  const openSettings = (id: string) => router.push(`/operators/password-settings/${id}`);
 
   const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
 

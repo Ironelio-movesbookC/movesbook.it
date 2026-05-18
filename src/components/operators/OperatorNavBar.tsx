@@ -16,6 +16,7 @@ type OperatorNavBarProps = {
   staffKind?: 'OPERATOR' | 'CO_ADMIN';
   isSuperAdmin?: boolean;
   canManageStaff?: boolean;
+  sessionId?: string;
 };
 
 export function OperatorNavBar({
@@ -26,8 +27,16 @@ export function OperatorNavBar({
   staffKind,
   isSuperAdmin,
   canManageStaff,
+  sessionId,
 }: OperatorNavBarProps) {
-  const tabs = getVisibleOperatorNavTabs({ isStaff, staffKind, isSuperAdmin, canManageStaff });
+  const tabs = getVisibleOperatorNavTabs({
+    isStaff,
+    staffKind,
+    isSuperAdmin,
+    canManageStaff,
+    operatorId,
+    sessionId,
+  });
 
   return (
     <div className="flex flex-nowrap gap-0 overflow-x-auto bg-[#4f4f4f] border-b border-gray-600">

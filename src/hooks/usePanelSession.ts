@@ -5,26 +5,31 @@ import {
   canManageStaffAccounts,
   isFullAdminPanelSession,
   isStaffPanelSession,
+  normalizePanelSession,
   readPanelSession,
   type PanelSessionUser,
 } from '@/lib/panelSession';
 
 export function usePanelSession() {
-  const [session, setSession] = useState<PanelSessionUser | null>(null);
+  const [session, setSession] = useState<PanelSessionUser | null>(() =>
+    typeof window === 'undefined' ? null : normalizePanelSession(readPanelSession()),
+  );
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    const raw = readPanelSession();
-    if (raw && isFullAdminPanelSession(raw) && !raw.isSuperAdmin) {
-      const updated: PanelSessionUser = { ...raw, isSuperAdmin: true, userType: raw.userType ?? 'ADMIN' };
-      try {
-        localStorage.setItem('adminUser', JSON.stringify(updated));
-      } catch {
-        /* ignore */
+    const normalized = normalizePanelSession(readPanelSession());
+    if (normalized) {
+      const raw = readPanelSession();
+      if (raw && isFullAdminPanelSession(raw) && !raw.isSuperAdmin) {
+        try {
+          localStorage.setItem('adminUser', JSON.stringify(normalized));
+        } catch {
+          /* ignore */
+        }
       }
-      setSession(updated);
-      return;
     }
-    setSession(raw);
+    setSession(normalized);
+    setHydrated(true);
   }, []);
 
   const isStaff = isStaffPanelSession(session);
@@ -32,6 +37,7 @@ export function usePanelSession() {
 
   return {
     session,
+    hydrated,
     isStaff,
     staffKind: session?.staffKind,
     isSuperAdmin: canManageStaff,

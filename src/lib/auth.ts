@@ -42,13 +42,20 @@ export const verifyPassword = async (password: string, hashedPassword: string): 
 };
 
 // Generate JWT token
-export const generateToken = (userId: string, email: string, username: string, userType: string): string => {
-  const payload = { 
-    userId, 
-    email, 
-    username, 
+export const generateToken = (
+  userId: string,
+  email: string,
+  username: string,
+  userType: string,
+  extra?: Record<string, unknown>,
+): string => {
+  const payload = {
+    userId,
+    email,
+    username,
     userType,
-    iat: Math.floor(Date.now() / 1000)
+    ...extra,
+    iat: Math.floor(Date.now() / 1000),
   };
   
   const secret = getJwtSecret();

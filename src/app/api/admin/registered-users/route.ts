@@ -185,16 +185,20 @@ export async function GET(request: NextRequest) {
 
   const clubsByAdmin = new Map<
     string,
-    { description: string | null; createdAt: Date }[]
+    { name: string; description: string | null; createdAt: Date }[]
   >();
   if (isClubsSegment && adminIds.length > 0) {
     const ownedClubs = await prisma.club.findMany({
       where: { adminId: { in: adminIds } },
-      select: { adminId: true, description: true, createdAt: true },
+      select: { adminId: true, name: true, description: true, createdAt: true },
     });
     for (const club of ownedClubs) {
       const list = clubsByAdmin.get(club.adminId) ?? [];
-      list.push({ description: club.description, createdAt: club.createdAt });
+      list.push({
+        name: club.name,
+        description: club.description,
+        createdAt: club.createdAt,
+      });
       clubsByAdmin.set(club.adminId, list);
     }
   }
@@ -207,12 +211,14 @@ export async function GET(request: NextRequest) {
       const displayName = [u.firstName, u.surname].filter(Boolean).join(' ').trim() || u.name;
 
       let clubsOwnedCount: number | undefined;
+      let companyName: string | undefined;
       let status = 'Active';
       let statusTone: string | undefined;
 
       if (isClubsSegment) {
         const adminClubs = clubsByAdmin.get(u.id) ?? [];
         clubsOwnedCount = adminClubs.length;
+        companyName = adminClubs[0]?.name?.trim() || '';
         const endDates = adminClubs.map((c) =>
           parseClubSubscriptionEndDate(c.description, c.createdAt)
         );
@@ -233,7 +239,7 @@ export async function GET(request: NextRequest) {
         version: versionLabel(u.userType),
         amount: '—',
         status,
-        ...(isClubsSegment ? { clubsOwnedCount, statusTone } : {}),
+        ...(isClubsSegment ? { clubsOwnedCount, companyName, statusTone } : {}),
       };
     }),
   });

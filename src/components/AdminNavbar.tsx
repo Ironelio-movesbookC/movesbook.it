@@ -81,7 +81,18 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const token = localStorage.getItem('adminToken');
+    if (token) {
+      try {
+        await fetch('/api/auth/admin/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        /* continue clearing local session */
+      }
+    }
     localStorage.removeItem('adminUser');
     localStorage.removeItem('adminToken');
     router.push('/');

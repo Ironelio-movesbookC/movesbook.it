@@ -47,15 +47,6 @@ export function parseOperatorSubNavFromPath(pathname: string | null): OperatorSu
     return { operatorId: m[1], activeTabId: 'super-admin', variant: { kind: 'standard' } };
   }
 
-  m = pathname.match(/^\/operators\/operator_coadmin_settings\/([^/]+)\/([^/]+)/);
-  if (m) {
-    return {
-      operatorId: m[1],
-      activeTabId: 'super-admin',
-      variant: { kind: 'coadmin', coadminId: m[2] },
-    };
-  }
-
   return null;
 }
 
@@ -66,11 +57,18 @@ export function readOperatorNavVariantFromSession(): OperatorNavVariant {
     if (!raw) return { kind: 'standard' };
     const parsed = JSON.parse(raw) as OperatorNavVariant;
     if (parsed?.kind === 'myCustomers') return { kind: 'myCustomers' };
-    if (parsed?.kind === 'coadmin' && typeof parsed.coadminId === 'string') {
-      return { kind: 'coadmin', coadminId: parsed.coadminId };
-    }
+    // Legacy session values from old co-admin settings URLs are ignored.
   } catch {
     /* ignore */
   }
   return { kind: 'standard' };
+}
+
+/** Pathname wins over session so nav links never use a stale variant after route changes. */
+export function resolveOperatorNavVariant(pathname: string | null): OperatorNavVariant {
+  const fromPath = parseOperatorSubNavFromPath(pathname);
+  if (fromPath && fromPath.variant.kind !== 'standard') {
+    return fromPath.variant;
+  }
+  return readOperatorNavVariantFromSession();
 }

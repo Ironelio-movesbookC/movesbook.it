@@ -61,7 +61,12 @@ export default function OperatorPasswordSettingsPage() {
         const o = data?.operator || {};
         const fullName = `${String(o.name ?? '')} ${String(o.surname ?? '')}`.trim() || '—';
         const imageUrl = o.imageUrl ? String(o.imageUrl) : null;
-        if (!cancelled) setHeader({ fullName, role: 'Operator', imageUrl });
+        const role =
+          o.kind === 'CO_ADMIN' ? 'Co-admin' : o.kind === 'OPERATOR' ? 'Operator' : 'Operator';
+        if (!cancelled) {
+          setHeader({ fullName, role, imageUrl });
+          setAlternateOneAccessOnly(Boolean(o.alternatePasswordOneAccessOnly));
+        }
       } catch (e: any) {
         if (!cancelled) setLoadError(e?.message || 'Failed to load operator');
       } finally {
@@ -131,10 +136,41 @@ export default function OperatorPasswordSettingsPage() {
       setLoadError('Repeat password does not match.');
       return;
     }
+    if (alternatePassword.length < 6) {
+      setLoadError('Password must be at least 6 characters.');
+      return;
+    }
     setSubmitting('alt');
     try {
-      // Not implemented yet in DB model.
-      setSuccess('Alternate password is not implemented yet.');
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        setLoadError('Admin session not found. Please login again.');
+        return;
+      }
+
+      const res = await fetch(`/api/admin/operators/${id}/alternate-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          password: alternatePassword,
+          oneAccessOnly: alternateOneAccessOnly,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to set alternate password');
+
+      setSuccess(
+        alternateOneAccessOnly
+          ? 'Alternate password set. It can be used once; it will be removed after logout.'
+          : 'Alternate password set successfully.',
+      );
+      setAlternatePassword('');
+      setAlternateRepeatPassword('');
+    } catch (e: any) {
+      setLoadError(e?.message || 'Failed to set alternate password');
     } finally {
       setSubmitting('');
     }

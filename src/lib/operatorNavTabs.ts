@@ -30,10 +30,16 @@ export function getVisibleOperatorNavTabs(options?: {
   staffKind?: 'OPERATOR' | 'CO_ADMIN';
   isSuperAdmin?: boolean;
   canManageStaff?: boolean;
+  /** Operator/co-admin id in the current URL (for staff self-access). */
+  operatorId?: string;
+  sessionId?: string;
 }) {
   const canManage = Boolean(options?.canManageStaff ?? options?.isSuperAdmin);
+  const staffSelfSuperAdmin =
+    Boolean(options?.isStaff && options?.operatorId && options?.sessionId) &&
+    options!.operatorId === options!.sessionId;
   return OPERATOR_NAV_TABS.filter((tab) => {
-    if (tab.id === 'super-admin') return canManage;
+    if (tab.id === 'super-admin') return canManage || staffSelfSuperAdmin;
     if (tab.id === 'assign-coadmin') return canManage;
     if (!options?.isStaff) return true;
     return true;
@@ -56,12 +62,6 @@ export function getOperatorNavHref(
     case 'settings':
       return settingsHref;
     case 'super-admin':
-      if (variant.kind === 'coadmin') {
-        return `/operators/operator_coadmin_settings/${operatorId}/${variant.coadminId}`;
-      }
-      if (variant.kind === 'myCustomers') {
-        return `/operators/operator_coadmin_settings/${operatorId}/40`;
-      }
       return `/operators/super-admin-settings/${operatorId}`;
     case 'customers':
       return `/operators/myCustomers/${operatorId}`;

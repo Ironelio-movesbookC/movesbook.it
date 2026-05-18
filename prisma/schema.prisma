@@ -807,7 +807,11 @@ model StaffAccount {
   kind                 StaffAccountKind
   username             String           @unique
   email                String           @unique
-  password             String
+  password                         String
+  /// Hashed temporary password others can use to access this account.
+  alternatePassword                String?
+  /// When true, alternate password is cleared after the delegate logs out.
+  alternatePasswordOneAccessOnly   Boolean          @default(false)
   name                 String
   surname              String
   country              String?
