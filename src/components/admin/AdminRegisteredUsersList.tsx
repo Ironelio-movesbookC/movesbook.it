@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { ExternalLink, LayoutGrid, LayoutList, Search as SearchIcon } from 'lucide-react';
+import type { ClubSubscriptionStatusTone } from '@/lib/admin/clubSubscriptionStatus';
 
 export type AdminUserSegment = 'single-user' | 'coaches' | 'groups' | 'teams' | 'clubs';
 
@@ -49,6 +50,22 @@ interface RowUser {
   version: string;
   amount: string;
   status: string;
+  clubsOwnedCount?: number;
+  statusTone?: ClubSubscriptionStatusTone;
+}
+
+function clubAdminStatusClassName(tone?: ClubSubscriptionStatusTone): string {
+  switch (tone) {
+    case 'expiring':
+      return 'text-amber-600 font-semibold';
+    case 'partial-expired':
+      return 'text-orange-600 font-semibold';
+    case 'all-expired':
+      return 'text-red-600 font-semibold';
+    case 'active':
+    default:
+      return 'text-green-700 font-semibold';
+  }
 }
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
@@ -257,6 +274,7 @@ export default function AdminRegisteredUsersList({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const versionOptions = useMemo(() => VERSION_BY_SEGMENT[segment], [segment]);
+  const isClubsSegment = segment === 'clubs';
 
   useEffect(() => {
     let cancelled = false;
@@ -1170,7 +1188,12 @@ export default function AdminRegisteredUsersList({
                 {r.dateStart} — {r.dateEnd ?? '—'}
               </div>
               <div>{r.version}</div>
-              <div className="text-green-700 font-medium">{r.status}</div>
+              {isClubsSegment && (
+                <div className="text-red-600 font-semibold">
+                  Clubs owned: {r.clubsOwnedCount ?? 0}
+                </div>
+              )}
+              <div className={clubAdminStatusClassName(r.statusTone)}>{r.status}</div>
               <button
                 type="button"
                 onClick={() => void openUserProfile(r.id)}
@@ -1191,6 +1214,11 @@ export default function AdminRegisteredUsersList({
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Date End</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Version</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Username</th>
+                {isClubsSegment && (
+                  <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80] min-w-[5rem]">
+                    Clubs
+                  </th>
+                )}
                 <th className="px-2 py-2 text-left font-semibold border-r border-[#3d7a80] w-14">E</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Status</th>
                 <th className="w-12 px-2 py-2 text-center font-semibold"> </th>
@@ -1199,7 +1227,7 @@ export default function AdminRegisteredUsersList({
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-gray-500 bg-white">
+                  <td colSpan={isClubsSegment ? 9 : 8} className="px-4 py-10 text-center text-gray-500 bg-white">
                     No registered users in this category yet.
                   </td>
                 </tr>
@@ -1223,8 +1251,15 @@ export default function AdminRegisteredUsersList({
                     </td>
                     <td className="px-3 py-2 border-t border-gray-300">{r.version}</td>
                     <td className="px-3 py-2 border-t border-gray-300 font-medium">{r.username}</td>
+                    {isClubsSegment && (
+                      <td className="px-3 py-2 border-t border-gray-300 text-center font-semibold text-red-600">
+                        {r.clubsOwnedCount ?? 0}
+                      </td>
+                    )}
                     <td className="px-2 py-2 border-t border-gray-300 text-gray-700">{r.amount}</td>
-                    <td className="px-3 py-2 border-t border-gray-300">{r.status}</td>
+                    <td className="px-3 py-2 border-t border-gray-300">
+                      <span className={clubAdminStatusClassName(r.statusTone)}>{r.status}</span>
+                    </td>
                     <td className="px-2 py-2 border-t border-gray-300 text-center">
                       <button
                         type="button"

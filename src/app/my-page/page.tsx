@@ -35,6 +35,8 @@ export default function MyPage() {
   // All hooks must be called before any conditional returns
   const {
     clubs,
+    clubProfiles,
+    hasClubProfile,
     groups,
     teams,
     coachingGroups,
@@ -56,6 +58,17 @@ export default function MyPage() {
       router.push('/');
     }
   }, [user, loading, router]);
+
+  useEffect(() => {
+    if (
+      user &&
+      isClubAccountUserType(user.userType) &&
+      !hasClubProfile &&
+      activeTab === 'my-entity'
+    ) {
+      setActiveTab('my-page');
+    }
+  }, [user, hasClubProfile, activeTab]);
 
   // Don't render if not authenticated (after all hooks are called)
   if (loading || !user) {
@@ -102,7 +115,7 @@ export default function MyPage() {
               <DarkSidebar
                 userType={user?.userType || ''}
                 entities={
-                  isClubAccountUserType(user?.userType || '') ? clubs :
+                  isClubAccountUserType(user?.userType || '') ? clubProfiles :
                   user?.userType === 'ATHLETE' ? myClubs :
                   user?.userType === 'TEAM_MANAGER' ? teams :
                   user?.userType === 'GROUP_ADMIN' ? groups :
@@ -133,11 +146,12 @@ export default function MyPage() {
                 onTabChange={setActiveTab}
                 onMyPageClick={() => setActiveTab('my-page')}
                 onMyClubClick={() => {
+                  if (!hasClubProfile) return;
                   setActiveTab('my-entity');
                   if (selectedClub) {
                     window.location.href = `/my-club?clubId=${selectedClub}`;
-                  } else if (clubs.length > 0) {
-                    window.location.href = `/my-club?clubId=${clubs[0].id}`;
+                  } else if (clubProfiles.length > 0) {
+                    window.location.href = `/my-club?clubId=${clubProfiles[0].id}`;
                   }
                 }}
                 onMyTeamClick={() => {

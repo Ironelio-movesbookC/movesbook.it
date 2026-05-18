@@ -13,6 +13,7 @@ import {
 import { useLanguage } from '@/contexts/LanguageContext';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
 
 type ClubEntity = {
   id?: string;
@@ -71,7 +72,11 @@ export default function SidebarClubMyEntityTop({
 }) {
   const { t } = useLanguage();
   const { locality, country: fallbackCountry } = parseLocalityAndCountry(club?.location);
-  const clubType = club?.description?.trim() || '';
+  const clubMeta = parseClubDescriptionMeta(club?.description);
+  const clubType =
+    clubMeta.category?.trim() ||
+    (club?.description?.trim().startsWith('{') ? '' : club?.description?.trim()) ||
+    '';
   const logoUrl = userImageUrl ?? club?.imageUrl;
   const country = userCountry ?? fallbackCountry;
 

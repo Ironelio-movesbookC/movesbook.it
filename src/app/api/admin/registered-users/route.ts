@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma, SportType, UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
+import {
+  aggregateClubAdminSubscriptionStatus,
+  parseClubSubscriptionEndDate,
+} from '@/lib/admin/clubSubscriptionStatus';
 
 export const dynamic = 'force-dynamic';
 
@@ -176,12 +180,47 @@ export async function GET(request: NextRequest) {
     }),
   ]);
 
+  const isClubsSegment = segment === 'clubs';
+  const adminIds = rows.map((u) => u.id);
+
+  const clubsByAdmin = new Map<
+    string,
+    { description: string | null; createdAt: Date }[]
+  >();
+  if (isClubsSegment && adminIds.length > 0) {
+    const ownedClubs = await prisma.club.findMany({
+      where: { adminId: { in: adminIds } },
+      select: { adminId: true, description: true, createdAt: true },
+    });
+    for (const club of ownedClubs) {
+      const list = clubsByAdmin.get(club.adminId) ?? [];
+      list.push({ description: club.description, createdAt: club.createdAt });
+      clubsByAdmin.set(club.adminId, list);
+    }
+  }
+
   return NextResponse.json({
     total,
     page,
     pageSize,
     users: rows.map((u: (typeof rows)[number]) => {
       const displayName = [u.firstName, u.surname].filter(Boolean).join(' ').trim() || u.name;
+
+      let clubsOwnedCount: number | undefined;
+      let status = 'Active';
+      let statusTone: string | undefined;
+
+      if (isClubsSegment) {
+        const adminClubs = clubsByAdmin.get(u.id) ?? [];
+        clubsOwnedCount = adminClubs.length;
+        const endDates = adminClubs.map((c) =>
+          parseClubSubscriptionEndDate(c.description, c.createdAt)
+        );
+        const aggregated = aggregateClubAdminSubscriptionStatus(endDates);
+        status = aggregated.label;
+        statusTone = aggregated.tone;
+      }
+
       return {
         id: u.id,
         username: u.username,
@@ -193,7 +232,8 @@ export async function GET(request: NextRequest) {
         dateEnd: null as string | null,
         version: versionLabel(u.userType),
         amount: '—',
-        status: 'Active',
+        status,
+        ...(isClubsSegment ? { clubsOwnedCount, statusTone } : {}),
       };
     }),
   });
