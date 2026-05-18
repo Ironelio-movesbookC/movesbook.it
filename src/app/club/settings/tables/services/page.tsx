@@ -1,12 +1,13 @@
 'use client';
 
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   Check,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  ImagePlus,
   Loader2,
   Pencil,
   Plus,
@@ -16,38 +17,44 @@ import {
 } from 'lucide-react';
 import TablesTabs from '@/components/club-settings/TablesTabs';
 
-type AreaItem = {
+type SectorOption = {
   id: string;
   name: string;
-  accessControlEnabled: boolean;
-  limitMembers: boolean;
-  memberLimit: string;
+};
+
+type ServiceItem = {
+  id: string;
+  sectorId: string;
+  sectorName: string;
+  serviceName: string;
+  cost: string;
+  actualCost: string;
+  currencyCode: string;
+  imageUrl: string | null;
   created: string | null;
   modified: string | null;
 };
 
-type AreaDraft = {
+type ServiceDraft = {
   id?: string;
-  name: string;
-  accessControlEnabled: boolean;
-  limitMembers: boolean;
-  memberLimit: string;
+  sectorId: string;
+  serviceName: string;
+  cost: string;
+  currentImageUrl: string | null;
+  imageFile: File | null;
+  imagePreview: string | null;
+  removeImage: boolean;
 };
 
-type FieldErrors = Partial<Record<keyof AreaDraft, string>>;
+type FieldErrors = Partial<Record<'sectorId' | 'serviceName' | 'cost' | 'image', string>>;
 type PageItem = number | 'ellipsis-left' | 'ellipsis-right';
-type SortKey = 'name' | 'modified';
+type SortKey = 'sector' | 'service' | 'cost' | 'modified';
 type SortDirection = 'asc' | 'desc';
 
-const API_PATH = '/api/club/settings/tables/areas';
+const API_PATH = '/api/club/settings/tables/services';
 const PAGE_SIZE_OPTIONS = [5, 10, 15, 20] as const;
-
-const EMPTY_DRAFT: AreaDraft = {
-  name: '',
-  accessControlEnabled: false,
-  limitMembers: false,
-  memberLimit: ''
-};
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']);
 
 function getSmartPageItems(currentPage: number, totalPages: number): PageItem[] {
   if (totalPages <= 7) {
@@ -76,39 +83,74 @@ function formatDate(value: string | null): string {
   }).format(date);
 }
 
-function validateDraft(draft: AreaDraft): FieldErrors {
+function formatCost(value: string, currencyCode: string): string {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return `- ${currencyCode}`;
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(numericValue)} ${currencyCode}`;
+}
+
+function isAllowedImage(file: File): boolean {
+  return ALLOWED_IMAGE_TYPES.has(file.type) || /\.(png|jpe?g|gif|webp)$/i.test(file.name);
+}
+
+function validateDraft(draft: ServiceDraft): FieldErrors {
   const errors: FieldErrors = {};
-  if (!draft.name.trim()) {
-    errors.name = 'Please enter area name.';
+
+  if (!draft.sectorId) {
+    errors.sectorId = 'Please select a sector.';
   }
 
-  if (draft.limitMembers) {
-    const value = draft.memberLimit.trim();
-    if (!value) {
-      errors.memberLimit = 'Please enter maximum members.';
-    } else if (!/^\d+$/.test(value) || Number(value) < 1) {
-      errors.memberLimit = 'Maximum members must be a whole number greater than 0.';
+  if (!draft.serviceName.trim()) {
+    errors.serviceName = 'Please enter service name.';
+  }
+
+  if (!draft.cost.trim()) {
+    errors.cost = 'Please enter cost.';
+  } else if (!Number.isFinite(Number(draft.cost)) || Number(draft.cost) < 0) {
+    errors.cost = 'Cost must be a number greater than or equal to 0.';
+  }
+
+  if (draft.imageFile) {
+    if (draft.imageFile.size > MAX_IMAGE_BYTES) {
+      errors.image = 'Service image must be 5MB or smaller.';
+    } else if (!isAllowedImage(draft.imageFile)) {
+      errors.image = 'Only PNG, JPG, GIF, or WEBP images are allowed.';
     }
   }
 
   return errors;
 }
 
-export default function ClubTablesAreasPage() {
-  const [items, setItems] = useState<AreaItem[]>([]);
+function makeEmptyDraft(): ServiceDraft {
+  return {
+    sectorId: '',
+    serviceName: '',
+    cost: '',
+    currentImageUrl: null,
+    imageFile: null,
+    imagePreview: null,
+    removeImage: false
+  };
+}
+
+export default function ClubTablesServicesPage() {
+  const [items, setItems] = useState<ServiceItem[]>([]);
+  const [sectors, setSectors] = useState<SectorOption[]>([]);
+  const [currencyCode, setCurrencyCode] = useState('EUR');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [sectorFilter, setSectorFilter] = useState('all');
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>('modified');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [draft, setDraft] = useState<AreaDraft | null>(null);
+  const [draft, setDraft] = useState<ServiceDraft | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [deleteTarget, setDeleteTarget] = useState<AreaItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ServiceItem | null>(null);
 
   const loadItems = async (signal?: AbortSignal) => {
     setLoading(true);
@@ -123,13 +165,15 @@ export default function ClubTablesAreasPage() {
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data?.error || 'Unable to load areas.');
+        throw new Error(data?.error || 'Unable to load services.');
       }
 
       setItems(Array.isArray(data.items) ? data.items : []);
+      setSectors(Array.isArray(data.sectors) ? data.sectors : []);
+      setCurrencyCode(data?.currency?.code || 'EUR');
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
-      setError(err instanceof Error ? err.message : 'Unable to load areas.');
+      setError(err instanceof Error ? err.message : 'Unable to load services.');
     } finally {
       setLoading(false);
     }
@@ -143,19 +187,33 @@ export default function ClubTablesAreasPage() {
 
   const filteredItems = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const filtered = term
-      ? items.filter((item) =>
-      [
-        item.name,
-        item.accessControlEnabled ? 'access control' : '',
-        item.limitMembers ? item.memberLimit : ''
-      ].some((value) => value.toLowerCase().includes(term))
-    )
-      : items;
+    const filtered = items.filter((item) => {
+      const matchesSearch = term
+        ? [
+          item.sectorName,
+          item.serviceName,
+          item.cost,
+          item.currencyCode
+        ].some((value) => value.toLowerCase().includes(term))
+        : true;
+
+      const matchesSector = sectorFilter === 'all' || item.sectorId === sectorFilter;
+      return matchesSearch && matchesSector;
+    });
 
     return [...filtered].sort((a, b) => {
-      if (sortKey === 'name') {
-        const result = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      if (sortKey === 'sector') {
+        const result = a.sectorName.localeCompare(b.sectorName, undefined, { sensitivity: 'base' });
+        return sortDirection === 'asc' ? result : -result;
+      }
+
+      if (sortKey === 'service') {
+        const result = a.serviceName.localeCompare(b.serviceName, undefined, { sensitivity: 'base' });
+        return sortDirection === 'asc' ? result : -result;
+      }
+
+      if (sortKey === 'cost') {
+        const result = Number(a.cost || 0) - Number(b.cost || 0);
         return sortDirection === 'asc' ? result : -result;
       }
 
@@ -164,7 +222,7 @@ export default function ClubTablesAreasPage() {
       const result = aTime - bTime;
       return sortDirection === 'asc' ? result : -result;
     });
-  }, [items, search, sortDirection, sortKey]);
+  }, [items, search, sectorFilter, sortDirection, sortKey]);
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -174,14 +232,7 @@ export default function ClubTablesAreasPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [pageSize, search]);
-
-  const openAddModal = () => {
-    setDraft(EMPTY_DRAFT);
-    setFieldErrors({});
-    setError(null);
-    setSuccess(null);
-  };
+  }, [pageSize, search, sectorFilter]);
 
   const updateSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -190,16 +241,26 @@ export default function ClubTablesAreasPage() {
     }
 
     setSortKey(key);
-    setSortDirection(key === 'name' ? 'asc' : 'desc');
+    setSortDirection(key === 'modified' ? 'desc' : 'asc');
   };
 
-  const openEditModal = (item: AreaItem) => {
+  const openAddModal = () => {
+    setDraft(makeEmptyDraft());
+    setFieldErrors({});
+    setError(null);
+    setSuccess(null);
+  };
+
+  const openEditModal = (item: ServiceItem) => {
     setDraft({
       id: item.id,
-      name: item.name,
-      accessControlEnabled: item.accessControlEnabled,
-      limitMembers: item.limitMembers,
-      memberLimit: item.memberLimit
+      sectorId: item.sectorId,
+      serviceName: item.serviceName,
+      cost: item.cost,
+      currentImageUrl: item.imageUrl,
+      imageFile: null,
+      imagePreview: null,
+      removeImage: false
     });
     setFieldErrors({});
     setError(null);
@@ -207,8 +268,47 @@ export default function ClubTablesAreasPage() {
   };
 
   const closeModal = () => {
+    if (draft?.imagePreview) {
+      URL.revokeObjectURL(draft.imagePreview);
+    }
     setDraft(null);
     setFieldErrors({});
+  };
+
+  const updateDraft = (patch: Partial<ServiceDraft>) => {
+    if (!draft) return;
+    setDraft({ ...draft, ...patch });
+  };
+
+  const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!draft) return;
+
+    const file = event.target.files?.[0] ?? null;
+    if (draft.imagePreview) {
+      URL.revokeObjectURL(draft.imagePreview);
+    }
+
+    setDraft({
+      ...draft,
+      imageFile: file,
+      imagePreview: file ? URL.createObjectURL(file) : null,
+      removeImage: false
+    });
+    setFieldErrors((current) => ({ ...current, image: undefined }));
+  };
+
+  const clearSelectedImage = () => {
+    if (!draft) return;
+    if (draft.imagePreview) {
+      URL.revokeObjectURL(draft.imagePreview);
+    }
+
+    setDraft({
+      ...draft,
+      imageFile: null,
+      imagePreview: null
+    });
+    setFieldErrors((current) => ({ ...current, image: undefined }));
   };
 
   const saveDraft = async (event: FormEvent<HTMLFormElement>) => {
@@ -224,18 +324,21 @@ export default function ClubTablesAreasPage() {
       setError(null);
       setSuccess(null);
 
+      const formData = new FormData();
+      if (draft.id) formData.append('id', draft.id);
+      formData.append('sectorId', draft.sectorId);
+      formData.append('serviceName', draft.serviceName.trim());
+      formData.append('cost', String(Number(draft.cost)));
+      formData.append('removeImage', draft.removeImage ? '1' : '0');
+      if (draft.imageFile) {
+        formData.append('image', draft.imageFile);
+      }
+
       const token = localStorage.getItem('token');
       const response = await fetch(API_PATH, {
         method: draft.id ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          ...draft,
-          name: draft.name.trim(),
-          memberLimit: draft.limitMembers ? draft.memberLimit.trim() : ''
-        })
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData
       });
 
       const data = await response.json().catch(() => ({}));
@@ -244,14 +347,14 @@ export default function ClubTablesAreasPage() {
           setFieldErrors(data.fieldErrors);
           return;
         }
-        throw new Error(data?.error || 'Unable to save area.');
+        throw new Error(data?.error || 'Unable to save service.');
       }
 
       await loadItems();
       closeModal();
-      setSuccess(draft.id ? 'Area updated successfully.' : 'Area added successfully.');
+      setSuccess(draft.id ? 'Service updated successfully.' : 'Service added successfully.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save area.');
+      setError(err instanceof Error ? err.message : 'Unable to save service.');
     } finally {
       setSaving(false);
     }
@@ -273,14 +376,14 @@ export default function ClubTablesAreasPage() {
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data?.error || 'Unable to delete area.');
+        throw new Error(data?.error || 'Unable to delete service.');
       }
 
       setItems((current) => current.filter((item) => item.id !== deleteTarget.id));
       setDeleteTarget(null);
-      setSuccess('Area deleted successfully.');
+      setSuccess('Service deleted successfully.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to delete area.');
+      setError(err instanceof Error ? err.message : 'Unable to delete service.');
     } finally {
       setDeleting(false);
     }
@@ -293,19 +396,29 @@ export default function ClubTablesAreasPage() {
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <h1 className="text-xl font-semibold text-gray-950">Tables</h1>
-              <p className="mt-1 text-sm text-gray-500">Club's management / General settings / Areas</p>
+              <p className="mt-1 text-sm text-gray-500">Club's management / General settings / Services</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={sectorFilter}
+                onChange={(event) => setSectorFilter(event.target.value)}
+                className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 outline-none focus:border-gray-500"
+              >
+                <option value="all">All sectors</option>
+                {sectors.map((sector) => (
+                  <option key={sector.id} value={sector.id}>{sector.name}</option>
+                ))}
+              </select>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search areas"
+                  placeholder="Search services"
                   className="h-9 w-56 rounded-md border border-gray-300 bg-white pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-gray-500"
                 />
               </div>
-              <ToolbarButton icon={Plus} label="Add area" onClick={openAddModal} variant="dark" />
+              <ToolbarButton icon={Plus} label="Add service" onClick={openAddModal} variant="dark" />
             </div>
           </div>
 
@@ -340,27 +453,32 @@ export default function ClubTablesAreasPage() {
           )}
         </div>
 
-        <TablesTabs active="areas" />
+        <TablesTabs active="services" />
 
         <div className="min-h-[360px] overflow-x-auto">
           {loading ? (
             <div className="flex h-72 items-center justify-center text-gray-500">
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              Loading areas
+              Loading services
             </div>
           ) : error && items.length === 0 ? (
             <div className="flex h-72 items-center justify-center px-4 text-center text-sm text-red-600">
               {error}
             </div>
           ) : (
-            <table className="w-full min-w-[860px] border-collapse text-sm">
+            <table className="w-full min-w-[960px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-100 text-left text-xs uppercase tracking-wide text-gray-600">
-                  <th className="px-4 py-3">
-                    <SortHeader label="Area name" active={sortKey === 'name'} direction={sortDirection} onClick={() => updateSort('name')} />
+                  <th className="w-52 px-4 py-3">
+                    <SortHeader label="Sector" active={sortKey === 'sector'} direction={sortDirection} onClick={() => updateSort('sector')} />
                   </th>
-                  <th className="w-48 px-4 py-3">Access control</th>
-                  <th className="w-44 px-4 py-3">Members limit</th>
+                  <th className="w-28 px-4 py-3">Image</th>
+                  <th className="px-4 py-3">
+                    <SortHeader label="Service" active={sortKey === 'service'} direction={sortDirection} onClick={() => updateSort('service')} />
+                  </th>
+                  <th className="w-36 px-4 py-3">
+                    <SortHeader label="Cost" active={sortKey === 'cost'} direction={sortDirection} onClick={() => updateSort('cost')} />
+                  </th>
                   <th className="w-36 px-4 py-3">
                     <SortHeader label="Modified" active={sortKey === 'modified'} direction={sortDirection} onClick={() => updateSort('modified')} />
                   </th>
@@ -370,31 +488,40 @@ export default function ClubTablesAreasPage() {
               <tbody>
                 {pageItems.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-16 text-center text-gray-500">
-                      No areas found.
+                    <td colSpan={6} className="px-4 py-16 text-center text-gray-500">
+                      No services found.
                     </td>
                   </tr>
                 ) : (
                   pageItems.map((item) => (
                     <tr key={item.id} className="border-b border-gray-100 bg-white transition hover:bg-gray-50">
                       <td className="px-4 py-4">
-                        <div className="font-semibold text-gray-950">{item.name}</div>
+                        <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700 ring-1 ring-gray-200">
+                          {item.sectorName}
+                        </span>
                       </td>
                       <td className="px-4 py-4">
-                        <StatusBadge active={item.accessControlEnabled} activeLabel="Enabled" inactiveLabel="Disabled" />
-                      </td>
-                      <td className="px-4 py-4 text-gray-700">
-                        {item.limitMembers ? (
-                          <span className="font-semibold text-gray-900">{item.memberLimit} members</span>
+                        {item.imageUrl ? (
+                          <img
+                            src={item.imageUrl}
+                            alt=""
+                            className="h-14 w-20 rounded-md border border-gray-200 bg-gray-50 object-cover"
+                          />
                         ) : (
-                          <span className="text-gray-400">Not limited</span>
+                          <div className="flex h-14 w-20 items-center justify-center rounded-md border border-dashed border-gray-300 bg-gray-50 text-[11px] font-medium text-gray-400">
+                            No image
+                          </div>
                         )}
                       </td>
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-gray-950">{item.serviceName}</div>
+                      </td>
+                      <td className="px-4 py-4 font-semibold text-gray-800">{formatCost(item.cost, item.currencyCode || currencyCode)}</td>
                       <td className="px-4 py-4 text-gray-600">{formatDate(item.modified || item.created)}</td>
                       <td className="px-4 py-4">
                         <div className="flex justify-end gap-2">
-                          <IconButton label="Edit area" onClick={() => openEditModal(item)} icon={<Pencil className="h-4 w-4" />} />
-                          <IconButton label="Delete area" onClick={() => setDeleteTarget(item)} icon={<Trash2 className="h-4 w-4" />} danger />
+                          <IconButton label="Edit service" onClick={() => openEditModal(item)} icon={<Pencil className="h-4 w-4" />} />
+                          <IconButton label="Delete service" onClick={() => setDeleteTarget(item)} icon={<Trash2 className="h-4 w-4" />} danger />
                         </div>
                       </td>
                     </tr>
@@ -408,66 +535,116 @@ export default function ClubTablesAreasPage() {
 
       {draft && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/45 px-4 py-6" role="dialog" aria-modal="true">
-          <form onSubmit={saveDraft} className="w-full max-w-xl rounded-md bg-white shadow-xl">
+          <form onSubmit={saveDraft} className="w-full max-w-2xl rounded-md bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-              <h2 className="text-lg font-semibold text-gray-950">{draft.id ? 'Edit area' : 'Add area'}</h2>
+              <h2 className="text-lg font-semibold text-gray-950">{draft.id ? 'Edit service' : 'Add service'}</h2>
               <button type="button" onClick={closeModal} className="rounded p-1 text-gray-500 hover:bg-gray-100" aria-label="Close">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="space-y-4 px-5 py-5">
+            <div className="grid gap-4 px-5 py-5 md:grid-cols-2">
+              <label className="block text-sm">
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600">Sector</span>
+                <select
+                  value={draft.sectorId}
+                  onChange={(event) => {
+                    updateDraft({ sectorId: event.target.value });
+                    setFieldErrors((current) => ({ ...current, sectorId: undefined }));
+                  }}
+                  className={`h-10 w-full rounded-md border bg-white px-3 text-sm text-gray-900 outline-none transition ${
+                    fieldErrors.sectorId ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-gray-500'
+                  }`}
+                >
+                  <option value="">Select type</option>
+                  {sectors.map((sector) => (
+                    <option key={sector.id} value={sector.id}>{sector.name}</option>
+                  ))}
+                </select>
+                {fieldErrors.sectorId && <span className="mt-1 block text-xs font-medium text-red-600">{fieldErrors.sectorId}</span>}
+              </label>
+
               <Field
-                label="Area name"
-                value={draft.name}
-                error={fieldErrors.name}
+                label="Service name"
+                value={draft.serviceName}
+                error={fieldErrors.serviceName}
                 onChange={(value) => {
-                  setDraft({ ...draft, name: value });
-                  setFieldErrors((current) => ({ ...current, name: undefined }));
+                  updateDraft({ serviceName: value });
+                  setFieldErrors((current) => ({ ...current, serviceName: undefined }));
                 }}
               />
 
-              <label className="flex items-center gap-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-3 text-sm font-medium text-gray-800">
-                <input
-                  type="checkbox"
-                  checked={draft.accessControlEnabled}
-                  onChange={(event) => setDraft({ ...draft, accessControlEnabled: event.target.checked })}
-                  className="h-4 w-4 rounded border-gray-300 accent-gray-900"
-                />
-                Enable this area for the access control
-              </label>
+              <Field
+                label={`Cost (${currencyCode})`}
+                value={draft.cost}
+                error={fieldErrors.cost}
+                type="number"
+                min={0}
+                step="0.01"
+                onChange={(value) => {
+                  updateDraft({ cost: value });
+                  setFieldErrors((current) => ({ ...current, cost: undefined }));
+                }}
+              />
 
-              <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
-                <label className="flex items-start gap-3 text-sm font-medium text-gray-800">
-                  <input
-                    type="checkbox"
-                    checked={draft.limitMembers}
-                    onChange={(event) => {
-                      setDraft({
-                        ...draft,
-                        limitMembers: event.target.checked,
-                        memberLimit: event.target.checked ? draft.memberLimit : ''
-                      });
-                      setFieldErrors((current) => ({ ...current, memberLimit: undefined }));
-                    }}
-                    className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-gray-900"
-                  />
-                  <span>Set the maximum number of members present at the same time in the area</span>
-                </label>
-                <div className="mt-3 max-w-44">
-                  <Field
-                    label="Maximum members"
-                    value={draft.memberLimit}
-                    error={fieldErrors.memberLimit}
-                    type="number"
-                    min={1}
-                    disabled={!draft.limitMembers}
-                    onChange={(value) => {
-                      setDraft({ ...draft, memberLimit: value });
-                      setFieldErrors((current) => ({ ...current, memberLimit: undefined }));
-                    }}
-                  />
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 md:row-span-2">
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
+                  <ImagePlus className="h-4 w-4" />
+                  Service image
                 </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <div className="flex h-28 w-full items-center justify-center rounded-md border border-dashed border-gray-300 bg-white sm:w-40">
+                    {draft.imagePreview || (draft.currentImageUrl && !draft.removeImage) ? (
+                      <img
+                        src={draft.imagePreview || draft.currentImageUrl || ''}
+                        alt=""
+                        className="h-full w-full rounded-md object-cover"
+                      />
+                    ) : (
+                      <span className="text-xs font-medium text-gray-400">No image</span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-1 flex-col justify-center gap-2">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif,image/webp"
+                      onChange={handleImageChange}
+                      className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-gray-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-gray-800"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {draft.imageFile && (
+                        <button
+                          type="button"
+                          onClick={clearSelectedImage}
+                          className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-white"
+                        >
+                          Clear selected image
+                        </button>
+                      )}
+                      {draft.currentImageUrl && !draft.imageFile && !draft.removeImage && (
+                        <button
+                          type="button"
+                          onClick={() => updateDraft({ removeImage: true })}
+                          className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                        >
+                          Remove image
+                        </button>
+                      )}
+                      {draft.currentImageUrl && draft.removeImage && (
+                        <button
+                          type="button"
+                          onClick={() => updateDraft({ removeImage: false })}
+                          className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-white"
+                        >
+                          Keep current image
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {fieldErrors.image && <span className="mt-2 block text-xs font-medium text-red-600">{fieldErrors.image}</span>}
               </div>
             </div>
 
@@ -488,13 +665,11 @@ export default function ClubTablesAreasPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/45 px-4 py-6" role="dialog" aria-modal="true">
           <div className="w-full max-w-lg rounded-md bg-white shadow-xl">
             <div className="border-b border-gray-200 px-5 py-4">
-              <h2 className="text-lg font-semibold text-gray-950">Delete area</h2>
+              <h2 className="text-lg font-semibold text-gray-950">Delete service</h2>
             </div>
             <div className="space-y-3 px-5 py-5 text-sm text-gray-700">
-              <p className="font-medium text-gray-950">{deleteTarget.name}</p>
-              <p>
-                Warning! If you delete an area, it will not be possible anymore to view the bookings of the courses related to the deleted area.
-              </p>
+              <p className="font-medium text-gray-950">{deleteTarget.serviceName}</p>
+              <p>This service will be removed from the club services table.</p>
             </div>
             <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">
               <button type="button" onClick={() => setDeleteTarget(null)} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
@@ -516,13 +691,11 @@ function ToolbarButton({
   icon: Icon,
   label,
   onClick,
-  active = false,
   variant = 'default'
 }: {
   icon: typeof Plus;
   label: string;
   onClick: () => void;
-  active?: boolean;
   variant?: 'default' | 'dark';
 }) {
   return (
@@ -532,9 +705,7 @@ function ToolbarButton({
       className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition ${
         variant === 'dark'
           ? 'border-gray-800 bg-gray-900 text-white hover:bg-gray-800'
-          : active
-            ? 'border-gray-900 bg-gray-900 text-white'
-            : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50'
+          : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50'
       }`}
     >
       <Icon className="h-4 w-4" />
@@ -571,24 +742,6 @@ function IconButton({
   );
 }
 
-function StatusBadge({
-  active,
-  activeLabel,
-  inactiveLabel
-}: {
-  active: boolean;
-  activeLabel: string;
-  inactiveLabel: string;
-}) {
-  return (
-    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-      active ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-gray-100 text-gray-500 ring-1 ring-gray-200'
-    }`}>
-      {active ? activeLabel : inactiveLabel}
-    </span>
-  );
-}
-
 function SortHeader({
   label,
   active,
@@ -621,7 +774,7 @@ function Field({
   error,
   type = 'text',
   min,
-  disabled = false
+  step
 }: {
   label: string;
   value: string;
@@ -629,7 +782,7 @@ function Field({
   error?: string;
   type?: 'text' | 'number';
   min?: number;
-  disabled?: boolean;
+  step?: string;
 }) {
   return (
     <label className="block text-sm">
@@ -637,10 +790,10 @@ function Field({
       <input
         type={type}
         min={min}
+        step={step}
         value={value}
-        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className={`h-10 w-full rounded-md border bg-white px-3 text-sm text-gray-900 outline-none transition disabled:bg-gray-100 disabled:text-gray-400 ${
+        className={`h-10 w-full rounded-md border bg-white px-3 text-sm text-gray-900 outline-none transition ${
           error ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-gray-500'
         }`}
       />
@@ -667,7 +820,7 @@ function SmartPagination({
   };
 
   return (
-    <nav className="flex flex-wrap items-center gap-1" aria-label="Areas pagination">
+    <nav className="flex flex-wrap items-center gap-1" aria-label="Services pagination">
       <PaginationIconButton label="First page" disabled={!canGoBack} onClick={() => goToPage(1)} icon={<ChevronsLeft className="h-4 w-4" />} />
       <PaginationIconButton label="Previous page" disabled={!canGoBack} onClick={() => goToPage(currentPage - 1)} icon={<ChevronLeft className="h-4 w-4" />} />
       {pageItems.map((item) => {

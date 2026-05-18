@@ -8,7 +8,7 @@ type TablesTabsProps = {
 
 const TABLE_TABS = [
   { key: 'areas', label: 'Areas', href: '/club/settings/tables/areas', enabled: true },
-  { key: 'services', label: 'Services', href: '/club/settings/tables/services', enabled: false },
+  { key: 'services', label: 'Services', href: '/club/settings/tables/services', enabled: true },
   { key: 'member_type', label: 'Member type', href: '/club/settings/tables/member_type', enabled: false },
   { key: 'professions', label: 'Professions', href: '/club/settings/tables/professions', enabled: false },
   { key: 'employees', label: 'Employees', href: '/club/settings/tables/employees', enabled: false },
@@ -42,7 +42,7 @@ export default function TablesTabs({ active }: TablesTabsProps) {
 
           if (!tab.enabled) {
             return (
-              <button key={tab.key} type="button" className={className} disabled title="Build this table after Areas">
+              <button key={tab.key} type="button" className={className} disabled title="Build this table later">
                 {content}
               </button>
             );
