@@ -19,10 +19,27 @@ export const OPERATOR_NAV_TABS = [
 
 export type OperatorNavTabId = (typeof OPERATOR_NAV_TABS)[number]['id'];
 
+export type StaffKind = 'OPERATOR' | 'CO_ADMIN';
+
 export type OperatorNavVariant =
-  | { kind: 'standard' }
-  | { kind: 'myCustomers' }
-  | { kind: 'coadmin'; coadminId: string };
+  | { kind: 'standard'; viewedStaffKind?: StaffKind }
+  | { kind: 'myCustomers'; viewedStaffKind?: StaffKind }
+  | { kind: 'coadmin'; coadminId: string; viewedStaffKind?: StaffKind };
+
+/** Label for the assign tab depends on which profile type is open. */
+export function getOperatorNavTabLabel(
+  tabId: OperatorNavTabId,
+  variant: OperatorNavVariant,
+): string {
+  const tab = OPERATOR_NAV_TABS.find((t) => t.id === tabId);
+  if (!tab) return '';
+  if (tabId === 'assign-coadmin') {
+    return variant.viewedStaffKind === 'CO_ADMIN'
+      ? 'Assign a new Operator'
+      : 'Assign a new Co-admin';
+  }
+  return tab.label;
+}
 
 /** Tabs visible for the current panel session (staff vs panel admin). */
 export function getVisibleOperatorNavTabs(options?: {
@@ -68,7 +85,9 @@ export function getOperatorNavHref(
     case 'logins':
       return `/operators/logins/${operatorId}`;
     case 'assign-coadmin':
-      return '/admin/add-co-admin';
+      return variant.viewedStaffKind === 'CO_ADMIN'
+        ? `/operators/assign-operator/${operatorId}`
+        : `/operators/assign-coadmin/${operatorId}`;
     default:
       return '#';
   }

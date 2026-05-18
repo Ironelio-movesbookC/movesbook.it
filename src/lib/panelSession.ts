@@ -81,7 +81,7 @@ export function canAccessOperatorSuperAdminSettings(
 export function operatorsRouteUsesAdminChrome(pathname: string | null): boolean {
   if (!pathname?.startsWith('/operators')) return false;
   if (pathname === '/operators' || pathname === '/operators/usersAssignedStaff') return true;
-  return /^\/operators\/(?:profile|password-settings|settings|myCustomers|logins|super-admin-settings)\//.test(
+  return /^\/operators\/(?:profile|password-settings|settings|myCustomers|logins|super-admin-settings|assign-coadmin|assign-operator)\//.test(
     pathname,
   );
 }

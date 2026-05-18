@@ -11,6 +11,8 @@ import {
   canDeleteStaffProfile,
   canEditStaffProfile,
 } from '@/lib/staffProfileAccess';
+import { persistOperatorNavContext } from '@/lib/operatorSubNav';
+import type { StaffKind } from '@/lib/operatorNavTabs';
 
 type OperatorProfileState = {
   username: string;
@@ -118,6 +120,8 @@ export default function OperatorProfilePage() {
         const o = data?.operator || {};
         const kind = String(o.kind ?? 'OPERATOR').toUpperCase();
         const isCoAdmin = kind === 'CO_ADMIN';
+        const viewedStaffKind: StaffKind = isCoAdmin ? 'CO_ADMIN' : 'OPERATOR';
+        persistOperatorNavContext(viewedStaffKind);
         const country = String(o.country ?? '').trim();
         const code = COUNTRIES_WITH_CODES.find((c) => c.name === country)?.id || '';
         const region = String(o.regions ?? '').trim();

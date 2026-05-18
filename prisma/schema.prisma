@@ -838,8 +838,24 @@ model StaffAccount {
   updatedAt            DateTime         @updatedAt
   assignedUsers        StaffAssignedUser[]
   loginLogs            StaffAccountLoginLog[]
+  coAdminLink          StaffOperatorCoAdminLink?  @relation("OperatorCoAdminLinkOperator")
+  operatorsAsCoAdmin   StaffOperatorCoAdminLink[] @relation("OperatorCoAdminLinkCoAdmin")
 
   @@map("staff_accounts")
+}
+
+/// Links one co-admin to one operator (operator has at most one co-admin; co-admin may have many operators).
+model StaffOperatorCoAdminLink {
+  id         String   @id @default(cuid())
+  operatorId String   @unique
+  coAdminId  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  operator   StaffAccount @relation("OperatorCoAdminLinkOperator", fields: [operatorId], references: [id], onDelete: Cascade)
+  coAdmin    StaffAccount @relation("OperatorCoAdminLinkCoAdmin", fields: [coAdminId], references: [id], onDelete: Cascade)
+
+  @@index([coAdminId])
+  @@map("staff_operator_coadmin_links")
 }
 
 /// Login / logout audit rows for an operator or co-admin (admin "Logins" tab).

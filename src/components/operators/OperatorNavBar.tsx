@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {
   getOperatorNavHref,
+  getOperatorNavTabLabel,
   getVisibleOperatorNavTabs,
   type OperatorNavTabId,
   type OperatorNavVariant,
@@ -58,7 +59,7 @@ export function OperatorNavBar({
               isActive ? 'bg-black text-white' : 'text-gray-300 hover:text-white hover:bg-gray-600'
             }`}
           >
-            {tab.label}
+            {getOperatorNavTabLabel(tab.id, variant)}
           </Link>
         );
       })}

@@ -14,7 +14,7 @@ import {
 } from '@/lib/panelSession';
 
 const STAFF_DETAIL_SEGMENT =
-  /^\/operators\/(?:profile|settings|password-settings|super-admin-settings|myCustomers|logins)\/([^/]+)/;
+  /^\/operators\/(?:profile|settings|password-settings|super-admin-settings|myCustomers|logins|assign-coadmin|assign-operator)\/([^/]+)/;
 
 const COADMIN_SETTINGS_SEGMENT =
   /^\/operators\/operator_coadmin_settings\/([^/]+)\/([^/]+)/;
