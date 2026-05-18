@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   Home, 
   User, 
@@ -16,7 +16,8 @@ import {
   Menu,
   X,
   Building2,
-  LayoutDashboard
+  LayoutDashboard,
+  History
 } from 'lucide-react';
 import Image from 'next/image';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -35,6 +36,7 @@ interface AdminNavbarProps {
 
 export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbarProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { t, currentLanguage, setLanguage, availableLanguages } = useLanguage();
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -42,7 +44,6 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [lastLogin, setLastLogin] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const languageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -82,8 +83,19 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
 
   const handleLogout = () => {
     localStorage.removeItem('adminUser');
+    localStorage.removeItem('adminToken');
     router.push('/');
   };
+
+  const isStaff = Boolean(
+    adminUser &&
+      ((adminUser as { isStaff?: boolean }).isStaff ||
+        (adminUser as { staffKind?: string }).staffKind ||
+        (adminUser as { userType?: string }).userType?.startsWith('STAFF_')),
+  );
+  const staffAccountId = isStaff ? adminUser?.id : null;
+  /** Operator / co-admin use the same main nav as super admin (Home, Single User, Coaches, …). */
+  const useStaffStripNav = false;
 
   const handleOpenDashboard = async () => {
     const adminToken = localStorage.getItem('adminToken');
@@ -124,7 +136,14 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
           <div className="flex items-center justify-between flex-wrap gap-2">
             {/* Logo Section */}
             <div className="flex items-center gap-2 sm:gap-3">
-              <Link href="/settings/admin-management" className="bg-white p-1 sm:p-1.5 rounded overflow-hidden cursor-pointer">
+              <Link
+                href={
+                  isStaff && staffAccountId
+                    ? `/operators/profile/${staffAccountId}`
+                    : '/settings/admin-management'
+                }
+                className="bg-white p-1 sm:p-1.5 rounded overflow-hidden cursor-pointer"
+              >
                 <Image 
                   src="/assets/admin.png" 
                   alt="Admin Logo"
@@ -152,7 +171,16 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
               <div className="hidden md:flex items-center gap-2 lg:gap-3">
                 <div className="text-right text-xs lg:text-sm leading-tight">
                   <p className="font-semibold text-yellow-200 hidden lg:block">Current Operator</p>
-                  <p className="font-bold text-sm lg:text-base">{adminUser.name} <span className="text-yellow-400">▼Admin</span></p>
+                  <p className="font-bold text-sm lg:text-base">
+                    {adminUser.name}{' '}
+                    <span className="text-yellow-400">
+                      {isStaff
+                        ? (adminUser as { staffKind?: string }).staffKind === 'CO_ADMIN'
+                          ? '▼ Co-Admin'
+                          : '▼ Operator'
+                        : '▼ Admin'}
+                    </span>
+                  </p>
                   <p className="text-xs text-yellow-200 whitespace-pre-line hidden lg:block">{lastLogin}</p>
                 </div>
                 <div className="w-10 h-10 lg:w-12 lg:h-12 bg-gray-300 rounded border-2 border-white overflow-hidden">
@@ -162,13 +190,23 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
                     </div>
                   )}
                 </div>
-                <Link
-                  href="/settings"
-                  className="p-2 hover:bg-red-600 rounded-lg transition"
-                  title="Sport settings"
-                >
-                  <Settings className="w-5 h-5" />
-                </Link>
+                {isStaff && staffAccountId ? (
+                  <Link
+                    href={`/operators/password-settings/${staffAccountId}`}
+                    className="p-2 hover:bg-red-600 rounded-lg transition"
+                    title="Account settings"
+                  >
+                    <Settings className="w-5 h-5" />
+                  </Link>
+                ) : (
+                  <Link
+                    href="/settings"
+                    className="p-2 hover:bg-red-600 rounded-lg transition"
+                    title="Sport settings"
+                  >
+                    <Settings className="w-5 h-5" />
+                  </Link>
+                )}
                 <button
                   onClick={handleLogout}
                   className="p-2 hover:bg-red-600 rounded-lg transition"
@@ -193,9 +231,41 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
       {/* Navigation Menu Bar - Desktop */}
       <div className="hidden md:block bg-gray-700 text-white shadow-lg">
         <div className="max-w-[1800px] mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between flex-wrap">
-            {/* Navigation Links */}
-            <nav className="flex items-center flex-wrap">
+          <div className="flex items-center min-h-[2.75rem]">
+            {useStaffStripNav ? (
+              <nav className="flex items-center flex-nowrap flex-1 min-w-0 overflow-x-auto">
+                <Link
+                  href={`/operators/profile/${staffAccountId}`}
+                  className="flex items-center gap-2 px-3 lg:px-4 py-2.5 lg:py-3 hover:bg-gray-600 transition border-r border-gray-600 text-sm"
+                >
+                  <User className="w-4 h-4" />
+                  <span className="font-medium">Profile</span>
+                </Link>
+                <Link
+                  href={`/operators/password-settings/${staffAccountId}`}
+                  className="flex items-center gap-2 px-3 lg:px-4 py-2.5 lg:py-3 hover:bg-gray-600 transition border-r border-gray-600 text-sm"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span className="font-medium">Settings</span>
+                </Link>
+                <Link
+                  href={`/operators/myCustomers/${staffAccountId}`}
+                  className="flex items-center gap-2 px-3 lg:px-4 py-2.5 lg:py-3 hover:bg-gray-600 transition border-r border-gray-600 text-sm"
+                >
+                  <Users className="w-4 h-4" />
+                  <span className="font-medium">My Customers</span>
+                </Link>
+                <Link
+                  href={`/operators/logins/${staffAccountId}`}
+                  className="flex items-center gap-2 px-3 lg:px-4 py-2.5 lg:py-3 hover:bg-gray-600 transition text-sm"
+                >
+                  <History className="w-4 h-4" />
+                  <span className="font-medium">Logins</span>
+                </Link>
+              </nav>
+            ) : (
+              <>
+            <nav className="flex items-center flex-nowrap flex-1 min-w-0 overflow-x-auto">
               {/* Left Sidebar Toggle */}
               <button 
                 onClick={onToggleLeft}
@@ -311,100 +381,57 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
 
               <Link
                 href="/settings/language"
-                className="flex items-center gap-2 px-3 lg:px-4 py-2.5 lg:py-3 hover:bg-gray-600 transition border-r border-gray-600 text-sm"
+                className="flex items-center gap-2 px-3 lg:px-4 py-2.5 lg:py-3 hover:bg-gray-600 transition border-r border-gray-600 text-sm shrink-0"
               >
                 <FileText className="w-4 h-4" />
                 <span className="font-medium">Language</span>
               </Link>
-
             </nav>
 
-            {/* Search Bar - Desktop */}
-            <div className="hidden xl:flex items-center gap-2">
-              <form onSubmit={handleSearch} className="flex items-baseline gap-2">
-                <span className="text-sm text-gray-300 font-bold">Search in</span>
-                <select
-                  value={searchCategory}
-                  onChange={(e) => setSearchCategory(e.target.value)}
-                  className="h-9 box-border border border-gray-300 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-colors leading-none"
-                >
-                  <option>All Users</option>
-                  <option>Athletes</option>
-                  <option>Coaches</option>
-                  <option>Teams</option>
-                  <option>Clubs</option>
-                  <option>Groups</option>
-                </select>
-                <div className="relative h-9">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search..."
-                    className="h-9 box-border border border-gray-300 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-4 rounded pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-colors leading-none"
-                  />
-                  <button 
-                    type="submit"
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-gray-700 p-1 rounded hover:bg-gray-600 transition"
+            <div className="flex items-center gap-2 shrink-0 border-l border-gray-600 pl-2 ml-0.5 py-1">
+              <form onSubmit={handleSearch} className="flex items-center gap-2 flex-nowrap">
+                  <span className="text-sm text-gray-300 font-bold whitespace-nowrap">Search in</span>
+                  <select
+                    value={searchCategory}
+                    onChange={(e) => setSearchCategory(e.target.value)}
+                    className="h-9 box-border border border-gray-300 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-colors leading-none shrink-0"
                   >
-                    <Search className="w-4 h-4 text-white" />
-                  </button>
-                </div>
-              </form>
-              
-              {/* Right Sidebar Toggle */}
-              <button 
+                    <option>All Users</option>
+                    <option>Athletes</option>
+                    <option>Coaches</option>
+                    <option>Teams</option>
+                    <option>Clubs</option>
+                    <option>Groups</option>
+                  </select>
+                  <div className="relative h-9 w-[min(12rem,22vw)] min-w-[7rem] shrink-0">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search..."
+                      className="w-full h-9 box-border border border-gray-300 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-4 rounded pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-colors leading-none"
+                    />
+                    <button 
+                      type="submit"
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-gray-700 p-1 rounded hover:bg-gray-600 transition"
+                    >
+                      <Search className="w-4 h-4 text-white" />
+                    </button>
+                  </div>
+                </form>
+
+              <button
                 onClick={onToggleRight}
-                className="p-2 hover:bg-gray-600 rounded transition ml-2"
+                className="p-2 hover:bg-gray-600 rounded transition shrink-0"
                 title="Toggle Right Sidebar"
               >
                 <Menu className="w-5 h-5 text-white" />
               </button>
             </div>
-
-            {/* Search Toggle - Tablet */}
-            <button
-              onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
-              className="xl:hidden px-4 py-2.5 hover:bg-gray-600 transition"
-            >
-              <Search className="w-5 h-5" />
-            </button>
+              </>
+            )}
           </div>
 
-          {/* Expandable Search Bar - Tablet */}
-          {mobileSearchOpen && (
-            <div className="xl:hidden border-t border-gray-600 py-3">
-              <form onSubmit={handleSearch} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <select
-                  value={searchCategory}
-                  onChange={(e) => setSearchCategory(e.target.value)}
-                  className="h-9 box-border border border-gray-300 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-4 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors leading-none"
-                >
-                  <option>All Users</option>
-                  <option>Athletes</option>
-                  <option>Coaches</option>
-                  <option>Teams</option>
-                  <option>Clubs</option>
-                  <option>Groups</option>
-                </select>
-                <div className="relative flex-1 h-9">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search..."
-                    className="w-full h-9 box-border border border-gray-300 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-4 rounded pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors leading-none"
-                  />
-                  <button 
-                    type="submit"
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-gray-700 p-1 rounded hover:bg-gray-600 transition"
-                  >
-                    <Search className="w-4 h-4 text-white" />
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
         </div>
       </div>
 

@@ -12,12 +12,13 @@ import { useMyPageHandlers } from '@/app/my-page/hooks/useMyPageHandlers';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 export default function ClubSettingsLayout({ children }: { children: React.ReactNode }) {
-  const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-entity');
+  const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-page');
   const { user, loading } = useAuth();
   const router = useRouter();
 
   const {
-    clubs,
+    clubProfiles,
+    hasClubProfile,
     groups,
     teams,
     coachingGroups
@@ -43,6 +44,12 @@ export default function ClubSettingsLayout({ children }: { children: React.React
     }
   }, [user, router]);
 
+  useEffect(() => {
+    if (hasClubProfile === false && activeTab === 'my-entity') {
+      setActiveTab('my-page');
+    }
+  }, [hasClubProfile, activeTab]);
+
   const userType = user?.userType || '';
   const isClubAccount = isClubAccountUserType(userType);
 
@@ -58,7 +65,7 @@ export default function ClubSettingsLayout({ children }: { children: React.React
           <DarkSidebar
             userType={userType}
             entities={
-              isClubAccount ? clubs :
+              isClubAccount ? clubProfiles :
               userType === 'TEAM_MANAGER' ? teams :
               userType === 'GROUP_ADMIN' ? groups :
               userType === 'COACH' ? coachingGroups : []
@@ -84,14 +91,12 @@ export default function ClubSettingsLayout({ children }: { children: React.React
             onTabChange={setActiveTab}
             onMyPageClick={() => setActiveTab('my-page')}
             onMyClubClick={() => {
+              if (!hasClubProfile) return;
               setActiveTab('my-entity');
-              if (userType === 'CLUB') {
-                return;
-              }
               if (selectedClub) {
                 window.location.href = `/my-club?clubId=${selectedClub}`;
-              } else if (clubs.length > 0) {
-                window.location.href = `/my-club?clubId=${clubs[0].id}`;
+              } else if (clubProfiles.length > 0) {
+                window.location.href = `/my-club?clubId=${clubProfiles[0].id}`;
               }
             }}
             onMyTeamClick={() => {

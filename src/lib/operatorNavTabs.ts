@@ -24,6 +24,22 @@ export type OperatorNavVariant =
   | { kind: 'myCustomers' }
   | { kind: 'coadmin'; coadminId: string };
 
+/** Tabs visible for the current panel session (staff vs panel admin). */
+export function getVisibleOperatorNavTabs(options?: {
+  isStaff?: boolean;
+  staffKind?: 'OPERATOR' | 'CO_ADMIN';
+  isSuperAdmin?: boolean;
+  canManageStaff?: boolean;
+}) {
+  const canManage = Boolean(options?.canManageStaff ?? options?.isSuperAdmin);
+  return OPERATOR_NAV_TABS.filter((tab) => {
+    if (tab.id === 'super-admin') return canManage;
+    if (tab.id === 'assign-coadmin') return canManage;
+    if (!options?.isStaff) return true;
+    return true;
+  });
+}
+
 export function getOperatorNavHref(
   tabId: OperatorNavTabId,
   operatorId: string,

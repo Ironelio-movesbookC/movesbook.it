@@ -4,7 +4,6 @@ import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { User, Eye, Settings, Trash2, Link2, UserPlus, X } from 'lucide-react';
-import { OperatorNavBar } from '@/components/operators/OperatorNavBar';
 import { COUNTRIES } from '@/lib/news/countries';
 
 const LANGUAGE_OPTIONS = [
@@ -236,8 +235,6 @@ export default function MyCustomersPage() {
           title="Operator / co-admin for this page"
         />
       </div>
-
-      <OperatorNavBar operatorId={id} activeTabId="customers" variant={{ kind: 'myCustomers' }} />
 
       <div className="max-w-6xl mx-auto px-6 py-6">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">

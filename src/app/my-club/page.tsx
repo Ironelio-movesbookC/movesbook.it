@@ -20,6 +20,8 @@ import {
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import { useAuth } from '@/hooks/useAuth';
+import { isClubCreatedFromForm } from '@/lib/club/clubSidebarLabel';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 interface ClubMember {
   id: string;
@@ -136,20 +138,56 @@ function MyClubContent() {
     }
   }, [user, authLoading, router]);
 
-  // Load club data when clubId changes
+  const verifyClubProfileAccess = useCallback(async (): Promise<boolean> => {
+    if (!clubId) return false;
+    const token = localStorage.getItem('token');
+    if (!token) return false;
+    try {
+      const res = await fetch('/api/clubs/my-clubs', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return false;
+      const data = (await res.json()) as {
+        clubProfiles?: { id: string; description?: string | null }[];
+        clubs?: { id: string; hasClubProfile?: boolean; description?: string | null }[];
+      };
+      const profiles =
+        data.clubProfiles ??
+        (data.clubs ?? []).filter((c) =>
+          c.hasClubProfile ?? isClubCreatedFromForm(c)
+        );
+      return profiles.some((c) => c.id === clubId);
+    } catch {
+      return false;
+    }
+  }, [clubId]);
+
+  // Load club data when clubId changes (only for clubs created via profile form)
   useEffect(() => {
     if (!clubId) {
-      // If no clubId selected, redirect to My Page to select a club
-      // This ensures users must select a club from My Page first
-      if (user?.userType === 'CLUB_TRAINER' || user?.userType === 'CLUB') {
-        router.push('/my-page');
+      if (user && isClubAccountUserType(user.userType)) {
+        router.replace('/club/dashboard');
         return;
       }
       setLoading(false);
-    } else {
-      loadClubData();
+      return;
     }
-  }, [clubId, user, router, loadClubData]);
+
+    let cancelled = false;
+    void (async () => {
+      const allowed = await verifyClubProfileAccess();
+      if (cancelled) return;
+      if (!allowed) {
+        router.replace('/club/dashboard');
+        return;
+      }
+      await loadClubData();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clubId, user, router, loadClubData, verifyClubProfileAccess]);
 
   // Don't render if not authenticated
   if (authLoading || !user) {

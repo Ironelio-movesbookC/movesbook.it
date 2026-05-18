@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import {
-  OPERATOR_NAV_TABS,
   getOperatorNavHref,
+  getVisibleOperatorNavTabs,
   type OperatorNavTabId,
   type OperatorNavVariant,
 } from '@/lib/operatorNavTabs';
@@ -12,12 +12,26 @@ type OperatorNavBarProps = {
   operatorId: string;
   activeTabId: OperatorNavTabId;
   variant: OperatorNavVariant;
+  isStaff?: boolean;
+  staffKind?: 'OPERATOR' | 'CO_ADMIN';
+  isSuperAdmin?: boolean;
+  canManageStaff?: boolean;
 };
 
-export function OperatorNavBar({ operatorId, activeTabId, variant }: OperatorNavBarProps) {
+export function OperatorNavBar({
+  operatorId,
+  activeTabId,
+  variant,
+  isStaff,
+  staffKind,
+  isSuperAdmin,
+  canManageStaff,
+}: OperatorNavBarProps) {
+  const tabs = getVisibleOperatorNavTabs({ isStaff, staffKind, isSuperAdmin, canManageStaff });
+
   return (
     <div className="flex flex-nowrap gap-0 overflow-x-auto bg-[#4f4f4f] border-b border-gray-600">
-      {OPERATOR_NAV_TABS.map((tab) => {
+      {tabs.map((tab) => {
         const href = getOperatorNavHref(tab.id, operatorId, variant);
         const isActive = activeTabId === tab.id;
         return (

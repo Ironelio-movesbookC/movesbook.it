@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin } from '@/lib/adminAuth';
+import { requireStaffSelfOrAdminPanel } from '@/lib/panelAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,12 +10,11 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string; userId: string } },
 ) {
-  const auth = await requireAdmin(request);
+  const { id: staffAccountId, userId } = params;
+  const auth = await requireStaffSelfOrAdminPanel(request, staffAccountId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
-
-  const { id: staffAccountId, userId } = params;
   if (!staffAccountId || !userId) {
     return NextResponse.json({ error: 'Operator id and user id are required' }, { status: 400 });
   }

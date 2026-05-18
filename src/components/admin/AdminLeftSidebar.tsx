@@ -53,7 +53,8 @@ import {
   Calendar,
   Search,
   UserPlus,
-  BookUser
+  BookUser,
+  Users2
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -1061,6 +1062,16 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                   <User className="w-3 h-3 text-white" />
               </div>
               <div className="font-bold text-white">Co-admins</div>
+            </Link>
+
+            <Link href="/admin/all-staff" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
+              <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
+                  <Users2 className="w-8 h-8 text-white" strokeWidth={1.5} />
+              </div>
+              <div className="bg-black border border-white p-0.5 rounded-full flex-shrink-0">
+                  <User className="w-3 h-3 text-white" />
+              </div>
+              <div className="font-bold text-white">All Staff</div>
             </Link>
 
             {/* Breakline */}

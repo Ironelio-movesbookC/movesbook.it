@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { isStaffUserType } from '@/lib/panelAuth';
 
 export type AdminAuthContext =
   | { ok: true; adminUserId: string; isSuperAdmin: boolean }
@@ -16,6 +17,17 @@ export async function requireAdmin(request: NextRequest): Promise<AdminAuthConte
   const decoded = verifyToken(token);
   if (!decoded?.userId) {
     return { ok: false, status: 401, error: 'Invalid token' };
+  }
+
+  if (isStaffUserType(decoded.userType)) {
+    const staff = await prisma.staffAccount.findUnique({
+      where: { id: decoded.userId },
+      select: { id: true, kind: true },
+    });
+    if (!staff) {
+      return { ok: false, status: 401, error: 'Staff session expired. Please login again.' };
+    }
+    return { ok: true, adminUserId: staff.id, isSuperAdmin: false };
   }
 
   const superAdmin = await prisma.superAdmin.findFirst({

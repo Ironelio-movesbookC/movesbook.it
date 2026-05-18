@@ -8,7 +8,6 @@ import { COUNTRIES } from '@/lib/news/countries';
 import { getRegionsForCountry } from '@/constants/countryRegions.constants';
 import { User, Mail, X, CalendarDays, CreditCard, Square, CheckSquare } from 'lucide-react';
 import CKEditorComponent from '@/components/news/CKEditor';
-
 type StaffKind = 'OPERATOR' | 'CO_ADMIN';
 
 type StaffDetails = {
@@ -152,6 +151,34 @@ export default function OperatorSettingsPage() {
     () => ['Operator', 'Club admin', 'Club owner', 'CEO', 'President', 'Director', 'General Manager', 'Manager'],
     [],
   );
+
+  const CLUB_CATEGORY_OPTIONS = useMemo(
+    () => ['Gym', 'Fitness', 'Swimming', 'Football', 'Basketball', 'Tennis', 'Other'],
+    [],
+  );
+
+  // Club_profile tab (legacy club admin UI)
+  const [clubLogoUrl, setClubLogoUrl] = useState<string | null>(null);
+  const [clubUsername, setClubUsername] = useState('');
+  const [clubCategory, setClubCategory] = useState('Gym');
+  const [clubCountry, setClubCountry] = useState('Italy');
+  const [clubRegion, setClubRegion] = useState('');
+  const [clubLocation, setClubLocation] = useState('');
+  const [clubZip, setClubZip] = useState('');
+  const [clubAddress, setClubAddress] = useState('');
+  const [clubGeo, setClubGeo] = useState('');
+  const [clubMail, setClubMail] = useState('');
+  const [clubMyPassword, setClubMyPassword] = useState('****');
+  const [clubNewPassword, setClubNewPassword] = useState('');
+  const [clubRepeatPassword, setClubRepeatPassword] = useState('');
+  const [clubDirectAccess, setClubDirectAccess] = useState('');
+  const [clubOfficialName, setClubOfficialName] = useState('');
+  const [clubDirectRegCode, setClubDirectRegCode] = useState('');
+
+  const clubRegionOptions = useMemo(() => {
+    const country = clubCountry.trim();
+    return country ? getRegionsForCountry(country) : [];
+  }, [clubCountry]);
 
   // Functions tab state (UI-only for now)
   const [functionsDaysDuration, setFunctionsDaysDuration] = useState<string>('');
@@ -312,6 +339,15 @@ export default function OperatorSettingsPage() {
           setMemberSurname(next.surname);
           setMemberEmail(next.email ?? '');
           setMemberCountry(next.country ?? 'India');
+          setClubCountry(next.country ?? 'Italy');
+          setClubMail(next.email ?? '');
+          setClubLocation(next.regions ?? '');
+          setClubUsername(next.username ? `${next.username}-club` : '');
+          setClubOfficialName(
+            `${next.name} ${next.surname}`.trim() ||
+              next.username ||
+              'Official club name',
+          );
         }
       } catch (e: any) {
         if (!cancelled) setLoadError(e?.message || 'Failed to load settings');
@@ -444,7 +480,7 @@ export default function OperatorSettingsPage() {
           </div>
         )}
 
-        {/* Panel control header */}
+        {activeTab === 'purchases' && (
         <div className="bg-gray-200 border border-gray-300 rounded shadow-sm">
           <div className="flex items-center justify-between px-4 py-2 border-b border-gray-300">
             <div className="flex items-center gap-3">
@@ -552,9 +588,10 @@ export default function OperatorSettingsPage() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Content */}
-        <div className="mt-4 bg-white border border-gray-300 rounded shadow-sm">
+        <div className={`${activeTab === 'purchases' ? 'mt-4' : 'mt-0'} bg-white border border-gray-300 rounded shadow-sm`}>
           <div className="px-4 py-2 border-b border-gray-200 text-sm font-semibold">
             {activeTab === 'purchases' ? 'Details of subscription · Club' : TOP_TABS.find((t) => t.id === activeTab)?.label}
           </div>
@@ -679,6 +716,8 @@ export default function OperatorSettingsPage() {
                   </div>
 
                   <div className="px-4 py-4">
+                    {profileSubTab === 'user' ? (
+                    <>
                     <div className="bg-purple-700 text-white px-4 py-2 font-semibold flex items-center justify-between">
                       <span>Members Profile</span>
                       <span className="text-xs text-yellow-200">(only view)</span>
@@ -766,7 +805,7 @@ export default function OperatorSettingsPage() {
                           <div className="grid grid-cols-[120px_1fr] items-center gap-2">
                             <label className="text-sm text-gray-700 text-left">User Type*</label>
                             <select value={memberUserType} onChange={(e) => setMemberUserType(e.target.value)} className="px-3 py-1.5 border border-gray-300 rounded bg-white text-sm">
-                              {(profileSubTab === 'club' ? MEMBER_USER_TYPE_OPTIONS_CLUB : MEMBER_USER_TYPE_OPTIONS_USER).map((t) => (
+                              {MEMBER_USER_TYPE_OPTIONS_USER.map((t) => (
                                 <option key={t} value={t}>
                                   {t}
                                 </option>
@@ -907,6 +946,200 @@ export default function OperatorSettingsPage() {
                         </select>
                       </div>
                     </div>
+                    </>
+                    ) : (
+                    <div className="border border-gray-300 bg-[#f3f3f3]">
+                      <div className="bg-[#6b1020] text-white px-4 py-2.5 text-sm font-semibold">
+                        {`Create a new club for the Club Admin <${staff?.username ?? 'username'}>`}
+                      </div>
+                      <div className="p-4 space-y-4">
+                        <div className="flex flex-col sm:flex-row gap-6">
+                          <div className="flex flex-col items-start gap-2 shrink-0">
+                            <div className="w-36 h-28 border border-gray-400 bg-white overflow-hidden flex items-center justify-center">
+                              {clubLogoUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={clubLogoUrl} alt="" className="w-full h-full object-cover" />
+                              ) : staff?.imageUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={staff.imageUrl} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <User className="w-10 h-10 text-gray-400" />
+                              )}
+                            </div>
+                            <button type="button" className="text-sm text-blue-700 hover:underline">
+                              [ Remove Logo ]
+                            </button>
+                          </div>
+                          <div className="flex-1 space-y-2 text-sm">
+                            {(
+                              [
+                                ['Club username', clubUsername, setClubUsername, false],
+                                ['Category', clubCategory, setClubCategory, true],
+                                ['Country', clubCountry, setClubCountry, true],
+                                ['Region', clubRegion, setClubRegion, true],
+                                ['Location', clubLocation, setClubLocation, false],
+                                ['Zip Code', clubZip, setClubZip, false],
+                                ['Address', clubAddress, setClubAddress, false],
+                                ['Geographic coordinate', clubGeo, setClubGeo, false],
+                                ['Club mail', clubMail, setClubMail, false],
+                              ] as [string, string, (v: string) => void, boolean][]
+                            ).map(([label, value, setter, isSelect]) => (
+                              <div key={String(label)} className="grid grid-cols-[160px_1fr] items-center gap-2">
+                                <label className="text-gray-800">{label}</label>
+                                {isSelect && label === 'Category' ? (
+                                  <select
+                                    value={String(value)}
+                                    onChange={(e) => (setter as (v: string) => void)(e.target.value)}
+                                    className="px-2 py-1.5 border border-gray-400 rounded bg-gray-100 w-full max-w-md"
+                                  >
+                                    {CLUB_CATEGORY_OPTIONS.map((c) => (
+                                      <option key={c} value={c}>
+                                        {c}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : isSelect && label === 'Country' ? (
+                                  <select
+                                    value={String(value)}
+                                    onChange={(e) => {
+                                      (setter as (v: string) => void)(e.target.value);
+                                      setClubRegion('');
+                                    }}
+                                    className="px-2 py-1.5 border border-gray-400 rounded bg-gray-100 w-full max-w-md"
+                                  >
+                                    {COUNTRIES.map((c) => (
+                                      <option key={c} value={c}>
+                                        {c}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : isSelect && label === 'Region' ? (
+                                  <select
+                                    value={String(value)}
+                                    onChange={(e) => (setter as (v: string) => void)(e.target.value)}
+                                    className="px-2 py-1.5 border border-gray-400 rounded bg-gray-100 w-full max-w-md"
+                                  >
+                                    <option value="">Select region</option>
+                                    {clubRegionOptions.map((r) => (
+                                      <option key={r} value={r}>
+                                        {r}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    value={String(value)}
+                                    onChange={(e) => (setter as (v: string) => void)(e.target.value)}
+                                    className="px-2 py-1.5 border border-gray-400 rounded bg-gray-100 w-full max-w-md"
+                                  />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="text-red-700 font-semibold text-sm mb-2">My Club password</div>
+                          <table className="w-full max-w-lg text-sm border border-gray-300">
+                            <tbody>
+                              <tr className="border-b border-gray-300">
+                                <td className="px-3 py-2 bg-gray-50 w-36">My Password</td>
+                                <td className="px-3 py-2">
+                                  <input
+                                    type="password"
+                                    value={clubMyPassword}
+                                    readOnly
+                                    className="w-full px-2 py-1 border border-gray-300 rounded bg-white"
+                                  />
+                                </td>
+                              </tr>
+                              <tr className="border-b border-gray-300">
+                                <td className="px-3 py-2 bg-gray-50">New Password</td>
+                                <td className="px-3 py-2">
+                                  <input
+                                    type="password"
+                                    value={clubNewPassword}
+                                    onChange={(e) => setClubNewPassword(e.target.value)}
+                                    className="w-full px-2 py-1 border border-gray-300 rounded bg-gray-200"
+                                  />
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="px-3 py-2 bg-gray-50">Repeat Pass.</td>
+                                <td className="px-3 py-2">
+                                  <input
+                                    type="password"
+                                    value={clubRepeatPassword}
+                                    onChange={(e) => setClubRepeatPassword(e.target.value)}
+                                    className="w-full px-2 py-1 border border-gray-300 rounded bg-gray-200"
+                                  />
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                          <button type="button" className="mt-2 text-sm text-gray-700 hover:underline">
+                            Reset Password
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-[160px_1fr] items-center gap-2 text-sm max-w-2xl">
+                          <label className="text-red-700 font-semibold">Direct Access</label>
+                          <input
+                            value={clubDirectAccess}
+                            onChange={(e) => setClubDirectAccess(e.target.value)}
+                            className="px-2 py-1.5 border border-gray-400 rounded bg-[#fff9c4] w-full max-w-xs"
+                          />
+                        </div>
+                        <div className="grid grid-cols-[160px_1fr] items-center gap-2 text-sm max-w-3xl">
+                          <label className="font-semibold text-gray-900">Official Club name</label>
+                          <input
+                            value={clubOfficialName}
+                            onChange={(e) => setClubOfficialName(e.target.value)}
+                            className="px-2 py-1.5 border border-gray-400 rounded bg-gray-900 text-white w-full"
+                          />
+                        </div>
+
+                        <div>
+                          <div className="text-red-700 font-semibold text-sm mb-2">Direct Registration Code</div>
+                          <div className="border border-gray-300 bg-gray-100 p-4 text-sm text-gray-800 space-y-3 max-w-3xl">
+                            <p>
+                              Password to be typed by the users who register at Movesbook by themselves to send an
+                              authorized request to become member of the club.
+                            </p>
+                            <div className="grid grid-cols-[180px_1fr] items-center gap-2">
+                              <label>Direct Registration code</label>
+                              <input
+                                value={clubDirectRegCode}
+                                onChange={(e) => setClubDirectRegCode(e.target.value)}
+                                className="px-2 py-1.5 border border-gray-400 rounded bg-white max-w-xs"
+                                placeholder="Magiccode"
+                              />
+                            </div>
+                            <p className="text-red-600 text-xs leading-relaxed">
+                              Once the request has been sent, the user will be placed on a temporary list waiting for
+                              the club staff to reauthorized his self-registration.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-center gap-6 pt-4">
+                          <button
+                            type="button"
+                            className="px-10 py-2.5 bg-gradient-to-b from-red-500 to-red-700 text-white font-semibold rounded-lg shadow border border-red-900"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => router.back()}
+                            className="px-10 py-2.5 bg-gradient-to-b from-gray-700 to-black text-white font-semibold rounded-lg shadow border border-gray-900"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    )}
                   </div>
                 </div>
               ) : activeTab === 'admin-settings' ? (

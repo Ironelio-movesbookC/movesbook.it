@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin } from '@/lib/adminAuth';
+import { requireStaffSelfOrAdminPanel } from '@/lib/panelAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,12 +22,12 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const id = getIdFromRequest(request);
+  const auth = await requireStaffSelfOrAdminPanel(request, id);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const id = getIdFromRequest(request);
   if (!id) {
     return NextResponse.json({ error: 'Operator id is required' }, { status: 400 });
   }

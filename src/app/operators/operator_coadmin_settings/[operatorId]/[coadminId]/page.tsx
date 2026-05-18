@@ -19,7 +19,6 @@ import {
   Info,
   MessageCircle,
 } from 'lucide-react';
-import { OperatorNavBar } from '@/components/operators/OperatorNavBar';
 
 type ToggleValue = 'OY' | 'ON'; // OY = Off, ON = On
 type YesNo = 'Yes' | 'No';
@@ -119,12 +118,6 @@ export default function OperatorCoadminSettingsPage() {
 
   return (
     <div className="min-h-full bg-gray-100">
-      <OperatorNavBar
-        operatorId={operatorId}
-        activeTabId="super-admin"
-        variant={{ kind: 'coadmin', coadminId }}
-      />
-
       <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
         {/* Co-Admin profile header */}
         <section className="bg-gray-200 rounded-lg border border-gray-300 p-4 flex items-center justify-between flex-wrap gap-4">

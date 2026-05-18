@@ -720,7 +720,7 @@ model Club {
   id                 String       @id @default(cuid())
   adminId            String
   name               String
-  description        String?
+  description        String?      @db.Text
   location           String?
   /// Public club YouTube URL (channel, @handle, or video), set by club admin; shown to members.
   youtubeChannelUrl  String?      @db.Text
