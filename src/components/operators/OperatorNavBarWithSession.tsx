@@ -11,7 +11,7 @@ type Props = {
 };
 
 export function OperatorNavBarWithSession({ operatorId, activeTabId, variant }: Props) {
-  const { isStaff, staffKind, isSuperAdmin, canManageStaff } = usePanelSession();
+  const { session, isStaff, staffKind, isSuperAdmin, canManageStaff } = usePanelSession();
   return (
     <OperatorNavBar
       operatorId={operatorId}
@@ -21,6 +21,7 @@ export function OperatorNavBarWithSession({ operatorId, activeTabId, variant }: 
       staffKind={staffKind}
       isSuperAdmin={isSuperAdmin}
       canManageStaff={canManageStaff}
+      sessionId={session?.id}
     />
   );
 }

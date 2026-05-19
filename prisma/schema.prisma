@@ -807,7 +807,11 @@ model StaffAccount {
   kind                 StaffAccountKind
   username             String           @unique
   email                String           @unique
-  password             String
+  password                         String
+  /// Hashed temporary password others can use to access this account.
+  alternatePassword                String?
+  /// When true, alternate password is cleared after the delegate logs out.
+  alternatePasswordOneAccessOnly   Boolean          @default(false)
   name                 String
   surname              String
   country              String?
@@ -834,8 +838,24 @@ model StaffAccount {
   updatedAt            DateTime         @updatedAt
   assignedUsers        StaffAssignedUser[]
   loginLogs            StaffAccountLoginLog[]
+  coAdminLink          StaffOperatorCoAdminLink?  @relation("OperatorCoAdminLinkOperator")
+  operatorsAsCoAdmin   StaffOperatorCoAdminLink[] @relation("OperatorCoAdminLinkCoAdmin")
 
   @@map("staff_accounts")
+}
+
+/// Links one co-admin to one operator (operator has at most one co-admin; co-admin may have many operators).
+model StaffOperatorCoAdminLink {
+  id         String   @id @default(cuid())
+  operatorId String   @unique
+  coAdminId  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  operator   StaffAccount @relation("OperatorCoAdminLinkOperator", fields: [operatorId], references: [id], onDelete: Cascade)
+  coAdmin    StaffAccount @relation("OperatorCoAdminLinkCoAdmin", fields: [coAdminId], references: [id], onDelete: Cascade)
+
+  @@index([coAdminId])
+  @@map("staff_operator_coadmin_links")
 }
 
 /// Login / logout audit rows for an operator or co-admin (admin "Logins" tab).
@@ -854,19 +874,23 @@ model StaffAccountLoginLog {
 
 /// Users assigned to an operator or co-admin from the admin "My Customers" screen.
 model StaffAssignedUser {
-  id             String       @id @default(cuid())
-  staffAccountId String
-  username       String
-  name           String
-  country        String?
-  language       String?
-  lastLogin      DateTime?
-  imageUrl       String?      @db.LongText
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  staffAccount   StaffAccount @relation(fields: [staffAccountId], references: [id], onDelete: Cascade)
+  id              String       @id @default(cuid())
+  staffAccountId  String
+  /// When set, row mirrors a Movesbook `users_new` account selected in the assign picker.
+  movesbookUserId String?
+  username        String
+  name            String
+  country         String?
+  language        String?
+  lastLogin       DateTime?
+  imageUrl        String?      @db.LongText
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  staffAccount    StaffAccount @relation(fields: [staffAccountId], references: [id], onDelete: Cascade)
 
+  @@unique([staffAccountId, movesbookUserId])
   @@index([staffAccountId])
+  @@index([movesbookUserId])
   @@map("staff_assigned_users")
 }
 

@@ -10,6 +10,7 @@ import {
   matchesOperatorRoleFilter,
   type OperatorLoginFilter,
 } from '@/components/operators/OperatorFilterPopover';
+import { persistOperatorNavContext } from '@/lib/operatorSubNav';
 
 interface StaffRow {
   id: string;
@@ -35,8 +36,11 @@ export default function AllStaffPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  const openProfile = (id: string) => router.push(`/operators/profile/${id}`);
-  const openSettings = (id: string) => router.push(`/operators/settings/${id}`);
+  const openProfile = (id: string, kind: StaffRow['kind']) => {
+    persistOperatorNavContext(kind);
+    router.push(`/operators/profile/${id}`);
+  };
+  const openSettings = (id: string) => router.push(`/operators/password-settings/${id}`);
 
   const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
 
@@ -246,7 +250,7 @@ export default function AllStaffPage() {
                     <td className="px-4 py-3">
                       <button
                         type="button"
-                        onClick={() => openProfile(row.id)}
+                        onClick={() => openProfile(row.id, row.kind)}
                         className="text-red-600 hover:text-red-700 hover:underline font-medium"
                       >
                         {row.username}
@@ -271,7 +275,7 @@ export default function AllStaffPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => openProfile(row.id)}
+                          onClick={() => openProfile(row.id, row.kind)}
                           className="p-1.5 text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded transition"
                           title="View profile"
                         >

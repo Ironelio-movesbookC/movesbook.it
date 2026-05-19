@@ -490,7 +490,7 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
       id: 'countries',
       label: 'Countries & Languages',
       items: [
-        { label: 'Countries settings', icon: Flag },
+        { label: 'Countries settings', icon: Flag, href: '/countries' },
         {
           label: 'Languages',
           icon: Languages,

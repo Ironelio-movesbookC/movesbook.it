@@ -62,6 +62,8 @@ export async function GET(request: NextRequest) {
       lastLogin: true,
       createdAt: true,
       updatedAt: true,
+      alternatePassword: true,
+      alternatePasswordOneAccessOnly: true,
     },
   });
 
@@ -69,7 +71,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Staff profile not found' }, { status: 404 });
   }
 
-  return NextResponse.json({ operator });
+  const { alternatePassword, ...rest } = operator;
+  return NextResponse.json({
+    operator: {
+      ...rest,
+      hasAlternatePassword: Boolean(alternatePassword),
+    },
+  });
 }
 
 export async function PUT(request: NextRequest) {

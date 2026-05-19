@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { ExternalLink, LayoutGrid, LayoutList, Search as SearchIcon } from 'lucide-react';
 import type { ClubSubscriptionStatusTone } from '@/lib/admin/clubSubscriptionStatus';
+import AdminClubsUserProfilePanel from '@/components/admin/AdminClubsUserProfilePanel';
+import AdminClubUserPanelModal, {
+  type ClubUserPanelData,
+} from '@/components/admin/AdminClubUserPanelModal';
 
 export type AdminUserSegment = 'single-user' | 'coaches' | 'groups' | 'teams' | 'clubs';
 
@@ -33,6 +37,7 @@ interface ProfilePayload {
     dateEnd: string | null;
     version: string;
     username: string;
+    companyName: string;
     e: string;
     status: string;
   }>;
@@ -51,6 +56,7 @@ interface RowUser {
   amount: string;
   status: string;
   clubsOwnedCount?: number;
+  companyName?: string;
   statusTone?: ClubSubscriptionStatusTone;
 }
 
@@ -180,7 +186,7 @@ const PROFILE_SUBSCRIPTION_VERSION_OPTIONS = [
 ] as const;
 
 type ProfileSubFilterIn = 'dateStart' | 'dateEnd';
-type ProfileSubOrdering = '' | 'dateStart' | 'dateEnd';
+type ProfileSubOrdering = '' | 'dateStart' | 'dateEnd' | 'version';
 
 interface ProfileSubscriptionFilterState {
   version: string;
@@ -266,6 +272,13 @@ export default function AdminRegisteredUsersList({
     useState<ProfileSubscriptionFilterState>(EMPTY_PROFILE_SUB_FILTERS);
   const [profileSubFilterApplied, setProfileSubFilterApplied] =
     useState<ProfileSubscriptionFilterState>(EMPTY_PROFILE_SUB_FILTERS);
+  const [profileOrdering, setProfileOrdering] = useState<ProfileSubOrdering>('');
+
+  const [clubPanelOpen, setClubPanelOpen] = useState(false);
+  const [clubPanelLoading, setClubPanelLoading] = useState(false);
+  const [clubPanelError, setClubPanelError] = useState('');
+  const [clubPanelData, setClubPanelData] = useState<ClubUserPanelData | null>(null);
+  const [clubPanelUserId, setClubPanelUserId] = useState<string | null>(null);
 
   const filterWrapRef = useRef<HTMLDivElement>(null);
   const profilePanelRef = useRef<HTMLDivElement>(null);
@@ -450,6 +463,7 @@ export default function AdminRegisteredUsersList({
     setProfileSubFilterOpen(false);
     setProfileSubFilterDraft(EMPTY_PROFILE_SUB_FILTERS);
     setProfileSubFilterApplied(EMPTY_PROFILE_SUB_FILTERS);
+    setProfileOrdering('');
   }, []);
 
   const openUserProfile = useCallback(
@@ -461,6 +475,7 @@ export default function AdminRegisteredUsersList({
       setProfileSubFilterOpen(false);
       setProfileSubFilterDraft(EMPTY_PROFILE_SUB_FILTERS);
       setProfileSubFilterApplied(EMPTY_PROFILE_SUB_FILTERS);
+      setProfileOrdering('');
       try {
         const token = localStorage.getItem('adminToken');
         if (!token) {
@@ -494,6 +509,7 @@ export default function AdminRegisteredUsersList({
               dateEnd?: string | null;
               version: string;
               username: string;
+              companyName?: string;
               e: string;
               status: string;
             }) => ({
@@ -502,6 +518,7 @@ export default function AdminRegisteredUsersList({
               dateEnd: r.dateEnd != null && r.dateEnd !== '' ? String(r.dateEnd) : null,
               version: String(r.version),
               username: String(r.username),
+              companyName: String(r.companyName ?? data.officialClubName ?? ''),
               e: String(r.e ?? '—'),
               status: String(r.status),
             }),
@@ -516,6 +533,78 @@ export default function AdminRegisteredUsersList({
     [segment],
   );
 
+  const closeClubUserPanel = useCallback(() => {
+    setClubPanelOpen(false);
+    setClubPanelLoading(false);
+    setClubPanelError('');
+    setClubPanelData(null);
+    setClubPanelUserId(null);
+  }, []);
+
+  const openClubUserPanel = useCallback(
+    async (userId: string) => {
+      setClubPanelUserId(userId);
+      setClubPanelOpen(true);
+      setClubPanelLoading(true);
+      setClubPanelError('');
+      setClubPanelData(null);
+      try {
+        const token = localStorage.getItem('adminToken');
+        if (!token) {
+          setClubPanelError('Admin session not found.');
+          setClubPanelLoading(false);
+          return;
+        }
+        const res = await fetch(
+          `/api/admin/registered-users/${userId}/profile?segment=clubs`,
+          { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to load club profile');
+        const panel = data.userPanel;
+        if (!panel || typeof panel !== 'object') {
+          throw new Error('Club profile data is not available for this user.');
+        }
+        setClubPanelData({
+          modalTitle: String(panel.modalTitle ?? 'online_old_Club'),
+          fullName: String(panel.fullName ?? ''),
+          username: String(panel.username ?? ''),
+          officialName: String(panel.officialName ?? ''),
+          clubname: String(panel.clubname ?? ''),
+          country: String(panel.country ?? ''),
+          city: String(panel.city ?? ''),
+          sport: String(panel.sport ?? ''),
+          dateStart: String(panel.dateStart ?? ''),
+          dateEnd: panel.dateEnd != null && panel.dateEnd !== '' ? String(panel.dateEnd) : null,
+          version: String(panel.version ?? ''),
+          paid: typeof panel.paid === 'number' ? panel.paid : parseInt(String(panel.paid ?? '0'), 10) || 0,
+          adminImageUrl: panel.adminImageUrl != null ? String(panel.adminImageUrl) : null,
+          clubId: panel.clubId != null ? String(panel.clubId) : null,
+          typeBadge: String(panel.typeBadge ?? 'Club'),
+          visitPagePath:
+            panel.visitPagePath != null && String(panel.visitPagePath).trim() !== ''
+              ? String(panel.visitPagePath)
+              : null,
+          websiteUrl:
+            panel.websiteUrl != null && String(panel.websiteUrl).trim() !== ''
+              ? String(panel.websiteUrl)
+              : null,
+        });
+      } catch (e: unknown) {
+        setClubPanelError(e instanceof Error ? e.message : 'Failed to load club profile');
+      } finally {
+        setClubPanelLoading(false);
+      }
+    },
+    [],
+  );
+
+  const handleClubPanelControlPanel = useCallback(() => {
+    if (!clubPanelUserId) return;
+    closeClubUserPanel();
+    void openUserProfile(clubPanelUserId);
+  }, [clubPanelUserId, closeClubUserPanel, openUserProfile]);
+
   const filteredProfileSubscriptionRows = useMemo(() => {
     if (!profileData?.subscriptionRows?.length) return [];
     let list = [...profileData.subscriptionRows];
@@ -526,6 +615,8 @@ export default function AdminRegisteredUsersList({
       list.sort((a, b) => (parseYmd(a.dateStart) ?? 0) - (parseYmd(b.dateStart) ?? 0));
     } else if (f.ordering === 'dateEnd') {
       list.sort((a, b) => (parseYmd(a.dateEnd) ?? 0) - (parseYmd(b.dateEnd) ?? 0));
+    } else if (f.ordering === 'version') {
+      list.sort((a, b) => a.version.localeCompare(b.version));
     }
     return list;
   }, [profileData, profileSubFilterApplied]);
@@ -536,12 +627,17 @@ export default function AdminRegisteredUsersList({
   };
 
   const profileSubFilterOk = () => {
-    setProfileSubFilterApplied({ ...profileSubFilterDraft });
+    setProfileSubFilterApplied({ ...profileSubFilterDraft, ordering: profileOrdering });
     setProfileSubFilterOpen(false);
   };
 
   const profileSubFilterExit = () => {
     setProfileSubFilterDraft({ ...profileSubFilterApplied });
+    setProfileSubFilterOpen(false);
+  };
+
+  const profileSubProceed = () => {
+    setProfileSubFilterApplied({ ...profileSubFilterDraft, ordering: profileOrdering });
     setProfileSubFilterOpen(false);
   };
 
@@ -553,16 +649,20 @@ export default function AdminRegisteredUsersList({
 
   return (
     <div className="max-w-[1800px] mx-auto px-4 sm:px-6 py-6 text-gray-900">
-      {/* Title strip */}
-      <div className="bg-[#b8b8b8] px-4 py-3 border border-gray-400">
-        <h1 className="text-lg sm:text-xl font-semibold text-gray-800">
-          Details of subscription — <span className="text-red-600">{roleTitle}</span>
-        </h1>
-      </div>
+      {!(profileState !== 'idle' && isClubsSegment) && (
+        <>
+          <div className="bg-[#b8b8b8] px-4 py-3 border border-gray-400">
+            <h1 className="text-lg sm:text-xl font-semibold text-gray-800">
+              Details of subscription{isClubsSegment ? ' · ' : ' — '}
+              <span className="text-red-600">{roleTitle}</span>
+            </h1>
+          </div>
 
-      <div className="bg-[#6b4c9a] text-white px-4 py-2.5 text-sm sm:text-base font-medium border-x border-b border-[#5a3d82]">
-        {historicalSubtitle}
-      </div>
+          <div className="bg-[#6b4c9a] text-white px-4 py-2.5 text-sm sm:text-base font-medium border-x border-b border-[#5a3d82]">
+            {historicalSubtitle}
+          </div>
+        </>
+      )}
 
       {profileState !== 'idle' ? (
         <div ref={profilePanelRef} className="border border-t-0 border-gray-300 bg-[#ececec]">
@@ -586,7 +686,29 @@ export default function AdminRegisteredUsersList({
             </div>
           )}
 
-          {profileState === 'ready' && profileData && (
+          {profileState === 'ready' && profileData && isClubsSegment && (
+            <AdminClubsUserProfilePanel
+              profileData={profileData}
+              historicalSubtitle={historicalSubtitle}
+              roleTitle={roleTitle}
+              filteredRows={filteredProfileSubscriptionRows}
+              profileRowSelected={profileRowSelected}
+              setProfileRowSelected={setProfileRowSelected}
+              profileSubFilterOpen={profileSubFilterOpen}
+              profileSubFilterDraft={profileSubFilterDraft}
+              setProfileSubFilterDraft={setProfileSubFilterDraft}
+              profileOrdering={profileOrdering}
+              setProfileOrdering={setProfileOrdering}
+              profileSubFilterWrapRef={profileSubFilterWrapRef}
+              onOpenProfileSubFilter={openProfileSubFilter}
+              onProfileSubFilterExit={profileSubFilterExit}
+              onProfileSubFilterOk={profileSubFilterOk}
+              onProfileSubProceed={profileSubProceed}
+              onClose={closeUserProfile}
+            />
+          )}
+
+          {profileState === 'ready' && profileData && !isClubsSegment && (
             <div className="bg-white border-x border-b border-gray-300">
               <div className="bg-[#b8b8b8] px-4 py-3 border-b border-gray-400">
                 <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
@@ -1183,7 +1305,17 @@ export default function AdminRegisteredUsersList({
               className="border border-gray-300 bg-white p-4 rounded shadow-sm text-sm space-y-1"
             >
               <div className="font-semibold">{r.displayName}</div>
-              <div className="text-gray-600">@{r.username}</div>
+              {isClubsSegment ? (
+                <button
+                  type="button"
+                  onClick={() => void openClubUserPanel(r.id)}
+                  className="text-blue-800 underline hover:text-blue-950 text-left"
+                >
+                  @{r.username}
+                </button>
+              ) : (
+                <div className="text-gray-600">@{r.username}</div>
+              )}
               <div>
                 {r.dateStart} — {r.dateEnd ?? '—'}
               </div>
@@ -1215,8 +1347,8 @@ export default function AdminRegisteredUsersList({
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Version</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Username</th>
                 {isClubsSegment && (
-                  <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80] min-w-[5rem]">
-                    Clubs
+                  <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80] min-w-[8rem]">
+                    Company name
                   </th>
                 )}
                 <th className="px-2 py-2 text-left font-semibold border-r border-[#3d7a80] w-14">E</th>
@@ -1250,10 +1382,22 @@ export default function AdminRegisteredUsersList({
                       {r.dateEnd ?? '—'}
                     </td>
                     <td className="px-3 py-2 border-t border-gray-300">{r.version}</td>
-                    <td className="px-3 py-2 border-t border-gray-300 font-medium">{r.username}</td>
+                    <td className="px-3 py-2 border-t border-gray-300 font-medium">
+                      {isClubsSegment ? (
+                        <button
+                          type="button"
+                          onClick={() => void openClubUserPanel(r.id)}
+                          className="text-blue-800 underline hover:text-blue-950 font-medium"
+                        >
+                          {r.username}
+                        </button>
+                      ) : (
+                        r.username
+                      )}
+                    </td>
                     {isClubsSegment && (
-                      <td className="px-3 py-2 border-t border-gray-300 text-center font-semibold text-red-600">
-                        {r.clubsOwnedCount ?? 0}
+                      <td className="px-3 py-2 border-t border-gray-300">
+                        {r.companyName || '—'}
                       </td>
                     )}
                     <td className="px-2 py-2 border-t border-gray-300 text-gray-700">{r.amount}</td>
@@ -1285,6 +1429,17 @@ export default function AdminRegisteredUsersList({
         </p>
       )}
         </>
+      )}
+
+      {isClubsSegment && (
+        <AdminClubUserPanelModal
+          isOpen={clubPanelOpen}
+          loading={clubPanelLoading}
+          error={clubPanelError}
+          data={clubPanelData}
+          onClose={closeClubUserPanel}
+          onControlPanel={handleClubPanelControlPanel}
+        />
       )}
     </div>
   );

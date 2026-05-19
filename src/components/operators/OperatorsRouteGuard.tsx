@@ -3,18 +3,18 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
+  canAccessOperatorSuperAdminSettings,
   isStaffForbiddenPath,
   isStaffPanelSession,
-  isSuperAdminPanelSession,
   isSuperAdminSettingsPath,
   panelAccessDeniedRedirect,
-  readPanelSession,
+  readNormalizedPanelSession,
   readPanelToken,
   staffHomePath,
 } from '@/lib/panelSession';
 
 const STAFF_DETAIL_SEGMENT =
-  /^\/operators\/(?:profile|settings|password-settings|super-admin-settings|myCustomers|logins)\/([^/]+)/;
+  /^\/operators\/(?:profile|settings|password-settings|super-admin-settings|myCustomers|logins|assign-coadmin|assign-operator)\/([^/]+)/;
 
 const COADMIN_SETTINGS_SEGMENT =
   /^\/operators\/operator_coadmin_settings\/([^/]+)\/([^/]+)/;
@@ -27,7 +27,7 @@ export function OperatorsRouteGuard({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     const token = readPanelToken();
-    const session = readPanelSession();
+    const session = readNormalizedPanelSession();
 
     if (!token || !session) {
       router.replace('/?showAdmin=true');
@@ -36,13 +36,16 @@ export function OperatorsRouteGuard({ children }: { children: React.ReactNode })
 
     const path = pathname ?? '';
 
-    if (isSuperAdminSettingsPath(path) && !isSuperAdminPanelSession(session)) {
-      router.replace(panelAccessDeniedRedirect(session));
-      return;
+    if (isSuperAdminSettingsPath(path)) {
+      const targetId = path.match(/^\/operators\/super-admin-settings\/([^/]+)/)?.[1] ?? '';
+      if (!canAccessOperatorSuperAdminSettings(session, targetId)) {
+        router.replace(panelAccessDeniedRedirect(session));
+        return;
+      }
     }
 
     if (isStaffPanelSession(session)) {
-      if (isStaffForbiddenPath(path)) {
+      if (isStaffForbiddenPath(path, session)) {
         router.replace(staffHomePath(session.id));
         return;
       }

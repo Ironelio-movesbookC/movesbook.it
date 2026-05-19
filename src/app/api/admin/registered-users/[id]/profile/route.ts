@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
+import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
+import { parseClubSubscriptionEndDate } from '@/lib/admin/clubSubscriptionStatus';
+import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
+import { getUserPersonalWebsiteHref } from '@/lib/userPersonalWebsite';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,7 +98,18 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       image: true,
       createdAt: true,
       mainSports: { select: { sport: true }, orderBy: { order: 'asc' } },
-      ownedClubs: { select: { name: true, location: true }, orderBy: { createdAt: 'asc' }, take: 1 },
+      ownedClubs: {
+        select: {
+          id: true,
+          name: true,
+          location: true,
+          description: true,
+          createdAt: true,
+          _count: { select: { members: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 1,
+      },
       clubMemberships: {
         select: { club: { select: { name: true, location: true } } },
         orderBy: { joinedAt: 'desc' },
@@ -114,22 +129,46 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   const fullName = [user.firstName, user.surname].filter(Boolean).join(' ').trim() || user.name;
   const primaryOwned = user.ownedClubs[0];
   const primaryMember = user.clubMemberships[0]?.club;
+  const clubMeta = parseClubDescriptionMeta(primaryOwned?.description);
   const officialClubName = primaryOwned?.name?.trim() || primaryMember?.name?.trim() || '';
   const location =
     primaryOwned?.location?.trim() || primaryMember?.location?.trim() || '';
   const sportLine =
-    user.mainSports.length > 0 ? user.mainSports.map((m) => sportLabel(m.sport)).join(', ') : '';
+    user.mainSports.length > 0
+      ? user.mainSports.map((m) => sportLabel(m.sport)).join(', ')
+      : clubMeta.category?.trim() || '';
 
   const planCount = await prisma.workoutPlan.count({ where: { userId: user.id } });
 
-  const dateStart = user.createdAt.toISOString().slice(0, 10);
+  const clubCreatedAt = primaryOwned?.createdAt ?? user.createdAt;
+  const dateStart = clubCreatedAt.toISOString().slice(0, 10);
+  const subscriptionEndDate = primaryOwned
+    ? parseClubSubscriptionEndDate(primaryOwned.description, primaryOwned.createdAt)
+    : null;
+  const dateEnd = subscriptionEndDate?.toISOString().slice(0, 10) ?? null;
+
+  const panelCountry = clubMeta.country?.trim() || user.country?.trim() || '';
+  const panelCity = location || clubMeta.region?.trim() || '';
+  const panelUsername = clubMeta.username?.trim() || user.username;
+  const panelSport = clubMeta.category?.trim() || sportLine;
+  const panelVersion =
+    clubMeta.category?.trim() && clubMeta.category !== 'Other'
+      ? `Club ${clubMeta.category}`
+      : versionLabel(user.userType);
+  const memberPaidCount = primaryOwned?._count.members ?? 0;
+  const clubAgeYears =
+    (Date.now() - new Date(clubCreatedAt).getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+  const panelModalTitle = clubAgeYears >= 2 ? 'online_old_Club' : 'online_new_Club';
+  const personalWebsiteHref =
+    segment === 'clubs' ? await getUserPersonalWebsiteHref(user.id) : null;
   const rows = [
     {
       id: `account-${user.id}`,
       dateStart,
-      dateEnd: null as string | null,
-      version: versionLabel(user.userType),
+      dateEnd,
+      version: panelVersion,
       username: user.username,
+      companyName: officialClubName,
       e: String(planCount),
       status: 'Active',
     },
@@ -148,5 +187,28 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     userType: user.userType,
     imageUrl: user.image?.trim() || null,
     subscriptionRows: rows,
+    ...(segment === 'clubs'
+      ? {
+          userPanel: {
+            modalTitle: panelModalTitle,
+            fullName,
+            username: panelUsername,
+            officialName: officialClubName,
+            clubname: location || clubMeta.region?.trim() || '',
+            country: panelCountry,
+            city: location || clubMeta.region?.trim() || '',
+            sport: panelSport,
+            dateStart,
+            dateEnd,
+            version: panelVersion,
+            paid: memberPaidCount > 0 ? memberPaidCount : planCount,
+            adminImageUrl: user.image?.trim() || null,
+            clubId: primaryOwned?.id ?? null,
+            typeBadge: typeBadge(user.userType),
+            visitPagePath: clubSearchResultsPath(officialClubName),
+            websiteUrl: personalWebsiteHref,
+          },
+        }
+      : {}),
   });
 }

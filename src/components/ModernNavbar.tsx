@@ -347,16 +347,25 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
     return () => window.removeEventListener('keydown', onKey);
   }, [networkSearchModalOpen]);
 
-  const handleAdminLogout = () => {
-    // Clear admin credentials
+  const handleAdminLogout = async () => {
+    const token = localStorage.getItem('adminToken');
+    if (token) {
+      try {
+        await fetch('/api/auth/admin/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        /* continue clearing local session */
+      }
+    }
     localStorage.removeItem('adminToken');
     localStorage.removeItem('adminUser');
     setIsAdmin(false);
     setAdminUser(null);
     setIsUserDropdownOpen(false);
     setIsMobileMenuOpen(false);
-    
-    // Redirect to homepage
+
     router.push('/');
   };
 

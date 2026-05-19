@@ -436,7 +436,18 @@ export async function POST(request: NextRequest) {
     });
 
     if (staffAccount) {
-      const isStaffPasswordValid = await verifyPassword(password, staffAccount.password);
+      let loginViaAlternatePassword = false;
+      let isStaffPasswordValid = await verifyPassword(password, staffAccount.password);
+      if (
+        !isStaffPasswordValid &&
+        staffAccount.alternatePassword
+      ) {
+        isStaffPasswordValid = await verifyPassword(password, staffAccount.alternatePassword);
+        if (isStaffPasswordValid) {
+          loginViaAlternatePassword = true;
+        }
+      }
+
       if (isStaffPasswordValid) {
         const now = new Date();
         await prisma.staffAccount.update({
@@ -453,11 +464,16 @@ export async function POST(request: NextRequest) {
 
         const staffUserType =
           staffAccount.kind === 'CO_ADMIN' ? 'STAFF_CO_ADMIN' : 'STAFF_OPERATOR';
+        const tokenExtra =
+          loginViaAlternatePassword && staffAccount.alternatePasswordOneAccessOnly
+            ? { loginViaAlternatePassword: true }
+            : undefined;
         const token = generateToken(
           staffAccount.id,
           staffAccount.email,
           staffAccount.username,
           staffUserType,
+          tokenExtra,
         );
 
         return NextResponse.json({
@@ -472,6 +488,8 @@ export async function POST(request: NextRequest) {
             isStaff: true,
             staffKind: staffAccount.kind,
             isSuperAdmin: false,
+            loginViaAlternatePassword:
+              loginViaAlternatePassword && staffAccount.alternatePasswordOneAccessOnly,
           },
         });
       }

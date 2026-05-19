@@ -22,6 +22,19 @@ export function readPanelSession(): PanelSessionUser | null {
   }
 }
 
+/** Normalize legacy ADMIN sessions so guards and hooks agree on super-admin access. */
+export function normalizePanelSession(user: PanelSessionUser | null): PanelSessionUser | null {
+  if (!user) return null;
+  if (isFullAdminPanelSession(user) && !user.isSuperAdmin) {
+    return { ...user, isSuperAdmin: true, userType: user.userType ?? 'ADMIN' };
+  }
+  return user;
+}
+
+export function readNormalizedPanelSession(): PanelSessionUser | null {
+  return normalizePanelSession(readPanelSession());
+}
+
 export function readPanelToken(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('adminToken');
@@ -50,14 +63,25 @@ export function isSuperAdminPanelSession(user: PanelSessionUser | null): boolean
 }
 
 export function canManageStaffAccounts(user: PanelSessionUser | null): boolean {
-  return isFullAdminPanelSession(user);
+  return isFullAdminPanelSession(normalizePanelSession(user));
+}
+
+/** Super Admin / panel admin for any operator; staff only for their own account id. */
+export function canAccessOperatorSuperAdminSettings(
+  user: PanelSessionUser | null,
+  staffAccountId: string,
+): boolean {
+  const session = normalizePanelSession(user);
+  if (!session || !staffAccountId) return false;
+  if (isSuperAdminPanelSession(session)) return true;
+  return isStaffPanelSession(session) && session.id === staffAccountId;
 }
 
 /** Operator routes that use admin dashboard chrome (sidebars + toggles). */
 export function operatorsRouteUsesAdminChrome(pathname: string | null): boolean {
   if (!pathname?.startsWith('/operators')) return false;
   if (pathname === '/operators' || pathname === '/operators/usersAssignedStaff') return true;
-  return /^\/operators\/(?:profile|password-settings|settings|myCustomers|logins|super-admin-settings)\//.test(
+  return /^\/operators\/(?:profile|password-settings|settings|myCustomers|logins|super-admin-settings|assign-coadmin|assign-operator)\//.test(
     pathname,
   );
 }
@@ -69,16 +93,24 @@ export const STAFF_FORBIDDEN_ADMIN_PATH_PREFIXES = [
   '/admin/all-staff',
 ] as const;
 
-/** Paths staff must not open under /operators (staff directory & super-admin operator settings). */
-export const STAFF_FORBIDDEN_OPERATORS_PATH_PREFIXES = [
-  '/operators/super-admin-settings/',
-  '/operators/usersAssignedStaff',
-] as const;
+/** Paths staff must not open under /operators (staff directory). */
+export const STAFF_FORBIDDEN_OPERATORS_PATH_PREFIXES = ['/operators/usersAssignedStaff'] as const;
 
-export function isStaffForbiddenPath(pathname: string): boolean {
+export function isStaffForbiddenPath(
+  pathname: string,
+  session?: PanelSessionUser | null,
+): boolean {
   if (pathname === '/operators') return true;
   if (STAFF_FORBIDDEN_ADMIN_PATH_PREFIXES.some((p) => pathname.startsWith(p))) return true;
   if (STAFF_FORBIDDEN_OPERATORS_PATH_PREFIXES.some((p) => pathname.startsWith(p))) return true;
+  if (isSuperAdminSettingsPath(pathname)) {
+    const m = pathname.match(/^\/operators\/super-admin-settings\/([^/]+)/);
+    const targetId = m?.[1] ?? '';
+    if (targetId && canAccessOperatorSuperAdminSettings(session ?? null, targetId)) {
+      return false;
+    }
+    return true;
+  }
   if (pathname.startsWith('/settings/admin-management')) return true;
   if (pathname === '/settings' || pathname.startsWith('/settings/')) return true;
   return false;

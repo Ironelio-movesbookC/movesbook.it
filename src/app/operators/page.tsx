@@ -10,6 +10,7 @@ import {
   matchesOperatorRoleFilter,
   type OperatorLoginFilter,
 } from '@/components/operators/OperatorFilterPopover';
+import { persistOperatorNavContext } from '@/lib/operatorSubNav';
 
 interface OperatorRow {
   id: string;
@@ -45,7 +46,10 @@ export default function OperatorsPage() {
   const isDataUrl = (src?: string | null) =>
     typeof src === 'string' && src.startsWith('data:image/');
 
-  const openProfile = (id: string) => router.push(`/operators/profile/${id}`);
+  const openProfile = (id: string) => {
+    persistOperatorNavContext('OPERATOR');
+    router.push(`/operators/profile/${id}`);
+  };
   const openSettings = (id: string) => router.push(`/operators/password-settings/${id}`);
 
   const filteredRows = useMemo(() => {

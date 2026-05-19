@@ -1,4 +1,8 @@
-import type { OperatorNavTabId, OperatorNavVariant } from '@/lib/operatorNavTabs';
+import type {
+  OperatorNavTabId,
+  OperatorNavVariant,
+  StaffKind,
+} from '@/lib/operatorNavTabs';
 
 export type OperatorSubNavState = {
   operatorId: string;
@@ -9,7 +13,7 @@ export type OperatorSubNavState = {
 /** Routes that show the operator sub-tab strip (Profile, Settings, Logins, …). */
 export function operatorsRouteHasSubNav(pathname: string | null): boolean {
   if (!pathname) return false;
-  return /^\/operators\/(?:profile|password-settings|settings|myCustomers|logins|super-admin-settings|operator_coadmin_settings)\//.test(
+  return /^\/operators\/(?:profile|password-settings|settings|myCustomers|logins|super-admin-settings|assign-coadmin|assign-operator|operator_coadmin_settings)\//.test(
     pathname,
   );
 }
@@ -47,16 +51,30 @@ export function parseOperatorSubNavFromPath(pathname: string | null): OperatorSu
     return { operatorId: m[1], activeTabId: 'super-admin', variant: { kind: 'standard' } };
   }
 
-  m = pathname.match(/^\/operators\/operator_coadmin_settings\/([^/]+)\/([^/]+)/);
+  m = pathname.match(/^\/operators\/assign-coadmin\/([^/]+)/);
   if (m) {
     return {
       operatorId: m[1],
-      activeTabId: 'super-admin',
-      variant: { kind: 'coadmin', coadminId: m[2] },
+      activeTabId: 'assign-coadmin',
+      variant: { kind: 'standard', viewedStaffKind: 'OPERATOR' },
+    };
+  }
+
+  m = pathname.match(/^\/operators\/assign-operator\/([^/]+)/);
+  if (m) {
+    return {
+      operatorId: m[1],
+      activeTabId: 'assign-coadmin',
+      variant: { kind: 'standard', viewedStaffKind: 'CO_ADMIN' },
     };
   }
 
   return null;
+}
+
+function parseStaffKind(value: unknown): StaffKind | undefined {
+  if (value === 'OPERATOR' || value === 'CO_ADMIN') return value;
+  return undefined;
 }
 
 export function readOperatorNavVariantFromSession(): OperatorNavVariant {
@@ -64,13 +82,47 @@ export function readOperatorNavVariantFromSession(): OperatorNavVariant {
   try {
     const raw = sessionStorage.getItem('operatorNavVariant');
     if (!raw) return { kind: 'standard' };
-    const parsed = JSON.parse(raw) as OperatorNavVariant;
-    if (parsed?.kind === 'myCustomers') return { kind: 'myCustomers' };
-    if (parsed?.kind === 'coadmin' && typeof parsed.coadminId === 'string') {
-      return { kind: 'coadmin', coadminId: parsed.coadminId };
+    const parsed = JSON.parse(raw) as OperatorNavVariant & { viewedStaffKind?: unknown };
+    const viewedStaffKind = parseStaffKind(parsed.viewedStaffKind);
+    if (parsed?.kind === 'myCustomers') {
+      return { kind: 'myCustomers', viewedStaffKind };
     }
+    if (parsed?.kind === 'standard') {
+      return { kind: 'standard', viewedStaffKind };
+    }
+    // Legacy session values from old co-admin settings URLs are ignored.
   } catch {
     /* ignore */
   }
   return { kind: 'standard' };
+}
+
+/** Remember profile context (operator vs co-admin) for sub-tab labels when opening from a list. */
+export function persistOperatorNavContext(
+  viewedStaffKind: StaffKind,
+  base: OperatorNavVariant = { kind: 'standard' },
+): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(
+      'operatorNavVariant',
+      JSON.stringify({ ...base, viewedStaffKind }),
+    );
+    window.dispatchEvent(new Event('operatorNavContextUpdated'));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Pathname wins over session so nav links never use a stale variant after route changes. */
+export function resolveOperatorNavVariant(pathname: string | null): OperatorNavVariant {
+  const fromPath = parseOperatorSubNavFromPath(pathname);
+  const fromSession = readOperatorNavVariantFromSession();
+  if (fromPath && fromPath.variant.kind !== 'standard') {
+    return {
+      ...fromPath.variant,
+      viewedStaffKind: fromSession.viewedStaffKind ?? fromPath.variant.viewedStaffKind,
+    };
+  }
+  return fromSession;
 }

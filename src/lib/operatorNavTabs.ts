@@ -19,10 +19,27 @@ export const OPERATOR_NAV_TABS = [
 
 export type OperatorNavTabId = (typeof OPERATOR_NAV_TABS)[number]['id'];
 
+export type StaffKind = 'OPERATOR' | 'CO_ADMIN';
+
 export type OperatorNavVariant =
-  | { kind: 'standard' }
-  | { kind: 'myCustomers' }
-  | { kind: 'coadmin'; coadminId: string };
+  | { kind: 'standard'; viewedStaffKind?: StaffKind }
+  | { kind: 'myCustomers'; viewedStaffKind?: StaffKind }
+  | { kind: 'coadmin'; coadminId: string; viewedStaffKind?: StaffKind };
+
+/** Label for the assign tab depends on which profile type is open. */
+export function getOperatorNavTabLabel(
+  tabId: OperatorNavTabId,
+  variant: OperatorNavVariant,
+): string {
+  const tab = OPERATOR_NAV_TABS.find((t) => t.id === tabId);
+  if (!tab) return '';
+  if (tabId === 'assign-coadmin') {
+    return variant.viewedStaffKind === 'CO_ADMIN'
+      ? 'Assign a new Operator'
+      : 'Assign a new Co-admin';
+  }
+  return tab.label;
+}
 
 /** Tabs visible for the current panel session (staff vs panel admin). */
 export function getVisibleOperatorNavTabs(options?: {
@@ -30,10 +47,16 @@ export function getVisibleOperatorNavTabs(options?: {
   staffKind?: 'OPERATOR' | 'CO_ADMIN';
   isSuperAdmin?: boolean;
   canManageStaff?: boolean;
+  /** Operator/co-admin id in the current URL (for staff self-access). */
+  operatorId?: string;
+  sessionId?: string;
 }) {
   const canManage = Boolean(options?.canManageStaff ?? options?.isSuperAdmin);
+  const staffSelfSuperAdmin =
+    Boolean(options?.isStaff && options?.operatorId && options?.sessionId) &&
+    options!.operatorId === options!.sessionId;
   return OPERATOR_NAV_TABS.filter((tab) => {
-    if (tab.id === 'super-admin') return canManage;
+    if (tab.id === 'super-admin') return canManage || staffSelfSuperAdmin;
     if (tab.id === 'assign-coadmin') return canManage;
     if (!options?.isStaff) return true;
     return true;
@@ -56,19 +79,15 @@ export function getOperatorNavHref(
     case 'settings':
       return settingsHref;
     case 'super-admin':
-      if (variant.kind === 'coadmin') {
-        return `/operators/operator_coadmin_settings/${operatorId}/${variant.coadminId}`;
-      }
-      if (variant.kind === 'myCustomers') {
-        return `/operators/operator_coadmin_settings/${operatorId}/40`;
-      }
       return `/operators/super-admin-settings/${operatorId}`;
     case 'customers':
       return `/operators/myCustomers/${operatorId}`;
     case 'logins':
       return `/operators/logins/${operatorId}`;
     case 'assign-coadmin':
-      return '/admin/add-co-admin';
+      return variant.viewedStaffKind === 'CO_ADMIN'
+        ? `/operators/assign-operator/${operatorId}`
+        : `/operators/assign-coadmin/${operatorId}`;
     default:
       return '#';
   }

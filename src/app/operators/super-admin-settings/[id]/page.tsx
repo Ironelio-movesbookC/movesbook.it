@@ -3,7 +3,10 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { usePanelSession } from '@/hooks/usePanelSession';
-import { panelAccessDeniedRedirect } from '@/lib/panelSession';
+import {
+  canAccessOperatorSuperAdminSettings,
+  panelAccessDeniedRedirect,
+} from '@/lib/panelSession';
 import { Key, User } from 'lucide-react';
 import { COUNTRIES } from '@/lib/news/countries';
 import {
@@ -124,7 +127,8 @@ export default function OperatorSuperAdminSettingsPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
-  const { canManageStaff, session } = usePanelSession();
+  const { hydrated, session } = usePanelSession();
+  const canAccess = canAccessOperatorSuperAdminSettings(session, id);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -157,13 +161,14 @@ export default function OperatorSuperAdminSettingsPage() {
   const [postPerms, setPostPerms] = useState<Record<string, boolean>>(() => ({ ...INITIAL_POST_PERMS }));
 
   useEffect(() => {
-    if (!canManageStaff) {
+    if (!hydrated) return;
+    if (!canAccess) {
       router.replace(panelAccessDeniedRedirect(session));
     }
-  }, [canManageStaff, session, router]);
+  }, [hydrated, canAccess, session, router]);
 
   useEffect(() => {
-    if (!canManageStaff) return;
+    if (!hydrated || !canAccess) return;
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -226,10 +231,10 @@ export default function OperatorSuperAdminSettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, refreshKey, canManageStaff]);
+  }, [id, refreshKey, hydrated, canAccess]);
 
   const handleSave = async () => {
-    if (!canManageStaff) return;
+    if (!canAccess) return;
     setSaving(true);
     setLoadError('');
     setFormSuccess('');
@@ -278,7 +283,7 @@ export default function OperatorSuperAdminSettingsPage() {
     setRefreshKey((k) => k + 1);
   };
 
-  if (!canManageStaff) {
+  if (!hydrated || !canAccess) {
     return (
       <div className="min-h-[40vh] flex items-center justify-center text-gray-500">
         Loading…
