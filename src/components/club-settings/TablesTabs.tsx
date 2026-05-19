@@ -16,7 +16,7 @@ const TABLE_TABS = [
   { key: 'list_of_the_expenses', label: 'List of the expenses', href: '/club/settings/tables/list_of_the_expenses', enabled: true },
   { key: 'category', label: 'Category', href: '/club/settings/tables/category', enabled: true },
   { key: 'unit', label: 'Unit', href: '/club/settings/tables/unit', enabled: true },
-  { key: 'special_services', label: 'Special Services', href: '/club/settings/tables/special_services', enabled: false }
+  { key: 'special_services', label: 'Special Services', href: '/club/settings/tables/special_services', enabled: true }
 ] as const;
 
 export default function TablesTabs({ active }: TablesTabsProps) {
