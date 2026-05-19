@@ -10,7 +10,7 @@ const TABLE_TABS = [
   { key: 'areas', label: 'Areas', href: '/club/settings/tables/areas', enabled: true },
   { key: 'services', label: 'Services', href: '/club/settings/tables/services', enabled: true },
   { key: 'member_type', label: 'Member type', href: '/club/settings/tables/member_type', enabled: true },
-  { key: 'professions', label: 'Professions', href: '/club/settings/tables/professions', enabled: false },
+  { key: 'professions', label: 'Professions', href: '/club/settings/tables/professions', enabled: true },
   { key: 'employees', label: 'Employees', href: '/club/settings/tables/employees', enabled: false },
   { key: 'contacts', label: 'Contacts', href: '/club/settings/tables/contacts', enabled: false },
   { key: 'list_of_the_expenses', label: 'List of the expenses', href: '/club/settings/tables/list_of_the_expenses', enabled: false },
