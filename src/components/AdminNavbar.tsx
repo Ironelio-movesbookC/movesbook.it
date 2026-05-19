@@ -21,6 +21,11 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import { useLanguage } from '@/contexts/LanguageContext';
+import {
+  navSearchLabelFromScope,
+  navSearchScopeFromLabel,
+  type NavSearchScope,
+} from '@/lib/adminNavUserSearchScope';
 
 interface AdminUser {
   id: string;
@@ -134,8 +139,25 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Search:', searchQuery, 'in', searchCategory);
+    const scope: NavSearchScope = navSearchScopeFromLabel(searchCategory);
+    const params = new URLSearchParams();
+    params.set('scope', scope);
+    const q = searchQuery.trim();
+    if (q) params.set('q', q);
+    router.push(`/admin/user-search?${params.toString()}`);
+    setMobileMenuOpen(false);
   };
+
+  useEffect(() => {
+    if (pathname !== '/admin/user-search') return;
+    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    const scopeParam = params.get('scope');
+    if (scopeParam) {
+      setSearchCategory(navSearchLabelFromScope(scopeParam));
+    }
+    const q = params.get('q');
+    if (q != null) setSearchQuery(q);
+  }, [pathname]);
 
   const currentLangDisplay = availableLanguages.find(l => l.code === currentLanguage)?.name || 'English';
 
