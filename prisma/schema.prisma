@@ -874,19 +874,23 @@ model StaffAccountLoginLog {
 
 /// Users assigned to an operator or co-admin from the admin "My Customers" screen.
 model StaffAssignedUser {
-  id             String       @id @default(cuid())
-  staffAccountId String
-  username       String
-  name           String
-  country        String?
-  language       String?
-  lastLogin      DateTime?
-  imageUrl       String?      @db.LongText
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  staffAccount   StaffAccount @relation(fields: [staffAccountId], references: [id], onDelete: Cascade)
+  id              String       @id @default(cuid())
+  staffAccountId  String
+  /// When set, row mirrors a Movesbook `users_new` account selected in the assign picker.
+  movesbookUserId String?
+  username        String
+  name            String
+  country         String?
+  language        String?
+  lastLogin       DateTime?
+  imageUrl        String?      @db.LongText
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  staffAccount    StaffAccount @relation(fields: [staffAccountId], references: [id], onDelete: Cascade)
 
+  @@unique([staffAccountId, movesbookUserId])
   @@index([staffAccountId])
+  @@index([movesbookUserId])
   @@map("staff_assigned_users")
 }
 
