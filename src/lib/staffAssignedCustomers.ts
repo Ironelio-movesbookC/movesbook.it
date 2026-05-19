@@ -182,7 +182,7 @@ export async function assignMovesbookUsersToStaff(
   staffAccountId: string,
   userIds: string[],
 ): Promise<{ created: number; skipped: number }> {
-  const uniqueIds = [...new Set(userIds.filter(Boolean))];
+  const uniqueIds = Array.from(new Set(userIds.filter(Boolean)));
   if (uniqueIds.length === 0) return { created: 0, skipped: 0 };
 
   const movesbookUsers = await prisma.user.findMany({
