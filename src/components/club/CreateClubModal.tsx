@@ -1,10 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { User, X } from 'lucide-react';
 import { COUNTRIES } from '@/lib/news/countries';
 import { getRegionsForCountry } from '@/constants/countryRegions.constants';
-import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 
 export const CLUB_CATEGORY_OPTIONS = [
   'Gym',
@@ -35,7 +34,6 @@ type CreateClubModalProps = {
   isOpen: boolean;
   onClose: () => void;
   adminUsername?: string;
-  adminImagePath?: string | null;
   onSave: (payload: CreateClubFormPayload) => Promise<void>;
   saving?: boolean;
 };
@@ -44,7 +42,6 @@ export default function CreateClubModal({
   isOpen,
   onClose,
   adminUsername = 'username',
-  adminImagePath,
   onSave,
   saving = false,
 }: CreateClubModalProps) {
@@ -71,7 +68,25 @@ export default function CreateClubModal({
     return country ? getRegionsForCountry(country) : [];
   }, [clubCountry]);
 
-  const adminImageUrl = resolvePublicImageUrl(adminImagePath);
+  useEffect(() => {
+    if (!isOpen) return;
+    setClubLogoUrl(null);
+    setClubUsername('');
+    setClubCategory('Gym');
+    setClubCountry('Italy');
+    setClubRegion('');
+    setClubLocation('');
+    setClubZip('');
+    setClubAddress('');
+    setClubGeo('');
+    setClubMail('');
+    setClubNewPassword('');
+    setClubRepeatPassword('');
+    setClubDirectAccess('');
+    setClubOfficialName('');
+    setClubDirectRegCode('');
+    setError(null);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -151,9 +166,6 @@ export default function CreateClubModal({
                 {clubLogoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={clubLogoUrl} alt="" className="h-full w-full object-cover" />
-                ) : adminImageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={adminImageUrl} alt="" className="h-full w-full object-cover" />
                 ) : (
                   <User className="h-10 w-10 text-gray-400" />
                 )}

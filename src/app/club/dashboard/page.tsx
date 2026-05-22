@@ -34,10 +34,11 @@ import DarkSidebar from '@/components/DarkSidebar';
 import NewsOGPPanel from '@/components/news/NewsOGPPanel';
 import SimpleFooter from '@/components/SimpleFooter';
 import AddMemberModal from '@/components/AddMemberModal';
+import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
 import CreateClubModal, { type CreateClubFormPayload } from '@/components/club/CreateClubModal';
 import {
   getClubMyPageDisplayName,
-  isClubCreatedFromForm,
+  getFormCreatedClubsSortedByCreatedAt,
   parseClubDescriptionMeta,
   formatMyClubsSidebarLabel,
 } from '@/lib/club/clubSidebarLabel';
@@ -74,13 +75,23 @@ function ClubDashboardContent() {
   const [clubAddSongsOgpExpanded, setClubAddSongsOgpExpanded] = useState(false);
   const [bannerProfile, setBannerProfile] = useState<AthleteLegacyBannerProfile | null>(null);
   const [showChangeBannerModal, setShowChangeBannerModal] = useState(false);
+  const [showAdminPasswordConfirm, setShowAdminPasswordConfirm] = useState(false);
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
+  const [createClubModalKey, setCreateClubModalKey] = useState(0);
   const [createClubSaving, setCreateClubSaving] = useState(false);
 
   const formClubs = useMemo(
-    () => clubs.filter(isClubCreatedFromForm),
+    () => getFormCreatedClubsSortedByCreatedAt(clubs),
     [clubs]
   );
+
+  const openCreateClubFlow = () => setShowAdminPasswordConfirm(true);
+
+  const handleAdminPasswordVerified = () => {
+    setShowAdminPasswordConfirm(false);
+    setCreateClubModalKey((k) => k + 1);
+    setShowCreateClubModal(true);
+  };
   const hasFormClub = formClubs.length > 0;
   const activeClub =
     formClubs.find((c) => c.id === selectedClubId) ?? formClubs[0] ?? null;
@@ -322,7 +333,7 @@ function ClubDashboardContent() {
                   setShowWorkoutSection(false);
                   setClubAddSongsOgpOpen(true);
                 }}
-                onCreateClubClick={() => setShowCreateClubModal(true)}
+                onCreateClubClick={openCreateClubFlow}
               />
             </div>
           )}
@@ -341,7 +352,7 @@ function ClubDashboardContent() {
                       </p>
                       <button
                         type="button"
-                        onClick={() => setShowCreateClubModal(true)}
+                        onClick={openCreateClubFlow}
                         className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700"
                       >
                         Create a club
@@ -486,11 +497,18 @@ function ClubDashboardContent() {
             entityType="club"
           />
 
+          <AdminPasswordConfirmModal
+            isOpen={showAdminPasswordConfirm}
+            onClose={() => setShowAdminPasswordConfirm(false)}
+            onVerified={handleAdminPasswordVerified}
+            adminUsername={user?.username ?? user?.name ?? 'username'}
+          />
+
           <CreateClubModal
+            key={createClubModalKey}
             isOpen={showCreateClubModal}
             onClose={() => setShowCreateClubModal(false)}
             adminUsername={user?.username ?? user?.name ?? 'username'}
-            adminImagePath={user?.image}
             saving={createClubSaving}
             onSave={handleCreateClubSave}
           />

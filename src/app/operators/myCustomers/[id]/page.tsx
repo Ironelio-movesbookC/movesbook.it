@@ -294,14 +294,16 @@ export default function MyCustomersPage() {
                 <Link2 className="w-5 h-5 text-amber-700 flex-shrink-0" />
                 <span>{listTitle}</span>
               </div>
-              <button
-                type="button"
-                onClick={openModal}
-                className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-red-600 text-red-600 rounded font-medium hover:bg-red-50 transition"
-              >
-                <UserPlus className="w-5 h-5 flex-shrink-0" />
-                Assign a new user
-              </button>
+              {isCoAdmin ? (
+                <button
+                  type="button"
+                  onClick={openModal}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-red-600 text-red-600 rounded font-medium hover:bg-red-50 transition"
+                >
+                  <UserPlus className="w-5 h-5 flex-shrink-0" />
+                  Assign a new user
+                </button>
+              ) : null}
               {!isCoAdmin && linkedCoAdmin ? (
                 <span className="text-sm text-gray-700">
                   …and assigned also to{' '}
@@ -374,8 +376,9 @@ export default function MyCustomersPage() {
               ) : pageRows.length === 0 ? (
                 <tr>
                   <td colSpan={isCoAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-500">
-                    No users assigned yet. Use &quot;Assign a new user&quot; to select Movesbook
-                    users.
+                    {isCoAdmin
+                      ? 'No users assigned yet. Use "Assign a new user" to select Movesbook users.'
+                      : 'No users assigned yet.'}
                   </td>
                 </tr>
               ) : (

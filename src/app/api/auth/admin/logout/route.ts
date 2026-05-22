@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import { isStaffUserType } from '@/lib/panelAuth';
+import { prisma } from '@/lib/prisma';
 import {
   clearStaffAlternatePassword,
   closeOpenStaffLoginLog,
 } from '@/lib/staffAlternatePassword';
+import { closeOpenSuperAdminLoginLog } from '@/lib/loginLogSession';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +35,18 @@ export async function POST(request: NextRequest) {
       } catch {
         /* best effort */
       }
+    }
+  } else {
+    try {
+      const superAdmin = await prisma.superAdmin.findFirst({
+        where: { id: decoded.userId, isActive: true },
+        select: { id: true },
+      });
+      if (superAdmin) {
+        await closeOpenSuperAdminLoginLog(decoded.userId);
+      }
+    } catch {
+      /* login log optional */
     }
   }
 

@@ -54,7 +54,7 @@ export default function AllStaffPage() {
     if (filterCountry !== 'all') {
       base = base.filter((r) => (r.country || '').trim() === filterCountry);
     }
-    base = base.filter((r) => matchesOperatorRoleFilter(r.roleLabel, filterRole));
+    base = base.filter((r) => matchesOperatorRoleFilter(r.roleLabel, filterRole, r.kind));
     base = base.filter((r) => matchesOperatorLoginFilter(r.lastLogin, filterLogin));
     if (!q) return base;
     return base.filter((r) => {

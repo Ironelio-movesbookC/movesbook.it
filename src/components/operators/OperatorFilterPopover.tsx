@@ -8,6 +8,7 @@ export type OperatorLoginFilter = 'all' | 'on' | 'off';
 
 export const OPERATOR_FILTER_ROLE_OPTIONS = [
   { value: 'all', label: 'All' },
+  { value: 'Coadmin', label: 'Coadmin' },
   { value: 'Movesbook staff', label: 'Movesbook staff' },
   { value: 'Agent', label: 'Agent' },
   { value: 'Sub Agent', label: 'Sub Agent' },
@@ -24,8 +25,15 @@ const LOGIN_OPTIONS: { value: OperatorLoginFilter; label: string }[] = [
 export function matchesOperatorRoleFilter(
   role: string | null | undefined,
   filter: string,
+  accountKind?: 'OPERATOR' | 'CO_ADMIN' | null,
 ): boolean {
   if (filter === 'all') return true;
+  if (filter === 'Coadmin') {
+    if (accountKind === 'CO_ADMIN') return true;
+    if (accountKind === 'OPERATOR') return false;
+    const r = (role || '').trim().toLowerCase();
+    return r.includes('co-admin') || r.includes('coadmin') || r.includes('co admin');
+  }
   const r = (role || '').trim().toLowerCase();
   switch (filter) {
     case 'Movesbook staff':
@@ -52,6 +60,16 @@ export function matchesOperatorLoginFilter(
   return filter === 'on' ? hasLogin : !hasLogin;
 }
 
+/** Open session = log on; closed session = log off (login log tables). */
+export function matchesLoginLogSessionFilter(
+  logoutAt: string | null | undefined,
+  filter: OperatorLoginFilter,
+): boolean {
+  if (filter === 'all') return true;
+  const isOpen = logoutAt == null;
+  return filter === 'on' ? isOpen : !isOpen;
+}
+
 type OperatorFilterPopoverProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -62,6 +80,8 @@ type OperatorFilterPopoverProps = {
   login: OperatorLoginFilter;
   onLoginChange: (value: OperatorLoginFilter) => void;
   onClear: () => void;
+  /** When false, hides the Role row (e.g. Movesbook users login list). */
+  showRole?: boolean;
 };
 
 const selectClass =
@@ -77,6 +97,7 @@ export function OperatorFilterPopover({
   login,
   onLoginChange,
   onClear,
+  showRole = true,
 }: OperatorFilterPopoverProps) {
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -128,20 +149,22 @@ export function OperatorFilterPopover({
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-3 justify-between">
-              <span className="text-sm font-medium text-gray-900 shrink-0">Role</span>
-              <select
-                className={selectClass}
-                value={role}
-                onChange={(e) => onRoleChange(e.target.value)}
-              >
-                {OPERATOR_FILTER_ROLE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {showRole ? (
+              <div className="flex items-center gap-3 justify-between">
+                <span className="text-sm font-medium text-gray-900 shrink-0">Role</span>
+                <select
+                  className={selectClass}
+                  value={role}
+                  onChange={(e) => onRoleChange(e.target.value)}
+                >
+                  {OPERATOR_FILTER_ROLE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <div className="flex items-center gap-3 justify-between">
               <span className="text-sm font-medium text-gray-900 shrink-0">Login</span>
               <select
