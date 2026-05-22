@@ -3069,7 +3069,11 @@ export default function DarkSidebar({
                                       label: 'Other settings',
                                       path: '/club/settings/other_settings',
                                     },
-                                    { Icon: LayoutGrid, label: 'Tables' },
+                                    {
+                                      Icon: LayoutGrid,
+                                      label: 'Tables',
+                                      path: '/club/settings/tables/areas',
+                                    },
                                     { Icon: Volume2, label: 'Access of outcome settings' },
                                     { Icon: Mic, label: 'Audio messages' },
                                     {
