@@ -2,15 +2,16 @@
 
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Eye, Settings, Trash2, User } from 'lucide-react';
 import {
-  Filter,
-  ChevronDown,
-  Eye,
-  Settings,
-  Trash2,
-  User,
-} from 'lucide-react';
+  OperatorFilterPopover,
+  matchesOperatorLoginFilter,
+  matchesOperatorRoleFilter,
+  type OperatorLoginFilter,
+} from '@/components/operators/OperatorFilterPopover';
+import { persistOperatorNavContext } from '@/lib/operatorSubNav';
+import type { StaffKind } from '@/lib/operatorNavTabs';
 
 interface AssignedStaffRow {
   id: string;
@@ -20,34 +21,87 @@ interface AssignedStaffRow {
   country?: string | null;
   staffLinked?: string | null;
   lastLogin?: string | null;
+  kind?: 'OPERATOR' | 'CO_ADMIN';
+  regions?: string | null;
+  roleLabel?: string | null;
 }
-
-// Placeholder data to match PHP UI; replace with API data
-const MOCK_ROWS: AssignedStaffRow[] = [
-  {
-    id: '1',
-    username: 'Lerkos',
-    name: 'Elio Blasevich',
-    imageUrl: null,
-    country: 'India',
-    staffLinked: 'Operator (0)',
-    lastLogin: null,
-  },
-];
 
 export default function UsersAssignedStaffPage() {
   const router = useRouter();
-  const [rows, setRows] = useState<AssignedStaffRow[]>(MOCK_ROWS);
-  const [filterValue, setFilterValue] = useState<string>('all');
+  const [rows, setRows] = useState<AssignedStaffRow[]>([]);
+  /** Default to co-admins only — use sidebar "All staff" for the combined list. */
+  const [filterValue, setFilterValue] = useState<string>('coadmin');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
+  const [filterCountry, setFilterCountry] = useState('all');
+  const [filterRole, setFilterRole] = useState('all');
+  const [filterLogin, setFilterLogin] = useState<OperatorLoginFilter>('all');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string>('');
 
-  const openProfile = (id: string) => router.push(`/operators/profile/${id}`);
-  const openSettings = (id: string) => router.push(`/operators/settings/${id}`);
+  const openProfile = (id: string, kind?: StaffKind) => {
+    persistOperatorNavContext(kind ?? 'CO_ADMIN');
+    router.push(`/operators/profile/${id}`);
+  };
+  const openSettings = (id: string) => router.push(`/operators/password-settings/${id}`);
+
+  const isDataUrl = (src?: string | null) =>
+    typeof src === 'string' && src.startsWith('data:image/');
 
   const handleProceed = () => {
-    // TODO: apply filter + search and refetch or filter client-side
+    setFilterOpen(false);
   };
+
+  const filteredRows = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    let base = rows;
+    if (filterValue === 'coadmin') base = base.filter((r) => r.kind === 'CO_ADMIN');
+    if (filterValue === 'operator') base = base.filter((r) => r.kind === 'OPERATOR');
+    if (filterCountry !== 'all') {
+      base = base.filter((r) => (r.country || '').trim() === filterCountry);
+    }
+    base = base.filter((r) => matchesOperatorRoleFilter(r.roleLabel, filterRole));
+    base = base.filter((r) => matchesOperatorLoginFilter(r.lastLogin, filterLogin));
+    if (!q) return base;
+    return base.filter((r) => `${r.username} ${r.name} ${r.country ?? ''}`.toLowerCase().includes(q));
+  }, [filterCountry, filterLogin, filterRole, filterValue, rows, searchQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setLoadError('');
+      try {
+        const token = localStorage.getItem('adminToken');
+        if (!token) {
+          setLoadError('Admin session not found. Please login again.');
+          setRows([]);
+          return;
+        }
+
+        const res = await fetch('/api/admin/staff-accounts', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to load staff');
+        if (!cancelled) setRows(Array.isArray(data?.staff) ? data.staff : []);
+      } catch (e: any) {
+        if (!cancelled) {
+          setLoadError(e?.message || 'Failed to load staff');
+          setRows([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="min-h-full bg-gray-50">
@@ -66,17 +120,21 @@ export default function UsersAssignedStaffPage() {
 
         {/* Filter and Search controls */}
         <div className="flex flex-wrap items-end gap-4 mb-4">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setFilterOpen(!filterOpen)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-[#4f4f4f] hover:bg-[#3d3d3d] text-white border border-gray-500 rounded transition"
-            >
-              <Filter className="w-4 h-4" />
-              <span>Filter</span>
-              <ChevronDown className={`w-4 h-4 transition-transform ${filterOpen ? 'rotate-180' : ''}`} />
-            </button>
-          </div>
+          <OperatorFilterPopover
+            open={filterOpen}
+            onOpenChange={setFilterOpen}
+            country={filterCountry}
+            onCountryChange={setFilterCountry}
+            role={filterRole}
+            onRoleChange={setFilterRole}
+            login={filterLogin}
+            onLoginChange={setFilterLogin}
+            onClear={() => {
+              setFilterCountry('all');
+              setFilterRole('all');
+              setFilterLogin('all');
+            }}
+          />
 
           <div className="flex items-center gap-2">
             <select
@@ -133,25 +191,48 @@ export default function UsersAssignedStaffPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {rows.length === 0 ? (
+              {loading ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                    No staff assigned. Connect this page to your API to load Co-Admins and Operators.
+                    Loading...
+                  </td>
+                </tr>
+              ) : loadError ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-red-600">
+                    {loadError}
+                  </td>
+                </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                    No staff found.
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
+                filteredRows.map((row) => (
                   <tr key={row.id} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3">
                       <div className="w-10 h-10 rounded overflow-hidden bg-gray-200 flex items-center justify-center flex-shrink-0">
                         {row.imageUrl ? (
-                          <Image
-                            src={row.imageUrl}
-                            alt={row.name}
-                            width={40}
-                            height={40}
-                            className="object-cover w-full h-full"
-                          />
+                          isDataUrl(row.imageUrl) ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={row.imageUrl}
+                              alt={row.name}
+                              width={40}
+                              height={40}
+                              className="object-cover w-full h-full"
+                            />
+                          ) : (
+                            <Image
+                              src={row.imageUrl}
+                              alt={row.name}
+                              width={40}
+                              height={40}
+                              className="object-cover w-full h-full"
+                            />
+                          )
                         ) : (
                           <User className="w-5 h-5 text-gray-500" />
                         )}
@@ -160,7 +241,7 @@ export default function UsersAssignedStaffPage() {
                     <td className="px-4 py-3">
                       <button
                         type="button"
-                        onClick={() => openProfile(row.id)}
+                        onClick={() => openProfile(row.id, row.kind)}
                         className="text-red-600 hover:text-red-700 hover:underline font-medium"
                       >
                         {row.username}
@@ -174,7 +255,7 @@ export default function UsersAssignedStaffPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => openProfile(row.id)}
+                          onClick={() => openProfile(row.id, row.kind)}
                           className="p-1.5 text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded transition"
                           title="View profile"
                         >

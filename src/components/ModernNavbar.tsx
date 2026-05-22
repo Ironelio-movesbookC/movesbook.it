@@ -347,16 +347,25 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
     return () => window.removeEventListener('keydown', onKey);
   }, [networkSearchModalOpen]);
 
-  const handleAdminLogout = () => {
-    // Clear admin credentials
+  const handleAdminLogout = async () => {
+    const token = localStorage.getItem('adminToken');
+    if (token) {
+      try {
+        await fetch('/api/auth/admin/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        /* continue clearing local session */
+      }
+    }
     localStorage.removeItem('adminToken');
     localStorage.removeItem('adminUser');
     setIsAdmin(false);
     setAdminUser(null);
     setIsUserDropdownOpen(false);
     setIsMobileMenuOpen(false);
-    
-    // Redirect to homepage
+
     router.push('/');
   };
 
@@ -544,17 +553,16 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
         data = await response.json();
 
         if (response.ok && data.user) {
-          // Admin login successful
           localStorage.setItem('adminToken', data.token);
           localStorage.setItem('adminUser', JSON.stringify(data.user));
-          
-          // Clear form
           setLoginUsername('');
           setLoginPassword('');
           setLoginError('');
-          
-          // Redirect to admin dashboard
-          router.push('/admin/dashboard');
+          if (data.user.isStaff) {
+            router.push(`/operators/profile/${data.user.id}`);
+          } else {
+            router.push('/admin/dashboard');
+          }
           return;
         }
       }
@@ -585,17 +593,16 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
         data = await response.json();
 
         if (response.ok && data.user) {
-          // Admin login successful
           localStorage.setItem('adminToken', data.token);
           localStorage.setItem('adminUser', JSON.stringify(data.user));
-          
-          // Clear form
           setLoginUsername('');
           setLoginPassword('');
           setLoginError('');
-          
-          // Redirect to admin dashboard
-          router.push('/admin/dashboard');
+          if (data.user.isStaff) {
+            router.push(`/operators/profile/${data.user.id}`);
+          } else {
+            router.push('/admin/dashboard');
+          }
           return;
         }
       }
