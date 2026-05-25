@@ -16,6 +16,43 @@ export const OPERATOR_FILTER_ROLE_OPTIONS = [
   { value: 'Inspector', label: 'Inspector' },
 ] as const;
 
+/** Role labels for staff profile edit (same labels as filter, without "All"). */
+export const STAFF_PROFILE_ROLE_OPTIONS = OPERATOR_FILTER_ROLE_OPTIONS.filter(
+  (o) => o.value !== 'all',
+);
+
+export function normalizeStaffRoleOption(
+  roleLabel: string | null | undefined,
+  accountKind?: 'OPERATOR' | 'CO_ADMIN' | null,
+): string {
+  const raw = (roleLabel ?? '').trim();
+  if (!raw) {
+    return accountKind === 'CO_ADMIN' ? 'Coadmin' : 'Movesbook staff';
+  }
+
+  const exact = STAFF_PROFILE_ROLE_OPTIONS.find(
+    (o) => o.value === raw || o.label === raw,
+  );
+  if (exact) return exact.value;
+
+  const lower = raw.toLowerCase();
+  if (
+    accountKind === 'CO_ADMIN' ||
+    lower.includes('co-admin') ||
+    lower.includes('coadmin') ||
+    lower.includes('co admin')
+  ) {
+    return 'Coadmin';
+  }
+  if (lower.includes('sub') && lower.includes('agent')) return 'Sub Agent';
+  if (lower.includes('agent')) return 'Agent';
+  if (lower.includes('staff') || lower === 'operator') return 'Movesbook staff';
+  if (lower.includes('translator')) return 'Translator';
+  if (lower.includes('inspector')) return 'Inspector';
+
+  return 'Movesbook staff';
+}
+
 const LOGIN_OPTIONS: { value: OperatorLoginFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'on', label: 'Log on' },

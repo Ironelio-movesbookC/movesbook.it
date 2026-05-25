@@ -14,6 +14,10 @@ import {
 } from '@/lib/staffProfileAccess';
 import { persistOperatorNavContext } from '@/lib/operatorSubNav';
 import type { StaffKind } from '@/lib/operatorNavTabs';
+import {
+  STAFF_PROFILE_ROLE_OPTIONS,
+  normalizeStaffRoleOption,
+} from '@/components/operators/OperatorFilterPopover';
 
 type OperatorProfileState = {
   username: string;
@@ -174,7 +178,10 @@ export default function OperatorProfilePage() {
           name: String(o.name ?? ''),
           surname: String(o.surname ?? ''),
           role: isCoAdmin ? 'Co-Admin' : 'Operator',
-          roleOption: roleLabelRaw || (isCoAdmin ? 'Co-Admin' : 'Movesbook staff'),
+          roleOption: normalizeStaffRoleOption(
+            roleLabelRaw,
+            isCoAdmin ? 'CO_ADMIN' : 'OPERATOR',
+          ),
           country,
           countryCode: code,
           regionsManaged: Boolean(region),
@@ -482,9 +489,11 @@ export default function OperatorProfilePage() {
               disabled={roleFieldDisabled}
               className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             >
-              <option>Movesbook staff</option>
-              <option>Operator</option>
-              <option>Co-Admin</option>
+              {STAFF_PROFILE_ROLE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
             </select>
             <label className="text-sm text-gray-700 sm:text-right">Regions managed</label>
             <div className="flex items-center gap-2 flex-wrap">

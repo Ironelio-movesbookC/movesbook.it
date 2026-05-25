@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { isOperatorLinkedToCoAdmin } from '@/lib/staffCoAdminLinks';
 
 export const STAFF_USER_TYPES = ['STAFF_OPERATOR', 'STAFF_CO_ADMIN'] as const;
 export type StaffUserType = (typeof STAFF_USER_TYPES)[number];
@@ -95,6 +96,60 @@ export async function requireStaffSelfOrAdminPanel(
   return auth;
 }
 
+/**
+ * Staff: own account; co-admin staff: own account + operators linked by Super Admin; admins: any.
+ */
+export async function requireStaffSelfAdminOrLinkedCoAdminPanel(
+  request: NextRequest,
+  targetStaffAccountId: string,
+): Promise<PanelAuthContext> {
+  const auth = await resolvePanelAuth(request);
+  if (!auth.ok) return auth;
+  if (isAdminPanelRole(auth)) return auth;
+  if (auth.role === 'staff' && auth.actorId === targetStaffAccountId) return auth;
+  if (auth.role === 'staff' && auth.staffKind === 'CO_ADMIN') {
+    const linked = await isOperatorLinkedToCoAdmin(auth.actorId, targetStaffAccountId);
+    if (linked) return auth;
+  }
+  return { ok: false, status: 403, error: 'Forbidden' };
+}
+
+/** Linking operators ↔ co-admins is reserved for Super Admin / panel admin. */
+export async function requireAdminPanelForStaffLinks(
+  request: NextRequest,
+): Promise<PanelAuthContext> {
+  const auth = await resolvePanelAuth(request);
+  if (!auth.ok) return auth;
+  if (!isAdminPanelRole(auth)) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'Only Super Admin can assign operators and co-admins to each other',
+    };
+  }
+  return auth;
+}
+
 export function isAdminPanelRole(auth: PanelAuthContext & { ok: true }): boolean {
   return auth.role === 'super_admin' || auth.role === 'admin_user';
+}
+
+/** Super Admin / panel admin → any operator or co-admin; co-admin → self + linked operators; operators → none. */
+export async function canAssignMovesbookUsersToStaffAccount(
+  auth: PanelAuthContext & { ok: true },
+  targetStaffAccountId: string,
+  targetStaffKind: 'OPERATOR' | 'CO_ADMIN',
+): Promise<boolean> {
+  if (!targetStaffAccountId) return false;
+  if (isAdminPanelRole(auth)) return true;
+  if (auth.role === 'staff' && auth.staffKind === 'OPERATOR') return false;
+  if (auth.role === 'staff' && auth.staffKind === 'CO_ADMIN') {
+    if (targetStaffKind === 'CO_ADMIN' && auth.actorId === targetStaffAccountId) {
+      return true;
+    }
+    if (targetStaffKind === 'OPERATOR') {
+      return isOperatorLinkedToCoAdmin(auth.actorId, targetStaffAccountId);
+    }
+  }
+  return false;
 }

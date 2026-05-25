@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireStaffSelfOrAdminPanel } from '@/lib/panelAuth';
+import {
+  requireAdminPanelForStaffLinks,
+  requireStaffSelfOrAdminPanel,
+} from '@/lib/panelAuth';
 import {
   getOperatorById,
   mapStaffListRow,
@@ -47,7 +50,7 @@ export async function PUT(
   { params }: { params: { id: string } },
 ) {
   const operatorId = params.id;
-  const auth = await requireStaffSelfOrAdminPanel(request, operatorId);
+  const auth = await requireAdminPanelForStaffLinks(request);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -89,7 +92,7 @@ export async function DELETE(
   { params }: { params: { id: string } },
 ) {
   const operatorId = params.id;
-  const auth = await requireStaffSelfOrAdminPanel(_request, operatorId);
+  const auth = await requireAdminPanelForStaffLinks(_request);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

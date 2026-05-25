@@ -57,7 +57,15 @@ export function getVisibleOperatorNavTabs(options?: {
     options!.operatorId === options!.sessionId;
   return OPERATOR_NAV_TABS.filter((tab) => {
     if (tab.id === 'super-admin') return canManage || staffSelfSuperAdmin;
-    if (tab.id === 'assign-coadmin') return canManage;
+    if (tab.id === 'assign-coadmin') {
+      if (canManage) return true;
+      return (
+        Boolean(options?.isStaff) &&
+        options?.staffKind === 'CO_ADMIN' &&
+        Boolean(options?.operatorId && options?.sessionId) &&
+        options!.operatorId === options!.sessionId
+      );
+    }
     if (!options?.isStaff) return true;
     return true;
   });

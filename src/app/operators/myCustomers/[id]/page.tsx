@@ -5,6 +5,8 @@ import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { User, Eye, Settings, Trash2, Link2, UserPlus, X, Search } from 'lucide-react';
 import { persistOperatorNavContext } from '@/lib/operatorSubNav';
+import { usePanelSession } from '@/hooks/usePanelSession';
+import { canAssignMovesbookUsersToStaff } from '@/lib/staffProfileAccess';
 
 const PAGE_SIZE = 10;
 
@@ -45,10 +47,14 @@ export default function MyCustomersPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
+  const { session, hydrated, canManageStaff } = usePanelSession();
 
   const [staffName, setStaffName] = useState('');
-  const [roleLabel, setRoleLabel] = useState('Operator');
+  const [staffKind, setStaffKind] = useState<'OPERATOR' | 'CO_ADMIN'>('OPERATOR');
   const [isCoAdmin, setIsCoAdmin] = useState(false);
+  const [roleLabel, setRoleLabel] = useState('Operator');
+  const [canAssignUsers, setCanAssignUsers] = useState(false);
+  const [linkedOperatorIds, setLinkedOperatorIds] = useState<string[]>([]);
   const [linkedCoAdmin, setLinkedCoAdmin] = useState<LinkedCoAdmin | null>(null);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -82,11 +88,22 @@ export default function MyCustomersPage() {
 
       setStaffName(String(data.staffName ?? ''));
       const kind = String(data.staffKind ?? 'OPERATOR').toUpperCase();
-      const coAdminView = kind === 'CO_ADMIN';
+      const viewedKind: 'OPERATOR' | 'CO_ADMIN' = kind === 'CO_ADMIN' ? 'CO_ADMIN' : 'OPERATOR';
+      const coAdminView = viewedKind === 'CO_ADMIN';
+      setStaffKind(viewedKind);
       setIsCoAdmin(coAdminView);
       setRoleLabel(coAdminView ? 'Co-Admin' : 'Operator');
+      const linkedIds = Array.isArray(data.linkedOperatorIds)
+        ? data.linkedOperatorIds.map((x: unknown) => String(x))
+        : [];
+      setLinkedOperatorIds(linkedIds);
+      setCanAssignUsers(
+        typeof data.canAssignUsers === 'boolean'
+          ? data.canAssignUsers
+          : canAssignMovesbookUsersToStaff(session, id, viewedKind, linkedIds),
+      );
       setLinkedCoAdmin(data.linkedCoAdmin ?? null);
-      persistOperatorNavContext(coAdminView ? 'CO_ADMIN' : 'OPERATOR', { kind: 'myCustomers' });
+      persistOperatorNavContext(viewedKind, { kind: 'myCustomers' });
 
       const users = Array.isArray(data?.users) ? data.users : [];
       setCustomers(
@@ -123,7 +140,7 @@ export default function MyCustomersPage() {
       setListError(e instanceof Error ? e.message : 'Failed to load');
       setCustomers([]);
     }
-  }, [id]);
+  }, [id, session]);
 
   useEffect(() => {
     setLoading(true);
@@ -273,6 +290,11 @@ export default function MyCustomersPage() {
     ? 'Users assigned to co-admin'
     : 'Users assigned to operator';
 
+  const showAssignButton =
+    hydrated &&
+    (canAssignUsers ||
+      canAssignMovesbookUsersToStaff(session, id, staffKind, linkedOperatorIds));
+
   return (
     <div className="min-h-full bg-gray-100">
       <div className="flex items-center gap-3 px-4 py-3 bg-gray-200 border-b border-gray-300">
@@ -294,7 +316,7 @@ export default function MyCustomersPage() {
                 <Link2 className="w-5 h-5 text-amber-700 flex-shrink-0" />
                 <span>{listTitle}</span>
               </div>
-              {isCoAdmin ? (
+              {showAssignButton ? (
                 <button
                   type="button"
                   onClick={openModal}
@@ -315,6 +337,10 @@ export default function MyCustomersPage() {
               <p className="text-sm text-gray-600">
                 Direct assignments show &quot;Direct association&quot;. Users assigned to your
                 operators appear with the operator name in the Via operator column.
+              </p>
+            ) : showAssignButton ? (
+              <p className="text-sm text-gray-600">
+                Assign Movesbook users directly to this operator account.
               </p>
             ) : null}
           </div>
@@ -376,7 +402,7 @@ export default function MyCustomersPage() {
               ) : pageRows.length === 0 ? (
                 <tr>
                   <td colSpan={isCoAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-500">
-                    {isCoAdmin
+                    {showAssignButton
                       ? 'No users assigned yet. Use "Assign a new user" to select Movesbook users.'
                       : 'No users assigned yet.'}
                   </td>
@@ -490,7 +516,8 @@ export default function MyCustomersPage() {
                 <p className="mt-2 text-sm text-red-600">{formError}</p>
               ) : (
                 <p className="mt-2 text-sm text-gray-600">
-                  Select one or more Movesbook users to assign directly to this {roleLabel.toLowerCase()}.
+                  Select one or more Movesbook users to assign directly to this{' '}
+                  {isCoAdmin ? 'co-admin' : 'operator'}.
                 </p>
               )}
             </div>

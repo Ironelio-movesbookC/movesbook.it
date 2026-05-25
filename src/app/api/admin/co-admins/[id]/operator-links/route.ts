@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireStaffSelfOrAdminPanel } from '@/lib/panelAuth';
+import {
+  isAdminPanelRole,
+  requireAdminPanelForStaffLinks,
+  requireStaffSelfOrAdminPanel,
+} from '@/lib/panelAuth';
 import {
   getCoAdminById,
   mapStaffListRow,
@@ -39,11 +43,13 @@ export async function GET(
   });
 
   const candidates = operators.filter((o) => !assignedOperatorIds.includes(o.id));
+  const canManageLinks = isAdminPanelRole(auth);
 
   return NextResponse.json({
     coAdmin: mapStaffListRow(coAdmin),
     assignedOperators: links.map((l) => mapStaffListRow(l.operator)),
-    candidates: candidates.map(mapStaffListRow),
+    candidates: canManageLinks ? candidates.map(mapStaffListRow) : [],
+    canManageLinks,
   });
 }
 
@@ -52,7 +58,7 @@ export async function POST(
   { params }: { params: { id: string } },
 ) {
   const coAdminId = params.id;
-  const auth = await requireStaffSelfOrAdminPanel(request, coAdminId);
+  const auth = await requireAdminPanelForStaffLinks(request);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

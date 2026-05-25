@@ -1,29 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireStaffSelfOrAdminPanel } from '@/lib/panelAuth';
+import {
+  canAssignMovesbookUsersToStaffAccount,
+  requireStaffSelfAdminOrLinkedCoAdminPanel,
+} from '@/lib/panelAuth';
 import {
   assignMovesbookUsersToStaff,
   getStaffAssignedCustomersPayload,
 } from '@/lib/staffAssignedCustomers';
+import { getOperatorIdsLinkedToCoAdmin } from '@/lib/staffCoAdminLinks';
 
 export const dynamic = 'force-dynamic';
 
 const PROFILE_KINDS = ['OPERATOR', 'CO_ADMIN'] as const;
-
-async function assertStaffExists(staffAccountId: string) {
-  const row = await prisma.staffAccount.findFirst({
-    where: { id: staffAccountId, kind: { in: [...PROFILE_KINDS] } },
-    select: { id: true },
-  });
-  return Boolean(row);
-}
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: { id: string } },
 ) {
   const { id: staffAccountId } = params;
-  const auth = await requireStaffSelfOrAdminPanel(_request, staffAccountId);
+  const auth = await requireStaffSelfAdminOrLinkedCoAdminPanel(_request, staffAccountId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -36,11 +32,24 @@ export async function GET(
     return NextResponse.json({ error: 'Staff profile not found' }, { status: 404 });
   }
 
+  const canAssignUsers = await canAssignMovesbookUsersToStaffAccount(
+    auth,
+    staffAccountId,
+    payload.staffKind,
+  );
+
+  const linkedOperatorIds =
+    auth.role === 'staff' && auth.staffKind === 'CO_ADMIN'
+      ? await getOperatorIdsLinkedToCoAdmin(auth.actorId)
+      : [];
+
   return NextResponse.json({
     staffKind: payload.staffKind,
     staffName: payload.staffName,
     linkedCoAdmin: payload.linkedCoAdmin,
     users: payload.users,
+    canAssignUsers,
+    linkedOperatorIds,
   });
 }
 
@@ -49,7 +58,7 @@ export async function POST(
   { params }: { params: { id: string } },
 ) {
   const { id: staffAccountId } = params;
-  const auth = await requireStaffSelfOrAdminPanel(request, staffAccountId);
+  const auth = await requireStaffSelfAdminOrLinkedCoAdminPanel(request, staffAccountId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -57,8 +66,20 @@ export async function POST(
     return NextResponse.json({ error: 'Staff id is required' }, { status: 400 });
   }
 
-  if (!(await assertStaffExists(staffAccountId))) {
+  const staff = await prisma.staffAccount.findFirst({
+    where: { id: staffAccountId, kind: { in: [...PROFILE_KINDS] } },
+    select: { id: true, kind: true },
+  });
+  if (!staff) {
     return NextResponse.json({ error: 'Staff profile not found' }, { status: 404 });
+  }
+
+  const targetKind = staff.kind === 'CO_ADMIN' ? 'CO_ADMIN' : 'OPERATOR';
+  if (!(await canAssignMovesbookUsersToStaffAccount(auth, staffAccountId, targetKind))) {
+    return NextResponse.json(
+      { error: 'You do not have permission to assign users to this account' },
+      { status: 403 },
+    );
   }
 
   const body = await request.json().catch(() => ({}));
@@ -73,6 +94,10 @@ export async function POST(
   const result = await assignMovesbookUsersToStaff(staffAccountId, userIds);
   const payload = await getStaffAssignedCustomersPayload(staffAccountId);
 
+  const canAssignUsers = payload
+    ? await canAssignMovesbookUsersToStaffAccount(auth, staffAccountId, payload.staffKind)
+    : false;
+
   return NextResponse.json({
     success: true,
     created: result.created,
@@ -81,5 +106,6 @@ export async function POST(
     staffName: payload?.staffName,
     linkedCoAdmin: payload?.linkedCoAdmin ?? null,
     users: payload?.users ?? [],
+    canAssignUsers,
   });
 }

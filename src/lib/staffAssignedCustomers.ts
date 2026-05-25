@@ -120,7 +120,7 @@ export async function getStaffAssignedCustomersPayload(staffAccountId: string) {
       : null;
 
     return {
-      staffKind: staff.kind,
+      staffKind: staff.kind as 'OPERATOR' | 'CO_ADMIN',
       staffName,
       linkedCoAdmin,
       users,
@@ -171,7 +171,7 @@ export async function getStaffAssignedCustomersPayload(staffAccountId: string) {
   });
 
   return {
-    staffKind: staff.kind,
+    staffKind: staff.kind as 'OPERATOR' | 'CO_ADMIN',
     staffName,
     linkedCoAdmin: null,
     users,
