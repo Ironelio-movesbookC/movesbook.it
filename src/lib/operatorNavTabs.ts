@@ -52,11 +52,8 @@ export function getVisibleOperatorNavTabs(options?: {
   sessionId?: string;
 }) {
   const canManage = Boolean(options?.canManageStaff ?? options?.isSuperAdmin);
-  const staffSelfSuperAdmin =
-    Boolean(options?.isStaff && options?.operatorId && options?.sessionId) &&
-    options!.operatorId === options!.sessionId;
   return OPERATOR_NAV_TABS.filter((tab) => {
-    if (tab.id === 'super-admin') return canManage || staffSelfSuperAdmin;
+    if (tab.id === 'super-admin') return canManage;
     if (tab.id === 'assign-coadmin') {
       if (canManage) return true;
       return (

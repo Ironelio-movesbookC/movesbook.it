@@ -12,9 +12,12 @@ import {
   readPanelToken,
   staffHomePath,
 } from '@/lib/panelSession';
-
-const STAFF_DETAIL_SEGMENT =
-  /^\/operators\/(?:profile|settings|password-settings|super-admin-settings|myCustomers|logins|assign-coadmin|assign-operator)\/([^/]+)/;
+import {
+  coAdminCanAccessStaffDetailPath,
+  extractStaffDetailTargetId,
+  isCoAdminStaffSession,
+  operatorStaffCanAccessDetailPath,
+} from '@/lib/staffCoAdminClientAccess';
 
 const COADMIN_SETTINGS_SEGMENT =
   /^\/operators\/operator_coadmin_settings\/([^/]+)\/([^/]+)/;
@@ -26,44 +29,62 @@ export function OperatorsRouteGuard({ children }: { children: React.ReactNode })
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const token = readPanelToken();
-    const session = readNormalizedPanelSession();
+    let cancelled = false;
 
-    if (!token || !session) {
-      router.replace('/?showAdmin=true');
-      return;
+    async function run() {
+      const token = readPanelToken();
+      const session = readNormalizedPanelSession();
+
+      if (!token || !session) {
+        router.replace('/?showAdmin=true');
+        return;
+      }
+
+      const path = pathname ?? '';
+
+      if (isSuperAdminSettingsPath(path)) {
+        const targetId = path.match(/^\/operators\/super-admin-settings\/([^/]+)/)?.[1] ?? '';
+        if (!canAccessOperatorSuperAdminSettings(session, targetId)) {
+          router.replace(panelAccessDeniedRedirect(session));
+          return;
+        }
+      }
+
+      if (isStaffPanelSession(session)) {
+        if (isStaffForbiddenPath(path, session)) {
+          router.replace(staffHomePath(session.id));
+          return;
+        }
+
+        const targetId = extractStaffDetailTargetId(path);
+        if (targetId && targetId !== session.id) {
+          if (isCoAdminStaffSession(session)) {
+            const allowed = await coAdminCanAccessStaffDetailPath(session, path, token);
+            if (!allowed) {
+              router.replace(staffHomePath(session.id));
+              return;
+            }
+          } else if (!operatorStaffCanAccessDetailPath(session, path)) {
+            router.replace(staffHomePath(session.id));
+            return;
+          }
+        }
+
+        const coAdminMatch = path.match(COADMIN_SETTINGS_SEGMENT);
+        if (coAdminMatch && coAdminMatch[2] !== session.id) {
+          router.replace(staffHomePath(session.id));
+          return;
+        }
+      }
+
+      if (!cancelled) setReady(true);
     }
 
-    const path = pathname ?? '';
-
-    if (isSuperAdminSettingsPath(path)) {
-      const targetId = path.match(/^\/operators\/super-admin-settings\/([^/]+)/)?.[1] ?? '';
-      if (!canAccessOperatorSuperAdminSettings(session, targetId)) {
-        router.replace(panelAccessDeniedRedirect(session));
-        return;
-      }
-    }
-
-    if (isStaffPanelSession(session)) {
-      if (isStaffForbiddenPath(path, session)) {
-        router.replace(staffHomePath(session.id));
-        return;
-      }
-
-      const detailMatch = path.match(STAFF_DETAIL_SEGMENT);
-      if (detailMatch && detailMatch[1] !== session.id) {
-        router.replace(staffHomePath(session.id));
-        return;
-      }
-
-      const coAdminMatch = path.match(COADMIN_SETTINGS_SEGMENT);
-      if (coAdminMatch && coAdminMatch[2] !== session.id) {
-        router.replace(staffHomePath(session.id));
-        return;
-      }
-    }
-
-    setReady(true);
+    setReady(false);
+    void run();
+    return () => {
+      cancelled = true;
+    };
   }, [pathname, router]);
 
   if (!ready) {

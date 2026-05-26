@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { Eye, User, UserMinus, UserPlus } from 'lucide-react';
 import { persistOperatorNavContext } from '@/lib/operatorSubNav';
+import { fetchCoAdminLinkedOperatorIds } from '@/lib/staffCoAdminClientAccess';
 import { usePanelSession } from '@/hooks/usePanelSession';
 
 type StaffItem = {
@@ -16,6 +17,7 @@ type StaffItem = {
   email: string;
   imageUrl: string | null;
   lastLogin: string;
+  assignmentDateDisplay?: string;
 };
 
 const isDataUrl = (src?: string | null) =>
@@ -58,6 +60,15 @@ export default function AssignOperatorPage() {
       setCanManageLinks(
         typeof data.canManageLinks === 'boolean' ? data.canManageLinks : canManageStaff,
       );
+      const assignedList = Array.isArray(data.assignedOperators) ? data.assignedOperators : [];
+      try {
+        sessionStorage.setItem(
+          'coAdminLinkedOperatorIds',
+          JSON.stringify(assignedList.map((o: { id: string }) => o.id)),
+        );
+      } catch {
+        /* ignore */
+      }
       setSelectedIds(new Set());
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load');
@@ -200,7 +211,7 @@ export default function AssignOperatorPage() {
                   key={row.id}
                   className="flex flex-wrap items-center gap-3 px-4 py-3 justify-between"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     {renderAvatar(row)}
                     <div className="min-w-0">
                       <p className="font-medium text-gray-900">{row.name}</p>
@@ -209,6 +220,10 @@ export default function AssignOperatorPage() {
                       </p>
                     </div>
                   </div>
+                  <p className="text-sm text-gray-700 shrink-0 px-2 min-w-[140px] text-center sm:text-left">
+                    <span className="text-gray-500 block sm:inline">Date assignment: </span>
+                    <span className="font-medium">{row.assignmentDateDisplay ?? '—'}</span>
+                  </p>
                   <div className="flex gap-2 flex-shrink-0">
                     <Link
                       href={`/operators/profile/${row.id}`}

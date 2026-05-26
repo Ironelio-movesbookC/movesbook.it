@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import {
   canAssignMovesbookUsersToStaffAccount,
+  isAdminPanelRole,
   requireStaffSelfAdminOrLinkedCoAdminPanel,
 } from '@/lib/panelAuth';
 import { searchAssignableMovesbookUsers } from '@/lib/staffAssignedCustomers';
@@ -32,7 +33,12 @@ export async function GET(
   }
 
   const q = request.nextUrl.searchParams.get('q')?.trim() ?? '';
-  const candidates = await searchAssignableMovesbookUsers(staffAccountId, q, 80);
+  const candidates = await searchAssignableMovesbookUsers(staffAccountId, q, 80, {
+    showBlockedForAdmin: isAdminPanelRole(auth),
+  });
 
-  return NextResponse.json({ candidates });
+  return NextResponse.json({
+    candidates,
+    showBlockedAssignments: isAdminPanelRole(auth),
+  });
 }

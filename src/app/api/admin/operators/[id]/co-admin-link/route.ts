@@ -6,6 +6,7 @@ import {
 } from '@/lib/panelAuth';
 import {
   getOperatorById,
+  mapStaffLinkAssignmentRow,
   mapStaffListRow,
   staffListSelect,
 } from '@/lib/staffOperatorCoAdminLink';
@@ -29,7 +30,10 @@ export async function GET(
 
   const link = await prisma.staffOperatorCoAdminLink.findUnique({
     where: { operatorId },
-    include: { coAdmin: { select: staffListSelect } },
+    select: {
+      createdAt: true,
+      coAdmin: { select: staffListSelect },
+    },
   });
 
   const coAdmins = await prisma.staffAccount.findMany({
@@ -40,7 +44,9 @@ export async function GET(
 
   return NextResponse.json({
     operator: mapStaffListRow(operator),
-    assignedCoAdmin: link?.coAdmin ? mapStaffListRow(link.coAdmin) : null,
+    assignedCoAdmin: link?.coAdmin
+      ? mapStaffLinkAssignmentRow(link.coAdmin, link)
+      : null,
     candidates: coAdmins.map(mapStaffListRow),
   });
 }
@@ -78,12 +84,15 @@ export async function PUT(
     where: { operatorId },
     create: { operatorId, coAdminId },
     update: { coAdminId },
-    include: { coAdmin: { select: staffListSelect } },
+    select: {
+      createdAt: true,
+      coAdmin: { select: staffListSelect },
+    },
   });
 
   return NextResponse.json({
     success: true,
-    assignedCoAdmin: mapStaffListRow(link.coAdmin),
+    assignedCoAdmin: mapStaffLinkAssignmentRow(link.coAdmin, link),
   });
 }
 

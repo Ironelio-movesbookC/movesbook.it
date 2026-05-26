@@ -1,5 +1,9 @@
 import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import {
+  alreadyAssignedMessage,
+  getAssignmentConflictForTarget,
+} from '@/lib/staffUserAssignmentRules';
 
 export type AssignedCustomerRow = {
   assignmentId: string;
@@ -11,6 +15,9 @@ export type AssignedCustomerRow = {
   lastLogin: string | null;
   lastLoginDisplay: string;
   imageUrl: string | null;
+  userTypeLabel: string;
+  assignmentDate: string | null;
+  assignmentDateDisplay: string;
   source: 'direct' | 'operator';
   viaOperatorId: string | null;
   viaOperatorName: string;
@@ -31,6 +38,39 @@ function formatLastLogin(d: Date | null): { iso: string | null; display: string 
   };
 }
 
+function formatAssignmentDate(d: Date | null): { iso: string | null; display: string } {
+  if (!d) return { iso: null, display: '—' };
+  return {
+    iso: d.toISOString(),
+    display: d.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  };
+}
+
+function userTypeLabelFromUserType(userType: UserType | null | undefined): string {
+  switch (userType) {
+    case UserType.COACH:
+      return 'Coach';
+    case UserType.TEAM:
+    case UserType.TEAM_MANAGER:
+      return 'Team';
+    case UserType.CLUB:
+    case UserType.CLUB_TRAINER:
+      return 'Club';
+    case UserType.GROUP:
+    case UserType.GROUP_ADMIN:
+      return 'Group';
+    case UserType.ATHLETE:
+    default:
+      return 'Single User';
+  }
+}
+
 function mapAssignmentRow(
   r: {
     id: string;
@@ -41,15 +81,18 @@ function mapAssignmentRow(
     language: string | null;
     lastLogin: Date | null;
     imageUrl: string | null;
+    createdAt: Date;
   },
   opts: {
     source: 'direct' | 'operator';
     viaOperatorId: string | null;
     viaOperatorName: string;
     canRemove: boolean;
+    userTypeLabel: string;
   },
 ): AssignedCustomerRow {
   const { iso, display } = formatLastLogin(r.lastLogin);
+  const { iso: assignIso, display: assignDisplay } = formatAssignmentDate(r.createdAt ?? null);
   return {
     assignmentId: r.id,
     movesbookUserId: r.movesbookUserId,
@@ -60,6 +103,9 @@ function mapAssignmentRow(
     lastLogin: iso,
     lastLoginDisplay: display,
     imageUrl: r.imageUrl,
+    userTypeLabel: opts.userTypeLabel,
+    assignmentDate: assignIso,
+    assignmentDateDisplay: assignDisplay,
     source: opts.source,
     viaOperatorId: opts.viaOperatorId,
     viaOperatorName: opts.viaOperatorName,
@@ -67,7 +113,15 @@ function mapAssignmentRow(
   };
 }
 
-export async function getStaffAssignedCustomersPayload(staffAccountId: string) {
+export type StaffAssignedCustomersOptions = {
+  /** Super Admin on a co-admin My Customers page: allow remove on via-operator rows too. */
+  adminCanRemoveAllOnCoAdmin?: boolean;
+};
+
+export async function getStaffAssignedCustomersPayload(
+  staffAccountId: string,
+  options: StaffAssignedCustomersOptions = {},
+) {
   const staff = await prisma.staffAccount.findFirst({
     where: { id: staffAccountId, kind: { in: ['OPERATOR', 'CO_ADMIN'] } },
     select: {
@@ -86,18 +140,49 @@ export async function getStaffAssignedCustomersPayload(staffAccountId: string) {
   const directRows = await prisma.staffAssignedUser.findMany({
     where: { staffAccountId },
     orderBy: { username: 'asc' },
+    select: {
+      id: true,
+      movesbookUserId: true,
+      username: true,
+      name: true,
+      country: true,
+      language: true,
+      lastLogin: true,
+      imageUrl: true,
+      createdAt: true,
+    },
   });
 
   const users: AssignedCustomerRow[] = [];
 
+  const allMovesbookUserIds = Array.from(
+    new Set(
+      directRows
+        .map((r) => r.movesbookUserId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const movesbookUserTypeById = new Map<string, UserType>();
+  if (allMovesbookUserIds.length > 0) {
+    const mbRows = await prisma.user.findMany({
+      where: { id: { in: allMovesbookUserIds } },
+      select: { id: true, userType: true },
+    });
+    for (const r of mbRows) movesbookUserTypeById.set(r.id, r.userType);
+  }
+
   if (!isCoAdmin) {
     for (const r of directRows) {
+      const userTypeLabel = userTypeLabelFromUserType(
+        r.movesbookUserId ? movesbookUserTypeById.get(r.movesbookUserId) : UserType.ATHLETE,
+      );
       users.push(
         mapAssignmentRow(r, {
           source: 'direct',
           viaOperatorId: null,
           viaOperatorName: '—',
           canRemove: true,
+          userTypeLabel,
         }),
       );
     }
@@ -128,12 +213,16 @@ export async function getStaffAssignedCustomersPayload(staffAccountId: string) {
   }
 
   for (const r of directRows) {
+    const userTypeLabel = userTypeLabelFromUserType(
+      r.movesbookUserId ? movesbookUserTypeById.get(r.movesbookUserId) : UserType.ATHLETE,
+    );
     users.push(
       mapAssignmentRow(r, {
         source: 'direct',
         viaOperatorId: null,
         viaOperatorName: 'Direct association',
         canRemove: true,
+        userTypeLabel,
       }),
     );
   }
@@ -151,14 +240,42 @@ export async function getStaffAssignedCustomersPayload(staffAccountId: string) {
     const opUsers = await prisma.staffAssignedUser.findMany({
       where: { staffAccountId: link.operatorId },
       orderBy: { username: 'asc' },
+      select: {
+        id: true,
+        movesbookUserId: true,
+        username: true,
+        name: true,
+        country: true,
+        language: true,
+        lastLogin: true,
+        imageUrl: true,
+        createdAt: true,
+      },
     });
+    const opMovesbookIds = Array.from(
+      new Set(
+        opUsers.map((r) => r.movesbookUserId).filter((id): id is string => Boolean(id)),
+      ),
+    );
+    const opUserTypeById = new Map<string, UserType>();
+    if (opMovesbookIds.length > 0) {
+      const mbRows = await prisma.user.findMany({
+        where: { id: { in: opMovesbookIds } },
+        select: { id: true, userType: true },
+      });
+      for (const r of mbRows) opUserTypeById.set(r.id, r.userType);
+    }
     for (const r of opUsers) {
+      const userTypeLabel = userTypeLabelFromUserType(
+        r.movesbookUserId ? opUserTypeById.get(r.movesbookUserId) : UserType.ATHLETE,
+      );
       users.push(
         mapAssignmentRow(r, {
           source: 'operator',
           viaOperatorId: link.operatorId,
           viaOperatorName: opName,
-          canRemove: false,
+          canRemove: Boolean(options.adminCanRemoveAllOnCoAdmin),
+          userTypeLabel,
         }),
       );
     }
@@ -215,6 +332,11 @@ export async function assignMovesbookUsersToStaff(
       skipped += 1;
       continue;
     }
+    const conflict = await getAssignmentConflictForTarget(staffAccountId, u.id);
+    if (conflict) {
+      skipped += 1;
+      continue;
+    }
     await prisma.staffAssignedUser.create({
       data: {
         staffAccountId,
@@ -233,22 +355,40 @@ export async function assignMovesbookUsersToStaff(
   return { created, skipped };
 }
 
+export type AssignCandidateRow = {
+  id: string;
+  username: string;
+  name: string;
+  country: string;
+  language: string;
+  lastLoginDisplay: string;
+  imageUrl: string | null;
+  assignBlocked: boolean;
+  existingAssignment: {
+    assignmentId: string;
+    staffAccountId: string;
+    staffName: string;
+    staffKind: 'OPERATOR' | 'CO_ADMIN';
+    message: string;
+  } | null;
+};
+
 export async function searchAssignableMovesbookUsers(
   staffAccountId: string,
   search: string,
   limit = 50,
-) {
+  options: { showBlockedForAdmin?: boolean } = {},
+): Promise<AssignCandidateRow[]> {
   const directAssigned = await prisma.staffAssignedUser.findMany({
     where: { staffAccountId, movesbookUserId: { not: null } },
     select: { movesbookUserId: true },
   });
-  const excludeIds = directAssigned
-    .map((r) => r.movesbookUserId)
-    .filter((id): id is string => Boolean(id));
+  const alreadyOnTargetIds = new Set(
+    directAssigned.map((r) => r.movesbookUserId).filter((id): id is string => Boolean(id)),
+  );
 
   const where = {
     userType: UserType.ATHLETE,
-    ...(excludeIds.length > 0 ? { id: { notIn: excludeIds } } : {}),
     ...(search
       ? {
           OR: [
@@ -279,10 +419,18 @@ export async function searchAssignableMovesbookUsers(
     take: limit,
   });
 
-  return rows.map((u) => {
+  const results: AssignCandidateRow[] = [];
+
+  for (const u of rows) {
+    if (alreadyOnTargetIds.has(u.id)) continue;
+
+    const conflict = await getAssignmentConflictForTarget(staffAccountId, u.id);
+    if (conflict && !options.showBlockedForAdmin) continue;
+
     const displayName = [u.firstName, u.surname].filter(Boolean).join(' ').trim() || u.name;
     const { display } = formatLastLogin(u.lastSeenAt);
-    return {
+
+    results.push({
       id: u.id,
       username: u.username,
       name: displayName,
@@ -290,6 +438,18 @@ export async function searchAssignableMovesbookUsers(
       language: u.settings?.language ?? 'en',
       lastLoginDisplay: display,
       imageUrl: u.image,
-    };
-  });
+      assignBlocked: Boolean(conflict),
+      existingAssignment: conflict
+        ? {
+            assignmentId: conflict.assignmentId,
+            staffAccountId: conflict.staffAccountId,
+            staffName: conflict.staffName,
+            staffKind: conflict.staffKind,
+            message: alreadyAssignedMessage(conflict),
+          }
+        : null,
+    });
+  }
+
+  return results;
 }

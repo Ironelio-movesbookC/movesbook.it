@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import {
   canAssignMovesbookUsersToStaffAccount,
+  isAdminPanelRole,
   requireStaffSelfAdminOrLinkedCoAdminPanel,
 } from '@/lib/panelAuth';
 import {
@@ -27,7 +28,18 @@ export async function GET(
     return NextResponse.json({ error: 'Staff id is required' }, { status: 400 });
   }
 
-  const payload = await getStaffAssignedCustomersPayload(staffAccountId);
+  const staffRow = await prisma.staffAccount.findFirst({
+    where: { id: staffAccountId, kind: { in: [...PROFILE_KINDS] } },
+    select: { kind: true },
+  });
+  if (!staffRow) {
+    return NextResponse.json({ error: 'Staff profile not found' }, { status: 404 });
+  }
+
+  const payload = await getStaffAssignedCustomersPayload(staffAccountId, {
+    adminCanRemoveAllOnCoAdmin:
+      isAdminPanelRole(auth) && staffRow.kind === 'CO_ADMIN',
+  });
   if (!payload) {
     return NextResponse.json({ error: 'Staff profile not found' }, { status: 404 });
   }
@@ -92,7 +104,10 @@ export async function POST(
   }
 
   const result = await assignMovesbookUsersToStaff(staffAccountId, userIds);
-  const payload = await getStaffAssignedCustomersPayload(staffAccountId);
+  const payload = await getStaffAssignedCustomersPayload(staffAccountId, {
+    adminCanRemoveAllOnCoAdmin:
+      isAdminPanelRole(auth) && staff.kind === 'CO_ADMIN',
+  });
 
   const canAssignUsers = payload
     ? await canAssignMovesbookUsersToStaffAccount(auth, staffAccountId, payload.staffKind)

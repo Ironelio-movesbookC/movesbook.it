@@ -74,7 +74,7 @@ export function canAccessOperatorSuperAdminSettings(
   const session = normalizePanelSession(user);
   if (!session || !staffAccountId) return false;
   if (isSuperAdminPanelSession(session)) return true;
-  return isStaffPanelSession(session) && session.id === staffAccountId;
+  return false;
 }
 
 /** Operator routes that use admin dashboard chrome (sidebars + toggles). */

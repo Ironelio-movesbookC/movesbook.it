@@ -7,6 +7,7 @@ import {
 } from '@/lib/panelAuth';
 import {
   getCoAdminById,
+  mapStaffLinkAssignmentRow,
   mapStaffListRow,
   staffListSelect,
 } from '@/lib/staffOperatorCoAdminLink';
@@ -47,7 +48,7 @@ export async function GET(
 
   return NextResponse.json({
     coAdmin: mapStaffListRow(coAdmin),
-    assignedOperators: links.map((l) => mapStaffListRow(l.operator)),
+    assignedOperators: links.map((l) => mapStaffLinkAssignmentRow(l.operator, l)),
     candidates: canManageLinks ? candidates.map(mapStaffListRow) : [],
     canManageLinks,
   });
@@ -100,6 +101,6 @@ export async function POST(
 
   return NextResponse.json({
     success: true,
-    assignedOperators: links.map((l) => mapStaffListRow(l.operator)),
+    assignedOperators: links.map((l) => mapStaffLinkAssignmentRow(l.operator, l)),
   });
 }
