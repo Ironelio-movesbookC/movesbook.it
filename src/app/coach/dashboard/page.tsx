@@ -91,6 +91,12 @@ export default function CoachDashboard() {
     }
   }, [activeTab]);
 
+  useEffect(() => {
+    if (coachingGroups.length === 0 && activeTab === 'my-entity') {
+      setActiveTab('my-page');
+    }
+  }, [coachingGroups.length, activeTab]);
+
   // Auto-hide left sidebar when workout section opens
   useEffect(() => {
     if (showWorkoutSection) {
@@ -113,7 +119,22 @@ export default function CoachDashboard() {
       });
       if (response.ok) {
         const data = await response.json();
-        setCoachingGroups(data.coachingGroups || []);
+        const groups = data.coachingGroups || [];
+        setCoachingGroups(groups);
+        if (groups.length > 0) {
+          setSelectedGroupId((prev) => {
+            if (prev && groups.some((g: { id: string }) => g.id === prev)) {
+              return prev;
+            }
+            if (typeof window !== 'undefined') {
+              const stored = localStorage.getItem('selectedCoachingGroup');
+              if (stored && groups.some((g: { id: string }) => g.id === stored)) {
+                return stored;
+              }
+            }
+            return groups[0].id;
+          });
+        }
       }
     } catch (error) {
       console.error('Error loading coaching groups:', error);
@@ -122,7 +143,7 @@ export default function CoachDashboard() {
 
   const handleCoachingGroupSelect = (groupId: string) => {
     localStorage.setItem('selectedCoachingGroup', groupId);
-    window.location.href = `/my-coaching-group?groupId=${groupId}`;
+    setSelectedGroupId(groupId);
   };
 
   return (
@@ -235,7 +256,9 @@ export default function CoachDashboard() {
 
               <div className="absolute bottom-4 left-4 mt-12">
                 <div className="bg-blue-800/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg font-medium">
-                  {coachingGroups[0]?.name || 'Club Magliw Awellino Club'}
+                  {coachingGroups.find((g) => g.id === selectedGroupId)?.name ??
+                    coachingGroups[0]?.name ??
+                    'Club Magliw Awellino Club'}
                 </div>
               </div>
             </div>
@@ -320,19 +343,12 @@ export default function CoachDashboard() {
               <DarkSidebar
                 userType={user?.userType || ''}
                 entities={coachingGroups}
-                selectedEntityId={selectedGroupId}
+                selectedEntityId={selectedGroupId ?? coachingGroups[0]?.id ?? null}
                 onEntitySelect={handleCoachingGroupSelect}
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
                 onMyPageClick={() => setActiveTab('my-page')}
-                onMyCoachingGroupClick={() => {
-                  setActiveTab('my-entity');
-                  if (selectedGroupId) {
-                    window.location.href = `/my-coaching-group?groupId=${selectedGroupId}`;
-                  } else if (coachingGroups.length > 0) {
-                    window.location.href = `/my-coaching-group?groupId=${coachingGroups[0].id}`;
-                  }
-                }}
+                onMyCoachingGroupClick={() => setActiveTab('my-entity')}
               />
             </div>
           )}
@@ -355,7 +371,9 @@ export default function CoachDashboard() {
             {activeTab === 'my-entity' && !showWorkoutSection && (
               <div className="bg-white rounded-lg shadow-sm border p-8 flex-1 flex items-center justify-center">
                 <div className="text-center">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to Your Coaching Group</h2>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                    {t('sidebar_trained_group')}
+                  </h2>
                   <p className="text-gray-600 mb-6">Click on "Workouts section" in the navigation bar above to view and manage workouts.</p>
                   <button 
                     onClick={() => setShowWorkoutSection(true)}
@@ -392,8 +410,15 @@ export default function CoachDashboard() {
                     {coachingGroups.map((group) => (
                       <div
                         key={group.id}
-                        onClick={() => handleCoachingGroupSelect(group.id)}
-                        className="p-6 border-2 border-gray-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all duration-300 cursor-pointer"
+                        onClick={() => {
+                          handleCoachingGroupSelect(group.id);
+                          setActiveTab('my-entity');
+                        }}
+                        className={`p-6 border-2 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all duration-300 cursor-pointer ${
+                          selectedGroupId === group.id
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200'
+                        }`}
                       >
                         <div className="flex items-center justify-between mb-4">
                           <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-purple-500 rounded-xl flex items-center justify-center">

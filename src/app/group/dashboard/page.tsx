@@ -38,6 +38,7 @@ import RightSidebar from '@/components/dashboard/RightSidebar';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { getDashboardPathForUserType, isGroupAccountUserType } from '@/utils/dashboardRouting';
 
 export default function GroupDashboard() {
   const router = useRouter();
@@ -73,13 +74,13 @@ export default function GroupDashboard() {
   }, []);
 
   useEffect(() => {
-    if (user && user.userType !== 'GROUP_ADMIN') {
-      router.push('/my-page');
+    if (user && !isGroupAccountUserType(user.userType)) {
+      router.replace(getDashboardPathForUserType(user.userType));
     }
   }, [user, router]);
 
   useEffect(() => {
-    if (user && user.userType === 'GROUP_ADMIN') {
+    if (user && isGroupAccountUserType(user.userType)) {
       loadGroups();
     }
   }, [user]);

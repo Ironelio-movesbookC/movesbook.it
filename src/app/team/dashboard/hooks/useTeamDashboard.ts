@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { getDashboardPathForUserType, isTeamAccountUserType } from '@/utils/dashboardRouting';
 
 export function useTeamDashboard() {
   const router = useRouter();
@@ -26,14 +27,14 @@ export function useTeamDashboard() {
 
   // Redirect if not team manager
   useEffect(() => {
-    if (user && user.userType !== 'TEAM_MANAGER') {
-      router.push('/my-page');
+    if (user && !isTeamAccountUserType(user.userType)) {
+      router.replace(getDashboardPathForUserType(user.userType));
     }
   }, [user, router]);
 
   // Load teams
   useEffect(() => {
-    if (user && user.userType === 'TEAM_MANAGER') {
+    if (user && isTeamAccountUserType(user.userType)) {
       loadTeams();
     }
   }, [user]);

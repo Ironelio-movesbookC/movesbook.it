@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { getFormCreatedClubs, userHasClubProfile } from '@/lib/club/clubSidebarLabel';
+import { isGroupAccountUserType, isTeamAccountUserType } from '@/utils/dashboardRouting';
 
 interface User {
   userType: string;
@@ -155,9 +156,9 @@ export function useMyPageData(user: User | null) {
     if (user) {
       if (user.userType === 'CLUB_TRAINER' || user.userType === 'CLUB') {
         loadClubs();
-      } else if (user.userType === 'GROUP_ADMIN') {
+      } else if (isGroupAccountUserType(user.userType)) {
         loadGroups();
-      } else if (user.userType === 'TEAM_MANAGER') {
+      } else if (isTeamAccountUserType(user.userType)) {
         loadTeams();
       } else if (user.userType === 'COACH') {
         loadCoachingGroups();
