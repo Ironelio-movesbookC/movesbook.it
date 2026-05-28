@@ -20,6 +20,7 @@ import {
   Volume2,
   X
 } from 'lucide-react';
+import ClubSettingsTypologyTabs from '@/components/club/settings/ClubSettingsTypologyTabs';
 
 type TypologyRow = {
   id: string;
@@ -49,14 +50,6 @@ const DEFAULT_BOOKING_SETTINGS: BookingSettings = {
   selfBook: 'N',
   authorizeExpired: 'N'
 };
-
-const TABS = [
-  { label: 'Typologies', active: true },
-  { label: 'List prices', active: false },
-  { label: 'Timetable', active: false },
-  { label: 'RfId/Card readers', active: false },
-  { label: 'Overview', active: false }
-];
 
 const PAGE_SIZE_OPTIONS = [5, 10, 15, 20] as const;
 
@@ -169,6 +162,15 @@ export default function TypologySubscriptionPage() {
     }
 
     router.push(`/club/settings/typology_subscription/edit/${encodeURIComponent(row.id)}`);
+  };
+
+  const openTimetableForRow = (row: TypologyRow) => {
+    if (row.id.startsWith('local-')) {
+      window.alert('Save this typology to the database before managing its timetable.');
+      return;
+    }
+
+    router.push(`/club/settings/typology_subscription/timetable/${encodeURIComponent(row.id)}`);
   };
 
   const copySelected = () => {
@@ -302,23 +304,7 @@ export default function TypologySubscriptionPage() {
   return (
     <div className="p-4 lg:p-6 print:p-0">
       <section className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm print:border-0 print:shadow-none">
-        <div className="border-b border-gray-200 bg-gray-50">
-          <div className="flex flex-wrap items-end">
-            {TABS.map((tab) => (
-              <button
-                key={tab.label}
-                type="button"
-                className={`border-r border-gray-200 px-4 py-3 text-sm font-semibold transition ${
-                  tab.active
-                    ? 'bg-gray-900 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-white'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <ClubSettingsTypologyTabs timetableTypologyId={selectedId} />
 
         <div className="border-b border-gray-200 px-4 py-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -479,8 +465,28 @@ export default function TypologySubscriptionPage() {
                             className="h-4 w-4 rounded border-gray-300 accent-gray-900"
                           />
                         </td>
-                        <td className="px-3 py-3 text-center text-gray-400">
-                          <MoreHorizontal className="mx-auto h-4 w-4" />
+                        <td className="relative px-3 py-3 text-center text-gray-400">
+                          <details className="group relative inline-block" onClick={(event) => event.stopPropagation()}>
+                            <summary className="cursor-pointer list-none">
+                              <MoreHorizontal className="mx-auto h-4 w-4" />
+                            </summary>
+                            <div className="absolute right-0 z-20 mt-1 hidden min-w-[120px] rounded-md border border-gray-300 bg-white py-1 text-left shadow-lg group-open:block">
+                              <button
+                                type="button"
+                                className="block w-full px-3 py-2 text-left text-sm text-gray-400"
+                                disabled
+                              >
+                                List prices
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openTimetableForRow(row)}
+                                className="block w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-100"
+                              >
+                                Timetable
+                              </button>
+                            </div>
+                          </details>
                         </td>
                       </tr>
                     );
