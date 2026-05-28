@@ -10,11 +10,13 @@ import AdminClubSettingsListPricesTab from '@/components/admin/club-settings/tab
 import AdminClubSettingsTimetableTab from '@/components/admin/club-settings/tabs/AdminClubSettingsTimetableTab';
 import AdminClubSettingsRfidCardReadersTab from '@/components/admin/club-settings/tabs/AdminClubSettingsRfidCardReadersTab';
 import AdminClubSettingsOverviewTab from '@/components/admin/club-settings/tabs/AdminClubSettingsOverviewTab';
+import AdminClubSettingsNewTypology from '@/components/admin/club-settings/typologies/AdminClubSettingsNewTypology';
 
 export default function AdminClubsSettingsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<AdminClubSettingsTabKey>('typologies');
+  const [typologyMode, setTypologyMode] = useState<'list' | 'new'>('list');
 
   useEffect(() => {
     const adminData = localStorage.getItem('adminUser');
@@ -33,7 +35,12 @@ export default function AdminClubsSettingsPage() {
       <AdminClubSettingsTabs active={activeTab} onChange={setActiveTab} />
 
       <div className="px-3 sm:px-4 py-4">
-        {activeTab === 'typologies' && <AdminClubSettingsTypologiesTab />}
+        {activeTab === 'typologies' &&
+          (typologyMode === 'new' ? (
+            <AdminClubSettingsNewTypology onBack={() => setTypologyMode('list')} />
+          ) : (
+            <AdminClubSettingsTypologiesTab onAddNew={() => setTypologyMode('new')} />
+          ))}
         {activeTab === 'list_prices' && <AdminClubSettingsListPricesTab />}
         {activeTab === 'timetable' && <AdminClubSettingsTimetableTab />}
         {activeTab === 'rfid' && <AdminClubSettingsRfidCardReadersTab />}

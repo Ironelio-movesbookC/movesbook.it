@@ -19,7 +19,11 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-export default function AdminClubSettingsTypologiesTab() {
+export default function AdminClubSettingsTypologiesTab({
+  onAddNew,
+}: {
+  onAddNew: () => void;
+}) {
   // Placeholder: will be wired to API later.
   const [rows] = useState<TypologyRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -63,6 +67,7 @@ export default function AdminClubSettingsTypologiesTab() {
         <button
           type="button"
           className="px-4 py-2 text-sm font-semibold rounded border transition border-gray-300 bg-gray-100 text-gray-950 hover:bg-gray-200"
+          onClick={onAddNew}
         >
           Add new
         </button>
