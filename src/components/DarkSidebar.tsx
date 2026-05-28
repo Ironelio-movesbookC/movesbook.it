@@ -296,6 +296,8 @@ interface DarkSidebarProps {
   onClubAddSongsPlaylistsClick?: () => void;
   /** General settings → Identification devices (card readers list in dashboard) */
   onIdentificationDevicesClick?: () => void;
+  /** General settings → Access of outcome settings (dashboard panel) */
+  onAccessOutcomeSettingsClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
   /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
@@ -319,6 +321,7 @@ export default function DarkSidebar({
   onPostsClick,
   onClubAddSongsPlaylistsClick,
   onIdentificationDevicesClick,
+  onAccessOutcomeSettingsClick,
   activeTab = 'my-page',
   onTabChange,
   profileImageFromDb,
@@ -3084,7 +3087,11 @@ export default function DarkSidebar({
                                       label: 'Tables',
                                       path: '/club/settings/tables/areas',
                                     },
-                                    { Icon: Volume2, label: 'Access of outcome settings' },
+                                    {
+                                      Icon: Volume2,
+                                      label: 'Access of outcome settings',
+                                      panel: 'outcome-settings' as const,
+                                    },
                                     { Icon: Mic, label: 'Audio messages' },
                                     {
                                       Icon: Import,
@@ -3109,6 +3116,10 @@ export default function DarkSidebar({
                                       onClick={() => {
                                         if (panel === 'identification-devices') {
                                           onIdentificationDevicesClick?.();
+                                          return;
+                                        }
+                                        if (panel === 'outcome-settings') {
+                                          onAccessOutcomeSettingsClick?.();
                                           return;
                                         }
                                         if (path) {

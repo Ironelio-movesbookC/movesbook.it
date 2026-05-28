@@ -49,6 +49,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import ClubDashboardMyPageBanner from './components/ClubDashboardMyPageBanner';
 import ClubIdentificationDevicesPanel from './components/ClubIdentificationDevicesPanel';
+import ClubAccessOutcomeSettingsPanel from './components/ClubAccessOutcomeSettingsPanel';
 import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLegacyBanner';
 import ChangeBannerModal, { type BannerAlignment } from '@/components/athlete/ChangeBannerModal';
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
@@ -80,7 +81,9 @@ function ClubDashboardContent() {
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
   const [createClubModalKey, setCreateClubModalKey] = useState(0);
   const [createClubSaving, setCreateClubSaving] = useState(false);
-  const [clubMainPanel, setClubMainPanel] = useState<'default' | 'identification-devices'>('default');
+  const [clubMainPanel, setClubMainPanel] = useState<
+    'default' | 'identification-devices' | 'outcome-settings'
+  >('default');
 
   const formClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(clubs),
@@ -344,6 +347,13 @@ function ClubDashboardContent() {
                   setClubAddSongsOgpOpen(false);
                   setClubMainPanel('identification-devices');
                 }}
+                onAccessOutcomeSettingsClick={() => {
+                  if (!hasFormClub) return;
+                  setActiveTab('my-entity');
+                  setShowWorkoutSection(false);
+                  setClubAddSongsOgpOpen(false);
+                  setClubMainPanel('outcome-settings');
+                }}
                 onCreateClubClick={openCreateClubFlow}
               />
             </div>
@@ -353,6 +363,13 @@ function ClubDashboardContent() {
             {!clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'identification-devices' ? (
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
                 <ClubIdentificationDevicesPanel clubId={selectedClubId} />
+              </div>
+            ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'outcome-settings' ? (
+              <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
+                <ClubAccessOutcomeSettingsPanel
+                  clubId={selectedClubId}
+                  onBack={() => setClubMainPanel('default')}
+                />
               </div>
             ) : !clubAddSongsOgpOpen && !showWorkoutSection ? (
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
