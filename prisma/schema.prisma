@@ -67,8 +67,23 @@ model User {
   plannedActionTemplates  PlannedActionTemplate[]
   workoutDayPlannedActions WorkoutDayPlannedAction[]
   sportMachines           SportMachine[]
+  loginLogs               UserLoginLog[]
 
   @@map("users_new")
+}
+
+/// Login / logout audit rows for Movesbook users (admin "Logins about users").
+model UserLoginLog {
+  id        String    @id @default(cuid())
+  userId    String
+  loginAt   DateTime
+  logoutAt  DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, loginAt])
+  @@index([userId, logoutAt])
+  @@map("user_login_logs")
 }
 
 model MyDeskItem {
@@ -787,8 +802,23 @@ model SuperAdmin {
   lastLogin DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  loginLogs SuperAdminLoginLog[]
 
   @@map("super_admins")
+}
+
+/// Login / logout audit rows for super admins (admin "Logins about operators").
+model SuperAdminLoginLog {
+  id           String     @id @default(cuid())
+  superAdminId String
+  loginAt      DateTime
+  logoutAt     DateTime?
+  createdAt    DateTime   @default(now())
+  superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
+
+  @@index([superAdminId, loginAt])
+  @@index([superAdminId, logoutAt])
+  @@map("super_admin_login_logs")
 }
 
 model SuperAdminSettings {

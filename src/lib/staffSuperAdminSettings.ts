@@ -63,3 +63,24 @@ export function mergeBoolMap<T extends Record<string, boolean>>(
   }
   return out;
 }
+
+/** Merge super-admin form snapshot into `StaffAccount.otherInfos` JSON. */
+export function buildOtherInfosWithSuperAdminSnapshot(
+  existingOtherInfos: string | null | undefined,
+  snapshot: SuperAdminSnapshot,
+): string {
+  let bag: Record<string, unknown> = {};
+  const raw = String(existingOtherInfos ?? '').trim();
+  if (raw.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        bag = { ...(parsed as Record<string, unknown>) };
+      }
+    } catch {
+      /* ignore invalid JSON */
+    }
+  }
+  bag[SUPER_ADMIN_SNAPSHOT_KEY] = snapshot;
+  return JSON.stringify(bag);
+}

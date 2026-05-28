@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+export { closeOpenStaffLoginLog } from '@/lib/loginLogSession';
 
 /** Remove temporary alternate password after a one-access-only delegate session ends. */
 export async function clearStaffAlternatePassword(staffAccountId: string): Promise<void> {
@@ -9,19 +10,4 @@ export async function clearStaffAlternatePassword(staffAccountId: string): Promi
       alternatePasswordOneAccessOnly: false,
     },
   });
-}
-
-export async function closeOpenStaffLoginLog(staffAccountId: string): Promise<void> {
-  const now = new Date();
-  const open = await prisma.staffAccountLoginLog.findFirst({
-    where: { staffAccountId, logoutAt: null },
-    orderBy: { loginAt: 'desc' },
-    select: { id: true },
-  });
-  if (open) {
-    await prisma.staffAccountLoginLog.update({
-      where: { id: open.id },
-      data: { logoutAt: now },
-    });
-  }
 }

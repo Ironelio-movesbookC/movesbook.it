@@ -3,9 +3,9 @@ import AdminUserSearchClient from './AdminUserSearchClient';
 
 export const dynamic = 'force-dynamic';
 
-export default function Page() {
+export default function AdminUserSearchPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<div className="p-6 text-gray-500">Loading...</div>}>
       <AdminUserSearchClient />
     </Suspense>
   );

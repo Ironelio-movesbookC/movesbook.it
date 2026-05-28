@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
@@ -112,7 +112,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import {
   formatMyClubsSidebarLabel,
-  getFormCreatedClubs,
+  getFormCreatedClubsSortedByCreatedAt,
   isClubCreatedFromForm,
   userHasClubProfile,
 } from '@/lib/club/clubSidebarLabel';
@@ -339,7 +339,10 @@ export default function DarkSidebar({
   const [myDashboardOpen, setMyDashboardOpen] = useState(false);
   const [myClubsOpen, setMyClubsOpen] = useState(false);
 
-  const formCreatedClubs = getFormCreatedClubs(entities);
+  const formCreatedClubs = useMemo(
+    () => getFormCreatedClubsSortedByCreatedAt(entities),
+    [entities]
+  );
   const clubUserHasProfile =
     !isClubAccountUserType(userType) || userHasClubProfile(entities);
   const showMyClubTab = clubUserHasProfile;

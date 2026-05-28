@@ -21,6 +21,13 @@ export function useAuth() {
 
   const logout = useCallback(() => {
     if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      if (token) {
+        void fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => undefined);
+      }
       localStorage.removeItem('token');
       localStorage.removeItem('user');
     }

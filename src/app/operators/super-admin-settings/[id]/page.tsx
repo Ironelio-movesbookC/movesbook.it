@@ -256,6 +256,10 @@ export default function OperatorSuperAdminSettingsPage() {
           idCardCode: idCardCode || null,
           commissionPct: commissionPct || null,
           commissionAutoAssign: autoAssignCommission,
+          operatorPerms,
+          otherSettings,
+          otherPerms,
+          postPerms,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -263,11 +267,18 @@ export default function OperatorSuperAdminSettingsPage() {
 
       const u = data?.operator;
       if (u) {
+        const snap = parseSuperAdminSnapshotFromOtherInfos(u.otherInfos);
         setCountry(String(u.country ?? '').trim() || DEFAULT_COUNTRY);
         setLanguage(String(u.operatorLanguage ?? '').trim() || DEFAULT_LANGUAGE);
         setIdCardCode(String(u.idCardCode ?? ''));
         setCommissionPct(String(u.commissionPct ?? ''));
         setAutoAssignCommission(Boolean(u.commissionAutoAssign));
+        if (snap) {
+          setOperatorPerms(mergeBoolPairMatrix({ ...INITIAL_OPERATOR_PERMS }, snap.operatorPerms ?? null));
+          setOtherSettings(mergeBoolPairMatrix({ ...INITIAL_OTHER_SETTINGS }, snap.otherSettings ?? null));
+          setOtherPerms(mergeBoolMap({ ...INITIAL_OTHER_PERMS }, snap.otherPerms ?? null));
+          setPostPerms(mergeBoolMap({ ...INITIAL_POST_PERMS }, snap.postPerms ?? null));
+        }
       }
       setFormSuccess('Saved successfully.');
     } catch (e: unknown) {

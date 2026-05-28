@@ -42,6 +42,23 @@ export function getFormCreatedClubs<T extends { description?: string | null }>(
   return clubs.filter(isClubCreatedFromForm);
 }
 
+/** Oldest club first — new clubs appear below earlier ones in My clubs. */
+export function sortClubsByCreatedAtAsc<
+  T extends { createdAt?: string | Date | null },
+>(clubs: T[]): T[] {
+  return [...clubs].sort((a, b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return ta - tb;
+  });
+}
+
+export function getFormCreatedClubsSortedByCreatedAt<
+  T extends { description?: string | null; createdAt?: string | Date | null },
+>(clubs: T[]): T[] {
+  return sortClubsByCreatedAtAsc(getFormCreatedClubs(clubs));
+}
+
 /** Registered club admin who completed the create-club profile form. */
 export function userHasClubProfile(
   clubs: { description?: string | null }[]

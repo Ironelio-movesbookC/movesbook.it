@@ -130,3 +130,53 @@ export function prismaConnect(): Promise<void> {
   }
   return globalForPrisma.prismaConnectPromise;
 }
+
+function hasLoginLogDelegates(client: PrismaClient): boolean {
+  return (
+    typeof client.userLoginLog?.findMany === 'function' &&
+    typeof client.superAdminLoginLog?.findMany === 'function'
+  );
+}
+
+async function assignFreshPrismaClient(): Promise<void> {
+  await resetPrismaClient();
+  globalForPrisma.prisma = createPrismaClient();
+  globalForPrisma.prismaConnectPromise = undefined;
+}
+
+/**
+ * Dev hot-reload can cache a PrismaClient from before UserLoginLog existed.
+ * Reset and assign a new client so delegates exist on the global instance.
+ */
+export async function ensureLoginLogPrismaModels(): Promise<void> {
+  if (hasLoginLogDelegates(getClient())) {
+    await prismaConnect();
+    return;
+  }
+
+  await assignFreshPrismaClient();
+  if (hasLoginLogDelegates(getClient())) {
+    await prismaConnect();
+    return;
+  }
+
+  // Next.js dev may keep a stale @prisma/client module; dynamic import picks up the latest generate.
+  await resetPrismaClient();
+  const { PrismaClient: FreshPrismaClient } = await import('@prisma/client');
+  globalForPrisma.prisma = new FreshPrismaClient({
+    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  });
+  globalForPrisma.prismaConnectPromise = undefined;
+
+  if (!hasLoginLogDelegates(getClient())) {
+    throw new Error(
+      'Prisma client is missing login log models. Run `npx prisma generate` and restart `npm run dev`.',
+    );
+  }
+  await prismaConnect();
+}
+
+/** Use after {@link ensureLoginLogPrismaModels} when calling login-log delegates directly. */
+export function getPrismaClient(): PrismaClient {
+  return getClient();
+}

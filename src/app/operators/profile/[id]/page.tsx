@@ -3,7 +3,8 @@
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
-import { User, Globe } from 'lucide-react';
+import { User, Globe, ExternalLink } from 'lucide-react';
+import { normalizePersonalWebsiteUrl } from '@/lib/normalizePersonalWebsiteUrl';
 import { usePanelSession } from '@/hooks/usePanelSession';
 import { COUNTRIES, COUNTRIES_WITH_CODES } from '@/lib/news/countries';
 import { getRegionsForCountry } from '@/constants/countryRegions.constants';
@@ -13,6 +14,10 @@ import {
 } from '@/lib/staffProfileAccess';
 import { persistOperatorNavContext } from '@/lib/operatorSubNav';
 import type { StaffKind } from '@/lib/operatorNavTabs';
+import {
+  STAFF_PROFILE_ROLE_OPTIONS,
+  normalizeStaffRoleOption,
+} from '@/components/operators/OperatorFilterPopover';
 
 type OperatorProfileState = {
   username: string;
@@ -77,6 +82,46 @@ function flagEmojiFromCode(code: string): string {
   return String.fromCodePoint(first, second);
 }
 
+function SocialSiteField({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  const launchUrl = normalizePersonalWebsiteUrl(value);
+  return (
+    <>
+      <label className="text-sm text-gray-700 sm:text-right">{label}</label>
+      <div className="flex gap-2 min-w-0">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          className="min-w-0 flex-1 px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (launchUrl) window.open(launchUrl, '_blank', 'noopener,noreferrer');
+          }}
+          disabled={!launchUrl}
+          title={launchUrl ? 'Open in new tab' : 'Enter a valid URL to open'}
+          aria-label={`Open ${label}`}
+          className="shrink-0 px-2.5 py-2 border border-gray-400 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <ExternalLink className="w-4 h-4" />
+        </button>
+      </div>
+    </>
+  );
+}
+
 export default function OperatorProfilePage() {
   const params = useParams();
   const router = useRouter();
@@ -133,7 +178,10 @@ export default function OperatorProfilePage() {
           name: String(o.name ?? ''),
           surname: String(o.surname ?? ''),
           role: isCoAdmin ? 'Co-Admin' : 'Operator',
-          roleOption: roleLabelRaw || (isCoAdmin ? 'Co-Admin' : 'Movesbook staff'),
+          roleOption: normalizeStaffRoleOption(
+            roleLabelRaw,
+            isCoAdmin ? 'CO_ADMIN' : 'OPERATOR',
+          ),
           country,
           countryCode: code,
           regionsManaged: Boolean(region),
@@ -441,9 +489,11 @@ export default function OperatorProfilePage() {
               disabled={roleFieldDisabled}
               className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             >
-              <option>Movesbook staff</option>
-              <option>Operator</option>
-              <option>Co-Admin</option>
+              {STAFF_PROFILE_ROLE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
             </select>
             <label className="text-sm text-gray-700 sm:text-right">Regions managed</label>
             <div className="flex items-center gap-2 flex-wrap">
@@ -537,55 +587,41 @@ export default function OperatorProfilePage() {
               />
             </div>
             <div className="sm:col-span-2 font-bold text-gray-800 mt-2">Social Sites</div>
-            <label className="text-sm text-gray-700 sm:text-right">Facebook</label>
-            <input
-              type="text"
+            <SocialSiteField
+              label="Facebook"
               value={profile.facebook}
-              onChange={(e) => setProfile({ ...profile, facebook: e.target.value })}
+              onChange={(facebook) => setProfile({ ...profile, facebook })}
               disabled={fieldDisabled}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
-            <label className="text-sm text-gray-700 sm:text-right">Twitter</label>
-            <input
-              type="text"
+            <SocialSiteField
+              label="Twitter"
               value={profile.twitter}
-              onChange={(e) => setProfile({ ...profile, twitter: e.target.value })}
-              placeholder=""
+              onChange={(twitter) => setProfile({ ...profile, twitter })}
               disabled={fieldDisabled}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
-            <label className="text-sm text-gray-700 sm:text-right">My Website</label>
-            <input
-              type="text"
+            <SocialSiteField
+              label="My Website"
               value={profile.website}
-              onChange={(e) => setProfile({ ...profile, website: e.target.value })}
+              onChange={(website) => setProfile({ ...profile, website })}
               disabled={fieldDisabled}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
-            <label className="text-sm text-gray-700 sm:text-right">My Blogsite</label>
-            <input
-              type="text"
+            <SocialSiteField
+              label="My Blogsite"
               value={profile.blogsite}
-              onChange={(e) => setProfile({ ...profile, blogsite: e.target.value })}
-              placeholder=""
+              onChange={(blogsite) => setProfile({ ...profile, blogsite })}
               disabled={fieldDisabled}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
-            <label className="text-sm text-gray-700 sm:text-right">Other Site</label>
-            <input
-              type="text"
+            <SocialSiteField
+              label="Other Site"
               value={profile.otherSite}
-              onChange={(e) => setProfile({ ...profile, otherSite: e.target.value })}
+              onChange={(otherSite) => setProfile({ ...profile, otherSite })}
               disabled={fieldDisabled}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
-            <label className="text-sm text-gray-700 sm:text-right">Location</label>
-            <input
-              type="text"
+            <SocialSiteField
+              label="Location"
               value={profile.location}
-              onChange={(e) => setProfile({ ...profile, location: e.target.value })}
+              onChange={(location) => setProfile({ ...profile, location })}
               disabled={fieldDisabled}
-              className="px-3 py-2 border border-gray-400 rounded bg-white text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
           </div>
         </section>

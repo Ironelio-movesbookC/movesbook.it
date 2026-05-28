@@ -15,6 +15,7 @@ type StaffItem = {
   email: string;
   imageUrl: string | null;
   lastLogin: string;
+  assignmentDateDisplay?: string;
 };
 
 const isDataUrl = (src?: string | null) =>
@@ -166,7 +167,7 @@ export default function AssignCoAdminPage() {
           <section className="bg-white rounded border border-gray-300 p-4 space-y-3">
             <h2 className="font-semibold text-gray-800">Assigned co-admin</h2>
             <div className="flex flex-wrap items-center gap-4 justify-between">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
                 {renderAvatar(assigned)}
                 <div>
                   <p className="font-semibold text-gray-900">{assigned.name}</p>
@@ -174,7 +175,11 @@ export default function AssignCoAdminPage() {
                   <p className="text-sm text-gray-500">{assigned.country}</p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <p className="text-sm text-gray-700 shrink-0 px-2 min-w-[140px]">
+                <span className="text-gray-500">Date assignment: </span>
+                <span className="font-medium">{assigned.assignmentDateDisplay ?? '—'}</span>
+              </p>
+              <div className="flex gap-2 flex-shrink-0">
                 <Link
                   href={`/operators/profile/${assigned.id}`}
                   onClick={() => persistOperatorNavContext('CO_ADMIN')}

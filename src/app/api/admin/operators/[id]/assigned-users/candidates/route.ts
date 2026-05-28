@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireStaffSelfOrAdminPanel } from '@/lib/panelAuth';
+import {
+  canAssignMovesbookUsersToStaffAccount,
+  isAdminPanelRole,
+  requireStaffSelfAdminOrLinkedCoAdminPanel,
+} from '@/lib/panelAuth';
 import { searchAssignableMovesbookUsers } from '@/lib/staffAssignedCustomers';
 
 export const dynamic = 'force-dynamic';
@@ -10,21 +14,31 @@ export async function GET(
   { params }: { params: { id: string } },
 ) {
   const staffAccountId = params.id;
-  const auth = await requireStaffSelfOrAdminPanel(request, staffAccountId);
+  const auth = await requireStaffSelfAdminOrLinkedCoAdminPanel(request, staffAccountId);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
   const staff = await prisma.staffAccount.findFirst({
     where: { id: staffAccountId, kind: { in: ['OPERATOR', 'CO_ADMIN'] } },
-    select: { id: true },
+    select: { id: true, kind: true },
   });
   if (!staff) {
     return NextResponse.json({ error: 'Staff profile not found' }, { status: 404 });
   }
 
-  const q = request.nextUrl.searchParams.get('q')?.trim() ?? '';
-  const candidates = await searchAssignableMovesbookUsers(staffAccountId, q, 80);
+  const targetKind = staff.kind === 'CO_ADMIN' ? 'CO_ADMIN' : 'OPERATOR';
+  if (!(await canAssignMovesbookUsersToStaffAccount(auth, staffAccountId, targetKind))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
-  return NextResponse.json({ candidates });
+  const q = request.nextUrl.searchParams.get('q')?.trim() ?? '';
+  const candidates = await searchAssignableMovesbookUsers(staffAccountId, q, 80, {
+    showBlockedForAdmin: isAdminPanelRole(auth),
+  });
+
+  return NextResponse.json({
+    candidates,
+    showBlockedAssignments: isAdminPanelRole(auth),
+  });
 }

@@ -24,6 +24,17 @@ export type StaffListRow = {
   lastLogin: Date | null;
 };
 
+export function formatStaffLinkAssignmentDate(date: Date | null | undefined): string {
+  if (!date) return '—';
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export function mapStaffListRow(row: StaffListRow) {
   const fullName = `${row.name} ${row.surname}`.trim() || row.username;
   return {
@@ -41,6 +52,18 @@ export function mapStaffListRow(row: StaffListRow) {
           day: 'numeric',
         })
       : '—',
+  };
+}
+
+/** Staff row plus operator↔co-admin link assignment timestamp. */
+export function mapStaffLinkAssignmentRow(
+  staff: StaffListRow,
+  link: { createdAt: Date },
+) {
+  return {
+    ...mapStaffListRow(staff),
+    assignmentDate: link.createdAt.toISOString(),
+    assignmentDateDisplay: formatStaffLinkAssignmentDate(link.createdAt),
   };
 }
 

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdminPanel, requireStaffSelfOrAdminPanel } from '@/lib/panelAuth';
+import {
+  requireAdminPanel,
+  requireStaffSelfAdminOrLinkedCoAdminPanel,
+  requireStaffSelfOrAdminPanel,
+} from '@/lib/panelAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +26,7 @@ function normalizeUsername(value: unknown): string {
 
 export async function GET(request: NextRequest) {
   const id = getIdFromRequest(request);
-  const auth = await requireStaffSelfOrAdminPanel(request, id);
+  const auth = await requireStaffSelfAdminOrLinkedCoAdminPanel(request, id);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

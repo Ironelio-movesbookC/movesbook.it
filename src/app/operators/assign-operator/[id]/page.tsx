@@ -6,6 +6,8 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { Eye, User, UserMinus, UserPlus } from 'lucide-react';
 import { persistOperatorNavContext } from '@/lib/operatorSubNav';
+import { fetchCoAdminLinkedOperatorIds } from '@/lib/staffCoAdminClientAccess';
+import { usePanelSession } from '@/hooks/usePanelSession';
 
 type StaffItem = {
   id: string;
@@ -15,6 +17,7 @@ type StaffItem = {
   email: string;
   imageUrl: string | null;
   lastLogin: string;
+  assignmentDateDisplay?: string;
 };
 
 const isDataUrl = (src?: string | null) =>
@@ -23,8 +26,10 @@ const isDataUrl = (src?: string | null) =>
 export default function AssignOperatorPage() {
   const params = useParams();
   const coAdminId = params?.id as string;
+  const { canManageStaff, hydrated } = usePanelSession();
 
   const [loading, setLoading] = useState(true);
+  const [canManageLinks, setCanManageLinks] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -52,6 +57,18 @@ export default function AssignOperatorPage() {
       setCoAdmin(data.coAdmin ?? null);
       setAssigned(Array.isArray(data.assignedOperators) ? data.assignedOperators : []);
       setCandidates(Array.isArray(data.candidates) ? data.candidates : []);
+      setCanManageLinks(
+        typeof data.canManageLinks === 'boolean' ? data.canManageLinks : canManageStaff,
+      );
+      const assignedList = Array.isArray(data.assignedOperators) ? data.assignedOperators : [];
+      try {
+        sessionStorage.setItem(
+          'coAdminLinkedOperatorIds',
+          JSON.stringify(assignedList.map((o: { id: string }) => o.id)),
+        );
+      } catch {
+        /* ignore */
+      }
       setSelectedIds(new Set());
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load');
@@ -176,6 +193,13 @@ export default function AssignOperatorPage() {
           </div>
         )}
 
+        {!loading && !canManageLinks && assigned.length > 0 && (
+          <p className="text-sm text-gray-600 bg-amber-50 border border-amber-200 rounded px-4 py-3">
+            Operators listed below were assigned to you by Super Admin. Use each operator&apos;s
+            profile → My Customers to assign Movesbook users.
+          </p>
+        )}
+
         {!loading && assigned.length > 0 && (
           <section className="bg-white rounded border border-gray-300 overflow-hidden">
             <div className="px-4 py-3 bg-gray-200 border-b border-gray-300 font-semibold text-gray-800">
@@ -187,7 +211,7 @@ export default function AssignOperatorPage() {
                   key={row.id}
                   className="flex flex-wrap items-center gap-3 px-4 py-3 justify-between"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     {renderAvatar(row)}
                     <div className="min-w-0">
                       <p className="font-medium text-gray-900">{row.name}</p>
@@ -196,6 +220,10 @@ export default function AssignOperatorPage() {
                       </p>
                     </div>
                   </div>
+                  <p className="text-sm text-gray-700 shrink-0 px-2 min-w-[140px] text-center sm:text-left">
+                    <span className="text-gray-500 block sm:inline">Date assignment: </span>
+                    <span className="font-medium">{row.assignmentDateDisplay ?? '—'}</span>
+                  </p>
                   <div className="flex gap-2 flex-shrink-0">
                     <Link
                       href={`/operators/profile/${row.id}`}
@@ -204,14 +232,23 @@ export default function AssignOperatorPage() {
                     >
                       <Eye className="w-4 h-4" /> Profile
                     </Link>
-                    <button
-                      type="button"
-                      onClick={() => void handleRemove(row.id)}
-                      disabled={submitting}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm rounded"
+                    <Link
+                      href={`/operators/myCustomers/${row.id}`}
+                      onClick={() => persistOperatorNavContext('OPERATOR', { kind: 'myCustomers' })}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#005c99] hover:bg-[#004d80] text-white text-sm rounded"
                     >
-                      <UserMinus className="w-4 h-4" /> Remove
-                    </button>
+                      My Customers
+                    </Link>
+                    {canManageLinks ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleRemove(row.id)}
+                        disabled={submitting}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm rounded"
+                      >
+                        <UserMinus className="w-4 h-4" /> Remove
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -219,7 +256,7 @@ export default function AssignOperatorPage() {
           </section>
         )}
 
-        {!loading && (
+        {!loading && hydrated && canManageLinks && (
           <section className="bg-white rounded border border-gray-300 overflow-hidden">
             <div className="px-4 py-3 bg-gray-200 border-b border-gray-300 font-semibold text-gray-800">
               Select operators to assign

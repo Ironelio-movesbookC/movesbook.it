@@ -5,6 +5,8 @@ import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { User, Eye, Settings, Trash2, Link2, UserPlus, X, Search } from 'lucide-react';
 import { persistOperatorNavContext } from '@/lib/operatorSubNav';
+import { usePanelSession } from '@/hooks/usePanelSession';
+import { canAssignMovesbookUsersToStaff } from '@/lib/staffProfileAccess';
 
 const PAGE_SIZE = 10;
 
@@ -17,6 +19,8 @@ type CustomerRow = {
   language: string;
   lastLogin: string;
   imageUrl?: string | null;
+  userTypeLabel: string;
+  assignmentDateDisplay: string;
   source: 'direct' | 'operator';
   viaOperatorName: string;
   canRemove: boolean;
@@ -30,6 +34,14 @@ type CandidateUser = {
   language: string;
   lastLoginDisplay: string;
   imageUrl: string | null;
+  assignBlocked?: boolean;
+  existingAssignment?: {
+    assignmentId: string;
+    staffAccountId: string;
+    staffName: string;
+    staffKind: 'OPERATOR' | 'CO_ADMIN';
+    message: string;
+  } | null;
 };
 
 type LinkedCoAdmin = {
@@ -45,10 +57,14 @@ export default function MyCustomersPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
+  const { session, hydrated, canManageStaff } = usePanelSession();
 
   const [staffName, setStaffName] = useState('');
-  const [roleLabel, setRoleLabel] = useState('Operator');
+  const [staffKind, setStaffKind] = useState<'OPERATOR' | 'CO_ADMIN'>('OPERATOR');
   const [isCoAdmin, setIsCoAdmin] = useState(false);
+  const [roleLabel, setRoleLabel] = useState('Operator');
+  const [canAssignUsers, setCanAssignUsers] = useState(false);
+  const [linkedOperatorIds, setLinkedOperatorIds] = useState<string[]>([]);
   const [linkedCoAdmin, setLinkedCoAdmin] = useState<LinkedCoAdmin | null>(null);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -62,6 +78,7 @@ export default function MyCustomersPage() {
   const [candidates, setCandidates] = useState<CandidateUser[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [removingAssignmentId, setRemovingAssignmentId] = useState<string | null>(null);
 
   const loadCustomers = useCallback(async () => {
     if (!id) return;
@@ -82,11 +99,22 @@ export default function MyCustomersPage() {
 
       setStaffName(String(data.staffName ?? ''));
       const kind = String(data.staffKind ?? 'OPERATOR').toUpperCase();
-      const coAdminView = kind === 'CO_ADMIN';
+      const viewedKind: 'OPERATOR' | 'CO_ADMIN' = kind === 'CO_ADMIN' ? 'CO_ADMIN' : 'OPERATOR';
+      const coAdminView = viewedKind === 'CO_ADMIN';
+      setStaffKind(viewedKind);
       setIsCoAdmin(coAdminView);
       setRoleLabel(coAdminView ? 'Co-Admin' : 'Operator');
+      const linkedIds = Array.isArray(data.linkedOperatorIds)
+        ? data.linkedOperatorIds.map((x: unknown) => String(x))
+        : [];
+      setLinkedOperatorIds(linkedIds);
+      setCanAssignUsers(
+        typeof data.canAssignUsers === 'boolean'
+          ? data.canAssignUsers
+          : canAssignMovesbookUsersToStaff(session, id, viewedKind, linkedIds),
+      );
       setLinkedCoAdmin(data.linkedCoAdmin ?? null);
-      persistOperatorNavContext(coAdminView ? 'CO_ADMIN' : 'OPERATOR', { kind: 'myCustomers' });
+      persistOperatorNavContext(viewedKind, { kind: 'myCustomers' });
 
       const users = Array.isArray(data?.users) ? data.users : [];
       setCustomers(
@@ -100,6 +128,8 @@ export default function MyCustomersPage() {
             language: string;
             lastLoginDisplay: string;
             imageUrl?: string | null;
+            userTypeLabel?: string;
+            assignmentDateDisplay?: string;
             source: 'direct' | 'operator';
             viaOperatorName: string;
             canRemove: boolean;
@@ -112,6 +142,8 @@ export default function MyCustomersPage() {
             language: u.language || '—',
             lastLogin: u.lastLoginDisplay || '—',
             imageUrl: u.imageUrl,
+            userTypeLabel: u.userTypeLabel || '—',
+            assignmentDateDisplay: u.assignmentDateDisplay || '—',
             source: u.source,
             viaOperatorName: u.viaOperatorName || '—',
             canRemove: Boolean(u.canRemove),
@@ -123,7 +155,7 @@ export default function MyCustomersPage() {
       setListError(e instanceof Error ? e.message : 'Failed to load');
       setCustomers([]);
     }
-  }, [id]);
+  }, [id, session]);
 
   useEffect(() => {
     setLoading(true);
@@ -189,13 +221,50 @@ export default function MyCustomersPage() {
     router.push(`/subscriptionuserlists/historystatus/${row.assignmentId}`);
   };
 
-  const toggleUser = (userId: string) => {
+  const toggleUser = (user: CandidateUser) => {
+    if (user.assignBlocked) return;
     setSelectedUserIds((prev) => {
       const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
+      if (next.has(user.id)) next.delete(user.id);
+      else next.add(user.id);
       return next;
     });
+  };
+
+  const handleRemoveConflictAssignment = async (candidate: CandidateUser) => {
+    const conflict = candidate.existingAssignment;
+    if (!conflict || !canManageStaff) return;
+    if (!window.confirm(`Remove assignment from ${conflict.staffName}?`)) return;
+
+    setRemovingAssignmentId(conflict.assignmentId);
+    setFormError('');
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        setFormError('Admin session not found.');
+        return;
+      }
+      const res = await fetch(
+        `/api/admin/operators/${id}/assigned-users/${conflict.assignmentId}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to remove assignment');
+
+      setSelectedUserIds((prev) => {
+        const next = new Set(prev);
+        next.delete(candidate.id);
+        return next;
+      });
+      await loadCandidates(searchQuery);
+    } catch (e: unknown) {
+      setFormError(e instanceof Error ? e.message : 'Failed to remove assignment');
+    } finally {
+      setRemovingAssignmentId(null);
+    }
   };
 
   const openModal = () => {
@@ -273,6 +342,11 @@ export default function MyCustomersPage() {
     ? 'Users assigned to co-admin'
     : 'Users assigned to operator';
 
+  const showAssignButton =
+    hydrated &&
+    (canAssignUsers ||
+      canAssignMovesbookUsersToStaff(session, id, staffKind, linkedOperatorIds));
+
   return (
     <div className="min-h-full bg-gray-100">
       <div className="flex items-center gap-3 px-4 py-3 bg-gray-200 border-b border-gray-300">
@@ -294,14 +368,16 @@ export default function MyCustomersPage() {
                 <Link2 className="w-5 h-5 text-amber-700 flex-shrink-0" />
                 <span>{listTitle}</span>
               </div>
-              <button
-                type="button"
-                onClick={openModal}
-                className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-red-600 text-red-600 rounded font-medium hover:bg-red-50 transition"
-              >
-                <UserPlus className="w-5 h-5 flex-shrink-0" />
-                Assign a new user
-              </button>
+              {showAssignButton ? (
+                <button
+                  type="button"
+                  onClick={openModal}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-red-600 text-red-600 rounded font-medium hover:bg-red-50 transition"
+                >
+                  <UserPlus className="w-5 h-5 flex-shrink-0" />
+                  Assign a new user
+                </button>
+              ) : null}
               {!isCoAdmin && linkedCoAdmin ? (
                 <span className="text-sm text-gray-700">
                   …and assigned also to{' '}
@@ -313,6 +389,10 @@ export default function MyCustomersPage() {
               <p className="text-sm text-gray-600">
                 Direct assignments show &quot;Direct association&quot;. Users assigned to your
                 operators appear with the operator name in the Via operator column.
+              </p>
+            ) : showAssignButton ? (
+              <p className="text-sm text-gray-600">
+                Assign Movesbook users directly to this operator account.
               </p>
             ) : null}
           </div>
@@ -355,6 +435,8 @@ export default function MyCustomersPage() {
                 <th className="px-4 py-3 font-semibold text-sm w-12">Image</th>
                 <th className="px-4 py-3 font-semibold text-sm">UserName</th>
                 <th className="px-4 py-3 font-semibold text-sm">Name</th>
+                <th className="px-4 py-3 font-semibold text-sm">Type of user</th>
+                <th className="px-4 py-3 font-semibold text-sm">Date assignment</th>
                 {isCoAdmin ? (
                   <th className="px-4 py-3 font-semibold text-sm">Via operator</th>
                 ) : null}
@@ -367,15 +449,16 @@ export default function MyCustomersPage() {
             <tbody className="divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={isCoAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={isCoAdmin ? 10 : 9} className="px-4 py-8 text-center text-gray-500">
                     Loading…
                   </td>
                 </tr>
               ) : pageRows.length === 0 ? (
                 <tr>
-                  <td colSpan={isCoAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-500">
-                    No users assigned yet. Use &quot;Assign a new user&quot; to select Movesbook
-                    users.
+                  <td colSpan={isCoAdmin ? 10 : 9} className="px-4 py-8 text-center text-gray-500">
+                    {showAssignButton
+                      ? 'No users assigned yet. Use "Assign a new user" to select Movesbook users.'
+                      : 'No users assigned yet.'}
                   </td>
                 </tr>
               ) : (
@@ -415,6 +498,10 @@ export default function MyCustomersPage() {
                       </button>
                     </td>
                     <td className="px-4 py-3 text-gray-800">{row.name}</td>
+                    <td className="px-4 py-3 text-gray-700 text-sm">{row.userTypeLabel}</td>
+                    <td className="px-4 py-3 text-gray-700 text-sm whitespace-nowrap">
+                      {row.assignmentDateDisplay}
+                    </td>
                     {isCoAdmin ? (
                       <td className="px-4 py-3 text-gray-700 text-sm">{row.viaOperatorName}</td>
                     ) : null}
@@ -487,7 +574,8 @@ export default function MyCustomersPage() {
                 <p className="mt-2 text-sm text-red-600">{formError}</p>
               ) : (
                 <p className="mt-2 text-sm text-gray-600">
-                  Select one or more Movesbook users to assign directly to this {roleLabel.toLowerCase()}.
+                  Select one or more Movesbook users to assign directly to this{' '}
+                  {isCoAdmin ? 'co-admin' : 'operator'}.
                 </p>
               )}
             </div>
@@ -498,41 +586,67 @@ export default function MyCustomersPage() {
                 <p className="p-4 text-sm text-gray-500">No users found.</p>
               ) : (
                 candidates.map((u) => (
-                  <label
+                  <div
                     key={u.id}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer"
+                    className={`flex items-center gap-3 px-4 py-3 ${
+                      u.assignBlocked ? 'bg-red-50/40' : 'hover:bg-gray-50'
+                    }`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={selectedUserIds.has(u.id)}
-                      onChange={() => toggleUser(u.id)}
-                      className="rounded border-gray-400"
-                    />
-                    <div className="w-9 h-9 rounded bg-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
-                      {u.imageUrl ? (
-                        isDataUrl(u.imageUrl) ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={u.imageUrl} alt="" className="w-full h-full object-cover" />
+                    <label
+                      className={`flex items-center gap-3 flex-1 min-w-0 ${
+                        u.assignBlocked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedUserIds.has(u.id)}
+                        onChange={() => toggleUser(u)}
+                        disabled={Boolean(u.assignBlocked)}
+                        className="rounded border-gray-400 disabled:cursor-not-allowed"
+                      />
+                      <div className="w-9 h-9 rounded bg-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {u.imageUrl ? (
+                          isDataUrl(u.imageUrl) ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={u.imageUrl} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <Image
+                              src={u.imageUrl}
+                              alt=""
+                              width={36}
+                              height={36}
+                              className="object-cover w-full h-full"
+                            />
+                          )
                         ) : (
-                          <Image
-                            src={u.imageUrl}
-                            alt=""
-                            width={36}
-                            height={36}
-                            className="object-cover w-full h-full"
-                          />
-                        )
-                      ) : (
-                        <User className="w-4 h-4 text-gray-500" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900">{u.name}</p>
-                      <p className="text-sm text-gray-600">
-                        {u.username} · {u.country || '—'}
-                      </p>
-                    </div>
-                  </label>
+                          <User className="w-4 h-4 text-gray-500" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900">{u.name}</p>
+                        <p className="text-sm text-gray-600">
+                          {u.username} · {u.country || '—'}
+                        </p>
+                      </div>
+                    </label>
+                    {u.assignBlocked && u.existingAssignment && canManageStaff ? (
+                      <div className="flex flex-col items-end gap-1 shrink-0 max-w-[240px] text-right">
+                        <p className="text-xs text-red-600 leading-snug">
+                          {u.existingAssignment.message}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => void handleRemoveConflictAssignment(u)}
+                          disabled={removingAssignmentId === u.existingAssignment.assignmentId}
+                          className="text-sm font-medium text-red-600 hover:text-red-700 underline disabled:opacity-50"
+                        >
+                          {removingAssignmentId === u.existingAssignment.assignmentId
+                            ? 'Removing…'
+                            : 'Remove'}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 ))
               )}
             </div>

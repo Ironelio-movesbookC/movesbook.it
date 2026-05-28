@@ -395,10 +395,17 @@ export async function POST(request: NextRequest) {
       
       if (isPasswordValid) {
         // Update last login
+        const now = new Date();
         await prisma.superAdmin.update({
           where: { id: superAdmin.id },
-          data: { lastLogin: new Date() }
+          data: { lastLogin: now },
         });
+        try {
+          const { recordSuperAdminLoginLog } = await import('@/lib/loginLogSession');
+          await recordSuperAdminLoginLog(superAdmin.id);
+        } catch {
+          /* login log optional */
+        }
 
         // Generate admin token
         const token = generateToken(
@@ -455,9 +462,8 @@ export async function POST(request: NextRequest) {
           data: { lastLogin: now },
         });
         try {
-          await prisma.staffAccountLoginLog.create({
-            data: { staffAccountId: staffAccount.id, loginAt: now },
-          });
+          const { recordStaffLoginLog } = await import('@/lib/loginLogSession');
+          await recordStaffLoginLog(staffAccount.id);
         } catch {
           /* login log optional */
         }
