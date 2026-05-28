@@ -231,6 +231,7 @@ async function getReaderTables(): Promise<{
 }> {
   const legacyReader = await findExistingTable(READER_TABLE_CANDIDATES);
   if (legacyReader) {
+    await ensureReaderTableColumns(legacyReader);
     return {
       readerTable: legacyReader,
       typeTable: await findExistingTable(READER_TYPE_TABLE_CANDIDATES),
@@ -238,6 +239,7 @@ async function getReaderTables(): Promise<{
     };
   }
   const local = await ensureLocalCardReaderTables();
+  await ensureReaderTableColumns(local.readerTable);
   return {
     readerTable: local.readerTable,
     typeTable: local.typeTable,
@@ -355,20 +357,192 @@ async function fetchReaders(userIds: string[], clubId: string | null): Promise<C
   });
 }
 
+async function getTableColumns(tableName: string): Promise<Set<string>> {
+  const rows = await prisma.$queryRawUnsafe<{ COLUMN_NAME: string }[]>(
+    `SELECT COLUMN_NAME
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?`,
+    tableName
+  );
+  return new Set(rows.map((row) => row.COLUMN_NAME));
+}
+
+/** Older local dev tables may lack columns present in CakePHP / newer schema. */
+async function ensureReaderTableColumns(readerTable: string): Promise<void> {
+  const columns = await getTableColumns(readerTable);
+  const additions: string[] = [];
+  if (!columns.has('iplocal')) {
+    additions.push('ADD COLUMN `iplocal` VARCHAR(255) NULL');
+  }
+  if (!columns.has('id_cards')) {
+    additions.push('ADD COLUMN `id_cards` VARCHAR(50) NULL');
+  }
+  if (!columns.has('num_order')) {
+    additions.push('ADD COLUMN `num_order` INT NOT NULL DEFAULT 0');
+  }
+  if (!columns.has('description')) {
+    additions.push('ADD COLUMN `description` VARCHAR(255) NOT NULL DEFAULT \'\'');
+  }
+  for (const clause of additions) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE \`${readerTable}\` ${clause}`);
+  }
+}
+
+async function fetchReaderMeta(): Promise<{
+  readerTypes: { id: string; name: string }[];
+  controlModes: { id: string; name: string }[];
+}> {
+  const { typeTable, modeTable } = await getReaderTables();
+  const readerTypes: { id: string; name: string }[] = [];
+  const controlModes: { id: string; name: string }[] = [];
+
+  if (typeTable) {
+    const rows = await prisma.$queryRawUnsafe<{ id: number | string; name: string }[]>(
+      `SELECT id, name FROM \`${typeTable}\` ORDER BY id ASC`
+    );
+    for (const row of rows) {
+      readerTypes.push({ id: String(row.id), name: String(row.name) });
+    }
+  }
+
+  if (modeTable) {
+    const rows = await prisma.$queryRawUnsafe<{ id: number | string; name: string }[]>(
+      `SELECT id, name FROM \`${modeTable}\` ORDER BY id ASC`
+    );
+    for (const row of rows) {
+      controlModes.push({ id: String(row.id), name: String(row.name) });
+    }
+  }
+
+  return { readerTypes, controlModes };
+}
+
+function defaultReaderPort(readerTypeId: string): string {
+  return readerTypeId === '3' ? 'COM1' : 'USB';
+}
+
+function linkedIdCardsForType(typeName: string, typeId: string): string {
+  const key = typeName.toLowerCase().replace(/\s+/g, '');
+  if (key.includes('magnetic') || typeId === '1') return 'MAGNETIC';
+  if (key.includes('qr')) return 'QR CODE';
+  if (key.includes('smart')) return 'SMART';
+  return 'RFID';
+}
+
+async function nextReaderNumber(readerTable: string, userIds: string[]): Promise<number> {
+  const userPlaceholders = userIds.map(() => '?').join(',');
+  const rows = await prisma.$queryRawUnsafe<{ maxNum: number | null }[]>(
+    `SELECT MAX(reader_number) AS maxNum FROM \`${readerTable}\` WHERE user_id IN (${userPlaceholders})`,
+    ...userIds
+  );
+  return Number(rows[0]?.maxNum ?? 0) + 1;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const context = await getAuthorizedContext(request);
     if ('error' in context) return context.error;
 
     const items = await fetchReaders(context.userIds, context.club?.id ?? null);
+    const meta = await fetchReaderMeta();
 
     return NextResponse.json({
       club: context.club,
       items,
+      readerTypes: meta.readerTypes,
+      controlModes: meta.controlModes,
       source: 'database',
     });
   } catch (error) {
     console.error('GET /api/club/settings/card-readers:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const context = await getAuthorizedContext(request);
+    if ('error' in context) return context.error;
+
+    const body = await request.json();
+    const readerTypeId = text(body.readerTypeId);
+    const controlModeId = text(body.controlModeId);
+    const description = text(body.description);
+    const numOrder = text(body.numOrder);
+    const ipLocal = text(body.ipLocal);
+    const ip = text(body.ip);
+    const enabled = body.enabled !== false && body.enabled !== 'N';
+
+    const fieldErrors: Record<string, string> = {};
+    if (!readerTypeId) fieldErrors.readerTypeId = 'Please select reader type.';
+    if (!controlModeId) fieldErrors.controlModeId = 'Please select reader mode.';
+    if (Object.keys(fieldErrors).length > 0) {
+      return NextResponse.json({ fieldErrors }, { status: 400 });
+    }
+
+    const { readerTable, typeTable } = await getReaderTables();
+    const columns = await getTableColumns(readerTable);
+
+    let typeName = '';
+    if (typeTable) {
+      const typeRows = await prisma.$queryRawUnsafe<{ name: string }[]>(
+        `SELECT name FROM \`${typeTable}\` WHERE id = ? LIMIT 1`,
+        readerTypeId
+      );
+      typeName = text(typeRows[0]?.name);
+    }
+
+    const readerNumber = await nextReaderNumber(readerTable, context.userIds);
+    const readerName = `reader-${readerNumber}`;
+    const readerPort = defaultReaderPort(readerTypeId);
+    const idCards = linkedIdCardsForType(typeName, readerTypeId);
+    const clubId = context.club?.id ?? null;
+    const primaryUserId = context.userIds[0];
+
+    const baseFields: Record<string, unknown> = {
+      user_id: primaryUserId,
+      club_id: clubId,
+      reader_number: readerNumber,
+      reader_name: readerName,
+      reader_type_id: Number(readerTypeId),
+      reader_port: readerPort,
+      ip,
+      iplocal: ipLocal || null,
+      control_mode_id: Number(controlModeId),
+      enable: enabled ? 'Y' : 'N',
+      activity_list: '',
+      service_list: '',
+      description,
+    };
+
+    if (columns.has('id_cards')) baseFields.id_cards = idCards;
+    if (columns.has('num_order') && numOrder) baseFields.num_order = Number(numOrder) || 0;
+
+    const fieldNames = Object.keys(baseFields).filter((key) => columns.has(key));
+    const placeholders = fieldNames.map(() => '?').join(', ');
+    const values = fieldNames.map((key) => baseFields[key]);
+
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO \`${readerTable}\` (${fieldNames.map((f) => `\`${f}\``).join(', ')})
+       VALUES (${placeholders})`,
+      ...values
+    );
+
+    const idRows = await prisma.$queryRawUnsafe<{ id: bigint | number | string }[]>(
+      'SELECT LAST_INSERT_ID() AS id'
+    );
+    const newId = idRows[0]?.id != null ? String(idRows[0].id) : null;
+
+    const items = await fetchReaders(context.userIds, clubId);
+
+    return NextResponse.json({
+      success: true,
+      id: newId,
+      items,
+    });
+  } catch (error) {
+    console.error('POST /api/club/settings/card-readers:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

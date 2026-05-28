@@ -1,3 +1,8 @@
+export type CardReaderOption = {
+  id: string;
+  name: string;
+};
+
 export type CardReaderListItem = {
   id: string;
   description: string;

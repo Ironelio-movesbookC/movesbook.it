@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, FolderOpen, Info, Loader2 } from 'lucide-react';
-import type { CardReaderListItem } from '@/types/clubCardReaders';
+import type { CardReaderListItem, CardReaderOption } from '@/types/clubCardReaders';
+import ClubCardReaderFormModal from './ClubCardReaderFormModal';
+import ClubCardReaderDeleteConfirmModal from './ClubCardReaderDeleteConfirmModal';
+import ClubCardReaderAssignActivityModal from './ClubCardReaderAssignActivityModal';
+import ClubCardReaderAdvancedSettingsPanel from './ClubCardReaderAdvancedSettingsPanel';
 
 type ClubIdentificationDevicesPanelProps = {
   clubId?: string | null;
@@ -21,6 +25,15 @@ export default function ClubIdentificationDevicesPanel({ clubId }: ClubIdentific
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [helpOpen, setHelpOpen] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [assignActivityOpen, setAssignActivityOpen] = useState(false);
+  const [advancedReaderId, setAdvancedReaderId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [readerTypes, setReaderTypes] = useState<CardReaderOption[]>([]);
+  const [controlModes, setControlModes] = useState<CardReaderOption[]>([]);
 
   const selected = items.find((row) => row.id === selectedId) ?? null;
   const showAssignActivity =
@@ -42,6 +55,8 @@ export default function ClubIdentificationDevicesPanel({ clubId }: ClubIdentific
       }
       const data = await response.json();
       setItems(Array.isArray(data.items) ? data.items : []);
+      setReaderTypes(Array.isArray(data.readerTypes) ? data.readerTypes : []);
+      setControlModes(Array.isArray(data.controlModes) ? data.controlModes : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load identification devices.');
       setItems([]);
@@ -53,6 +68,38 @@ export default function ClubIdentificationDevicesPanel({ clubId }: ClubIdentific
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = window.setTimeout(() => setSuccessMessage(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [successMessage]);
+
+  async function handleDeleteConfirm() {
+    if (!selectedId) return;
+    setDeleting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const qs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
+      const response = await fetch(`/api/club/settings/card-readers/${selectedId}${qs}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to delete reader.');
+      }
+      setDeleteModalOpen(false);
+      setSelectedId(null);
+      setSuccessMessage('Reader deleted successfully.');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete reader.');
+      setDeleteModalOpen(false);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   function toggleExpanded(id: string) {
     setExpandedIds((prev) => {
@@ -70,8 +117,37 @@ export default function ClubIdentificationDevicesPanel({ clubId }: ClubIdentific
   const btnClass =
     'px-3 py-2 text-sm font-semibold rounded border border-gray-300 bg-gray-100 text-gray-950 hover:bg-gray-200 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400';
 
+  const showAdvancedSettings =
+    selected != null &&
+    [1, 2, 3, 4, 5, 6].includes(selected.controlModeId);
+
+  function openAdvancedSettings() {
+    if (!selectedId) return;
+    setAdvancedReaderId(selectedId);
+  }
+
+  if (advancedReaderId) {
+    return (
+      <ClubCardReaderAdvancedSettingsPanel
+        readerId={advancedReaderId}
+        clubId={clubId}
+        onBack={() => setAdvancedReaderId(null)}
+        onSaved={() => void load()}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
+      {successMessage && (
+        <div
+          className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm font-medium text-green-800"
+          role="status"
+        >
+          {successMessage}
+        </div>
+      )}
+
       <div className="border border-blue-200 bg-blue-700 px-4 py-2 text-base font-semibold text-white">
         Setting of devices
       </div>
@@ -88,25 +164,40 @@ export default function ClubIdentificationDevicesPanel({ clubId }: ClubIdentific
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex flex-wrap gap-2">
-          <button type="button" className={btnClass} title="Coming soon">
+          <button type="button" className={btnClass} onClick={() => setAddModalOpen(true)}>
             New reader
           </button>
-          <button type="button" className={btnClass} disabled={!selectedId} title="Coming soon">
+          <button
+            type="button"
+            className={btnClass}
+            disabled={!selectedId}
+            onClick={() => setEditModalOpen(true)}
+          >
             Edit
           </button>
           <button
             type="button"
             className={btnClass}
             disabled={!selectedId || !showAssignActivity}
-            title="Coming soon"
+            onClick={() => setAssignActivityOpen(true)}
           >
             Assign Activity
           </button>
-          <button type="button" className={btnClass} title="Coming soon">
+          <button
+            type="button"
+            className={btnClass}
+            disabled={!selectedId || !showAdvancedSettings}
+            onClick={openAdvancedSettings}
+          >
             Advance Settings
           </button>
         </div>
-        <button type="button" className={btnClass} disabled={!selectedId} title="Coming soon">
+        <button
+          type="button"
+          className={btnClass}
+          disabled={!selectedId}
+          onClick={() => setDeleteModalOpen(true)}
+        >
           Delete
         </button>
       </div>
@@ -226,6 +317,45 @@ export default function ClubIdentificationDevicesPanel({ clubId }: ClubIdentific
           )}
         </div>
       )}
+
+      <ClubCardReaderFormModal
+        mode="add"
+        isOpen={addModalOpen}
+        onClose={() => setAddModalOpen(false)}
+        clubId={clubId}
+        readerTypes={readerTypes}
+        controlModes={controlModes}
+        onSaved={() => void load()}
+      />
+
+      <ClubCardReaderFormModal
+        mode="edit"
+        readerId={selectedId}
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        clubId={clubId}
+        readerTypes={readerTypes}
+        controlModes={controlModes}
+        onSaved={() => void load()}
+      />
+
+      <ClubCardReaderDeleteConfirmModal
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={() => void handleDeleteConfirm()}
+        deleting={deleting}
+      />
+
+      <ClubCardReaderAssignActivityModal
+        isOpen={assignActivityOpen}
+        readerId={selectedId}
+        clubId={clubId}
+        onClose={() => setAssignActivityOpen(false)}
+        onSaved={() => {
+          setSuccessMessage('Activities update successfully.');
+          void load();
+        }}
+      />
     </div>
   );
 }
