@@ -181,16 +181,16 @@ export async function GET(request: NextRequest) {
   ]);
 
   const isClubsSegment = segment === 'clubs';
-  const adminIds = rows.map((u) => u.id);
+  const userIds = rows.map((u) => u.id);
 
   const clubsByAdmin = new Map<
     string,
-    { name: string; description: string | null; createdAt: Date }[]
+    { name: string; description: string | null; createdAt: Date; location: string | null }[]
   >();
-  if (isClubsSegment && adminIds.length > 0) {
+  if (isClubsSegment && userIds.length > 0) {
     const ownedClubs = await prisma.club.findMany({
-      where: { adminId: { in: adminIds } },
-      select: { adminId: true, name: true, description: true, createdAt: true },
+      where: { adminId: { in: userIds } },
+      select: { adminId: true, name: true, description: true, createdAt: true, location: true },
     });
     for (const club of ownedClubs) {
       const list = clubsByAdmin.get(club.adminId) ?? [];
@@ -198,8 +198,27 @@ export async function GET(request: NextRequest) {
         name: club.name,
         description: club.description,
         createdAt: club.createdAt,
+        location: club.location,
       });
       clubsByAdmin.set(club.adminId, list);
+    }
+  }
+
+  const locationByUserId = new Map<string, string>();
+  if (userIds.length > 0 && !isClubsSegment) {
+    const memberships = await prisma.clubMember.findMany({
+      where: { memberId: { in: userIds } },
+      select: {
+        memberId: true,
+        club: { select: { location: true } },
+      },
+      orderBy: { joinedAt: 'asc' },
+    });
+    for (const m of memberships) {
+      const loc = m.club.location?.trim();
+      if (loc && !locationByUserId.has(m.memberId)) {
+        locationByUserId.set(m.memberId, loc);
+      }
     }
   }
 
@@ -215,16 +234,20 @@ export async function GET(request: NextRequest) {
       let status = 'Active';
       let statusTone: string | undefined;
 
+      let location = '';
       if (isClubsSegment) {
         const adminClubs = clubsByAdmin.get(u.id) ?? [];
         clubsOwnedCount = adminClubs.length;
         companyName = adminClubs[0]?.name?.trim() || '';
+        location = adminClubs[0]?.location?.trim() || '';
         const endDates = adminClubs.map((c) =>
           parseClubSubscriptionEndDate(c.description, c.createdAt)
         );
         const aggregated = aggregateClubAdminSubscriptionStatus(endDates);
         status = aggregated.label;
         statusTone = aggregated.tone;
+      } else {
+        location = locationByUserId.get(u.id) ?? '';
       }
 
       return {
@@ -234,6 +257,7 @@ export async function GET(request: NextRequest) {
         displayName,
         userType: u.userType,
         country: u.country,
+        location,
         dateStart: u.createdAt.toISOString().slice(0, 10),
         dateEnd: null as string | null,
         version: versionLabel(u.userType),

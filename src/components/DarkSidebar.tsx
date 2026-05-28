@@ -121,6 +121,7 @@ import {
   YOUTUBE_CHANNEL_URL_KEY
 } from '@/utils/youtubeChannelUrl';
 import SidebarClubMyEntityTop from '@/components/SidebarClubMyEntityTop';
+import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
@@ -306,6 +307,8 @@ interface DarkSidebarProps {
   onBecomeMemberClick?: () => void;
   /** Coach My Groups trained → Create a group trained (creation flow TBD). */
   onCreateGroupTrainedClick?: () => void;
+  /** Club dashboard: show My Club tab only while a club workspace is open (hidden on My Page). */
+  clubMyClubTabVisible?: boolean;
 }
 
 export default function DarkSidebar({
@@ -327,6 +330,7 @@ export default function DarkSidebar({
   onCreateClubClick,
   onBecomeMemberClick,
   onCreateGroupTrainedClick,
+  clubMyClubTabVisible = false,
 }: DarkSidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
@@ -344,6 +348,8 @@ export default function DarkSidebar({
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [myDashboardOpen, setMyDashboardOpen] = useState(false);
   const [myClubsOpen, setMyClubsOpen] = useState(false);
+  const [clubAdminInfoOpen, setClubAdminInfoOpen] = useState(false);
+  const [memberInfoOpen, setMemberInfoOpen] = useState(false);
 
   const formCreatedClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(entities),
@@ -356,13 +362,15 @@ export default function DarkSidebar({
   const isTeamManagerUser = isTeamAccountUserType(userType);
   const athleteHasClubMembership = entities.length > 0;
   const coachHasTrainedGroup = entities.length > 0;
-  const showMyClubTab = isAthleteUser
-    ? athleteHasClubMembership
-    : isCoachUser
-      ? coachHasTrainedGroup
-      : isTeamManagerUser
-        ? entities.length > 0
-      : clubUserHasProfile;
+  const showMyClubTab = isClubAccountUserType(userType)
+    ? clubMyClubTabVisible === true
+    : isAthleteUser
+      ? athleteHasClubMembership
+      : isCoachUser
+        ? coachHasTrainedGroup
+        : isTeamManagerUser
+          ? entities.length > 0
+          : clubUserHasProfile;
 
   useEffect(() => {
     if (
@@ -1065,7 +1073,7 @@ export default function DarkSidebar({
   return (
     <>
     <div className="w-full h-full bg-gray-900 text-white flex flex-col overflow-hidden" style={{ width: '320px' }}>
-      {/* Tab Navigation — club accounts: My Club tab only after create-club form save */}
+      {/* Tab Navigation — club accounts: My Club tab appears when a sidebar club is opened */}
       <div className="flex flex-shrink-0 border-b border-gray-700 bg-gray-900">
         <button
           onClick={handleMyPageTab}
@@ -1300,7 +1308,10 @@ export default function DarkSidebar({
                             <li key={club.id}>
                               <button
                                 type="button"
-                                onClick={() => onEntitySelect?.(club.id)}
+                                onClick={() => {
+                                  onEntitySelect?.(club.id);
+                                  setCurrentTab('my-entity');
+                                }}
                                 className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
                                   isSelected ? 'bg-zinc-700/60' : ''
                                 }`}
@@ -1445,15 +1456,87 @@ export default function DarkSidebar({
               <ChevronDown className="w-4 h-4 opacity-80" />
             </button>
 
-            <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
-              <div className="flex items-center gap-3">
-                <UserCircle className="w-5 h-5" />
-                <span>
-                  {isClubAccountUserType(userType) ? 'Club admin info' : 'Member info'}
-                </span>
+            {isClubAccountUserType(userType) ? (
+              <div className="border-b border-teal-700">
+                <div className="flex w-full items-stretch bg-teal-800 text-white">
+                  <button
+                    type="button"
+                    onClick={() => setClubAdminInfoOpen((v) => !v)}
+                    aria-expanded={clubAdminInfoOpen}
+                    className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left transition-colors hover:bg-teal-700"
+                  >
+                    <UserCircle className="h-5 w-5 shrink-0" />
+                    <span>Club admin info</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClubAdminInfoOpen((v) => !v)}
+                    aria-label={clubAdminInfoOpen ? t('collapse') : t('expand')}
+                    className="flex shrink-0 items-center border-l border-teal-700/40 px-4 transition-colors hover:bg-teal-700"
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 opacity-80 transition-transform duration-200 ${clubAdminInfoOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                </div>
+                {clubAdminInfoOpen && (
+                  <div className="border-t border-teal-900/40 bg-[#2d2d2d] text-sm text-white">
+                    <button
+                      type="button"
+                      onClick={() => router.push('/profile')}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90"
+                    >
+                      <UserCircle className="h-4 w-4 shrink-0 opacity-90" />
+                      <span>Club Admin profile</span>
+                    </button>
+                  </div>
+                )}
               </div>
-              <ChevronDown className="w-4 h-4 opacity-80" />
-            </button>
+            ) : (
+              <div className="border-b border-teal-700">
+                <div className="flex w-full items-stretch bg-teal-800 text-white">
+                  <button
+                    type="button"
+                    onClick={() => setMemberInfoOpen((v) => !v)}
+                    aria-expanded={memberInfoOpen}
+                    className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left transition-colors hover:bg-teal-700"
+                  >
+                    <UserCircle className="h-5 w-5 shrink-0" />
+                    <span>Member info</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMemberInfoOpen((v) => !v)}
+                    aria-label={memberInfoOpen ? t('collapse') : t('expand')}
+                    className="flex shrink-0 items-center border-l border-teal-700/40 px-4 transition-colors hover:bg-teal-700"
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 opacity-80 transition-transform duration-200 ${memberInfoOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                </div>
+                {memberInfoOpen && (
+                  <div className="border-t border-teal-900/40 bg-[#2d2d2d] text-sm text-white">
+                    <button
+                      type="button"
+                      onClick={() => router.push('/profile#member-info')}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90"
+                    >
+                      <UserCircle className="h-4 w-4 shrink-0 opacity-90" />
+                      <span>Member info</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push('/profile#member-profile')}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90 border-t border-black/25"
+                    >
+                      <UserCircle className="h-4 w-4 shrink-0 opacity-90" />
+                      <span>Member profile</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
               <div className="flex items-center gap-3">
@@ -1912,17 +1995,22 @@ export default function DarkSidebar({
                       </div>
                     </div>
 
-                    {/* Club info / pages */}
-                    <button
-                      type="button"
-                      className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Building2 className="w-5 h-5 shrink-0" />
-                        <span className="font-semibold tracking-wide truncate">Club Info</span>
-                      </div>
-                      <ChevronDown className="w-4 h-4 opacity-90" />
-                    </button>
+                    {isClubAccountUserType(userType) ? (
+                      <ClubMyClubInfoSubmenu
+                        clubId={displaySelectedClub?.id as string | undefined}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Building2 className="w-5 h-5 shrink-0" />
+                          <span className="font-semibold tracking-wide truncate">Club Info</span>
+                        </div>
+                        <ChevronDown className="w-4 h-4 opacity-90" />
+                      </button>
+                    )}
 
                     <button
                       type="button"

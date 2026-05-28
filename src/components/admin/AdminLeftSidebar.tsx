@@ -58,7 +58,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   DndContext, 
   closestCenter,
@@ -135,7 +135,12 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
 
   const [openSubSections, setOpenSubSections] = useState<Record<string, boolean>>({});
   const [internalIsOpen, setInternalIsOpen] = useState(true);
+  const [isDndMounted, setIsDndMounted] = useState(false);
   const isSidebarOpen = isOpen !== undefined ? isOpen : internalIsOpen;
+
+  useEffect(() => {
+    setIsDndMounted(true);
+  }, []);
 
   const handleToggle = () => {
     if (onToggle) onToggle();
@@ -1089,23 +1094,31 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
           </div>
         </div>
 
-        {/* Draggable Sections */}
-        <DndContext 
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext 
-            items={items}
-            strategy={verticalListSortingStrategy}
+        {/* Draggable Sections — client-only to avoid dnd-kit aria-describedby hydration mismatch */}
+        {isDndMounted ? (
+          <DndContext
+            id="admin-left-sidebar"
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
           >
-            {items.map(id => (
-              <SortableItem key={id} id={id}>
+            <SortableContext items={items} strategy={verticalListSortingStrategy}>
+              {items.map((id) => (
+                <SortableItem key={id} id={id}>
+                  {renderSection(id)}
+                </SortableItem>
+              ))}
+            </SortableContext>
+          </DndContext>
+        ) : (
+          <div>
+            {items.map((id) => (
+              <div key={id} className="mb-0 mt-1">
                 {renderSection(id)}
-              </SortableItem>
+              </div>
             ))}
-          </SortableContext>
-        </DndContext>
+          </div>
+        )}
       </div>
     </div>
   );

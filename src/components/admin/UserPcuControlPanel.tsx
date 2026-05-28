@@ -1,21 +1,25 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
-import {
-  CalendarDays,
-  CheckSquare,
-  CreditCard,
-  Mail,
-  Square,
-  User,
-  X,
-} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { CalendarDays, CreditCard, Mail, User, X } from 'lucide-react';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
 import { COUNTRIES_WITH_CODES } from '@/lib/news/countries';
 import type { PcuPanelPayload } from '@/lib/admin/userPcuPanel';
-import CKEditorComponent from '@/components/news/CKEditor';
+import type { PcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
+import {
+  normalizeFavouritePriority,
+  type FavouritePriority,
+  type ProfilePanelSettings,
+} from '@/lib/admin/userProfilePanelSettings';
+const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), {
+  ssr: false,
+  loading: () => (
+    <div className="min-h-[200px] border border-gray-300 rounded bg-gray-50 animate-pulse" aria-hidden />
+  ),
+});
 
 const BASE_TABS = [
   { id: 'purchases', label: 'IPurchases' },
@@ -93,34 +97,65 @@ const FILTER_VERSION_OPTIONS = [
 
 type OrderingOption = 'ordering' | 'by version' | 'by date start subscription' | 'by date end subscription';
 
+type SubscriptionRow = {
+  id: string;
+  dateStart: string;
+  dateEnd: string | null;
+  version: string;
+  username: string;
+  companyName: string;
+  e: string;
+  status: string;
+};
+
 type UserPcuControlPanelProps = {
   user: PcuPanelPayload;
   backHref: string;
-  subscriptionRows?: {
-    id: string;
-    dateStart: string;
-    dateEnd: string | null;
-    version: string;
-    username: string;
-    companyName: string;
-    e: string;
-    status: string;
-  }[];
+  subscriptionRows?: SubscriptionRow[];
+  profilePanel?: ProfilePanelSettings;
+  initialPcuAccess?: PcuAccessSettings;
 };
+
+function SubscriptionFilterRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 justify-between">
+      <span className="font-medium text-gray-900 shrink-0">{label}</span>
+      {children}
+    </div>
+  );
+}
 
 export default function UserPcuControlPanel({
   user,
   backHref,
   subscriptionRows = [],
+  profilePanel,
+  initialPcuAccess,
 }: UserPcuControlPanelProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TopTabId>('profile');
   const [profileSubTab, setProfileSubTab] = useState<'admin' | 'entity'>('admin');
-  const [accessStart, setAccessStart] = useState(user.startDateIso);
-  const [accessEnd, setAccessEnd] = useState(user.endDateIso);
-  const [tagUser, setTagUser] = useState(false);
-  const [favourite, setFavourite] = useState(false);
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
+  const [accessStart, setAccessStart] = useState(
+    () => initialPcuAccess?.accessStartIso || user.startDateIso,
+  );
+  const [accessEnd, setAccessEnd] = useState(() => initialPcuAccess?.accessEndIso ?? user.endDateIso ?? '');
+  const [suspendAccessControl, setSuspendAccessControl] = useState(
+    () => initialPcuAccess?.suspendAccessControl ?? false,
+  );
+  const [suspend, setSuspend] = useState(() => initialPcuAccess?.suspend ?? false);
+  const [tagUser, setTagUser] = useState(() => Boolean(profilePanel?.tagged));
+  const [favouritePriority, setFavouritePriority] = useState<FavouritePriority>(() =>
+    normalizeFavouritePriority(profilePanel?.favouritePriority),
+  );
+  const [profilePanelSaving, setProfilePanelSaving] = useState(false);
+  const [pcuAccessSaving, setPcuAccessSaving] = useState(false);
+  const [profileRowSelected, setProfileRowSelected] = useState<Set<string>>(() => new Set());
+  const [actionBusy, setActionBusy] = useState(false);
+  const [msgModalOpen, setMsgModalOpen] = useState(false);
+  const [msgDraft, setMsgDraft] = useState('');
+  const [msgSubject, setMsgSubject] = useState('Message from Movesbook Admin');
+  const [msgError, setMsgError] = useState('');
+  const [msgSending, setMsgSending] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterVersion, setFilterVersion] = useState<string>('All');
   const [filterSubscription, setFilterSubscription] = useState<string>('All');
@@ -938,10 +973,243 @@ export default function UserPcuControlPanel({
     }
   }, [user.segment]);
 
-  const handleSendMail = () => {
-    if (!user.email) return;
+  useEffect(() => {
+    if (profilePanel) {
+      setTagUser(Boolean(profilePanel.tagged));
+      setFavouritePriority(normalizeFavouritePriority(profilePanel.favouritePriority));
+    }
+  }, [profilePanel]);
+
+  useEffect(() => {
+    if (initialPcuAccess) {
+      setAccessStart(initialPcuAccess.accessStartIso || user.startDateIso);
+      setAccessEnd(initialPcuAccess.accessEndIso ?? '');
+      setSuspendAccessControl(initialPcuAccess.suspendAccessControl);
+      setSuspend(initialPcuAccess.suspend);
+    }
+  }, [initialPcuAccess, user.startDateIso]);
+
+  const isFavourite = favouritePriority !== 'not_selected';
+
+  const saveProfilePanelSettings = useCallback(
+    async (patch: { tagged?: boolean; favouritePriority?: FavouritePriority }) => {
+      const prevTagged = tagUser;
+      const prevPriority = favouritePriority;
+      if (patch.tagged !== undefined) setTagUser(patch.tagged);
+      if (patch.favouritePriority !== undefined) {
+        setFavouritePriority(normalizeFavouritePriority(patch.favouritePriority));
+      }
+
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        if (patch.tagged !== undefined) setTagUser(prevTagged);
+        if (patch.favouritePriority !== undefined) setFavouritePriority(prevPriority);
+        window.alert('Admin session not found. Please log in again.');
+        return;
+      }
+
+      setProfilePanelSaving(true);
+      try {
+        const res = await fetch(
+          `/api/admin/registered-users/${encodeURIComponent(user.userId)}/profile-panel`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(patch),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to save profile settings');
+        if (data.profilePanel) {
+          setTagUser(Boolean(data.profilePanel.tagged));
+          setFavouritePriority(normalizeFavouritePriority(data.profilePanel.favouritePriority));
+        }
+      } catch (e: unknown) {
+        setTagUser(prevTagged);
+        setFavouritePriority(prevPriority);
+        window.alert(e instanceof Error ? e.message : 'Failed to save profile settings');
+      } finally {
+        setProfilePanelSaving(false);
+      }
+    },
+    [user.userId, tagUser, favouritePriority],
+  );
+
+  const savePcuAccessSettings = useCallback(
+    async (patch: Partial<PcuAccessSettings>) => {
+      const prev = {
+        accessStart,
+        accessEnd,
+        suspendAccessControl,
+        suspend,
+      };
+      if (patch.accessStartIso !== undefined) setAccessStart(patch.accessStartIso);
+      if (patch.accessEndIso !== undefined) setAccessEnd(patch.accessEndIso);
+      if (patch.suspendAccessControl !== undefined) setSuspendAccessControl(patch.suspendAccessControl);
+      if (patch.suspend !== undefined) setSuspend(patch.suspend);
+
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        setAccessStart(prev.accessStart);
+        setAccessEnd(prev.accessEnd);
+        setSuspendAccessControl(prev.suspendAccessControl);
+        setSuspend(prev.suspend);
+        window.alert('Admin session not found. Please log in again.');
+        return;
+      }
+
+      setPcuAccessSaving(true);
+      try {
+        const res = await fetch(
+          `/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-access`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(patch),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to save access settings');
+        if (data.pcuAccess) {
+          setAccessStart(data.pcuAccess.accessStartIso || user.startDateIso);
+          setAccessEnd(data.pcuAccess.accessEndIso ?? '');
+          setSuspendAccessControl(Boolean(data.pcuAccess.suspendAccessControl));
+          setSuspend(Boolean(data.pcuAccess.suspend));
+        }
+      } catch (e: unknown) {
+        setAccessStart(prev.accessStart);
+        setAccessEnd(prev.accessEnd);
+        setSuspendAccessControl(prev.suspendAccessControl);
+        setSuspend(prev.suspend);
+        window.alert(e instanceof Error ? e.message : 'Failed to save access settings');
+      } finally {
+        setPcuAccessSaving(false);
+      }
+    },
+    [user.userId, user.startDateIso, accessStart, accessEnd, suspendAccessControl, suspend],
+  );
+
+  const resolveActionUserIds = useCallback((): string[] => {
+    if (profileRowSelected.size > 0) {
+      const ids = new Set<string>();
+      profileRowSelected.forEach((rowId) => {
+        ids.add(rowId.startsWith('account-') ? rowId.slice('account-'.length) : user.userId);
+      });
+      return Array.from(ids);
+    }
+    return [user.userId];
+  }, [profileRowSelected, user.userId]);
+
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
+
+  const handleSendMail = useCallback(() => {
+    if (!user.email) {
+      window.alert('This user has no email address.');
+      return;
+    }
     window.location.href = `mailto:${encodeURIComponent(user.email)}`;
-  };
+  }, [user.email]);
+
+  const openSendMsgModal = useCallback(() => {
+    setMsgError('');
+    setMsgDraft('');
+    setMsgSubject('Message from Movesbook Admin');
+    setMsgModalOpen(true);
+  }, []);
+
+  const handleSendMsgSubmit = useCallback(async () => {
+    const message = msgDraft.trim();
+    if (!message) {
+      setMsgError('Please enter a message.');
+      return;
+    }
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      setMsgError('Admin session not found. Please log in again.');
+      return;
+    }
+    setMsgSending(true);
+    setMsgError('');
+    try {
+      const res = await fetch('/api/admin/registered-users/actions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          segment: user.segment,
+          userIds: resolveActionUserIds(),
+          message,
+          subject: msgSubject.trim() || 'Message from Movesbook Admin',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to send message');
+      if (data.mailtoFallback && Array.isArray(data.recipients) && data.recipients.length > 0) {
+        const emails = data.recipients
+          .map((r: { email?: string }) => r.email?.trim())
+          .filter(Boolean) as string[];
+        if (emails.length === 1) {
+          window.location.href = `mailto:${encodeURIComponent(emails[0]!)}`;
+        } else if (emails.length > 1) {
+          window.location.href = `mailto:?bcc=${emails.map((e) => encodeURIComponent(e)).join(',')}`;
+        }
+      } else {
+        window.alert(`Message sent to ${data.sent ?? 0} user(s).`);
+      }
+      setMsgModalOpen(false);
+    } catch (e: unknown) {
+      setMsgError(e instanceof Error ? e.message : 'Failed to send message');
+    } finally {
+      setMsgSending(false);
+    }
+  }, [msgDraft, msgSubject, resolveActionUserIds, user.segment]);
+
+  const handleDeleteAccount = useCallback(async () => {
+    const label = user.fullname || user.username;
+    const ok = window.confirm(
+      `Delete account for ${label}?\n\nThis permanently removes the user from Movesbook. This cannot be undone.`,
+    );
+    if (!ok) return;
+
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      window.alert('Admin session not found. Please log in again.');
+      return;
+    }
+    setActionBusy(true);
+    try {
+      const res = await fetch('/api/admin/registered-users/actions', {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          segment: user.segment,
+          userIds: resolveActionUserIds(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to delete account');
+      const deleted = typeof data.deleted === 'number' ? data.deleted : 0;
+      window.alert(`Deleted ${deleted} user account(s).`);
+      router.push(backHref);
+    } catch (e: unknown) {
+      window.alert(e instanceof Error ? e.message : 'Failed to delete account');
+    } finally {
+      setActionBusy(false);
+    }
+  }, [backHref, resolveActionUserIds, router, user.fullname, user.segment, user.username]);
 
   const handleOpenProfile = () => {
     if (user.dashboardPath) {
@@ -1041,8 +1309,10 @@ export default function UserPcuControlPanel({
                 <input
                   type="date"
                   value={accessStart}
+                  disabled={pcuAccessSaving}
                   onChange={(e) => setAccessStart(e.target.value)}
-                  className="px-2 py-1 border border-gray-400 bg-white w-32 text-sm"
+                  onBlur={(e) => void savePcuAccessSettings({ accessStartIso: e.currentTarget.value })}
+                  className="px-2 py-1 border border-gray-400 bg-white w-32 text-sm disabled:opacity-60"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
                 <CreditCard className="w-5 h-5 text-gray-600" />
@@ -1052,20 +1322,42 @@ export default function UserPcuControlPanel({
                 <input
                   type="date"
                   value={accessEnd}
+                  disabled={pcuAccessSaving}
                   onChange={(e) => setAccessEnd(e.target.value)}
-                  className="px-2 py-1 border border-gray-400 bg-white w-32 text-sm text-red-600"
+                  onBlur={(e) => void savePcuAccessSettings({ accessEndIso: e.currentTarget.value })}
+                  className="px-2 py-1 border border-gray-400 bg-white w-32 text-sm text-red-600 disabled:opacity-60"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
               </div>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <Square className="w-4 h-4 text-gray-600" />
+                <input
+                  type="checkbox"
+                  checked={suspendAccessControl}
+                  disabled={pcuAccessSaving}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setSuspendAccessControl(next);
+                    void savePcuAccessSettings({ suspendAccessControl: next });
+                  }}
+                  className="w-4 h-4 rounded border-gray-400"
+                />
                 <span className="text-red-600">Suspend access control</span>
               </label>
               <button type="button" className="px-4 py-2 bg-gray-700 text-white text-sm rounded">
                 Exhaustion status
               </button>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <CheckSquare className="w-4 h-4 text-gray-600" />
+                <input
+                  type="checkbox"
+                  checked={suspend}
+                  disabled={pcuAccessSaving}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setSuspend(next);
+                    void savePcuAccessSettings({ suspend: next });
+                  }}
+                  className="w-4 h-4 rounded border-gray-400"
+                />
                 <span className="text-red-600">Suspend</span>
               </label>
             </div>
@@ -1343,26 +1635,41 @@ export default function UserPcuControlPanel({
                     <input
                       type="checkbox"
                       checked={tagUser}
-                      onChange={(e) => setTagUser(e.target.checked)}
-                      className="w-4 h-4"
+                      disabled={profilePanelSaving}
+                      onChange={(e) => void saveProfilePanelSettings({ tagged: e.target.checked })}
+                      className="w-4 h-4 disabled:opacity-60"
                     />
                     <span>Tag the user</span>
                   </label>
                   <label className="inline-flex items-center gap-2">
                     <input
                       type="checkbox"
-                      checked={favourite}
-                      onChange={(e) => setFavourite(e.target.checked)}
-                      className="w-4 h-4"
+                      checked={isFavourite}
+                      disabled={profilePanelSaving}
+                      onChange={(e) =>
+                        void saveProfilePanelSettings({
+                          favouritePriority: e.target.checked
+                            ? favouritePriority === 'not_selected'
+                              ? 'medium'
+                              : favouritePriority
+                            : 'not_selected',
+                        })
+                      }
+                      className="w-4 h-4 disabled:opacity-60"
                     />
                     <span>Put as favourite</span>
                   </label>
                   <div className="inline-flex items-center gap-2">
-                    <span>Medium priority</span>
+                    <span>Priority</span>
                     <select
-                      value={priority}
-                      onChange={(e) => setPriority(e.target.value as typeof priority)}
-                      className="px-2 py-1 border border-gray-400 bg-white text-sm"
+                      value={favouritePriority === 'not_selected' ? 'medium' : favouritePriority}
+                      disabled={profilePanelSaving || !isFavourite}
+                      onChange={(e) =>
+                        void saveProfilePanelSettings({
+                          favouritePriority: normalizeFavouritePriority(e.target.value),
+                        })
+                      }
+                      className="px-2 py-1 border border-gray-400 bg-white text-sm disabled:opacity-60"
                     >
                       <option value="low">Low priority</option>
                       <option value="medium">Medium priority</option>
@@ -1383,14 +1690,13 @@ export default function UserPcuControlPanel({
                     </button>
 
                     {filterOpen ? (
-                      <div className="absolute z-20 top-9 left-0 w-[280px] bg-[#efe7b3] border border-[#c9bd7a] shadow">
-                        <div className="p-3 space-y-2">
-                          <div className="grid grid-cols-[90px_1fr] gap-2 items-center text-sm">
-                            <div>Version</div>
+                      <div className="absolute z-20 left-0 top-full mt-1 w-[min(100vw-2rem,380px)] border border-black bg-[#fff8dc] shadow-lg">
+                        <div className="p-4 space-y-3 text-sm">
+                          <SubscriptionFilterRow label="Version">
                             <select
                               value={filterVersion}
                               onChange={(e) => setFilterVersion(e.target.value)}
-                              className="px-2 py-1 border border-gray-400 bg-white"
+                              className="w-full max-w-[220px] border border-gray-500 bg-white px-2 py-1.5 text-sm ml-auto"
                             >
                               {FILTER_VERSION_OPTIONS.map((o) => (
                                 <option key={o} value={o}>
@@ -1398,14 +1704,13 @@ export default function UserPcuControlPanel({
                                 </option>
                               ))}
                             </select>
-                          </div>
+                          </SubscriptionFilterRow>
 
-                          <div className="grid grid-cols-[90px_1fr] gap-2 items-center text-sm">
-                            <div>Subscription</div>
+                          <SubscriptionFilterRow label="Subscription">
                             <select
                               value={filterSubscription}
                               onChange={(e) => setFilterSubscription(e.target.value)}
-                              className="px-2 py-1 border border-gray-400 bg-white"
+                              className="w-full max-w-[220px] border border-gray-500 bg-white px-2 py-1.5 text-sm ml-auto"
                             >
                               {FILTER_VERSION_OPTIONS.map((o) => (
                                 <option key={o} value={o}>
@@ -1413,15 +1718,14 @@ export default function UserPcuControlPanel({
                                 </option>
                               ))}
                             </select>
-                          </div>
+                          </SubscriptionFilterRow>
 
-                          <div className="grid grid-cols-[90px_1fr] gap-2 items-center text-sm">
-                            <div>Datarange</div>
-                            <div className="flex gap-2">
+                          <SubscriptionFilterRow label="Datarange">
+                            <div className="flex gap-2 w-full max-w-[220px] ml-auto">
                               <select
                                 value={filterMonth}
                                 onChange={(e) => setFilterMonth(e.target.value)}
-                                className="px-2 py-1 border border-gray-400 bg-white w-24"
+                                className="flex-1 min-w-0 border border-gray-500 bg-white px-2 py-1.5 text-sm"
                               >
                                 {['select', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].map(
                                   (m) => (
@@ -1434,27 +1738,26 @@ export default function UserPcuControlPanel({
                               <input
                                 value={filterYear}
                                 onChange={(e) => setFilterYear(e.target.value)}
-                                className="px-2 py-1 border border-gray-400 bg-white w-20"
+                                className="w-20 shrink-0 border border-gray-500 bg-white px-2 py-1.5 text-sm text-center"
                               />
                             </div>
-                          </div>
-
-                          <div className="pt-2 flex justify-between">
-                            <button
-                              type="button"
-                              onClick={() => setFilterOpen(false)}
-                              className="px-4 py-1.5 border border-gray-400 bg-gray-200 text-sm"
-                            >
-                              Exit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setFilterOpen(false)}
-                              className="px-4 py-1.5 border border-gray-400 bg-gray-200 text-sm"
-                            >
-                              OK
-                            </button>
-                          </div>
+                          </SubscriptionFilterRow>
+                        </div>
+                        <div className="flex justify-center gap-4 border-t border-gray-400 bg-[#f5ebc8] py-3">
+                          <button
+                            type="button"
+                            onClick={() => setFilterOpen(false)}
+                            className="px-8 py-1.5 bg-[#c4c4c4] border border-gray-600 text-sm font-semibold text-gray-900 hover:bg-[#b8b8b8]"
+                          >
+                            OK
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFilterOpen(false)}
+                            className="px-8 py-1.5 bg-[#c4c4c4] border border-gray-600 text-sm font-semibold text-gray-900 hover:bg-[#b8b8b8]"
+                          >
+                            Exit
+                          </button>
                         </div>
                       </div>
                     ) : null}
@@ -1477,16 +1780,36 @@ export default function UserPcuControlPanel({
                     </button>
                   </div>
                   <div className="flex flex-wrap items-center gap-4 text-sm">
-                    <button type="button" className="hover:underline">
+                    <button
+                      type="button"
+                      onClick={handlePrint}
+                      disabled={actionBusy}
+                      className="hover:underline disabled:opacity-50"
+                    >
                       Print
                     </button>
-                    <button type="button" className="hover:underline">
+                    <button
+                      type="button"
+                      onClick={openSendMsgModal}
+                      disabled={actionBusy}
+                      className="hover:underline disabled:opacity-50"
+                    >
                       Send Msg
                     </button>
-                    <button type="button" onClick={handleSendMail} className="hover:underline">
+                    <button
+                      type="button"
+                      onClick={handleSendMail}
+                      disabled={actionBusy || !user.email}
+                      className="hover:underline disabled:opacity-50"
+                    >
                       Send mail
                     </button>
-                    <button type="button" className="hover:underline text-red-700">
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteAccount()}
+                      disabled={actionBusy}
+                      className="hover:underline text-red-700 disabled:opacity-50"
+                    >
                       Delete account
                     </button>
                   </div>
@@ -1498,7 +1821,24 @@ export default function UserPcuControlPanel({
                       <thead className="bg-slate-700 text-white">
                         <tr>
                           <th className="px-2 py-2 text-left w-8">
-                            <input type="checkbox" disabled className="w-4 h-4" />
+                            <input
+                              type="checkbox"
+                              checked={
+                                filteredRows.length > 0 &&
+                                filteredRows.every((r) => profileRowSelected.has(r.id))
+                              }
+                              onChange={() => {
+                                if (
+                                  filteredRows.length > 0 &&
+                                  filteredRows.every((r) => profileRowSelected.has(r.id))
+                                ) {
+                                  setProfileRowSelected(new Set());
+                                } else {
+                                  setProfileRowSelected(new Set(filteredRows.map((r) => r.id)));
+                                }
+                              }}
+                              className="w-4 h-4"
+                            />
                           </th>
                           <th className="px-2 py-2 text-left">Full Name</th>
                           <th className="px-2 py-2 text-left">User Name</th>
@@ -1516,14 +1856,24 @@ export default function UserPcuControlPanel({
                           filteredRows.map((r) => (
                             <tr key={r.id} className="odd:bg-white even:bg-gray-50 border-b border-gray-200">
                               <td className="px-2 py-2">
-                                <input type="checkbox" disabled className="w-4 h-4" />
+                                <input
+                                  type="checkbox"
+                                  checked={profileRowSelected.has(r.id)}
+                                  onChange={() => {
+                                    const next = new Set(profileRowSelected);
+                                    if (next.has(r.id)) next.delete(r.id);
+                                    else next.add(r.id);
+                                    setProfileRowSelected(next);
+                                  }}
+                                  className="w-4 h-4"
+                                />
                               </td>
                               <td className="px-2 py-2">{user.fullname || '—'}</td>
                               <td className="px-2 py-2">{r.username || user.username}</td>
                               <td className="px-2 py-2">{user.roleTitle}</td>
                               <td className="px-2 py-2">{r.version}</td>
-                              <td className="px-2 py-2">{r.dateStart}</td>
-                              <td className="px-2 py-2">{r.dateEnd ?? '—'}</td>
+                              <td className="px-2 py-2">{accessStart || r.dateStart}</td>
+                              <td className="px-2 py-2">{accessEnd || r.dateEnd || '—'}</td>
                               <td className="px-2 py-2">{String(user.logs ?? 0)}</td>
                               <td className="px-2 py-2">{r.e}</td>
                               <td className="px-2 py-2">{r.status}</td>
@@ -3820,6 +4170,56 @@ export default function UserPcuControlPanel({
           </div>
         )}
       </div>
+
+      {msgModalOpen ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <button
+              type="button"
+              onClick={() => setMsgModalOpen(false)}
+              className="absolute right-3 top-3 text-gray-400 hover:text-gray-800"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <h2 className="mb-1 text-lg font-semibold text-gray-900">Send message</h2>
+            <p className="mb-4 text-sm text-gray-600">{user.fullname || user.username}</p>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Subject</label>
+            <input
+              type="text"
+              value={msgSubject}
+              onChange={(e) => setMsgSubject(e.target.value)}
+              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+            />
+            <label className="mb-2 block text-sm font-medium text-gray-700">Message</label>
+            <textarea
+              value={msgDraft}
+              onChange={(e) => setMsgDraft(e.target.value)}
+              rows={5}
+              placeholder="Write your message…"
+              className="mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+            />
+            {msgError ? <p className="mb-2 text-sm text-red-600">{msgError}</p> : null}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMsgModalOpen(false)}
+                className="rounded border border-gray-400 px-4 py-2 text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSendMsgSubmit()}
+                disabled={msgSending}
+                className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {msgSending ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

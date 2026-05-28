@@ -2,8 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
-import { ExternalLink, LayoutGrid, LayoutList, Search as SearchIcon } from 'lucide-react';
+import {
+  ExternalLink,
+  LayoutGrid,
+  LayoutList,
+  Search as SearchIcon,
+  X,
+} from 'lucide-react';
 import type { ClubSubscriptionStatusTone } from '@/lib/admin/clubSubscriptionStatus';
+import { flagEmojiFromCountryName } from '@/lib/admin/countryFlag';
+import type { FavouritePriority } from '@/lib/admin/userProfilePanelSettings';
+import { normalizeFavouritePriority } from '@/lib/admin/userProfilePanelSettings';
 import AdminClubsUserProfilePanel from '@/components/admin/AdminClubsUserProfilePanel';
 import AdminClubUserPanelModal, {
   type ClubUserPanelData,
@@ -41,7 +50,13 @@ interface ProfilePayload {
     e: string;
     status: string;
   }>;
+  profilePanel?: {
+    tagged: boolean;
+    favouritePriority: FavouritePriority;
+  };
 }
+
+type ActionTarget = { id: string; email: string; username: string; label: string };
 
 interface RowUser {
   id: string;
@@ -50,6 +65,7 @@ interface RowUser {
   displayName: string;
   userType: string;
   country: string | null;
+  location: string | null;
   dateStart: string;
   dateEnd: string | null;
   version: string;
@@ -58,6 +74,15 @@ interface RowUser {
   clubsOwnedCount?: number;
   companyName?: string;
   statusTone?: ClubSubscriptionStatusTone;
+}
+
+function CountryFlagCell({ country }: { country: string | null | undefined }) {
+  const flag = flagEmojiFromCountryName(country);
+  return (
+    <td className="px-2 py-2 border-t border-gray-300 text-center text-lg leading-none">
+      {flag || '—'}
+    </td>
+  );
 }
 
 function clubAdminStatusClassName(tone?: ClubSubscriptionStatusTone): string {
@@ -280,6 +305,18 @@ export default function AdminRegisteredUsersList({
   const [clubPanelData, setClubPanelData] = useState<ClubUserPanelData | null>(null);
   const [clubPanelUserId, setClubPanelUserId] = useState<string | null>(null);
 
+  const [msgModalOpen, setMsgModalOpen] = useState(false);
+  const [msgTargets, setMsgTargets] = useState<ActionTarget[]>([]);
+  const [msgDraft, setMsgDraft] = useState('');
+  const [msgSubject, setMsgSubject] = useState('Message from Movesbook Admin');
+  const [msgSending, setMsgSending] = useState(false);
+  const [msgError, setMsgError] = useState('');
+  const [actionBusy, setActionBusy] = useState(false);
+  const [profileTagged, setProfileTagged] = useState(false);
+  const [profileFavouritePriority, setProfileFavouritePriority] =
+    useState<FavouritePriority>('not_selected');
+  const [profilePanelSaving, setProfilePanelSaving] = useState(false);
+
   const filterWrapRef = useRef<HTMLDivElement>(null);
   const profilePanelRef = useRef<HTMLDivElement>(null);
   const profileSubFilterWrapRef = useRef<HTMLDivElement>(null);
@@ -421,6 +458,149 @@ export default function AdminRegisteredUsersList({
     setSelected(next);
   };
 
+  const resolveActionTargets = useCallback((): ActionTarget[] => {
+    if (selected.size > 0) {
+      return rows
+        .filter((r) => selected.has(r.id))
+        .map((r) => ({
+          id: r.id,
+          email: r.email,
+          username: r.username,
+          label: r.displayName || r.username,
+        }));
+    }
+    if (profileState === 'ready' && profileData && profileRowSelected.size > 0) {
+      const userIds = new Set<string>();
+      profileRowSelected.forEach((rowId) => {
+        userIds.add(rowId.startsWith('account-') ? rowId.slice('account-'.length) : profileData.id);
+      });
+      return Array.from(userIds).map((id) => ({
+        id,
+        email: profileData.email,
+        username: profileData.username,
+        label: profileData.fullName || profileData.username,
+      }));
+    }
+    return [];
+  }, [selected, rows, profileState, profileData, profileRowSelected]);
+
+  const profileActionTarget = useMemo((): ActionTarget | null => {
+    if (profileState !== 'ready' || !profileData) return null;
+    return {
+      id: profileData.id,
+      email: profileData.email,
+      username: profileData.username,
+      label: profileData.fullName || profileData.username,
+    };
+  }, [profileState, profileData]);
+
+  const requireActionTargets = useCallback((): ActionTarget[] | null => {
+    const targets = resolveActionTargets();
+    if (targets.length === 0) {
+      window.alert('Select at least one user (checkbox in the list or subscription row in the profile panel).');
+      return null;
+    }
+    return targets;
+  }, [resolveActionTargets]);
+
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
+
+  const handleSendMail = useCallback(() => {
+    const targets = requireActionTargets();
+    if (!targets) return;
+    const emails = targets.map((t) => t.email.trim()).filter(Boolean);
+    if (emails.length === 0) {
+      window.alert('Selected users have no email address.');
+      return;
+    }
+    if (emails.length === 1) {
+      window.location.href = `mailto:${encodeURIComponent(emails[0]!)}`;
+      return;
+    }
+    const bcc = emails.map((e) => encodeURIComponent(e)).join(',');
+    window.location.href = `mailto:?bcc=${bcc}`;
+  }, [requireActionTargets]);
+
+  const openSendMsgModal = useCallback(() => {
+    const targets = requireActionTargets();
+    if (!targets) return;
+    setMsgTargets(targets);
+    setMsgError('');
+    setMsgDraft('');
+    setMsgSubject('Message from Movesbook Admin');
+    setMsgModalOpen(true);
+  }, [requireActionTargets]);
+
+  const handleSendMsgSubmit = useCallback(async () => {
+    const targets = msgTargets;
+    if (targets.length === 0) return;
+    const message = msgDraft.trim();
+    if (!message) {
+      setMsgError('Please enter a message.');
+      return;
+    }
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      setMsgError('Admin session not found. Please log in again.');
+      return;
+    }
+    setMsgSending(true);
+    setMsgError('');
+    try {
+      const res = await fetch('/api/admin/registered-users/actions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          segment,
+          userIds: targets.map((t) => t.id),
+          message,
+          subject: msgSubject.trim() || 'Message from Movesbook Admin',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to send message');
+
+      if (data.mailtoFallback && Array.isArray(data.recipients)) {
+        const emails = data.recipients
+          .map((r: { email?: string }) => r.email?.trim())
+          .filter(Boolean) as string[];
+        if (emails.length === 0) {
+          throw new Error('No email addresses for selected users.');
+        }
+        const body = encodeURIComponent(message);
+        const subj = encodeURIComponent(msgSubject.trim() || 'Message from Movesbook Admin');
+        if (emails.length === 1) {
+          window.location.href = `mailto:${encodeURIComponent(emails[0]!)}?subject=${subj}&body=${body}`;
+        } else {
+          const bcc = emails.map((e) => encodeURIComponent(e)).join(',');
+          window.location.href = `mailto:?bcc=${bcc}&subject=${subj}&body=${body}`;
+        }
+        setMsgModalOpen(false);
+        window.alert('Email service is not configured. Your mail client will open with the message prefilled.');
+        return;
+      }
+
+      const sent = typeof data.sent === 'number' ? data.sent : 0;
+      const failed = Array.isArray(data.failed) ? data.failed.length : 0;
+      setMsgModalOpen(false);
+      setMsgDraft('');
+      if (failed > 0) {
+        window.alert(`Message sent to ${sent} user(s). ${failed} failed — check email addresses.`);
+      } else {
+        window.alert(`Message sent to ${sent} user(s).`);
+      }
+    } catch (e: unknown) {
+      setMsgError(e instanceof Error ? e.message : 'Failed to send message');
+    } finally {
+      setMsgSending(false);
+    }
+  }, [msgTargets, msgDraft, msgSubject, segment]);
+
   const pageNumbers = useMemo(() => {
     const maxButtons = 5;
     if (totalPages <= maxButtons) {
@@ -464,7 +644,141 @@ export default function AdminRegisteredUsersList({
     setProfileSubFilterDraft(EMPTY_PROFILE_SUB_FILTERS);
     setProfileSubFilterApplied(EMPTY_PROFILE_SUB_FILTERS);
     setProfileOrdering('');
+    setProfileTagged(false);
+    setProfileFavouritePriority('not_selected');
+    setProfilePanelSaving(false);
   }, []);
+
+  const saveProfilePanelSettings = useCallback(
+    async (patch: { tagged?: boolean; favouritePriority?: FavouritePriority }) => {
+      if (!profileData?.id) return;
+      const prevTagged = profileTagged;
+      const prevPriority = profileFavouritePriority;
+      if (patch.tagged !== undefined) setProfileTagged(patch.tagged);
+      if (patch.favouritePriority !== undefined) setProfileFavouritePriority(patch.favouritePriority);
+
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        setProfileTagged(prevTagged);
+        setProfileFavouritePriority(prevPriority);
+        window.alert('Admin session not found. Please log in again.');
+        return;
+      }
+
+      setProfilePanelSaving(true);
+      try {
+        const res = await fetch(
+          `/api/admin/registered-users/${encodeURIComponent(profileData.id)}/profile-panel`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(patch),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to save profile settings');
+        if (data.profilePanel) {
+          setProfileTagged(Boolean(data.profilePanel.tagged));
+          setProfileFavouritePriority(
+            normalizeFavouritePriority(data.profilePanel.favouritePriority),
+          );
+          setProfileData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  profilePanel: {
+                    tagged: Boolean(data.profilePanel.tagged),
+                    favouritePriority: normalizeFavouritePriority(
+                      data.profilePanel.favouritePriority,
+                    ),
+                  },
+                }
+              : prev,
+          );
+        }
+      } catch (e: unknown) {
+        setProfileTagged(prevTagged);
+        setProfileFavouritePriority(prevPriority);
+        window.alert(e instanceof Error ? e.message : 'Failed to save profile settings');
+      } finally {
+        setProfilePanelSaving(false);
+      }
+    },
+    [profileData?.id, profileTagged, profileFavouritePriority],
+  );
+
+  const deleteSubscriptionsForTargets = useCallback(
+    async (targets: ActionTarget[], closeProfileIfDeleted: boolean) => {
+      const names = targets.map((t) => t.label).slice(0, 5).join(', ');
+      const more = targets.length > 5 ? ` and ${targets.length - 5} more` : '';
+      const ok = window.confirm(
+        `Delete ${targets.length} subscription(s)?\n\n${names}${more}\n\nThis permanently removes the user account(s) from Movesbook. This cannot be undone.`,
+      );
+      if (!ok) return;
+
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        window.alert('Admin session not found. Please log in again.');
+        return;
+      }
+      setActionBusy(true);
+      try {
+        const res = await fetch('/api/admin/registered-users/actions', {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            segment,
+            userIds: targets.map((t) => t.id),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to delete subscriptions');
+
+        const deleted = typeof data.deleted === 'number' ? data.deleted : 0;
+        setSelected(new Set());
+        setProfileRowSelected(new Set());
+        if (closeProfileIfDeleted && profileData && targets.some((t) => t.id === profileData.id)) {
+          closeUserProfile();
+        }
+        await load();
+        window.alert(`Deleted ${deleted} user subscription(s).`);
+      } catch (e: unknown) {
+        window.alert(e instanceof Error ? e.message : 'Failed to delete subscriptions');
+      } finally {
+        setActionBusy(false);
+      }
+    },
+    [segment, profileData, closeUserProfile, load],
+  );
+
+  const handleDeleteSubscriptions = useCallback(async () => {
+    const targets = requireActionTargets();
+    if (!targets) return;
+    await deleteSubscriptionsForTargets(targets, true);
+  }, [requireActionTargets, deleteSubscriptionsForTargets]);
+
+  const handleProfileSendMail = useCallback(() => {
+    if (!profileActionTarget?.email) {
+      window.alert('This user has no email address.');
+      return;
+    }
+    window.location.href = `mailto:${encodeURIComponent(profileActionTarget.email)}`;
+  }, [profileActionTarget]);
+
+  const openProfileSendMsgModal = useCallback(() => {
+    if (!profileActionTarget) return;
+    setMsgTargets([profileActionTarget]);
+    setMsgError('');
+    setMsgDraft('');
+    setMsgSubject('Message from Movesbook Admin');
+    setMsgModalOpen(true);
+  }, [profileActionTarget]);
 
   const openUserProfile = useCallback(
     async (userId: string) => {
@@ -523,7 +837,17 @@ export default function AdminRegisteredUsersList({
               status: String(r.status),
             }),
           ),
+          profilePanel: data.profilePanel
+            ? {
+                tagged: Boolean(data.profilePanel.tagged),
+                favouritePriority: normalizeFavouritePriority(data.profilePanel.favouritePriority),
+              }
+            : undefined,
         });
+        setProfileTagged(Boolean(data.profilePanel?.tagged));
+        setProfileFavouritePriority(
+          normalizeFavouritePriority(data.profilePanel?.favouritePriority),
+        );
         setProfileState('ready');
       } catch (e: unknown) {
         setProfileError(e instanceof Error ? e.message : 'Failed to load');
@@ -748,7 +1072,13 @@ export default function AdminRegisteredUsersList({
                       {profileData.typeBadge}
                     </div>
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input type="checkbox" className="rounded border-gray-600" />
+                      <input
+                        type="checkbox"
+                        className="rounded border-gray-600"
+                        checked={profileTagged}
+                        disabled={profilePanelSaving}
+                        onChange={(e) => void saveProfilePanelSettings({ tagged: e.target.checked })}
+                      />
                       Tag the user
                     </label>
                   </div>
@@ -783,23 +1113,32 @@ export default function AdminRegisteredUsersList({
 
                   <div className="flex flex-col gap-2 shrink-0">
                     <span className="text-sm text-gray-600">Put as favourite</span>
-                    <select className="border border-gray-500 bg-white px-2 py-1.5 text-sm rounded min-w-[140px]">
-                      <option>Not selected</option>
-                      <option>Low priority</option>
-                      <option>Medium priority</option>
-                      <option>High priority</option>
+                    <select
+                      className="border border-gray-500 bg-white px-2 py-1.5 text-sm rounded min-w-[140px] disabled:opacity-60"
+                      value={profileFavouritePriority}
+                      disabled={profilePanelSaving}
+                      onChange={(e) =>
+                        void saveProfilePanelSettings({
+                          favouritePriority: normalizeFavouritePriority(e.target.value),
+                        })
+                      }
+                    >
+                      <option value="not_selected">Not selected</option>
+                      <option value="low">Low priority</option>
+                      <option value="medium">Medium priority</option>
+                      <option value="high">High priority</option>
                     </select>
                   </div>
                 </div>
 
                 <div className="flex flex-wrap gap-4 text-sm text-blue-800 underline mt-4 pt-4 border-t border-gray-200">
-                  <button type="button" className="hover:text-blue-950">
+                  <button type="button" onClick={handlePrint} className="hover:text-blue-950">
                     Print
                   </button>
-                  <button type="button" className="hover:text-blue-950">
+                  <button type="button" onClick={openProfileSendMsgModal} className="hover:text-blue-950">
                     Send Msg
                   </button>
-                  <button type="button" className="hover:text-blue-950">
+                  <button type="button" onClick={handleProfileSendMail} className="hover:text-blue-950">
                     Send Mail
                   </button>
                 </div>
@@ -929,10 +1268,14 @@ export default function AdminRegisteredUsersList({
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-sm">
+                <table className="w-full min-w-[1100px] text-sm">
                   <thead>
                     <tr className="bg-[#4a8f96] text-white">
                       <th className="w-10 px-2 py-2 text-left font-semibold border-r border-[#3d7a80]" />
+                      <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Full name</th>
+                      <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Country</th>
+                      <th className="px-2 py-2 text-center font-semibold border-r border-[#3d7a80] w-14">Flag</th>
+                      <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Location</th>
                       <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Date Start</th>
                       <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Date End</th>
                       <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Version</th>
@@ -944,7 +1287,7 @@ export default function AdminRegisteredUsersList({
                   <tbody>
                     {filteredProfileSubscriptionRows.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500 bg-white">
+                        <td colSpan={11} className="px-4 py-8 text-center text-gray-500 bg-white">
                           No subscription rows match the current filter.
                         </td>
                       </tr>
@@ -964,6 +1307,12 @@ export default function AdminRegisteredUsersList({
                               className="rounded border-gray-500"
                             />
                           </td>
+                          <td className="px-3 py-2 border-t border-gray-300 font-medium">
+                            {profileData.fullName || '—'}
+                          </td>
+                          <td className="px-3 py-2 border-t border-gray-300">{profileData.country || '—'}</td>
+                          <CountryFlagCell country={profileData.country} />
+                          <td className="px-3 py-2 border-t border-gray-300">{profileData.location || '—'}</td>
                           <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{row.dateStart}</td>
                           <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{row.dateEnd ?? '—'}</td>
                           <td className="px-3 py-2 border-t border-gray-300">{row.version}</td>
@@ -1219,16 +1568,31 @@ export default function AdminRegisteredUsersList({
         </div>
 
         <div className="flex flex-wrap gap-4 text-sm text-blue-800 underline">
-          <button type="button" className="hover:text-blue-950">
+          <button type="button" onClick={handlePrint} className="hover:text-blue-950">
             Print
           </button>
-          <button type="button" className="hover:text-blue-950">
+          <button
+            type="button"
+            onClick={openSendMsgModal}
+            disabled={actionBusy}
+            className="hover:text-blue-950 disabled:opacity-50"
+          >
             Send Msg
           </button>
-          <button type="button" className="hover:text-blue-950">
+          <button
+            type="button"
+            onClick={handleSendMail}
+            disabled={actionBusy}
+            className="hover:text-blue-950 disabled:opacity-50"
+          >
             Send mail
           </button>
-          <button type="button" className="hover:text-blue-950">
+          <button
+            type="button"
+            onClick={() => void handleDeleteSubscriptions()}
+            disabled={actionBusy}
+            className="hover:text-red-900 text-red-700 disabled:opacity-50"
+          >
             Delete Subscriptions
           </button>
         </div>
@@ -1304,7 +1668,14 @@ export default function AdminRegisteredUsersList({
               key={r.id}
               className="border border-gray-300 bg-white p-4 rounded shadow-sm text-sm space-y-1"
             >
-              <div className="font-semibold">{r.displayName}</div>
+              <div className="font-semibold">{r.displayName || '—'}</div>
+              <div className="text-gray-700">
+                {r.country || '—'}{' '}
+                {flagEmojiFromCountryName(r.country) && (
+                  <span className="ml-1">{flagEmojiFromCountryName(r.country)}</span>
+                )}
+              </div>
+              <div className="text-gray-600">{r.location?.trim() || '—'}</div>
               {isClubsSegment ? (
                 <button
                   type="button"
@@ -1338,10 +1709,14 @@ export default function AdminRegisteredUsersList({
         </div>
       ) : (
         <div className="overflow-x-auto border border-t-0 border-gray-300">
-          <table className="w-full min-w-[900px] text-sm">
+          <table className="w-full min-w-[1200px] text-sm">
             <thead>
               <tr className="bg-[#4a8f96] text-white">
                 <th className="w-10 px-2 py-2 text-left font-semibold border-r border-[#3d7a80]" />
+                <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Full name</th>
+                <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Country</th>
+                <th className="px-2 py-2 text-center font-semibold border-r border-[#3d7a80] w-14">Flag</th>
+                <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Location</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Date Start</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Date End</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Version</th>
@@ -1359,7 +1734,7 @@ export default function AdminRegisteredUsersList({
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={isClubsSegment ? 9 : 8} className="px-4 py-10 text-center text-gray-500 bg-white">
+                  <td colSpan={isClubsSegment ? 13 : 12} className="px-4 py-10 text-center text-gray-500 bg-white">
                     No registered users in this category yet.
                   </td>
                 </tr>
@@ -1377,6 +1752,10 @@ export default function AdminRegisteredUsersList({
                         className="rounded border-gray-500"
                       />
                     </td>
+                    <td className="px-3 py-2 border-t border-gray-300 font-medium">{r.displayName || '—'}</td>
+                    <td className="px-3 py-2 border-t border-gray-300">{r.country?.trim() || '—'}</td>
+                    <CountryFlagCell country={r.country} />
+                    <td className="px-3 py-2 border-t border-gray-300">{r.location?.trim() || '—'}</td>
                     <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{r.dateStart}</td>
                     <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">
                       {r.dateEnd ?? '—'}
@@ -1440,6 +1819,58 @@ export default function AdminRegisteredUsersList({
           onClose={closeClubUserPanel}
           onControlPanel={handleClubPanelControlPanel}
         />
+      )}
+
+      {msgModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <button
+              type="button"
+              onClick={() => setMsgModalOpen(false)}
+              className="absolute right-3 top-3 text-gray-400 hover:text-gray-800"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <h2 className="mb-1 text-lg font-semibold text-gray-900">Send message</h2>
+            <p className="mb-4 text-sm text-gray-600">
+              To {msgTargets.map((t) => t.label).join(', ')}
+            </p>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Subject</label>
+            <input
+              type="text"
+              value={msgSubject}
+              onChange={(e) => setMsgSubject(e.target.value)}
+              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+            />
+            <label className="mb-2 block text-sm font-medium text-gray-700">Message</label>
+            <textarea
+              value={msgDraft}
+              onChange={(e) => setMsgDraft(e.target.value)}
+              rows={5}
+              placeholder="Write your message…"
+              className="mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+            />
+            {msgError ? <p className="mb-2 text-sm text-red-600">{msgError}</p> : null}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMsgModalOpen(false)}
+                className="rounded border border-gray-400 px-4 py-2 text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSendMsgSubmit()}
+                disabled={msgSending}
+                className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {msgSending ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

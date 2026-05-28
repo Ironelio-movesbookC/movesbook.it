@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
+import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
 
@@ -178,16 +179,20 @@ export default function SidebarClubMyEntityTop({
           </div>
         </div>
 
-        <button
-          type="button"
-          className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Building2 className="w-5 h-5 shrink-0" />
-            <span className="font-semibold tracking-wide truncate">Club Info</span>
-          </div>
-          <ChevronDown className="w-4 h-4 opacity-90" />
-        </button>
+        {isClubAccountUserType(userType) ? (
+          <ClubMyClubInfoSubmenu clubId={club?.id} />
+        ) : (
+          <button
+            type="button"
+            className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Building2 className="w-5 h-5 shrink-0" />
+              <span className="font-semibold tracking-wide truncate">Club Info</span>
+            </div>
+            <ChevronDown className="w-4 h-4 opacity-90" />
+          </button>
+        )}
 
         <button
           type="button"

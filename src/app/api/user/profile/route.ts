@@ -29,6 +29,8 @@ export async function GET(request: NextRequest) {
         firstName: true,
         surname: true,
         country: true,
+        gender: true,
+        birthdate: true,
         image: true,
         profileBanner: true,
         profileBannerAlignment: true,
@@ -132,12 +134,32 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { profileBanner, profileBannerAlignment, profileBannerSequence, profileBannerVideo, image } = body as {
+    const {
+      profileBanner,
+      profileBannerAlignment,
+      profileBannerSequence,
+      profileBannerVideo,
+      image,
+      name,
+      firstName,
+      surname,
+      country,
+      language,
+      gender,
+      birthdate,
+    } = body as {
       profileBanner?: string | null;
       profileBannerAlignment?: string | null;
       profileBannerSequence?: string | null | unknown[];
       profileBannerVideo?: string | null;
       image?: string | null;
+      name?: string | null;
+      firstName?: string | null;
+      surname?: string | null;
+      country?: string | null;
+      language?: string | null;
+      gender?: string | null;
+      birthdate?: string | null;
     };
 
     const data: {
@@ -146,6 +168,12 @@ export async function PATCH(request: NextRequest) {
       profileBannerSequence?: string | null;
       profileBannerVideo?: string | null;
       image?: string | null;
+      name?: string;
+      firstName?: string | null;
+      surname?: string | null;
+      country?: string | null;
+      gender?: string | null;
+      birthdate?: Date | null;
     } = {};
 
     if (profileBanner !== undefined) {
@@ -199,6 +227,85 @@ export async function PATCH(request: NextRequest) {
       data.image = image === null || image === '' ? null : String(image).trim().slice(0, 512);
     }
 
+    if (name !== undefined) {
+      const trimmed = String(name ?? '').trim();
+      if (trimmed.length > 0) {
+        data.name = trimmed.slice(0, 120);
+      }
+    }
+
+    if (firstName !== undefined) {
+      const trimmed = String(firstName ?? '').trim();
+      data.firstName = trimmed.length > 0 ? trimmed.slice(0, 80) : null;
+    }
+
+    if (surname !== undefined) {
+      const trimmed = String(surname ?? '').trim();
+      data.surname = trimmed.length > 0 ? trimmed.slice(0, 80) : null;
+    }
+
+    if (country !== undefined) {
+      const trimmed = String(country ?? '').trim();
+      data.country = trimmed.length > 0 ? trimmed.slice(0, 80) : null;
+    }
+
+    if (gender !== undefined) {
+      const trimmed = String(gender ?? '').trim();
+      data.gender = trimmed.length > 0 ? trimmed.slice(0, 40) : null;
+    }
+
+    if (birthdate !== undefined) {
+      if (birthdate === null || birthdate === '') {
+        data.birthdate = null;
+      } else {
+        const parsed = new Date(String(birthdate));
+        if (Number.isNaN(parsed.getTime())) {
+          return NextResponse.json({ error: 'Invalid birthdate' }, { status: 400 });
+        }
+        data.birthdate = parsed;
+      }
+    }
+
+    const explicitDisplayName = name !== undefined && String(name).trim().length > 0;
+    if ((firstName !== undefined || surname !== undefined) && !explicitDisplayName) {
+      const current = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: { firstName: true, surname: true },
+      });
+      const fn =
+        data.firstName !== undefined ? data.firstName : (current?.firstName ?? null);
+      const sn =
+        data.surname !== undefined ? data.surname : (current?.surname ?? null);
+      const composed = [fn, sn]
+        .filter((part) => part != null && String(part).trim().length > 0)
+        .join(' ')
+        .trim();
+      if (composed) {
+        data.name = composed.slice(0, 120);
+      }
+    }
+
+    if (language !== undefined) {
+      const lang = String(language ?? '').trim().slice(0, 10) || 'en';
+      await prisma.userSettings.upsert({
+        where: { userId: decoded.userId },
+        update: { language: lang },
+        create: {
+          userId: decoded.userId,
+          language: lang,
+          colorSettings: '{}',
+          toolsSettings: '{}',
+          favouritesSettings: '{}',
+          myBestSettings: '{}',
+          adminSettings: '{}',
+          workoutPreferences: '{}',
+          socialSettings: '{}',
+          notificationSettings: '{}',
+          widgetArrangement: '[]',
+        },
+      });
+    }
+
     const mediaTouched =
       data.image !== undefined ||
       data.profileBanner !== undefined ||
@@ -221,12 +328,16 @@ export async function PATCH(request: NextRequest) {
         name: true,
         firstName: true,
         surname: true,
+        country: true,
+        gender: true,
+        birthdate: true,
         image: true,
         profileBanner: true,
         profileBannerAlignment: true,
         profileBannerSequence: true,
         profileBannerVideo: true,
         userType: true,
+        settings: { select: { language: true } },
       } as Prisma.UserSelect,
     });
 

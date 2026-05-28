@@ -6,6 +6,8 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import UserPcuControlPanel from '@/components/admin/UserPcuControlPanel';
 import { navScopeToProfileSegment, type PcuPanelPayload } from '@/lib/admin/userPcuPanel';
+import type { PcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
+import type { ProfilePanelSettings } from '@/lib/admin/userProfilePanelSettings';
 
 type SubscriptionRow = {
   id: string;
@@ -27,6 +29,8 @@ export default function HistoryUserPage() {
   const [error, setError] = useState('');
   const [user, setUser] = useState<PcuPanelPayload | null>(null);
   const [subscriptionRows, setSubscriptionRows] = useState<SubscriptionRow[]>([]);
+  const [profilePanel, setProfilePanel] = useState<ProfilePanelSettings | undefined>();
+  const [pcuAccess, setPcuAccess] = useState<PcuAccessSettings | undefined>();
 
   const loadProfile = useCallback(async () => {
     if (!userId) return;
@@ -64,10 +68,22 @@ export default function HistoryUserPage() {
 
       setUser(panel);
       setSubscriptionRows(Array.isArray(data.subscriptionRows) ? (data.subscriptionRows as SubscriptionRow[]) : []);
+      setProfilePanel(
+        data.profilePanel && typeof data.profilePanel === 'object'
+          ? (data.profilePanel as ProfilePanelSettings)
+          : undefined,
+      );
+      setPcuAccess(
+        data.pcuAccess && typeof data.pcuAccess === 'object'
+          ? (data.pcuAccess as PcuAccessSettings)
+          : undefined,
+      );
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load profile');
       setUser(null);
       setSubscriptionRows([]);
+      setProfilePanel(undefined);
+      setPcuAccess(undefined);
     } finally {
       setLoading(false);
     }
@@ -119,7 +135,13 @@ export default function HistoryUserPage() {
 
   return (
     <div className="py-4 px-2 sm:px-4">
-      <UserPcuControlPanel user={user} backHref={backHref} subscriptionRows={subscriptionRows} />
+      <UserPcuControlPanel
+        user={user}
+        backHref={backHref}
+        subscriptionRows={subscriptionRows}
+        profilePanel={profilePanel}
+        initialPcuAccess={pcuAccess}
+      />
     </div>
   );
 }

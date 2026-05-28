@@ -11,6 +11,8 @@ import {
   inferProfileSegment,
   typeBadgeLabel,
 } from '@/lib/admin/userPcuPanel';
+import { readProfilePanelSettings } from '@/lib/admin/userProfilePanelSettings';
+import { readPcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,6 +131,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         orderBy: { joinedAt: 'desc' },
         take: 1,
       },
+      settings: { select: { adminSettings: true } },
     },
   });
 
@@ -198,6 +201,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   ];
 
   const pcuPanel = buildPcuPanel(user, segment, loginLogCount, planCount);
+  const profilePanel = readProfilePanelSettings(user.settings?.adminSettings);
+  const pcuAccess = readPcuAccessSettings(user.settings?.adminSettings, {
+    accessStartIso: pcuPanel.startDateIso,
+    accessEndIso: pcuPanel.endDateIso,
+  });
 
   return NextResponse.json({
     id: user.id,
@@ -214,6 +222,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     subscriptionRows: rows,
     segment,
     pcuPanel,
+    profilePanel,
+    pcuAccess,
     ...(segment === 'clubs'
       ? {
           userPanel: {

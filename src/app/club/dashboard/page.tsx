@@ -13,7 +13,6 @@ import {
   Plus,
   Target,
   TrendingUp,
-  ChevronRight,
   ChevronDown,
   Building2,
   Menu,
@@ -79,6 +78,24 @@ function ClubDashboardContent() {
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
   const [createClubModalKey, setCreateClubModalKey] = useState(0);
   const [createClubSaving, setCreateClubSaving] = useState(false);
+  /** My Club tab is visible only after opening a club from the sidebar list. */
+  const [myClubTabVisible, setMyClubTabVisible] = useState(false);
+
+  const showMyClubTab = useCallback(() => {
+    setMyClubTabVisible(true);
+  }, []);
+
+  const hideMyClubTab = useCallback(() => {
+    setMyClubTabVisible(false);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const savedClubId = localStorage.getItem('selectedClub');
+    if (savedClubId) setSelectedClubId(savedClubId);
+    setActiveTab('my-page');
+    setMyClubTabVisible(false);
+  }, []);
 
   const formClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(clubs),
@@ -93,8 +110,9 @@ function ClubDashboardContent() {
     setShowCreateClubModal(true);
   };
   const hasFormClub = formClubs.length > 0;
-  const activeClub =
-    formClubs.find((c) => c.id === selectedClubId) ?? formClubs[0] ?? null;
+  const activeClub = selectedClubId
+    ? formClubs.find((c) => c.id === selectedClubId) ?? null
+    : null;
 
   // All function definitions and useEffect hooks must also be before any early returns
   const loadBannerProfile = useCallback(async () => {
@@ -139,8 +157,24 @@ function ClubDashboardContent() {
   const handleClubSelect = (clubId: string) => {
     localStorage.setItem('selectedClub', clubId);
     setSelectedClubId(clubId);
+    showMyClubTab();
     setActiveTab('my-entity');
   };
+
+  const handleMyPageTabClick = useCallback(() => {
+    hideMyClubTab();
+    setActiveTab('my-page');
+  }, [hideMyClubTab]);
+
+  const handleTabChange = useCallback(
+    (tab: 'my-page' | 'my-entity') => {
+      if (tab === 'my-page') {
+        hideMyClubTab();
+      }
+      setActiveTab(tab);
+    },
+    [hideMyClubTab],
+  );
 
   const handleCreateClubSave = async (payload: CreateClubFormPayload) => {
     const token = localStorage.getItem('token');
@@ -166,18 +200,10 @@ function ClubDashboardContent() {
         localStorage.setItem('selectedClub', data.club.id);
       }
       setShowCreateClubModal(false);
-      setActiveTab('my-entity');
     } finally {
       setCreateClubSaving(false);
     }
   };
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('selectedClub');
-      if (saved) setSelectedClubId(saved);
-    }
-  }, []);
 
   useEffect(() => {
     if (activeTab !== 'my-entity') {
@@ -188,13 +214,25 @@ function ClubDashboardContent() {
 
   // After tab cleanup effect: open normal-user OGP/News (same `NewsOGPPanel` / `useNewsData` as athletes; not super-admin).
   useEffect(() => {
-    if (searchParams != null && searchParams.get('open') === 'news') {
+    if (searchParams != null && searchParams.get('open') === 'news' && formClubs.length > 0) {
+      const clubId = selectedClubId ?? formClubs[0]?.id;
+      if (clubId && !selectedClubId) {
+        setSelectedClubId(clubId);
+        localStorage.setItem('selectedClub', clubId);
+      }
+      showMyClubTab();
       setActiveTab('my-entity');
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(true);
       router.replace('/club/dashboard', { scroll: false });
     }
-  }, [searchParams, router]);
+  }, [searchParams, router, formClubs, selectedClubId]);
+
+  useEffect(() => {
+    if (!selectedClubId && activeTab === 'my-entity') {
+      setActiveTab('my-page');
+    }
+  }, [selectedClubId, activeTab]);
 
   useEffect(() => {
     if (user && !isClubAccountUserType(user.userType)) {
@@ -209,10 +247,11 @@ function ClubDashboardContent() {
     }
   }, [user, loadBannerProfile]);
 
-  // Reset workout section when switching to my-page
+  // Reset workout section when switching to my-page; hide My Club tab on My Page
   useEffect(() => {
     if (activeTab === 'my-page') {
       setShowWorkoutSection(false);
+      setMyClubTabVisible(false);
     }
   }, [activeTab]);
 
@@ -243,9 +282,8 @@ function ClubDashboardContent() {
     return null;
   }
 
-  const dashboardShellActiveTab: 'my-page' | 'my-entity' = hasFormClub
-    ? activeTab
-    : 'my-page';
+  const dashboardShellActiveTab: 'my-page' | 'my-entity' =
+    selectedClubId && hasFormClub ? activeTab : 'my-page';
 
   return (
     <div className="bg-gray-50 flex flex-col" style={{ minHeight: '100vh' }}>
@@ -303,6 +341,10 @@ function ClubDashboardContent() {
         {showPersonalBanner && hasFormClub && activeClub && (
           <ClubDashboardMyPageBanner
             clubName={getClubMyPageDisplayName(activeClub)}
+            clubId={activeClub.id}
+            onClubProfileClick={() => {
+              router.push(`/my-club?clubId=${encodeURIComponent(activeClub.id)}`);
+            }}
             coverImageUrl={getHeroBannerDisplayUrl(bannerProfile)}
             coverBannerAlignment={
               bannerProfile?.profileBannerAlignment === 'center' ? 'center' : 'default'
@@ -319,16 +361,21 @@ function ClubDashboardContent() {
                 userType={user?.userType || ''}
                 entities={formClubs}
                 selectedEntityId={selectedClubId}
+                clubMyClubTabVisible={myClubTabVisible}
                 onEntitySelect={handleClubSelect}
                 activeTab={activeTab}
-                onTabChange={setActiveTab}
-                onMyPageClick={() => setActiveTab('my-page')}
+                onTabChange={handleTabChange}
+                onMyPageClick={handleMyPageTabClick}
                 onMyClubClick={() => {
-                  if (!hasFormClub) return;
+                  if (!myClubTabVisible || !selectedClubId) return;
                   setActiveTab('my-entity');
                 }}
                 onClubAddSongsPlaylistsClick={() => {
-                  if (!hasFormClub) return;
+                  if (!hasFormClub || !myClubTabVisible) return;
+                  if (!selectedClubId && formClubs[0]?.id) {
+                    setSelectedClubId(formClubs[0].id);
+                    localStorage.setItem('selectedClub', formClubs[0].id);
+                  }
                   setActiveTab('my-entity');
                   setShowWorkoutSection(false);
                   setClubAddSongsOgpOpen(true);
@@ -359,9 +406,27 @@ function ClubDashboardContent() {
                       </button>
                     </div>
                   </div>
-                ) : dashboardShellActiveTab === 'my-page' && activeClub ? (
+                ) : dashboardShellActiveTab === 'my-page' ? (
                   <div>
                     <h2 className="mb-6 text-2xl font-bold text-gray-900">My Page</h2>
+                    <div className="max-w-2xl space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-6">
+                      <p className="text-gray-700">
+                        Your personal club owner page. Use the left sidebar to manage your profile,
+                        visitors, and club settings.
+                      </p>
+                      {hasFormClub && (
+                        <p className="text-sm text-gray-600">
+                          To open a club workspace, expand <strong>My clubs</strong> and click your club
+                          (e.g. <strong>{formatMyClubsSidebarLabel(formClubs[0]!)}</strong>). That opens{' '}
+                          <strong>My Club</strong>, where you can switch back here with{' '}
+                          <strong>My Page</strong>.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : dashboardShellActiveTab === 'my-entity' && activeClub ? (
+                  <div>
+                    <h2 className="mb-6 text-2xl font-bold text-gray-900">My Club</h2>
                     <div className="max-w-2xl space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-6">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -399,52 +464,19 @@ function ClubDashboardContent() {
                           {formatMyClubsSidebarLabel(activeClub)}
                         </span>
                       </p>
-                    </div>
-                  </div>
-                ) : dashboardShellActiveTab === 'my-entity' && activeClub ? (
-                  <div>
-                    <h2 className="mb-6 text-2xl font-bold text-gray-900">My Club</h2>
-                    <div className="max-w-2xl space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-6">
-                      <p className="text-lg font-semibold text-gray-900">
-                        {getClubMyPageDisplayName(activeClub)}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        {formatMyClubsSidebarLabel(activeClub)}
-                      </p>
                       <p className="text-sm text-gray-500">
                         Use the left sidebar for club tools, members, music, and management.
                       </p>
                     </div>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {formClubs.map((club) => (
-                      <div
-                        key={club.id}
-                        onClick={() => handleClubSelect(club.id)}
-                        className="p-6 border-2 border-gray-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all duration-300 cursor-pointer"
-                      >
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-purple-500 rounded-xl flex items-center justify-center">
-                            <Building2 className="w-6 h-6 text-white" />
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-gray-400" />
-                        </div>
-                        <h3 className="font-bold text-gray-900 text-lg mb-2">
-                          {getClubMyPageDisplayName(club)}
-                        </h3>
-                        <p className="text-sm text-gray-600 mb-2">
-                          {formatMyClubsSidebarLabel(club)}
-                        </p>
-                        {club.location && <p className="text-xs text-gray-500 mb-4">{club.location}</p>}
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-500">{club.memberCount || 0} members</span>
-                          <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full">Active</span>
-                        </div>
-                      </div>
-                    ))}
+                ) : dashboardShellActiveTab === 'my-entity' ? (
+                  <div>
+                    <h2 className="mb-2 text-2xl font-bold text-gray-900">My Club</h2>
+                    <p className="text-gray-600">
+                      Click a club under <strong>My clubs</strong> in the sidebar to open it here.
+                    </p>
                   </div>
-                )}
+                ) : null}
               </div>
             ) : clubAddSongsOgpOpen ? (
               <div className="flex-1 flex flex-col min-h-0 py-4">
