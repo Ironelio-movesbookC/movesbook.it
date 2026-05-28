@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
 import { ExternalLink, LayoutGrid, LayoutList, Search as SearchIcon } from 'lucide-react';
 import type { ClubSubscriptionStatusTone } from '@/lib/admin/clubSubscriptionStatus';
 import AdminClubsUserProfilePanel from '@/components/admin/AdminClubsUserProfilePanel';
@@ -1015,15 +1014,6 @@ export default function AdminRegisteredUsersList({
               {label}
             </button>
           ))}
-
-          {segment === 'clubs' && (
-            <Link
-              href="/admin/clubs/settings/"
-              className="px-4 py-2 text-sm font-semibold rounded border transition bg-neutral-900 text-white border-black hover:bg-neutral-800"
-            >
-              Club settings
-            </Link>
-          )}
         </div>
 
         <div className="flex flex-col lg:flex-row lg:items-start gap-3 flex-wrap">
