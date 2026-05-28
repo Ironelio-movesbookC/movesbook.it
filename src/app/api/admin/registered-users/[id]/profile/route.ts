@@ -6,6 +6,11 @@ import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
 import { parseClubSubscriptionEndDate } from '@/lib/admin/clubSubscriptionStatus';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
 import { getUserPersonalWebsiteHref } from '@/lib/userPersonalWebsite';
+import {
+  buildPcuPanel,
+  inferProfileSegment,
+  typeBadgeLabel,
+} from '@/lib/admin/userPcuPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,31 +42,6 @@ function versionLabel(userType: UserType): string {
   }
 }
 
-function typeBadge(userType: UserType): string {
-  switch (userType) {
-    case UserType.ATHLETE:
-      return 'Athlete';
-    case UserType.COACH:
-      return 'Coach';
-    case UserType.TEAM:
-      return 'Team';
-    case UserType.TEAM_MANAGER:
-      return 'Team manager';
-    case UserType.CLUB:
-      return 'Club';
-    case UserType.CLUB_TRAINER:
-      return 'Club trainer';
-    case UserType.GROUP:
-      return 'Group';
-    case UserType.GROUP_ADMIN:
-      return 'Group admin';
-    case UserType.ADMIN:
-      return 'Admin';
-    default:
-      return userType;
-  }
-}
-
 function sportLabel(s: string): string {
   return s.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -78,11 +58,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 
   const url = new URL(request.url);
-  const segment = url.searchParams.get('segment') || 'single-user';
-  const types = SEGMENT_TYPES[segment];
-  if (!types?.length) {
-    return NextResponse.json({ error: 'Invalid segment' }, { status: 400 });
-  }
+  let segment = url.searchParams.get('segment') || '';
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -95,6 +71,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       surname: true,
       userType: true,
       country: true,
+      gender: true,
+      birthdate: true,
+      telegramAccount: true,
       image: true,
       createdAt: true,
       mainSports: { select: { sport: true }, orderBy: { order: 'asc' } },
@@ -103,6 +82,41 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           id: true,
           name: true,
           location: true,
+          description: true,
+          createdAt: true,
+          _count: { select: { members: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 1,
+      },
+      ownedTeams: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          sport: true,
+          createdAt: true,
+          _count: { select: { members: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 1,
+      },
+      ownedGroups: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          groupType: true,
+          createdAt: true,
+          _count: { select: { members: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 1,
+      },
+      ownedCoachingGroups: {
+        select: {
+          id: true,
+          name: true,
           description: true,
           createdAt: true,
           _count: { select: { members: true } },
@@ -122,8 +136,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
 
-  if (!types.includes(user.userType)) {
-    return NextResponse.json({ error: 'User is not in this category' }, { status: 404 });
+  if (!segment || !SEGMENT_TYPES[segment]) {
+    segment = inferProfileSegment(user.userType);
+  }
+
+  const types = SEGMENT_TYPES[segment];
+  if (!types?.includes(user.userType)) {
+    segment = inferProfileSegment(user.userType);
   }
 
   const fullName = [user.firstName, user.surname].filter(Boolean).join(' ').trim() || user.name;
@@ -138,7 +157,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       ? user.mainSports.map((m) => sportLabel(m.sport)).join(', ')
       : clubMeta.category?.trim() || '';
 
-  const planCount = await prisma.workoutPlan.count({ where: { userId: user.id } });
+  const [planCount, loginLogCount] = await Promise.all([
+    prisma.workoutPlan.count({ where: { userId: user.id } }),
+    prisma.userLoginLog.count({ where: { userId: user.id } }),
+  ]);
 
   const clubCreatedAt = primaryOwned?.createdAt ?? user.createdAt;
   const dateStart = clubCreatedAt.toISOString().slice(0, 10);
@@ -161,6 +183,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   const panelModalTitle = clubAgeYears >= 2 ? 'online_old_Club' : 'online_new_Club';
   const personalWebsiteHref =
     segment === 'clubs' ? await getUserPersonalWebsiteHref(user.id) : null;
+
   const rows = [
     {
       id: `account-${user.id}`,
@@ -174,6 +197,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     },
   ];
 
+  const pcuPanel = buildPcuPanel(user, segment, loginLogCount, planCount);
+
   return NextResponse.json({
     id: user.id,
     username: user.username,
@@ -183,10 +208,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     location,
     officialClubName,
     sportLine,
-    typeBadge: typeBadge(user.userType),
+    typeBadge: typeBadgeLabel(user.userType),
     userType: user.userType,
     imageUrl: user.image?.trim() || null,
     subscriptionRows: rows,
+    segment,
+    pcuPanel,
     ...(segment === 'clubs'
       ? {
           userPanel: {
@@ -204,7 +231,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
             paid: memberPaidCount > 0 ? memberPaidCount : planCount,
             adminImageUrl: user.image?.trim() || null,
             clubId: primaryOwned?.id ?? null,
-            typeBadge: typeBadge(user.userType),
+            typeBadge: typeBadgeLabel(user.userType),
             visitPagePath: clubSearchResultsPath(officialClubName),
             websiteUrl: personalWebsiteHref,
           },

@@ -9,6 +9,8 @@ interface CKEditorComponentProps {
   onChange: (data: string) => void;
   placeholder?: string;
   id?: string;
+  readOnly?: boolean;
+  minHeightPx?: number;
 }
 
 class NewsImageUploadAdapter {
@@ -60,7 +62,9 @@ export default function CKEditorComponent({
   value, 
   onChange, 
   placeholder = 'Enter content...',
-  id 
+  id,
+  readOnly = false,
+  minHeightPx = 400,
 }: CKEditorComponentProps) {
   const editorRef = useRef<any>(null);
 
@@ -70,7 +74,7 @@ export default function CKEditorComponent({
       .ckeditor-wrapper .ck-editor__editable {
         color: #333 !important;
         background-color: #fff !important;
-        min-height: 400px;
+        min-height: ${minHeightPx}px;
       }
       .ckeditor-wrapper .ck-editor__editable * {
         color: #333 !important;
@@ -132,15 +136,43 @@ export default function CKEditorComponent({
         data={value || ''}
         config={{
           placeholder,
-              extraPlugins: [NewsImageUploadAdapterPlugin],
-          toolbar: [
-            'heading', '|',
-            'bold', 'italic', 'link', '|',
-            'bulletedList', 'numberedList', '|',
-            'blockQuote', 'insertTable', '|',
-            'imageUpload', 'mediaEmbed', '|',
-            'undo', 'redo'
-          ],
+          extraPlugins: readOnly ? [] : [NewsImageUploadAdapterPlugin],
+          toolbar: readOnly
+            ? ([
+                'heading',
+                '|',
+                'bold',
+                'italic',
+                'link',
+                '|',
+                'bulletedList',
+                'numberedList',
+                '|',
+                'blockQuote',
+                'insertTable',
+                '|',
+                'undo',
+                'redo',
+              ] as any)
+            : ([
+                'heading',
+                '|',
+                'bold',
+                'italic',
+                'link',
+                '|',
+                'bulletedList',
+                'numberedList',
+                '|',
+                'blockQuote',
+                'insertTable',
+                '|',
+                'imageUpload',
+                'mediaEmbed',
+                '|',
+                'undo',
+                'redo',
+              ] as any),
           heading: {
             options: [
               { model: 'paragraph', title: 'Paragraph', class: 'ck-heading_paragraph' },
@@ -155,8 +187,17 @@ export default function CKEditorComponent({
         }}
         onReady={(editor) => {
           editorRef.current = editor;
+          if (readOnly) {
+            try {
+              editor.enableReadOnlyMode('pcu-readonly');
+            } catch {
+              // fallback below
+              editor.isReadOnly = true;
+            }
+          }
         }}
         onChange={(event, editor) => {
+          if (readOnly) return;
           const data = editor.getData();
           onChange(data);
         }}

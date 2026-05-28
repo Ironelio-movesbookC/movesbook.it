@@ -96,7 +96,14 @@ export default function AdminNavUserSearchResults({
   }, [currentPage, totalPages]);
 
   const openPcu = (userId: string) => {
-    router.push(`/subscriptionuserlists/historyuser/${userId}`);
+    const params = new URLSearchParams();
+    if (scope && scope !== 'all') params.set('scope', scope);
+    const q = query.trim();
+    if (q) params.set('q', q);
+    const qs = params.toString();
+    router.push(
+      `/subscriptionuserlists/historyuser/${encodeURIComponent(userId)}${qs ? `?${qs}` : ''}`,
+    );
   };
 
   const handleSubmit = (e: React.FormEvent) => {
