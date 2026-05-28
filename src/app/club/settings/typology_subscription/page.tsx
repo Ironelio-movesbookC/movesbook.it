@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   CalendarCheck,
@@ -40,16 +40,6 @@ type BookingSettings = {
   confirmationOption: 'no' | 'ask' | 'yes';
   selfBook: 'Y' | 'N';
   authorizeExpired: 'Y' | 'N';
-};
-
-type DraftTypology = {
-  id?: string;
-  area: string;
-  activityName: string;
-  room: string;
-  cost: string;
-  limit: string;
-  blockAccess: boolean;
 };
 
 const DEFAULT_BOOKING_SETTINGS: BookingSettings = {
@@ -97,7 +87,6 @@ export default function TypologySubscriptionPage() {
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [draft, setDraft] = useState<DraftTypology | null>(null);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookingSettings, setBookingSettings] = useState<BookingSettings>(DEFAULT_BOOKING_SETTINGS);
   const [savingBooking, setSavingBooking] = useState(false);
@@ -170,18 +159,16 @@ export default function TypologySubscriptionPage() {
     return selectedRow;
   };
 
-  const openEditDraft = () => {
+  const openEditPage = () => {
     const row = requireSelection();
     if (!row) return;
-    setDraft({
-      id: row.id,
-      area: row.area,
-      activityName: row.activityName,
-      room: row.room,
-      cost: row.cost,
-      limit: row.limit,
-      blockAccess: row.blockAccess
-    });
+
+    if (row.id.startsWith('local-')) {
+      window.alert('Save this typology to the database before editing the full form.');
+      return;
+    }
+
+    router.push(`/club/settings/typology_subscription/edit/${encodeURIComponent(row.id)}`);
   };
 
   const copySelected = () => {
@@ -231,31 +218,6 @@ export default function TypologySubscriptionPage() {
 
   const removeSelection = () => {
     setSelectedId(null);
-  };
-
-  const saveDraft = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!draft) return;
-
-    const nextRow: TypologyRow = {
-      id: draft.id ?? `local-${Date.now()}`,
-      area: draft.area.trim() || 'Unassigned',
-      activityName: draft.activityName.trim() || 'Untitled course',
-      room: draft.room.trim(),
-      cost: draft.cost.trim(),
-      limit: draft.limit.trim(),
-      limitEnabled: draft.limit.trim() !== '',
-      blockAccess: draft.blockAccess,
-      audioUrl: null,
-      isDefault: draft.id ? rows.find((row) => row.id === draft.id)?.isDefault ?? false : false
-    };
-
-    setRows((current) => {
-      if (!draft.id) return [nextRow, ...current];
-      return current.map((row) => row.id === draft.id ? { ...row, ...nextRow } : row);
-    });
-    setSelectedId(nextRow.id);
-    setDraft(null);
   };
 
   const updateBlockAccess = async (row: TypologyRow, blockAccess: boolean) => {
@@ -408,7 +370,7 @@ export default function TypologySubscriptionPage() {
 
           <div className="mt-4 flex flex-wrap gap-2 print:hidden">
             <ToolbarButton icon={Plus} label="Add new" onClick={() => router.push('/club/settings/typology_subscription/add')} />
-            <ToolbarButton icon={Pencil} label="Modify" onClick={openEditDraft} disabled={!selectedRow} />
+            <ToolbarButton icon={Pencil} label="Modify" onClick={openEditPage} disabled={!selectedRow} />
             <ToolbarButton icon={Copy} label="Copy" onClick={copySelected} disabled={!selectedRow} />
             <ToolbarButton icon={Printer} label="Print" onClick={() => window.print()} />
             <ToolbarButton icon={Trash2} label="Delete" onClick={deleteSelected} disabled={!selectedRow} danger />
@@ -530,45 +492,6 @@ export default function TypologySubscriptionPage() {
         </div>
 
       </section>
-
-      {draft && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <form onSubmit={saveDraft} className="w-full max-w-xl rounded-md bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-              <h2 className="text-lg font-semibold text-gray-950">
-                {draft.id ? 'Modify typology' : 'Add typology'}
-              </h2>
-              <button type="button" onClick={() => setDraft(null)} className="rounded p-1 text-gray-500 hover:bg-gray-100">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
-              <Field label="Area activity" value={draft.area} onChange={(value) => setDraft({ ...draft, area: value })} />
-              <Field label="Name activity" value={draft.activityName} onChange={(value) => setDraft({ ...draft, activityName: value })} />
-              <Field label="Room" value={draft.room} onChange={(value) => setDraft({ ...draft, room: value })} />
-              <Field label="Cost" value={draft.cost} onChange={(value) => setDraft({ ...draft, cost: value })} />
-              <Field label="Limit" value={draft.limit} onChange={(value) => setDraft({ ...draft, limit: value })} />
-              <label className="flex items-center gap-2 pt-7 text-sm font-medium text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={draft.blockAccess}
-                  onChange={(event) => setDraft({ ...draft, blockAccess: event.target.checked })}
-                  className="h-4 w-4 accent-gray-900"
-                />
-                Block access
-              </label>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">
-              <button type="button" onClick={() => setDraft(null)} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700">
-                Cancel
-              </button>
-              <button type="submit" className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white">
-                Save
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
       {bookingOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
@@ -817,26 +740,5 @@ function PaginationIconButton({
     >
       {children}
     </button>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block text-sm font-medium text-gray-700">
-      {label}
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-gray-500"
-      />
-    </label>
   );
 }
