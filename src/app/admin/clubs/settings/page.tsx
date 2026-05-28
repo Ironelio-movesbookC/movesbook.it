@@ -2,19 +2,19 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-
-const TABS = [
-  { key: 'typologies', label: 'Typologies', enabled: true },
-  { key: 'list_prices', label: 'List prices', enabled: false },
-  { key: 'timetable', label: 'Timetable', enabled: false },
-  { key: 'rfid', label: 'Rfld/Card readers', enabled: false },
-  { key: 'overview', label: 'Overview', enabled: false }
-] as const;
+import AdminClubSettingsTabs, {
+  type AdminClubSettingsTabKey,
+} from '@/components/admin/club-settings/AdminClubSettingsTabs';
+import AdminClubSettingsTypologiesTab from '@/components/admin/club-settings/tabs/AdminClubSettingsTypologiesTab';
+import AdminClubSettingsListPricesTab from '@/components/admin/club-settings/tabs/AdminClubSettingsListPricesTab';
+import AdminClubSettingsTimetableTab from '@/components/admin/club-settings/tabs/AdminClubSettingsTimetableTab';
+import AdminClubSettingsRfidCardReadersTab from '@/components/admin/club-settings/tabs/AdminClubSettingsRfidCardReadersTab';
+import AdminClubSettingsOverviewTab from '@/components/admin/club-settings/tabs/AdminClubSettingsOverviewTab';
 
 export default function AdminClubsSettingsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['key']>('typologies');
+  const [activeTab, setActiveTab] = useState<AdminClubSettingsTabKey>('typologies');
 
   useEffect(() => {
     const adminData = localStorage.getItem('adminUser');
@@ -30,39 +30,14 @@ export default function AdminClubsSettingsPage() {
   // Keep the same page template as /admin/clubs by preserving the wrapper.
   return (
     <div className="min-h-full bg-[#ececec]">
-      <div className="border-b border-gray-300 bg-gray-100 px-3 sm:px-4">
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.key;
-            const base =
-              'relative -mb-px px-1 py-3 text-sm font-semibold transition select-none';
-            const className = `${base} ${
-              isActive
-                ? 'text-gray-950'
-                : tab.enabled
-                  ? 'text-gray-500 hover:text-gray-950'
-                  : 'cursor-not-allowed text-gray-400'
-            }`;
+      <AdminClubSettingsTabs active={activeTab} onChange={setActiveTab} />
 
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => {
-                  if (!tab.enabled) return;
-                  setActiveTab(tab.key);
-                }}
-                disabled={!tab.enabled}
-                className={className}
-                title={tab.enabled ? undefined : 'Build this section later'}
-                aria-current={isActive ? 'page' : undefined}
-              >
-                {tab.label}
-                {isActive && <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-red-600" />}
-              </button>
-            );
-          })}
-        </div>
+      <div className="px-3 sm:px-4 py-4">
+        {activeTab === 'typologies' && <AdminClubSettingsTypologiesTab />}
+        {activeTab === 'list_prices' && <AdminClubSettingsListPricesTab />}
+        {activeTab === 'timetable' && <AdminClubSettingsTimetableTab />}
+        {activeTab === 'rfid' && <AdminClubSettingsRfidCardReadersTab />}
+        {activeTab === 'overview' && <AdminClubSettingsOverviewTab />}
       </div>
     </div>
   );
