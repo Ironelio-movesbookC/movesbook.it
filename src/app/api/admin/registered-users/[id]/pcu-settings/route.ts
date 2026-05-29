@@ -1,53 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
+import { mergePcuSettingsPatch } from '@/lib/admin/userPcuFunctionsSettings';
+import { readPcuSettings, type PcuSettings } from '@/lib/admin/userPcuSettings';
 
 export const dynamic = 'force-dynamic';
 
-type PcuSettingsPayload = {
-  extend?: { enabled?: boolean; months?: string };
-  assignment?: { asOperator?: boolean; operatorId?: string; asAgent?: boolean; agentId?: string };
-  publishing?: {
-    enableFeedback?: boolean;
-    enableBlogs?: boolean;
-    blogsDate?: string;
-    enableReviews?: boolean;
-    reviewsDate?: string;
-    disableComments?: {
-      reviews?: boolean;
-      suggestions?: boolean;
-      htmlDocsNews?: boolean;
-      queries?: boolean;
-      bugs?: boolean;
-      blogs?: boolean;
-    };
-  };
-  sponsors?: {
-    enableSponsors?: boolean;
-    lastPurchase?: string;
-    expirationDate?: string;
-    numberEnabled?: string;
-    costLastPurchase?: string;
-    paymentStatus?: string;
-  };
-  blocks?: {
-    blockUserEnabled?: boolean;
-    blockUserAfterDate?: string;
-    blockAreas?: { social?: boolean; training?: boolean; management?: boolean };
-    blockAssignmentsEnabled?: boolean;
-    blockAssignmentsAfterDate?: string;
-  };
-  alert?: { enabled?: boolean; htmlByLang?: Record<string, string> };
-  vip?: {
-    showInReferenceList?: boolean;
-    showInBanner?: boolean;
-    username?: string;
-    youtubeUrl?: string;
-    referencesHtmlByLang?: Record<string, string>;
-    priorityLevel?: string;
-    favourite?: boolean;
-  };
-};
+type PcuSettingsPayload = PcuSettings;
+
+/** GET — Load saved PCU admin settings for a user. */
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  const auth = await requireAdmin(request);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  const userId = params?.id;
+  if (!userId) {
+    return NextResponse.json({ error: 'User id is required' }, { status: 400 });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, settings: { select: { adminSettings: true } } },
+  });
+  if (!user) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
+
+  const pcuSettings = readPcuSettings(user.settings?.adminSettings);
+  return NextResponse.json({ ok: true, pcuSettings });
+}
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAdmin(request);
@@ -76,11 +59,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
   })();
 
+  const prevPcu =
+    prev?.pcu && typeof prev.pcu === 'object' ? (prev.pcu as Record<string, unknown>) : {};
+  const mergedPcu = mergePcuSettingsPatch(prevPcu, body as Record<string, unknown>);
+
   const next = {
     ...prev,
     pcu: {
-      ...(prev?.pcu || {}),
-      ...body,
+      ...mergedPcu,
       updatedAt: new Date().toISOString(),
     },
   };
@@ -107,6 +93,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     });
   }
 
-  return NextResponse.json({ ok: true });
+  const pcuSettings = readPcuSettings(JSON.stringify(next));
+  return NextResponse.json({ ok: true, pcuSettings });
 }
 

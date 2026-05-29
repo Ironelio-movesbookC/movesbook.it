@@ -13,6 +13,7 @@ import {
 } from '@/lib/admin/userPcuPanel';
 import { readProfilePanelSettings } from '@/lib/admin/userProfilePanelSettings';
 import { readPcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
+import { readPcuSettings } from '@/lib/admin/userPcuSettings';
 
 export const dynamic = 'force-dynamic';
 
@@ -206,6 +207,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     accessStartIso: pcuPanel.startDateIso,
     accessEndIso: pcuPanel.endDateIso,
   });
+  const pcuSettings = readPcuSettings(user.settings?.adminSettings);
 
   return NextResponse.json({
     id: user.id,
@@ -224,6 +226,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     pcuPanel,
     profilePanel,
     pcuAccess,
+    pcuSettings,
     ...(segment === 'clubs'
       ? {
           userPanel: {

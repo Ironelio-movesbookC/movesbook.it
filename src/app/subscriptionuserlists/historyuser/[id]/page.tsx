@@ -5,9 +5,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import UserPcuControlPanel from '@/components/admin/UserPcuControlPanel';
+import { getAdminBearerToken } from '@/lib/admin/clientAdminAuth';
 import { navScopeToProfileSegment, type PcuPanelPayload } from '@/lib/admin/userPcuPanel';
 import type { PcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import type { ProfilePanelSettings } from '@/lib/admin/userProfilePanelSettings';
+import type { PcuSettings } from '@/lib/admin/userPcuSettings';
 
 type SubscriptionRow = {
   id: string;
@@ -31,13 +33,15 @@ export default function HistoryUserPage() {
   const [subscriptionRows, setSubscriptionRows] = useState<SubscriptionRow[]>([]);
   const [profilePanel, setProfilePanel] = useState<ProfilePanelSettings | undefined>();
   const [pcuAccess, setPcuAccess] = useState<PcuAccessSettings | undefined>();
+  const [actionSegment, setActionSegment] = useState('');
+  const [pcuSettings, setPcuSettings] = useState<PcuSettings | null>(null);
 
   const loadProfile = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     setError('');
     try {
-      const token = localStorage.getItem('adminToken');
+      const token = getAdminBearerToken();
       if (!token) {
         setError('Admin session not found. Please log in as admin.');
         setUser(null);
@@ -46,10 +50,14 @@ export default function HistoryUserPage() {
 
       const scopeParam = searchParams?.get('scope') ?? '';
       const segmentParam = searchParams?.get('segment') ?? '';
+      const qParam = searchParams?.get('q') ?? '';
       const segment =
-        navScopeToProfileSegment(segmentParam || scopeParam) ||
+        navScopeToProfileSegment(segmentParam || scopeParam || qParam) ||
         segmentParam ||
+        scopeParam ||
         '';
+
+      setActionSegment(segment);
 
       const qs = new URLSearchParams();
       if (segment) qs.set('segment', segment);
@@ -78,12 +86,18 @@ export default function HistoryUserPage() {
           ? (data.pcuAccess as PcuAccessSettings)
           : undefined,
       );
+      setPcuSettings(
+        data.pcuSettings && typeof data.pcuSettings === 'object'
+          ? (data.pcuSettings as PcuSettings)
+          : null,
+      );
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load profile');
       setUser(null);
       setSubscriptionRows([]);
       setProfilePanel(undefined);
       setPcuAccess(undefined);
+      setPcuSettings(null);
     } finally {
       setLoading(false);
     }
@@ -136,11 +150,15 @@ export default function HistoryUserPage() {
   return (
     <div className="py-4 px-2 sm:px-4">
       <UserPcuControlPanel
+        key={user.userId}
         user={user}
         backHref={backHref}
         subscriptionRows={subscriptionRows}
         profilePanel={profilePanel}
         initialPcuAccess={pcuAccess}
+        initialPcuSettings={pcuSettings}
+        defaultActiveTab={searchParams?.get('q') === 'new' ? 'functions' : 'purchases'}
+        actionSegment={actionSegment || user.segment}
       />
     </div>
   );

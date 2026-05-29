@@ -3,10 +3,50 @@
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, CreditCard, Mail, User, X } from 'lucide-react';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
 import { COUNTRIES_WITH_CODES } from '@/lib/news/countries';
+import AdminPcuDatePicker, { isoToMmDdYyyy, mmDdYyyyToIso } from '@/components/admin/AdminPcuDatePicker';
+import NewsCategoriesMultiSelect from '@/components/admin/NewsCategoriesMultiSelect';
+import { getAdminBearerToken } from '@/lib/admin/clientAdminAuth';
+import {
+  createNewsCategoriesState,
+  createVipCountriesState,
+  PCU_AGENT_OPTIONS,
+  PCU_OPERATOR_OPTIONS,
+} from '@/lib/admin/pcuAdminSettingsOptions';
+import {
+  mergeNewsCategories,
+  mergeRecordFlags,
+  mergeVipCountriesAllowed,
+  type PcuSettings,
+} from '@/lib/admin/userPcuSettings';
+import {
+  applyExpirationFunctionsSlice,
+  buildExpirationFunctionsSlice,
+  DEFAULT_BUYED_ACCOUNTS_MATRIX,
+  DEFAULT_FREE_ACCOUNTS_MATRIX,
+  emptyHtmlByLang,
+  type BuyedAccountsVersionMatrix,
+  type ExpirationEndUserMode,
+  type ExpirationFeatureMode,
+  type FreeAccountsVersionMatrix,
+  type NewMembersExpiryMode,
+  type NewVersionAssignMode,
+  type PcuFunctionsSettings,
+  type VersionColumn3,
+  type VersionColumn4,
+} from '@/lib/admin/userPcuFunctionsSettings';
+import {
+  applyProcedureRowOnToggle,
+  buildProcedureSavePayload,
+  mergeProcedureRowsByTab,
+  parseProcedureFromSaved,
+  type ProcedureRow,
+  type ProcedureRowsByTab,
+  type ProcedureTabId,
+} from '@/lib/admin/userPcuProcedureDefaults';
 import type { PcuPanelPayload } from '@/lib/admin/userPcuPanel';
 import type { PcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import {
@@ -114,6 +154,12 @@ type UserPcuControlPanelProps = {
   subscriptionRows?: SubscriptionRow[];
   profilePanel?: ProfilePanelSettings;
   initialPcuAccess?: PcuAccessSettings;
+  /** Tab shown first (history user page uses subscription / iPurchases). */
+  defaultActiveTab?: TopTabId;
+  /** Segment for admin actions API (falls back to user.segment). */
+  actionSegment?: string;
+  /** Saved admin tab settings loaded from the server. */
+  initialPcuSettings?: PcuSettings | null;
 };
 
 function SubscriptionFilterRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -131,9 +177,17 @@ export default function UserPcuControlPanel({
   subscriptionRows = [],
   profilePanel,
   initialPcuAccess,
+  defaultActiveTab = 'profile',
+  actionSegment,
+  initialPcuSettings = null,
 }: UserPcuControlPanelProps) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TopTabId>('profile');
+  const segmentForActions = actionSegment?.trim() || user.segment || 'single-user';
+  const loadedPcuSettingsRef = useRef<PcuSettings | null>(null);
+  const [expirationAutoSaveReady, setExpirationAutoSaveReady] = useState(false);
+  const expirationSkipInitialSaveRef = useRef(true);
+  const expirationSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [activeTab, setActiveTab] = useState<TopTabId>(defaultActiveTab);
   const [profileSubTab, setProfileSubTab] = useState<'admin' | 'entity'>('admin');
   const [accessStart, setAccessStart] = useState(
     () => initialPcuAccess?.accessStartIso || user.startDateIso,
@@ -278,24 +332,13 @@ export default function UserPcuControlPanel({
     Chinese: false,
     Arabic: false,
   });
-  const [vipCountriesAllowed, setVipCountriesAllowed] = useState<Record<string, boolean>>({
-    all: false,
-    Andorra: false,
-    'United Arab Emirates': false,
-    Afghanistan: false,
-    'Antigua and Barbuda': false,
-    Anguilla: false,
-    Albania: false,
-    Armenia: false,
-    Angola: false,
-    Antarctica: false,
-  });
-  const [vipDuration, setVipDuration] = useState(() => {
-    const d = new Date();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${mm}/${dd}/${d.getFullYear()}`;
-  });
+  const [vipCountriesAllowed, setVipCountriesAllowed] = useState<Record<string, boolean>>(() =>
+    createVipCountriesState(),
+  );
+  const [newsCategoriesFollowed, setNewsCategoriesFollowed] = useState<Record<string, boolean>>(() =>
+    createNewsCategoriesState(),
+  );
+  const [vipDuration, setVipDuration] = useState(() => isoToMmDdYyyy(new Date().toISOString().slice(0, 10)));
   const [vipAllowVisitorsProfile, setVipAllowVisitorsProfile] = useState(true);
   const [vipAllowVisitorsBiography, setVipAllowVisitorsBiography] = useState(true);
   const [vipAllowVisitorsFriendship, setVipAllowVisitorsFriendship] = useState(true);
@@ -310,6 +353,11 @@ export default function UserPcuControlPanel({
   const [functionsSaving, setFunctionsSaving] = useState(false);
   const [functionsSaveError, setFunctionsSaveError] = useState('');
   const [functionsSaveSuccess, setFunctionsSaveSuccess] = useState('');
+  const [expirationNotifySaving, setExpirationNotifySaving] = useState(false);
+  const [expirationFlowSaving, setExpirationFlowSaving] = useState(false);
+  const [expirationMsgSaving, setExpirationMsgSaving] = useState(false);
+  const [newMembersSaving, setNewMembersSaving] = useState(false);
+  const [newVersionSaving, setNewVersionSaving] = useState(false);
 
   const [maxMembers, setMaxMembers] = useState('1301');
   const [currentMembers, setCurrentMembers] = useState('5');
@@ -320,17 +368,17 @@ export default function UserPcuControlPanel({
     return String(Math.max(0, max - cur));
   }, [currentMembers, maxMembers]);
 
-  const [newLicenseRequests, setNewLicenseRequests] = useState('0');
-  const [authorizationNo, setAuthorizationNo] = useState('1');
-  const [priceEuro, setPriceEuro] = useState('6');
-  const [costToPay, setCostToPay] = useState('0');
-  const [amountPaid, setAmountPaid] = useState('0');
-  const [maxDevicesCanEnable, setMaxDevicesCanEnable] = useState('25');
-  const [currentDeviceEnabled, setCurrentDeviceEnabled] = useState('8');
-  const [requestCodePending, setRequestCodePending] = useState('5');
-  const [deviceDisable, setDeviceDisable] = useState('0');
-  const [availableEnquiries, setAvailableEnquiries] = useState('12');
-  const [subscriptionExpiration, setSubscriptionExpiration] = useState(user.endDateIso || '');
+  const [newLicenseRequests, setNewLicenseRequests] = useState('');
+  const [authorizationNo, setAuthorizationNo] = useState('');
+  const [priceEuro, setPriceEuro] = useState('');
+  const [costToPay, setCostToPay] = useState('');
+  const [amountPaid, setAmountPaid] = useState('');
+  const [maxDevicesCanEnable, setMaxDevicesCanEnable] = useState('');
+  const [currentDeviceEnabled, setCurrentDeviceEnabled] = useState('');
+  const [requestCodePending, setRequestCodePending] = useState('');
+  const [deviceDisable, setDeviceDisable] = useState('');
+  const [availableEnquiries, setAvailableEnquiries] = useState('');
+  const [subscriptionExpiration, setSubscriptionExpiration] = useState('');
   const [blockCodeGeneration, setBlockCodeGeneration] = useState(false);
 
   const [postActivationMsgEnabled, setPostActivationMsgEnabled] = useState(true);
@@ -348,7 +396,13 @@ export default function UserPcuControlPanel({
     arab: '',
   });
 
-  const [freeAccountsDurationDays, setFreeAccountsDurationDays] = useState('150');
+  const [freeAccountsDurationDays, setFreeAccountsDurationDays] = useState('');
+  const [freeAccountsMatrix, setFreeAccountsMatrix] = useState<FreeAccountsVersionMatrix>(
+    () => ({ ...DEFAULT_FREE_ACCOUNTS_MATRIX }),
+  );
+  const [buyedAccountsMatrix, setBuyedAccountsMatrix] = useState<BuyedAccountsVersionMatrix>(
+    () => ({ ...DEFAULT_BUYED_ACCOUNTS_MATRIX }),
+  );
   const [termsCreditCard, setTermsCreditCard] = useState(true);
   const [termsSendMoneyLater, setTermsSendMoneyLater] = useState(true);
   const [termsSendMoneyDays, setTermsSendMoneyDays] = useState('30');
@@ -358,12 +412,12 @@ export default function UserPcuControlPanel({
   const [sharingGroups, setSharingGroups] = useState(true);
   const [sharingOtherClubs, setSharingOtherClubs] = useState(true);
 
-  const [notifyAtExpiration, setNotifyAtExpiration] = useState(true);
-  const [notifyBeforeDays, setNotifyBeforeDays] = useState('1');
-  const [notifyAfterDays, setNotifyAfterDays] = useState('7');
-  const [notifyEveryDay, setNotifyEveryDay] = useState(true);
-  const [notifyByMail, setNotifyByMail] = useState(true);
-  const [notifyOnNetworkPage, setNotifyOnNetworkPage] = useState(true);
+  const [notifyAtExpiration, setNotifyAtExpiration] = useState(false);
+  const [notifyBeforeDays, setNotifyBeforeDays] = useState('');
+  const [notifyAfterDays, setNotifyAfterDays] = useState('');
+  const [notifyEveryDay, setNotifyEveryDay] = useState(false);
+  const [notifyByMail, setNotifyByMail] = useState(false);
+  const [notifyOnNetworkPage, setNotifyOnNetworkPage] = useState(false);
   const [notifyCellular, setNotifyCellular] = useState(false);
   const [notifyPostFacebook, setNotifyPostFacebook] = useState(false);
 
@@ -372,66 +426,29 @@ export default function UserPcuControlPanel({
   const [stockPrice, setStockPrice] = useState('');
   const [stockPayment, setStockPayment] = useState('select');
 
-  const [procedureTab, setProcedureTab] = useState<'social' | 'training' | 'management'>('social');
-  const [procedureRows, setProcedureRows] = useState<
-    { id: string; label: string; status: 'enabled' | 'disabled' | 'optional_off' | 'optional_on'; on: boolean }[]
-  >([
-    { id: 'polls', label: 'Polls', status: 'optional_on', on: true },
-    { id: 'blogs', label: 'Blogs', status: 'optional_on', on: true },
-    { id: 'photo', label: 'Photo', status: 'disabled', on: false },
-    { id: 'campaign', label: 'Campaign', status: 'disabled', on: false },
-    { id: 'events', label: 'Events', status: 'optional_on', on: true },
-    { id: 'qa', label: 'Question&Answer', status: 'optional_on', on: true },
-    { id: 'employment', label: 'Employment', status: 'optional_on', on: true },
-    { id: 'bacheca', label: 'Bacheca', status: 'optional_on', on: true },
-    { id: 'message', label: 'Message', status: 'optional_on', on: true },
-    { id: 'chat', label: 'Chat', status: 'disabled', on: false },
-    { id: 'sharing', label: 'Sharing', status: 'optional_on', on: true },
-    { id: 'comments', label: 'Comments', status: 'optional_on', on: true },
-    { id: 'fanclubs', label: 'Fan Clubs', status: 'optional_on', on: true },
-    { id: 'friends', label: 'Friends', status: 'optional_on', on: true },
-    { id: 'classified', label: 'Classified', status: 'disabled', on: false },
-    { id: 'education', label: 'Education', status: 'optional_on', on: true },
-    { id: 'video', label: 'Video', status: 'optional_on', on: true },
-    { id: 'music', label: 'Music', status: 'disabled', on: false },
-    { id: 'otherMedia', label: 'Other Media', status: 'disabled', on: false },
-    { id: 'favLinks', label: 'Favorite Links', status: 'optional_on', on: true },
-    { id: 'forum', label: 'Forum', status: 'optional_on', on: true },
-    { id: 'winks', label: 'Winks', status: 'optional_on', on: true },
-    { id: 'sharingFriends', label: 'Sharing friends', status: 'disabled', on: false },
-  ]);
+  const [procedureTab, setProcedureTab] = useState<ProcedureTabId>('social');
+  const [procedureRowsByTab, setProcedureRowsByTab] = useState(() => mergeProcedureRowsByTab());
 
-  const [expireExtendEnabled, setExpireExtendEnabled] = useState(true);
-  const [expireExtendDays, setExpireExtendDays] = useState('40');
-  const [expireActual, setExpireActual] = useState(user.endSubscription || '31 Dec 2026');
-  const [expireExtendedTo, setExpireExtendedTo] = useState('9 Feb 2027');
+  const procedureRows = procedureRowsByTab[procedureTab];
 
-  const [sharingSharedUsersMode, setSharingSharedUsersMode] = useState<'stop' | 'view' | 'extend'>('view');
-  const [socialItemsMode, setSocialItemsMode] = useState<'stop' | 'view' | 'extend'>('view');
-  const [trainingItemsMode, setTrainingItemsMode] = useState<'stop' | 'view' | 'extend'>('view');
-  const [endUsersInteractiveMode, setEndUsersInteractiveMode] = useState<'stop' | 'extend'>('extend');
-  const [managementItemsMode, setManagementItemsMode] = useState<'stop' | 'extend'>('stop');
-  const [insertOptionsManagementMode, setInsertOptionsManagementMode] = useState<'stop' | 'extend'>('stop');
+  const [expireExtendEnabled, setExpireExtendEnabled] = useState(false);
+  const [expireExtendDays, setExpireExtendDays] = useState('');
+  const [expireActual, setExpireActual] = useState('');
+  const [expireExtendedTo, setExpireExtendedTo] = useState('');
 
-  const [expirationMsgHtmlByLang, setExpirationMsgHtmlByLang] = useState<Record<string, string>>({
-    en: '',
-    fr: '',
-    de: '',
-    it: '',
-    es: '',
-    por: '',
-    rus: '',
-    ind: '',
-    chin: '',
-    arab: '',
-  });
+  const [sharingSharedUsersMode, setSharingSharedUsersMode] = useState<ExpirationFeatureMode | ''>('');
+  const [socialItemsMode, setSocialItemsMode] = useState<ExpirationFeatureMode | ''>('');
+  const [trainingItemsMode, setTrainingItemsMode] = useState<ExpirationFeatureMode | ''>('');
+  const [endUsersInteractiveMode, setEndUsersInteractiveMode] = useState<ExpirationEndUserMode | ''>('');
+  const [managementItemsMode, setManagementItemsMode] = useState<ExpirationEndUserMode | ''>('');
+  const [insertOptionsManagementMode, setInsertOptionsManagementMode] = useState<ExpirationEndUserMode | ''>('');
 
-  const [newMembersExpiryMode, setNewMembersExpiryMode] = useState<'own' | 'after_end' | 'after_invite'>('after_invite');
-  const [newMembersAfterDays, setNewMembersAfterDays] = useState('8');
+  const [expirationMsgHtmlByLang, setExpirationMsgHtmlByLang] = useState(emptyHtmlByLang);
 
-  const [newVersionMode, setNewVersionMode] = useState<'same' | 'trial_to_base' | 'stay_current_subscription' | 'next_assigned' | 'professional'>(
-    'next_assigned',
-  );
+  const [newMembersExpiryMode, setNewMembersExpiryMode] = useState<NewMembersExpiryMode | ''>('');
+  const [newMembersAfterDays, setNewMembersAfterDays] = useState('');
+
+  const [newVersionMode, setNewVersionMode] = useState<NewVersionAssignMode | ''>('');
 
   // ID Cards tab (club-focused UI)
   const [idCardsSaving, setIdCardsSaving] = useState(false);
@@ -724,76 +741,233 @@ export default function UserPcuControlPanel({
     }
   };
 
+  const buildFunctionsSettingsPayload = useCallback(
+    (): PcuFunctionsSettings => ({
+      members: { maxMembers, currentMembers },
+      licenses: {
+        newLicenseRequests,
+        authorizationNo,
+        priceEuro,
+        costToPay,
+        amountPaid,
+        maxDevicesCanEnable,
+        currentDeviceEnabled,
+        requestCodePending,
+        deviceDisable,
+        availableEnquiries,
+        subscriptionExpiration,
+        blockCodeGeneration,
+      },
+      messageAfterActivation: {
+        enabled: postActivationMsgEnabled,
+        daysRange: postActivationDays,
+        htmlByLang: postActivationHtmlByLang,
+      },
+      freeAccounts: {
+        durationDays: freeAccountsDurationDays,
+        versionMatrix: freeAccountsMatrix,
+      },
+      terms: {
+        creditCard: termsCreditCard,
+        sendMoneyLater: termsSendMoneyLater,
+        sendMoneyLaterDays: termsSendMoneyDays,
+      },
+      sharing: {
+        coaches: sharingCoaches,
+        teams: sharingTeams,
+        groups: sharingGroups,
+        otherClubs: sharingOtherClubs,
+      },
+      ...buildExpirationFunctionsSlice({
+        notifyAtExpiration,
+        notifyBeforeDays,
+        notifyAfterDays,
+        notifyEveryDay,
+        notifyByMail,
+        notifyOnNetworkPage,
+        notifyCellular,
+        notifyPostFacebook,
+        expireExtendEnabled,
+        expireExtendDays,
+        expireActual,
+        expireExtendedTo,
+        sharingSharedUsersMode,
+        socialItemsMode,
+        trainingItemsMode,
+        endUsersInteractiveMode,
+        managementItemsMode,
+        insertOptionsManagementMode,
+        expirationMsgHtmlByLang,
+        newMembersExpiryMode,
+        newMembersAfterDays,
+        newVersionMode,
+      }),
+      stock: { accounts: stockAccounts, version: stockVersion, price: stockPrice, payment: stockPayment },
+      buyedAccountsMatrix,
+      procedure: buildProcedureSavePayload(procedureRowsByTab, procedureTab),
+    }),
+    [
+      maxMembers,
+      currentMembers,
+      newLicenseRequests,
+      authorizationNo,
+      priceEuro,
+      costToPay,
+      amountPaid,
+      maxDevicesCanEnable,
+      currentDeviceEnabled,
+      requestCodePending,
+      deviceDisable,
+      availableEnquiries,
+      subscriptionExpiration,
+      blockCodeGeneration,
+      postActivationMsgEnabled,
+      postActivationDays,
+      postActivationHtmlByLang,
+      freeAccountsDurationDays,
+      freeAccountsMatrix,
+      termsCreditCard,
+      termsSendMoneyLater,
+      termsSendMoneyDays,
+      sharingCoaches,
+      sharingTeams,
+      sharingGroups,
+      sharingOtherClubs,
+      notifyAtExpiration,
+      notifyBeforeDays,
+      notifyAfterDays,
+      notifyEveryDay,
+      notifyByMail,
+      notifyOnNetworkPage,
+      notifyCellular,
+      notifyPostFacebook,
+      stockAccounts,
+      stockVersion,
+      stockPrice,
+      stockPayment,
+      buyedAccountsMatrix,
+      procedureTab,
+      procedureRowsByTab,
+      expireExtendEnabled,
+      expireExtendDays,
+      expireActual,
+      expireExtendedTo,
+      sharingSharedUsersMode,
+      socialItemsMode,
+      trainingItemsMode,
+      endUsersInteractiveMode,
+      managementItemsMode,
+      insertOptionsManagementMode,
+      expirationMsgHtmlByLang,
+      newMembersExpiryMode,
+      newMembersAfterDays,
+      newVersionMode,
+    ],
+  );
+
+  const applyFunctionsSettingsToForm = useCallback((fn: PcuFunctionsSettings) => {
+    if (fn.members) {
+      if (fn.members.maxMembers != null) setMaxMembers(String(fn.members.maxMembers));
+      if (fn.members.currentMembers != null) setCurrentMembers(String(fn.members.currentMembers));
+    }
+    if (fn.licenses) {
+      const lic = fn.licenses;
+      if (lic.newLicenseRequests != null) setNewLicenseRequests(String(lic.newLicenseRequests));
+      if (lic.authorizationNo != null) setAuthorizationNo(String(lic.authorizationNo));
+      if (lic.priceEuro != null) setPriceEuro(String(lic.priceEuro));
+      if (lic.costToPay != null) setCostToPay(String(lic.costToPay));
+      if (lic.amountPaid != null) setAmountPaid(String(lic.amountPaid));
+      if (lic.maxDevicesCanEnable != null) setMaxDevicesCanEnable(String(lic.maxDevicesCanEnable));
+      if (lic.currentDeviceEnabled != null) setCurrentDeviceEnabled(String(lic.currentDeviceEnabled));
+      if (lic.requestCodePending != null) setRequestCodePending(String(lic.requestCodePending));
+      if (lic.deviceDisable != null) setDeviceDisable(String(lic.deviceDisable));
+      if (lic.availableEnquiries != null) setAvailableEnquiries(String(lic.availableEnquiries));
+      if (lic.subscriptionExpiration != null) setSubscriptionExpiration(String(lic.subscriptionExpiration));
+      if (lic.blockCodeGeneration != null) setBlockCodeGeneration(Boolean(lic.blockCodeGeneration));
+    }
+    if (fn.messageAfterActivation) {
+      setPostActivationMsgEnabled(Boolean(fn.messageAfterActivation.enabled));
+      if (fn.messageAfterActivation.daysRange != null) {
+        setPostActivationDays(String(fn.messageAfterActivation.daysRange));
+      }
+      if (fn.messageAfterActivation.htmlByLang) {
+        setPostActivationHtmlByLang((prev) => ({ ...prev, ...fn.messageAfterActivation!.htmlByLang }));
+      }
+    }
+    if (fn.freeAccounts?.durationDays != null && String(fn.freeAccounts.durationDays).trim() !== '') {
+      setFreeAccountsDurationDays(String(fn.freeAccounts.durationDays));
+    }
+    // versionMatrix is per subscription tier — leave blank until version settings are implemented
+    if (fn.terms) {
+      setTermsCreditCard(Boolean(fn.terms.creditCard));
+      setTermsSendMoneyLater(Boolean(fn.terms.sendMoneyLater));
+      if (fn.terms.sendMoneyLaterDays != null) setTermsSendMoneyDays(String(fn.terms.sendMoneyLaterDays));
+    }
+    if (fn.sharing) {
+      setSharingCoaches(Boolean(fn.sharing.coaches));
+      setSharingTeams(Boolean(fn.sharing.teams));
+      setSharingGroups(Boolean(fn.sharing.groups));
+      setSharingOtherClubs(Boolean(fn.sharing.otherClubs));
+    }
+    applyExpirationFunctionsSlice(fn, {
+      setNotifyAtExpiration,
+      setNotifyBeforeDays,
+      setNotifyAfterDays,
+      setNotifyEveryDay,
+      setNotifyByMail,
+      setNotifyOnNetworkPage,
+      setNotifyCellular,
+      setNotifyPostFacebook,
+      setExpireExtendEnabled,
+      setExpireExtendDays,
+      setExpireActual,
+      setExpireExtendedTo,
+      setSharingSharedUsersMode,
+      setSocialItemsMode,
+      setTrainingItemsMode,
+      setEndUsersInteractiveMode,
+      setManagementItemsMode,
+      setInsertOptionsManagementMode,
+      setExpirationMsgHtmlByLang,
+      setNewMembersExpiryMode,
+      setNewMembersAfterDays,
+      setNewVersionMode,
+    });
+    if (fn.stock) {
+      if (fn.stock.accounts != null) setStockAccounts(String(fn.stock.accounts));
+      if (fn.stock.version != null) setStockVersion(String(fn.stock.version));
+      if (fn.stock.price != null) setStockPrice(String(fn.stock.price));
+      if (fn.stock.payment != null) setStockPayment(String(fn.stock.payment));
+    }
+    // buyedAccountsMatrix is per subscription tier — leave blank until version settings are implemented
+    if (fn.procedure) {
+      const parsed = parseProcedureFromSaved(fn.procedure);
+      setProcedureTab(parsed.tab);
+      setProcedureRowsByTab(parsed.rowsByTab);
+    }
+  }, []);
+
   const saveFunctionsSettings = async () => {
     setFunctionsSaving(true);
     setFunctionsSaveError('');
     setFunctionsSaveSuccess('');
     try {
-      const token = localStorage.getItem('adminToken');
+      const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
       const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          functions: {
-            members: { maxMembers, currentMembers },
-            licenses: {
-              newLicenseRequests,
-              authorizationNo,
-              priceEuro,
-              costToPay,
-              amountPaid,
-              maxDevicesCanEnable,
-              currentDeviceEnabled,
-              requestCodePending,
-              deviceDisable,
-              availableEnquiries,
-              subscriptionExpiration,
-              blockCodeGeneration,
-            },
-            messageAfterActivation: {
-              enabled: postActivationMsgEnabled,
-              daysRange: postActivationDays,
-              htmlByLang: postActivationHtmlByLang,
-            },
-            freeAccounts: { durationDays: freeAccountsDurationDays },
-            terms: {
-              creditCard: termsCreditCard,
-              sendMoneyLater: termsSendMoneyLater,
-              sendMoneyLaterDays: termsSendMoneyDays,
-            },
-            sharing: { coaches: sharingCoaches, teams: sharingTeams, groups: sharingGroups, otherClubs: sharingOtherClubs },
-            expirationNotify: {
-              enabled: notifyAtExpiration,
-              beforeDays: notifyBeforeDays,
-              afterDays: notifyAfterDays,
-              everyDay: notifyEveryDay,
-              mail: notifyByMail,
-              networkPage: notifyOnNetworkPage,
-              cellular: notifyCellular,
-              facebook: notifyPostFacebook,
-            },
-            stock: { accounts: stockAccounts, version: stockVersion, price: stockPrice, payment: stockPayment },
-            procedure: { tab: procedureTab, rows: procedureRows },
-            expirationFlow: {
-              extend: { enabled: expireExtendEnabled, days: expireExtendDays, actual: expireActual, extendedTo: expireExtendedTo },
-              modes: {
-                sharingSharedUsersMode,
-                socialItemsMode,
-                trainingItemsMode,
-                endUsersInteractiveMode,
-                managementItemsMode,
-                insertOptionsManagementMode,
-              },
-              messageHtmlByLang: expirationMsgHtmlByLang,
-            },
-            newMembers: { expiryMode: newMembersExpiryMode, afterDays: newMembersAfterDays },
-            newVersion: { mode: newVersionMode },
-          },
-        }),
+        body: JSON.stringify({ functions: buildFunctionsSettingsPayload() }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save functions');
+      if (data.pcuSettings) {
+        loadedPcuSettingsRef.current = data.pcuSettings as PcuSettings;
+        setExpirationAutoSaveReady(false);
+        expirationSkipInitialSaveRef.current = true;
+        applyPcuSettingsToForm(data.pcuSettings as PcuSettings);
+        window.setTimeout(() => setExpirationAutoSaveReady(true), 150);
+      }
       setFunctionsSaveSuccess('Saved');
     } catch (e: unknown) {
       setFunctionsSaveError(e instanceof Error ? e.message : 'Failed to save functions');
@@ -802,6 +976,265 @@ export default function UserPcuControlPanel({
       window.setTimeout(() => setFunctionsSaveSuccess(''), 2500);
     }
   };
+
+  const buildExpirationSlice = useCallback(
+    () =>
+      buildExpirationFunctionsSlice({
+        notifyAtExpiration,
+        notifyBeforeDays,
+        notifyAfterDays,
+        notifyEveryDay,
+        notifyByMail,
+        notifyOnNetworkPage,
+        notifyCellular,
+        notifyPostFacebook,
+        expireExtendEnabled,
+        expireExtendDays,
+        expireActual,
+        expireExtendedTo,
+        sharingSharedUsersMode,
+        socialItemsMode,
+        trainingItemsMode,
+        endUsersInteractiveMode,
+        managementItemsMode,
+        insertOptionsManagementMode,
+        expirationMsgHtmlByLang,
+        newMembersExpiryMode,
+        newMembersAfterDays,
+        newVersionMode,
+      }),
+    [
+      notifyAtExpiration,
+      notifyBeforeDays,
+      notifyAfterDays,
+      notifyEveryDay,
+      notifyByMail,
+      notifyOnNetworkPage,
+      notifyCellular,
+      notifyPostFacebook,
+      expireExtendEnabled,
+      expireExtendDays,
+      expireActual,
+      expireExtendedTo,
+      sharingSharedUsersMode,
+      socialItemsMode,
+      trainingItemsMode,
+      endUsersInteractiveMode,
+      managementItemsMode,
+      insertOptionsManagementMode,
+      expirationMsgHtmlByLang,
+      newMembersExpiryMode,
+      newMembersAfterDays,
+      newVersionMode,
+    ],
+  );
+
+  const persistFunctionsPatch = useCallback(
+    async (functionsPatch: Partial<PcuFunctionsSettings>) => {
+      const token = getAdminBearerToken();
+      if (!token) throw new Error('Admin session not found. Please log in as admin.');
+      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ functions: functionsPatch }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to save section');
+      if (data.pcuSettings) loadedPcuSettingsRef.current = data.pcuSettings as PcuSettings;
+    },
+    [user.userId],
+  );
+
+  const saveExpirationNotifySection = useCallback(async () => {
+    setExpirationNotifySaving(true);
+    setFunctionsSaveError('');
+    setFunctionsSaveSuccess('');
+    try {
+      await persistFunctionsPatch({
+        expirationNotify: buildExpirationSlice().expirationNotify,
+      });
+      setFunctionsSaveSuccess('Saved');
+    } catch (e: unknown) {
+      setFunctionsSaveError(e instanceof Error ? e.message : 'Failed to save section');
+    } finally {
+      setExpirationNotifySaving(false);
+      window.setTimeout(() => setFunctionsSaveSuccess(''), 2500);
+    }
+  }, [persistFunctionsPatch, buildExpirationSlice]);
+
+  const saveExpirationFlowSection = useCallback(async () => {
+    setExpirationFlowSaving(true);
+    setFunctionsSaveError('');
+    setFunctionsSaveSuccess('');
+    try {
+      const slice = buildExpirationSlice();
+      await persistFunctionsPatch({
+        expirationFlow: slice.expirationFlow!,
+      });
+      setFunctionsSaveSuccess('Saved');
+    } catch (e: unknown) {
+      setFunctionsSaveError(e instanceof Error ? e.message : 'Failed to save section');
+    } finally {
+      setExpirationFlowSaving(false);
+      window.setTimeout(() => setFunctionsSaveSuccess(''), 2500);
+    }
+  }, [persistFunctionsPatch, buildExpirationSlice]);
+
+  const saveExpirationMessageSection = useCallback(async () => {
+    setExpirationMsgSaving(true);
+    setFunctionsSaveError('');
+    setFunctionsSaveSuccess('');
+    try {
+      const slice = buildExpirationSlice();
+      await persistFunctionsPatch({
+        expirationFlow: { messageHtmlByLang: slice.expirationFlow!.messageHtmlByLang },
+      });
+      setFunctionsSaveSuccess('Saved');
+    } catch (e: unknown) {
+      setFunctionsSaveError(e instanceof Error ? e.message : 'Failed to save section');
+    } finally {
+      setExpirationMsgSaving(false);
+      window.setTimeout(() => setFunctionsSaveSuccess(''), 2500);
+    }
+  }, [persistFunctionsPatch, buildExpirationSlice]);
+
+  const saveNewMembersSection = useCallback(async () => {
+    setNewMembersSaving(true);
+    setFunctionsSaveError('');
+    setFunctionsSaveSuccess('');
+    try {
+      await persistFunctionsPatch({
+        newMembers: buildExpirationSlice().newMembers,
+      });
+      setFunctionsSaveSuccess('Saved');
+    } catch (e: unknown) {
+      setFunctionsSaveError(e instanceof Error ? e.message : 'Failed to save section');
+    } finally {
+      setNewMembersSaving(false);
+      window.setTimeout(() => setFunctionsSaveSuccess(''), 2500);
+    }
+  }, [persistFunctionsPatch, buildExpirationSlice]);
+
+  const saveNewVersionSection = useCallback(async () => {
+    setNewVersionSaving(true);
+    setFunctionsSaveError('');
+    setFunctionsSaveSuccess('');
+    try {
+      await persistFunctionsPatch({
+        newVersion: buildExpirationSlice().newVersion,
+      });
+      setFunctionsSaveSuccess('Saved');
+    } catch (e: unknown) {
+      setFunctionsSaveError(e instanceof Error ? e.message : 'Failed to save section');
+    } finally {
+      setNewVersionSaving(false);
+      window.setTimeout(() => setFunctionsSaveSuccess(''), 2500);
+    }
+  }, [persistFunctionsPatch, buildExpirationSlice]);
+
+  const persistProcedureSettings = useCallback(
+    async (nextByTab: ProcedureRowsByTab, tab: ProcedureTabId) => {
+      const token = getAdminBearerToken();
+      if (!token) return;
+      try {
+        const res = await fetch(
+          `/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              functions: {
+                procedure: buildProcedureSavePayload(nextByTab, tab),
+              },
+            }),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        if (data.pcuSettings) {
+          loadedPcuSettingsRef.current = data.pcuSettings as PcuSettings;
+        }
+      } catch {
+        /* optional auto-save; use Save for explicit confirmation */
+      }
+    },
+    [user.userId],
+  );
+
+  const persistExpirationSettings = useCallback(async () => {
+    const token = getAdminBearerToken();
+    if (!token) return;
+    try {
+      const res = await fetch(
+        `/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ functions: buildExpirationSlice() }),
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      if (data.pcuSettings) {
+        loadedPcuSettingsRef.current = data.pcuSettings as PcuSettings;
+      }
+    } catch {
+      /* optional auto-save; use Save for explicit confirmation */
+    }
+  }, [user.userId, buildExpirationSlice]);
+
+  useEffect(() => {
+    if (!expirationAutoSaveReady) return;
+    if (expirationSkipInitialSaveRef.current) {
+      expirationSkipInitialSaveRef.current = false;
+      return;
+    }
+    if (expirationSaveTimerRef.current) clearTimeout(expirationSaveTimerRef.current);
+    expirationSaveTimerRef.current = setTimeout(() => {
+      void persistExpirationSettings();
+    }, 600);
+    return () => {
+      if (expirationSaveTimerRef.current) clearTimeout(expirationSaveTimerRef.current);
+    };
+  }, [
+    expirationAutoSaveReady,
+    persistExpirationSettings,
+    notifyAtExpiration,
+    notifyBeforeDays,
+    notifyAfterDays,
+    notifyEveryDay,
+    notifyByMail,
+    notifyOnNetworkPage,
+    notifyCellular,
+    notifyPostFacebook,
+    expireExtendEnabled,
+    expireExtendDays,
+    expireActual,
+    expireExtendedTo,
+    sharingSharedUsersMode,
+    socialItemsMode,
+    trainingItemsMode,
+    endUsersInteractiveMode,
+    managementItemsMode,
+    insertOptionsManagementMode,
+    expirationMsgHtmlByLang,
+    newMembersExpiryMode,
+    newMembersAfterDays,
+    newVersionMode,
+  ]);
+
+  const updateProcedureRows = useCallback(
+    (updater: ProcedureRow[] | ((prev: ProcedureRow[]) => ProcedureRow[])) => {
+      setProcedureRowsByTab((prev) => {
+        const current = prev[procedureTab];
+        const nextRows = typeof updater === 'function' ? updater(current) : updater;
+        const nextByTab = { ...prev, [procedureTab]: nextRows };
+        void persistProcedureSettings(nextByTab, procedureTab);
+        return nextByTab;
+      });
+    },
+    [procedureTab, persistProcedureSettings],
+  );
 
   const topTabs = useMemo(() => {
     // Requirements:
@@ -815,9 +1248,9 @@ export default function UserPcuControlPanel({
 
   useEffect(() => {
     if (!topTabs.some((t) => t.id === activeTab)) {
-      setActiveTab('profile');
+      setActiveTab(defaultActiveTab);
     }
-  }, [activeTab, topTabs]);
+  }, [activeTab, topTabs, defaultActiveTab]);
 
   const countryCode = countryCodeFromName(user.country);
   const entityProfileLabel = `${user.roleTitle}_profile`;
@@ -832,81 +1265,248 @@ export default function UserPcuControlPanel({
     setAdminSaveSuccess('');
   }, [user.username]);
 
+  const applyPcuSettingsToForm = useCallback((pcu: PcuSettings | null) => {
+    if (!pcu) return;
+    loadedPcuSettingsRef.current = pcu;
+
+    if (pcu.extend) {
+      setExtendEnabled(Boolean(pcu.extend.enabled));
+      if (pcu.extend.months != null) setExtendMonths(String(pcu.extend.months));
+    }
+    if (pcu.assignment) {
+      setAsOperator(Boolean(pcu.assignment.asOperator));
+      setOperatorId(String(pcu.assignment.operatorId ?? ''));
+      setAsAgent(Boolean(pcu.assignment.asAgent));
+      setAgentId(String(pcu.assignment.agentId ?? ''));
+    }
+    if (pcu.publishing) {
+      const pub = pcu.publishing;
+      setEnableFeedback(Boolean(pub.enableFeedback));
+      setEnableBlogs(Boolean(pub.enableBlogs));
+      setBlogsDate(pub.blogsDate ?? '');
+      setEnableReviews(Boolean(pub.enableReviews));
+      setReviewsDate(pub.reviewsDate ?? '');
+      if (pub.disableComments) {
+        setDisableCommentsReviews(Boolean(pub.disableComments.reviews));
+        setDisableCommentsSuggestions(Boolean(pub.disableComments.suggestions));
+        setDisableCommentsHtmlDocs(Boolean(pub.disableComments.htmlDocsNews));
+        setDisableCommentsQueries(Boolean(pub.disableComments.queries));
+        setDisableCommentsBugs(Boolean(pub.disableComments.bugs));
+        setDisableCommentsBlogs(Boolean(pub.disableComments.blogs));
+      }
+      if (pub.newsCategories) {
+        setNewsCategoriesFollowed(mergeNewsCategories(pub.newsCategories));
+      }
+    }
+    if (pcu.sponsors) {
+      setEnableSponsors(Boolean(pcu.sponsors.enableSponsors));
+      setSponsorsLastPurchase(pcu.sponsors.lastPurchase ?? '');
+      setSponsorsExpiration(pcu.sponsors.expirationDate ?? '');
+      setSponsorsCount(pcu.sponsors.numberEnabled ?? '10');
+      setSponsorsCost(pcu.sponsors.costLastPurchase ?? '10');
+      setSponsorsPaymentStatus(pcu.sponsors.paymentStatus ?? 'not ok');
+    }
+    if (pcu.blocks) {
+      setBlockUserEnabled(Boolean(pcu.blocks.blockUserEnabled));
+      setBlockUserAfterDate(pcu.blocks.blockUserAfterDate ?? '');
+      if (pcu.blocks.blockAreas) {
+        setBlockSocialArea(Boolean(pcu.blocks.blockAreas.social));
+        setBlockTrainingArea(Boolean(pcu.blocks.blockAreas.training));
+        setBlockManagementArea(Boolean(pcu.blocks.blockAreas.management));
+      }
+      setBlockAssignmentsEnabled(Boolean(pcu.blocks.blockAssignmentsEnabled));
+      setBlockAssignmentsAfterDate(pcu.blocks.blockAssignmentsAfterDate ?? '');
+    }
+    if (pcu.alert) {
+      setAlertEnabled(Boolean(pcu.alert.enabled));
+      if (pcu.alert.htmlByLang) {
+        setAlertHtmlByLang((prev) => ({ ...prev, ...pcu.alert!.htmlByLang }));
+      }
+    }
+    if (pcu.vip) {
+      const vip = pcu.vip;
+      setVipShowInReferenceList(Boolean(vip.showInReferenceList));
+      setVipShowInBanner(Boolean(vip.showInBanner));
+      setVipUsername(vip.username ?? user.username ?? '');
+      setVipYoutubeUrl(vip.youtubeUrl ?? '');
+      if (vip.referencesHtmlByLang) {
+        setVipReferencesHtmlByLang((prev) => ({ ...prev, ...vip.referencesHtmlByLang }));
+      }
+      if (vip.priorityLevel) setVipPriorityLevel(vip.priorityLevel);
+      setVipFavourite(Boolean(vip.favourite));
+      setVipEnabled(Boolean(vip.enabled));
+      if (vip.types) setVipTypes((prev) => mergeRecordFlags(prev, vip.types));
+      if (vip.visibleToUserTypes) {
+        setVipVisibleToUserTypes((prev) => mergeRecordFlags(prev, vip.visibleToUserTypes));
+      }
+      if (vip.languagesAllowed) {
+        setVipLanguagesAllowed((prev) => mergeRecordFlags(prev, vip.languagesAllowed));
+      }
+      if (vip.countriesAllowed) {
+        setVipCountriesAllowed(mergeVipCountriesAllowed(vip.countriesAllowed));
+      }
+      if (vip.duration) setVipDuration(vip.duration);
+      if (vip.allowVisitors) {
+        setVipAllowVisitorsProfile(vip.allowVisitors.profile ?? true);
+        setVipAllowVisitorsBiography(vip.allowVisitors.biography ?? true);
+        setVipAllowVisitorsFriendship(vip.allowVisitors.friendship ?? true);
+        setVipAllowVisitorsMail(vip.allowVisitors.mail ?? true);
+      }
+    }
+    if (pcu.functions) {
+      applyFunctionsSettingsToForm(pcu.functions);
+    }
+  }, [user.username, applyFunctionsSettingsToForm]);
+
+  useEffect(() => {
+    setExpirationAutoSaveReady(false);
+    expirationSkipInitialSaveRef.current = true;
+    applyPcuSettingsToForm(initialPcuSettings);
+    const t = window.setTimeout(() => setExpirationAutoSaveReady(true), 150);
+    return () => clearTimeout(t);
+  }, [initialPcuSettings, applyPcuSettingsToForm]);
+
+  const buildAdminSettingsPayload = useCallback(
+    (): PcuSettings => ({
+      extend: { enabled: extendEnabled, months: extendMonths },
+      assignment: { asOperator, operatorId, asAgent, agentId },
+      publishing: {
+        enableFeedback,
+        enableBlogs,
+        blogsDate,
+        enableReviews,
+        reviewsDate,
+        disableComments: {
+          reviews: disableCommentsReviews,
+          suggestions: disableCommentsSuggestions,
+          htmlDocsNews: disableCommentsHtmlDocs,
+          queries: disableCommentsQueries,
+          bugs: disableCommentsBugs,
+          blogs: disableCommentsBlogs,
+        },
+        newsCategories: newsCategoriesFollowed,
+      },
+      sponsors: {
+        enableSponsors,
+        lastPurchase: sponsorsLastPurchase,
+        expirationDate: sponsorsExpiration,
+        numberEnabled: sponsorsCount,
+        costLastPurchase: sponsorsCost,
+        paymentStatus: sponsorsPaymentStatus,
+      },
+      blocks: {
+        blockUserEnabled,
+        blockUserAfterDate,
+        blockAreas: { social: blockSocialArea, training: blockTrainingArea, management: blockManagementArea },
+        blockAssignmentsEnabled,
+        blockAssignmentsAfterDate,
+      },
+      alert: { enabled: alertEnabled, htmlByLang: alertHtmlByLang },
+      vip: {
+        showInReferenceList: vipShowInReferenceList,
+        showInBanner: vipShowInBanner,
+        username: vipUsername,
+        youtubeUrl: vipYoutubeUrl,
+        referencesHtmlByLang: vipReferencesHtmlByLang,
+        priorityLevel: vipPriorityLevel,
+        favourite: vipFavourite,
+        enabled: vipEnabled,
+        types: vipTypes,
+        visibleToUserTypes: vipVisibleToUserTypes,
+        languagesAllowed: vipLanguagesAllowed,
+        countriesAllowed: vipCountriesAllowed,
+        duration: vipDuration,
+        allowVisitors: {
+          profile: vipAllowVisitorsProfile,
+          biography: vipAllowVisitorsBiography,
+          friendship: vipAllowVisitorsFriendship,
+          mail: vipAllowVisitorsMail,
+        },
+      },
+    }),
+    [
+      extendEnabled,
+      extendMonths,
+      asOperator,
+      operatorId,
+      asAgent,
+      agentId,
+      enableFeedback,
+      enableBlogs,
+      blogsDate,
+      enableReviews,
+      reviewsDate,
+      disableCommentsReviews,
+      disableCommentsSuggestions,
+      disableCommentsHtmlDocs,
+      disableCommentsQueries,
+      disableCommentsBugs,
+      disableCommentsBlogs,
+      newsCategoriesFollowed,
+      enableSponsors,
+      sponsorsLastPurchase,
+      sponsorsExpiration,
+      sponsorsCount,
+      sponsorsCost,
+      sponsorsPaymentStatus,
+      blockUserEnabled,
+      blockUserAfterDate,
+      blockSocialArea,
+      blockTrainingArea,
+      blockManagementArea,
+      blockAssignmentsEnabled,
+      blockAssignmentsAfterDate,
+      alertEnabled,
+      alertHtmlByLang,
+      vipShowInReferenceList,
+      vipShowInBanner,
+      vipUsername,
+      vipYoutubeUrl,
+      vipReferencesHtmlByLang,
+      vipPriorityLevel,
+      vipFavourite,
+      vipEnabled,
+      vipTypes,
+      vipVisibleToUserTypes,
+      vipLanguagesAllowed,
+      vipCountriesAllowed,
+      vipDuration,
+      vipAllowVisitorsProfile,
+      vipAllowVisitorsBiography,
+      vipAllowVisitorsFriendship,
+      vipAllowVisitorsMail,
+    ],
+  );
+
+  const resetAdminSettingsForm = useCallback(() => {
+    applyPcuSettingsToForm(loadedPcuSettingsRef.current);
+    setAdminSaveError('');
+    setAdminSaveSuccess('');
+  }, [applyPcuSettingsToForm]);
+
   const saveAdminSettings = async () => {
     setAdminSaving(true);
     setAdminSaveError('');
     setAdminSaveSuccess('');
     try {
-      const token = localStorage.getItem('adminToken');
+      const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
       const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          extend: { enabled: extendEnabled, months: extendMonths },
-          assignment: { asOperator, operatorId, asAgent, agentId },
-          publishing: {
-            enableFeedback,
-            enableBlogs,
-            blogsDate,
-            enableReviews,
-            reviewsDate,
-            disableComments: {
-              reviews: disableCommentsReviews,
-              suggestions: disableCommentsSuggestions,
-              htmlDocsNews: disableCommentsHtmlDocs,
-              queries: disableCommentsQueries,
-              bugs: disableCommentsBugs,
-              blogs: disableCommentsBlogs,
-            },
-          },
-          sponsors: {
-            enableSponsors,
-            lastPurchase: sponsorsLastPurchase,
-            expirationDate: sponsorsExpiration,
-            numberEnabled: sponsorsCount,
-            costLastPurchase: sponsorsCost,
-            paymentStatus: sponsorsPaymentStatus,
-          },
-          blocks: {
-            blockUserEnabled,
-            blockUserAfterDate,
-            blockAreas: { social: blockSocialArea, training: blockTrainingArea, management: blockManagementArea },
-            blockAssignmentsEnabled,
-            blockAssignmentsAfterDate,
-          },
-          alert: { enabled: alertEnabled, htmlByLang: alertHtmlByLang },
-          vip: {
-            showInReferenceList: vipShowInReferenceList,
-            showInBanner: vipShowInBanner,
-            username: vipUsername,
-            youtubeUrl: vipYoutubeUrl,
-            referencesHtmlByLang: vipReferencesHtmlByLang,
-            priorityLevel: vipPriorityLevel,
-            favourite: vipFavourite,
-            enabled: vipEnabled,
-            types: vipTypes,
-            visibleToUserTypes: vipVisibleToUserTypes,
-            languagesAllowed: vipLanguagesAllowed,
-            countriesAllowed: vipCountriesAllowed,
-            duration: vipDuration,
-            allowVisitors: {
-              profile: vipAllowVisitorsProfile,
-              biography: vipAllowVisitorsBiography,
-              friendship: vipAllowVisitorsFriendship,
-              mail: vipAllowVisitorsMail,
-            },
-          },
-        }),
+        body: JSON.stringify(buildAdminSettingsPayload()),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save settings');
-      setAdminSaveSuccess('Saved');
+      if (data.pcuSettings) {
+        loadedPcuSettingsRef.current = data.pcuSettings as PcuSettings;
+      }
+      setAdminSaveSuccess('Settings saved successfully.');
     } catch (e: unknown) {
       setAdminSaveError(e instanceof Error ? e.message : 'Failed to save settings');
     } finally {
       setAdminSaving(false);
-      window.setTimeout(() => setAdminSaveSuccess(''), 2500);
+      window.setTimeout(() => setAdminSaveSuccess(''), 3000);
     }
   };
 
@@ -1000,7 +1600,7 @@ export default function UserPcuControlPanel({
         setFavouritePriority(normalizeFavouritePriority(patch.favouritePriority));
       }
 
-      const token = localStorage.getItem('adminToken');
+      const token = getAdminBearerToken();
       if (!token) {
         if (patch.tagged !== undefined) setTagUser(prevTagged);
         if (patch.favouritePriority !== undefined) setFavouritePriority(prevPriority);
@@ -1051,7 +1651,7 @@ export default function UserPcuControlPanel({
       if (patch.suspendAccessControl !== undefined) setSuspendAccessControl(patch.suspendAccessControl);
       if (patch.suspend !== undefined) setSuspend(patch.suspend);
 
-      const token = localStorage.getItem('adminToken');
+      const token = getAdminBearerToken();
       if (!token) {
         setAccessStart(prev.accessStart);
         setAccessEnd(prev.accessEnd);
@@ -1131,7 +1731,7 @@ export default function UserPcuControlPanel({
       setMsgError('Please enter a message.');
       return;
     }
-    const token = localStorage.getItem('adminToken');
+    const token = getAdminBearerToken();
     if (!token) {
       setMsgError('Admin session not found. Please log in again.');
       return;
@@ -1146,7 +1746,7 @@ export default function UserPcuControlPanel({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          segment: user.segment,
+          segment: segmentForActions,
           userIds: resolveActionUserIds(),
           message,
           subject: msgSubject.trim() || 'Message from Movesbook Admin',
@@ -1172,7 +1772,7 @@ export default function UserPcuControlPanel({
     } finally {
       setMsgSending(false);
     }
-  }, [msgDraft, msgSubject, resolveActionUserIds, user.segment]);
+  }, [msgDraft, msgSubject, resolveActionUserIds, segmentForActions]);
 
   const handleDeleteAccount = useCallback(async () => {
     const label = user.fullname || user.username;
@@ -1181,7 +1781,7 @@ export default function UserPcuControlPanel({
     );
     if (!ok) return;
 
-    const token = localStorage.getItem('adminToken');
+    const token = getAdminBearerToken();
     if (!token) {
       window.alert('Admin session not found. Please log in again.');
       return;
@@ -1195,7 +1795,7 @@ export default function UserPcuControlPanel({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          segment: user.segment,
+          segment: segmentForActions,
           userIds: resolveActionUserIds(),
         }),
       });
@@ -1209,7 +1809,7 @@ export default function UserPcuControlPanel({
     } finally {
       setActionBusy(false);
     }
-  }, [backHref, resolveActionUserIds, router, user.fullname, user.segment, user.username]);
+  }, [backHref, resolveActionUserIds, router, segmentForActions, user.fullname, user.username]);
 
   const handleOpenProfile = () => {
     if (user.dashboardPath) {
@@ -1662,8 +2262,8 @@ export default function UserPcuControlPanel({
                   <div className="inline-flex items-center gap-2">
                     <span>Priority</span>
                     <select
-                      value={favouritePriority === 'not_selected' ? 'medium' : favouritePriority}
-                      disabled={profilePanelSaving || !isFavourite}
+                      value={favouritePriority}
+                      disabled={profilePanelSaving}
                       onChange={(e) =>
                         void saveProfilePanelSettings({
                           favouritePriority: normalizeFavouritePriority(e.target.value),
@@ -1671,6 +2271,7 @@ export default function UserPcuControlPanel({
                       }
                       className="px-2 py-1 border border-gray-400 bg-white text-sm disabled:opacity-60"
                     >
+                      <option value="not_selected">Not selected</option>
                       <option value="low">Low priority</option>
                       <option value="medium">Medium priority</option>
                       <option value="high">High priority</option>
@@ -1779,12 +2380,12 @@ export default function UserPcuControlPanel({
                       Proceed
                     </button>
                   </div>
-                  <div className="flex flex-wrap items-center gap-4 text-sm">
+                  <div className="flex flex-wrap items-center gap-4 text-sm text-blue-800">
                     <button
                       type="button"
                       onClick={handlePrint}
                       disabled={actionBusy}
-                      className="hover:underline disabled:opacity-50"
+                      className="underline cursor-pointer hover:text-blue-950 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Print
                     </button>
@@ -1792,7 +2393,7 @@ export default function UserPcuControlPanel({
                       type="button"
                       onClick={openSendMsgModal}
                       disabled={actionBusy}
-                      className="hover:underline disabled:opacity-50"
+                      className="underline cursor-pointer hover:text-blue-950 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Send Msg
                     </button>
@@ -1800,7 +2401,8 @@ export default function UserPcuControlPanel({
                       type="button"
                       onClick={handleSendMail}
                       disabled={actionBusy || !user.email}
-                      className="hover:underline disabled:opacity-50"
+                      className="underline cursor-pointer hover:text-blue-950 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={!user.email ? 'No email on file' : undefined}
                     >
                       Send mail
                     </button>
@@ -1808,7 +2410,7 @@ export default function UserPcuControlPanel({
                       type="button"
                       onClick={() => void handleDeleteAccount()}
                       disabled={actionBusy}
-                      className="hover:underline text-red-700 disabled:opacity-50"
+                      className="underline cursor-pointer text-red-700 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Delete account
                     </button>
@@ -1968,7 +2570,11 @@ export default function UserPcuControlPanel({
                                 onChange={(e) => setOperatorId(e.target.value)}
                                 className="px-2 py-1 border border-gray-300 bg-white flex-1"
                               >
-                                <option value="">List of operator</option>
+                                {PCU_OPERATOR_OPTIONS.map((o) => (
+                                  <option key={o.value || 'default'} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
                               </select>
                               <button type="button" className="w-9 h-9 border border-gray-300 bg-gray-50">
                                 👥
@@ -1994,7 +2600,11 @@ export default function UserPcuControlPanel({
                                 onChange={(e) => setAgentId(e.target.value)}
                                 className="px-2 py-1 border border-gray-300 bg-white flex-1"
                               >
-                                <option value="">List of agents/sub-</option>
+                                {PCU_AGENT_OPTIONS.map((o) => (
+                                  <option key={o.value || 'default'} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
                               </select>
                               <button type="button" className="w-9 h-9 border border-gray-300 bg-gray-50">
                                 👥
@@ -2046,11 +2656,10 @@ export default function UserPcuControlPanel({
                                   checked={enableReviews}
                                   onChange={(e) => setEnableReviews(e.target.checked)}
                                 />
-                                <input
-                                  type="date"
+                                <AdminPcuDatePicker
                                   value={reviewsDate}
-                                  onChange={(e) => setReviewsDate(e.target.value)}
-                                  className="px-2 py-1 border border-gray-300 flex-1"
+                                  onChange={setReviewsDate}
+                                  className="flex-1"
                                 />
                               </div>
                             </div>
@@ -2112,9 +2721,10 @@ export default function UserPcuControlPanel({
 
                           <div className="border border-gray-200 p-4">
                             <div className="font-semibold text-sm">Categories of News followed by the user</div>
-                            <select className="mt-2 px-3 py-2 border border-gray-300 bg-white w-full" disabled>
-                              <option>Select an option</option>
-                            </select>
+                            <NewsCategoriesMultiSelect
+                              selected={newsCategoriesFollowed}
+                              onChange={setNewsCategoriesFollowed}
+                            />
                           </div>
 
                           <div className="border border-gray-200 p-4">
@@ -2183,6 +2793,14 @@ export default function UserPcuControlPanel({
                         </div>
                       </div>
 
+                      <AdminSettingsSaveBar
+                        saving={adminSaving}
+                        error={adminSaveError}
+                        success={adminSaveSuccess}
+                        onSave={() => void saveAdminSettings()}
+                        onCancel={resetAdminSettingsForm}
+                      />
+
                       <div className="mt-6 border border-gray-300">
                         <div className="bg-[#eeeaf8] px-4 py-2 font-semibold text-sm flex items-center justify-center gap-3">
                           <span className="w-8 h-8 inline-flex items-center justify-center bg-white border border-gray-300 rounded">🚫</span>
@@ -2192,17 +2810,10 @@ export default function UserPcuControlPanel({
                           <ToggleNY value={blockUserEnabled} onChange={setBlockUserEnabled} />
                           <div className="font-semibold">Block this user</div>
                           <div className="text-xs">After this date</div>
-                          <div className="flex items-center gap-2">
-                            <input
-                              value={blockUserAfterDate}
-                              onChange={(e) => setBlockUserAfterDate(e.target.value)}
-                              className="px-2 py-1 border border-gray-300"
-                              placeholder="0000-00-00"
-                            />
-                            <span className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center">
-                              📅
-                            </span>
-                          </div>
+                          <AdminPcuDatePicker
+                            value={blockUserAfterDate}
+                            onChange={setBlockUserAfterDate}
+                          />
                         </div>
                       </div>
 
@@ -2292,17 +2903,38 @@ export default function UserPcuControlPanel({
 
                           <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-4 items-start mt-6">
                             <div className="text-sm text-gray-700 pt-2">Countries</div>
-                            <div className="border border-gray-300 p-4 w-full max-w-sm text-sm max-h-48 overflow-auto">
-                              {Object.keys(vipCountriesAllowed).map((k) => (
-                                <label key={k} className="flex items-center gap-2">
+                            <div className="border border-gray-300 p-4 w-full max-w-sm text-sm max-h-64 overflow-auto">
+                              <label className="flex items-center gap-2 mb-1 sticky top-0 bg-white py-1 border-b border-gray-200">
+                                <input
+                                  type="checkbox"
+                                  checked={!!vipCountriesAllowed.all}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setVipCountriesAllowed((p) => {
+                                      const next: Record<string, boolean> = { ...p, all: checked };
+                                      for (const c of ALL_COUNTRIES) {
+                                        next[c] = checked;
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                />
+                                <span className="font-semibold">select all countries</span>
+                              </label>
+                              {ALL_COUNTRIES.map((country) => (
+                                <label key={country} className="flex items-center gap-2">
                                   <input
                                     type="checkbox"
-                                    checked={!!vipCountriesAllowed[k]}
-                                    onChange={(e) => setVipCountriesAllowed((p) => ({ ...p, [k]: e.target.checked }))}
+                                    checked={!!vipCountriesAllowed[country]}
+                                    onChange={(e) =>
+                                      setVipCountriesAllowed((p) => ({
+                                        ...p,
+                                        [country]: e.target.checked,
+                                        all: false,
+                                      }))
+                                    }
                                   />
-                                  <span className={k === 'all' ? 'font-semibold' : ''}>
-                                    {k === 'all' ? 'select all countries' : k}
-                                  </span>
+                                  <span>{country}</span>
                                 </label>
                               ))}
                             </div>
@@ -2310,10 +2942,9 @@ export default function UserPcuControlPanel({
 
                           <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-4 items-center mt-4">
                             <div className="text-sm text-gray-700">Duration</div>
-                            <input
-                              value={vipDuration}
-                              onChange={(e) => setVipDuration(e.target.value)}
-                              className="px-3 py-2 border border-gray-300 max-w-sm"
+                            <AdminPcuDatePicker
+                              value={mmDdYyyyToIso(vipDuration)}
+                              onChange={(iso) => setVipDuration(isoToMmDdYyyy(iso))}
                             />
                           </div>
 
@@ -2451,33 +3082,13 @@ export default function UserPcuControlPanel({
                                 </label>
                               </div>
 
-                              <div className="mt-6 flex items-center justify-center gap-4">
-                                <button
-                                  type="button"
-                                  onClick={saveAdminSettings}
-                                  disabled={adminSaving}
-                                  className="px-6 py-2 bg-red-600 text-white font-semibold rounded disabled:opacity-50"
-                                >
-                                  {adminSaving ? 'Saving…' : 'Save'}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setAdminSaveError('');
-                                    setAdminSaveSuccess('');
-                                  }}
-                                  className="px-6 py-2 bg-gray-300 text-gray-900 font-semibold rounded"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-
-                              {adminSaveError ? (
-                                <div className="mt-3 text-sm text-center text-red-700">{adminSaveError}</div>
-                              ) : null}
-                              {adminSaveSuccess ? (
-                                <div className="mt-3 text-sm text-center text-green-700">{adminSaveSuccess}</div>
-                              ) : null}
+                              <AdminSettingsSaveBar
+                                saving={adminSaving}
+                                error={adminSaveError}
+                                success={adminSaveSuccess}
+                                onSave={() => void saveAdminSettings()}
+                                onCancel={resetAdminSettingsForm}
+                              />
                             </div>
                           </div>
                         </div>
@@ -2678,48 +3289,38 @@ export default function UserPcuControlPanel({
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="border border-gray-300 px-2 py-2 bg-slate-100 font-semibold">
-                            Athletes that can be loaded freely
-                          </td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">-1</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">20</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">10</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">5</td>
-                        </tr>
-                        <tr>
-                          <td className="border border-gray-300 px-2 py-2 bg-slate-100 font-semibold">
-                            Free accounts assigned
-                          </td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">-1</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">100</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">4</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">0</td>
-                        </tr>
-                        <tr>
-                          <td className="border border-gray-300 px-2 py-2 bg-slate-100 font-semibold">
-                            Remaining free accounts
-                          </td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">-1</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">-80</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">6</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">5</td>
-                        </tr>
-                        <tr>
-                          <td className="border border-gray-300 px-2 py-2 bg-slate-100 font-semibold">
-                            Days duration of the subscription
-                          </td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">
-                            <input
-                              value={freeAccountsDurationDays}
-                              onChange={(e) => setFreeAccountsDurationDays(e.target.value)}
-                              className="px-2 py-1 border border-gray-300 w-16 text-center"
-                            />
-                          </td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">{freeAccountsDurationDays}</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">{freeAccountsDurationDays}</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">{freeAccountsDurationDays}</td>
-                        </tr>
+                        {(
+                          [
+                            ['athletesLoaded', 'Athletes that can be loaded freely'] as const,
+                            ['assigned', 'Free accounts assigned'] as const,
+                            ['remaining', 'Remaining free accounts'] as const,
+                            ['daysDuration', 'Days duration of the subscription'] as const,
+                          ] as const
+                        ).map(([rowKey, label]) => (
+                          <tr key={rowKey}>
+                            <td className="border border-gray-300 px-2 py-2 bg-slate-100 font-semibold">
+                              {label}
+                            </td>
+                            {(['trial', 'base', 'premium', 'pro'] as VersionColumn4[]).map((col) => (
+                              <td key={col} className="border border-gray-300 px-2 py-2 text-center">
+                                <input
+                                  value={freeAccountsMatrix[rowKey][col]}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setFreeAccountsMatrix((prev) => ({
+                                      ...prev,
+                                      [rowKey]: { ...prev[rowKey], [col]: value },
+                                    }));
+                                    if (rowKey === 'daysDuration' && col === 'trial') {
+                                      setFreeAccountsDurationDays(value);
+                                    }
+                                  }}
+                                  className="px-2 py-1 border border-gray-300 w-16 text-center mx-auto"
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -2794,30 +3395,33 @@ export default function UserPcuControlPanel({
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="border border-gray-300 px-2 py-2 bg-slate-100 font-semibold">
-                            buyed accounts assigned <span className="text-xs">A</span>
-                          </td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">9700</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">3700</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">4000</td>
-                        </tr>
-                        <tr>
-                          <td className="border border-gray-300 px-2 py-2 bg-slate-100 font-semibold">
-                            Remaining buyed accounts <span className="text-xs">B</span>
-                          </td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">9643</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">3674</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">3990</td>
-                        </tr>
-                        <tr>
-                          <td className="border border-gray-300 px-2 py-2 bg-slate-100 font-semibold">
-                            Days Duration <span className="text-xs">C</span>
-                          </td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">180</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">123</td>
-                          <td className="border border-gray-300 px-2 py-2 text-center">300</td>
-                        </tr>
+                        {(
+                          [
+                            ['assigned', 'buyed accounts assigned', 'A'] as const,
+                            ['remaining', 'Remaining buyed accounts', 'B'] as const,
+                            ['daysDuration', 'Days Duration', 'C'] as const,
+                          ] as const
+                        ).map(([rowKey, label, tag]) => (
+                          <tr key={rowKey}>
+                            <td className="border border-gray-300 px-2 py-2 bg-slate-100 font-semibold">
+                              {label} <span className="text-xs">{tag}</span>
+                            </td>
+                            {(['base', 'premium', 'pro'] as VersionColumn3[]).map((col) => (
+                              <td key={col} className="border border-gray-300 px-2 py-2 text-center">
+                                <input
+                                  value={buyedAccountsMatrix[rowKey][col]}
+                                  onChange={(e) =>
+                                    setBuyedAccountsMatrix((prev) => ({
+                                      ...prev,
+                                      [rowKey]: { ...prev[rowKey], [col]: e.target.value },
+                                    }))
+                                  }
+                                  className="px-2 py-1 border border-gray-300 w-20 text-center mx-auto"
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
 
@@ -2897,7 +3501,7 @@ export default function UserPcuControlPanel({
                   <div className="bg-gray-300 px-4 py-2 font-semibold text-sm">Actual function and procedure</div>
                   <div className="px-4 py-3">
                     <div className="flex gap-2 mb-2">
-                      {(['social', 'training', 'management'] as const).map((t) => (
+                      {(['social', 'training', 'management'] as ProcedureTabId[]).map((t) => (
                         <button
                           key={t}
                           type="button"
@@ -2930,9 +3534,14 @@ export default function UserPcuControlPanel({
                             <label className="inline-flex items-center gap-1">
                               <input
                                 type="radio"
+                                name={`procedure-${procedureTab}-${r.id}`}
                                 checked={r.on}
                                 onChange={() =>
-                                  setProcedureRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, on: true } : x)))
+                                  updateProcedureRows((prev) =>
+                                    prev.map((x) =>
+                                      x.id === r.id ? applyProcedureRowOnToggle(x, true) : x,
+                                    ),
+                                  )
                                 }
                               />
                               On
@@ -2940,10 +3549,13 @@ export default function UserPcuControlPanel({
                             <label className="inline-flex items-center gap-1">
                               <input
                                 type="radio"
+                                name={`procedure-${procedureTab}-${r.id}`}
                                 checked={!r.on}
                                 onChange={() =>
-                                  setProcedureRows((prev) =>
-                                    prev.map((x) => (x.id === r.id ? { ...x, on: false } : x)),
+                                  updateProcedureRows((prev) =>
+                                    prev.map((x) =>
+                                      x.id === r.id ? applyProcedureRowOnToggle(x, false) : x,
+                                    ),
                                   )
                                 }
                               />
@@ -3032,8 +3644,13 @@ export default function UserPcuControlPanel({
                         <input type="checkbox" checked={notifyPostFacebook} onChange={(e) => setNotifyPostFacebook(e.target.checked)} />
                         Post on Facebook
                       </label>
-                      <button type="button" className="ml-auto px-4 py-1.5 bg-gray-300 border border-gray-400 rounded">
-                        Upgrade
+                      <button
+                        type="button"
+                        onClick={saveExpirationNotifySection}
+                        disabled={expirationNotifySaving}
+                        className="ml-auto px-4 py-1.5 bg-gray-300 border border-gray-400 rounded disabled:opacity-50"
+                      >
+                        {expirationNotifySaving ? 'Saving…' : 'Upgrade'}
                       </button>
                     </div>
                   </div>
@@ -3069,13 +3686,19 @@ export default function UserPcuControlPanel({
                       <div />
                       <div>
                         <div className="text-xs text-gray-600">Actual Expiration</div>
-                        <div className="px-3 py-2 border border-gray-300 bg-white text-center">{expireActual}</div>
+                        <input
+                          value={expireActual}
+                          onChange={(e) => setExpireActual(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 bg-white text-center"
+                        />
                       </div>
                       <div>
                         <div className="text-xs text-gray-600">Extended to...</div>
-                        <div className="px-3 py-2 border border-gray-300 bg-red-50 text-center text-red-700">
-                          {expireExtendedTo}
-                        </div>
+                        <input
+                          value={expireExtendedTo}
+                          onChange={(e) => setExpireExtendedTo(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 bg-red-50 text-center text-red-700"
+                        />
                       </div>
                     </div>
 
@@ -3148,8 +3771,13 @@ export default function UserPcuControlPanel({
                     </div>
 
                     <div className="flex justify-end">
-                      <button type="button" className="px-4 py-1.5 bg-gray-300 border border-gray-400 rounded">
-                        Upgrade
+                      <button
+                        type="button"
+                        onClick={saveExpirationFlowSection}
+                        disabled={expirationFlowSaving}
+                        className="px-4 py-1.5 bg-gray-300 border border-gray-400 rounded disabled:opacity-50"
+                      >
+                        {expirationFlowSaving ? 'Saving…' : 'Upgrade'}
                       </button>
                     </div>
                   </div>
@@ -3162,8 +3790,13 @@ export default function UserPcuControlPanel({
                       placeholder=""
                     />
                     <div className="mt-3 flex justify-end">
-                      <button type="button" className="px-6 py-2 bg-red-600 text-white font-semibold rounded">
-                        Upgrade all
+                      <button
+                        type="button"
+                        onClick={saveExpirationMessageSection}
+                        disabled={expirationMsgSaving}
+                        className="px-6 py-2 bg-red-600 text-white font-semibold rounded disabled:opacity-50"
+                      >
+                        {expirationMsgSaving ? 'Saving…' : 'Upgrade all'}
                       </button>
                     </div>
                   </div>
@@ -3212,8 +3845,13 @@ export default function UserPcuControlPanel({
                       </label>
                     </div>
                     <div className="flex justify-end mt-2">
-                      <button type="button" className="px-5 py-1.5 bg-gray-300 border border-gray-400 rounded">
-                        Upgrade
+                      <button
+                        type="button"
+                        onClick={saveNewMembersSection}
+                        disabled={newMembersSaving}
+                        className="px-5 py-1.5 bg-gray-300 border border-gray-400 rounded disabled:opacity-50"
+                      >
+                        {newMembersSaving ? 'Saving…' : 'Upgrade'}
                       </button>
                     </div>
                   </div>
@@ -3262,8 +3900,13 @@ export default function UserPcuControlPanel({
                       </label>
                     </div>
                     <div className="flex justify-end mt-2">
-                      <button type="button" className="px-5 py-1.5 bg-gray-300 border border-gray-400 rounded">
-                        Upgrade
+                      <button
+                        type="button"
+                        onClick={saveNewVersionSection}
+                        disabled={newVersionSaving}
+                        className="px-5 py-1.5 bg-gray-300 border border-gray-400 rounded disabled:opacity-50"
+                      >
+                        {newVersionSaving ? 'Saving…' : 'Upgrade'}
                       </button>
                     </div>
                   </div>
@@ -3275,6 +3918,16 @@ export default function UserPcuControlPanel({
                 {functionsSaveSuccess ? (
                   <div className="px-4 py-3 text-sm text-green-700">{functionsSaveSuccess}</div>
                 ) : null}
+                <div className="flex justify-end gap-3 border-t border-gray-300 px-4 py-3 bg-gray-50">
+                  <button
+                    type="button"
+                    onClick={saveFunctionsSettings}
+                    disabled={functionsSaving}
+                    className="px-6 py-2 bg-red-600 text-white font-semibold rounded disabled:opacity-50"
+                  >
+                    {functionsSaving ? 'Saving…' : 'SAVE'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -4220,6 +4873,45 @@ export default function UserPcuControlPanel({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function AdminSettingsSaveBar({
+  saving,
+  error,
+  success,
+  onSave,
+  onCancel,
+}: {
+  saving: boolean;
+  error: string;
+  success: string;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="mt-6 border-t border-gray-300 pt-4">
+      <div className="flex flex-wrap items-center justify-center gap-4">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          className="px-8 py-2 bg-red-600 text-white font-semibold rounded disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={saving}
+          className="px-8 py-2 bg-gray-300 text-gray-900 font-semibold rounded disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+      {error ? <div className="mt-3 text-sm text-center text-red-700">{error}</div> : null}
+      {success ? <div className="mt-3 text-sm text-center text-green-700">{success}</div> : null}
     </div>
   );
 }

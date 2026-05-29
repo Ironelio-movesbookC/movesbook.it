@@ -99,9 +99,14 @@ export function inferProfileSegment(userType: UserType): string {
 }
 
 export function navScopeToProfileSegment(scope: string): string {
-  if (scope === 'athletes') return 'single-user';
-  if (scope === 'all') return '';
-  if (['coaches', 'teams', 'clubs', 'groups', 'single-user'].includes(scope)) return scope;
+  const s = (scope || '').trim().toLowerCase();
+  if (s === 'athletes' || s === 'athlete') return 'single-user';
+  if (s === 'coach' || s === 'coaches') return 'coaches';
+  if (s === 'team' || s === 'teams') return 'teams';
+  if (s === 'club' || s === 'clubs') return 'clubs';
+  if (s === 'group' || s === 'groups') return 'groups';
+  if (s === 'all') return '';
+  if (['coaches', 'teams', 'clubs', 'groups', 'single-user'].includes(s)) return s;
   return '';
 }
 
