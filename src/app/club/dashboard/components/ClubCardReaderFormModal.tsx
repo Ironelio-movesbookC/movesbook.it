@@ -7,6 +7,7 @@ import {
   initialCardReaderForm,
   instructionForType,
   linkedIdCardsForType,
+  type CardReaderAddForm,
 } from './clubCardReaderFormUtils';
 
 type ClubCardReaderFormModalProps = {
