@@ -114,7 +114,7 @@ export default function ClubCardReaderAssignActivityModal({
             'Content-Type': 'application/json',
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ activityIds: [...selected] }),
+          body: JSON.stringify({ activityIds: Array.from(selected) }),
         }
       );
       const data = await response.json().catch(() => null);

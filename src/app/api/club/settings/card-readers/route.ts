@@ -323,8 +323,8 @@ async function fetchReaders(userIds: string[], clubId: string | null): Promise<C
       .forEach((id) => allServiceIds.add(id));
   }
 
-  const activityLabels = await loadActivityLabels([...allActivityIds], userIds);
-  const serviceLabels = await loadServiceLabels([...allServiceIds]);
+  const activityLabels = await loadActivityLabels(Array.from(allActivityIds), userIds);
+  const serviceLabels = await loadServiceLabels(Array.from(allServiceIds));
 
   return rows.map((row) => {
     const activityIds = text(row.activityList)

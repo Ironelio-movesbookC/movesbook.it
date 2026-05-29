@@ -170,7 +170,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       header,
       description: text(reader.description),
       activities,
-      selectedIds: [...selectedIds],
+      selectedIds: Array.from(selectedIds),
     });
   } catch (error) {
     console.error('GET /api/club/settings/card-readers/[id]/activities:', error);

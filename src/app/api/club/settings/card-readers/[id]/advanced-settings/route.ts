@@ -42,7 +42,7 @@ type SettingsField = {
 
 function buildFields(row: Record<string, unknown>, columns: Set<string>): SettingsField[] {
   const fields: SettingsField[] = [];
-  for (const key of columns) {
+  for (const key of Array.from(columns)) {
     if (ADVANCED_SETTINGS_SKIP_COLUMNS.has(key)) continue;
     const raw = row[key];
     const value = raw == null ? '' : String(raw);
@@ -129,7 +129,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     if (settingsTable && readerTypeId) {
       const columns = await getTableColumns(settingsTable);
-      const colList = [...columns].map((c) => `\`${c}\``).join(', ');
+      const colList = Array.from(columns).map((c) => `\`${c}\``).join(', ');
       const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
         `SELECT ${colList} FROM \`${settingsTable}\` WHERE reader_type_id = ? LIMIT 1`,
         readerTypeId
@@ -138,7 +138,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         if (rows[0].id != null) settingsId = String(rows[0].id);
         fields = buildFields(rows[0], columns);
       } else {
-        fields = [...columns]
+        fields = Array.from(columns)
           .filter((key) => !ADVANCED_SETTINGS_SKIP_COLUMNS.has(key))
           .map((key) => ({
             key,

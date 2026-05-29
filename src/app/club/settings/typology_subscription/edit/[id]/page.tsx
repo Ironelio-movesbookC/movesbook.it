@@ -1,11 +1,11 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import AddTypologySubscriptionPage from '../../add/page';
+import AddTypologySubscriptionForm from '@/components/club/settings/AddTypologySubscriptionForm';
 
 export default function EditTypologySubscriptionPage() {
   const params = useParams<{ id: string }>();
   const typologyId = String(params?.id ?? '');
 
-  return <AddTypologySubscriptionPage typologyId={typologyId} />;
+  return <AddTypologySubscriptionForm typologyId={typologyId} />;
 }
