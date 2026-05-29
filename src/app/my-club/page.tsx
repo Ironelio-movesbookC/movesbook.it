@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   Users, 
-  Settings, 
   BarChart3, 
   Calendar,
   UserPlus,
@@ -12,15 +12,19 @@ import {
   Trophy,
   Award,
   Target,
-  Star,
   TrendingUp,
-  X,
-  Loader2
+  Loader2,
+  ArrowLeft,
+  Pencil
 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import { useAuth } from '@/hooks/useAuth';
-import { isClubCreatedFromForm } from '@/lib/club/clubSidebarLabel';
+import {
+  getClubMyPageDisplayName,
+  getClubProfileDisplayRows,
+  isClubCreatedFromForm,
+} from '@/lib/club/clubSidebarLabel';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 interface ClubMember {
@@ -194,6 +198,13 @@ function MyClubContent() {
     return null;
   }
 
+  const clubDisplayName = club ? getClubMyPageDisplayName(club) : 'Loading...';
+  const clubProfileRows = club ? getClubProfileDisplayRows(club) : [];
+  const clubSettingsHref = clubId
+    ? `/club/settings?clubId=${encodeURIComponent(clubId)}`
+    : '/club/settings';
+  const backToMenuHref = '/club/dashboard';
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex flex-col">
       <ModernNavbar />
@@ -209,12 +220,49 @@ function MyClubContent() {
           {/* Left Sidebar */}
           <div className="w-80 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 h-full flex flex-col">
-              <div className="text-center mb-8">
-                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                  <Users className="w-10 h-10 text-white" />
+              <Link
+                href={backToMenuHref}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 mb-4"
+              >
+                <ArrowLeft className="w-4 h-4 shrink-0" />
+                Back to menu
+              </Link>
+
+              <div className="mb-6">
+                <div className="text-center mb-4">
+                  <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+                    <Users className="w-10 h-10 text-white" />
+                  </div>
+                  <div className="flex items-start justify-center gap-2">
+                    <h2 className="text-2xl font-bold text-gray-900 text-center flex-1">
+                      {clubDisplayName}
+                    </h2>
+                    {clubId && (
+                      <Link
+                        href={clubSettingsHref}
+                        className="inline-flex items-center gap-1 shrink-0 text-sm font-semibold text-red-600 hover:text-red-800 mt-1"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit
+                      </Link>
+                    )}
+                  </div>
                 </div>
-                <h2 className="text-2xl font-bold text-gray-900">{club?.name || 'Loading...'}</h2>
-                <p className="text-gray-600 text-sm mt-2">{club?.description || club?.location || 'Club'}</p>
+
+                {clubProfileRows.length > 0 ? (
+                  <dl className="space-y-2.5 text-sm border-t border-gray-100 pt-4">
+                    {clubProfileRows.map(({ label, value }) => (
+                      <div key={label} className="grid grid-cols-[1fr_1.2fr] gap-2 items-start">
+                        <dt className="text-gray-500 font-medium">{label}</dt>
+                        <dd className="text-gray-900 break-words text-right">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : (
+                  <p className="text-gray-600 text-sm text-center border-t border-gray-100 pt-4">
+                    {club?.location?.trim() || 'Club profile'}
+                  </p>
+                )}
               </div>
 
               <nav className="space-y-3 flex-1">

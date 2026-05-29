@@ -18,7 +18,7 @@ import AdminClubUserPanelModal, {
   type ClubUserPanelData,
 } from '@/components/admin/AdminClubUserPanelModal';
 
-export type AdminUserSegment = 'single-user' | 'coaches' | 'groups' | 'teams' | 'clubs';
+export type AdminUserSegment = 'all' | 'single-user' | 'coaches' | 'groups' | 'teams' | 'clubs';
 
 export interface AdminRegisteredUsersListProps {
   segment: AdminUserSegment;
@@ -109,6 +109,7 @@ interface FilterState {
   country: string;
   mainSport: string;
   version: string;
+  userTypeCategory: string;
   login: LoginFilter;
   subDay: string;
   subMonth: string;
@@ -121,6 +122,7 @@ const EMPTY_FILTERS: FilterState = {
   country: '',
   mainSport: '',
   version: '',
+  userTypeCategory: '',
   login: 'all',
   subDay: '',
   subMonth: '',
@@ -128,6 +130,15 @@ const EMPTY_FILTERS: FilterState = {
   rangeFrom: '',
   rangeTo: '',
 };
+
+const USER_TYPE_CATEGORY_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'All' },
+  { value: 'single-user', label: 'Single User' },
+  { value: 'coaches', label: 'Coach' },
+  { value: 'groups', label: 'Group' },
+  { value: 'teams', label: 'Team' },
+  { value: 'clubs', label: 'Club' },
+];
 
 const ORDER_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'Ordering' },
@@ -179,6 +190,13 @@ const YEAR_OPTIONS: { value: string; label: string }[] = [
 ];
 
 const VERSION_BY_SEGMENT: Record<AdminUserSegment, string[]> = {
+  all: [
+    'User — base version',
+    'Coach — base',
+    'Group account',
+    'Team account',
+    'Club account',
+  ],
   'single-user': ['User — base version'],
   coaches: ['Coach — base'],
   groups: ['Group account'],
@@ -228,6 +246,28 @@ const EMPTY_PROFILE_SUB_FILTERS: ProfileSubscriptionFilterState = {
   dateTo: '',
   ordering: '',
 };
+
+function isClubUserType(userType: string): boolean {
+  return userType === 'CLUB' || userType === 'CLUB_TRAINER';
+}
+
+function inferProfileSegmentFromUserType(userType: string): AdminUserSegment {
+  switch (userType) {
+    case 'COACH':
+      return 'coaches';
+    case 'TEAM':
+    case 'TEAM_MANAGER':
+      return 'teams';
+    case 'CLUB':
+    case 'CLUB_TRAINER':
+      return 'clubs';
+    case 'GROUP':
+    case 'GROUP_ADMIN':
+      return 'groups';
+    default:
+      return 'single-user';
+  }
+}
 
 function normalizeVersionKey(s: string): string {
   return s.toLowerCase().replace(/—/g, '-').replace(/\s+/g, ' ').trim();
@@ -280,7 +320,7 @@ export default function AdminRegisteredUsersList({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(segment === 'all' ? 'grid' : 'list');
   const [orderBy, setOrderBy] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(EMPTY_FILTERS);
@@ -324,7 +364,14 @@ export default function AdminRegisteredUsersList({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const versionOptions = useMemo(() => VERSION_BY_SEGMENT[segment], [segment]);
+  const isAllSegment = segment === 'all';
   const isClubsSegment = segment === 'clubs';
+  const showCompanyColumn = isClubsSegment || isAllSegment;
+  const profileSegment =
+    isAllSegment && profileData
+      ? inferProfileSegmentFromUserType(profileData.userType)
+      : segment;
+  const profileIsClubsSegment = profileSegment === 'clubs';
 
   useEffect(() => {
     let cancelled = false;
@@ -396,6 +443,9 @@ export default function AdminRegisteredUsersList({
       if (appliedFilters.country) params.set('country', appliedFilters.country);
       if (appliedFilters.mainSport) params.set('sport', appliedFilters.mainSport);
       if (appliedFilters.version) params.set('version', appliedFilters.version);
+      if (appliedFilters.userTypeCategory) {
+        params.set('userTypeCategory', appliedFilters.userTypeCategory);
+      }
       if (appliedFilters.login !== 'all') params.set('login', appliedFilters.login);
       if (appliedFilters.subDay) params.set('subDay', appliedFilters.subDay);
       if (appliedFilters.subMonth) params.set('subMonth', appliedFilters.subMonth);
@@ -973,11 +1023,11 @@ export default function AdminRegisteredUsersList({
 
   return (
     <div className="max-w-[1800px] mx-auto px-4 sm:px-6 py-6 text-gray-900">
-      {!(profileState !== 'idle' && isClubsSegment) && (
+      {!(profileState !== 'idle' && profileIsClubsSegment) && (
         <>
           <div className="bg-[#b8b8b8] px-4 py-3 border border-gray-400">
             <h1 className="text-lg sm:text-xl font-semibold text-gray-800">
-              Details of subscription{isClubsSegment ? ' · ' : ' — '}
+              Details of subscription{profileIsClubsSegment ? ' · ' : ' — '}
               <span className="text-red-600">{roleTitle}</span>
             </h1>
           </div>
@@ -1010,7 +1060,7 @@ export default function AdminRegisteredUsersList({
             </div>
           )}
 
-          {profileState === 'ready' && profileData && isClubsSegment && (
+          {profileState === 'ready' && profileData && profileIsClubsSegment && (
             <AdminClubsUserProfilePanel
               profileData={profileData}
               historicalSubtitle={historicalSubtitle}
@@ -1032,7 +1082,7 @@ export default function AdminRegisteredUsersList({
             />
           )}
 
-          {profileState === 'ready' && profileData && !isClubsSegment && (
+          {profileState === 'ready' && profileData && !profileIsClubsSegment && (
             <div className="bg-white border-x border-b border-gray-300">
               <div className="bg-[#b8b8b8] px-4 py-3 border-b border-gray-400">
                 <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
@@ -1435,6 +1485,24 @@ export default function AdminRegisteredUsersList({
                     </select>
                   </FilterRow>
 
+                  {isAllSegment && (
+                    <FilterRow label="Type of user">
+                      <select
+                        value={draftFilters.userTypeCategory}
+                        onChange={(e) =>
+                          setDraftFilters((f) => ({ ...f, userTypeCategory: e.target.value }))
+                        }
+                        className="w-full max-w-[220px] border border-gray-500 bg-white px-2 py-1.5 text-sm ml-auto"
+                      >
+                        {USER_TYPE_CATEGORY_OPTIONS.map((o) => (
+                          <option key={o.value || 'all-types'} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </FilterRow>
+                  )}
+
                   <div className="flex flex-wrap items-center gap-2 justify-between">
                     <span className="font-medium text-gray-900 shrink-0">Subscription</span>
                     <div className="flex flex-wrap gap-1 justify-end">
@@ -1676,7 +1744,7 @@ export default function AdminRegisteredUsersList({
                 )}
               </div>
               <div className="text-gray-600">{r.location?.trim() || '—'}</div>
-              {isClubsSegment ? (
+              {isClubsSegment || (isAllSegment && isClubUserType(r.userType)) ? (
                 <button
                   type="button"
                   onClick={() => void openClubUserPanel(r.id)}
@@ -1691,7 +1759,13 @@ export default function AdminRegisteredUsersList({
                 {r.dateStart} — {r.dateEnd ?? '—'}
               </div>
               <div>{r.version}</div>
-              {isClubsSegment && (
+              {showCompanyColumn && (
+                <div className="text-gray-700">
+                  Company:{' '}
+                  {isAllSegment && r.userType === 'ATHLETE' ? '' : r.companyName || '—'}
+                </div>
+              )}
+              {(isClubsSegment || isAllSegment) && isClubUserType(r.userType) && (
                 <div className="text-red-600 font-semibold">
                   Clubs owned: {r.clubsOwnedCount ?? 0}
                 </div>
@@ -1721,7 +1795,7 @@ export default function AdminRegisteredUsersList({
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Date End</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Version</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Username</th>
-                {isClubsSegment && (
+                {showCompanyColumn && (
                   <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80] min-w-[8rem]">
                     Company name
                   </th>
@@ -1734,7 +1808,7 @@ export default function AdminRegisteredUsersList({
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={isClubsSegment ? 13 : 12} className="px-4 py-10 text-center text-gray-500 bg-white">
+                  <td colSpan={showCompanyColumn ? 13 : 12} className="px-4 py-10 text-center text-gray-500 bg-white">
                     No registered users in this category yet.
                   </td>
                 </tr>
@@ -1762,7 +1836,7 @@ export default function AdminRegisteredUsersList({
                     </td>
                     <td className="px-3 py-2 border-t border-gray-300">{r.version}</td>
                     <td className="px-3 py-2 border-t border-gray-300 font-medium">
-                      {isClubsSegment ? (
+                      {isClubsSegment || (isAllSegment && isClubUserType(r.userType)) ? (
                         <button
                           type="button"
                           onClick={() => void openClubUserPanel(r.id)}
@@ -1774,9 +1848,11 @@ export default function AdminRegisteredUsersList({
                         r.username
                       )}
                     </td>
-                    {isClubsSegment && (
+                    {showCompanyColumn && (
                       <td className="px-3 py-2 border-t border-gray-300">
-                        {r.companyName || '—'}
+                        {isAllSegment && r.userType === 'ATHLETE'
+                          ? ''
+                          : r.companyName || '—'}
                       </td>
                     )}
                     <td className="px-2 py-2 border-t border-gray-300 text-gray-700">{r.amount}</td>
@@ -1810,7 +1886,7 @@ export default function AdminRegisteredUsersList({
         </>
       )}
 
-      {isClubsSegment && (
+      {(isClubsSegment || isAllSegment) && (
         <AdminClubUserPanelModal
           isOpen={clubPanelOpen}
           loading={clubPanelLoading}

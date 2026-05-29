@@ -7,6 +7,9 @@ import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
 import ModernNavbar from '@/components/ModernNavbar';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
+import ChangeBannerModal, { type BannerAlignment } from '@/components/athlete/ChangeBannerModal';
+import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLegacyBanner';
+import StandardPageBanners, { profileToBannerProfile } from '@/components/layout/StandardPageBanners';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
@@ -22,6 +25,13 @@ interface UserProfileData {
   gender?: string | null;
   birthdate?: string | null;
   image?: string | null;
+  profileBanner?: string | null;
+  profileBannerAlignment?: string | null;
+  profileBannerSequence?: string | null;
+  profileBannerVideo?: string | null;
+  telegramAccount?: string | null;
+  youtubeChannelUrl?: string | null;
+  mainSports?: Array<{ sport: string; order: number }>;
   userType: string;
   createdAt: string;
   settings: { language?: string } | null;
@@ -76,6 +86,34 @@ function formatBirthdateInput(value: string | null | undefined): string {
   return d.toISOString().slice(0, 10);
 }
 
+function formatProfileDisplayDate(value: string | null | undefined): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString();
+}
+
+function formatProfileField(value: string | null | undefined): string {
+  const trimmed = value?.trim();
+  return trimmed || '—';
+}
+
+function formatUserTypeLabel(userType: string): string {
+  return userType.replace(/_/g, ' ');
+}
+
+function formatSportLabel(sport: string): string {
+  return sport
+    .split('_')
+    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function languageLabel(code: string): string {
+  const match = SUPPORTED_LANGUAGES.find((l) => l.code === code);
+  return match ? `${match.name} (${code.toUpperCase()})` : code.toUpperCase();
+}
+
 export default function UserProfile({ embedded = false }: { embedded?: boolean }) {
   const { t } = useLanguage();
   const [profile, setProfile] = useState<UserProfileData | null>(null);
@@ -94,7 +132,9 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [showChangeBannerModal, setShowChangeBannerModal] = useState(false);
   const [avatarOverride, setAvatarOverride] = useState<string | null | undefined>(undefined);
+  const [bannerOverride, setBannerOverride] = useState<AthleteLegacyBannerProfile | null>(null);
 
   const applyProfileToForm = useCallback((data: UserProfileData) => {
     setForm({
@@ -221,9 +261,12 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
 
   if (loading) {
     return (
-      <div className={embedded ? 'bg-gray-50' : 'min-h-screen bg-gray-50'}>
+      <div className={embedded ? 'bg-gray-50' : 'min-h-screen bg-gray-50 flex flex-col'}>
         {!embedded && <ModernNavbar />}
-        <div className={`flex items-center justify-center ${embedded ? 'py-12' : 'min-h-[60vh]'}`}>
+        {!embedded && (
+          <StandardPageBanners bannerProfile={null} t={t} onAvatarCameraClick={() => setShowPhotoModal(true)} />
+        )}
+        <div className={`flex items-center justify-center flex-1 ${embedded ? 'py-12' : 'min-h-[40vh]'}`}>
           <div className="text-center">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
             <p className="text-gray-600">Loading profile...</p>
@@ -235,9 +278,12 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
 
   if (error || !profile) {
     return (
-      <div className={embedded ? 'bg-gray-50' : 'min-h-screen bg-gray-50'}>
+      <div className={embedded ? 'bg-gray-50' : 'min-h-screen bg-gray-50 flex flex-col'}>
         {!embedded && <ModernNavbar />}
-        <div className={`flex items-center justify-center ${embedded ? 'py-12' : 'min-h-[60vh]'}`}>
+        {!embedded && (
+          <StandardPageBanners bannerProfile={null} t={t} onAvatarCameraClick={() => setShowPhotoModal(true)} />
+        )}
+        <div className={`flex items-center justify-center flex-1 ${embedded ? 'py-12' : 'min-h-[40vh]'}`}>
           <div className="text-center">
             <p className="text-red-600 mb-4">{error || 'Failed to load profile'}</p>
             <button
@@ -261,10 +307,52 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
   const editProfileMode = profileHash === 'member-profile';
   const avatarSrc = resolvePublicImageUrl(avatarOverride ?? profile.image);
   const dashboardHref = getDashboardPathForUserType(profile.userType);
+  const mainSportsLine =
+    profile.mainSports && profile.mainSports.length > 0
+      ? profile.mainSports.map((s) => formatSportLabel(s.sport)).join(', ')
+      : '—';
+
+  const memberInfoFields: { label: string; value: string }[] = [
+    { label: 'Display name', value: formatProfileField(displayName) },
+    { label: 'First name', value: formatProfileField(form.firstName) },
+    { label: 'Surname', value: formatProfileField(form.surname) },
+    { label: 'Username', value: `@${profile.username}` },
+    { label: 'Email', value: formatProfileField(profile.email) },
+    { label: 'Account type', value: formatUserTypeLabel(profile.userType) },
+    { label: 'Country', value: formatProfileField(form.country) },
+    { label: 'Gender', value: formatProfileField(form.gender) },
+    { label: 'Birthdate', value: formatProfileDisplayDate(form.birthdate) },
+    { label: 'Preferred language', value: languageLabel(form.preferredLanguage) },
+    { label: 'Telegram account', value: formatProfileField(profile.telegramAccount) },
+    { label: 'YouTube channel', value: formatProfileField(profile.youtubeChannelUrl) },
+    { label: 'Main sports', value: mainSportsLine },
+    { label: 'Member since', value: formatProfileDisplayDate(profile.createdAt) },
+  ];
+
+  const bannerProfile =
+    bannerOverride ??
+    profileToBannerProfile({
+      image: avatarOverride ?? profile.image,
+      profileBanner: profile.profileBanner,
+      profileBannerAlignment: profile.profileBannerAlignment,
+      profileBannerSequence: profile.profileBannerSequence,
+      profileBannerVideo: profile.profileBannerVideo,
+      name: profile.name,
+      firstName: profile.firstName,
+      surname: profile.surname,
+    });
 
   return (
-    <div className={embedded ? 'bg-gray-50' : 'min-h-screen bg-gray-50'}>
+    <div className={embedded ? 'bg-gray-50' : 'min-h-screen bg-gray-50 flex flex-col'}>
       {!embedded && <ModernNavbar />}
+      {!embedded && (
+        <StandardPageBanners
+          bannerProfile={bannerProfile}
+          t={t}
+          onCoverCameraClick={() => setShowChangeBannerModal(true)}
+          onAvatarCameraClick={() => setShowPhotoModal(true)}
+        />
+      )}
       <ChangeProfilePhotoModal
         isOpen={showPhotoModal}
         onClose={() => setShowPhotoModal(false)}
@@ -277,7 +365,57 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
         currentImagePath={avatarOverride ?? profile.image}
         t={t}
       />
-      <div className={`max-w-6xl mx-auto ${embedded ? 'p-4' : 'p-4 md:p-8'}`}>
+      {!embedded && (
+        <ChangeBannerModal
+          isOpen={showChangeBannerModal}
+          onClose={() => setShowChangeBannerModal(false)}
+          onSaved={(patch) => {
+            setBannerOverride((prev) => {
+              const base = prev ?? profileToBannerProfile(profile) ?? {};
+              const next = { ...base };
+              if (patch.profileBanner !== undefined) next.profileBanner = patch.profileBanner;
+              if (patch.profileBannerAlignment !== undefined) {
+                next.profileBannerAlignment = patch.profileBannerAlignment;
+              }
+              if (patch.profileBannerSequence !== undefined) {
+                next.profileBannerSequence = patch.profileBannerSequence;
+              }
+              if (patch.profileBannerVideo !== undefined) {
+                next.profileBannerVideo = patch.profileBannerVideo;
+              }
+              return next;
+            });
+            setProfile((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    ...(patch.profileBanner !== undefined
+                      ? { profileBanner: patch.profileBanner }
+                      : {}),
+                    ...(patch.profileBannerAlignment !== undefined
+                      ? { profileBannerAlignment: patch.profileBannerAlignment }
+                      : {}),
+                    ...(patch.profileBannerSequence !== undefined
+                      ? { profileBannerSequence: patch.profileBannerSequence }
+                      : {}),
+                    ...(patch.profileBannerVideo !== undefined
+                      ? { profileBannerVideo: patch.profileBannerVideo }
+                      : {}),
+                  }
+                : prev,
+            );
+          }}
+          currentBannerPath={bannerProfile?.profileBanner}
+          currentAlignment={
+            (bannerProfile?.profileBannerAlignment as BannerAlignment | null | undefined) ??
+            'default'
+          }
+          currentBannerSequenceJson={bannerProfile?.profileBannerSequence}
+          currentBannerVideoPath={bannerProfile?.profileBannerVideo}
+          t={t}
+        />
+      )}
+      <div className={`flex-1 w-full max-w-6xl mx-auto ${embedded ? 'p-4' : 'p-4 md:p-8'}`}>
         {!embedded && (
           <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
             <Link href={dashboardHref} className="text-blue-600 hover:text-blue-800 font-medium">
@@ -326,37 +464,19 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
         )}
 
         {/* Member info — read-only summary */}
-        {!embedded && !editProfileMode && (
+        {!embedded && (
         <section
           id="member-info"
           className="scroll-mt-24 bg-white rounded-lg shadow-lg p-6 mb-6"
         >
           <h2 className="text-xl font-bold text-gray-800 mb-4">Member info</h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-            <div>
-              <dt className="text-gray-500 font-medium">Display name</dt>
-              <dd className="text-gray-900 mt-0.5">{displayName}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500 font-medium">Username</dt>
-              <dd className="text-gray-900 mt-0.5">@{profile.username}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500 font-medium">Email</dt>
-              <dd className="text-gray-900 mt-0.5">{profile.email}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500 font-medium">Account type</dt>
-              <dd className="text-gray-900 mt-0.5">{profile.userType.replace('_', ' ')}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500 font-medium">Country</dt>
-              <dd className="text-gray-900 mt-0.5">{form.country || '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500 font-medium">Preferred language</dt>
-              <dd className="text-gray-900 mt-0.5">{form.preferredLanguage.toUpperCase()}</dd>
-            </div>
+            {memberInfoFields.map(({ label, value }) => (
+              <div key={label}>
+                <dt className="text-gray-500 font-medium">{label}</dt>
+                <dd className="text-gray-900 mt-0.5 break-words">{value}</dd>
+              </div>
+            ))}
           </dl>
         </section>
         )}
@@ -515,6 +635,66 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
               />
             </div>
+            <div>
+              <label htmlFor="profile-telegram" className="block text-sm font-medium text-gray-700 mb-1">
+                Telegram account
+              </label>
+              <input
+                id="profile-telegram"
+                type="text"
+                value={formatProfileField(profile.telegramAccount)}
+                readOnly
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+              />
+            </div>
+            <div>
+              <label htmlFor="profile-youtube" className="block text-sm font-medium text-gray-700 mb-1">
+                YouTube channel
+              </label>
+              <input
+                id="profile-youtube"
+                type="text"
+                value={formatProfileField(profile.youtubeChannelUrl)}
+                readOnly
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+              />
+            </div>
+            <div>
+              <label htmlFor="profile-account-type" className="block text-sm font-medium text-gray-700 mb-1">
+                Account type
+              </label>
+              <input
+                id="profile-account-type"
+                type="text"
+                value={formatUserTypeLabel(profile.userType)}
+                readOnly
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+              />
+            </div>
+            <div>
+              <label htmlFor="profile-member-since" className="block text-sm font-medium text-gray-700 mb-1">
+                Member since
+              </label>
+              <input
+                id="profile-member-since"
+                type="text"
+                value={formatProfileDisplayDate(profile.createdAt)}
+                readOnly
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label htmlFor="profile-main-sports" className="block text-sm font-medium text-gray-700 mb-1">
+                Main sports
+              </label>
+              <input
+                id="profile-main-sports"
+                type="text"
+                value={mainSportsLine}
+                readOnly
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+              />
+            </div>
             <div className="md:col-span-2 mt-2 flex flex-wrap items-center gap-3">
               <button
                 type="submit"
@@ -561,72 +741,6 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
             <p className="text-3xl font-bold text-gray-800">{profile._count.clubMemberships}</p>
             <p className="text-sm text-gray-600">Club Memberships</p>
           </div>
-        </div>
-        )}
-
-        {!embedded && !editProfileMode && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {profile.periods && profile.periods.length > 0 && (
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <Calendar className="w-5 h-5" />
-                Training Periods
-              </h2>
-              <div className="space-y-3">
-                {profile.periods.map((period) => (
-                  <div
-                    key={period.id}
-                    className="p-4 rounded-lg border-2 hover:shadow-md transition-shadow"
-                    style={{ borderColor: period.color }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-6 h-6 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: period.color }}
-                      />
-                      <div className="flex-1">
-                        <span className="font-semibold text-lg">{period.name}</span>
-                        {period.description && (
-                          <p className="text-sm text-gray-600 mt-1">{period.description}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {profile.sections && profile.sections.length > 0 && (
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <SettingsIcon className="w-5 h-5" />
-                Workout Sections
-              </h2>
-              <div className="space-y-3">
-                {profile.sections.map((section) => (
-                  <div
-                    key={section.id}
-                    className="p-4 rounded-lg border-2 hover:shadow-md transition-shadow"
-                    style={{ borderColor: section.color }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-6 h-6 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: section.color }}
-                      />
-                      <div className="flex-1">
-                        <span className="font-semibold text-lg">{section.name}</span>
-                        {section.description && (
-                          <p className="text-sm text-gray-600 mt-1">{section.description}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
         )}
 

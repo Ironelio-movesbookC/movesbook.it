@@ -6,8 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { Building2, Loader2, UserCircle } from 'lucide-react';
 import UserProfile from '@/components/UserProfile';
 import {
-  getClubMyPageDisplayName,
-  parseClubDescriptionMeta,
+  getClubProfileDisplayRows,
   formatMyClubsSidebarLabel,
 } from '@/lib/club/clubSidebarLabel';
 import { useEffect, useState } from 'react';
@@ -59,22 +58,13 @@ function ClubProfileSummary({ clubId }: { clubId: string }) {
     return <p className="text-sm text-red-600">{error || 'Club not found'}</p>;
   }
 
-  const meta = parseClubDescriptionMeta(club.description);
-  const rows = [
-    ['Official name', getClubMyPageDisplayName(club)],
-    ['Club username', meta.username],
-    ['Direct access', meta.directAccess],
-    ['Category', meta.category],
-    ['Country', meta.country],
-    ['Location', club.location],
-    ['Club mail', meta.mail],
-  ].filter(([, v]) => v && String(v).trim());
+  const rows = getClubProfileDisplayRows(club);
 
   return (
     <div className="space-y-4">
       <dl className="grid gap-3 sm:grid-cols-2 text-sm">
-        {rows.map(([label, value]) => (
-          <div key={String(label)}>
+        {rows.map(({ label, value }) => (
+          <div key={label}>
             <dt className="text-gray-500 font-medium">{label}</dt>
             <dd className="text-gray-900 mt-0.5">{value}</dd>
           </div>

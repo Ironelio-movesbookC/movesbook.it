@@ -39,6 +39,11 @@ export async function GET(request: NextRequest) {
         userType: true,
         createdAt: true,
         telegramAccount: true,
+        youtubeChannelUrl: true,
+        mainSports: {
+          select: { sport: true, order: true },
+          orderBy: { order: 'asc' },
+        },
         
         // Include related data from migration
         settings: true,

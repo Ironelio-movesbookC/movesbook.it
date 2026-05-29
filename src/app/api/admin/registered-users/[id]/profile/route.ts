@@ -17,7 +17,19 @@ import { readPcuSettings } from '@/lib/admin/userPcuSettings';
 
 export const dynamic = 'force-dynamic';
 
+const ALL_REGISTERED_TYPES: UserType[] = [
+  UserType.ATHLETE,
+  UserType.COACH,
+  UserType.GROUP,
+  UserType.GROUP_ADMIN,
+  UserType.TEAM,
+  UserType.TEAM_MANAGER,
+  UserType.CLUB,
+  UserType.CLUB_TRAINER,
+];
+
 const SEGMENT_TYPES: Record<string, UserType[]> = {
+  all: ALL_REGISTERED_TYPES,
   'single-user': [UserType.ATHLETE],
   coaches: [UserType.COACH],
   groups: [UserType.GROUP, UserType.GROUP_ADMIN],
@@ -140,7 +152,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
 
-  if (!segment || !SEGMENT_TYPES[segment]) {
+  if (!segment || segment === 'all' || !SEGMENT_TYPES[segment]) {
     segment = inferProfileSegment(user.userType);
   }
 

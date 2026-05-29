@@ -9,13 +9,37 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+const ALL_REGISTERED_TYPES: UserType[] = [
+  UserType.ATHLETE,
+  UserType.COACH,
+  UserType.GROUP,
+  UserType.GROUP_ADMIN,
+  UserType.TEAM,
+  UserType.TEAM_MANAGER,
+  UserType.CLUB,
+  UserType.CLUB_TRAINER,
+];
+
 const SEGMENT_TYPES: Record<string, UserType[]> = {
+  all: ALL_REGISTERED_TYPES,
   'single-user': [UserType.ATHLETE],
   coaches: [UserType.COACH],
   groups: [UserType.GROUP, UserType.GROUP_ADMIN],
   teams: [UserType.TEAM, UserType.TEAM_MANAGER],
   clubs: [UserType.CLUB, UserType.CLUB_TRAINER],
 };
+
+const USER_TYPE_CATEGORY_TYPES: Record<string, UserType[]> = {
+  'single-user': [UserType.ATHLETE],
+  coaches: [UserType.COACH],
+  groups: [UserType.GROUP, UserType.GROUP_ADMIN],
+  teams: [UserType.TEAM, UserType.TEAM_MANAGER],
+  clubs: [UserType.CLUB, UserType.CLUB_TRAINER],
+};
+
+function isClubUserType(userType: UserType): boolean {
+  return userType === UserType.CLUB || userType === UserType.CLUB_TRAINER;
+}
 
 function versionLabel(userType: UserType): string {
   switch (userType) {
@@ -80,10 +104,14 @@ export async function GET(request: NextRequest) {
   const subYear = (url.searchParams.get('subYear') || '').trim();
   const createdFrom = (url.searchParams.get('createdFrom') || '').trim();
   const createdTo = (url.searchParams.get('createdTo') || '').trim();
+  const userTypeCategory = (url.searchParams.get('userTypeCategory') || '').trim();
 
   let finalTypes = types;
+  if (userTypeCategory && USER_TYPE_CATEGORY_TYPES[userTypeCategory]) {
+    finalTypes = types.filter((t) => USER_TYPE_CATEGORY_TYPES[userTypeCategory].includes(t));
+  }
   if (version) {
-    finalTypes = types.filter((t) => versionLabel(t) === version);
+    finalTypes = finalTypes.filter((t) => versionLabel(t) === version);
   }
   if (finalTypes.length === 0) {
     return NextResponse.json({
@@ -181,15 +209,19 @@ export async function GET(request: NextRequest) {
   ]);
 
   const isClubsSegment = segment === 'clubs';
+  const isAllSegment = segment === 'all';
   const userIds = rows.map((u) => u.id);
 
   const clubsByAdmin = new Map<
     string,
     { name: string; description: string | null; createdAt: Date; location: string | null }[]
   >();
-  if (isClubsSegment && userIds.length > 0) {
+  const clubUserIds = isAllSegment
+    ? rows.filter((u) => isClubUserType(u.userType)).map((u) => u.id)
+    : userIds;
+  if ((isClubsSegment || isAllSegment) && clubUserIds.length > 0) {
     const ownedClubs = await prisma.club.findMany({
-      where: { adminId: { in: userIds } },
+      where: { adminId: { in: clubUserIds } },
       select: { adminId: true, name: true, description: true, createdAt: true, location: true },
     });
     for (const club of ownedClubs) {
@@ -205,9 +237,14 @@ export async function GET(request: NextRequest) {
   }
 
   const locationByUserId = new Map<string, string>();
-  if (userIds.length > 0 && !isClubsSegment) {
+  const nonClubLocationIds = isAllSegment
+    ? rows.filter((u) => !isClubUserType(u.userType)).map((u) => u.id)
+    : isClubsSegment
+      ? []
+      : userIds;
+  if (nonClubLocationIds.length > 0) {
     const memberships = await prisma.clubMember.findMany({
-      where: { memberId: { in: userIds } },
+      where: { memberId: { in: nonClubLocationIds } },
       select: {
         memberId: true,
         club: { select: { location: true } },
@@ -235,7 +272,8 @@ export async function GET(request: NextRequest) {
       let statusTone: string | undefined;
 
       let location = '';
-      if (isClubsSegment) {
+      const userIsClubAdmin = isClubUserType(u.userType);
+      if (isClubsSegment || (isAllSegment && userIsClubAdmin)) {
         const adminClubs = clubsByAdmin.get(u.id) ?? [];
         clubsOwnedCount = adminClubs.length;
         companyName = adminClubs[0]?.name?.trim() || '';
@@ -248,6 +286,9 @@ export async function GET(request: NextRequest) {
         statusTone = aggregated.tone;
       } else {
         location = locationByUserId.get(u.id) ?? '';
+        if (isAllSegment && u.userType === UserType.ATHLETE) {
+          companyName = '';
+        }
       }
 
       return {
@@ -263,7 +304,9 @@ export async function GET(request: NextRequest) {
         version: versionLabel(u.userType),
         amount: '—',
         status,
-        ...(isClubsSegment ? { clubsOwnedCount, companyName, statusTone } : {}),
+        ...(isClubsSegment || isAllSegment
+          ? { clubsOwnedCount, companyName, statusTone }
+          : {}),
       };
     }),
   });

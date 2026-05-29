@@ -315,6 +315,18 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
                 <Home className="w-4 h-4" />
                 <span className="font-medium">Home</span>
               </Link>
+
+              <Link 
+                href="/admin/all"
+                className="flex items-center gap-2 px-3 lg:px-4 py-2.5 lg:py-3 hover:bg-gray-600 transition border-r border-gray-600 text-sm"
+              >
+                <span className="flex items-center gap-0.5">
+                  <User className="w-3.5 h-3.5" />
+                  <Shield className="w-3.5 h-3.5" />
+                  <Building2 className="w-3.5 h-3.5" />
+                </span>
+                <span className="font-medium">All</span>
+              </Link>
               
               <Link 
                 href="/admin/single-user"
@@ -479,6 +491,19 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
             >
               <Home className="w-5 h-5" />
               <span className="font-medium">Home</span>
+            </Link>
+
+            <Link 
+              href="/admin/all"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-3 px-5 py-3 hover:bg-gray-600 transition border-b border-gray-600"
+            >
+              <span className="flex items-center gap-1">
+                <User className="w-4 h-4" />
+                <Shield className="w-4 h-4" />
+                <Building2 className="w-4 h-4" />
+              </span>
+              <span className="font-medium">All</span>
             </Link>
             
             <Link 

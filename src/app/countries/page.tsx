@@ -5,198 +5,16 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronDown, Eye, Pencil, Trash2 } from 'lucide-react';
 import { CountryEditModal, type CountryRow } from './CountryEditModal';
+import type { CountryEditSavePayload } from './countryEditTypes';
 import {
   CountriesFilterModal,
   DEFAULT_COUNTRIES_FILTER,
   type CountriesFilterState,
 } from './CountriesFilterModal';
-
-const DEMO_COUNTRIES: CountryRow[] = [
-  {
-    id: 1,
-    name: 'Afghanistan',
-    iso2: 'af',
-    continent: 'West Asia',
-    population: 38042754,
-    officialLanguage: 'Afgano',
-    primaryLanguage: 'English',
-    secondaryLanguage: 'Hindi',
-    eurRate: 91.35,
-    usdRate: 77.2,
-    currencyCode: 'AFN',
-    regions: 33,
-    settingCompleted: true,
-  },
-  {
-    id: 2,
-    name: 'Albania',
-    iso2: 'al',
-    continent: 'West Europe',
-    population: 2845955,
-    officialLanguage: 'Albanian',
-    primaryLanguage: 'English',
-    secondaryLanguage: 'French',
-    eurRate: 123.52,
-    usdRate: 102.43,
-    currencyCode: 'ALL',
-    regions: 12,
-  },
-  {
-    id: 3,
-    name: 'Algeria',
-    iso2: 'dz',
-    continent: 'North Africa',
-    population: 43053054,
-    officialLanguage: 'Arabic',
-    primaryLanguage: 'Arabic',
-    secondaryLanguage: 'French',
-    eurRate: 158.87,
-    usdRate: 132.91,
-    currencyCode: 'DZD',
-    regions: 48,
-  },
-  {
-    id: 4,
-    name: 'Argentina',
-    iso2: 'ar',
-    continent: 'South America',
-    population: 43432376,
-    officialLanguage: 'Spanish',
-    primaryLanguage: 'Spanish',
-    secondaryLanguage: 'Italian',
-    eurRate: 100.2,
-    usdRate: 88.16,
-    currencyCode: 'ARS',
-    regions: 24,
-  },
-  {
-    id: 5,
-    name: 'Armenia',
-    iso2: 'am',
-    continent: 'East Europe',
-    population: 2963234,
-    officialLanguage: 'Hayastan',
-    primaryLanguage: 'Russian',
-    secondaryLanguage: 'English',
-    eurRate: 825.92,
-    usdRate: 521.8,
-    currencyCode: 'AMD',
-    regions: 3,
-  },
-  {
-    id: 6,
-    name: 'Aruba',
-    iso2: 'aw',
-    continent: 'Central America',
-    population: 106765,
-    officialLanguage: 'Dutch',
-    primaryLanguage: 'English',
-    secondaryLanguage: 'Spanish',
-    eurRate: 2.01,
-    usdRate: 1.79,
-    currencyCode: 'AWG',
-    regions: 0,
-  },
-  {
-    id: 7,
-    name: 'Australia',
-    iso2: 'au',
-    continent: 'Oceania',
-    population: 25499884,
-    officialLanguage: 'English',
-    primaryLanguage: 'English',
-    secondaryLanguage: '—',
-    eurRate: 1.65,
-    usdRate: 1.52,
-    currencyCode: 'AUD',
-    regions: 8,
-  },
-  {
-    id: 8,
-    name: 'Austria',
-    iso2: 'at',
-    continent: 'West Europe',
-    population: 9006698,
-    officialLanguage: 'German',
-    primaryLanguage: 'German',
-    secondaryLanguage: 'English',
-    eurRate: 1,
-    usdRate: 1.08,
-    currencyCode: 'EUR',
-    regions: 9,
-    settingCompleted: true,
-  },
-  {
-    id: 9,
-    name: 'Azerbaijan',
-    iso2: 'az',
-    continent: 'East Asia',
-    population: 10139177,
-    officialLanguage: 'Azerbaijani',
-    primaryLanguage: 'Russian',
-    secondaryLanguage: 'English',
-    eurRate: 2.08,
-    usdRate: 1.85,
-    currencyCode: 'AZN',
-    regions: 10,
-  },
-  {
-    id: 10,
-    name: 'Bahamas',
-    iso2: 'bs',
-    continent: 'North America',
-    population: 393248,
-    officialLanguage: 'English',
-    primaryLanguage: 'English',
-    secondaryLanguage: 'French',
-    eurRate: 1.15,
-    usdRate: 1,
-    currencyCode: 'USD',
-    regions: 15,
-  },
-  {
-    id: 11,
-    name: 'Bahrain',
-    iso2: 'bh',
-    continent: 'West Asia',
-    population: 1701583,
-    officialLanguage: 'Arabic',
-    primaryLanguage: 'English',
-    secondaryLanguage: 'Urdu',
-    eurRate: 0.42,
-    usdRate: 0.38,
-    currencyCode: 'BHD',
-    regions: 4,
-  },
-  {
-    id: 12,
-    name: 'Bangladesh',
-    iso2: 'bd',
-    continent: 'South Asia',
-    population: 164689383,
-    officialLanguage: 'Bengali',
-    primaryLanguage: 'English',
-    secondaryLanguage: 'Hindi',
-    eurRate: 110.5,
-    usdRate: 92.3,
-    currencyCode: 'BDT',
-    regions: 64,
-  },
-  {
-    id: 13,
-    name: 'Barbados',
-    iso2: 'bb',
-    continent: 'Caribbean',
-    population: 287371,
-    officialLanguage: 'English',
-    primaryLanguage: 'English',
-    secondaryLanguage: 'French',
-    eurRate: 2.4,
-    usdRate: 2.0,
-    currencyCode: 'BBD',
-    regions: 11,
-  },
-];
+import {
+  COUNTRIES_DASHBOARD_ROWS,
+  COUNTRIES_PAGE_SIZE,
+} from '@/constants/countriesDashboard.constants';
 
 function flagUrl(iso2: string) {
   return `https://flagcdn.com/24x18/${iso2.toLowerCase()}.png`;
@@ -275,28 +93,46 @@ function sortCountries(rows: CountryRow[], mode: OrderMode): CountryRow[] {
   return copy;
 }
 
+function buildPaginationItems(currentPage: number, totalPages: number): (number | 'ellipsis')[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+
+  const items: (number | 'ellipsis')[] = [1];
+  const windowStart = Math.max(2, currentPage - 1);
+  const windowEnd = Math.min(totalPages - 1, currentPage + 1);
+
+  if (windowStart > 2) items.push('ellipsis');
+  for (let page = windowStart; page <= windowEnd; page += 1) items.push(page);
+  if (windowEnd < totalPages - 1) items.push('ellipsis');
+  items.push(totalPages);
+  return items;
+}
+
 export default function CountriesPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [countries, setCountries] = useState<CountryRow[]>(COUNTRIES_DASHBOARD_ROWS);
   const [editingCountry, setEditingCountry] = useState<CountryRow | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [appliedFilter, setAppliedFilter] = useState<CountriesFilterState>(DEFAULT_COUNTRIES_FILTER);
   const [draftFilter, setDraftFilter] = useState<CountriesFilterState>(DEFAULT_COUNTRIES_FILTER);
 
   const filterSelectOptions = useMemo(() => {
-    const continents = Array.from(new Set(DEMO_COUNTRIES.map((r) => r.continent))).sort();
-    const primary = Array.from(new Set(DEMO_COUNTRIES.map((r) => r.primaryLanguage))).sort();
-    const secondary = Array.from(new Set(DEMO_COUNTRIES.map((r) => r.secondaryLanguage))).sort();
+    const continents = Array.from(new Set(countries.map((r) => r.continent))).sort();
+    const primary = Array.from(new Set(countries.map((r) => r.primaryLanguage))).sort();
+    const secondary = Array.from(new Set(countries.map((r) => r.secondaryLanguage))).sort();
     return { continents, primary, secondary };
-  }, []);
+  }, [countries]);
 
   const filteredCountries = useMemo(
-    () => DEMO_COUNTRIES.filter((row) => rowMatchesCountriesFilter(row, appliedFilter)),
-    [appliedFilter],
+    () => countries.filter((row) => rowMatchesCountriesFilter(row, appliedFilter)),
+    [countries, appliedFilter],
   );
 
   const [orderingSelect, setOrderingSelect] = useState<OrderMode>('reset');
   const [appliedOrderMode, setAppliedOrderMode] = useState<OrderMode>('reset');
+  const [currentPage, setCurrentPage] = useState(1);
   const [annualIncomeEur, setAnnualIncomeEur] = useState('0.00');
   const [costVirtualProduct, setCostVirtualProduct] = useState('0.00');
   const [usdEurField, setUsdEurField] = useState('');
@@ -305,6 +141,21 @@ export default function CountriesPage() {
     () => sortCountries(filteredCountries, appliedOrderMode),
     [filteredCountries, appliedOrderMode],
   );
+
+  const totalPages = Math.max(1, Math.ceil(displayedCountries.length / COUNTRIES_PAGE_SIZE));
+
+  const paginatedCountries = useMemo(() => {
+    const start = (currentPage - 1) * COUNTRIES_PAGE_SIZE;
+    return displayedCountries.slice(start, start + COUNTRIES_PAGE_SIZE);
+  }, [displayedCountries, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [appliedFilter, appliedOrderMode]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   useEffect(() => {
     const adminData = localStorage.getItem('adminUser');
@@ -323,6 +174,35 @@ export default function CountriesPage() {
       router.push('/');
     }
   }, [router]);
+
+  const handleCountrySave = (countryId: number, payload: CountryEditSavePayload) => {
+    setCountries((prev) =>
+      prev.map((row) =>
+        row.id === countryId
+          ? {
+              ...row,
+              settingCompleted: payload.settingCompleted,
+              iso2: payload.iso2,
+              population: payload.population,
+              continent: payload.continent,
+              officialLanguage: payload.officialLanguage,
+              primaryLanguage: payload.primaryLanguage,
+              secondaryLanguage: payload.secondaryLanguage,
+              currencyCode: payload.currencyCode,
+              eurRate: payload.eurRate,
+              usdRate: payload.usdRate,
+              regions: payload.regions,
+            }
+          : row,
+      ),
+    );
+  };
+
+  const handleRegionsCountChange = (countryId: number, regionsCount: number) => {
+    setCountries((prev) =>
+      prev.map((row) => (row.id === countryId ? { ...row, regions: regionsCount } : row)),
+    );
+  };
 
   if (loading) return null;
 
@@ -467,7 +347,7 @@ export default function CountriesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {displayedCountries.map((row, index) => (
+                  {paginatedCountries.map((row, index) => (
                     <tr
                       key={row.id}
                       className={`border-b border-gray-200 ${
@@ -551,45 +431,54 @@ export default function CountriesPage() {
           <div className="flex flex-wrap items-center gap-1 mt-3 text-xs">
             <button
               type="button"
-              className="px-2 py-1 border border-gray-300 bg-white hover:bg-gray-100 rounded-sm"
+              disabled={currentPage <= 1}
+              className="px-2 py-1 border border-gray-300 bg-white hover:bg-gray-100 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
             >
               Prev
             </button>
-            {[1, 2, 3, 4, 5].map((p) => (
-              <button
-                key={p}
-                type="button"
-                className={`px-2 py-1 border rounded-sm ${
-                  p === 1
-                    ? 'bg-[#a51d2d] text-white border-[#800000]'
-                    : 'border-gray-300 bg-white hover:bg-gray-100'
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-            <span className="px-1 text-gray-500">…</span>
-            {[12, 13].map((p) => (
-              <button
-                key={p}
-                type="button"
-                className="px-2 py-1 border border-gray-300 bg-white hover:bg-gray-100 rounded-sm"
-              >
-                {p}
-              </button>
-            ))}
+            {buildPaginationItems(currentPage, totalPages).map((item, index) =>
+              item === 'ellipsis' ? (
+                <span key={`ellipsis-${index}`} className="px-1 text-gray-500">
+                  …
+                </span>
+              ) : (
+                <button
+                  key={item}
+                  type="button"
+                  className={`px-2 py-1 border rounded-sm ${
+                    item === currentPage
+                      ? 'bg-[#a51d2d] text-white border-[#800000]'
+                      : 'border-gray-300 bg-white hover:bg-gray-100'
+                  }`}
+                  onClick={() => setCurrentPage(item)}
+                >
+                  {item}
+                </button>
+              ),
+            )}
             <button
               type="button"
-              className="px-2 py-1 border border-gray-300 bg-white hover:bg-gray-100 rounded-sm"
+              disabled={currentPage >= totalPages}
+              className="px-2 py-1 border border-gray-300 bg-white hover:bg-gray-100 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
             >
               Next
             </button>
+            <span className="ml-2 text-gray-600">
+              {displayedCountries.length} countries · page {currentPage} of {totalPages}
+            </span>
           </div>
           </div>
         </div>
       </div>
 
-      <CountryEditModal row={editingCountry} onClose={() => setEditingCountry(null)} />
+      <CountryEditModal
+        row={editingCountry}
+        onClose={() => setEditingCountry(null)}
+        onSave={handleCountrySave}
+        onRegionsCountChange={handleRegionsCountChange}
+      />
 
       <CountriesFilterModal
         open={filterOpen}

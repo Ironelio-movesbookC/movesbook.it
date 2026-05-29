@@ -3,6 +3,11 @@ import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword, generateToken, hashPassword } from '@/lib/auth';
 import { MOVESBOOK_LOGIN_USER_TYPES } from '@/lib/adminLoginLogLabels';
+import {
+  findClubByCompanyUsername,
+  verifyClubCompanyPassword,
+} from '@/lib/club/clubDirectLogin';
+import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
 import mysql from 'mysql2/promise';
 
 type LegacyDbConfig = {
@@ -227,6 +232,60 @@ const hasLegacyUsersTable = async (): Promise<boolean> => {
   return false;
 };
 
+type ClubCompanyLoginResult = {
+  user: {
+    id: string;
+    name: string;
+    username: string;
+    email: string;
+    country: string | null;
+    image: string | null;
+    password: string;
+    userType: UserType;
+    createdAt: Date;
+  };
+  clubId: string;
+};
+
+async function tryClubCompanyLogin(
+  loginIdentifier: string,
+  password: string,
+): Promise<ClubCompanyLoginResult | null> {
+  const clubs = await prisma.$queryRaw<
+    { id: string; adminId: string; description: string | null }[]
+  >`
+    SELECT id, adminId, description
+    FROM clubs_new
+    WHERE description IS NOT NULL
+  `;
+
+  const match = findClubByCompanyUsername(clubs, loginIdentifier);
+  if (!match) return null;
+
+  const clubRow = clubs.find((c) => c.id === match.clubId);
+  const meta = parseClubDescriptionMeta(clubRow?.description);
+  const passwordOk = await verifyClubCompanyPassword(password, meta.clubPasswordHash);
+  if (!passwordOk) return null;
+
+  const adminUser = await prisma.user.findUnique({
+    where: { id: match.adminId },
+    select: {
+      id: true,
+      name: true,
+      username: true,
+      email: true,
+      country: true,
+      image: true,
+      password: true,
+      userType: true,
+      createdAt: true,
+    },
+  });
+  if (!adminUser) return null;
+
+  return { user: adminUser, clubId: match.clubId };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { email, username, identifier, password, userType } = await request.json();
@@ -269,6 +328,7 @@ export async function POST(request: NextRequest) {
     });
     let user = null;
     let passwordAlreadyVerified = false;
+    let clubDirectLoginClubId: string | null = null;
     
     if (newUsers.length > 0) {
       for (const candidate of newUsers) {
@@ -545,10 +605,17 @@ export async function POST(request: NextRequest) {
     }
 
     if (!user) {
-      return NextResponse.json(
-        { error: 'Invalid email/username or password' },
-        { status: 401 }
-      );
+      const clubLogin = await tryClubCompanyLogin(loginIdentifier, password);
+      if (clubLogin) {
+        user = clubLogin.user;
+        passwordAlreadyVerified = true;
+        clubDirectLoginClubId = clubLogin.clubId;
+      } else {
+        return NextResponse.json(
+          { error: 'Invalid email/username or password' },
+          { status: 401 }
+        );
+      }
     }
 
     if (!passwordAlreadyVerified) {
@@ -561,14 +628,22 @@ export async function POST(request: NextRequest) {
       console.log(`🔐 Password verification result: ${isPasswordValid ? '✅ VALID' : '❌ INVALID'}`);
       
       if (!isPasswordValid) {
-        const username = user?.username || loginIdentifier;
-        console.log(`❌ Password verification failed for user: ${username}`);
-        return NextResponse.json(
-          { error: 'Invalid email/username or password' },
-          { status: 401 }
-        );
+        const clubLogin = await tryClubCompanyLogin(loginIdentifier, password);
+        if (clubLogin) {
+          user = clubLogin.user;
+          passwordAlreadyVerified = true;
+          clubDirectLoginClubId = clubLogin.clubId;
+        } else {
+          const username = user?.username || loginIdentifier;
+          console.log(`❌ Password verification failed for user: ${username}`);
+          return NextResponse.json(
+            { error: 'Invalid email/username or password' },
+            { status: 401 }
+          );
+        }
+      } else {
+        console.log(`✅ Password verified successfully for user: ${user.username}`);
       }
-      console.log(`✅ Password verified successfully for user: ${user.username}`);
     }
 
     // Auto-upgrade disabled - keeping SHA1 passwords as-is
@@ -620,7 +695,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       token,
-      user: userPayload
+      user: userPayload,
+      ...(clubDirectLoginClubId
+        ? { redirectTo: `/my-club?clubId=${encodeURIComponent(clubDirectLoginClubId)}` }
+        : {}),
     });
 
   } catch (error) {

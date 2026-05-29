@@ -6,7 +6,19 @@ import { requireAdmin } from '@/lib/adminAuth';
 
 export const dynamic = 'force-dynamic';
 
+const ALL_REGISTERED_TYPES: UserType[] = [
+  UserType.ATHLETE,
+  UserType.COACH,
+  UserType.GROUP,
+  UserType.GROUP_ADMIN,
+  UserType.TEAM,
+  UserType.TEAM_MANAGER,
+  UserType.CLUB,
+  UserType.CLUB_TRAINER,
+];
+
 const SEGMENT_TYPES: Record<string, UserType[]> = {
+  all: ALL_REGISTERED_TYPES,
   'single-user': [UserType.ATHLETE],
   coaches: [UserType.COACH],
   groups: [UserType.GROUP, UserType.GROUP_ADMIN],

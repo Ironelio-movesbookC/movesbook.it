@@ -28,6 +28,7 @@ export type CreateClubFormPayload = {
   directAccess: string;
   officialName: string;
   directRegistrationCode: string;
+  clubPassword: string;
 };
 
 type CreateClubModalProps = {
@@ -102,6 +103,14 @@ export default function CreateClubModal({
       setError('Club username and Direct Access are required.');
       return;
     }
+    if (!clubNewPassword.trim()) {
+      setError('My Club password is required.');
+      return;
+    }
+    if (clubNewPassword !== clubRepeatPassword) {
+      setError('Password and repeat password do not match.');
+      return;
+    }
     const name = clubOfficialName.trim() || clubUsername.trim();
     if (!name) {
       setError('Enter a club username or official club name.');
@@ -122,6 +131,7 @@ export default function CreateClubModal({
         directAccess: clubDirectAccess.trim(),
         officialName: clubOfficialName.trim() || clubUsername.trim(),
         directRegistrationCode: clubDirectRegCode.trim(),
+        clubPassword: clubNewPassword,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create club');
@@ -269,8 +279,8 @@ export default function CreateClubModal({
                       type="password"
                       value={clubNewPassword}
                       onChange={(e) => setClubNewPassword(e.target.value)}
-                      disabled
-                      className="w-full rounded border border-gray-300 bg-gray-200 px-2 py-1"
+                      autoComplete="new-password"
+                      className="w-full rounded border border-gray-300 bg-white px-2 py-1"
                     />
                   </td>
                 </tr>
@@ -281,8 +291,8 @@ export default function CreateClubModal({
                       type="password"
                       value={clubRepeatPassword}
                       onChange={(e) => setClubRepeatPassword(e.target.value)}
-                      disabled
-                      className="w-full rounded border border-gray-300 bg-gray-200 px-2 py-1"
+                      autoComplete="new-password"
+                      className="w-full rounded border border-gray-300 bg-white px-2 py-1"
                     />
                   </td>
                 </tr>

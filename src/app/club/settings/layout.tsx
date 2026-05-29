@@ -1,19 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
 import RightSidebar from '@/components/dashboard/RightSidebar';
 import SimpleFooter from '@/components/SimpleFooter';
+import StandardPageBanners, { profileToBannerProfile } from '@/components/layout/StandardPageBanners';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useMyPageData } from '@/app/my-page/hooks/useMyPageData';
 import { useMyPageHandlers } from '@/app/my-page/hooks/useMyPageHandlers';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLegacyBanner';
 
 export default function ClubSettingsLayout({ children }: { children: React.ReactNode }) {
   const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-page');
+  const [bannerProfile, setBannerProfile] = useState<AthleteLegacyBannerProfile | null>(null);
   const { user, loading } = useAuth();
+  const { t } = useLanguage();
   const router = useRouter();
 
   const {
@@ -50,6 +55,26 @@ export default function ClubSettingsLayout({ children }: { children: React.React
     }
   }, [hasClubProfile, activeTab]);
 
+  const loadBannerProfile = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const res = await fetch('/api/user/profile', {
+        cache: 'no-store',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setBannerProfile(profileToBannerProfile(data));
+    } catch {
+      /* optional */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) void loadBannerProfile();
+  }, [user, loadBannerProfile]);
+
   const userType = user?.userType || '';
   const isClubAccount = isClubAccountUserType(userType);
 
@@ -60,6 +85,7 @@ export default function ClubSettingsLayout({ children }: { children: React.React
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <ModernNavbar />
+      <StandardPageBanners bannerProfile={bannerProfile} t={t} />
       <div className="flex flex-1 min-h-0">
         <aside className="w-80 flex-shrink-0">
           <DarkSidebar

@@ -609,9 +609,17 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
 
       if (response.ok && data.user) {
         // Regular user login successful
-        // Use the login function from useAuth (token first, then user)
-        // The login function will automatically redirect to the appropriate dashboard
-        login(data.token, data.user);
+        const redirectTo =
+          typeof data.redirectTo === 'string' && data.redirectTo.trim()
+            ? data.redirectTo.trim()
+            : null;
+        if (redirectTo && typeof window !== 'undefined') {
+          const clubMatch = redirectTo.match(/[?&]clubId=([^&]+)/);
+          if (clubMatch?.[1]) {
+            localStorage.setItem('selectedClub', decodeURIComponent(clubMatch[1]));
+          }
+        }
+        login(data.token, data.user, redirectTo);
         
         // Clear form
         setLoginUsername('');
