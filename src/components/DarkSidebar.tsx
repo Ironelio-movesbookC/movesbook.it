@@ -294,6 +294,10 @@ interface DarkSidebarProps {
   onPostsClick?: () => void;
   /** My Club → Music for the club → opens OGP-style panel in dashboard main area */
   onClubAddSongsPlaylistsClick?: () => void;
+  /** General settings → Identification devices (card readers list in dashboard) */
+  onIdentificationDevicesClick?: () => void;
+  /** General settings → Access of outcome settings (dashboard panel) */
+  onAccessOutcomeSettingsClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
   /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
@@ -316,6 +320,8 @@ export default function DarkSidebar({
   onMyCoachingGroupClick,
   onPostsClick,
   onClubAddSongsPlaylistsClick,
+  onIdentificationDevicesClick,
+  onAccessOutcomeSettingsClick,
   activeTab = 'my-page',
   onTabChange,
   profileImageFromDb,
@@ -3055,7 +3061,11 @@ export default function DarkSidebar({
                                       Icon: Contact2,
                                       label: "Default for member's profiles",
                                     },
-                                    { Icon: Fingerprint, label: 'Identification devices' },
+                                    {
+                                      Icon: Fingerprint,
+                                      label: 'Identification devices',
+                                      panel: 'identification-devices' as const,
+                                    },
                                     {
                                       Icon: List,
                                       label: 'Typologies of subscription',
@@ -3077,7 +3087,11 @@ export default function DarkSidebar({
                                       label: 'Tables',
                                       path: '/club/settings/tables/areas',
                                     },
-                                    { Icon: Volume2, label: 'Access of outcome settings' },
+                                    {
+                                      Icon: Volume2,
+                                      label: 'Access of outcome settings',
+                                      panel: 'outcome-settings' as const,
+                                    },
                                     { Icon: Mic, label: 'Audio messages' },
                                     {
                                       Icon: Import,
@@ -3093,11 +3107,21 @@ export default function DarkSidebar({
                                 ).map((item, subIdx, arr) => {
                                   const { Icon: SubIcon, label: subLabel } = item;
                                   const path = 'path' in item ? item.path : undefined;
+                                  const panel =
+                                    'panel' in item ? item.panel : undefined;
                                   return (
                                     <button
                                       key={subLabel}
                                       type="button"
                                       onClick={() => {
+                                        if (panel === 'identification-devices') {
+                                          onIdentificationDevicesClick?.();
+                                          return;
+                                        }
+                                        if (panel === 'outcome-settings') {
+                                          onAccessOutcomeSettingsClick?.();
+                                          return;
+                                        }
                                         if (path) {
                                           router.push(path);
                                         }

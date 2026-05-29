@@ -118,6 +118,17 @@ const TYPOLOGY_LIST_PATH = '/club/settings/typology_subscription';
 const BUILT_IN_ICON_COUNT = 10;
 type FormErrors = Record<string, string>;
 
+type AddTypologySubscriptionPageProps = {
+  /** When set, loads and updates an existing typology instead of creating one. */
+  typologyId?: string;
+  /** Override the "Back to typologies" behavior (e.g. embed inside another page). */
+  onBack?: () => void;
+  /** Override where we go after a successful save. Defaults to back/list. */
+  onSaved?: () => void;
+  /** Override the list route used for router navigation in standalone page mode. */
+  listPath?: string;
+};
+
 const SELF_SUBSCRIPTION_FIELDS = new Set([
   'enabledForBooking',
   'mandatoryBooking',
@@ -311,13 +322,16 @@ function validateForm(form: FormState): FormErrors {
   return nextErrors;
 }
 
-export default function AddTypologySubscriptionPage() {
+export default function AddTypologySubscriptionPage(props: AddTypologySubscriptionPageProps) {
   const router = useRouter();
+  const isEditMode = Boolean(props.typologyId);
   const [activeTab, setActiveTab] = useState<TabId>('Course settings');
   const [form, setForm] = useState<FormState>(() => initialForm());
   const [areas, setAreas] = useState<AreaOption[]>(DEFAULT_AREAS);
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
+  const [loadingTypology, setLoadingTypology] = useState(Boolean(props.typologyId));
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [dailyAvailabilityOpen, setDailyAvailabilityOpen] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -359,6 +373,67 @@ export default function AddTypologySubscriptionPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!props.typologyId) return;
+
+    let cancelled = false;
+
+    async function loadTypology() {
+      try {
+        setLoadingTypology(true);
+        setLoadError(null);
+        const token = localStorage.getItem('token');
+        const response = await fetch(
+          `/api/club/settings/typology-subscription?id=${encodeURIComponent(props.typologyId!)}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+        );
+
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error || 'Unable to load this typology.');
+        }
+
+        if (cancelled) return;
+
+        const nextAreas = Array.isArray(data.areas) && data.areas.length > 0
+          ? data.areas
+          : DEFAULT_AREAS;
+        setAreas(nextAreas);
+
+        const payload = data.typology as Partial<FormState> | undefined;
+        if (!payload || typeof payload !== 'object') {
+          throw new Error('Typology data is missing.');
+        }
+
+        setForm({
+          ...initialForm(),
+          ...payload,
+          admissions: {
+            ...createAdmissions(),
+            ...(payload.admissions ?? {})
+          },
+          lanes: Array.isArray(payload.lanes) && payload.lanes.length > 0
+            ? payload.lanes
+            : initialForm().lanes
+        });
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(error instanceof Error ? error.message : 'Unable to load this typology.');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingTypology(false);
+        }
+      }
+    }
+
+    loadTypology();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [props.typologyId]);
 
   const selectedIconLabel = useMemo(() => getTypologyIconLabel(form.image), [form.image]);
   const iconPreviewUrl = useMemo(() => getTypologyIconUrl(form.image), [form.image]);
@@ -503,7 +578,8 @@ export default function AddTypologySubscriptionPage() {
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
-          action: 'create-typology',
+          action: isEditMode ? 'update-typology' : 'create-typology',
+          ...(isEditMode ? { id: props.typologyId } : {}),
           ...form
         })
       });
@@ -517,7 +593,13 @@ export default function AddTypologySubscriptionPage() {
         throw new Error(data?.error || 'Unable to save this typology.');
       }
 
-      router.push(TYPOLOGY_LIST_PATH);
+      if (props.onSaved) {
+        props.onSaved();
+      } else if (props.onBack) {
+        props.onBack();
+      } else {
+        router.push(props.listPath ?? TYPOLOGY_LIST_PATH);
+      }
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Unable to save this typology.');
     } finally {
@@ -525,18 +607,53 @@ export default function AddTypologySubscriptionPage() {
     }
   };
 
+  if (loadingTypology) {
+    return (
+      <div className="flex min-h-[360px] items-center justify-center p-6 text-gray-500">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+        Loading typology
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-4 lg:p-6">
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-6 text-center text-sm text-red-700">
+          {loadError}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (props.onBack) return props.onBack();
+            router.push(props.listPath ?? TYPOLOGY_LIST_PATH);
+          }}
+          className="mt-4 inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to typologies
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 lg:p-6">
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <button
           type="button"
-          onClick={() => router.push(TYPOLOGY_LIST_PATH)}
+          onClick={() => {
+            if (props.onBack) return props.onBack();
+            router.push(props.listPath ?? TYPOLOGY_LIST_PATH);
+          }}
           className="inline-flex h-10 w-fit items-center gap-2 rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-800 hover:bg-gray-50"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to typologies
         </button>
-        <span className="text-sm text-gray-500">Club's management / General settings</span>
+        <span className="text-sm text-gray-500">
+          {isEditMode ? 'Modify typology subscription' : 'Add typology subscription'} · Club&apos;s management / General settings
+        </span>
       </div>
       <form onSubmit={handleSubmit} className="club-typology-form overflow-hidden rounded-md border border-gray-200 bg-white text-gray-900 shadow-sm">
         <div className="border-b border-gray-200 bg-gray-50">
@@ -1134,7 +1251,10 @@ export default function AddTypologySubscriptionPage() {
           </button>
           <button
             type="button"
-            onClick={() => router.push(TYPOLOGY_LIST_PATH)}
+            onClick={() => {
+              if (props.onBack) return props.onBack();
+              router.push(props.listPath ?? TYPOLOGY_LIST_PATH);
+            }}
             className="inline-flex h-10 items-center gap-2 rounded-md bg-red-600 px-5 text-sm font-semibold text-white hover:bg-red-700"
           >
             <ArrowLeft className="h-4 w-4" />

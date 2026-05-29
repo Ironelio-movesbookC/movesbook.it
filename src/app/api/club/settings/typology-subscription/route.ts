@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { unserialize } from 'php-serialize';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 
@@ -89,6 +90,20 @@ const DEFAULT_AREAS: AreaOption[] = [
   { id: 'Aerobics', name: 'Aerobics' },
   { id: 'Pilates', name: 'Pilates' }
 ];
+
+const ACCESS_KEYS = [
+  'one',
+  'three',
+  'five',
+  'seven',
+  'ten',
+  'twelve',
+  'fifteen',
+  'one_month',
+  'two_month',
+  'three_month',
+  'six_month'
+] as const;
 
 function yesNo(value: unknown, fallback: 'Y' | 'N' = 'N'): 'Y' | 'N' {
   if (value === 'Y' || value === 'y' || value === true || value === 1 || value === '1') {
@@ -430,6 +445,164 @@ function serializeLaneAvailability(lanes: any[]): string {
   return `a:${normalizedLanes.length}:{${serializedItems.join('')}}`;
 }
 
+function boolFromYesNo(value: unknown): boolean {
+  return yesNo(value) === 'Y';
+}
+
+function parseLaneAvailability(raw: unknown): { available: boolean; limit: string }[] {
+  const defaults = Array.from({ length: 10 }, () => ({ available: false, limit: '' }));
+  if (!raw || typeof raw !== 'string' || !raw.trim()) {
+    return defaults;
+  }
+
+  try {
+    const parsed = unserialize(raw) as Record<string | number, Record<string, string>> | null;
+    if (!parsed || typeof parsed !== 'object') {
+      return defaults;
+    }
+
+    return Array.from({ length: 10 }, (_, index) => {
+      const lane = parsed[index] ?? parsed[String(index)];
+      if (!lane || typeof lane !== 'object') {
+        return { available: false, limit: '' };
+      }
+
+      if ('Y' in lane) {
+        return { available: true, limit: text(lane.Y) };
+      }
+
+      if ('N' in lane) {
+        return { available: false, limit: text(lane.N) };
+      }
+
+      const [flag, limitValue] = Object.entries(lane)[0] ?? [];
+      if (flag === 'Y') {
+        return { available: true, limit: text(limitValue) };
+      }
+
+      return { available: false, limit: '' };
+    });
+  } catch {
+    return defaults;
+  }
+}
+
+function buildTypologyValues(body: any, areaActivity: string): Record<string, unknown> {
+  const admissions = body.admissions && typeof body.admissions === 'object' ? body.admissions : {};
+  const lanes = Array.isArray(body.lanes) ? body.lanes : [];
+
+  const values: Record<string, unknown> = {
+    area_activity: areaActivity,
+    activity_name: String(body.activityName ?? '').trim(),
+    code: String(body.code ?? '').trim(),
+    color: String(body.color ?? '').trim(),
+    image: String(body.image ?? 'Cat_1.png').trim(),
+    multifactory: String(body.multifactory ?? '').trim(),
+    coaches: String(body.coaches ?? '').trim(),
+    vendors: String(body.vendors ?? '').trim(),
+    annotations: String(body.annotations ?? '').trim(),
+    room: String(body.room ?? '').trim(),
+    cost_for_lesson: String(body.costForLesson ?? '').trim(),
+    allow_multiple_entrances_same_day: yesNo(body.allowMultipleEntrancesSameDay),
+    after_daccess_decrease_subsequent: yesNo(body.afterDailyAccessDecreaseSubsequent),
+    max_limit_status: yesNo(body.maxLimitEnabled),
+    max_limit_value: String(body.maxLimitValue ?? '').trim(),
+    subscription_process: yesNo(body.preventSubscriptionProcess),
+    enable_for_lanes_booths: yesNo(body.enableLanesBooths),
+    availability_with_max_limit: serializeLaneAvailability(lanes),
+    after_expire_lane_days: String(body.afterExpireLaneDays ?? '').trim(),
+    block_access: yesNo(body.blockAccess),
+    decrease_season: yesNo(body.decreaseSeason),
+    access_control_for_user: yesNo(body.hideAccessControlData),
+    result_of_the_access_control: yesNo(body.disableAccessVoiceMessage),
+    data_regarding_accesses: yesNo(body.doNotStoreAccessData),
+    accesses_allow: yesNo(body.doNotStoreAllowedAccesses),
+    accesses_not_allow: yesNo(body.doNotStoreDeniedAccesses),
+    audio_message_status: yesNo(body.audioMessageEnabled),
+    audio_message_start: String(body.audioMessageStart ?? '').trim(),
+    audio_message_end: String(body.audioMessageEnd ?? '').trim(),
+    pop_up_status: yesNo(body.popupMessageEnabled),
+    pop_up_start: String(body.popupMessageStart ?? '').trim(),
+    pop_up_end: String(body.popupMessageEnd ?? '').trim(),
+    notice: String(body.notice ?? '').trim(),
+    header_size: String(body.headerSize ?? 'header_size-1').trim(),
+    typology_description: String(body.description ?? '').trim(),
+    enabled_for_booking: yesNo(body.enabledForBooking),
+    mandatory_booking: yesNo(body.mandatoryBooking),
+    self_booking: yesNo(body.selfBooking),
+    self_subscription: yesNo(body.selfSubscription),
+    payment_posteciped_or_credit_card: yesNo(body.paymentPostecipedOrCreditCard),
+    pay_within_days: String(body.payWithinDays ?? '').trim()
+  };
+
+  for (const key of ACCESS_KEYS) {
+    const admission = admissions[key] ?? {};
+    values[`enabled_access_${key}`] = yesNo(admission.enabled);
+    values[`cost_access_${key}`] = String(admission.price ?? '').trim();
+    values[`usable_access_${key}`] = String(admission.accesses ?? '').trim();
+    values[`days_to_pay_access_${key}`] = String(admission.daysToPay ?? '').trim();
+  }
+
+  return values;
+}
+
+function mapDbRowToTypologyForm(row: Record<string, unknown>) {
+  const admissions = ACCESS_KEYS.reduce((acc, key) => {
+    acc[key] = {
+      enabled: boolFromYesNo(row[`enabled_access_${key}`]),
+      price: text(row[`cost_access_${key}`]),
+      accesses: text(row[`usable_access_${key}`]),
+      daysToPay: text(row[`days_to_pay_access_${key}`])
+    };
+    return acc;
+  }, {} as Record<string, { enabled: boolean; price: string; accesses: string; daysToPay: string }>);
+
+  return {
+    areaActivity: text(row.area_activity),
+    activityName: text(row.activity_name),
+    code: text(row.code),
+    color: text(row.color) || '#ffffff',
+    image: text(row.image) || 'Cat_1.png',
+    multifactory: text(row.multifactory) || '1',
+    coaches: text(row.coaches) || '1',
+    vendors: text(row.vendors) || '1',
+    annotations: text(row.annotations),
+    room: text(row.room),
+    costForLesson: text(row.cost_for_lesson),
+    admissions,
+    allowMultipleEntrancesSameDay: boolFromYesNo(row.allow_multiple_entrances_same_day),
+    afterDailyAccessDecreaseSubsequent: boolFromYesNo(row.after_daccess_decrease_subsequent),
+    maxLimitEnabled: boolFromYesNo(row.max_limit_status),
+    maxLimitValue: text(row.max_limit_value),
+    preventSubscriptionProcess: boolFromYesNo(row.subscription_process),
+    enableLanesBooths: boolFromYesNo(row.enable_for_lanes_booths),
+    lanes: parseLaneAvailability(row.availability_with_max_limit),
+    afterExpireLaneDays: text(row.after_expire_lane_days),
+    blockAccess: boolFromYesNo(row.block_access),
+    decreaseSeason: boolFromYesNo(row.decrease_season),
+    hideAccessControlData: boolFromYesNo(row.access_control_for_user),
+    disableAccessVoiceMessage: boolFromYesNo(row.result_of_the_access_control),
+    doNotStoreAccessData: boolFromYesNo(row.data_regarding_accesses),
+    doNotStoreAllowedAccesses: boolFromYesNo(row.accesses_allow),
+    doNotStoreDeniedAccesses: boolFromYesNo(row.accesses_not_allow),
+    audioMessageEnabled: boolFromYesNo(row.audio_message_status),
+    audioMessageStart: text(row.audio_message_start),
+    audioMessageEnd: text(row.audio_message_end),
+    popupMessageEnabled: boolFromYesNo(row.pop_up_status),
+    popupMessageStart: text(row.pop_up_start),
+    popupMessageEnd: text(row.pop_up_end),
+    notice: text(row.notice),
+    headerSize: text(row.header_size) || 'header_size-1',
+    description: text(row.typology_description),
+    enabledForBooking: boolFromYesNo(row.enabled_for_booking),
+    mandatoryBooking: boolFromYesNo(row.mandatory_booking),
+    selfBooking: boolFromYesNo(row.self_booking),
+    selfSubscription: boolFromYesNo(row.self_subscription),
+    paymentPostecipedOrCreditCard: boolFromYesNo(row.payment_posteciped_or_credit_card),
+    payWithinDays: text(row.pay_within_days)
+  };
+}
+
 function validateScalarFields(body: any, fieldErrors: Record<string, string>) {
   if (isBlank(body.areaActivity)) {
     fieldErrors.areaActivity = 'Please select an area activity.';
@@ -547,21 +720,25 @@ async function hasDuplicateTypology(
   activityName: string,
   areaActivity: string,
   userIds: string[],
-  clubId: string | null
+  clubId: string | null,
+  excludeId?: string
 ): Promise<boolean> {
   const columns = await getTableColumns(tableName);
   const userPlaceholders = userIds.map(() => '?').join(',');
   const clubFilter = clubId && columns.has('club_id') ? ' AND club_id = ?' : '';
+  const excludeFilter = excludeId ? ' AND id <> ?' : '';
   const rows = await prisma.$queryRawUnsafe<{ id: string | number }[]>(
     `SELECT id
      FROM \`${tableName}\`
      WHERE user_id IN (${userPlaceholders})
        ${clubFilter}
+       ${excludeFilter}
        AND area_activity = ?
        AND LOWER(activity_name) = LOWER(?)
      LIMIT 1`,
     ...userIds,
     ...(clubFilter ? [clubId] : []),
+    ...(excludeId ? [excludeId] : []),
     areaActivity,
     activityName
   );
@@ -572,7 +749,8 @@ async function hasDuplicateTypology(
 async function validateTypologyPayload(
   body: any,
   tableName: string,
-  context: AuthorizedContext
+  context: AuthorizedContext,
+  excludeTypologyId?: string
 ): Promise<TypologyValidationResult> {
   const fieldErrors: Record<string, string> = {};
   validateScalarFields(body, fieldErrors);
@@ -590,7 +768,8 @@ async function validateTypologyPayload(
     activityName,
     areaActivity,
     context.userIds,
-    context.club?.id ?? null
+    context.club?.id ?? null,
+    excludeTypologyId
   )) {
     fieldErrors.activityName = 'This activity already exists in the selected area.';
   }
@@ -601,75 +780,11 @@ async function validateTypologyPayload(
 async function insertTypology(tableName: string, body: any, userIds: string[], clubId: string | null, areaActivity: string) {
   const columns = await getTableColumns(tableName);
   const userId = userIds[userIds.length - 1] ?? '';
-  const admissions = body.admissions && typeof body.admissions === 'object' ? body.admissions : {};
-  const lanes = Array.isArray(body.lanes) ? body.lanes : [];
-  const accessKeys = [
-    'one',
-    'three',
-    'five',
-    'seven',
-    'ten',
-    'twelve',
-    'fifteen',
-    'one_month',
-    'two_month',
-    'three_month',
-    'six_month'
-  ];
-
   const values: Record<string, unknown> = {
     user_id: userId,
     club_id: clubId,
-    area_activity: areaActivity,
-    activity_name: String(body.activityName ?? '').trim(),
-    code: String(body.code ?? '').trim(),
-    color: String(body.color ?? '').trim(),
-    image: String(body.image ?? 'Cat_1.png').trim(),
-    multifactory: String(body.multifactory ?? '').trim(),
-    coaches: String(body.coaches ?? '').trim(),
-    vendors: String(body.vendors ?? '').trim(),
-    annotations: String(body.annotations ?? '').trim(),
-    room: String(body.room ?? '').trim(),
-    cost_for_lesson: String(body.costForLesson ?? '').trim(),
-    allow_multiple_entrances_same_day: yesNo(body.allowMultipleEntrancesSameDay),
-    after_daccess_decrease_subsequent: yesNo(body.afterDailyAccessDecreaseSubsequent),
-    max_limit_status: yesNo(body.maxLimitEnabled),
-    max_limit_value: String(body.maxLimitValue ?? '').trim(),
-    subscription_process: yesNo(body.preventSubscriptionProcess),
-    enable_for_lanes_booths: yesNo(body.enableLanesBooths),
-    availability_with_max_limit: serializeLaneAvailability(lanes),
-    after_expire_lane_days: String(body.afterExpireLaneDays ?? '').trim(),
-    block_access: yesNo(body.blockAccess),
-    decrease_season: yesNo(body.decreaseSeason),
-    access_control_for_user: yesNo(body.hideAccessControlData),
-    result_of_the_access_control: yesNo(body.disableAccessVoiceMessage),
-    data_regarding_accesses: yesNo(body.doNotStoreAccessData),
-    accesses_allow: yesNo(body.doNotStoreAllowedAccesses),
-    accesses_not_allow: yesNo(body.doNotStoreDeniedAccesses),
-    audio_message_status: yesNo(body.audioMessageEnabled),
-    audio_message_start: String(body.audioMessageStart ?? '').trim(),
-    audio_message_end: String(body.audioMessageEnd ?? '').trim(),
-    pop_up_status: yesNo(body.popupMessageEnabled),
-    pop_up_start: String(body.popupMessageStart ?? '').trim(),
-    pop_up_end: String(body.popupMessageEnd ?? '').trim(),
-    notice: String(body.notice ?? '').trim(),
-    header_size: String(body.headerSize ?? 'header_size-1').trim(),
-    typology_description: String(body.description ?? '').trim(),
-    enabled_for_booking: yesNo(body.enabledForBooking),
-    mandatory_booking: yesNo(body.mandatoryBooking),
-    self_booking: yesNo(body.selfBooking),
-    self_subscription: yesNo(body.selfSubscription),
-    payment_posteciped_or_credit_card: yesNo(body.paymentPostecipedOrCreditCard),
-    pay_within_days: String(body.payWithinDays ?? '').trim()
+    ...buildTypologyValues(body, areaActivity)
   };
-
-  for (const key of accessKeys) {
-    const admission = admissions[key] ?? {};
-    values[`enabled_access_${key}`] = yesNo(admission.enabled);
-    values[`cost_access_${key}`] = String(admission.price ?? '').trim();
-    values[`usable_access_${key}`] = String(admission.accesses ?? '').trim();
-    values[`days_to_pay_access_${key}`] = String(admission.daysToPay ?? '').trim();
-  }
 
   const insertColumns = Object.keys(values).filter((column) => columns.has(column));
   const params = insertColumns.map((column) => values[column]);
@@ -687,6 +802,69 @@ async function insertTypology(tableName: string, body: any, userIds: string[], c
   );
 
   return idRows[0]?.id != null ? String(idRows[0].id) : null;
+}
+
+async function updateTypology(
+  tableName: string,
+  id: string,
+  body: any,
+  userIds: string[],
+  areaActivity: string
+): Promise<boolean> {
+  const columns = await getTableColumns(tableName);
+  const values = buildTypologyValues(body, areaActivity);
+  const updateColumns = Object.keys(values).filter((column) => columns.has(column));
+
+  if (updateColumns.length === 0) {
+    return false;
+  }
+
+  const userPlaceholders = userIds.map(() => '?').join(',');
+  await prisma.$executeRawUnsafe(
+    `UPDATE \`${tableName}\`
+     SET ${updateColumns.map((column) => `\`${column}\` = ?`).join(', ')}
+     WHERE id = ?
+       AND user_id IN (${userPlaceholders})`,
+    ...updateColumns.map((column) => values[column]),
+    id,
+    ...userIds
+  );
+
+  return true;
+}
+
+async function fetchTypologyRowById(
+  id: string,
+  userIds: string[],
+  clubId: string | null
+): Promise<Record<string, unknown> | null> {
+  if (id.startsWith('local-')) {
+    return null;
+  }
+
+  const typologyTable = await getTypologyTableForRead();
+  const userPlaceholders = userIds.map(() => '?').join(',');
+  const columns = await getTableColumns(typologyTable);
+
+  const queryTypology = async (withClubFilter: boolean) => {
+    const filter = withClubFilter && clubId && columns.has('club_id') ? ' AND club_id = ?' : '';
+    return prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+      `SELECT *
+       FROM \`${typologyTable}\`
+       WHERE id = ?
+         AND user_id IN (${userPlaceholders})
+         ${filter}
+       LIMIT 1`,
+      id,
+      ...userIds,
+      ...(filter ? [clubId] : [])
+    );
+  };
+
+  const clubRows = clubId ? await queryTypology(true) : [];
+  const rows = clubRows.length > 0 ? clubRows : await queryTypology(false);
+
+  return rows[0] ?? null;
 }
 
 async function getLegacyUserId(userId: string): Promise<string | null> {
@@ -852,6 +1030,22 @@ export async function GET(request: NextRequest) {
     if ('error' in context) return context.error;
 
     const areas = await fetchAreaOptions(context.userIds, context.club?.id ?? null);
+    const typologyId = request.nextUrl.searchParams.get('id');
+
+    if (typologyId) {
+      const row = await fetchTypologyRowById(typologyId, context.userIds, context.club?.id ?? null);
+      if (!row) {
+        return NextResponse.json({ error: 'Typology not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        club: context.club,
+        areas,
+        typology: mapDbRowToTypologyForm(row),
+        source: 'database'
+      });
+    }
+
     await normalizeTypologyAreaReferences(context.userIds, context.club?.id ?? null);
     const legacy = await fetchLegacyRows(context.userIds, context.club?.id ?? null);
     const items = legacy.rows.map(normalizeLegacyRow);
@@ -963,6 +1157,37 @@ export async function POST(request: NextRequest) {
       );
 
       return NextResponse.json({ success: true, persisted: true, id });
+    }
+
+    if (body.action === 'update-typology') {
+      const typologyId = String(body.id ?? '');
+      if (!typologyId || typologyId.startsWith('local-')) {
+        return NextResponse.json({ error: 'Invalid typology id' }, { status: 400 });
+      }
+
+      const typologyTable = await getTypologyTableForWrite();
+      const existing = await fetchTypologyRowById(typologyId, context.userIds, context.club?.id ?? null);
+      if (!existing) {
+        return NextResponse.json({ error: 'Typology not found' }, { status: 404 });
+      }
+
+      const validation = await validateTypologyPayload(body, typologyTable, context, typologyId);
+      if (Object.keys(validation.fieldErrors).length > 0 || !validation.areaActivity) {
+        return NextResponse.json({
+          error: 'Validation failed',
+          fieldErrors: validation.fieldErrors
+        }, { status: 400 });
+      }
+
+      const persisted = await updateTypology(
+        typologyTable,
+        typologyId,
+        body,
+        context.userIds,
+        validation.areaActivity
+      );
+
+      return NextResponse.json({ success: true, persisted, id: typologyId });
     }
 
     if (body.action !== 'booking-settings') {
