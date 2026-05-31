@@ -48,10 +48,11 @@ export function SearchResultVisitorWallDashboardChrome({
         onTogglePersonalBanner={onTogglePersonalBanner}
         onToggleLeftSidebar={onToggleLeftSidebar}
         onToggleRightSidebar={hideRightColumnByPolicy ? () => {} : onToggleRightSidebar}
+        onToggleToolbar={onToggleToolbar}
       />
 
       {showAdBanner ? (
-        <div className="flex-shrink-0 px-4 pt-4 print:hidden">
+        <div className="flex-shrink-0 pt-4 print:hidden">
           <AdvertisementCarousel />
         </div>
       ) : null}

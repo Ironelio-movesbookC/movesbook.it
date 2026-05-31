@@ -17,6 +17,11 @@ export default function ClubLayout({ children }: { children: React.ReactNode }) 
   const router = useRouter();
   const pathname = usePathname();
   const isNetworkSearchList = pathname?.includes('/users/searchList') ?? false;
+  /** My Desk routes ship their own navbar, Display Options, and sidebars (same as /my-page). */
+  const isSelfContainedDeskRoute =
+    pathname === '/users/my_desk' ||
+    pathname === '/users/my_desk_list' ||
+    pathname === '/users/add_new_mydesk';
 
   // All hooks must be called before any conditional returns
   const {
@@ -40,6 +45,10 @@ export default function ClubLayout({ children }: { children: React.ReactNode }) 
   }, [user, loading, router]);
 
   // Don't render if not authenticated (after all hooks are called)
+  if (isSelfContainedDeskRoute) {
+    return <>{children}</>;
+  }
+
   if (loading || !user) {
     return null;
   }

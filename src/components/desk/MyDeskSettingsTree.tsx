@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import FontAwesomeIconPicker, { normalizeFaIconClass } from '@/components/desk/FontAwesomeIconPicker';
+import { deskTreeRowInsetStyle } from '@/components/desk/deskTreeDepth';
 
 type DeskIconKey = 'at' | 'book' | 'id' | 'trophy' | 'wheelchair' | 'landmark';
 
@@ -178,19 +179,17 @@ function SortableMyDeskRow({
   };
 
   const childIds = node.children?.map((c) => c.id) ?? [];
+  const insetStyle = deskTreeRowInsetStyle(depth);
 
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{ ...style, ...insetStyle }}
       className="select-none border-b border-zinc-200 last:border-b-0"
     >
       <div
-        className={`flex w-full min-h-[42px] items-center gap-1.5 px-2 py-2 text-xs font-medium tracking-wide ${node.barClass ?? ''} ${
-          depth > 0 ? 'ml-2 border-l-2 border-zinc-300 pl-2' : ''
-        }`}
+        className={`flex min-h-[42px] w-full items-center gap-1.5 px-2 py-2 text-xs font-medium tracking-wide ${node.barClass ?? ''}`}
         style={{
-          paddingLeft: `${6 + depth * 12}px`,
           ...(node.bgColor ? { backgroundColor: node.bgColor } : {}),
           ...(node.titleColor ? { color: node.titleColor } : {})
         }}
@@ -300,8 +299,8 @@ export default function MyDeskSettingsTree() {
   const [loading, setLoading] = useState(true);
   const [addModalParentId, setAddModalParentId] = useState<string | null>(null);
   const [newIcon, setNewIcon] = useState('fas fa-address-book');
-  const [newBgColor, setNewBgColor] = useState('#22c55e');
-  const [newTitleColor, setNewTitleColor] = useState('#171717');
+  const [newBgColor, setNewBgColor] = useState('#ffffff');
+  const [newTitleColor, setNewTitleColor] = useState('#000000');
   const [newTitle, setNewTitle] = useState('');
   const [newPath, setNewPath] = useState('');
   const [newDisplayMode, setNewDisplayMode] = useState<'new_label' | 'central_page'>('new_label');
@@ -354,8 +353,8 @@ export default function MyDeskSettingsTree() {
   const onAddChild = useCallback((parentId: string) => {
     setAddModalParentId(parentId);
     setNewIcon('fas fa-address-book');
-    setNewBgColor('#22c55e');
-    setNewTitleColor('#171717');
+    setNewBgColor('#ffffff');
+    setNewTitleColor('#000000');
     setNewTitle('');
     setNewPath('');
     setNewDisplayMode('new_label');
