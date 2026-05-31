@@ -493,6 +493,7 @@ export interface LanguageStrings {
         'searchlist_reset_all': 'Reset all',
         'searchlist_no_image': 'No image',
         'searchlist_mutuals_placeholder': 'Mutual connections will appear here when available.',
+        'searchlist_user_since': 'User since {date}',
         'searchlist_btn_member': 'Already member',
         'searchlist_btn_invite': 'Invite to become member',
         'searchlist_btn_send_register': 'Send registration by one click',
@@ -1190,6 +1191,7 @@ export interface LanguageStrings {
         'searchlist_no_image': 'Sin imagen',
         'searchlist_mutuals_placeholder':
           'Las conexiones en común aparecerán aquí cuando estén disponibles.',
+        'searchlist_user_since': 'Usuario desde {date}',
         'searchlist_btn_member': 'Ya es miembro',
         'searchlist_btn_invite': 'Invitar a ser miembro',
         'searchlist_btn_send_register': 'Enviar registro con un clic',
