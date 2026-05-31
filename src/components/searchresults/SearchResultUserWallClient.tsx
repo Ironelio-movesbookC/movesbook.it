@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { Home, UserPlus, Users } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { SearchResultUserWallLeftSidebar } from '@/components/searchresults/SearchResultUserWallLeftSidebar';
@@ -20,6 +21,25 @@ export type UserWallPayload = {
 export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) {
   const { t } = useLanguage();
   const { selfPath, username, displayName, country, image, sportsLine, ageLabel } = data;
+  const [activeWallTab, setActiveWallTab] = useState<
+    'posted_me' | 'posted_friends' | 'articles_me' | 'articles_friends'
+  >('posted_me');
+
+  const wallTabs = [
+    { id: 'posted_me' as const, label: t('searchresult_tab_posted_me').replace('{name}', displayName) },
+    {
+      id: 'posted_friends' as const,
+      label: t('searchresult_tab_posted_friends').replace('{name}', displayName),
+    },
+    {
+      id: 'articles_me' as const,
+      label: t('searchresult_tab_articles_me').replace('{name}', displayName),
+    },
+    {
+      id: 'articles_friends' as const,
+      label: t('searchresult_tab_articles_friends').replace('{name}', displayName),
+    },
+  ];
 
   return (
     <div className="min-h-0 flex-1 bg-zinc-200 pb-10">
@@ -118,33 +138,28 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
               />
             </div>
 
-            <div className="flex flex-wrap gap-2 border-t border-zinc-200 px-3 py-2">
+            <div className="flex flex-col items-center gap-3 border-t border-zinc-200 px-3 py-4">
               <button
                 type="button"
-                className="rounded bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800"
-              >
-                {t('searchresult_show_post')}
-              </button>
-              <button
-                type="button"
-                className="rounded bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800"
+                className="rounded bg-zinc-900 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zinc-800"
               >
                 {t('searchresult_new_post')}
               </button>
-            </div>
-            <div className="flex flex-wrap gap-1 border-b border-zinc-800 bg-zinc-900 px-1 py-1">
-              <button type="button" className="rounded-t bg-white px-2 py-1.5 text-[11px] font-semibold text-zinc-900">
-                {t('searchresult_tab_posted_me').replace('{name}', displayName)}
-              </button>
-              <button type="button" className="px-2 py-1.5 text-[11px] font-semibold text-zinc-200 hover:text-white">
-                {t('searchresult_tab_posted_friends').replace('{name}', displayName)}
-              </button>
-              <button type="button" className="px-2 py-1.5 text-[11px] font-semibold text-zinc-200 hover:text-white">
-                {t('searchresult_tab_articles_me').replace('{name}', displayName)}
-              </button>
-              <button type="button" className="px-2 py-1.5 text-[11px] font-semibold text-zinc-200 hover:text-white">
-                {t('searchresult_tab_articles_friends').replace('{name}', displayName)}
-              </button>
+              <div className="flex w-full flex-wrap justify-center gap-2">
+                {wallTabs.map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setActiveWallTab(id)}
+                    className={`rounded bg-zinc-900 px-2 py-1.5 text-center text-[10px] font-semibold leading-snug text-white hover:bg-zinc-800 sm:text-[11px] ${
+                      activeWallTab === id ? 'ring-1 ring-zinc-400' : ''
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <hr className="mt-1 w-full border-zinc-300" />
             </div>
             <div className="min-h-[120px] p-4 text-sm text-zinc-600">
               {t('searchresult_wall_placeholder')}
