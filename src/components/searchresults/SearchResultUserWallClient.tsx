@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Home, UserPlus, Users } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { SearchResultUserWallLeftSidebar } from '@/components/searchresults/SearchResultUserWallLeftSidebar';
+import { SearchResultUserWallNotifications } from '@/components/searchresults/SearchResultUserWallNotifications';
 
 export type UserWallPayload = {
   selfPath: string;
@@ -84,8 +85,8 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
           <div className="rounded border border-zinc-300 bg-white shadow-sm">
             <div className="border-b border-zinc-200 bg-zinc-50 px-3 py-2">
               <h2 className="text-lg font-bold text-zinc-900">
-                {displayName}
-                {t('searchresult_wall_suffix')}
+                <span className="text-zinc-600">{displayName}</span>
+                <span className="text-red-800">{t('searchresult_wall_suffix')}</span>
               </h2>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
@@ -108,19 +109,16 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
                 </button>
               </div>
             </div>
-            <div className="border-b border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-              {t('searchresult_member_confirmed')}
+
+            <div className="px-3 py-3">
+              <SearchResultUserWallNotifications
+                displayName={displayName}
+                image={image}
+                t={t}
+              />
             </div>
-            <div className="border-b-2 border-red-400 bg-red-50 p-3">
-              <div className="flex justify-between gap-2">
-                <p className="text-sm font-medium text-red-900">{t('searchresult_invite_notice_title')}</p>
-                <button type="button" className="text-red-700 hover:text-red-900" aria-label="Close">
-                  ×
-                </button>
-              </div>
-              <p className="mt-2 text-xs text-red-800">{t('searchresult_invite_notice_body')}</p>
-            </div>
-            <div className="flex flex-wrap gap-2 border-b border-zinc-200 px-3 py-2">
+
+            <div className="flex flex-wrap gap-2 border-t border-zinc-200 px-3 py-2">
               <button
                 type="button"
                 className="rounded bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800"

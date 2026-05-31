@@ -535,6 +535,7 @@ export interface LanguageStrings {
         'searchresult_invite_notice_title': 'Invitation notice',
         'searchresult_invite_notice_body':
           'You have sent an invite to this user to become member with One Click on date 2024-08-27.',
+        'searchresult_show_all_notifications': 'Show all notification',
         'searchresult_show_post': 'Show Post',
         'searchresult_new_post': 'New post for the user',
         'searchresult_tab_posted_me': 'Posted by me {name}',
@@ -1242,6 +1243,7 @@ export interface LanguageStrings {
         'searchresult_invite_notice_title': 'Aviso de invitación',
         'searchresult_invite_notice_body':
           'Has enviado una invitación a este usuario para ser miembro con un clic el 2024-08-27.',
+        'searchresult_show_all_notifications': 'Mostrar todas las notificaciones',
         'searchresult_show_post': 'Mostrar publicación',
         'searchresult_new_post': 'Nueva publicación para el usuario',
         'searchresult_tab_posted_me': 'Publicado por mí {name}',
