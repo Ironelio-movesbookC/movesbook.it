@@ -65,10 +65,19 @@ type NetworkSearchResultItem = {
   kind: 'user' | 'team' | 'club';
   id: string;
   title: string;
+  username: string | null;
   categoryLabel: string;
   lines: string[];
   image: string | null;
 };
+
+function networkSearchVisitorHref(item: NetworkSearchResultItem): string {
+  const slug =
+    item.kind === 'user'
+      ? (item.username?.trim() || item.id)
+      : item.title.trim() || item.id;
+  return `/searchresults/search/${encodeURIComponent(slug)}`;
+}
 
 export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavbarProps) {
   const pathname = usePathname();
@@ -1342,7 +1351,15 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold text-blue-700">{item.title}</p>
+                          <Link
+                            href={networkSearchVisitorHref(item)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-semibold text-blue-700 hover:text-blue-900 hover:underline"
+                            onClick={() => setNetworkSearchModalOpen(false)}
+                          >
+                            {item.title}
+                          </Link>
                           {item.lines.map((line, idx) => (
                             <p key={`${item.id}-line-${idx}`} className="text-xs text-zinc-600">
                               {line}
