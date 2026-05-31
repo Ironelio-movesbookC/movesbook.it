@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { Home, Mail, Settings, UserPlus, Users } from 'lucide-react';
+import { Home, UserPlus, Users } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { SearchResultUserWallLeftSidebar } from '@/components/searchresults/SearchResultUserWallLeftSidebar';
 
 export type UserWallPayload = {
   selfPath: string;
@@ -17,7 +18,7 @@ export type UserWallPayload = {
 
 export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) {
   const { t } = useLanguage();
-  const { selfPath, username, displayName, country, image, sportsLine, userTypeLabel, ageLabel } = data;
+  const { selfPath, username, displayName, country, image, sportsLine, ageLabel } = data;
 
   return (
     <div className="min-h-0 flex-1 bg-zinc-200 pb-10">
@@ -45,99 +46,14 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
       </nav>
 
       <div className="mx-auto grid max-w-7xl gap-4 px-3 py-6 lg:grid-cols-12 lg:px-4">
-        <aside className="space-y-3 lg:col-span-3">
-          <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-            <button
-              type="button"
-              className="rounded border border-zinc-400 bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-800 shadow-sm hover:bg-white"
-            >
-              {t('searchresult_users_visited')}
-            </button>
-            <button
-              type="button"
-              className="rounded border border-zinc-400 bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-800 shadow-sm hover:bg-white"
-            >
-              {t('searchresult_back_my_data')}
-            </button>
-          </div>
-
-          <div className="overflow-hidden rounded border border-zinc-400 bg-zinc-800 text-white shadow">
-            <div className="flex items-center justify-between border-b border-zinc-600 px-3 py-2 text-xs font-semibold">
-              <span>
-                {t('searchresult_message_staff_prefix')} {displayName}{' '}
-                {t('searchresult_message_staff_by')}
-              </span>
-              <Settings className="h-4 w-4 text-zinc-300" aria-hidden />
-            </div>
-          </div>
-
-          <div className="rounded border border-zinc-400 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-start gap-3">
-              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded bg-zinc-200">
-                {image ? (
-                  <img src={image} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-xs text-zinc-500">—</div>
-                )}
-              </div>
-              <div>
-                <p className="font-semibold text-zinc-900">{displayName}</p>
-                <p className="mt-1 flex items-center gap-1 text-xs text-emerald-700">
-                  <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
-                  {t('searchresult_online')}
-                </p>
-              </div>
-            </div>
-            <dl className="space-y-1.5 text-xs text-zinc-700">
-              <div>
-                <dt className="font-semibold text-zinc-500">{t('searchresult_username_label')}</dt>
-                <dd>{username}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-zinc-500">{t('searchresult_age_label')}</dt>
-                <dd>{ageLabel ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-zinc-500">{t('searchresult_country_label')}</dt>
-                <dd>{country ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-zinc-500">{t('searchresult_sport_label')}</dt>
-                <dd>{sportsLine || '—'}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-zinc-500">{t('searchresult_role_label')}</dt>
-                <dd>{userTypeLabel}</dd>
-              </div>
-            </dl>
-            <div className="mt-3 flex flex-wrap gap-2 border-t border-zinc-100 pt-3 text-[10px] text-zinc-600">
-              <span className="rounded bg-zinc-100 px-2 py-1">{t('searchresult_action_add_friend')}</span>
-              <span className="rounded bg-zinc-100 px-2 py-1">{t('searchresult_action_fav')}</span>
-              <span className="rounded bg-zinc-100 px-2 py-1">{t('searchresult_action_block')}</span>
-              <span className="rounded bg-zinc-100 px-2 py-1">{t('searchresult_action_follow')}</span>
-              <span className="inline-flex items-center gap-1 rounded bg-zinc-100 px-2 py-1">
-                <Mail className="h-3 w-3" aria-hidden />
-                {t('searchresult_action_mail')}
-              </span>
-            </div>
-            <div className="mt-3 flex gap-2 text-xs font-semibold text-blue-700">
-              <Link href="#" className="hover:underline">
-                {t('searchresult_profile_info')}
-              </Link>
-              <span className="text-zinc-300">|</span>
-              <Link href="#" className="hover:underline">
-                {t('searchresult_biography')}
-              </Link>
-            </div>
-          </div>
-
-          <div className="space-y-1 text-xs font-semibold text-white">
-            <div className="rounded-t bg-zinc-700 px-3 py-2">{t('searchresult_acc_posts')}</div>
-            <div className="bg-zinc-600 px-3 py-2">{t('searchresult_acc_other')}</div>
-            <div className="bg-zinc-600 px-3 py-2">{t('searchresult_acc_communities')}</div>
-            <div className="rounded-b bg-teal-800 px-3 py-2">{t('searchresult_acc_online_friends')}</div>
-          </div>
-        </aside>
+        <SearchResultUserWallLeftSidebar
+          displayName={displayName}
+          username={username}
+          country={country}
+          image={image}
+          sportsLine={sportsLine}
+          ageLabel={ageLabel}
+        />
 
         <section className="space-y-3 lg:col-span-6">
           <div className="rounded-t border border-amber-200 bg-amber-100 px-3 py-2 text-sm font-semibold text-zinc-900">
