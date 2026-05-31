@@ -7,6 +7,7 @@ import {
   SearchResultVisitorWallBanner,
   type VisitorWallBannerProfile,
 } from '@/components/searchresults/SearchResultVisitorWallBanner';
+import { useVisitorWallHideRightColumn } from '@/hooks/useVisitorWallHideRightColumn';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 export type ClubWallPayload = {
@@ -24,6 +25,8 @@ export function SearchResultClubWallClient({ data }: { data: ClubWallPayload }) 
   const { t } = useLanguage();
   const { selfPath, clubName, description, location, adminDisplayName, adminCountry, adminImage, bannerProfile } =
     data;
+
+  const hideRightColumn = useVisitorWallHideRightColumn();
 
   return (
     <div className="min-h-0 flex-1 bg-zinc-200 pb-10">
@@ -96,7 +99,7 @@ export function SearchResultClubWallClient({ data }: { data: ClubWallPayload }) 
           </div>
         </aside>
 
-        <section className="space-y-3 lg:col-span-6">
+        <section className={`space-y-3 ${hideRightColumn ? 'lg:col-span-9' : 'lg:col-span-6'}`}>
           <div className="rounded-t border border-amber-200 bg-amber-100 px-3 py-2 text-sm font-semibold text-zinc-900">
             {adminDisplayName}
           </div>
@@ -183,7 +186,7 @@ export function SearchResultClubWallClient({ data }: { data: ClubWallPayload }) 
           </div>
         </section>
 
-        <SearchResultVisitorWallRightColumn variant="club" />
+        {!hideRightColumn ? <SearchResultVisitorWallRightColumn variant="club" /> : null}
       </div>
     </div>
   );

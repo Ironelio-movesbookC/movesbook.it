@@ -11,6 +11,7 @@ import {
   SearchResultVisitorWallBanner,
   type VisitorWallBannerProfile,
 } from '@/components/searchresults/SearchResultVisitorWallBanner';
+import { useVisitorWallHideRightColumn } from '@/hooks/useVisitorWallHideRightColumn';
 
 export type UserWallPayload = {
   selfPath: string;
@@ -28,6 +29,7 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
   const { t } = useLanguage();
   const { selfPath, username, displayName, country, image, sportsLine, ageLabel, userTypeLabel, bannerProfile } =
     data;
+  const hideRightColumn = useVisitorWallHideRightColumn();
   const [activeWallTab, setActiveWallTab] = useState<
     'posted_me' | 'posted_friends' | 'articles_me' | 'articles_friends'
   >('posted_me');
@@ -72,7 +74,7 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
           ageLabel={ageLabel}
         />
 
-        <section className="space-y-3 lg:col-span-6">
+        <section className={`space-y-3 ${hideRightColumn ? 'lg:col-span-9' : 'lg:col-span-6'}`}>
           <div className="rounded-t border border-amber-200 bg-amber-100 px-3 py-2 text-sm font-semibold text-zinc-900">
             {displayName}
           </div>
@@ -163,7 +165,7 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
           </div>
         </section>
 
-        <SearchResultVisitorWallRightColumn variant="user" />
+        {!hideRightColumn ? <SearchResultVisitorWallRightColumn variant="user" /> : null}
       </div>
     </div>
   );

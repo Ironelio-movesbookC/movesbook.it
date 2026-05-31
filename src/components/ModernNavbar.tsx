@@ -71,12 +71,16 @@ type NetworkSearchResultItem = {
   image: string | null;
 };
 
-function networkSearchVisitorHref(item: NetworkSearchResultItem): string {
+function networkSearchVisitorHref(
+  item: NetworkSearchResultItem,
+  source?: 'mainpage'
+): string {
   const slug =
     item.kind === 'user'
       ? (item.username?.trim() || item.id)
       : item.title.trim() || item.id;
-  return `/searchresults/search/${encodeURIComponent(slug)}`;
+  const base = `/searchresults/search/${encodeURIComponent(slug)}`;
+  return source === 'mainpage' ? `${base}?source=mainpage` : base;
 }
 
 export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavbarProps) {
@@ -1352,7 +1356,10 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                         </div>
                         <div className="min-w-0 flex-1">
                           <Link
-                            href={networkSearchVisitorHref(item)}
+                            href={networkSearchVisitorHref(
+                              item,
+                              !isAuthenticated && pathname === '/' ? 'mainpage' : undefined
+                            )}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-sm font-semibold text-blue-700 hover:text-blue-900 hover:underline"
