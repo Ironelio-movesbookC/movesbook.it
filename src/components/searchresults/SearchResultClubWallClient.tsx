@@ -7,7 +7,8 @@ import {
   SearchResultVisitorWallBanner,
   type VisitorWallBannerProfile,
 } from '@/components/searchresults/SearchResultVisitorWallBanner';
-import { useVisitorWallHideRightColumn } from '@/hooks/useVisitorWallHideRightColumn';
+import { SearchResultVisitorWallDashboardChrome } from '@/components/searchresults/SearchResultVisitorWallDashboardChrome';
+import { useVisitorWallDisplayOptions } from '@/hooks/useVisitorWallDisplayOptions';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 export type ClubWallPayload = {
@@ -26,11 +27,45 @@ export function SearchResultClubWallClient({ data }: { data: ClubWallPayload }) 
   const { selfPath, clubName, description, location, adminDisplayName, adminCountry, adminImage, bannerProfile } =
     data;
 
-  const hideRightColumn = useVisitorWallHideRightColumn();
+  const {
+    showAdBanner,
+    setShowAdBanner,
+    showPersonalBanner,
+    setShowPersonalBanner,
+    showLeftSidebar,
+    setShowLeftSidebar,
+    showRightSidebar,
+    setShowRightSidebar,
+    showToolbar,
+    setShowToolbar,
+    hideRightColumnByPolicy,
+    rightSidebarVisible,
+    centerColSpan,
+  } = useVisitorWallDisplayOptions();
+
+  const centerColClass =
+    centerColSpan === 12
+      ? 'lg:col-span-12'
+      : centerColSpan === 9
+        ? 'lg:col-span-9'
+        : 'lg:col-span-6';
 
   return (
     <div className="min-h-0 flex-1 bg-zinc-200 pb-10">
-      <SearchResultVisitorWallBanner profile={bannerProfile} badgeLabel="CLUB" />
+      <SearchResultVisitorWallDashboardChrome
+        showAdBanner={showAdBanner}
+        showPersonalBanner={showPersonalBanner}
+        showLeftSidebar={showLeftSidebar}
+        showRightSidebar={showRightSidebar}
+        showToolbar={showToolbar}
+        hideRightColumnByPolicy={hideRightColumnByPolicy}
+        onToggleAdBanner={setShowAdBanner}
+        onTogglePersonalBanner={setShowPersonalBanner}
+        onToggleLeftSidebar={setShowLeftSidebar}
+        onToggleRightSidebar={setShowRightSidebar}
+        onToggleToolbar={setShowToolbar}
+        personalBanner={<SearchResultVisitorWallBanner profile={bannerProfile} badgeLabel="CLUB" />}
+      />
 
       <nav className="border-b border-zinc-900 bg-zinc-900 px-4 py-1.5 text-xs text-zinc-200">
         <div className="mx-auto flex max-w-7xl items-center gap-2">
@@ -40,6 +75,7 @@ export function SearchResultClubWallClient({ data }: { data: ClubWallPayload }) 
       </nav>
 
       <div className="mx-auto grid max-w-7xl gap-4 px-3 py-6 lg:grid-cols-12 lg:px-4">
+        {showLeftSidebar ? (
         <aside className="space-y-3 lg:col-span-3">
           <div className="flex gap-1 rounded border border-zinc-400 bg-zinc-100 p-1 text-xs font-semibold shadow-sm">
             <button type="button" className="flex-1 rounded bg-white px-2 py-2 text-zinc-900 shadow-sm">
@@ -98,8 +134,9 @@ export function SearchResultClubWallClient({ data }: { data: ClubWallPayload }) 
             <div className="rounded-b bg-teal-800 px-3 py-2">{t('searchresult_acc_communities')}</div>
           </div>
         </aside>
+        ) : null}
 
-        <section className={`space-y-3 ${hideRightColumn ? 'lg:col-span-9' : 'lg:col-span-6'}`}>
+        <section className={`space-y-3 ${centerColClass}`}>
           <div className="rounded-t border border-amber-200 bg-amber-100 px-3 py-2 text-sm font-semibold text-zinc-900">
             {adminDisplayName}
           </div>
@@ -186,7 +223,7 @@ export function SearchResultClubWallClient({ data }: { data: ClubWallPayload }) 
           </div>
         </section>
 
-        {!hideRightColumn ? <SearchResultVisitorWallRightColumn variant="club" /> : null}
+        {rightSidebarVisible ? <SearchResultVisitorWallRightColumn variant="club" /> : null}
       </div>
     </div>
   );

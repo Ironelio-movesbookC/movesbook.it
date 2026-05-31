@@ -11,7 +11,8 @@ import {
   SearchResultVisitorWallBanner,
   type VisitorWallBannerProfile,
 } from '@/components/searchresults/SearchResultVisitorWallBanner';
-import { useVisitorWallHideRightColumn } from '@/hooks/useVisitorWallHideRightColumn';
+import { SearchResultVisitorWallDashboardChrome } from '@/components/searchresults/SearchResultVisitorWallDashboardChrome';
+import { useVisitorWallDisplayOptions } from '@/hooks/useVisitorWallDisplayOptions';
 
 export type UserWallPayload = {
   selfPath: string;
@@ -29,7 +30,21 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
   const { t } = useLanguage();
   const { selfPath, username, displayName, country, image, sportsLine, ageLabel, userTypeLabel, bannerProfile } =
     data;
-  const hideRightColumn = useVisitorWallHideRightColumn();
+  const {
+    showAdBanner,
+    setShowAdBanner,
+    showPersonalBanner,
+    setShowPersonalBanner,
+    showLeftSidebar,
+    setShowLeftSidebar,
+    showRightSidebar,
+    setShowRightSidebar,
+    showToolbar,
+    setShowToolbar,
+    hideRightColumnByPolicy,
+    rightSidebarVisible,
+    centerColSpan,
+  } = useVisitorWallDisplayOptions();
   const [activeWallTab, setActiveWallTab] = useState<
     'posted_me' | 'posted_friends' | 'articles_me' | 'articles_friends'
   >('posted_me');
@@ -50,11 +65,33 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
     },
   ];
 
+  const centerColClass =
+    centerColSpan === 12
+      ? 'lg:col-span-12'
+      : centerColSpan === 9
+        ? 'lg:col-span-9'
+        : 'lg:col-span-6';
+
   return (
     <div className="min-h-0 flex-1 bg-zinc-200 pb-10">
-      <SearchResultVisitorWallBanner
-        profile={bannerProfile}
-        badgeLabel={userTypeLabel.toUpperCase()}
+      <SearchResultVisitorWallDashboardChrome
+        showAdBanner={showAdBanner}
+        showPersonalBanner={showPersonalBanner}
+        showLeftSidebar={showLeftSidebar}
+        showRightSidebar={showRightSidebar}
+        showToolbar={showToolbar}
+        hideRightColumnByPolicy={hideRightColumnByPolicy}
+        onToggleAdBanner={setShowAdBanner}
+        onTogglePersonalBanner={setShowPersonalBanner}
+        onToggleLeftSidebar={setShowLeftSidebar}
+        onToggleRightSidebar={setShowRightSidebar}
+        onToggleToolbar={setShowToolbar}
+        personalBanner={
+          <SearchResultVisitorWallBanner
+            profile={bannerProfile}
+            badgeLabel={userTypeLabel.toUpperCase()}
+          />
+        }
       />
 
       <nav className="border-b border-zinc-700 bg-zinc-800 px-4 py-1.5 text-xs text-zinc-200">
@@ -65,16 +102,18 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
       </nav>
 
       <div className="mx-auto grid max-w-7xl gap-4 px-3 py-6 lg:grid-cols-12 lg:px-4">
-        <SearchResultUserWallLeftSidebar
-          displayName={displayName}
-          username={username}
-          country={country}
-          image={image}
-          sportsLine={sportsLine}
-          ageLabel={ageLabel}
-        />
+        {showLeftSidebar ? (
+          <SearchResultUserWallLeftSidebar
+            displayName={displayName}
+            username={username}
+            country={country}
+            image={image}
+            sportsLine={sportsLine}
+            ageLabel={ageLabel}
+          />
+        ) : null}
 
-        <section className={`space-y-3 ${hideRightColumn ? 'lg:col-span-9' : 'lg:col-span-6'}`}>
+        <section className={`space-y-3 ${centerColClass}`}>
           <div className="rounded-t border border-amber-200 bg-amber-100 px-3 py-2 text-sm font-semibold text-zinc-900">
             {displayName}
           </div>
@@ -165,7 +204,7 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
           </div>
         </section>
 
-        {!hideRightColumn ? <SearchResultVisitorWallRightColumn variant="user" /> : null}
+        {rightSidebarVisible ? <SearchResultVisitorWallRightColumn variant="user" /> : null}
       </div>
     </div>
   );
