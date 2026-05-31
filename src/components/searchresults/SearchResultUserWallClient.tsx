@@ -7,6 +7,10 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { SearchResultUserWallLeftSidebar } from '@/components/searchresults/SearchResultUserWallLeftSidebar';
 import { SearchResultUserWallNotifications } from '@/components/searchresults/SearchResultUserWallNotifications';
 import { SearchResultVisitorWallRightColumn } from '@/components/searchresults/SearchResultVisitorWallRightColumn';
+import {
+  SearchResultVisitorWallBanner,
+  type VisitorWallBannerProfile,
+} from '@/components/searchresults/SearchResultVisitorWallBanner';
 
 export type UserWallPayload = {
   selfPath: string;
@@ -17,11 +21,13 @@ export type UserWallPayload = {
   sportsLine: string;
   userTypeLabel: string;
   ageLabel: string | null;
+  bannerProfile: VisitorWallBannerProfile;
 };
 
 export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) {
   const { t } = useLanguage();
-  const { selfPath, username, displayName, country, image, sportsLine, ageLabel } = data;
+  const { selfPath, username, displayName, country, image, sportsLine, ageLabel, userTypeLabel, bannerProfile } =
+    data;
   const [activeWallTab, setActiveWallTab] = useState<
     'posted_me' | 'posted_friends' | 'articles_me' | 'articles_friends'
   >('posted_me');
@@ -44,21 +50,10 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
 
   return (
     <div className="min-h-0 flex-1 bg-zinc-200 pb-10">
-      <section className="relative h-44 w-full overflow-hidden bg-gradient-to-r from-slate-800 via-slate-700 to-slate-900">
-        <div className="absolute inset-0 bg-[url('/sidelogo.png')] bg-right bg-no-repeat opacity-10" />
-        <div className="relative mx-auto flex h-full max-w-7xl items-end gap-3 px-4 pb-4">
-          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded border-2 border-white bg-zinc-300 shadow-lg">
-            {image ? (
-              <img src={image} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-xs text-zinc-600">—</div>
-            )}
-          </div>
-          <div className="mb-1 rounded bg-blue-700 px-4 py-2 text-lg font-semibold text-white shadow-md">
-            {displayName}
-          </div>
-        </div>
-      </section>
+      <SearchResultVisitorWallBanner
+        profile={bannerProfile}
+        badgeLabel={userTypeLabel.toUpperCase()}
+      />
 
       <nav className="border-b border-zinc-700 bg-zinc-800 px-4 py-1.5 text-xs text-zinc-200">
         <div className="mx-auto flex max-w-7xl items-center gap-2">

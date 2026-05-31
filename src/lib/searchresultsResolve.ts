@@ -5,7 +5,17 @@ const userInclude = {
 } as const;
 
 const clubInclude = {
-  admin: { select: { name: true, image: true, country: true } },
+  admin: {
+    select: {
+      name: true,
+      image: true,
+      country: true,
+      profileBanner: true,
+      profileBannerAlignment: true,
+      profileBannerSequence: true,
+      profileBannerVideo: true,
+    },
+  },
 } as const;
 
 function nameMatchVariants(value: string) {

@@ -17,7 +17,11 @@ export function SearchResultVisitorWallRightColumn({
   return (
     <aside className={wrapClass}>
       <div className="h-full min-h-0 overflow-y-auto rounded border border-zinc-400 bg-white shadow">
-        {variant === 'club' ? <AthleteMyClubRightSidebar /> : <VisitorWallUserRightColumn />}
+        {variant === 'club' ? (
+          <AthleteMyClubRightSidebar showSponsoredBlock={false} />
+        ) : (
+          <VisitorWallUserRightColumn />
+        )}
       </div>
     </aside>
   );

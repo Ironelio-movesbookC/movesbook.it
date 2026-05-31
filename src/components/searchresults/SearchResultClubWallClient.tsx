@@ -3,6 +3,10 @@
 import Link from 'next/link';
 import { Home } from 'lucide-react';
 import { SearchResultVisitorWallRightColumn } from '@/components/searchresults/SearchResultVisitorWallRightColumn';
+import {
+  SearchResultVisitorWallBanner,
+  type VisitorWallBannerProfile,
+} from '@/components/searchresults/SearchResultVisitorWallBanner';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 export type ClubWallPayload = {
@@ -13,29 +17,17 @@ export type ClubWallPayload = {
   adminDisplayName: string;
   adminCountry: string | null;
   adminImage: string | null;
+  bannerProfile: VisitorWallBannerProfile;
 };
 
 export function SearchResultClubWallClient({ data }: { data: ClubWallPayload }) {
   const { t } = useLanguage();
-  const { selfPath, clubName, description, location, adminDisplayName, adminCountry, adminImage } = data;
+  const { selfPath, clubName, description, location, adminDisplayName, adminCountry, adminImage, bannerProfile } =
+    data;
 
   return (
     <div className="min-h-0 flex-1 bg-zinc-200 pb-10">
-      <section className="relative h-48 w-full overflow-hidden bg-gradient-to-r from-rose-950 via-slate-900 to-slate-800">
-        <div className="absolute inset-0 bg-black/30" />
-        <div className="relative mx-auto flex h-full max-w-7xl items-end gap-3 px-4 pb-4">
-          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded border-2 border-white bg-zinc-300 shadow-lg">
-            {adminImage ? (
-              <img src={adminImage} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-xs text-zinc-600">—</div>
-            )}
-          </div>
-          <div className="mb-1 rounded bg-blue-700 px-4 py-2 text-lg font-semibold text-white shadow-md">
-            {clubName}
-          </div>
-        </div>
-      </section>
+      <SearchResultVisitorWallBanner profile={bannerProfile} badgeLabel="CLUB" />
 
       <nav className="border-b border-zinc-900 bg-zinc-900 px-4 py-1.5 text-xs text-zinc-200">
         <div className="mx-auto flex max-w-7xl items-center gap-2">

@@ -57,6 +57,13 @@ export default async function SearchResultsSearchPage({
             sportsLine,
             userTypeLabel: titleCaseUserType(u.userType),
             ageLabel: ageFromBirthdate(u.birthdate),
+            bannerProfile: {
+              image: u.image,
+              profileBanner: u.profileBanner,
+              profileBannerAlignment: u.profileBannerAlignment,
+              profileBannerSequence: u.profileBannerSequence,
+              profileBannerVideo: u.profileBannerVideo,
+            },
           }}
         />
       </div>
@@ -79,6 +86,13 @@ export default async function SearchResultsSearchPage({
             adminDisplayName: adm.name,
             adminCountry: adm.country,
             adminImage: adm.image,
+            bannerProfile: {
+              image: adm.image,
+              profileBanner: adm.profileBanner,
+              profileBannerAlignment: adm.profileBannerAlignment,
+              profileBannerSequence: adm.profileBannerSequence,
+              profileBannerVideo: adm.profileBannerVideo,
+            },
           }}
         />
       </div>

@@ -177,7 +177,7 @@ function SponsoredBlock() {
  * Right column for athlete dashboard when "My Club" tab is selected.
  * Reused for CLUB accounts on /club/dashboard and club visitor walls.
  */
-export default function AthleteMyClubRightSidebar() {
+export default function AthleteMyClubRightSidebar({ showSponsoredBlock = true }: { showSponsoredBlock?: boolean }) {
   return (
     <div className="flex flex-col">
       <div className="bg-gray-900 px-3 py-2 text-xs font-bold tracking-wide text-white border-b border-gray-300">
@@ -232,7 +232,7 @@ export default function AthleteMyClubRightSidebar() {
       </div>
 
       <ClubSocialBlocks />
-      <SponsoredBlock />
+      {showSponsoredBlock ? <SponsoredBlock /> : null}
     </div>
   );
 }
