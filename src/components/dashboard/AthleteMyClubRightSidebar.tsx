@@ -1,6 +1,9 @@
 'use client';
 
-import AthleteMyPageRightSidebarExtras from '@/components/dashboard/AthleteMyPageRightSidebarExtras';
+import {
+  WallMembersLastLoggedSection,
+  WallNextEventSection,
+} from '@/components/dashboard/wallRightColumn/shared';
 
 function MarqueeText({
   text,
@@ -28,17 +31,17 @@ function MarqueeText({
 
 function ClubSocialBlocks() {
   return (
-    <div className="mt-4">
-      <div className="bg-gray-900 text-white px-3 py-2 text-[11px] font-bold tracking-wide flex items-center justify-between border-t border-gray-300">
+    <div className="mt-3">
+      <div className="flex items-center justify-between border-t border-gray-300 bg-gray-900 px-3 py-2 text-[11px] font-bold tracking-wide text-white">
         <span>RECENT POST</span>
         <button
           type="button"
-          className="text-[10px] font-semibold text-gray-300 underline cursor-pointer"
+          className="cursor-pointer text-[10px] font-semibold text-gray-300 underline"
         >
           Shared Clubs
         </button>
       </div>
-      <div className="bg-white border-b border-gray-300">
+      <div className="border-b border-gray-300 bg-white">
         {[
           {
             title: 'Trail Running',
@@ -64,16 +67,16 @@ function ClubSocialBlocks() {
         ].map((p, idx) => (
           <div key={`${p.title}-${idx}`} className="border-b border-gray-300 px-3 py-3">
             <div className="flex gap-3">
-              <div className="w-11 h-11 bg-gray-200 border border-gray-400 flex items-center justify-center text-[10px] text-gray-500 shrink-0">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center border border-gray-400 bg-gray-200 text-[10px] text-gray-500">
                 {p.thumb}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
-                  <div className="text-red-600 text-[11px] font-semibold truncate">{p.title}</div>
-                  <div className="text-[10px] text-gray-500 shrink-0">{p.date}</div>
+                  <div className="truncate text-[11px] font-semibold text-red-600">{p.title}</div>
+                  <div className="shrink-0 text-[10px] text-gray-500">{p.date}</div>
                 </div>
-                <div className="text-[10px] text-gray-600 leading-snug mt-1">{p.body}</div>
-                <div className="text-[10px] text-gray-500 mt-1">{p.meta}</div>
+                <div className="mt-1 text-[10px] leading-snug text-gray-600">{p.body}</div>
+                <div className="mt-1 text-[10px] text-gray-500">{p.meta}</div>
               </div>
             </div>
           </div>
@@ -85,22 +88,22 @@ function ClubSocialBlocks() {
         </div>
       </div>
 
-      <div className="bg-gray-900 text-white px-3 py-2 text-[11px] font-bold tracking-wide flex items-center justify-between mt-3 border-t border-gray-300">
+      <div className="mt-3 flex items-center justify-between bg-gray-900 px-3 py-2 text-[11px] font-bold tracking-wide text-white">
         <span>RECOMMENDED PAGES</span>
         <button
           type="button"
-          className="text-[10px] font-semibold text-gray-300 underline cursor-pointer"
+          className="cursor-pointer text-[10px] font-semibold text-gray-300 underline"
         >
           See All
         </button>
       </div>
       <button
         type="button"
-        className="w-full bg-teal-600 hover:bg-teal-700 text-white py-2 px-3 text-xs font-semibold transition-colors border-b border-gray-300"
+        className="w-full border-b border-gray-300 bg-teal-600 py-2 px-3 text-xs font-semibold text-white transition-colors hover:bg-teal-700"
       >
         Filter option
       </button>
-      <div className="bg-white border-b border-gray-300">
+      <div className="border-b border-gray-300 bg-white">
         {[
           {
             name: 'Correre',
@@ -125,14 +128,14 @@ function ClubSocialBlocks() {
         ].map((p, idx) => (
           <div key={`${p.name}-${idx}`} className="border-b border-gray-300 px-3 py-3">
             <div className="flex gap-3">
-              <div className="w-11 h-11 bg-gray-200 border border-gray-400 flex items-center justify-center text-[10px] text-gray-500 shrink-0">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center border border-gray-400 bg-gray-200 text-[10px] text-gray-500">
                 IMG
               </div>
               <div className="min-w-0 flex-1">
                 <div className="text-[11px] font-semibold text-gray-800">{p.name}</div>
-                <div className="text-[10px] text-gray-600 mt-0.5">{p.line1}</div>
-                <div className="text-[10px] text-gray-600 mt-1 flex items-center gap-2">
-                  <span className="inline-block w-3 h-3 bg-gray-300 border border-gray-400" />
+                <div className="mt-0.5 text-[10px] text-gray-600">{p.line1}</div>
+                <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-600">
+                  <span className="inline-block h-3 w-3 border border-gray-400 bg-gray-300" />
                   <span>{p.line2}</span>
                 </div>
               </div>
@@ -140,68 +143,64 @@ function ClubSocialBlocks() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
 
-      <div className="bg-gray-900 text-white px-3 py-2 text-[11px] font-bold tracking-wide flex items-center justify-between mt-3 border-t border-gray-300">
-        <span>POPULAR CLUBS</span>
-        <button
-          type="button"
-          className="text-[10px] font-semibold text-gray-300 underline cursor-pointer"
-        >
-          Others
-        </button>
+function SponsoredBlock() {
+  return (
+    <div className="mt-3">
+      <div className="bg-gray-900 px-3 py-2 text-xs font-bold tracking-wide text-white border-t border-gray-300">
+        SPONSORED
       </div>
-      <div className="h-28 bg-white border-b border-gray-300" />
+      <div className="border-b border-gray-300 bg-gray-100">
+        <div className="px-3 py-3">
+          <div className="flex gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-gray-400 bg-gray-200 text-[10px] text-gray-500">
+              IMG
+            </div>
+            <div className="text-[11px] leading-snug text-gray-700">
+              Lorem Ipsum has been the industry&apos;s standard dummy text of the printing and
+              typesetting industry.
+            </div>
+          </div>
+        </div>
+        <div className="border-t border-gray-300 px-3 py-2 text-[11px] leading-snug text-gray-700">
+          <MarqueeText text="Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum is simply dummy text of the printing and typesetting industry." />
+        </div>
+      </div>
     </div>
   );
 }
 
 /**
  * Right column for athlete dashboard when "My Club" tab is selected.
- * Reused for CLUB accounts on /club/dashboard when My Club tab matches this layout.
+ * Reused for CLUB accounts on /club/dashboard and club visitor walls.
  */
 export default function AthleteMyClubRightSidebar() {
   return (
     <div className="flex flex-col">
-      <div className="bg-gray-900 text-white px-3 py-2 text-xs font-bold tracking-wide border-b border-gray-300">
-        SPONSORED
-      </div>
-      <div className="bg-gray-100 border-b border-gray-300">
-        <div className="px-3 py-3">
-          <div className="flex gap-3">
-            <div className="w-12 h-12 bg-gray-200 border border-gray-400 flex items-center justify-center text-[10px] text-gray-500 shrink-0">
-              IMG
-            </div>
-            <div className="text-[11px] text-gray-700 leading-snug">
-              Lorem Ipsum has been the industry&apos;s standard dummy text of the printing and typesetting industry.
-            </div>
-          </div>
-        </div>
-        <div className="px-3 py-2 text-[11px] text-gray-700 leading-snug border-t border-gray-300">
-          <MarqueeText text="Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum is simply dummy text of the printing and typesetting industry." />
-        </div>
-      </div>
-
-      <div className="bg-gray-900 text-white px-3 py-2 text-xs font-bold tracking-wide border-b border-gray-300">
+      <div className="bg-gray-900 px-3 py-2 text-xs font-bold tracking-wide text-white border-b border-gray-300">
         EVENTS
       </div>
 
-      <div className="bg-gray-100 border-b border-gray-300 px-2 py-2">
+      <div className="border-b border-gray-300 bg-gray-100 px-2 py-2">
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="px-2.5 py-1.5 text-[11px] font-semibold border border-gray-400 bg-gray-500 text-white"
+            className="border border-gray-400 bg-gray-500 px-2.5 py-1.5 text-[11px] font-semibold text-white"
           >
             Events
           </button>
           <button
             type="button"
-            className="px-2.5 py-1.5 text-[11px] font-semibold border border-gray-300 bg-gray-200 text-gray-700"
+            className="border border-gray-300 bg-gray-200 px-2.5 py-1.5 text-[11px] font-semibold text-gray-700"
           >
             Access Control
           </button>
           <button
             type="button"
-            className="px-2.5 py-1.5 text-[11px] font-semibold border border-gray-300 bg-gray-200 text-gray-700"
+            className="border border-gray-300 bg-gray-200 px-2.5 py-1.5 text-[11px] font-semibold text-gray-700"
           >
             Access List
           </button>
@@ -209,25 +208,31 @@ export default function AthleteMyClubRightSidebar() {
       </div>
 
       <div className="bg-white">
-        <div>
-          {[
-            'Today is the birthday of',
-            "Events about club's member",
-            'Events about this club',
-            'Events about shared club',
-          ].map((label) => (
-            <div key={label} className="border-b border-gray-300">
-              <div className="flex items-start justify-between px-3 py-4 min-h-16 text-[11px] text-gray-700">
-                <span className="pt-0.5">{label}</span>
-                <span className="text-[10px] text-gray-600 whitespace-nowrap">Month ▾</span>
-              </div>
+        {[
+          'Today is the birthday of',
+          "Events about club's member",
+          'Events about this club',
+          'Events about shared club',
+        ].map((label) => (
+          <div key={label} className="border-b border-gray-300">
+            <div className="flex min-h-16 items-start justify-between px-3 py-4 text-[11px] text-gray-700">
+              <span className="pt-0.5">{label}</span>
+              <span className="whitespace-nowrap text-[10px] text-gray-600">Month ▾</span>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
 
-      <AthleteMyPageRightSidebarExtras />
+      <div className="mt-3">
+        <WallNextEventSection />
+      </div>
+
+      <div className="mt-3">
+        <WallMembersLastLoggedSection />
+      </div>
+
       <ClubSocialBlocks />
+      <SponsoredBlock />
     </div>
   );
 }

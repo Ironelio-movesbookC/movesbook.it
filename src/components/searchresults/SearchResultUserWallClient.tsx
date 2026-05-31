@@ -6,6 +6,7 @@ import { Home, UserPlus, Users } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { SearchResultUserWallLeftSidebar } from '@/components/searchresults/SearchResultUserWallLeftSidebar';
 import { SearchResultUserWallNotifications } from '@/components/searchresults/SearchResultUserWallNotifications';
+import { SearchResultVisitorWallRightColumn } from '@/components/searchresults/SearchResultVisitorWallRightColumn';
 
 export type UserWallPayload = {
   selfPath: string;
@@ -167,28 +168,7 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
           </div>
         </section>
 
-        <aside className="space-y-4 lg:col-span-3">
-          <div className="rounded border border-zinc-400 bg-zinc-800 p-3 text-xs text-zinc-100 shadow">
-            <h3 className="border-b border-zinc-600 pb-2 font-bold uppercase tracking-wide text-amber-200">
-              {t('searchresult_next_event')}
-            </h3>
-            <ul className="mt-2 space-y-2">
-              <li>{t('searchresult_event_birthday')}</li>
-              <li>{t('searchresult_events_my_sports')}</li>
-              <li>{t('searchresult_friends_events')}</li>
-              <li>{t('searchresult_other_sport')}</li>
-            </ul>
-            <Link href="#" className="mt-2 inline-block text-red-400 hover:underline">
-              {t('searchresult_see_all')}
-            </Link>
-          </div>
-          <div className="rounded border border-zinc-400 bg-zinc-800 p-3 text-xs text-zinc-100 shadow">
-            <h3 className="border-b border-zinc-600 pb-2 font-bold uppercase tracking-wide text-amber-200">
-              {t('searchresult_news_by_friends')}
-            </h3>
-            <p className="mt-2 text-zinc-300">{t('searchresult_news_placeholder')}</p>
-          </div>
-        </aside>
+        <SearchResultVisitorWallRightColumn variant="user" />
       </div>
     </div>
   );
