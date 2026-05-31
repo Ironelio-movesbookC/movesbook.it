@@ -3,9 +3,10 @@ import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
 import SimpleFooter from '@/components/SimpleFooter';
 import RightSidebar from '@/components/dashboard/RightSidebar';
+import { SearchResultVisitorWallRightColumn } from '@/components/searchresults/SearchResultVisitorWallRightColumn';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useMyPageData } from '../my-page/hooks/useMyPageData';
 import { useMyPageHandlers } from '../my-page/hooks/useMyPageHandlers';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
@@ -14,6 +15,8 @@ export default function ClubLayout({ children }: { children: React.ReactNode }) 
   const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-entity');
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const isNetworkSearchList = pathname?.includes('/users/searchList') ?? false;
 
   // All hooks must be called before any conditional returns
   const {
@@ -104,10 +107,16 @@ export default function ClubLayout({ children }: { children: React.ReactNode }) 
           <main className="flex-1 overflow-y-auto bg-gray-50">
             {children}
           </main>
-          <RightSidebar
-            context="my-club"
-            onAddMember={() => (true)}
-          />
+          {isNetworkSearchList ? (
+            <SearchResultVisitorWallRightColumn
+              mode="flex"
+              variant={
+                isClubAccountUserType(user?.userType || '') ? 'club' : 'user'
+              }
+            />
+          ) : (
+            <RightSidebar context="my-club" onAddMember={() => true} />
+          )}
         </div>
         <SimpleFooter />
       </div>
