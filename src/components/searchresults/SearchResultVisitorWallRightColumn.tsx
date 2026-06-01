@@ -12,7 +12,9 @@ export function SearchResultVisitorWallRightColumn({
   mode?: 'grid' | 'flex';
 }) {
   const wrapClass =
-    mode === 'flex' ? 'w-80 shrink-0 print:hidden' : 'lg:col-span-3';
+    mode === 'flex'
+      ? 'sticky top-0 w-80 shrink-0 self-start print:hidden'
+      : 'lg:col-span-3';
 
   return (
     <aside className={wrapClass}>

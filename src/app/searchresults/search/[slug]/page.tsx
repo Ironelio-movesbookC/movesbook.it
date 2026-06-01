@@ -45,7 +45,7 @@ export default async function SearchResultsSearchPage({
     const sportsLine = u.mainSports.map((m) => String(m.sport).replace(/_/g, ' ')).join(', ');
     const selfPath = `/searchresults/search/${encodeURIComponent(u.username)}`;
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-100">
+      <div className="flex min-h-screen w-full flex-col bg-zinc-100">
         <ModernNavbar />
         <SearchResultUserWallClient
           data={{
@@ -75,7 +75,7 @@ export default async function SearchResultsSearchPage({
     const selfPath = `/searchresults/search/${encodeURIComponent(c.name)}`;
     const adm = c.admin;
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-100">
+      <div className="flex min-h-screen w-full flex-col bg-zinc-100">
         <ModernNavbar />
         <SearchResultClubWallClient
           data={{
@@ -103,7 +103,7 @@ export default async function SearchResultsSearchPage({
     const tm = resolved.team;
     const sub = [tm.sport, tm.description].filter(Boolean).join(' · ');
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-100">
+      <div className="flex min-h-screen w-full flex-col bg-zinc-100">
         <ModernNavbar />
         <SearchResultTeamGroupWallClient
           data={{ kind: 'team', name: tm.name, subtitle: sub || null }}

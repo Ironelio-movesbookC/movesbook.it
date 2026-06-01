@@ -86,7 +86,7 @@ export function SearchResultUserWallLeftSidebar({
   const primarySport = sportsLine.split(',')[0]?.trim() || sportsLine || '—';
 
   return (
-    <aside className="space-y-2 lg:col-span-3">
+    <aside className="space-y-2">
       <div className="flex flex-col gap-1.5 sm:flex-row lg:flex-col">
         <button
           type="button"
