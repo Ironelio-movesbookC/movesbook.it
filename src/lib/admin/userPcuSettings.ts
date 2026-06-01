@@ -14,6 +14,7 @@ export type PcuSettings = {
     agentId?: string;
   };
   publishing?: {
+    enableUserComments?: boolean;
     enableFeedback?: boolean;
     enableBlogs?: boolean;
     blogsDate?: string;
@@ -48,6 +49,9 @@ export type PcuSettings = {
   vip?: {
     showInReferenceList?: boolean;
     showInBanner?: boolean;
+    usernameEnabled?: boolean;
+    youtubeEnabled?: boolean;
+    bannerImage?: string | null;
     username?: string;
     youtubeUrl?: string;
     referencesHtmlByLang?: Record<string, string>;
@@ -67,6 +71,27 @@ export type PcuSettings = {
     };
   };
   functions?: PcuFunctionsSettings;
+  alertMsg?: {
+    activated?: boolean;
+    enableFrom?: string;
+    enableTo?: string;
+    showAt?: { login?: boolean; logout?: boolean };
+    htmlByLang?: Record<string, string>;
+  };
+  idCards?: {
+    terms?: { creditCard?: boolean; sendMoneyLaterDays?: string };
+    messages?: {
+      afterExpeditionNotPaid?: {
+        enabled?: boolean;
+        days?: string;
+        htmlByLang?: Record<string, string>;
+      };
+      thirdPartyPricelist?: { enabled?: boolean; htmlByLang?: Record<string, string> };
+    };
+    cardsEnabled?: Record<string, unknown>;
+    history?: Record<string, unknown>;
+  };
+  deletePosts?: Record<string, unknown>;
   updatedAt?: string;
 };
 

@@ -10,6 +10,8 @@ export type CountryPartnerRecord = {
   description: string;
   extraRows: string[];
   fileName?: string;
+  /** Base64 data URL for profile picture (persisted in country settings). */
+  imageDataUrl?: string;
 };
 
 export type CountryExtendedSettings = {
@@ -27,6 +29,8 @@ export type CountryExtendedSettings = {
   exchangeUsdPerUnit: string;
   exchange1Usd: string;
   countryPictureName: string;
+  /** Base64 data URL for country picture (persisted in local settings). */
+  countryPictureDataUrl?: string;
 };
 
 export type CountryEditSavePayload = {

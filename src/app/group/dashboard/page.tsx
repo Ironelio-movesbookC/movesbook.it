@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Image from 'next/image';
 import { 
   Users, 
@@ -34,8 +34,14 @@ import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
 import SimpleFooter from '@/components/SimpleFooter';
 import AddMemberModal from '@/components/AddMemberModal';
+import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
+import CreateEntityModal from '@/components/entity/CreateEntityModal';
 import RightSidebar from '@/components/dashboard/RightSidebar';
 import { useAuth } from '@/hooks/useAuth';
+import {
+  filterFormCreatedEntities,
+  useManagedEntityCreation,
+} from '@/hooks/useManagedEntityCreation';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getDashboardPathForUserType, isGroupAccountUserType } from '@/utils/dashboardRouting';
@@ -59,7 +65,38 @@ export default function GroupDashboard() {
   const [expandedActionsPlanner, setExpandedActionsPlanner] = useState(true);
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
 
-  // Redirect to home if not authenticated
+  const loadGroups = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/groups/my-groups', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setGroups(data.groups || []);
+      }
+    } catch (error) {
+      console.error('Error loading groups:', error);
+    }
+  }, []);
+
+  const entityCreation = useManagedEntityCreation({
+    createApiPath: '/api/groups',
+    responseEntityKey: 'group',
+    onReload: loadGroups,
+    storageKey: 'selectedGroup',
+    onEntityCreated: (id) => {
+      setSelectedGroupId(id);
+      setActiveTab('my-entity');
+    },
+  });
+
+  const formCreatedGroups = useMemo(
+    () => filterFormCreatedEntities(groups),
+    [groups],
+  );
+  const hasFormGroup = formCreatedGroups.length > 0;
+
   useEffect(() => {
     if (!loading && !user) {
       router.push('/');
@@ -81,18 +118,22 @@ export default function GroupDashboard() {
 
   useEffect(() => {
     if (user && isGroupAccountUserType(user.userType)) {
-      loadGroups();
+      void loadGroups();
     }
-  }, [user]);
+  }, [user, loadGroups]);
 
-  // Reset workout section when switching to my-page
   useEffect(() => {
     if (activeTab === 'my-page') {
       setShowWorkoutSection(false);
     }
   }, [activeTab]);
 
-  // Auto-hide left sidebar when workout section opens
+  useEffect(() => {
+    if (!hasFormGroup && activeTab === 'my-entity') {
+      setActiveTab('my-page');
+    }
+  }, [hasFormGroup, activeTab]);
+
   useEffect(() => {
     if (showWorkoutSection) {
       setShowLeftSidebar(false);
@@ -101,29 +142,14 @@ export default function GroupDashboard() {
     }
   }, [showWorkoutSection]);
 
-  // Don't render if not authenticated (after all hooks are called)
   if (loading || !user) {
     return null;
   }
 
-  const loadGroups = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/groups/my-groups', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setGroups(data.groups || []);
-      }
-    } catch (error) {
-      console.error('Error loading groups:', error);
-    }
-  };
-
   const handleGroupSelect = (groupId: string) => {
     localStorage.setItem('selectedGroup', groupId);
-    window.location.href = `/my-group?groupId=${groupId}`;
+    setSelectedGroupId(groupId);
+    setActiveTab('my-entity');
   };
 
   return (
@@ -330,10 +356,11 @@ export default function GroupDashboard() {
                   setActiveTab('my-entity');
                   if (selectedGroupId) {
                     window.location.href = `/my-group?groupId=${selectedGroupId}`;
-                  } else if (groups.length > 0) {
-                    window.location.href = `/my-group?groupId=${groups[0].id}`;
+                  } else if (formCreatedGroups.length > 0) {
+                    window.location.href = `/my-group?groupId=${formCreatedGroups[0].id}`;
                   }
                 }}
+                onCreateGroupClick={entityCreation.openCreateFlow}
               />
             </div>
           )}
@@ -341,15 +368,33 @@ export default function GroupDashboard() {
           <div className="flex-1 min-w-0 flex flex-col px-4">
             {activeTab === 'my-page' && (
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900">My Page</h2>
-                </div>
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center text-gray-500">
-                    <p className="text-xl font-semibold mb-2">Welcome to Your Personal Page</p>
-                    <p className="text-gray-600">Your personal dashboard content goes here</p>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">My Page</h2>
+                {!hasFormGroup ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center text-gray-500">
+                      <Users className="w-20 h-20 mx-auto mb-6 opacity-60" />
+                      <p className="text-2xl font-bold mb-2">Set up your group</p>
+                      <p className="text-lg mb-4 max-w-md">
+                        Expand <strong>My group</strong> in the sidebar, click <strong>Create a group</strong>,
+                        and save your group profile.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={entityCreation.openCreateFlow}
+                        className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700"
+                      >
+                        Create a group
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="max-w-2xl space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-6">
+                    <p className="text-gray-700">
+                      Your personal group admin page. Use the sidebar to open a group or manage
+                      workouts.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
             
@@ -372,25 +417,33 @@ export default function GroupDashboard() {
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-2xl font-bold text-gray-900">Workouts Section</h2>
-                  <button className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-all duration-200">
-                    Create New Group
+                  <button
+                    type="button"
+                    onClick={entityCreation.openCreateFlow}
+                    className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-all duration-200"
+                  >
+                    Create a group
                   </button>
                 </div>
 
-                {groups.length === 0 ? (
+                {formCreatedGroups.length === 0 ? (
                   <div className="flex-1 flex items-center justify-center">
                     <div className="text-center text-gray-500">
                       <Users className="w-20 h-20 mx-auto mb-6 opacity-60" />
-                      <p className="text-2xl font-bold mb-2">No Groups Yet</p>
+                      <p className="text-2xl font-bold mb-2">No groups yet</p>
                       <p className="text-lg mb-4">Create your first group to start managing users</p>
-                      <button className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">
-                        Create Group
+                      <button
+                        type="button"
+                        onClick={entityCreation.openCreateFlow}
+                        className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700"
+                      >
+                        Create a group
                       </button>
                     </div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {groups.map((group) => (
+                    {formCreatedGroups.map((group) => (
                       <div
                         key={group.id}
                         onClick={() => handleGroupSelect(group.id)}
@@ -442,6 +495,24 @@ export default function GroupDashboard() {
           setShowAddMemberModal(false);
         }}
         entityType="group"
+      />
+
+      <AdminPasswordConfirmModal
+        isOpen={entityCreation.showAdminPasswordConfirm}
+        onClose={() => entityCreation.setShowAdminPasswordConfirm(false)}
+        onVerified={entityCreation.handleAdminPasswordVerified}
+        adminUsername={user?.username ?? user?.name ?? 'username'}
+        entityKind="group"
+      />
+
+      <CreateEntityModal
+        key={entityCreation.createModalKey}
+        entityKind="group"
+        isOpen={entityCreation.showCreateModal}
+        onClose={() => entityCreation.setShowCreateModal(false)}
+        adminUsername={user?.username ?? user?.name ?? 'username'}
+        saving={entityCreation.createSaving}
+        onSave={entityCreation.handleCreateSave}
       />
       <SimpleFooter />
     </div>

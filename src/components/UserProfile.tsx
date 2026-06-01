@@ -11,6 +11,8 @@ import ChangeBannerModal, { type BannerAlignment } from '@/components/athlete/Ch
 import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLegacyBanner';
 import StandardPageBanners, { profileToBannerProfile } from '@/components/layout/StandardPageBanners';
 import { useLanguage } from '@/contexts/LanguageContext';
+import ProfileSportsMultiSelect from '@/components/profile/ProfileSportsMultiSelect';
+import { formatSportLabel } from '@/lib/profileSports';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 
@@ -61,6 +63,9 @@ type ProfileFormState = {
   gender: string;
   birthdate: string;
   preferredLanguage: string;
+  telegramAccount: string;
+  youtubeChannelUrl: string;
+  mainSports: string[];
 };
 
 function readProfileHash(): 'member-info' | 'member-profile' | null {
@@ -102,13 +107,6 @@ function formatUserTypeLabel(userType: string): string {
   return userType.replace(/_/g, ' ');
 }
 
-function formatSportLabel(sport: string): string {
-  return sport
-    .split('_')
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(' ');
-}
-
 function languageLabel(code: string): string {
   const match = SUPPORTED_LANGUAGES.find((l) => l.code === code);
   return match ? `${match.name} (${code.toUpperCase()})` : code.toUpperCase();
@@ -126,6 +124,9 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
     gender: '',
     birthdate: '',
     preferredLanguage: 'en',
+    telegramAccount: '',
+    youtubeChannelUrl: '',
+    mainSports: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -145,6 +146,9 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
       gender: data.gender ?? '',
       birthdate: formatBirthdateInput(data.birthdate),
       preferredLanguage: data?.settings?.language || 'en',
+      telegramAccount: data.telegramAccount ?? '',
+      youtubeChannelUrl: data.youtubeChannelUrl ?? '',
+      mainSports: data.mainSports?.map((s) => s.sport) ?? [],
     });
   }, []);
 
@@ -226,6 +230,9 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
           gender: form.gender.trim() || null,
           birthdate: form.birthdate.trim() || null,
           language: form.preferredLanguage,
+          telegramAccount: form.telegramAccount.trim() || null,
+          youtubeChannelUrl: form.youtubeChannelUrl.trim() || null,
+          mainSports: form.mainSports,
         }),
       });
 
@@ -308,9 +315,7 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
   const avatarSrc = resolvePublicImageUrl(avatarOverride ?? profile.image);
   const dashboardHref = getDashboardPathForUserType(profile.userType);
   const mainSportsLine =
-    profile.mainSports && profile.mainSports.length > 0
-      ? profile.mainSports.map((s) => formatSportLabel(s.sport)).join(', ')
-      : '—';
+    form.mainSports.length > 0 ? form.mainSports.map((s) => formatSportLabel(s)).join(', ') : '—';
 
   const memberInfoFields: { label: string; value: string }[] = [
     { label: 'Display name', value: formatProfileField(displayName) },
@@ -323,8 +328,8 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
     { label: 'Gender', value: formatProfileField(form.gender) },
     { label: 'Birthdate', value: formatProfileDisplayDate(form.birthdate) },
     { label: 'Preferred language', value: languageLabel(form.preferredLanguage) },
-    { label: 'Telegram account', value: formatProfileField(profile.telegramAccount) },
-    { label: 'YouTube channel', value: formatProfileField(profile.youtubeChannelUrl) },
+    { label: 'Telegram account', value: formatProfileField(form.telegramAccount) },
+    { label: 'YouTube channel', value: formatProfileField(form.youtubeChannelUrl) },
     { label: 'Main sports', value: mainSportsLine },
     { label: 'Member since', value: formatProfileDisplayDate(profile.createdAt) },
   ];
@@ -426,7 +431,7 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
               Member info
             </a>
             <a href="#member-profile" className="text-gray-600 hover:text-gray-900 font-medium">
-              Member profile
+              User Profile
             </a>
           </div>
         )}
@@ -481,14 +486,14 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
         </section>
         )}
 
-        {/* Member profile — editable */}
+        {/* User Profile — editable */}
         <section
           id="member-profile"
           className={`scroll-mt-24 bg-white rounded-lg shadow-lg p-6 mb-6 ${
             editProfileMode ? 'ring-2 ring-blue-500/40' : ''
           }`}
         >
-          <h2 className="text-xl font-bold text-gray-800 mb-1">Member profile</h2>
+          <h2 className="text-xl font-bold text-gray-800 mb-1">User Profile</h2>
           <p className="text-sm text-gray-600 mb-4">
             Edit your details below, then click Save profile to update your account.
           </p>
@@ -642,9 +647,10 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
               <input
                 id="profile-telegram"
                 type="text"
-                value={formatProfileField(profile.telegramAccount)}
-                readOnly
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+                value={form.telegramAccount}
+                onChange={(e) => setForm((f) => ({ ...f, telegramAccount: e.target.value }))}
+                placeholder="@username"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
@@ -653,10 +659,11 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
               </label>
               <input
                 id="profile-youtube"
-                type="text"
-                value={formatProfileField(profile.youtubeChannelUrl)}
-                readOnly
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+                type="url"
+                value={form.youtubeChannelUrl}
+                onChange={(e) => setForm((f) => ({ ...f, youtubeChannelUrl: e.target.value }))}
+                placeholder="https://youtube.com/@channel"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
@@ -687,13 +694,13 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
               <label htmlFor="profile-main-sports" className="block text-sm font-medium text-gray-700 mb-1">
                 Main sports
               </label>
-              <input
+              <ProfileSportsMultiSelect
                 id="profile-main-sports"
-                type="text"
-                value={mainSportsLine}
-                readOnly
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+                value={form.mainSports}
+                onChange={(mainSports) => setForm((f) => ({ ...f, mainSports }))}
+                disabled={saving}
               />
+              <p className="mt-1 text-xs text-gray-500">Select one or more sports from the list.</p>
             </div>
             <div className="md:col-span-2 mt-2 flex flex-wrap items-center gap-3">
               <button

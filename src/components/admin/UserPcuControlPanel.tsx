@@ -3,11 +3,11 @@
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { CalendarDays, CreditCard, Mail, User, X } from 'lucide-react';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
 import { COUNTRIES_WITH_CODES } from '@/lib/news/countries';
-import AdminPcuDatePicker, { isoToMmDdYyyy, mmDdYyyyToIso } from '@/components/admin/AdminPcuDatePicker';
+import AdminPcuDatePicker, { isoToMmDdYyyy, mmDdYyyyToIso, parseIsoDate } from '@/components/admin/AdminPcuDatePicker';
 import NewsCategoriesMultiSelect from '@/components/admin/NewsCategoriesMultiSelect';
 import { getAdminBearerToken } from '@/lib/admin/clientAdminAuth';
 import {
@@ -23,11 +23,17 @@ import {
   type PcuSettings,
 } from '@/lib/admin/userPcuSettings';
 import {
+  flushSharedLangEditors,
+  useLangHtmlEditor,
+} from '@/lib/admin/pcuLangHtmlEditor.client';
+import {
   applyExpirationFunctionsSlice,
   buildExpirationFunctionsSlice,
   DEFAULT_BUYED_ACCOUNTS_MATRIX,
   DEFAULT_FREE_ACCOUNTS_MATRIX,
   emptyHtmlByLang,
+  mergeHtmlByLang,
+  mergeHtmlByLangKeys,
   type BuyedAccountsVersionMatrix,
   type ExpirationEndUserMode,
   type ExpirationFeatureMode,
@@ -160,6 +166,8 @@ type UserPcuControlPanelProps = {
   actionSegment?: string;
   /** Saved admin tab settings loaded from the server. */
   initialPcuSettings?: PcuSettings | null;
+  /** Link back to read-only PCU overview (user search eye icon). */
+  overviewHref?: string;
 };
 
 function SubscriptionFilterRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -180,13 +188,12 @@ export default function UserPcuControlPanel({
   defaultActiveTab = 'profile',
   actionSegment,
   initialPcuSettings = null,
+  overviewHref,
 }: UserPcuControlPanelProps) {
   const router = useRouter();
   const segmentForActions = actionSegment?.trim() || user.segment || 'single-user';
   const loadedPcuSettingsRef = useRef<PcuSettings | null>(null);
-  const [expirationAutoSaveReady, setExpirationAutoSaveReady] = useState(false);
-  const expirationSkipInitialSaveRef = useRef(true);
-  const expirationSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reloadPcuFromServerRef = useRef<(pcu: PcuSettings | undefined) => void>(() => {});
   const [activeTab, setActiveTab] = useState<TopTabId>(defaultActiveTab);
   const [profileSubTab, setProfileSubTab] = useState<'admin' | 'entity'>('admin');
   const [accessStart, setAccessStart] = useState(
@@ -197,6 +204,12 @@ export default function UserPcuControlPanel({
     () => initialPcuAccess?.suspendAccessControl ?? false,
   );
   const [suspend, setSuspend] = useState(() => initialPcuAccess?.suspend ?? false);
+  const pcuAccessSnapshotRef = useRef({
+    accessStart: initialPcuAccess?.accessStartIso || user.startDateIso,
+    accessEnd: initialPcuAccess?.accessEndIso ?? user.endDateIso ?? '',
+    suspendAccessControl: initialPcuAccess?.suspendAccessControl ?? false,
+    suspend: initialPcuAccess?.suspend ?? false,
+  });
   const [tagUser, setTagUser] = useState(() => Boolean(profilePanel?.tagged));
   const [favouritePriority, setFavouritePriority] = useState<FavouritePriority>(() =>
     normalizeFavouritePriority(profilePanel?.favouritePriority),
@@ -210,6 +223,11 @@ export default function UserPcuControlPanel({
   const [msgSubject, setMsgSubject] = useState('Message from Movesbook Admin');
   const [msgError, setMsgError] = useState('');
   const [msgSending, setMsgSending] = useState(false);
+  const [mailModalOpen, setMailModalOpen] = useState(false);
+  const [mailTo, setMailTo] = useState('');
+  const [mailSubject, setMailSubject] = useState('');
+  const [mailBody, setMailBody] = useState('');
+  const [mailError, setMailError] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterVersion, setFilterVersion] = useState<string>('All');
   const [filterSubscription, setFilterSubscription] = useState<string>('All');
@@ -229,6 +247,7 @@ export default function UserPcuControlPanel({
   const [operatorId, setOperatorId] = useState('');
   const [asAgent, setAsAgent] = useState(false);
   const [agentId, setAgentId] = useState('');
+  const [enableUserComments, setEnableUserComments] = useState(false);
   const [enableFeedback, setEnableFeedback] = useState(false);
   const [enableBlogs, setEnableBlogs] = useState(false);
   const [blogsDate, setBlogsDate] = useState('');
@@ -257,36 +276,27 @@ export default function UserPcuControlPanel({
   const [blockAssignmentsAfterDate, setBlockAssignmentsAfterDate] = useState('');
 
   const [alertEnabled, setAlertEnabled] = useState(false);
-  const [alertHtmlByLang, setAlertHtmlByLang] = useState<Record<string, string>>({
-    en: '',
-    fr: '',
-    de: '',
-    it: '',
-    es: '',
-    por: '',
-    rus: '',
-    ind: '',
-    chin: '',
-    arab: '',
-  });
+  const [alertHtmlByLang, setAlertHtmlByLang] = useState<Record<string, string>>(() => emptyHtmlByLang());
 
   // VIP
   const [vipShowInReferenceList, setVipShowInReferenceList] = useState(false);
   const [vipShowInBanner, setVipShowInBanner] = useState(false);
-  const [vipUsername, setVipUsername] = useState('');
+  const [vipUsernameEnabled, setVipUsernameEnabled] = useState(false);
+  const [vipYoutubeEnabled, setVipYoutubeEnabled] = useState(false);
+  const [vipUsername, setVipUsername] = useState(() => user.username || '');
   const [vipYoutubeUrl, setVipYoutubeUrl] = useState('');
-  const [vipReferencesHtmlByLang, setVipReferencesHtmlByLang] = useState<Record<string, string>>({
-    en: '',
-    fr: '',
-    de: '',
-    it: '',
-    es: '',
-    por: '',
-    rus: '',
-    ind: '',
-    chin: '',
-    arab: '',
-  });
+  const [vipBannerImagePath, setVipBannerImagePath] = useState<string | null>(null);
+  const [vipBannerUploading, setVipBannerUploading] = useState(false);
+  const [vipBannerUploadError, setVipBannerUploadError] = useState('');
+  const [vipReferencesHtmlByLang, setVipReferencesHtmlByLang] = useState<Record<string, string>>(() =>
+    emptyHtmlByLang(),
+  );
+  const vipReferencesEditor = useLangHtmlEditor(
+    adminLang,
+    setAdminLang,
+    vipReferencesHtmlByLang,
+    setVipReferencesHtmlByLang,
+  );
   const [vipPriorityLevel, setVipPriorityLevel] = useState('First');
   const [vipFavourite, setVipFavourite] = useState(false);
   const [profileReferencesHtml, setProfileReferencesHtml] = useState(user.referencesHtml || '');
@@ -383,18 +393,9 @@ export default function UserPcuControlPanel({
 
   const [postActivationMsgEnabled, setPostActivationMsgEnabled] = useState(true);
   const [postActivationDays, setPostActivationDays] = useState('1-30');
-  const [postActivationHtmlByLang, setPostActivationHtmlByLang] = useState<Record<string, string>>({
-    en: '',
-    fr: '',
-    de: '',
-    it: '',
-    es: '',
-    por: '',
-    rus: '',
-    ind: '',
-    chin: '',
-    arab: '',
-  });
+  const [postActivationHtmlByLang, setPostActivationHtmlByLang] = useState<Record<string, string>>(() =>
+    emptyHtmlByLang(),
+  );
 
   const [freeAccountsDurationDays, setFreeAccountsDurationDays] = useState('');
   const [freeAccountsMatrix, setFreeAccountsMatrix] = useState<FreeAccountsVersionMatrix>(
@@ -433,17 +434,69 @@ export default function UserPcuControlPanel({
 
   const [expireExtendEnabled, setExpireExtendEnabled] = useState(false);
   const [expireExtendDays, setExpireExtendDays] = useState('');
-  const [expireActual, setExpireActual] = useState('');
   const [expireExtendedTo, setExpireExtendedTo] = useState('');
+  const [expirationExtendDateError, setExpirationExtendDateError] = useState('');
 
   const [sharingSharedUsersMode, setSharingSharedUsersMode] = useState<ExpirationFeatureMode | ''>('');
   const [socialItemsMode, setSocialItemsMode] = useState<ExpirationFeatureMode | ''>('');
+  const [socialClubPages, setSocialClubPages] = useState(true);
+  const [socialMemberPages, setSocialMemberPages] = useState(false);
   const [trainingItemsMode, setTrainingItemsMode] = useState<ExpirationFeatureMode | ''>('');
+  const [trainingClubPages, setTrainingClubPages] = useState(true);
+  const [trainingMemberPages, setTrainingMemberPages] = useState(false);
+
+  const currentSubscriptionExpirationIso = useMemo(() => {
+    const lic = subscriptionExpiration.trim();
+    if (lic && !lic.startsWith('0000')) return lic;
+    const end = user.endDateIso?.trim() || '';
+    if (end && !end.startsWith('0000')) return end;
+    return '';
+  }, [subscriptionExpiration, user.endDateIso]);
+
+  const handleExpireExtendedToChange = useCallback(
+    (iso: string) => {
+      setExpirationExtendDateError('');
+      if (!iso.trim()) {
+        setExpireExtendedTo('');
+        return;
+      }
+      const actual = parseIsoDate(currentSubscriptionExpirationIso);
+      const extended = parseIsoDate(iso);
+      if (actual && extended && extended.getTime() <= actual.getTime()) {
+        setExpirationExtendDateError('Extended date must be after the actual expiration date.');
+        return;
+      }
+      setExpireExtendedTo(iso);
+    },
+    [currentSubscriptionExpirationIso],
+  );
+
   const [endUsersInteractiveMode, setEndUsersInteractiveMode] = useState<ExpirationEndUserMode | ''>('');
   const [managementItemsMode, setManagementItemsMode] = useState<ExpirationEndUserMode | ''>('');
   const [insertOptionsManagementMode, setInsertOptionsManagementMode] = useState<ExpirationEndUserMode | ''>('');
 
   const [expirationMsgHtmlByLang, setExpirationMsgHtmlByLang] = useState(emptyHtmlByLang);
+
+  const functionsPostActivationGetDataRef = useRef<(() => string) | null>(null);
+  const functionsExpirationMsgGetDataRef = useRef<(() => string) | null>(null);
+
+  const switchFunctionsLang = useCallback(
+    (next: typeof functionsLang) => {
+      if (next === functionsLang) return;
+      flushSharedLangEditors(functionsLang, [
+        {
+          getData: functionsPostActivationGetDataRef.current,
+          setHtmlByLang: setPostActivationHtmlByLang,
+        },
+        {
+          getData: functionsExpirationMsgGetDataRef.current,
+          setHtmlByLang: setExpirationMsgHtmlByLang,
+        },
+      ]);
+      setFunctionsLang(next);
+    },
+    [functionsLang],
+  );
 
   const [newMembersExpiryMode, setNewMembersExpiryMode] = useState<NewMembersExpiryMode | ''>('');
   const [newMembersAfterDays, setNewMembersAfterDays] = useState('');
@@ -463,32 +516,35 @@ export default function UserPcuControlPanel({
 
   const [idCardsMsgAfterExpeditionEnabled, setIdCardsMsgAfterExpeditionEnabled] = useState(true);
   const [idCardsMsgAfterExpeditionDays, setIdCardsMsgAfterExpeditionDays] = useState('3');
-  const [idCardsMsgAfterExpeditionHtmlByLang, setIdCardsMsgAfterExpeditionHtmlByLang] = useState<Record<string, string>>({
-    en: '',
-    fr: '',
-    de: '',
-    it: '',
-    es: '',
-    por: '',
-    rus: '',
-    ind: '',
-    chin: '',
-    arab: '',
-  });
+  const [idCardsMsgAfterExpeditionHtmlByLang, setIdCardsMsgAfterExpeditionHtmlByLang] = useState<
+    Record<string, string>
+  >(() => emptyHtmlByLang());
 
   const [idCardsThirdPartyEnabled, setIdCardsThirdPartyEnabled] = useState(true);
-  const [idCardsThirdPartyHtmlByLang, setIdCardsThirdPartyHtmlByLang] = useState<Record<string, string>>({
-    en: '',
-    fr: '',
-    de: '',
-    it: '',
-    es: '',
-    por: '',
-    rus: '',
-    ind: '',
-    chin: '',
-    arab: '',
-  });
+  const [idCardsThirdPartyHtmlByLang, setIdCardsThirdPartyHtmlByLang] = useState<Record<string, string>>(() =>
+    emptyHtmlByLang(),
+  );
+
+  const idCardsExpeditionGetDataRef = useRef<(() => string) | null>(null);
+  const idCardsThirdPartyGetDataRef = useRef<(() => string) | null>(null);
+
+  const switchIdCardsLang = useCallback(
+    (next: typeof idCardsLang) => {
+      if (next === idCardsLang) return;
+      flushSharedLangEditors(idCardsLang, [
+        {
+          getData: idCardsExpeditionGetDataRef.current,
+          setHtmlByLang: setIdCardsMsgAfterExpeditionHtmlByLang,
+        },
+        {
+          getData: idCardsThirdPartyGetDataRef.current,
+          setHtmlByLang: setIdCardsThirdPartyHtmlByLang,
+        },
+      ]);
+      setIdCardsLang(next);
+    },
+    [idCardsLang],
+  );
 
   const [idCardsEnabledTab, setIdCardsEnabledTab] = useState<'magnetic' | 'rfids' | 'qr' | 'smartcards'>('magnetic');
   const [idCardsFrom, setIdCardsFrom] = useState('');
@@ -654,6 +710,7 @@ export default function UserPcuControlPanel({
     en: '',
     it: '',
   });
+  const alertMsgEditor = useLangHtmlEditor(alertMsgLang, setAlertMsgLang, alertMsgHtmlByLang, setAlertMsgHtmlByLang);
   const [alertMsgSaving, setAlertMsgSaving] = useState(false);
   const [alertMsgSaveError, setAlertMsgSaveError] = useState('');
   const [alertMsgSaveSuccess, setAlertMsgSaveSuccess] = useState('');
@@ -663,7 +720,10 @@ export default function UserPcuControlPanel({
     setAlertMsgSaveError('');
     setAlertMsgSaveSuccess('');
     try {
-      const token = localStorage.getItem('adminToken');
+      const htmlByLang = alertMsgEditor.getHtmlByLangForSave();
+      setAlertMsgHtmlByLang(htmlByLang as Record<AlertMsgLang, string>);
+
+      const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
       const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
         method: 'PUT',
@@ -674,12 +734,13 @@ export default function UserPcuControlPanel({
             enableFrom: alertMsgEnableFrom,
             enableTo: alertMsgEnableTo,
             showAt: { login: alertMsgShowLogin, logout: alertMsgShowLogout },
-            htmlByLang: alertMsgHtmlByLang,
+            htmlByLang,
           },
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save alert message');
+      reloadPcuFromServerRef.current(data.pcuSettings as PcuSettings | undefined);
       setAlertMsgSaveSuccess('Saved');
     } catch (e: unknown) {
       setAlertMsgSaveError(e instanceof Error ? e.message : 'Failed to save alert message');
@@ -732,6 +793,7 @@ export default function UserPcuControlPanel({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save ID cards');
+      reloadPcuFromServerRef.current(data.pcuSettings as PcuSettings | undefined);
       setIdCardsSaveSuccess('Saved');
     } catch (e: unknown) {
       setIdCardsSaveError(e instanceof Error ? e.message : 'Failed to save ID cards');
@@ -789,11 +851,15 @@ export default function UserPcuControlPanel({
         notifyPostFacebook,
         expireExtendEnabled,
         expireExtendDays,
-        expireActual,
+        expireActual: currentSubscriptionExpirationIso,
         expireExtendedTo,
         sharingSharedUsersMode,
         socialItemsMode,
+        socialClubPages,
+        socialMemberPages,
         trainingItemsMode,
+        trainingClubPages,
+        trainingMemberPages,
         endUsersInteractiveMode,
         managementItemsMode,
         insertOptionsManagementMode,
@@ -850,11 +916,15 @@ export default function UserPcuControlPanel({
       procedureRowsByTab,
       expireExtendEnabled,
       expireExtendDays,
-      expireActual,
+      currentSubscriptionExpirationIso,
       expireExtendedTo,
       sharingSharedUsersMode,
       socialItemsMode,
+      socialClubPages,
+      socialMemberPages,
       trainingItemsMode,
+      trainingClubPages,
+      trainingMemberPages,
       endUsersInteractiveMode,
       managementItemsMode,
       insertOptionsManagementMode,
@@ -891,7 +961,7 @@ export default function UserPcuControlPanel({
         setPostActivationDays(String(fn.messageAfterActivation.daysRange));
       }
       if (fn.messageAfterActivation.htmlByLang) {
-        setPostActivationHtmlByLang((prev) => ({ ...prev, ...fn.messageAfterActivation!.htmlByLang }));
+        setPostActivationHtmlByLang(mergeHtmlByLang(fn.messageAfterActivation.htmlByLang));
       }
     }
     if (fn.freeAccounts?.durationDays != null && String(fn.freeAccounts.durationDays).trim() !== '') {
@@ -920,11 +990,14 @@ export default function UserPcuControlPanel({
       setNotifyPostFacebook,
       setExpireExtendEnabled,
       setExpireExtendDays,
-      setExpireActual,
       setExpireExtendedTo,
       setSharingSharedUsersMode,
       setSocialItemsMode,
+      setSocialClubPages,
+      setSocialMemberPages,
       setTrainingItemsMode,
+      setTrainingClubPages,
+      setTrainingMemberPages,
       setEndUsersInteractiveMode,
       setManagementItemsMode,
       setInsertOptionsManagementMode,
@@ -961,13 +1034,7 @@ export default function UserPcuControlPanel({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save functions');
-      if (data.pcuSettings) {
-        loadedPcuSettingsRef.current = data.pcuSettings as PcuSettings;
-        setExpirationAutoSaveReady(false);
-        expirationSkipInitialSaveRef.current = true;
-        applyPcuSettingsToForm(data.pcuSettings as PcuSettings);
-        window.setTimeout(() => setExpirationAutoSaveReady(true), 150);
-      }
+      reloadPcuFromServerRef.current(data.pcuSettings as PcuSettings | undefined);
       setFunctionsSaveSuccess('Saved');
     } catch (e: unknown) {
       setFunctionsSaveError(e instanceof Error ? e.message : 'Failed to save functions');
@@ -990,11 +1057,15 @@ export default function UserPcuControlPanel({
         notifyPostFacebook,
         expireExtendEnabled,
         expireExtendDays,
-        expireActual,
+        expireActual: currentSubscriptionExpirationIso,
         expireExtendedTo,
         sharingSharedUsersMode,
         socialItemsMode,
+        socialClubPages,
+        socialMemberPages,
         trainingItemsMode,
+        trainingClubPages,
+        trainingMemberPages,
         endUsersInteractiveMode,
         managementItemsMode,
         insertOptionsManagementMode,
@@ -1014,11 +1085,15 @@ export default function UserPcuControlPanel({
       notifyPostFacebook,
       expireExtendEnabled,
       expireExtendDays,
-      expireActual,
+      currentSubscriptionExpirationIso,
       expireExtendedTo,
       sharingSharedUsersMode,
       socialItemsMode,
+      socialClubPages,
+      socialMemberPages,
       trainingItemsMode,
+      trainingClubPages,
+      trainingMemberPages,
       endUsersInteractiveMode,
       managementItemsMode,
       insertOptionsManagementMode,
@@ -1040,7 +1115,9 @@ export default function UserPcuControlPanel({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save section');
-      if (data.pcuSettings) loadedPcuSettingsRef.current = data.pcuSettings as PcuSettings;
+      const pcu = data.pcuSettings as PcuSettings | undefined;
+      if (pcu) reloadPcuFromServerRef.current(pcu);
+      return pcu;
     },
     [user.userId],
   );
@@ -1066,7 +1143,16 @@ export default function UserPcuControlPanel({
     setExpirationFlowSaving(true);
     setFunctionsSaveError('');
     setFunctionsSaveSuccess('');
+    setExpirationExtendDateError('');
     try {
+      if (expireExtendEnabled && expireExtendedTo.trim()) {
+        const actual = parseIsoDate(currentSubscriptionExpirationIso);
+        const extended = parseIsoDate(expireExtendedTo);
+        if (!actual || !extended || extended.getTime() <= actual.getTime()) {
+          setExpirationExtendDateError('Extended date must be after the actual expiration date.');
+          throw new Error('Extended date must be after the actual expiration date.');
+        }
+      }
       const slice = buildExpirationSlice();
       await persistFunctionsPatch({
         expirationFlow: slice.expirationFlow!,
@@ -1078,7 +1164,13 @@ export default function UserPcuControlPanel({
       setExpirationFlowSaving(false);
       window.setTimeout(() => setFunctionsSaveSuccess(''), 2500);
     }
-  }, [persistFunctionsPatch, buildExpirationSlice]);
+  }, [
+    persistFunctionsPatch,
+    buildExpirationSlice,
+    expireExtendEnabled,
+    expireExtendedTo,
+    currentSubscriptionExpirationIso,
+  ]);
 
   const saveExpirationMessageSection = useCallback(async () => {
     setExpirationMsgSaving(true);
@@ -1161,68 +1253,6 @@ export default function UserPcuControlPanel({
     [user.userId],
   );
 
-  const persistExpirationSettings = useCallback(async () => {
-    const token = getAdminBearerToken();
-    if (!token) return;
-    try {
-      const res = await fetch(
-        `/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ functions: buildExpirationSlice() }),
-        },
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return;
-      if (data.pcuSettings) {
-        loadedPcuSettingsRef.current = data.pcuSettings as PcuSettings;
-      }
-    } catch {
-      /* optional auto-save; use Save for explicit confirmation */
-    }
-  }, [user.userId, buildExpirationSlice]);
-
-  useEffect(() => {
-    if (!expirationAutoSaveReady) return;
-    if (expirationSkipInitialSaveRef.current) {
-      expirationSkipInitialSaveRef.current = false;
-      return;
-    }
-    if (expirationSaveTimerRef.current) clearTimeout(expirationSaveTimerRef.current);
-    expirationSaveTimerRef.current = setTimeout(() => {
-      void persistExpirationSettings();
-    }, 600);
-    return () => {
-      if (expirationSaveTimerRef.current) clearTimeout(expirationSaveTimerRef.current);
-    };
-  }, [
-    expirationAutoSaveReady,
-    persistExpirationSettings,
-    notifyAtExpiration,
-    notifyBeforeDays,
-    notifyAfterDays,
-    notifyEveryDay,
-    notifyByMail,
-    notifyOnNetworkPage,
-    notifyCellular,
-    notifyPostFacebook,
-    expireExtendEnabled,
-    expireExtendDays,
-    expireActual,
-    expireExtendedTo,
-    sharingSharedUsersMode,
-    socialItemsMode,
-    trainingItemsMode,
-    endUsersInteractiveMode,
-    managementItemsMode,
-    insertOptionsManagementMode,
-    expirationMsgHtmlByLang,
-    newMembersExpiryMode,
-    newMembersAfterDays,
-    newVersionMode,
-  ]);
-
   const updateProcedureRows = useCallback(
     (updater: ProcedureRow[] | ((prev: ProcedureRow[]) => ProcedureRow[])) => {
       setProcedureRowsByTab((prev) => {
@@ -1257,13 +1287,11 @@ export default function UserPcuControlPanel({
   const isSingleUserProfile = user.segment === 'single-user';
 
   useEffect(() => {
-    // initialize a few defaults based on the selected user
-    setVipUsername(user.username || '');
     setProfileReferencesHtml(user.referencesHtml || '');
     setProfileReferencesLevel(user.referencesLevel || '1');
     setAdminSaveError('');
     setAdminSaveSuccess('');
-  }, [user.username]);
+  }, [user.userId, user.referencesHtml, user.referencesLevel]);
 
   const applyPcuSettingsToForm = useCallback((pcu: PcuSettings | null) => {
     if (!pcu) return;
@@ -1281,6 +1309,7 @@ export default function UserPcuControlPanel({
     }
     if (pcu.publishing) {
       const pub = pcu.publishing;
+      setEnableUserComments(Boolean(pub.enableUserComments));
       setEnableFeedback(Boolean(pub.enableFeedback));
       setEnableBlogs(Boolean(pub.enableBlogs));
       setBlogsDate(pub.blogsDate ?? '');
@@ -1320,17 +1349,65 @@ export default function UserPcuControlPanel({
     if (pcu.alert) {
       setAlertEnabled(Boolean(pcu.alert.enabled));
       if (pcu.alert.htmlByLang) {
-        setAlertHtmlByLang((prev) => ({ ...prev, ...pcu.alert!.htmlByLang }));
+        setAlertHtmlByLang(mergeHtmlByLang(pcu.alert.htmlByLang));
+      }
+    }
+    if (pcu.alertMsg) {
+      const am = pcu.alertMsg;
+      if (am.activated != null) setAlertMsgActivated(Boolean(am.activated));
+      if (am.enableFrom != null) setAlertMsgEnableFrom(String(am.enableFrom));
+      if (am.enableTo != null) setAlertMsgEnableTo(String(am.enableTo));
+      if (am.showAt) {
+        if (am.showAt.login != null) setAlertMsgShowLogin(Boolean(am.showAt.login));
+        if (am.showAt.logout != null) setAlertMsgShowLogout(Boolean(am.showAt.logout));
+      }
+      if (am.htmlByLang) {
+        setAlertMsgHtmlByLang((prev) =>
+          mergeHtmlByLangKeys(['en', 'it'] as const, { ...prev, ...am.htmlByLang }),
+        );
+      }
+    }
+    if (pcu.idCards) {
+      const ic = pcu.idCards;
+      if (ic.terms) {
+        if (ic.terms.creditCard != null) setIdCardsCreditCard(Boolean(ic.terms.creditCard));
+        if (ic.terms.sendMoneyLaterDays != null) {
+          setIdCardsSendMoneyLaterDays(String(ic.terms.sendMoneyLaterDays));
+        }
+      }
+      const msgs = ic.messages;
+      if (msgs?.afterExpeditionNotPaid) {
+        const m = msgs.afterExpeditionNotPaid;
+        if (m.enabled != null) setIdCardsMsgAfterExpeditionEnabled(Boolean(m.enabled));
+        if (m.days != null) setIdCardsMsgAfterExpeditionDays(String(m.days));
+        if (m.htmlByLang) setIdCardsMsgAfterExpeditionHtmlByLang(mergeHtmlByLang(m.htmlByLang));
+      }
+      if (msgs?.thirdPartyPricelist) {
+        const m = msgs.thirdPartyPricelist;
+        if (m.enabled != null) setIdCardsThirdPartyEnabled(Boolean(m.enabled));
+        if (m.htmlByLang) setIdCardsThirdPartyHtmlByLang(mergeHtmlByLang(m.htmlByLang));
       }
     }
     if (pcu.vip) {
       const vip = pcu.vip;
       setVipShowInReferenceList(Boolean(vip.showInReferenceList));
       setVipShowInBanner(Boolean(vip.showInBanner));
+      setVipUsernameEnabled(
+        vip.usernameEnabled != null ? Boolean(vip.usernameEnabled) : Boolean(vip.username),
+      );
+      setVipYoutubeEnabled(
+        vip.youtubeEnabled != null ? Boolean(vip.youtubeEnabled) : Boolean(vip.youtubeUrl),
+      );
       setVipUsername(vip.username ?? user.username ?? '');
       setVipYoutubeUrl(vip.youtubeUrl ?? '');
+      const bannerPath = vip.bannerImage?.trim() || null;
+      setVipBannerImagePath(bannerPath);
+      setVipBannerImageFileName(
+        bannerPath ? bannerPath.split('/').pop() || 'No file chosen' : 'No file chosen',
+      );
+      setVipBannerUploadError('');
       if (vip.referencesHtmlByLang) {
-        setVipReferencesHtmlByLang((prev) => ({ ...prev, ...vip.referencesHtmlByLang }));
+        setVipReferencesHtmlByLang(mergeHtmlByLang(vip.referencesHtmlByLang));
       }
       if (vip.priorityLevel) setVipPriorityLevel(vip.priorityLevel);
       setVipFavourite(Boolean(vip.favourite));
@@ -1358,12 +1435,18 @@ export default function UserPcuControlPanel({
     }
   }, [user.username, applyFunctionsSettingsToForm]);
 
+  const reloadPcuFromServer = useCallback((pcu: PcuSettings | undefined) => {
+    if (!pcu) return;
+    loadedPcuSettingsRef.current = pcu;
+    applyPcuSettingsToForm(pcu);
+  }, [applyPcuSettingsToForm]);
+
   useEffect(() => {
-    setExpirationAutoSaveReady(false);
-    expirationSkipInitialSaveRef.current = true;
+    reloadPcuFromServerRef.current = reloadPcuFromServer;
+  }, [reloadPcuFromServer]);
+
+  useEffect(() => {
     applyPcuSettingsToForm(initialPcuSettings);
-    const t = window.setTimeout(() => setExpirationAutoSaveReady(true), 150);
-    return () => clearTimeout(t);
   }, [initialPcuSettings, applyPcuSettingsToForm]);
 
   const buildAdminSettingsPayload = useCallback(
@@ -1371,6 +1454,7 @@ export default function UserPcuControlPanel({
       extend: { enabled: extendEnabled, months: extendMonths },
       assignment: { asOperator, operatorId, asAgent, agentId },
       publishing: {
+        enableUserComments,
         enableFeedback,
         enableBlogs,
         blogsDate,
@@ -1405,6 +1489,9 @@ export default function UserPcuControlPanel({
       vip: {
         showInReferenceList: vipShowInReferenceList,
         showInBanner: vipShowInBanner,
+        usernameEnabled: vipUsernameEnabled,
+        youtubeEnabled: vipYoutubeEnabled,
+        bannerImage: vipBannerImagePath,
         username: vipUsername,
         youtubeUrl: vipYoutubeUrl,
         referencesHtmlByLang: vipReferencesHtmlByLang,
@@ -1431,6 +1518,7 @@ export default function UserPcuControlPanel({
       operatorId,
       asAgent,
       agentId,
+      enableUserComments,
       enableFeedback,
       enableBlogs,
       blogsDate,
@@ -1460,6 +1548,9 @@ export default function UserPcuControlPanel({
       alertHtmlByLang,
       vipShowInReferenceList,
       vipShowInBanner,
+      vipUsernameEnabled,
+      vipYoutubeEnabled,
+      vipBannerImagePath,
       vipUsername,
       vipYoutubeUrl,
       vipReferencesHtmlByLang,
@@ -1484,6 +1575,76 @@ export default function UserPcuControlPanel({
     setAdminSaveSuccess('');
   }, [applyPcuSettingsToForm]);
 
+  const persistVipBannerImage = useCallback(
+    async (bannerImage: string | null) => {
+      const token = getAdminBearerToken();
+      if (!token) throw new Error('Admin session not found. Please log in as admin.');
+      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ vip: { bannerImage } }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to save banner');
+      if (data.pcuSettings) {
+        loadedPcuSettingsRef.current = data.pcuSettings as PcuSettings;
+      }
+    },
+    [user.userId],
+  );
+
+  const handleVipBannerFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setVipBannerUploadError('');
+    setVipBannerUploading(true);
+    setVipBannerImageFileName(file.name);
+
+    try {
+      const token = getAdminBearerToken();
+      if (!token) throw new Error('Admin session not found. Please log in as admin.');
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const uploadRes = await fetch(
+        `/api/admin/registered-users/${encodeURIComponent(user.userId)}/vip-banner-upload`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData },
+      );
+      const uploadData = await uploadRes.json().catch(() => ({}));
+      if (!uploadRes.ok) throw new Error(uploadData?.error || 'Failed to upload banner');
+
+      const path = typeof uploadData.path === 'string' ? uploadData.path : '';
+      if (!path) throw new Error('Upload did not return a file path');
+
+      setVipBannerImagePath(path);
+      await persistVipBannerImage(path);
+    } catch (err: unknown) {
+      setVipBannerUploadError(err instanceof Error ? err.message : 'Failed to upload banner');
+      setVipBannerImageFileName(
+        vipBannerImagePath ? vipBannerImagePath.split('/').pop() || 'No file chosen' : 'No file chosen',
+      );
+    } finally {
+      setVipBannerUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleVipBannerDelete = async () => {
+    setVipBannerUploadError('');
+    setVipBannerUploading(true);
+    try {
+      setVipBannerImagePath(null);
+      setVipBannerImageFileName('No file chosen');
+      await persistVipBannerImage(null);
+    } catch (err: unknown) {
+      setVipBannerUploadError(err instanceof Error ? err.message : 'Failed to delete banner');
+    } finally {
+      setVipBannerUploading(false);
+    }
+  };
+
   const saveAdminSettings = async () => {
     setAdminSaving(true);
     setAdminSaveError('');
@@ -1500,6 +1661,7 @@ export default function UserPcuControlPanel({
       if (!res.ok) throw new Error(data?.error || 'Failed to save settings');
       if (data.pcuSettings) {
         loadedPcuSettingsRef.current = data.pcuSettings as PcuSettings;
+        applyPcuSettingsToForm(data.pcuSettings as PcuSettings);
       }
       setAdminSaveSuccess('Settings saved successfully.');
     } catch (e: unknown) {
@@ -1582,12 +1744,29 @@ export default function UserPcuControlPanel({
 
   useEffect(() => {
     if (initialPcuAccess) {
-      setAccessStart(initialPcuAccess.accessStartIso || user.startDateIso);
-      setAccessEnd(initialPcuAccess.accessEndIso ?? '');
+      const start = initialPcuAccess.accessStartIso || user.startDateIso;
+      const end = initialPcuAccess.accessEndIso ?? '';
+      setAccessStart(start);
+      setAccessEnd(end);
       setSuspendAccessControl(initialPcuAccess.suspendAccessControl);
       setSuspend(initialPcuAccess.suspend);
+      pcuAccessSnapshotRef.current = {
+        accessStart: start,
+        accessEnd: end,
+        suspendAccessControl: initialPcuAccess.suspendAccessControl,
+        suspend: initialPcuAccess.suspend,
+      };
     }
   }, [initialPcuAccess, user.startDateIso]);
+
+  useEffect(() => {
+    pcuAccessSnapshotRef.current = {
+      accessStart,
+      accessEnd,
+      suspendAccessControl,
+      suspend,
+    };
+  }, [accessStart, accessEnd, suspendAccessControl, suspend]);
 
   const isFavourite = favouritePriority !== 'not_selected';
 
@@ -1640,16 +1819,24 @@ export default function UserPcuControlPanel({
 
   const savePcuAccessSettings = useCallback(
     async (patch: Partial<PcuAccessSettings>) => {
-      const prev = {
-        accessStart,
-        accessEnd,
-        suspendAccessControl,
-        suspend,
+      const prev = { ...pcuAccessSnapshotRef.current };
+      const merged = {
+        accessStartIso: patch.accessStartIso ?? prev.accessStart,
+        accessEndIso: patch.accessEndIso ?? prev.accessEnd,
+        suspendAccessControl: patch.suspendAccessControl ?? prev.suspendAccessControl,
+        suspend: patch.suspend ?? prev.suspend,
       };
-      if (patch.accessStartIso !== undefined) setAccessStart(patch.accessStartIso);
-      if (patch.accessEndIso !== undefined) setAccessEnd(patch.accessEndIso);
-      if (patch.suspendAccessControl !== undefined) setSuspendAccessControl(patch.suspendAccessControl);
-      if (patch.suspend !== undefined) setSuspend(patch.suspend);
+
+      setAccessStart(merged.accessStartIso);
+      setAccessEnd(merged.accessEndIso);
+      setSuspendAccessControl(merged.suspendAccessControl);
+      setSuspend(merged.suspend);
+      pcuAccessSnapshotRef.current = {
+        accessStart: merged.accessStartIso,
+        accessEnd: merged.accessEndIso,
+        suspendAccessControl: merged.suspendAccessControl,
+        suspend: merged.suspend,
+      };
 
       const token = getAdminBearerToken();
       if (!token) {
@@ -1657,6 +1844,7 @@ export default function UserPcuControlPanel({
         setAccessEnd(prev.accessEnd);
         setSuspendAccessControl(prev.suspendAccessControl);
         setSuspend(prev.suspend);
+        pcuAccessSnapshotRef.current = prev;
         window.alert('Admin session not found. Please log in again.');
         return;
       }
@@ -1671,28 +1859,37 @@ export default function UserPcuControlPanel({
               Authorization: `Bearer ${token}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify(patch),
+            body: JSON.stringify(merged),
           },
         );
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error || 'Failed to save access settings');
         if (data.pcuAccess) {
-          setAccessStart(data.pcuAccess.accessStartIso || user.startDateIso);
-          setAccessEnd(data.pcuAccess.accessEndIso ?? '');
+          const start = data.pcuAccess.accessStartIso || user.startDateIso;
+          const end = data.pcuAccess.accessEndIso ?? '';
+          setAccessStart(start);
+          setAccessEnd(end);
           setSuspendAccessControl(Boolean(data.pcuAccess.suspendAccessControl));
           setSuspend(Boolean(data.pcuAccess.suspend));
+          pcuAccessSnapshotRef.current = {
+            accessStart: start,
+            accessEnd: end,
+            suspendAccessControl: Boolean(data.pcuAccess.suspendAccessControl),
+            suspend: Boolean(data.pcuAccess.suspend),
+          };
         }
       } catch (e: unknown) {
         setAccessStart(prev.accessStart);
         setAccessEnd(prev.accessEnd);
         setSuspendAccessControl(prev.suspendAccessControl);
         setSuspend(prev.suspend);
+        pcuAccessSnapshotRef.current = prev;
         window.alert(e instanceof Error ? e.message : 'Failed to save access settings');
       } finally {
         setPcuAccessSaving(false);
       }
     },
-    [user.userId, user.startDateIso, accessStart, accessEnd, suspendAccessControl, suspend],
+    [user.userId, user.startDateIso],
   );
 
   const resolveActionUserIds = useCallback((): string[] => {
@@ -1711,12 +1908,32 @@ export default function UserPcuControlPanel({
   }, []);
 
   const handleSendMail = useCallback(() => {
-    if (!user.email) {
-      window.alert('This user has no email address.');
+    setMailError('');
+    setMailTo(user.email?.trim() || '');
+    setMailSubject('');
+    setMailBody('');
+    setMailModalOpen(true);
+  }, [user.email]);
+
+  const handleMailClientOpen = useCallback(() => {
+    const to = mailTo.trim();
+    if (!to) {
+      setMailError('Please enter an email address.');
       return;
     }
-    window.location.href = `mailto:${encodeURIComponent(user.email)}`;
-  }, [user.email]);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      setMailError('Please enter a valid email address.');
+      return;
+    }
+    const params = new URLSearchParams();
+    const subject = mailSubject.trim();
+    const body = mailBody.trim();
+    if (subject) params.set('subject', subject);
+    if (body) params.set('body', body);
+    const query = params.toString();
+    window.location.href = `mailto:${encodeURIComponent(to)}${query ? `?${query}` : ''}`;
+    setMailModalOpen(false);
+  }, [mailTo, mailSubject, mailBody]);
 
   const openSendMsgModal = useCallback(() => {
     setMsgError('');
@@ -1834,6 +2051,15 @@ export default function UserPcuControlPanel({
             <div className="text-sm font-semibold text-red-700">Panel control about the User</div>
           </div>
           <div className="flex items-center gap-2">
+            {overviewHref ? (
+              <button
+                type="button"
+                className="text-xs text-teal-800 hover:underline px-1"
+                onClick={() => router.push(overviewHref)}
+              >
+                Overview
+              </button>
+            ) : null}
             <button
               type="button"
               className="p-1.5 rounded hover:bg-gray-300"
@@ -1898,8 +2124,7 @@ export default function UserPcuControlPanel({
               <button
                 type="button"
                 onClick={handleSendMail}
-                disabled={!user.email}
-                className="px-4 py-2 bg-gray-700 text-white text-sm rounded disabled:opacity-50"
+                className="px-4 py-2 bg-gray-700 text-white text-sm rounded"
               >
                 <Mail className="inline w-4 h-4 mr-2" />
                 Send mail
@@ -1910,8 +2135,7 @@ export default function UserPcuControlPanel({
                   type="date"
                   value={accessStart}
                   disabled={pcuAccessSaving}
-                  onChange={(e) => setAccessStart(e.target.value)}
-                  onBlur={(e) => void savePcuAccessSettings({ accessStartIso: e.currentTarget.value })}
+                  onChange={(e) => void savePcuAccessSettings({ accessStartIso: e.target.value })}
                   className="px-2 py-1 border border-gray-400 bg-white w-32 text-sm disabled:opacity-60"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
@@ -1923,8 +2147,7 @@ export default function UserPcuControlPanel({
                   type="date"
                   value={accessEnd}
                   disabled={pcuAccessSaving}
-                  onChange={(e) => setAccessEnd(e.target.value)}
-                  onBlur={(e) => void savePcuAccessSettings({ accessEndIso: e.currentTarget.value })}
+                  onChange={(e) => void savePcuAccessSettings({ accessEndIso: e.target.value })}
                   className="px-2 py-1 border border-gray-400 bg-white w-32 text-sm text-red-600 disabled:opacity-60"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
@@ -2400,9 +2623,8 @@ export default function UserPcuControlPanel({
                     <button
                       type="button"
                       onClick={handleSendMail}
-                      disabled={actionBusy || !user.email}
+                      disabled={actionBusy}
                       className="underline cursor-pointer hover:text-blue-950 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title={!user.email ? 'No email on file' : undefined}
                     >
                       Send mail
                     </button>
@@ -2786,7 +3008,11 @@ export default function UserPcuControlPanel({
                             <div className="border border-gray-200 p-4">
                               <div className="font-semibold text-sm">Enable user to add comments</div>
                               <label className="mt-2 inline-flex items-center gap-2 text-sm">
-                                <input type="checkbox" />
+                                <input
+                                  type="checkbox"
+                                  checked={enableUserComments}
+                                  onChange={(e) => setEnableUserComments(e.target.checked)}
+                                />
                               </label>
                             </div>
                           </div>
@@ -2995,7 +3221,11 @@ export default function UserPcuControlPanel({
                                   Enable to display in the banner at main page
                                 </label>
                                 <div className="flex items-center gap-2">
-                                  <input type="checkbox" checked={!!vipUsername} readOnly />
+                                  <input
+                                    type="checkbox"
+                                    checked={vipUsernameEnabled}
+                                    onChange={(e) => setVipUsernameEnabled(e.target.checked)}
+                                  />
                                   <input
                                     value={vipUsername}
                                     onChange={(e) => setVipUsername(e.target.value)}
@@ -3003,34 +3233,63 @@ export default function UserPcuControlPanel({
                                   />
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <input type="checkbox" checked={!!vipYoutubeUrl} readOnly />
+                                  <input
+                                    type="checkbox"
+                                    checked={vipYoutubeEnabled}
+                                    onChange={(e) => setVipYoutubeEnabled(e.target.checked)}
+                                  />
                                   <input
                                     value={vipYoutubeUrl}
                                     onChange={(e) => setVipYoutubeUrl(e.target.value)}
                                     className="px-2 py-1 border border-gray-300 flex-1"
+                                    placeholder="YouTube URL"
                                   />
                                 </div>
                               </div>
 
-                              <div className="mt-3 bg-gray-100 border border-gray-200 h-44 flex items-center justify-center text-4xl font-semibold text-gray-400">
-                                NO<br/>IMAGE<br/>AVAILABLE
+                              <div className="mt-3 bg-gray-100 border border-gray-200 h-44 flex items-center justify-center overflow-hidden relative">
+                                {vipBannerImagePath ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={vipBannerImagePath}
+                                    alt="VIP reference banner"
+                                    className="w-full h-full object-contain"
+                                  />
+                                ) : (
+                                  <span className="text-4xl font-semibold text-gray-400 text-center leading-tight">
+                                    NO<br />
+                                    IMAGE
+                                    <br />
+                                    AVAILABLE
+                                  </span>
+                                )}
                               </div>
-                              <div className="mt-2 flex items-center gap-3">
-                                <label className="px-3 py-1.5 bg-gray-100 border border-gray-300 cursor-pointer">
-                                  Choose File
+                              <div className="mt-2 flex flex-wrap items-center gap-3">
+                                <label
+                                  className={`px-3 py-1.5 bg-gray-100 border border-gray-300 ${vipBannerUploading ? 'opacity-60 pointer-events-none' : 'cursor-pointer'}`}
+                                >
+                                  {vipBannerUploading ? 'Uploading…' : 'Choose File'}
                                   <input
                                     type="file"
+                                    accept="image/jpeg,image/png,image/gif,image/webp"
                                     className="hidden"
-                                    onChange={(e) =>
-                                      setVipBannerImageFileName(e.target.files?.[0]?.name || 'No file chosen')
-                                    }
+                                    disabled={vipBannerUploading}
+                                    onChange={(e) => void handleVipBannerFileChange(e)}
                                   />
                                 </label>
                                 <span className="text-xs text-gray-600">{vipBannerImageFileName}</span>
-                                <button type="button" className="px-4 py-1.5 bg-gray-200 border border-gray-400">
+                                <button
+                                  type="button"
+                                  disabled={vipBannerUploading || !vipBannerImagePath}
+                                  onClick={() => void handleVipBannerDelete()}
+                                  className="px-4 py-1.5 bg-gray-200 border border-gray-400 disabled:opacity-50"
+                                >
                                   Delete
                                 </button>
                               </div>
+                              {vipBannerUploadError ? (
+                                <p className="mt-2 text-xs text-red-700">{vipBannerUploadError}</p>
+                              ) : null}
                             </div>
                           </div>
 
@@ -3044,7 +3303,7 @@ export default function UserPcuControlPanel({
                                   <button
                                     key={l}
                                     type="button"
-                                    onClick={() => setAdminLang(l)}
+                                    onClick={() => vipReferencesEditor.switchLang(l)}
                                     className={`px-2 py-1 border ${adminLang === l ? 'border-red-600 text-red-700' : 'border-transparent'} `}
                                   >
                                     {l}
@@ -3052,8 +3311,11 @@ export default function UserPcuControlPanel({
                                 ))}
                               </div>
                               <CKEditorComponent
-                                value={vipReferencesHtmlByLang[adminLang] || ''}
-                                onChange={(html) => setVipReferencesHtmlByLang((prev) => ({ ...prev, [adminLang]: html }))}
+                                instanceId="vip-references-editor"
+                                localeKey={vipReferencesEditor.localeKey}
+                                registerGetData={vipReferencesEditor.registerGetData}
+                                value={vipReferencesEditor.editorValue}
+                                onChange={vipReferencesEditor.onEditorChange}
                                 minHeightPx={260}
                                 placeholder=""
                               />
@@ -3247,7 +3509,7 @@ export default function UserPcuControlPanel({
                           <button
                             key={l}
                             type="button"
-                            onClick={() => setFunctionsLang(l)}
+                            onClick={() => switchFunctionsLang(l)}
                             className={`px-2 py-1 border ${
                               functionsLang === l ? 'border-red-600 text-red-700' : 'border-transparent'
                             }`}
@@ -3257,6 +3519,11 @@ export default function UserPcuControlPanel({
                         ))}
                       </div>
                       <CKEditorComponent
+                        instanceId="post-activation-editor"
+                        localeKey={functionsLang}
+                        registerGetData={(getData) => {
+                          functionsPostActivationGetDataRef.current = getData;
+                        }}
                         value={postActivationHtmlByLang[functionsLang] || ''}
                         onChange={(html) =>
                           setPostActivationHtmlByLang((prev) => ({ ...prev, [functionsLang]: html }))
@@ -3682,23 +3949,33 @@ export default function UserPcuControlPanel({
                       <span className="ml-auto text-xs bg-gray-200 border border-gray-300 px-2 py-1">-1=Unlimited</span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-[1fr_220px_220px] gap-3 items-end">
+                    <div className="grid grid-cols-1 md:grid-cols-[1fr_220px_280px] gap-3 items-end">
                       <div />
                       <div>
                         <div className="text-xs text-gray-600">Actual Expiration</div>
                         <input
-                          value={expireActual}
-                          onChange={(e) => setExpireActual(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 bg-white text-center"
+                          readOnly
+                          value={
+                            currentSubscriptionExpirationIso
+                              ? isoToMmDdYyyy(currentSubscriptionExpirationIso)
+                              : ''
+                          }
+                          placeholder="—"
+                          className="w-full px-3 py-2 border border-gray-300 bg-gray-50 text-center"
                         />
                       </div>
                       <div>
                         <div className="text-xs text-gray-600">Extended to...</div>
-                        <input
+                        <AdminPcuDatePicker
                           value={expireExtendedTo}
-                          onChange={(e) => setExpireExtendedTo(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 bg-red-50 text-center text-red-700"
+                          onChange={handleExpireExtendedToChange}
+                          disabled={!expireExtendEnabled}
+                          minDateIso={currentSubscriptionExpirationIso}
+                          className="w-full justify-center [&_input]:w-full [&_input]:text-center [&_input]:bg-red-50 [&_input]:text-red-700"
                         />
+                        {expirationExtendDateError ? (
+                          <p className="mt-1 text-xs text-red-700">{expirationExtendDateError}</p>
+                        ) : null}
                       </div>
                     </div>
 
@@ -3723,8 +4000,17 @@ export default function UserPcuControlPanel({
                         value={socialItemsMode}
                         onChange={setSocialItemsMode}
                         lines={[
-                          { checked: true, text: "Club's pages" },
-                          { checked: true, text: "Member's pages single user pages", red: true },
+                          {
+                            checked: socialClubPages,
+                            text: "Club's pages",
+                            onChange: setSocialClubPages,
+                          },
+                          {
+                            checked: socialMemberPages,
+                            text: "Member's pages single user pages",
+                            red: true,
+                            onChange: setSocialMemberPages,
+                          },
                         ]}
                       />
                       <ModeCard
@@ -3746,8 +4032,17 @@ export default function UserPcuControlPanel({
                         value={trainingItemsMode}
                         onChange={setTrainingItemsMode}
                         lines={[
-                          { checked: true, text: "Club's pages" },
-                          { checked: true, text: "Member's pages single user pages", red: true },
+                          {
+                            checked: trainingClubPages,
+                            text: "Club's pages",
+                            onChange: setTrainingClubPages,
+                          },
+                          {
+                            checked: trainingMemberPages,
+                            text: "Member's pages single user pages",
+                            red: true,
+                            onChange: setTrainingMemberPages,
+                          },
                         ]}
                       />
                       <ModeCard
@@ -3784,6 +4079,11 @@ export default function UserPcuControlPanel({
 
                   <div className="border-t border-gray-300 px-4 py-3">
                     <CKEditorComponent
+                      instanceId="expiration-msg-editor"
+                      localeKey={functionsLang}
+                      registerGetData={(getData) => {
+                        functionsExpirationMsgGetDataRef.current = getData;
+                      }}
                       value={expirationMsgHtmlByLang[functionsLang] || ''}
                       onChange={(html) => setExpirationMsgHtmlByLang((prev) => ({ ...prev, [functionsLang]: html }))}
                       minHeightPx={220}
@@ -4007,7 +4307,7 @@ export default function UserPcuControlPanel({
                           <button
                             key={l}
                             type="button"
-                            onClick={() => setIdCardsLang(l)}
+                            onClick={() => switchIdCardsLang(l)}
                             className={`px-2 py-1 border ${
                               idCardsLang === l ? 'border-red-600 text-red-700' : 'border-transparent'
                             }`}
@@ -4017,6 +4317,11 @@ export default function UserPcuControlPanel({
                         ))}
                       </div>
                       <CKEditorComponent
+                        instanceId="idcards-expedition-editor"
+                        localeKey={idCardsLang}
+                        registerGetData={(getData) => {
+                          idCardsExpeditionGetDataRef.current = getData;
+                        }}
                         value={idCardsMsgAfterExpeditionHtmlByLang[idCardsLang] || ''}
                         onChange={(html) =>
                           setIdCardsMsgAfterExpeditionHtmlByLang((prev) => ({ ...prev, [idCardsLang]: html }))
@@ -4058,7 +4363,7 @@ export default function UserPcuControlPanel({
                           <button
                             key={l}
                             type="button"
-                            onClick={() => setIdCardsLang(l)}
+                            onClick={() => switchIdCardsLang(l)}
                             className={`px-2 py-1 border ${
                               idCardsLang === l ? 'border-red-600 text-red-700 bg-[#efe7b3]' : 'border-gray-200 bg-[#efe7b3]'
                             }`}
@@ -4068,6 +4373,11 @@ export default function UserPcuControlPanel({
                         ))}
                       </div>
                       <CKEditorComponent
+                        instanceId="idcards-third-party-editor"
+                        localeKey={idCardsLang}
+                        registerGetData={(getData) => {
+                          idCardsThirdPartyGetDataRef.current = getData;
+                        }}
                         value={idCardsThirdPartyHtmlByLang[idCardsLang] || ''}
                         onChange={(html) => setIdCardsThirdPartyHtmlByLang((prev) => ({ ...prev, [idCardsLang]: html }))}
                         minHeightPx={220}
@@ -4709,7 +5019,7 @@ export default function UserPcuControlPanel({
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setAlertMsgLang('it')}
+                        onClick={() => alertMsgEditor.switchLang('it')}
                         className={`px-3 py-1 border border-white font-semibold ${
                           alertMsgLang === 'it' ? 'bg-white text-slate-700' : 'bg-slate-500 text-white'
                         }`}
@@ -4718,7 +5028,7 @@ export default function UserPcuControlPanel({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setAlertMsgLang('en')}
+                        onClick={() => alertMsgEditor.switchLang('en')}
                         className={`px-3 py-1 border border-white font-semibold ${
                           alertMsgLang === 'en' ? 'bg-white text-slate-700' : 'bg-slate-500 text-white'
                         }`}
@@ -4791,8 +5101,11 @@ export default function UserPcuControlPanel({
 
                   <div className="px-4 pb-4">
                     <CKEditorComponent
-                      value={alertMsgHtmlByLang[alertMsgLang]}
-                      onChange={(html) => setAlertMsgHtmlByLang((prev) => ({ ...prev, [alertMsgLang]: html }))}
+                      instanceId="alert-msg-editor"
+                      localeKey={alertMsgEditor.localeKey}
+                      registerGetData={alertMsgEditor.registerGetData}
+                      value={alertMsgEditor.editorValue}
+                      onChange={alertMsgEditor.onEditorChange}
                       minHeightPx={280}
                       placeholder=""
                     />
@@ -4823,6 +5136,69 @@ export default function UserPcuControlPanel({
           </div>
         )}
       </div>
+
+      {mailModalOpen ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <button
+              type="button"
+              onClick={() => setMailModalOpen(false)}
+              className="absolute right-3 top-3 text-gray-400 hover:text-gray-800"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <h2 className="mb-1 text-lg font-semibold text-gray-900">Send mail</h2>
+            <p className="mb-4 text-sm text-gray-600">
+              To: {user.fullname || user.username}
+              {!user.email?.trim() ? (
+                <span className="block text-xs text-amber-700 mt-1">No email on file — enter an address below.</span>
+              ) : null}
+            </p>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Mail address</label>
+            <input
+              type="email"
+              value={mailTo}
+              onChange={(e) => setMailTo(e.target.value)}
+              placeholder="user@example.com"
+              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+              autoComplete="email"
+            />
+            <label className="mb-2 block text-sm font-medium text-gray-700">Subject (optional)</label>
+            <input
+              type="text"
+              value={mailSubject}
+              onChange={(e) => setMailSubject(e.target.value)}
+              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+            />
+            <label className="mb-2 block text-sm font-medium text-gray-700">Message (optional)</label>
+            <textarea
+              value={mailBody}
+              onChange={(e) => setMailBody(e.target.value)}
+              rows={4}
+              placeholder="Write your message…"
+              className="mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+            />
+            {mailError ? <p className="mb-2 text-sm text-red-600">{mailError}</p> : null}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMailModalOpen(false)}
+                className="rounded border border-gray-400 px-4 py-2 text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleMailClientOpen}
+                className="rounded bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+              >
+                Open in mail client
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {msgModalOpen ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
@@ -5065,7 +5441,7 @@ function ModeCard<T extends string>({
   options: { id: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
-  lines?: { checked: boolean; text: string; red?: boolean }[];
+  lines?: { checked: boolean; text: string; red?: boolean; onChange?: (checked: boolean) => void }[];
 }) {
   return (
     <div className="bg-gray-100 border border-gray-200 p-3">
@@ -5083,10 +5459,15 @@ function ModeCard<T extends string>({
       {lines?.length ? (
         <div className="mt-2 space-y-1 text-sm">
           {lines.map((l, idx) => (
-            <div key={idx} className="flex items-center gap-2">
-              <input type="checkbox" checked={l.checked} readOnly />
+            <label key={idx} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={l.checked}
+                disabled={!l.onChange}
+                onChange={(e) => l.onChange?.(e.target.checked)}
+              />
               <span className={l.red ? 'text-red-700' : ''}>{l.text}</span>
-            </div>
+            </label>
           ))}
         </div>
       ) : null}

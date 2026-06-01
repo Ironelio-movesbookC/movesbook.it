@@ -74,13 +74,21 @@ function ClubProfileSummary({ clubId }: { clubId: string }) {
         Sidebar label:{' '}
         <span className="font-medium text-gray-800">{formatMyClubsSidebarLabel(club)}</span>
       </p>
-      <Link
-        href={`/my-club?clubId=${encodeURIComponent(clubId)}`}
-        className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800"
-      >
-        <Building2 className="w-4 h-4" />
-        Open full Club profile
-      </Link>
+      <div className="flex flex-wrap gap-4">
+        <Link
+          href={`/my-club/edit?clubId=${encodeURIComponent(clubId)}`}
+          className="inline-flex items-center gap-2 text-sm font-semibold text-red-600 hover:text-red-800"
+        >
+          Edit club profile
+        </Link>
+        <Link
+          href={`/my-club?clubId=${encodeURIComponent(clubId)}`}
+          className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800"
+        >
+          <Building2 className="w-4 h-4" />
+          Open full Club profile
+        </Link>
+      </div>
     </div>
   );
 }

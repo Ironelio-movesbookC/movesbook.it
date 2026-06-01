@@ -1,11 +1,13 @@
 'use client';
 
 import { useParams, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import AdminPcuUserOverview from '@/components/admin/AdminPcuUserOverview';
 import UserPcuControlPanel from '@/components/admin/UserPcuControlPanel';
 import { getAdminBearerToken } from '@/lib/admin/clientAdminAuth';
+import { buildPcuHistoryUserUrl, resolvePcuDefaultTab } from '@/lib/admin/pcuHistoryUserUrl';
 import { navScopeToProfileSegment, type PcuPanelPayload } from '@/lib/admin/userPcuPanel';
 import type { PcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import type { ProfilePanelSettings } from '@/lib/admin/userProfilePanelSettings';
@@ -36,6 +38,13 @@ export default function HistoryUserPage() {
   const [actionSegment, setActionSegment] = useState('');
   const [pcuSettings, setPcuSettings] = useState<PcuSettings | null>(null);
 
+  const scope = searchParams?.get('scope') ?? '';
+  const q = searchParams?.get('q') ?? '';
+  const clubId = searchParams?.get('clubId') ?? '';
+  const isOverview = searchParams?.get('view') === 'overview';
+
+  const urlOpts = useMemo(() => ({ scope, q, clubId: clubId || null }), [scope, q, clubId]);
+
   const loadProfile = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
@@ -48,19 +57,21 @@ export default function HistoryUserPage() {
         return;
       }
 
-      const scopeParam = searchParams?.get('scope') ?? '';
       const segmentParam = searchParams?.get('segment') ?? '';
       const qParam = searchParams?.get('q') ?? '';
       const segment =
-        navScopeToProfileSegment(segmentParam || scopeParam || qParam) ||
+        navScopeToProfileSegment(segmentParam || scope || qParam) ||
         segmentParam ||
-        scopeParam ||
+        scope ||
         '';
 
       setActionSegment(segment);
 
       const qs = new URLSearchParams();
       if (segment) qs.set('segment', segment);
+      if (scope) qs.set('scope', scope);
+      if (q) qs.set('q', q);
+      if (clubId) qs.set('clubId', clubId);
 
       const res = await fetch(
         `/api/admin/registered-users/${encodeURIComponent(userId)}/profile?${qs.toString()}`,
@@ -101,15 +112,13 @@ export default function HistoryUserPage() {
     } finally {
       setLoading(false);
     }
-  }, [userId, searchParams]);
+  }, [userId, searchParams, scope, q, clubId]);
 
   useEffect(() => {
     void loadProfile();
   }, [loadProfile]);
 
   const backHref = (() => {
-    const scope = searchParams?.get('scope');
-    const q = searchParams?.get('q');
     if (scope) {
       const p = new URLSearchParams();
       p.set('scope', scope);
@@ -147,18 +156,38 @@ export default function HistoryUserPage() {
     );
   }
 
+  if (isOverview) {
+    return (
+      <AdminPcuUserOverview
+        user={user}
+        pcuSettings={pcuSettings}
+        backHref={backHref}
+        adminSettingsHref={buildPcuHistoryUserUrl(user.userId, { ...urlOpts, tab: 'admin' })}
+        profileEditHref={buildPcuHistoryUserUrl(user.userId, { ...urlOpts, tab: 'profile' })}
+        purchasesHref={buildPcuHistoryUserUrl(user.userId, { ...urlOpts, tab: 'purchases' })}
+        alertEditHref={buildPcuHistoryUserUrl(user.userId, { ...urlOpts, tab: 'alert' })}
+        onOpenUserProfile={() => {
+          if (user.dashboardPath) {
+            window.open(user.dashboardPath, '_blank', 'noopener,noreferrer');
+          }
+        }}
+      />
+    );
+  }
+
   return (
     <div className="py-4 px-2 sm:px-4">
       <UserPcuControlPanel
-        key={user.userId}
+        key={`${user.userId}-${resolvePcuDefaultTab(searchParams)}`}
         user={user}
         backHref={backHref}
         subscriptionRows={subscriptionRows}
         profilePanel={profilePanel}
         initialPcuAccess={pcuAccess}
         initialPcuSettings={pcuSettings}
-        defaultActiveTab={searchParams?.get('q') === 'new' ? 'functions' : 'purchases'}
+        defaultActiveTab={resolvePcuDefaultTab(searchParams)}
         actionSegment={actionSegment || user.segment}
+        overviewHref={buildPcuHistoryUserUrl(user.userId, { ...urlOpts, view: 'overview' })}
       />
     </div>
   );

@@ -1,5 +1,7 @@
 import { mergeProcedureSaved } from '@/lib/admin/userPcuProcedureDefaults';
 
+export type HtmlByLang = Record<string, string>;
+
 export type VersionColumn4 = 'trial' | 'base' | 'premium' | 'pro';
 export type VersionColumn3 = 'base' | 'premium' | 'pro';
 
@@ -83,7 +85,11 @@ export type PcuFunctionsSettings = {
     modes?: {
       sharingSharedUsersMode?: ExpirationFeatureMode | '';
       socialItemsMode?: ExpirationFeatureMode | '';
+      socialClubPages?: boolean;
+      socialMemberPages?: boolean;
       trainingItemsMode?: ExpirationFeatureMode | '';
+      trainingClubPages?: boolean;
+      trainingMemberPages?: boolean;
       endUsersInteractiveMode?: ExpirationEndUserMode | '';
       managementItemsMode?: ExpirationEndUserMode | '';
       insertOptionsManagementMode?: ExpirationEndUserMode | '';
@@ -109,10 +115,24 @@ export type NewVersionAssignMode =
   | 'next_assigned'
   | 'professional';
 
-const LANG_KEYS = ['en', 'fr', 'de', 'it', 'es', 'por', 'rus', 'ind', 'chin', 'arab'] as const;
+export const LANG_KEYS = ['en', 'fr', 'de', 'it', 'es', 'por', 'rus', 'ind', 'chin', 'arab'] as const;
 
 export function emptyHtmlByLang(): Record<string, string> {
   return Object.fromEntries(LANG_KEYS.map((k) => [k, '']));
+}
+
+/** Merge saved per-language HTML with the full PCU language key set. */
+export function mergeHtmlByLang(saved?: HtmlByLang | null): HtmlByLang {
+  return { ...emptyHtmlByLang(), ...(saved ?? {}) };
+}
+
+export function mergeHtmlByLangKeys<T extends string>(
+  keys: readonly T[],
+  saved?: Partial<Record<T, string>> | null,
+): Record<T, string> {
+  const base = Object.fromEntries(keys.map((k) => [k, ''])) as Record<T, string>;
+  if (!saved) return base;
+  return { ...base, ...saved };
 }
 
 function strOrEmpty(v: unknown): string {
@@ -136,7 +156,6 @@ export type ExpirationFormApplyHandlers = {
   setNotifyPostFacebook: (v: boolean) => void;
   setExpireExtendEnabled: (v: boolean) => void;
   setExpireExtendDays: (v: string) => void;
-  setExpireActual: (v: string) => void;
   setExpireExtendedTo: (v: string) => void;
   setSharingSharedUsersMode: (v: ExpirationFeatureMode | '') => void;
   setSocialItemsMode: (v: ExpirationFeatureMode | '') => void;
@@ -144,6 +163,10 @@ export type ExpirationFormApplyHandlers = {
   setEndUsersInteractiveMode: (v: ExpirationEndUserMode | '') => void;
   setManagementItemsMode: (v: ExpirationEndUserMode | '') => void;
   setInsertOptionsManagementMode: (v: ExpirationEndUserMode | '') => void;
+  setSocialClubPages: (v: boolean) => void;
+  setSocialMemberPages: (v: boolean) => void;
+  setTrainingClubPages: (v: boolean) => void;
+  setTrainingMemberPages: (v: boolean) => void;
   setExpirationMsgHtmlByLang: (
     v: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>),
   ) => void;
@@ -171,6 +194,10 @@ export function buildExpirationFunctionsSlice(state: {
   endUsersInteractiveMode: ExpirationEndUserMode | '';
   managementItemsMode: ExpirationEndUserMode | '';
   insertOptionsManagementMode: ExpirationEndUserMode | '';
+  socialClubPages: boolean;
+  socialMemberPages: boolean;
+  trainingClubPages: boolean;
+  trainingMemberPages: boolean;
   expirationMsgHtmlByLang: Record<string, string>;
   newMembersExpiryMode: NewMembersExpiryMode | '';
   newMembersAfterDays: string;
@@ -197,7 +224,11 @@ export function buildExpirationFunctionsSlice(state: {
       modes: {
         sharingSharedUsersMode: state.sharingSharedUsersMode,
         socialItemsMode: state.socialItemsMode,
+        socialClubPages: state.socialClubPages,
+        socialMemberPages: state.socialMemberPages,
         trainingItemsMode: state.trainingItemsMode,
+        trainingClubPages: state.trainingClubPages,
+        trainingMemberPages: state.trainingMemberPages,
         endUsersInteractiveMode: state.endUsersInteractiveMode,
         managementItemsMode: state.managementItemsMode,
         insertOptionsManagementMode: state.insertOptionsManagementMode,
@@ -243,7 +274,6 @@ export function applyExpirationFunctionsSlice(
     if (flow.extend) {
       if (flow.extend.enabled != null) handlers.setExpireExtendEnabled(Boolean(flow.extend.enabled));
       if (flow.extend.days != null) handlers.setExpireExtendDays(strOrEmpty(flow.extend.days));
-      if (flow.extend.actual != null) handlers.setExpireActual(strOrEmpty(flow.extend.actual));
       if (flow.extend.extendedTo != null) handlers.setExpireExtendedTo(strOrEmpty(flow.extend.extendedTo));
     }
     if (flow.modes) {
@@ -268,9 +298,13 @@ export function applyExpirationFunctionsSlice(
           modeOrEmpty(m.insertOptionsManagementMode, END_USER_MODES),
         );
       }
+      if (m.socialClubPages != null) handlers.setSocialClubPages(Boolean(m.socialClubPages));
+      if (m.socialMemberPages != null) handlers.setSocialMemberPages(Boolean(m.socialMemberPages));
+      if (m.trainingClubPages != null) handlers.setTrainingClubPages(Boolean(m.trainingClubPages));
+      if (m.trainingMemberPages != null) handlers.setTrainingMemberPages(Boolean(m.trainingMemberPages));
     }
     if (flow.messageHtmlByLang) {
-      handlers.setExpirationMsgHtmlByLang((prev) => ({ ...prev, ...flow.messageHtmlByLang }));
+      handlers.setExpirationMsgHtmlByLang(() => mergeHtmlByLang(flow.messageHtmlByLang));
     }
   }
   if (fn.newMembers) {
@@ -381,7 +415,108 @@ export function mergePcuSettingsPatch(
     if (incoming.procedure || prevFn.procedure) {
       merged.procedure = mergeProcedureSaved(prevFn.procedure, incoming.procedure);
     }
+    if (incoming.expirationFlow || prevFn.expirationFlow) {
+      const prevFlow = prevFn.expirationFlow ?? {};
+      const incFlow = incoming.expirationFlow ?? {};
+      merged.expirationFlow = {
+        ...prevFlow,
+        ...incFlow,
+        extend: { ...prevFlow.extend, ...incFlow.extend },
+        modes: { ...prevFlow.modes, ...incFlow.modes },
+        messageHtmlByLang: {
+          ...prevFlow.messageHtmlByLang,
+          ...incFlow.messageHtmlByLang,
+        },
+      };
+    }
+    if (incoming.messageAfterActivation || prevFn.messageAfterActivation) {
+      const prevMa = prevFn.messageAfterActivation ?? {};
+      const incMa = incoming.messageAfterActivation ?? {};
+      merged.messageAfterActivation = {
+        ...prevMa,
+        ...incMa,
+        htmlByLang: { ...prevMa.htmlByLang, ...incMa.htmlByLang },
+      };
+    }
     next.functions = merged;
+  }
+
+  if (body.vip && typeof body.vip === 'object') {
+    const prevVip =
+      prev.vip && typeof prev.vip === 'object' ? (prev.vip as Record<string, unknown>) : {};
+    next.vip = { ...prevVip, ...(body.vip as Record<string, unknown>) };
+  }
+
+  if (body.alertMsg && typeof body.alertMsg === 'object') {
+    const prevAm =
+      prev.alertMsg && typeof prev.alertMsg === 'object' ? (prev.alertMsg as Record<string, unknown>) : {};
+    const inc = body.alertMsg as Record<string, unknown>;
+    const prevHtml =
+      prevAm.htmlByLang && typeof prevAm.htmlByLang === 'object'
+        ? (prevAm.htmlByLang as Record<string, string>)
+        : {};
+    const incHtml =
+      inc.htmlByLang && typeof inc.htmlByLang === 'object'
+        ? (inc.htmlByLang as Record<string, string>)
+        : {};
+    next.alertMsg = {
+      ...prevAm,
+      ...inc,
+      showAt: {
+        ...((prevAm.showAt as object) ?? {}),
+        ...((inc.showAt as object) ?? {}),
+      },
+      htmlByLang: { ...prevHtml, ...incHtml },
+    };
+  }
+
+  if (body.idCards && typeof body.idCards === 'object') {
+    const prevIc =
+      prev.idCards && typeof prev.idCards === 'object' ? (prev.idCards as Record<string, unknown>) : {};
+    const inc = body.idCards as Record<string, unknown>;
+    const prevMsg =
+      prevIc.messages && typeof prevIc.messages === 'object'
+        ? (prevIc.messages as Record<string, unknown>)
+        : {};
+    const incMsg =
+      inc.messages && typeof inc.messages === 'object'
+        ? (inc.messages as Record<string, unknown>)
+        : {};
+    const mergeMsgBlock = (key: string) => {
+      const p = prevMsg[key] && typeof prevMsg[key] === 'object' ? (prevMsg[key] as Record<string, unknown>) : {};
+      const i = incMsg[key] && typeof incMsg[key] === 'object' ? (incMsg[key] as Record<string, unknown>) : {};
+      const pHtml =
+        p.htmlByLang && typeof p.htmlByLang === 'object' ? (p.htmlByLang as Record<string, string>) : {};
+      const iHtml =
+        i.htmlByLang && typeof i.htmlByLang === 'object' ? (i.htmlByLang as Record<string, string>) : {};
+      return { ...p, ...i, htmlByLang: { ...pHtml, ...iHtml } };
+    };
+    next.idCards = {
+      ...prevIc,
+      ...inc,
+      terms: { ...((prevIc.terms as object) ?? {}), ...((inc.terms as object) ?? {}) },
+      messages: {
+        ...prevMsg,
+        ...incMsg,
+        afterExpeditionNotPaid: mergeMsgBlock('afterExpeditionNotPaid'),
+        thirdPartyPricelist: mergeMsgBlock('thirdPartyPricelist'),
+      },
+    };
+  }
+
+  if (body.alert && typeof body.alert === 'object') {
+    const prevAl =
+      prev.alert && typeof prev.alert === 'object' ? (prev.alert as Record<string, unknown>) : {};
+    const inc = body.alert as Record<string, unknown>;
+    const prevHtml =
+      prevAl.htmlByLang && typeof prevAl.htmlByLang === 'object'
+        ? (prevAl.htmlByLang as Record<string, string>)
+        : {};
+    const incHtml =
+      inc.htmlByLang && typeof inc.htmlByLang === 'object'
+        ? (inc.htmlByLang as Record<string, string>)
+        : {};
+    next.alert = { ...prevAl, ...inc, htmlByLang: { ...prevHtml, ...incHtml } };
   }
 
   return next;

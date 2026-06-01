@@ -4,26 +4,27 @@ import { X } from 'lucide-react';
 import ClubProfileEditor, {
   type ClubProfileFormPayload,
 } from '@/components/club/ClubProfileEditor';
+import type { ManagedEntityKind } from '@/lib/entity/entityProfileLabels';
 
-export type CreateClubFormPayload = ClubProfileFormPayload;
+export type CreateEntityFormPayload = ClubProfileFormPayload;
 
-export { CLUB_CATEGORY_OPTIONS } from '@/components/club/ClubProfileEditor';
-
-type CreateClubModalProps = {
+type CreateEntityModalProps = {
+  entityKind: ManagedEntityKind;
   isOpen: boolean;
   onClose: () => void;
   adminUsername?: string;
-  onSave: (payload: CreateClubFormPayload) => Promise<void>;
+  onSave: (payload: CreateEntityFormPayload) => Promise<void>;
   saving?: boolean;
 };
 
-export default function CreateClubModal({
+export default function CreateEntityModal({
+  entityKind,
   isOpen,
   onClose,
   adminUsername = 'username',
   onSave,
   saving = false,
-}: CreateClubModalProps) {
+}: CreateEntityModalProps) {
   if (!isOpen) return null;
 
   return (
@@ -31,7 +32,7 @@ export default function CreateClubModal({
       className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/55 p-4 sm:p-8"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="create-club-modal-title"
+      aria-labelledby="create-entity-modal-title"
     >
       <div className="relative my-auto w-full max-w-4xl border border-gray-400 bg-[#f3f3f3] shadow-2xl">
         <button
@@ -43,12 +44,13 @@ export default function CreateClubModal({
           <X className="h-5 w-5" />
         </button>
 
-        <div id="create-club-modal-title" className="sr-only">
-          Create club
+        <div id="create-entity-modal-title" className="sr-only">
+          Create {entityKind}
         </div>
 
         <ClubProfileEditor
           mode="create"
+          entityKind={entityKind}
           adminUsername={adminUsername}
           onSave={onSave}
           saving={saving}

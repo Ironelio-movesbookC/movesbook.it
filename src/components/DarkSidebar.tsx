@@ -109,13 +109,21 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { isClubAccountUserType, isTeamAccountUserType } from '@/utils/dashboardRouting';
+import {
+  isClubAccountUserType,
+  isGroupAccountUserType,
+  isTeamAccountUserType,
+} from '@/utils/dashboardRouting';
 import {
   formatMyClubsSidebarLabel,
   getFormCreatedClubsSortedByCreatedAt,
   isClubCreatedFromForm,
   userHasClubProfile,
 } from '@/lib/club/clubSidebarLabel';
+import {
+  formatEntitySidebarLabel,
+  getFormCreatedEntitiesSortedByCreatedAt,
+} from '@/lib/entity/entityForm';
 import {
   normalizeYoutubeUrlForOpen,
   YOUTUBE_CHANNEL_URL_KEY
@@ -309,8 +317,12 @@ interface DarkSidebarProps {
   onCreateClubClick?: () => void;
   /** Athlete My clubs → Become member (assignment flow TBD). */
   onBecomeMemberClick?: () => void;
-  /** Coach My Groups trained → Create a group trained (creation flow TBD). */
+  /** Coach My Groups trained → Create a trained group. */
   onCreateGroupTrainedClick?: () => void;
+  /** Team dashboard → Create a team. */
+  onCreateTeamClick?: () => void;
+  /** Group dashboard → Create a group. */
+  onCreateGroupClick?: () => void;
   /** Club dashboard: show My Club tab only while a club workspace is open (hidden on My Page). */
   clubMyClubTabVisible?: boolean;
 }
@@ -336,6 +348,8 @@ export default function DarkSidebar({
   onCreateClubClick,
   onBecomeMemberClick,
   onCreateGroupTrainedClick,
+  onCreateTeamClick,
+  onCreateGroupClick,
   clubMyClubTabVisible = false,
 }: DarkSidebarProps) {
   const { user } = useAuth();
@@ -361,13 +375,18 @@ export default function DarkSidebar({
     () => getFormCreatedClubsSortedByCreatedAt(entities),
     [entities]
   );
+  const formCreatedEntities = useMemo(
+    () => getFormCreatedEntitiesSortedByCreatedAt(entities),
+    [entities]
+  );
   const clubUserHasProfile =
     !isClubAccountUserType(userType) || userHasClubProfile(entities);
   const isAthleteUser = userType === 'ATHLETE';
   const isCoachUser = userType === 'COACH';
   const isTeamManagerUser = isTeamAccountUserType(userType);
+  const isGroupAdminUser = isGroupAccountUserType(userType);
   const athleteHasClubMembership = entities.length > 0;
-  const coachHasTrainedGroup = entities.length > 0;
+  const coachHasTrainedGroup = formCreatedEntities.length > 0;
   const showMyClubTab = isClubAccountUserType(userType)
     ? clubMyClubTabVisible === true
     : isAthleteUser
@@ -375,17 +394,23 @@ export default function DarkSidebar({
       : isCoachUser
         ? coachHasTrainedGroup
         : isTeamManagerUser
-          ? entities.length > 0
-          : clubUserHasProfile;
+          ? formCreatedEntities.length > 0
+          : isGroupAdminUser
+            ? formCreatedEntities.length > 0
+            : clubUserHasProfile;
 
   useEffect(() => {
     if (
-      (isClubAccountUserType(userType) || isAthleteUser || isCoachUser || isTeamManagerUser) &&
+      (isClubAccountUserType(userType) ||
+        isAthleteUser ||
+        isCoachUser ||
+        isTeamManagerUser ||
+        isGroupAdminUser) &&
       entities.length > 0
     ) {
       setMyClubsOpen(true);
     }
-  }, [entities.length, userType, isAthleteUser, isCoachUser, isTeamManagerUser]);
+  }, [entities.length, userType, isAthleteUser, isCoachUser, isTeamManagerUser, isGroupAdminUser]);
 
   const [socialSettings, setSocialSettings] = useState<Record<string, unknown>>({});
   /** Personal "My channel on YouTube" — persisted on `User.youtubeChannelUrl` (API merges legacy social JSON). */
@@ -1280,7 +1305,9 @@ export default function DarkSidebar({
                       ? t('sidebar_my_groups_trained')
                       : isTeamManagerUser
                         ? t('sidebar_my_teams')
-                        : t('sidebar_my_clubs')}
+                        : isGroupAdminUser
+                          ? t('sidebar_my_group')
+                          : t('sidebar_my_clubs')}
                   </span>
                 </button>
                 <button
@@ -1385,17 +1412,22 @@ export default function DarkSidebar({
                   >
                     {t('create_group_trained')}
                   </button>
-                  {entities.length > 0 && (
+                  {formCreatedEntities.length > 0 && (
                     <>
                       <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15" />
                       <ul className="mt-3 space-y-1">
-                        {entities.map((group: { id: string; name: string }) => {
+                        {formCreatedEntities.map(
+                          (group: { id: string; name: string; description?: string | null }) => {
                           const isSelected = selectedEntityId === group.id;
+                          const label = formatEntitySidebarLabel(group);
                           return (
                             <li key={group.id}>
                               <button
                                 type="button"
-                                onClick={() => onEntitySelect?.(group.id)}
+                                onClick={() => {
+                                  onEntitySelect?.(group.id);
+                                  setCurrentTab('my-entity');
+                                }}
                                 className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
                                   isSelected ? 'bg-zinc-700/60' : ''
                                 }`}
@@ -1404,13 +1436,12 @@ export default function DarkSidebar({
                                   className="h-2.5 w-2.5 shrink-0 rounded-full bg-lime-400 shadow-[0_0_6px_rgba(163,230,53,0.8)]"
                                   aria-hidden
                                 />
-                                <span className="min-w-0 flex-1 truncate leading-snug">
-                                  {group.name?.trim() || 'Group'}
-                                </span>
+                                <span className="min-w-0 flex-1 truncate leading-snug">{label}</span>
                               </button>
                             </li>
                           );
-                        })}
+                        },
+                        )}
                       </ul>
                     </>
                   )}
@@ -1418,16 +1449,29 @@ export default function DarkSidebar({
               )}
               {myClubsOpen && isTeamManagerUser && (
                 <div className="border-t border-teal-900/40 bg-[#2d2d2d] px-4 py-4">
-                  {entities.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => onCreateTeamClick?.()}
+                    className="mx-auto block w-full max-w-[220px] rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-2.5 text-center text-sm font-semibold text-white shadow hover:from-red-600 hover:to-red-800"
+                  >
+                    Create a team
+                  </button>
+                  {formCreatedEntities.length > 0 ? (
                     <>
-                      <ul className="space-y-1">
-                        {entities.map((team: { id: string; name: string }) => {
+                      <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15" />
+                      <ul className="mt-3 space-y-1">
+                        {formCreatedEntities.map(
+                          (team: { id: string; name: string; description?: string | null }) => {
                           const isSelected = selectedEntityId === team.id;
+                          const label = formatEntitySidebarLabel(team);
                           return (
                             <li key={team.id}>
                               <button
                                 type="button"
-                                onClick={() => onEntitySelect?.(team.id)}
+                                onClick={() => {
+                                  onEntitySelect?.(team.id);
+                                  setCurrentTab('my-entity');
+                                }}
                                 className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
                                   isSelected ? 'bg-zinc-700/60' : ''
                                 }`}
@@ -1436,19 +1480,58 @@ export default function DarkSidebar({
                                   className="h-2.5 w-2.5 shrink-0 rounded-full bg-lime-400 shadow-[0_0_6px_rgba(163,230,53,0.8)]"
                                   aria-hidden
                                 />
-                                <span className="min-w-0 flex-1 truncate leading-snug">
-                                  {team.name?.trim() || 'Team'}
-                                </span>
+                                <span className="min-w-0 flex-1 truncate leading-snug">{label}</span>
                               </button>
                             </li>
                           );
-                        })}
+                        },
+                        )}
                       </ul>
                     </>
-                  ) : (
-                    <div className="text-center text-xs text-gray-300/90">
-                      No teams yet.
-                    </div>
+                  ) : null}
+                </div>
+              )}
+              {myClubsOpen && isGroupAdminUser && (
+                <div className="border-t border-teal-900/40 bg-[#2d2d2d] px-4 py-4">
+                  <button
+                    type="button"
+                    onClick={() => onCreateGroupClick?.()}
+                    className="mx-auto block w-full max-w-[220px] rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-2.5 text-center text-sm font-semibold text-white shadow hover:from-red-600 hover:to-red-800"
+                  >
+                    Create a group
+                  </button>
+                  {formCreatedEntities.length > 0 && (
+                    <>
+                      <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15" />
+                      <ul className="mt-3 space-y-1">
+                        {formCreatedEntities.map(
+                          (group: { id: string; name: string; description?: string | null }) => {
+                          const isSelected = selectedEntityId === group.id;
+                          const label = formatEntitySidebarLabel(group);
+                          return (
+                            <li key={group.id}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onEntitySelect?.(group.id);
+                                  setCurrentTab('my-entity');
+                                }}
+                                className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
+                                  isSelected ? 'bg-zinc-700/60' : ''
+                                }`}
+                              >
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full bg-lime-400 shadow-[0_0_6px_rgba(163,230,53,0.8)]"
+                                  aria-hidden
+                                />
+                                <span className="min-w-0 flex-1 truncate leading-snug">{label}</span>
+                              </button>
+                            </li>
+                          );
+                        },
+                        )}
+                      </ul>
+                    </>
                   )}
                 </div>
               )}
@@ -1537,7 +1620,7 @@ export default function DarkSidebar({
                       className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90 border-t border-black/25"
                     >
                       <UserCircle className="h-4 w-4 shrink-0 opacity-90" />
-                      <span>Member profile</span>
+                      <span>User Profile</span>
                     </button>
                   </div>
                 )}

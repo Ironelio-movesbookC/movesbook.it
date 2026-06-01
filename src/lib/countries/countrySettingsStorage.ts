@@ -6,8 +6,21 @@ import type {
 } from '@/app/countries/countryEditTypes';
 
 const STORAGE_KEY = 'movesbook_country_settings_v1';
+const GLOBAL_SETTINGS_KEY = 'movesbook_countries_global_v1';
 
 type StoredMap = Record<string, CountryExtendedSettings>;
+
+export type CountriesPageGlobalSettings = {
+  annualIncomeEur: string;
+  costVirtualProduct: string;
+  usdEur: string;
+};
+
+const DEFAULT_COUNTRIES_PAGE_GLOBAL: CountriesPageGlobalSettings = {
+  annualIncomeEur: '0.00',
+  costVirtualProduct: '0.00',
+  usdEur: '',
+};
 
 function newId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -159,4 +172,31 @@ export function createPartner(name: string): CountryPartnerRecord {
     description: '',
     extraRows: ['', '', ''],
   };
+}
+
+export function loadCountriesPageGlobalSettings(): CountriesPageGlobalSettings {
+  if (typeof window === 'undefined') return { ...DEFAULT_COUNTRIES_PAGE_GLOBAL };
+  try {
+    const raw = localStorage.getItem(GLOBAL_SETTINGS_KEY);
+    if (!raw) return { ...DEFAULT_COUNTRIES_PAGE_GLOBAL };
+    const parsed = JSON.parse(raw) as Partial<CountriesPageGlobalSettings>;
+    return {
+      annualIncomeEur:
+        typeof parsed.annualIncomeEur === 'string'
+          ? parsed.annualIncomeEur
+          : DEFAULT_COUNTRIES_PAGE_GLOBAL.annualIncomeEur,
+      costVirtualProduct:
+        typeof parsed.costVirtualProduct === 'string'
+          ? parsed.costVirtualProduct
+          : DEFAULT_COUNTRIES_PAGE_GLOBAL.costVirtualProduct,
+      usdEur: typeof parsed.usdEur === 'string' ? parsed.usdEur : DEFAULT_COUNTRIES_PAGE_GLOBAL.usdEur,
+    };
+  } catch {
+    return { ...DEFAULT_COUNTRIES_PAGE_GLOBAL };
+  }
+}
+
+export function saveCountriesPageGlobalSettings(settings: CountriesPageGlobalSettings): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(GLOBAL_SETTINGS_KEY, JSON.stringify(settings));
 }

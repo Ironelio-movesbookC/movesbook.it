@@ -3,11 +3,7 @@ import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword, generateToken, hashPassword } from '@/lib/auth';
 import { MOVESBOOK_LOGIN_USER_TYPES } from '@/lib/adminLoginLogLabels';
-import {
-  findClubByCompanyUsername,
-  verifyClubCompanyPassword,
-} from '@/lib/club/clubDirectLogin';
-import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
+import { tryEntityCompanyLogin } from '@/lib/entity/entityDirectLogin';
 import mysql from 'mysql2/promise';
 
 type LegacyDbConfig = {
@@ -232,43 +228,9 @@ const hasLegacyUsersTable = async (): Promise<boolean> => {
   return false;
 };
 
-type ClubCompanyLoginResult = {
-  user: {
-    id: string;
-    name: string;
-    username: string;
-    email: string;
-    country: string | null;
-    image: string | null;
-    password: string;
-    userType: UserType;
-    createdAt: Date;
-  };
-  clubId: string;
-};
-
-async function tryClubCompanyLogin(
-  loginIdentifier: string,
-  password: string,
-): Promise<ClubCompanyLoginResult | null> {
-  const clubs = await prisma.$queryRaw<
-    { id: string; adminId: string; description: string | null }[]
-  >`
-    SELECT id, adminId, description
-    FROM clubs_new
-    WHERE description IS NOT NULL
-  `;
-
-  const match = findClubByCompanyUsername(clubs, loginIdentifier);
-  if (!match) return null;
-
-  const clubRow = clubs.find((c) => c.id === match.clubId);
-  const meta = parseClubDescriptionMeta(clubRow?.description);
-  const passwordOk = await verifyClubCompanyPassword(password, meta.clubPasswordHash);
-  if (!passwordOk) return null;
-
-  const adminUser = await prisma.user.findUnique({
-    where: { id: match.adminId },
+async function loadAdminUserForEntityLogin(adminId: string) {
+  return prisma.user.findUnique({
+    where: { id: adminId },
     select: {
       id: true,
       name: true,
@@ -281,9 +243,6 @@ async function tryClubCompanyLogin(
       createdAt: true,
     },
   });
-  if (!adminUser) return null;
-
-  return { user: adminUser, clubId: match.clubId };
 }
 
 export async function POST(request: NextRequest) {
@@ -328,7 +287,7 @@ export async function POST(request: NextRequest) {
     });
     let user = null;
     let passwordAlreadyVerified = false;
-    let clubDirectLoginClubId: string | null = null;
+    let entityDirectLoginRedirect: string | null = null;
     
     if (newUsers.length > 0) {
       for (const candidate of newUsers) {
@@ -605,12 +564,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (!user) {
-      const clubLogin = await tryClubCompanyLogin(loginIdentifier, password);
-      if (clubLogin) {
-        user = clubLogin.user;
-        passwordAlreadyVerified = true;
-        clubDirectLoginClubId = clubLogin.clubId;
-      } else {
+      const entityLogin = await tryEntityCompanyLogin(loginIdentifier, password);
+      if (entityLogin) {
+        const adminUser = await loadAdminUserForEntityLogin(entityLogin.adminId);
+        if (adminUser) {
+          user = adminUser;
+          passwordAlreadyVerified = true;
+          entityDirectLoginRedirect = entityLogin.redirectTo;
+        }
+      }
+      if (!user) {
         return NextResponse.json(
           { error: 'Invalid email/username or password' },
           { status: 401 }
@@ -628,12 +591,16 @@ export async function POST(request: NextRequest) {
       console.log(`🔐 Password verification result: ${isPasswordValid ? '✅ VALID' : '❌ INVALID'}`);
       
       if (!isPasswordValid) {
-        const clubLogin = await tryClubCompanyLogin(loginIdentifier, password);
-        if (clubLogin) {
-          user = clubLogin.user;
-          passwordAlreadyVerified = true;
-          clubDirectLoginClubId = clubLogin.clubId;
-        } else {
+        const entityLogin = await tryEntityCompanyLogin(loginIdentifier, password);
+        if (entityLogin) {
+          const adminUser = await loadAdminUserForEntityLogin(entityLogin.adminId);
+          if (adminUser) {
+            user = adminUser;
+            passwordAlreadyVerified = true;
+            entityDirectLoginRedirect = entityLogin.redirectTo;
+          }
+        }
+        if (!passwordAlreadyVerified) {
           const username = user?.username || loginIdentifier;
           console.log(`❌ Password verification failed for user: ${username}`);
           return NextResponse.json(
@@ -696,9 +663,7 @@ export async function POST(request: NextRequest) {
       success: true,
       token,
       user: userPayload,
-      ...(clubDirectLoginClubId
-        ? { redirectTo: `/my-club?clubId=${encodeURIComponent(clubDirectLoginClubId)}` }
-        : {}),
+      ...(entityDirectLoginRedirect ? { redirectTo: entityDirectLoginRedirect } : {}),
     });
 
   } catch (error) {

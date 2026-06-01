@@ -65,7 +65,20 @@ export function CountryPartnersListModal({
             <tbody>
               {records.map((record, index) => (
                 <tr key={record.id} className={index % 2 === 0 ? 'bg-white' : 'bg-[#f5f5f5]'}>
-                  <td className="w-10 px-2 py-1.5 border-r border-gray-200 text-gray-700">{index + 1}</td>
+                  <td className="w-14 px-2 py-1.5 border-r border-gray-200 align-middle">
+                    {record.imageDataUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={record.imageDataUrl}
+                        alt=""
+                        className="w-10 h-10 object-cover border border-gray-300 bg-gray-100"
+                      />
+                    ) : (
+                      <span className="inline-flex w-10 h-10 items-center justify-center border border-gray-300 bg-gray-100 text-gray-500 text-xs">
+                        {index + 1}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-2 py-1.5 border-r border-gray-200">
                     <button
                       type="button"

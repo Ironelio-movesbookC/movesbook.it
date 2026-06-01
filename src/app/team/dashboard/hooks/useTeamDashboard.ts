@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { getDashboardPathForUserType, isTeamAccountUserType } from '@/utils/dashboardRouting';
+import { filterFormCreatedEntities } from '@/hooks/useManagedEntityCreation';
 
 export function useTeamDashboard() {
   const router = useRouter();
@@ -10,40 +11,11 @@ export function useTeamDashboard() {
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-page');
 
-  // Redirect to home if not authenticated
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push('/');
-    }
-  }, [user, loading, router]);
-
-  // Load selected team from localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('selectedTeam');
-      if (saved) setSelectedTeamId(saved);
-    }
-  }, []);
-
-  // Redirect if not team manager
-  useEffect(() => {
-    if (user && !isTeamAccountUserType(user.userType)) {
-      router.replace(getDashboardPathForUserType(user.userType));
-    }
-  }, [user, router]);
-
-  // Load teams
-  useEffect(() => {
-    if (user && isTeamAccountUserType(user.userType)) {
-      loadTeams();
-    }
-  }, [user]);
-
-  const loadTeams = async () => {
+  const loadTeams = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch('/api/teams/my-teams', {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
         const data = await response.json();
@@ -52,21 +24,59 @@ export function useTeamDashboard() {
     } catch (error) {
       console.error('Error loading teams:', error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/');
+    }
+  }, [user, loading, router]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('selectedTeam');
+      if (saved) setSelectedTeamId(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user && !isTeamAccountUserType(user.userType)) {
+      router.replace(getDashboardPathForUserType(user.userType));
+    }
+  }, [user, router]);
+
+  useEffect(() => {
+    if (user && isTeamAccountUserType(user.userType)) {
+      void loadTeams();
+    }
+  }, [user, loadTeams]);
+
+  const formCreatedTeams = filterFormCreatedEntities(teams);
+  const hasFormTeam = formCreatedTeams.length > 0;
+
+  useEffect(() => {
+    if (!hasFormTeam && activeTab === 'my-entity') {
+      setActiveTab('my-page');
+    }
+  }, [hasFormTeam, activeTab]);
 
   const handleTeamSelect = (teamId: string) => {
     localStorage.setItem('selectedTeam', teamId);
-    window.location.href = `/my-team?teamId=${teamId}`;
+    setSelectedTeamId(teamId);
+    setActiveTab('my-entity');
   };
 
   return {
     user,
     loading,
     teams,
+    formCreatedTeams,
+    hasFormTeam,
     selectedTeamId,
+    setSelectedTeamId,
     activeTab,
     setActiveTab,
-    handleTeamSelect
+    loadTeams,
+    handleTeamSelect,
   };
 }
-

@@ -614,9 +614,23 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
             ? data.redirectTo.trim()
             : null;
         if (redirectTo && typeof window !== 'undefined') {
+          const path = redirectTo.split('?')[0] ?? '';
           const clubMatch = redirectTo.match(/[?&]clubId=([^&]+)/);
+          const groupIdMatch = redirectTo.match(/[?&]groupId=([^&]+)/);
+          const teamMatch = redirectTo.match(/[?&]teamId=([^&]+)/);
           if (clubMatch?.[1]) {
             localStorage.setItem('selectedClub', decodeURIComponent(clubMatch[1]));
+          }
+          if (groupIdMatch?.[1]) {
+            const id = decodeURIComponent(groupIdMatch[1]);
+            if (path.includes('my-coaching-group')) {
+              localStorage.setItem('selectedCoachingGroup', id);
+            } else if (path.includes('my-group')) {
+              localStorage.setItem('selectedGroup', id);
+            }
+          }
+          if (teamMatch?.[1]) {
+            localStorage.setItem('selectedTeam', decodeURIComponent(teamMatch[1]));
           }
         }
         login(data.token, data.user, redirectTo);

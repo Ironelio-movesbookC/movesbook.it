@@ -15,10 +15,11 @@ import {
   COUNTRIES_DASHBOARD_ROWS,
   COUNTRIES_PAGE_SIZE,
 } from '@/constants/countriesDashboard.constants';
-
-function flagUrl(iso2: string) {
-  return `https://flagcdn.com/24x18/${iso2.toLowerCase()}.png`;
-}
+import { countryFlagSrc } from '@/lib/countries/countryFlag';
+import {
+  loadCountriesPageGlobalSettings,
+  saveCountriesPageGlobalSettings,
+} from '@/lib/countries/countrySettingsStorage';
 
 function rowMatchesCountriesFilter(row: CountryRow, f: CountriesFilterState): boolean {
   if (f.continent !== 'All' && row.continent !== f.continent) return false;
@@ -165,6 +166,10 @@ export default function CountriesPage() {
     }
     try {
       JSON.parse(adminData);
+      const global = loadCountriesPageGlobalSettings();
+      setAnnualIncomeEur(global.annualIncomeEur);
+      setCostVirtualProduct(global.costVirtualProduct);
+      setUsdEurField(global.usdEur);
       setLoading(false);
     } catch {
       localStorage.removeItem('token');
@@ -202,6 +207,14 @@ export default function CountriesPage() {
     setCountries((prev) =>
       prev.map((row) => (row.id === countryId ? { ...row, regions: regionsCount } : row)),
     );
+  };
+
+  const handleSaveGlobalSettings = () => {
+    saveCountriesPageGlobalSettings({
+      annualIncomeEur,
+      costVirtualProduct,
+      usdEur: usdEurField,
+    });
   };
 
   if (loading) return null;
@@ -290,6 +303,7 @@ export default function CountriesPage() {
               <button
                 type="button"
                 className="bg-[#222] hover:bg-black text-white px-3 py-1 text-xs font-bold rounded-md border border-black/20"
+                onClick={handleSaveGlobalSettings}
               >
                 Save
               </button>
@@ -361,11 +375,12 @@ export default function CountriesPage() {
                       <td className="py-1.5 px-2 border-r border-gray-100 text-center">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={flagUrl(row.iso2)}
+                          src={countryFlagSrc(row.iso2)}
                           alt=""
                           width={24}
                           height={18}
                           className="inline-block border border-gray-200"
+                          loading="lazy"
                         />
                       </td>
                       <td className="py-1.5 px-2 border-r border-gray-100 text-gray-700">

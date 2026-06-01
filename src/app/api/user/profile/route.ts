@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { Prisma } from '@prisma/client';
+import { SportType, type Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
 import { verifyToken } from '@/lib/auth';
 import { collectReferencedUploadPaths, deleteUnreferencedUserMediaFiles } from '@/lib/userMediaUploadCleanup';
+import { isValidSportType, normalizeTelegramAccount } from '@/lib/profileSports';
 
 export const dynamic = 'force-dynamic';
 
@@ -152,6 +153,9 @@ export async function PATCH(request: NextRequest) {
       language,
       gender,
       birthdate,
+      telegramAccount,
+      youtubeChannelUrl,
+      mainSports,
     } = body as {
       profileBanner?: string | null;
       profileBannerAlignment?: string | null;
@@ -165,6 +169,9 @@ export async function PATCH(request: NextRequest) {
       language?: string | null;
       gender?: string | null;
       birthdate?: string | null;
+      telegramAccount?: string | null;
+      youtubeChannelUrl?: string | null;
+      mainSports?: string[] | null;
     };
 
     const data: {
@@ -179,6 +186,8 @@ export async function PATCH(request: NextRequest) {
       country?: string | null;
       gender?: string | null;
       birthdate?: Date | null;
+      telegramAccount?: string | null;
+      youtubeChannelUrl?: string | null;
     } = {};
 
     if (profileBanner !== undefined) {
@@ -271,6 +280,15 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    if (telegramAccount !== undefined) {
+      data.telegramAccount = normalizeTelegramAccount(String(telegramAccount ?? ''));
+    }
+
+    if (youtubeChannelUrl !== undefined) {
+      const trimmed = String(youtubeChannelUrl ?? '').trim();
+      data.youtubeChannelUrl = trimmed.length > 0 ? trimmed.slice(0, 512) : null;
+    }
+
     const explicitDisplayName = name !== undefined && String(name).trim().length > 0;
     if ((firstName !== undefined || surname !== undefined) && !explicitDisplayName) {
       const current = await prisma.user.findUnique({
@@ -324,6 +342,31 @@ export async function PATCH(request: NextRequest) {
       });
     }
 
+    if (mainSports !== undefined) {
+      if (!Array.isArray(mainSports)) {
+        return NextResponse.json({ error: 'mainSports must be an array' }, { status: 400 });
+      }
+      const uniqueSports: SportType[] = [];
+      for (const raw of mainSports) {
+        const sport = String(raw).trim();
+        if (!sport) continue;
+        if (!isValidSportType(sport)) {
+          return NextResponse.json({ error: `Invalid sport: ${sport}` }, { status: 400 });
+        }
+        if (!uniqueSports.includes(sport)) uniqueSports.push(sport);
+      }
+      await prisma.userMainSport.deleteMany({ where: { userId: decoded.userId } });
+      if (uniqueSports.length > 0) {
+        await prisma.userMainSport.createMany({
+          data: uniqueSports.map((sport, order) => ({
+            userId: decoded.userId,
+            sport,
+            order,
+          })),
+        });
+      }
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
       select: {
@@ -341,7 +384,10 @@ export async function PATCH(request: NextRequest) {
         profileBannerAlignment: true,
         profileBannerSequence: true,
         profileBannerVideo: true,
+        telegramAccount: true,
+        youtubeChannelUrl: true,
         userType: true,
+        mainSports: { select: { sport: true, order: true }, orderBy: { order: 'asc' } },
         settings: { select: { language: true } },
       } as Prisma.UserSelect,
     });

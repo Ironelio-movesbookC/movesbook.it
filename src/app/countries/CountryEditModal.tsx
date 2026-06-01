@@ -9,6 +9,7 @@ import {
   loadCountryExtendedSettings,
   saveCountryExtendedSettings,
 } from '@/lib/countries/countrySettingsStorage';
+import { countryFlagSrc } from '@/lib/countries/countryFlag';
 
 export type CountryRow = {
   id: number;
@@ -77,10 +78,6 @@ const CURRENCY_NAMES: Record<string, string> = {
   BBD: 'Dollar',
 };
 
-function flagUrl(iso2: string) {
-  return `https://flagcdn.com/24x18/${iso2.toLowerCase()}.png`;
-}
-
 function describeCurrency(code: string) {
   return CURRENCY_NAMES[code] ?? code;
 }
@@ -107,9 +104,10 @@ function rowToForm(row: CountryRow, extended: CountryExtendedSettings) {
     exchange1EurAfn: extended.exchange1Eur || safeEur.toFixed(3),
     exchangeUsdPerAfn: extended.exchangeUsdPerUnit || (1 / safeUsd).toFixed(4),
     exchange1UsdAfn: extended.exchange1Usd || safeUsd.toFixed(3),
-    flagSrc: flagUrl(row.iso2),
+    flagSrc: countryFlagSrc(row.iso2),
     countryPictureName: extended.countryPictureName,
-    countryPicturePreview: '' as string | null,
+    countryPictureDataUrl: extended.countryPictureDataUrl ?? '',
+    countryPicturePreview: extended.countryPictureDataUrl || null,
   };
 }
 
@@ -142,6 +140,7 @@ function formToSavePayload(form: FormState, extended: CountryExtendedSettings): 
       exchangeUsdPerUnit: form.exchangeUsdPerAfn,
       exchange1Usd: form.exchange1UsdAfn,
       countryPictureName: form.countryPictureName,
+      countryPictureDataUrl: form.countryPictureDataUrl || undefined,
     },
   };
 }
@@ -239,25 +238,34 @@ export function CountryEditModal({ row, onClose, onSave, onRegionsCountChange }:
   const clearFlag = () => {
     if (!form || !row) return;
     if (form.flagSrc.startsWith('blob:')) URL.revokeObjectURL(form.flagSrc);
-    update('flagSrc', flagUrl(row.iso2));
+    update('flagSrc', countryFlagSrc(row.iso2));
   };
 
   const onCountryPicture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !form) return;
-    const url = URL.createObjectURL(file);
-    if (form.countryPicturePreview?.startsWith('blob:')) {
-      URL.revokeObjectURL(form.countryPicturePreview);
-    }
-    setForm({ ...form, countryPictureName: file.name, countryPicturePreview: url });
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!dataUrl) return;
+      setForm({
+        ...form,
+        countryPictureName: file.name,
+        countryPictureDataUrl: dataUrl,
+        countryPicturePreview: dataUrl,
+      });
+    };
+    reader.readAsDataURL(file);
   };
 
   const clearCountryPicture = () => {
     if (!form) return;
-    if (form.countryPicturePreview?.startsWith('blob:')) {
-      URL.revokeObjectURL(form.countryPicturePreview);
-    }
-    setForm({ ...form, countryPictureName: '', countryPicturePreview: null });
+    setForm({
+      ...form,
+      countryPictureName: '',
+      countryPictureDataUrl: '',
+      countryPicturePreview: null,
+    });
   };
 
   const continentOptions = useMemo(() => {

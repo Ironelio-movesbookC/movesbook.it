@@ -6,6 +6,10 @@ import {
   aggregateClubAdminSubscriptionStatus,
   parseClubSubscriptionEndDate,
 } from '@/lib/admin/clubSubscriptionStatus';
+import {
+  buildMovesbookUserTextSearchOr,
+  segmentShouldMatchOwnedClubs,
+} from '@/lib/admin/movesbookUserTextSearch';
 
 export const dynamic = 'force-dynamic';
 
@@ -125,15 +129,11 @@ export async function GET(request: NextRequest) {
   const andClauses: Prisma.UserWhereInput[] = [{ userType: { in: finalTypes } }];
 
   if (search) {
-    andClauses.push({
-      OR: [
-        { username: { contains: search } },
-        { email: { contains: search } },
-        { name: { contains: search } },
-        { firstName: { contains: search } },
-        { surname: { contains: search } },
-      ],
-    });
+    andClauses.push(
+      buildMovesbookUserTextSearchOr(search, {
+        matchOwnedClubs: segmentShouldMatchOwnedClubs(segment),
+      }),
+    );
   }
 
   if (country) {

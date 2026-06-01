@@ -13,6 +13,7 @@ import {
 } from '@/lib/admin/userPcuPanel';
 import { readProfilePanelSettings } from '@/lib/admin/userProfilePanelSettings';
 import { readPcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
+import { pickClubForAdminProfile } from '@/lib/admin/pickClubForAdminProfile';
 import { readPcuSettings } from '@/lib/admin/userPcuSettings';
 
 export const dynamic = 'force-dynamic';
@@ -74,6 +75,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
   const url = new URL(request.url);
   let segment = url.searchParams.get('segment') || '';
+  const searchQuery = (url.searchParams.get('q') || '').trim();
+  const clubIdParam = (url.searchParams.get('clubId') || '').trim();
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -101,8 +104,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           createdAt: true,
           _count: { select: { members: true } },
         },
-        orderBy: { createdAt: 'asc' },
-        take: 1,
+        orderBy: { createdAt: 'desc' },
+        take: 50,
       },
       ownedTeams: {
         select: {
@@ -162,9 +165,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 
   const fullName = [user.firstName, user.surname].filter(Boolean).join(' ').trim() || user.name;
-  const primaryOwned = user.ownedClubs[0];
+  const primaryOwned = pickClubForAdminProfile(user.ownedClubs, {
+    clubId: clubIdParam || null,
+    searchQuery: searchQuery || null,
+  });
   const primaryMember = user.clubMemberships[0]?.club;
   const clubMeta = parseClubDescriptionMeta(primaryOwned?.description);
+  const userForPcuPanel = {
+    ...user,
+    ownedClubs: primaryOwned ? [primaryOwned] : [],
+  };
   const officialClubName = primaryOwned?.name?.trim() || primaryMember?.name?.trim() || '';
   const location =
     primaryOwned?.location?.trim() || primaryMember?.location?.trim() || '';
@@ -213,7 +223,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     },
   ];
 
-  const pcuPanel = buildPcuPanel(user, segment, loginLogCount, planCount);
+  const pcuPanel = buildPcuPanel(userForPcuPanel, segment, loginLogCount, planCount);
   const profilePanel = readProfilePanelSettings(user.settings?.adminSettings);
   const pcuAccess = readPcuAccessSettings(user.settings?.adminSettings, {
     accessStartIso: pcuPanel.startDateIso,

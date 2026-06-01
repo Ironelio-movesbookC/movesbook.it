@@ -2,30 +2,44 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { 
-  Home,
-  Eye,
-  EyeOff
-} from 'lucide-react';
+import { Home, Eye, EyeOff, Users } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
 import SimpleFooter from '@/components/SimpleFooter';
 import AddMemberModal from '@/components/AddMemberModal';
+import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
+import CreateEntityModal from '@/components/entity/CreateEntityModal';
 import RightSidebar from '@/components/dashboard/RightSidebar';
 import TeamGrid from './components/TeamGrid';
 import { useTeamDashboard } from './hooks/useTeamDashboard';
+import { useManagedEntityCreation } from '@/hooks/useManagedEntityCreation';
 
 export default function TeamDashboard() {
   const {
     user,
     loading,
     teams,
+    formCreatedTeams,
+    hasFormTeam,
     selectedTeamId,
+    setSelectedTeamId,
     activeTab,
     setActiveTab,
-    handleTeamSelect
+    loadTeams,
+    handleTeamSelect,
   } = useTeamDashboard();
+
+  const entityCreation = useManagedEntityCreation({
+    createApiPath: '/api/teams',
+    responseEntityKey: 'team',
+    onReload: loadTeams,
+    storageKey: 'selectedTeam',
+    onEntityCreated: (id) => {
+      setSelectedTeamId(id);
+      setActiveTab('my-entity');
+    },
+  });
 
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
@@ -260,10 +274,11 @@ export default function TeamDashboard() {
                   setActiveTab('my-entity');
                   if (selectedTeamId) {
                     window.location.href = `/my-team?teamId=${selectedTeamId}`;
-                  } else if (teams.length > 0) {
-                    window.location.href = `/my-team?teamId=${teams[0].id}`;
+                  } else if (formCreatedTeams.length > 0) {
+                    window.location.href = `/my-team?teamId=${formCreatedTeams[0].id}`;
                   }
                 }}
+                onCreateTeamClick={entityCreation.openCreateFlow}
               />
             </div>
           )}
@@ -271,15 +286,33 @@ export default function TeamDashboard() {
           <div className="flex-1 min-w-0 flex flex-col px-4">
             {activeTab === 'my-page' && (
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900">My Page</h2>
-                </div>
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center text-gray-500">
-                    <p className="text-xl font-semibold mb-2">Welcome to Your Personal Page</p>
-                    <p className="text-gray-600">Your personal dashboard content goes here</p>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">My Page</h2>
+                {!hasFormTeam ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center text-gray-500">
+                      <Users className="w-20 h-20 mx-auto mb-6 opacity-60" />
+                      <p className="text-2xl font-bold mb-2">Set up your team</p>
+                      <p className="text-lg mb-4 max-w-md">
+                        Expand <strong>My teams</strong> in the sidebar, click <strong>Create a team</strong>,
+                        and save your team profile.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={entityCreation.openCreateFlow}
+                        className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700"
+                      >
+                        Create a team
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="max-w-2xl space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-6">
+                    <p className="text-gray-700">
+                      Your personal team manager page. Use the sidebar to open a team or manage
+                      workouts.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
             
@@ -300,9 +333,9 @@ export default function TeamDashboard() {
             
             {activeTab === 'my-entity' && showWorkoutSection && (
               <TeamGrid
-                teams={teams}
+                teams={formCreatedTeams}
                 onTeamSelect={handleTeamSelect}
-                onCreateTeam={() => console.log('Create team')}
+                onCreateTeam={entityCreation.openCreateFlow}
               />
             )}
           </div>
@@ -328,6 +361,24 @@ export default function TeamDashboard() {
               setShowAddMemberModal(false);
             }}
             entityType="team"
+          />
+
+          <AdminPasswordConfirmModal
+            isOpen={entityCreation.showAdminPasswordConfirm}
+            onClose={() => entityCreation.setShowAdminPasswordConfirm(false)}
+            onVerified={entityCreation.handleAdminPasswordVerified}
+            adminUsername={user?.username ?? user?.name ?? 'username'}
+            entityKind="team"
+          />
+
+          <CreateEntityModal
+            key={entityCreation.createModalKey}
+            entityKind="team"
+            isOpen={entityCreation.showCreateModal}
+            onClose={() => entityCreation.setShowCreateModal(false)}
+            adminUsername={user?.username ?? user?.name ?? 'username'}
+            saving={entityCreation.createSaving}
+            onSave={entityCreation.handleCreateSave}
           />
         </div>
       </div>

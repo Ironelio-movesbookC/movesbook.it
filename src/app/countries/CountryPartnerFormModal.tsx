@@ -20,9 +20,11 @@ function emptyForm(record: CountryPartnerRecord | null): CountryPartnerRecord {
 export function CountryPartnerFormModal({ entityLabel, record, onSubmit, onClose }: Props) {
   const fileInputId = useId();
   const [form, setForm] = useState<CountryPartnerRecord>(() => emptyForm(record));
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   useEffect(() => {
     setForm(emptyForm(record));
+    setImagePreview(record?.imageDataUrl ?? null);
   }, [record]);
 
   useEffect(() => {
@@ -44,13 +46,24 @@ export function CountryPartnerFormModal({ entityLabel, record, onSubmit, onClose
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setForm((prev) => ({ ...prev, fileName: file.name }));
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!dataUrl) return;
+      setImagePreview(dataUrl);
+      setForm((prev) => ({ ...prev, fileName: file.name, imageDataUrl: dataUrl }));
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = () => {
     const name = form.name.trim();
     if (!name) return;
-    onSubmit({ ...form, name });
+    onSubmit({
+      ...form,
+      name,
+      imageDataUrl: imagePreview ?? form.imageDataUrl,
+    });
   };
 
   const nameLabel = `${entityLabel} Name`;
@@ -89,13 +102,30 @@ export function CountryPartnerFormModal({ entityLabel, record, onSubmit, onClose
             />
           </label>
 
-          <div>
-            <input id={fileInputId} type="file" className="text-xs" onChange={handleFile} />
-            {form.fileName ? (
-              <p className="text-xs text-gray-600 mt-1">Selected: {form.fileName}</p>
-            ) : (
-              <p className="text-xs text-gray-500 mt-1">No file chosen</p>
-            )}
+          <div className="flex gap-3 items-start">
+            <div className="flex-1 min-w-0">
+              <input
+                id={fileInputId}
+                type="file"
+                accept="image/*"
+                className="text-xs max-w-full"
+                onChange={handleFile}
+              />
+              {form.fileName ? (
+                <p className="text-xs text-gray-600 mt-1">Selected: {form.fileName}</p>
+              ) : (
+                <p className="text-xs text-gray-500 mt-1">No file chosen</p>
+              )}
+            </div>
+            <div
+              className="w-24 h-24 shrink-0 border border-gray-400 bg-gray-200 flex items-center justify-center overflow-hidden"
+              aria-label="Profile picture preview"
+            >
+              {imagePreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={imagePreview} alt="" className="max-h-full max-w-full object-contain" />
+              ) : null}
+            </div>
           </div>
 
           <div className="grid grid-cols-[120px_1fr] gap-2 items-center">
