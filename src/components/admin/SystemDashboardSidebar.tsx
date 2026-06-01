@@ -467,7 +467,7 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
             { label: 'Club password requests' },
             { label: 'Enablings management' },
             { label: 'Set functions enabled' },
-            { label: 'Access control audio setting' },
+            { label: 'Access control audio setting', href: '/admin/access-audio-settings' },
             { label: 'Defaultsettings' }
           ]
         },
