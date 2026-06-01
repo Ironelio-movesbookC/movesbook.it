@@ -15,6 +15,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   // Pages that need special layout handling
   const isGlobalSettings = pathname?.startsWith('/admin/global-settings');
+  const isAccessAudioSettings = pathname?.startsWith('/admin/access-audio-settings');
+  const useSystemSidebar = isGlobalSettings || isAccessAudioSettings;
   const isLogin = pathname?.startsWith('/admin/login');
 
   if (isLogin) {
@@ -29,7 +31,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       />
       
       <div className="flex-1 flex min-h-0 max-w-[1920px] mx-auto w-full">
-        {isGlobalSettings ? (
+        {useSystemSidebar ? (
           <SystemDashboardSidebar isOpen={leftOpen} onToggle={() => setLeftOpen(!leftOpen)} />
         ) : (
           <AdminLeftSidebar isOpen={leftOpen} onToggle={() => setLeftOpen(!leftOpen)} />
