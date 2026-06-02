@@ -344,7 +344,7 @@ export default function TypologySubscriptionPage() {
   return (
     <div className="p-4 lg:p-6 print:p-0">
       <section className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm print:border-0 print:shadow-none">
-        <ClubSettingsTypologyTabs timetableTypologyId={selectedId} />
+        <ClubSettingsTypologyTabs timetableTypologyId={selectedId} listPriceTypologyId={selectedId} />
 
         <div className="border-b border-gray-200 px-4 py-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -530,8 +530,12 @@ export default function TypologySubscriptionPage() {
                             <div className="absolute right-0 z-20 mt-1 hidden min-w-[120px] rounded-md border border-gray-300 bg-white py-1 text-left shadow-lg group-open:block">
                               <button
                                 type="button"
-                                className="block w-full px-3 py-2 text-left text-sm text-gray-400"
-                                disabled
+                                onClick={() =>
+                                  router.push(
+                                    `/club/settings/typology_subscription/pricelist?typologyId=${encodeURIComponent(row.id)}`
+                                  )
+                                }
+                                className="block w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-100"
                               >
                                 List prices
                               </button>

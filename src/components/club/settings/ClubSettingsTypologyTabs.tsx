@@ -12,13 +12,20 @@ type TabItem = {
 
 type ClubSettingsTypologyTabsProps = {
   timetableTypologyId?: string | null;
+  listPriceTypologyId?: string | null;
 };
 
-export default function ClubSettingsTypologyTabs({ timetableTypologyId }: ClubSettingsTypologyTabsProps) {
+export default function ClubSettingsTypologyTabs({
+  timetableTypologyId,
+  listPriceTypologyId
+}: ClubSettingsTypologyTabsProps) {
   const pathname = usePathname() ?? '';
   const timetableHref = timetableTypologyId
     ? `/club/settings/typology_subscription/timetable/${encodeURIComponent(timetableTypologyId)}`
     : '/club/settings/typology_subscription/timetable';
+  const listPriceHref = listPriceTypologyId
+    ? `/club/settings/typology_subscription/pricelist?typologyId=${encodeURIComponent(listPriceTypologyId)}`
+    : '/club/settings/typology_subscription/pricelist';
 
   const tabs: TabItem[] = [
     {
@@ -28,7 +35,7 @@ export default function ClubSettingsTypologyTabs({ timetableTypologyId }: ClubSe
     },
     {
       label: 'List prices',
-      href: '/club/settings/typology_subscription/pricelist',
+      href: listPriceHref,
       match: (path) => path.includes('/typology_subscription/pricelist')
     },
     {
