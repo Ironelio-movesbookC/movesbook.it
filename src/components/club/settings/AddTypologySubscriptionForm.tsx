@@ -750,30 +750,31 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                       <ChevronDown className="h-6 w-6 fill-amber-300" />
                     </button>
                   </div>
-                  <span className="text-xs font-medium text-gray-500">Icon {selectedIconLabel}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-gray-500">Icon {selectedIconLabel}</span>
+                    <input
+                      ref={iconInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg"
+                      className="hidden"
+                      onChange={handleIconUpload}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => iconInputRef.current?.click()}
+                      disabled={uploadingIcon}
+                      className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-gray-100 px-4 text-sm font-semibold text-gray-800 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {uploadingIcon ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4" />
+                      )}
+                      {uploadingIcon ? 'Uploading...' : 'Load an icon'}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center justify-end">
-                  <input
-                    ref={iconInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg"
-                    className="hidden"
-                    onChange={handleIconUpload}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => iconInputRef.current?.click()}
-                    disabled={uploadingIcon}
-                    className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-gray-100 px-4 text-sm font-semibold text-gray-800 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {uploadingIcon ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Upload className="h-4 w-4" />
-                    )}
-                    {uploadingIcon ? 'Uploading...' : 'Load an icon'}
-                  </button>
-                </div>
+                <div className="hidden xl:block"></div>
               </div>
             </section>
 

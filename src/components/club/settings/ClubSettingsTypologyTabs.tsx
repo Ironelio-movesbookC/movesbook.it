@@ -28,9 +28,8 @@ export default function ClubSettingsTypologyTabs({ timetableTypologyId }: ClubSe
     },
     {
       label: 'List prices',
-      href: '#',
-      match: () => false,
-      disabled: true
+      href: '/club/settings/typology_subscription/pricelist',
+      match: (path) => path.includes('/typology_subscription/pricelist')
     },
     {
       label: 'Timetable',
@@ -39,15 +38,13 @@ export default function ClubSettingsTypologyTabs({ timetableTypologyId }: ClubSe
     },
     {
       label: 'RfId/Card readers',
-      href: '#',
-      match: () => false,
-      disabled: true
+      href: '/club/settings/typology_subscription/active_reader',
+      match: (path) => path.includes('/typology_subscription/active_reader')
     },
     {
       label: 'Overview',
-      href: '#',
-      match: () => false,
-      disabled: true
+      href: '/club/settings/typology_subscription/activity_overview',
+      match: (path) => path.includes('/typology_subscription/activity_overview')
     }
   ];
 
@@ -59,14 +56,6 @@ export default function ClubSettingsTypologyTabs({ timetableTypologyId }: ClubSe
           const className = `border-r border-gray-200 px-4 py-3 text-sm font-semibold transition ${
             active ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700 hover:bg-white'
           } ${tab.disabled ? 'cursor-not-allowed opacity-60' : ''}`;
-
-          if (tab.disabled) {
-            return (
-              <span key={tab.label} className={className}>
-                {tab.label}
-              </span>
-            );
-          }
 
           return (
             <Link key={tab.label} href={tab.href} className={className}>
