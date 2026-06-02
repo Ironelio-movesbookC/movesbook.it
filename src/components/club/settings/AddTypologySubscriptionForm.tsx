@@ -209,8 +209,10 @@ function getTypologyIconUrl(image: string): string | null {
   return `/img/typology_image/${normalized}`;
 }
 
+const TYPOLOGY_ICON_FILE_PATTERN = /\.(jpe?g|png|gif|bmp)$/i;
+
 function getTypologyIconLabel(image: string): string {
-  const match = image.match(/^Cat_(\d+)\.(png|jpe?g)$/i);
+  const match = image.match(/^Cat_(\d+)\.(png|jpe?g|gif|bmp)$/i);
   if (match?.[1]) return match[1];
   return 'custom';
 }
@@ -498,7 +500,7 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
   };
 
   const cycleIcon = (direction: 1 | -1) => {
-    const match = form.image.match(/^Cat_(\d+)\.(png|jpe?g)$/i);
+    const match = form.image.match(/^Cat_(\d+)\.(png|jpe?g|gif|bmp)$/i);
     const current = Number(match?.[1]) || 1;
     const next = current + direction;
     const bounded = next < 1 ? BUILT_IN_ICON_COUNT : next > BUILT_IN_ICON_COUNT ? 1 : next;
@@ -508,6 +510,12 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
   const handleIconUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    if (!TYPOLOGY_ICON_FILE_PATTERN.test(file.name)) {
+      window.alert('Allowed file types: jpg, png, bmp, gif');
+      event.target.value = '';
+      return;
+    }
 
     setUploadingIcon(true);
     try {
@@ -733,6 +741,7 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                         alt="Typology icon"
                         width={56}
                         height={56}
+                        unoptimized
                         className="h-14 w-14 object-contain"
                       />
                     ) : (
@@ -750,12 +759,12 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                       <ChevronDown className="h-6 w-6 fill-amber-300" />
                     </button>
                   </div>
+                  <span className="text-xs font-medium text-gray-500">Icon {selectedIconLabel}</span>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-medium text-gray-500">Icon {selectedIconLabel}</span>
                     <input
                       ref={iconInputRef}
                       type="file"
-                      accept="image/png,image/jpeg"
+                      accept="image/png,image/jpeg,image/gif,image/bmp,.jpg,.jpeg,.png,.gif,.bmp"
                       className="hidden"
                       onChange={handleIconUpload}
                     />

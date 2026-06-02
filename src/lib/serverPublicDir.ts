@@ -1,3 +1,4 @@
+import { existsSync } from 'fs';
 import { join, normalize } from 'path';
 
 /**
@@ -13,5 +14,23 @@ export function getServerPublicDir(): string {
   if (env) {
     return normalize(env);
   }
-  return normalize(join(process.cwd(), 'public'));
+
+  const cwd = process.cwd();
+
+  // `node server.js` from inside `.next/standalone` (typical PM2 layout).
+  if (existsSync(join(cwd, 'server.js')) && existsSync(join(cwd, 'public'))) {
+    return normalize(join(cwd, 'public'));
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    const standalonePublic = join(cwd, '.next', 'standalone', 'public');
+    if (
+      existsSync(standalonePublic) &&
+      existsSync(join(cwd, '.next', 'standalone', 'server.js'))
+    ) {
+      return normalize(standalonePublic);
+    }
+  }
+
+  return normalize(join(cwd, 'public'));
 }
