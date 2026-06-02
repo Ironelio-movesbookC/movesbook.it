@@ -373,8 +373,8 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
             <>
               {viewMode === 'schedule' && (
                 <div className="px-4 py-4">
-                  <div className="mb-3 overflow-x-auto">
-                    <div className="flex min-w-[720px] justify-between text-xs text-gray-500">
+                  <div className="mb-3 overflow-x-auto" style={{paddingLeft: 83, paddingRight: 111}}>
+                    <div className="flex justify-between text-xs text-gray-500">
                       {Array.from({ length: 25 }, (_, hour) => (
                         <span key={hour} className="w-4 text-center">
                           {hour}
