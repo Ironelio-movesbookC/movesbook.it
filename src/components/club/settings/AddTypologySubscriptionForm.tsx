@@ -4,6 +4,11 @@ import Image from 'next/image';
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getTypologyIconUrl } from '@/lib/typologyIcon';
+import {
+  createEmptyLanesForDays,
+  LANE_DAY_LABELS,
+  type LanesForDaysMatrix
+} from '@/lib/lanesForDays';
 import RichTextEditor from '@/components/shared/RichTextEditor';
 import {
   ArrowLeft,
@@ -68,6 +73,7 @@ type FormState = {
   preventSubscriptionProcess: boolean;
   enableLanesBooths: boolean;
   lanes: LaneSetting[];
+  lanesForDays: LanesForDaysMatrix;
   afterExpireLaneDays: string;
   blockAccess: boolean;
   decreaseSeason: boolean;
@@ -173,6 +179,7 @@ function initialForm(): FormState {
     preventSubscriptionProcess: false,
     enableLanesBooths: false,
     lanes: Array.from({ length: 10 }, () => ({ available: false, limit: '' })),
+    lanesForDays: createEmptyLanesForDays(),
     afterExpireLaneDays: '',
     blockAccess: false,
     decreaseSeason: false,
@@ -326,6 +333,7 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
   const [loadError, setLoadError] = useState<string | null>(null);
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [dailyAvailabilityOpen, setDailyAvailabilityOpen] = useState(false);
+  const [savingDailyAvailability, setSavingDailyAvailability] = useState(false);
   const [recording, setRecording] = useState(false);
   const iconInputRef = useRef<HTMLInputElement | null>(null);
   const audioInputRef = useRef<HTMLInputElement | null>(null);
@@ -406,7 +414,10 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
           },
           lanes: Array.isArray(payload.lanes) && payload.lanes.length > 0
             ? payload.lanes
-            : initialForm().lanes
+            : initialForm().lanes,
+          lanesForDays: Array.isArray((payload as { lanesForDays?: LanesForDaysMatrix }).lanesForDays)
+            ? (payload as { lanesForDays: LanesForDaysMatrix }).lanesForDays
+            : createEmptyLanesForDays()
         });
       } catch (error) {
         if (!cancelled) {
@@ -480,12 +491,89 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
   const updateLane = (index: number, patch: Partial<LaneSetting>) => {
     if ('limit' in patch) clearFieldError(`lanes.${index}.limit`);
     if ('available' in patch) clearFieldError('enableLanesBooths');
+    setForm((current) => {
+      const nextLanes = current.lanes.map((lane, laneIndex) =>
+        laneIndex === index ? { ...lane, ...patch } : lane
+      );
+
+      let nextLanesForDays = current.lanesForDays;
+      if ('available' in patch && patch.available === false) {
+        nextLanesForDays = current.lanesForDays.map((day) =>
+          day.map((enabled, laneIndex) => (laneIndex === index ? false : enabled))
+        );
+      }
+
+      return {
+        ...current,
+        lanes: nextLanes,
+        lanesForDays: nextLanesForDays
+      };
+    });
+  };
+
+  const updateLaneForDay = (dayIndex: number, laneIndex: number, enabled: boolean) => {
     setForm((current) => ({
       ...current,
-      lanes: current.lanes.map((lane, laneIndex) =>
-        laneIndex === index ? { ...lane, ...patch } : lane
+      lanesForDays: current.lanesForDays.map((day, di) =>
+        di === dayIndex
+          ? day.map((value, li) => (li === laneIndex ? enabled : value))
+          : day
       )
     }));
+  };
+
+  const toggleDayLanes = (dayIndex: number, enabled: boolean) => {
+    setForm((current) => ({
+      ...current,
+      lanesForDays: current.lanesForDays.map((day, di) =>
+        di === dayIndex
+          ? day.map((_, laneIndex) => (current.lanes[laneIndex]?.available ? enabled : false))
+          : day
+      )
+    }));
+  };
+
+  const saveDailyAvailability = async () => {
+    if (!isEditMode || !props.typologyId) {
+      setDailyAvailabilityOpen(false);
+      return;
+    }
+
+    setSavingDailyAvailability(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/club/settings/typology-subscription', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          action: 'save-lanes-for-days',
+          id: props.typologyId,
+          lanesForDays: form.lanesForDays,
+          lanes: form.lanes
+        })
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || 'Save failed');
+      }
+      if (data?.persisted === false) {
+        throw new Error(
+          'The lanes_for_days table is missing in your database. Import the legacy schema or create that table.'
+        );
+      }
+
+      setDailyAvailabilityOpen(false);
+    } catch (error) {
+      window.alert(
+        error instanceof Error ? error.message : 'Unable to save daily availability.'
+      );
+    } finally {
+      setSavingDailyAvailability(false);
+    }
   };
 
   const cycleIcon = (direction: 1 | -1) => {
@@ -1257,9 +1345,13 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
               </button>
             </div>
             <div className="overflow-x-auto p-5">
+              <p className="mb-3 text-sm text-gray-600">
+                Enable lanes or units that can be used for each day. Only lanes marked available above can be selected.
+              </p>
               <table className="w-full min-w-[720px] border-collapse text-sm">
                 <thead>
                   <tr className="bg-gray-100 text-left">
+                    <th className="border border-gray-200 px-3 py-2 text-center">All</th>
                     <th className="border border-gray-200 px-3 py-2">Day</th>
                     {form.lanes.map((_, index) => (
                       <th key={index} className="border border-gray-200 px-3 py-2 text-center">{index + 1}</th>
@@ -1267,16 +1359,41 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                   </tr>
                 </thead>
                 <tbody>
-                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
-                    <tr key={day}>
-                      <td className="border border-gray-200 px-3 py-2 font-medium">{day}</td>
-                      {form.lanes.map((lane, index) => (
-                        <td key={index} className="border border-gray-200 px-3 py-2 text-center">
-                          <input type="checkbox" disabled={!lane.available} className="h-4 w-4 accent-gray-900" />
+                  {LANE_DAY_LABELS.map((dayLabel, dayIndex) => {
+                    const availableLaneIndexes = form.lanes
+                      .map((lane, laneIndex) => (lane.available ? laneIndex : -1))
+                      .filter((laneIndex) => laneIndex >= 0);
+                    const allDaySelected =
+                      availableLaneIndexes.length > 0 &&
+                      availableLaneIndexes.every((laneIndex) => form.lanesForDays[dayIndex]?.[laneIndex]);
+
+                    return (
+                      <tr key={dayLabel}>
+                        <td className="border border-gray-200 px-3 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={allDaySelected}
+                            disabled={availableLaneIndexes.length === 0}
+                            onChange={(event) => toggleDayLanes(dayIndex, event.target.checked)}
+                            className="h-4 w-4 accent-gray-900"
+                            title={`Select all lanes for ${dayLabel}`}
+                          />
                         </td>
-                      ))}
-                    </tr>
-                  ))}
+                        <td className="border border-gray-200 px-3 py-2 font-medium">{dayLabel}</td>
+                        {form.lanes.map((lane, laneIndex) => (
+                          <td key={laneIndex} className="border border-gray-200 px-3 py-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={form.lanesForDays[dayIndex]?.[laneIndex] ?? false}
+                              disabled={!lane.available}
+                              onChange={(event) => updateLaneForDay(dayIndex, laneIndex, event.target.checked)}
+                              className="h-4 w-4 accent-gray-900"
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1284,10 +1401,18 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
               <button
                 type="button"
                 onClick={() => setDailyAvailabilityOpen(false)}
-                className="inline-flex h-10 items-center gap-2 rounded-md bg-gray-900 px-4 text-sm font-semibold text-white"
+                className="inline-flex h-10 items-center rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-800 hover:bg-gray-50"
               >
-                <CalendarDays className="h-4 w-4" />
-                Save
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveDailyAvailability}
+                disabled={savingDailyAvailability}
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-gray-900 px-4 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {savingDailyAvailability ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
+                {savingDailyAvailability ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>

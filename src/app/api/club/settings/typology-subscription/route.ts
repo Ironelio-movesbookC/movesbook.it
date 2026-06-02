@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { unserialize } from 'php-serialize';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { fetchLanesForDays, saveLanesForDays } from '@/lib/lanesForDays.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -1042,10 +1043,13 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Typology not found' }, { status: 404 });
       }
 
+      const typology = mapDbRowToTypologyForm(row);
+      const lanesForDays = await fetchLanesForDays(typologyId);
+
       return NextResponse.json({
         club: context.club,
         areas,
-        typology: mapDbRowToTypologyForm(row),
+        typology: { ...typology, lanesForDays },
         source: 'database'
       });
     }
@@ -1160,6 +1164,10 @@ export async function POST(request: NextRequest) {
         validation.areaActivity
       );
 
+      if (Array.isArray(body.lanesForDays) && Array.isArray(body.lanes)) {
+        await saveLanesForDays(String(id), body.lanesForDays, body.lanes);
+      }
+
       return NextResponse.json({ success: true, persisted: true, id });
     }
 
@@ -1191,7 +1199,30 @@ export async function POST(request: NextRequest) {
         validation.areaActivity
       );
 
+      if (Array.isArray(body.lanesForDays) && Array.isArray(body.lanes)) {
+        await saveLanesForDays(typologyId, body.lanesForDays, body.lanes);
+      }
+
       return NextResponse.json({ success: true, persisted, id: typologyId });
+    }
+
+    if (body.action === 'save-lanes-for-days') {
+      const typologyId = String(body.id ?? '');
+      if (!typologyId || typologyId.startsWith('local-')) {
+        return NextResponse.json({ error: 'Invalid typology id' }, { status: 400 });
+      }
+
+      const existing = await fetchTypologyRowById(typologyId, context.userIds, context.club?.id ?? null);
+      if (!existing) {
+        return NextResponse.json({ error: 'Typology not found' }, { status: 404 });
+      }
+
+      if (!Array.isArray(body.lanesForDays) || !Array.isArray(body.lanes)) {
+        return NextResponse.json({ error: 'lanesForDays and lanes are required' }, { status: 400 });
+      }
+
+      const persisted = await saveLanesForDays(typologyId, body.lanesForDays, body.lanes);
+      return NextResponse.json({ success: true, persisted });
     }
 
     if (body.action !== 'booking-settings') {
