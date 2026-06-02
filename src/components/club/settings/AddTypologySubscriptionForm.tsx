@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getTypologyIconUrl } from '@/lib/typologyIcon';
+import RichTextEditor from '@/components/shared/RichTextEditor';
 import {
   ArrowLeft,
   CalendarDays,
@@ -328,7 +329,6 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
   const [recording, setRecording] = useState(false);
   const iconInputRef = useRef<HTMLInputElement | null>(null);
   const audioInputRef = useRef<HTMLInputElement | null>(null);
-  const descriptionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
@@ -535,26 +535,6 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
       setUploadingIcon(false);
       event.target.value = '';
     }
-  };
-
-  const applyDescriptionMarkup = (prefix: string, suffix = prefix) => {
-    const textarea = descriptionInputRef.current;
-    if (!textarea) {
-      setForm((current) => ({ ...current, description: `${current.description}${prefix}${suffix}` }));
-      return;
-    }
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = form.description.slice(start, end);
-    const nextValue = `${form.description.slice(0, start)}${prefix}${selectedText}${suffix}${form.description.slice(end)}`;
-    const nextCursor = start + prefix.length + selectedText.length;
-
-    setForm((current) => ({ ...current, description: nextValue }));
-    window.requestAnimationFrame(() => {
-      textarea.focus();
-      textarea.setSelectionRange(nextCursor, nextCursor);
-    });
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1178,13 +1158,18 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
         )}
 
         {activeTab === 'Description' && (
-          <section className="p-2">
-            <RichDescriptionEditor
+          <section className="p-2" ref={registerField('description')}>
+            <RichTextEditor
               value={form.description}
-              onChange={(event) => setForm({ ...form, description: event.target.value })}
-              textareaRef={descriptionInputRef}
-              onFormat={applyDescriptionMarkup}
+              onChange={(html) => {
+                clearFieldError('description');
+                setForm((current) => ({ ...current, description: html }));
+              }}
+              minHeight="280px"
+              maxHeight="480px"
+              focusRingClass="focus:ring-2 focus:ring-gray-500"
             />
+            <FieldError message={errors.description} />
           </section>
         )}
 
@@ -1339,119 +1324,6 @@ function SectionTitle({
     }`}>
       {children}
     </h2>
-  );
-}
-
-function RichDescriptionEditor({
-  value,
-  onChange,
-  textareaRef,
-  onFormat
-}: {
-  value: string;
-  onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  textareaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
-  onFormat: (prefix: string, suffix?: string) => void;
-}) {
-  return (
-    <div className="border border-gray-300 bg-white">
-      <div className="border-b border-gray-300 bg-gray-50 px-2 py-2">
-        <div className="flex flex-wrap items-center gap-1">
-          <EditorButton label="Source" onClick={() => onFormat('<p>', '</p>')} wide />
-          <EditorButton label="Save" onClick={() => undefined} />
-          <EditorButton label="New" onClick={() => onFormat('<br />', '')} />
-          <EditorButton label="Find" onClick={() => undefined} />
-          <EditorButton label="Print" onClick={() => window.print()} />
-          <span className="mx-1 h-6 w-px bg-gray-300" />
-          <EditorButton label="Cut" onClick={() => undefined} muted />
-          <EditorButton label="Copy" onClick={() => undefined} muted />
-          <EditorButton label="Paste" onClick={() => undefined} muted />
-          <EditorButton label="Undo" onClick={() => undefined} muted />
-          <EditorButton label="Redo" onClick={() => undefined} muted />
-          <span className="mx-1 h-6 w-px bg-gray-300" />
-          <EditorButton label="B" onClick={() => onFormat('<strong>', '</strong>')} strong />
-          <EditorButton label="I" onClick={() => onFormat('<em>', '</em>')} italic />
-          <EditorButton label="U" onClick={() => onFormat('<u>', '</u>')} underline />
-          <EditorButton label="S" onClick={() => onFormat('<s>', '</s>')} strike />
-          <EditorButton label="x2" onClick={() => onFormat('<sub>', '</sub>')} />
-          <EditorButton label="x^2" onClick={() => onFormat('<sup>', '</sup>')} />
-          <EditorButton label="ul" onClick={() => onFormat('<ul><li>', '</li></ul>')} />
-          <EditorButton label="ol" onClick={() => onFormat('<ol><li>', '</li></ol>')} />
-          <EditorButton label="quote" onClick={() => onFormat('<blockquote>', '</blockquote>')} wide />
-          <EditorButton label="left" onClick={() => onFormat('<p style=\"text-align:left\">', '</p>')} wide />
-          <EditorButton label="center" onClick={() => onFormat('<p style=\"text-align:center\">', '</p>')} wide />
-          <EditorButton label="right" onClick={() => onFormat('<p style=\"text-align:right\">', '</p>')} wide />
-          <EditorButton label="link" onClick={() => onFormat('<a href=\"\">', '</a>')} wide />
-          <EditorButton label="image" onClick={() => onFormat('<img src=\"\" alt=\"\" />', '')} wide />
-          <EditorButton label="table" onClick={() => onFormat('<table><tbody><tr><td>', '</td></tr></tbody></table>')} wide />
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <EditorSelect label="Styles" />
-          <EditorSelect label="Format" />
-          <EditorSelect label="Font" />
-          <EditorSelect label="Size" />
-          <EditorButton label="A" onClick={() => onFormat('<span style=\"color:#111827\">', '</span>')} />
-          <EditorButton label="A+" onClick={() => onFormat('<span style=\"font-size:18px\">', '</span>')} />
-          <EditorButton label="Max" onClick={() => undefined} />
-          <EditorSelect label="Zoom" />
-          <EditorButton label="Help" onClick={() => undefined} wide />
-        </div>
-      </div>
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={onChange}
-        className="min-h-[190px] w-full resize-y border-0 bg-white p-3 text-sm outline-none"
-      />
-      <div className="h-6 border-t border-gray-300 bg-gray-50" />
-    </div>
-  );
-}
-
-function EditorButton({
-  label,
-  onClick,
-  wide = false,
-  muted = false,
-  strong = false,
-  italic = false,
-  underline = false,
-  strike = false
-}: {
-  label: string;
-  onClick: () => void;
-  wide?: boolean;
-  muted?: boolean;
-  strong?: boolean;
-  italic?: boolean;
-  underline?: boolean;
-  strike?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      title={label}
-      onClick={onClick}
-      className={`h-7 border border-transparent bg-white px-2 text-xs text-gray-700 hover:border-gray-300 hover:bg-gray-100 ${
-        wide ? 'min-w-[44px]' : 'min-w-7'
-      } ${muted ? 'text-gray-400' : ''} ${strong ? 'font-bold' : ''} ${italic ? 'italic' : ''} ${
-        underline ? 'underline' : ''
-      } ${strike ? 'line-through' : ''}`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function EditorSelect({ label }: { label: string }) {
-  return (
-    <select
-      aria-label={label}
-      defaultValue=""
-      className="h-7 min-w-[92px] border border-transparent bg-white px-2 text-xs text-gray-700 hover:border-gray-300"
-    >
-      <option value="">{label}</option>
-    </select>
   );
 }
 
