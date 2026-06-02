@@ -247,7 +247,16 @@ async function getReaderTables(): Promise<{
   };
 }
 
-async function fetchReaders(userIds: string[], clubId: string | null): Promise<CardReaderListItem[]> {
+type FetchReadersOptions = {
+  /** CakePHP active_reader: control modes 1–2 and enabled readers only */
+  activeOnly?: boolean;
+};
+
+async function fetchReaders(
+  userIds: string[],
+  clubId: string | null,
+  options: FetchReadersOptions = {}
+): Promise<CardReaderListItem[]> {
   const { readerTable, typeTable, modeTable } = await getReaderTables();
 
   const userPlaceholders = userIds.map(() => '?').join(',');
@@ -261,6 +270,10 @@ async function fetchReaders(userIds: string[], clubId: string | null): Promise<C
 
   const typeSelect = typeTable ? 'COALESCE(rt.name, \'\') AS readerType' : '\'\' AS readerType';
   const modeSelect = modeTable ? 'COALESCE(cm.name, \'\') AS controlMode' : '\'\' AS controlMode';
+
+  const activeFilter = options.activeOnly
+    ? ` AND COALESCE(r.control_mode_id, 0) IN (1, 2) AND COALESCE(r.enable, 'N') = 'Y'`
+    : '';
 
   const baseSql = `
     SELECT
@@ -277,7 +290,7 @@ async function fetchReaders(userIds: string[], clubId: string | null): Promise<C
     FROM \`${readerTable}\` r
     ${typeJoin}
     ${modeJoin}
-    WHERE r.user_id IN (${userPlaceholders})
+    WHERE r.user_id IN (${userPlaceholders})${activeFilter}
   `;
 
   type RawRow = {
@@ -444,14 +457,17 @@ export async function GET(request: NextRequest) {
     const context = await getAuthorizedContext(request);
     if ('error' in context) return context.error;
 
-    const items = await fetchReaders(context.userIds, context.club?.id ?? null);
-    const meta = await fetchReaderMeta();
+    const scope = request.nextUrl.searchParams.get('scope');
+    const activeOnly = scope === 'active';
+    const items = await fetchReaders(context.userIds, context.club?.id ?? null, { activeOnly });
+    const meta = activeOnly ? { readerTypes: [], controlModes: [] } : await fetchReaderMeta();
 
     return NextResponse.json({
       club: context.club,
       items,
       readerTypes: meta.readerTypes,
       controlModes: meta.controlModes,
+      scope: activeOnly ? 'active' : 'all',
       source: 'database',
     });
   } catch (error) {

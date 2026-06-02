@@ -1,8 +1,8 @@
-import { redirect } from 'next/navigation';
+'use client';
 
+import ClubActiveReadersPage from '@/components/club/settings/ClubActiveReadersPage';
+
+/** CakePHP: /clubSettings/active_reader */
 export default function ClubSettingsTypologyActiveReaderPage() {
-  // CakePHP equivalent: /clubSettings/active_reader
-  // Next.js: the card readers UI currently lives in the club dashboard.
-  redirect('/club/dashboard?panel=identification-devices');
+  return <ClubActiveReadersPage />;
 }
-
