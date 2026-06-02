@@ -21,7 +21,7 @@ export function deskTreeHorizontalInset(depth: number): number {
 }
 
 /** Left-only indent so nested rows fill to the right (no right-side gap). */
-export function deskTreeRowInsetStyle(depth: number): { paddingLeft: number } {
+export function deskTreeRowInsetStyle(depth: number): { paddingLeft?: number } {
   const inset = deskTreeHorizontalInset(depth);
   return inset > 0 ? { paddingLeft: inset } : {};
 }

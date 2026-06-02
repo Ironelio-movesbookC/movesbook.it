@@ -11,7 +11,7 @@ export function useVisitorWallHideRightColumn(): boolean {
   const searchParams = useSearchParams();
   const { isAuthenticated, loading } = useAuth();
 
-  const fromMainpage = searchParams.get('source') === 'mainpage';
+  const fromMainpage = searchParams?.get('source') === 'mainpage';
   if (!fromMainpage) return false;
   if (loading) return true;
   return !isAuthenticated;
