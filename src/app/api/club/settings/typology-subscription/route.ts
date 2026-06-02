@@ -9,6 +9,7 @@ type TypologyRow = {
   id: string;
   area: string;
   blockAccess: boolean;
+  image: string;
   activityName: string;
   room: string;
   cost: string;
@@ -48,6 +49,7 @@ type LegacyTypologyRow = {
   area?: string | null;
   blockAccess?: string | null;
   activityName?: string | null;
+  image?: string | null;
   room?: string | number | null;
   cost?: string | number | null;
   limitValue?: string | number | null;
@@ -919,6 +921,7 @@ function normalizeLegacyRow(row: LegacyTypologyRow): TypologyRow {
     id: String(row.id),
     area: row.area?.trim() || 'Unassigned',
     blockAccess: yesNo(row.blockAccess) === 'Y',
+    image: row.image?.trim() || 'Cat_1.png',
     activityName: row.activityName?.trim() || 'Untitled course',
     room: row.room != null ? String(row.room) : '',
     cost: row.cost != null ? String(row.cost) : '',
@@ -965,6 +968,7 @@ async function fetchLegacyRows(userIds: string[], clubId: string | null) {
       t.user_id AS userId,
       ${areaSelect},
       COALESCE(t.block_access, 'N') AS blockAccess,
+      COALESCE(t.image, 'Cat_1.png') AS image,
       COALESCE(t.activity_name, '') AS activityName,
       COALESCE(t.room, '') AS room,
       COALESCE(t.cost_for_lesson, '') AS cost,

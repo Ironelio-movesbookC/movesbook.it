@@ -1,7 +1,9 @@
 'use client';
 
+import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getTypologyIconUrlWithDefault } from '@/lib/typologyIcon';
 import {
   CalendarCheck,
   Check,
@@ -26,6 +28,7 @@ type TypologyRow = {
   id: string;
   area: string;
   blockAccess: boolean;
+  image: string;
   activityName: string;
   room: string;
   cost: string;
@@ -432,7 +435,19 @@ export default function TypologySubscriptionPage() {
                             className="h-4 w-4 rounded border-gray-300 accent-gray-900"
                           />
                         </td>
-                        <td className="px-4 py-3 text-gray-900">{row.activityName}</td>
+                        <td className="px-4 py-3 text-gray-900">
+                          <div className="flex items-center gap-2">
+                            <Image
+                              src={getTypologyIconUrlWithDefault(row.image)}
+                              alt=""
+                              width={32}
+                              height={32}
+                              unoptimized
+                              className="h-8 w-8 shrink-0 object-contain"
+                            />
+                            <span>{row.activityName}</span>
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-center text-gray-700">{row.room || '-'}</td>
                         <td className="px-4 py-3 text-center text-gray-700">{row.cost || '-'}</td>
                         <td className={`px-4 py-3 text-center ${row.limitEnabled ? 'text-gray-900' : 'text-gray-400'}`}>

@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getTypologyIconUrl } from '@/lib/typologyIcon';
 import {
   ArrowLeft,
   CalendarDays,
@@ -195,18 +196,6 @@ function initialForm(): FormState {
     paymentPostecipedOrCreditCard: false,
     payWithinDays: ''
   };
-}
-
-function getTypologyIconUrl(image: string): string | null {
-  const value = image.trim();
-  if (!value || /^https?:\/\//i.test(value)) return null;
-
-  const normalized = value.replace(/^\/+/, '');
-  if (normalized.includes('/')) {
-    return `/${normalized}`;
-  }
-
-  return `/img/typology_image/${normalized}`;
 }
 
 const TYPOLOGY_ICON_FILE_PATTERN = /\.(jpe?g|png|gif|bmp)$/i;
