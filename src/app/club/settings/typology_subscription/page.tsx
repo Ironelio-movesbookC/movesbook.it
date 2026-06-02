@@ -86,6 +86,7 @@ export default function TypologySubscriptionPage() {
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookingSettings, setBookingSettings] = useState<BookingSettings>(DEFAULT_BOOKING_SETTINGS);
   const [savingBooking, setSavingBooking] = useState(false);
+  const [copying, setCopying] = useState(false);
 
   const selectedRow = rows.find((row) => row.id === selectedId) ?? null;
 
@@ -176,19 +177,55 @@ export default function TypologySubscriptionPage() {
     router.push(`/club/settings/typology_subscription/timetable/${encodeURIComponent(row.id)}`);
   };
 
-  const copySelected = () => {
+  const copySelected = async () => {
     const row = requireSelection();
     if (!row) return;
 
-    const copyRow: TypologyRow = {
-      ...row,
-      id: `local-copy-${Date.now()}`,
-      activityName: `${row.activityName} copy`,
-      isDefault: false
-    };
+    if (row.id.startsWith('local-')) {
+      window.alert('Save this typology to the database before copying it.');
+      return;
+    }
 
-    setRows((current) => [copyRow, ...current]);
-    setSelectedId(copyRow.id);
+    setCopying(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/club/settings/typology-subscription', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          action: 'copy-typology',
+          sourceId: row.id
+        })
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || 'Unable to copy this typology.');
+      }
+
+      const newId = String(data.id ?? '');
+      const activityName = String(data.activityName ?? `${row.activityName} copy`);
+      if (!newId) {
+        throw new Error('Copy did not return a new typology id.');
+      }
+
+      const copyRow: TypologyRow = {
+        ...row,
+        id: newId,
+        activityName,
+        isDefault: false
+      };
+
+      setRows((current) => [copyRow, ...current]);
+      setSelectedId(copyRow.id);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to copy this typology.');
+    } finally {
+      setCopying(false);
+    }
   };
 
   const deleteSelected = async () => {
@@ -360,7 +397,12 @@ export default function TypologySubscriptionPage() {
           <div className="mt-4 flex flex-wrap gap-2 print:hidden">
             <ToolbarButton icon={Plus} label="Add new" onClick={() => router.push('/club/settings/typology_subscription/add')} />
             <ToolbarButton icon={Pencil} label="Modify" onClick={openEditPage} disabled={!selectedRow} />
-            <ToolbarButton icon={Copy} label="Copy" onClick={copySelected} disabled={!selectedRow} />
+            <ToolbarButton
+              icon={Copy}
+              label={copying ? 'Copying…' : 'Copy'}
+              onClick={copySelected}
+              disabled={!selectedRow || copying}
+            />
             <ToolbarButton icon={Printer} label="Print" onClick={() => window.print()} />
             <ToolbarButton icon={Trash2} label="Delete" onClick={deleteSelected} disabled={!selectedRow} danger />
             <ToolbarButton icon={X} label="Remove selection" onClick={removeSelection} disabled={!selectedRow} />

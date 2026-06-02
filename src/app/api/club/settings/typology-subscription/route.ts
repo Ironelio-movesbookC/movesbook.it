@@ -749,6 +749,33 @@ async function hasDuplicateTypology(
   return rows.length > 0;
 }
 
+async function resolveCopyActivityName(
+  baseName: string,
+  areaActivity: string,
+  tableName: string,
+  userIds: string[],
+  clubId: string | null
+): Promise<string> {
+  const trimmed = baseName.trim() || 'Untitled course';
+  const root = trimmed.replace(/\s+copy(?:\s+\d+)?$/i, '').trim() || trimmed;
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const candidate = attempt === 0 ? `${root} copy` : `${root} copy ${attempt + 1}`;
+    const duplicate = await hasDuplicateTypology(
+      tableName,
+      candidate,
+      areaActivity,
+      userIds,
+      clubId
+    );
+    if (!duplicate) {
+      return candidate;
+    }
+  }
+
+  return `${root} copy ${Date.now()}`;
+}
+
 async function validateTypologyPayload(
   body: any,
   tableName: string,
@@ -1169,6 +1196,80 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json({ success: true, persisted: true, id });
+    }
+
+    if (body.action === 'copy-typology') {
+      const sourceId = String(body.sourceId ?? body.id ?? '');
+      if (!sourceId || sourceId.startsWith('local-')) {
+        return NextResponse.json({ error: 'Invalid typology id' }, { status: 400 });
+      }
+
+      const sourceRow = await fetchTypologyRowById(
+        sourceId,
+        context.userIds,
+        context.club?.id ?? null
+      );
+      if (!sourceRow) {
+        return NextResponse.json({ error: 'Typology not found' }, { status: 404 });
+      }
+
+      const typologyTable = await getTypologyTableForWrite();
+      const formPayload = mapDbRowToTypologyForm(sourceRow);
+      const lanesForDays = await fetchLanesForDays(sourceId);
+
+      const areaActivity = await resolveAreaActivity(
+        formPayload.areaActivity,
+        context.userIds,
+        context.club?.id ?? null
+      );
+      if (!areaActivity) {
+        return NextResponse.json({ error: 'Invalid area activity for this typology.' }, { status: 400 });
+      }
+
+      const activityName = await resolveCopyActivityName(
+        formPayload.activityName,
+        areaActivity,
+        typologyTable,
+        context.userIds,
+        context.club?.id ?? null
+      );
+
+      const copyBody = {
+        ...formPayload,
+        activityName,
+        lanesForDays
+      };
+
+      const validation = await validateTypologyPayload(copyBody, typologyTable, context);
+      if (Object.keys(validation.fieldErrors).length > 0) {
+        return NextResponse.json({
+          error: 'Validation failed',
+          fieldErrors: validation.fieldErrors
+        }, { status: 400 });
+      }
+
+      const newId = await insertTypology(
+        typologyTable,
+        copyBody,
+        context.userIds,
+        context.club?.id ?? null,
+        areaActivity
+      );
+
+      if (!newId) {
+        return NextResponse.json({ error: 'Unable to create typology copy.' }, { status: 500 });
+      }
+
+      if (Array.isArray(copyBody.lanes)) {
+        await saveLanesForDays(newId, lanesForDays, copyBody.lanes);
+      }
+
+      return NextResponse.json({
+        success: true,
+        persisted: true,
+        id: newId,
+        activityName
+      });
     }
 
     if (body.action === 'update-typology') {
