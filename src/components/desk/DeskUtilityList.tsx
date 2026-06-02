@@ -30,6 +30,7 @@ import {
   Trophy
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { deskTreeRowInsetStyle } from '@/components/desk/deskTreeDepth';
 
 type DeskIconKey = 'at' | 'book' | 'id' | 'trophy' | 'wheelchair' | 'landmark';
 
@@ -254,15 +255,13 @@ function SortableDeskRow({
   };
 
   const childIds = node.children?.map((c) => c.id) ?? [];
+  const insetStyle = deskTreeRowInsetStyle(depth);
 
   return (
-    <div ref={setNodeRef} style={style} className="select-none border-b border-black/10 last:border-b-0">
+    <div ref={setNodeRef} style={{ ...style, ...insetStyle }} className="select-none border-b border-black/10 last:border-b-0">
       <div
-        className={`flex w-full min-h-[40px] items-center gap-2 px-2 py-2 text-xs font-medium tracking-wide shadow-sm ${node.barClass ?? ''} ${
-          depth > 0 ? 'ml-2 border-l-2 border-zinc-300 pl-2' : ''
-        }`}
+        className={`flex min-h-[40px] w-full items-center gap-2 px-2 py-2 text-xs font-medium tracking-wide shadow-sm ${node.barClass ?? ''}`}
         style={{
-          paddingLeft: `${8 + depth * 14}px`,
           ...(node.bgColor ? { backgroundColor: node.bgColor } : {}),
           ...(node.titleColor ? { color: node.titleColor } : {})
         }}

@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { format } from 'date-fns';
 import { Bike, Star, UserPlus } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/hooks/useAuth';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 type LegendKey =
   | 'single_user'
@@ -23,6 +26,8 @@ type ListRow = {
   country: string | null;
   roleLine: string;
   mutualLine: string | null;
+  subscribedSince: string | null;
+  isClubMember: boolean;
 };
 
 const ALL_LEGEND_KEYS: LegendKey[] = [
@@ -50,10 +55,27 @@ function countryBadge(country: string | null): string {
   return t.slice(0, 2).toUpperCase();
 }
 
-function demoMemberVariant(id: string): 'member' | 'invite' {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h + id.charCodeAt(i)) % 2;
-  return h === 0 ? 'member' : 'invite';
+function formatSubscribedSince(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  try {
+    return format(new Date(iso), 'MMM d, yyyy');
+  } catch {
+    return '—';
+  }
+}
+
+function viewerCanManageMembers(userType: string | undefined): boolean {
+  if (!userType) return false;
+  return (
+    isClubAccountUserType(userType) ||
+    userType === 'TEAM_MANAGER' ||
+    userType === 'COACH' ||
+    userType === 'GROUP_ADMIN'
+  );
+}
+
+function targetIsInvitableMember(legendKey: LegendKey): boolean {
+  return legendKey === 'single_user' || legendKey === 'public_figure';
 }
 
 type Props = {
@@ -63,6 +85,7 @@ type Props = {
 
 export function NetworkSearchListClient({ initialQuery, initialSource }: Props) {
   const { t } = useLanguage();
+  const { user } = useAuth();
   const [rows, setRows] = useState<ListRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,8 +104,14 @@ export function NetworkSearchListClient({ initialQuery, initialSource }: Props) 
     setLoading(true);
     setError(null);
     try {
+      const token =
+        typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      const headers: HeadersInit = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+
       const res = await fetch(
-        `/api/network-search-list?q=${encodeURIComponent(q)}&source=${encodeURIComponent(initialSource)}`
+        `/api/network-search-list?q=${encodeURIComponent(q)}&source=${encodeURIComponent(initialSource)}`,
+        { headers }
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -128,6 +157,9 @@ export function NetworkSearchListClient({ initialQuery, initialSource }: Props) 
     { key: 'club', label: t('searchlist_legend_club') },
     { key: 'public_figure', label: t('searchlist_legend_public_figure') },
   ];
+
+  const viewerUserType = user?.userType;
+  const isClubViewer = isClubAccountUserType(viewerUserType ?? '');
 
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 px-3 py-6 sm:px-4 lg:px-6">
@@ -175,7 +207,13 @@ export function NetworkSearchListClient({ initialQuery, initialSource }: Props) 
       ) : (
         <ul className="space-y-4">
           {filteredRows.map((row) => (
-            <SearchResultCard key={`${row.resultType}-${row.id}`} row={row} t={t} />
+            <SearchResultCard
+              key={`${row.resultType}-${row.id}`}
+              row={row}
+              t={t}
+              viewerUserType={viewerUserType}
+              isClubViewer={isClubViewer}
+            />
           ))}
         </ul>
       )}
@@ -186,16 +224,27 @@ export function NetworkSearchListClient({ initialQuery, initialSource }: Props) 
 function SearchResultCard({
   row,
   t,
+  viewerUserType,
+  isClubViewer,
 }: {
   row: ListRow;
   t: (key: string) => string;
+  viewerUserType: string | undefined;
+  isClubViewer: boolean;
 }) {
-  const variant = demoMemberVariant(row.id);
   const isUser = row.resultType === 'user';
-  const memberLabel =
-    variant === 'member' ? t('searchlist_btn_member') : t('searchlist_btn_invite');
-  const secondaryCta =
-    variant === 'member' ? t('searchlist_btn_member') : t('searchlist_btn_send_register');
+  const subscribedLabel = t('searchlist_user_since').replace(
+    '{date}',
+    formatSubscribedSince(row.subscribedSince)
+  );
+
+  const showInviteActions =
+    viewerCanManageMembers(viewerUserType) &&
+    isUser &&
+    targetIsInvitableMember(row.legendKey) &&
+    !row.isClubMember;
+
+  const showAlreadyMember = isClubViewer && isUser && row.isClubMember;
 
   return (
     <li className="rounded-lg border border-zinc-300 bg-white shadow-sm">
@@ -215,14 +264,11 @@ function SearchResultCard({
               {t('searchlist_no_image')}
             </div>
           </div>
-          <button
-            type="button"
-            className={`w-full rounded px-2 py-1.5 text-center text-[11px] font-semibold text-white shadow-sm sm:text-xs ${
-              variant === 'member' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'
-            }`}
-          >
-            {memberLabel}
-          </button>
+          {isUser ? (
+            <p className="w-full rounded border border-zinc-200 bg-zinc-100 px-2 py-1.5 text-center text-[10px] font-medium leading-snug text-zinc-700 sm:text-[11px]">
+              {subscribedLabel}
+            </p>
+          ) : null}
         </div>
 
         <div className="min-w-0 sm:col-span-6 lg:col-span-7">
@@ -257,14 +303,32 @@ function SearchResultCard({
           <p className="mt-1 text-xs text-zinc-500">
             {row.mutualLine ?? t('searchlist_mutuals_placeholder')}
           </p>
-          <button
-            type="button"
-            className={`mt-3 hidden w-full max-w-xs rounded px-3 py-2 text-center text-xs font-semibold text-white shadow-sm sm:block ${
-              variant === 'member' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'
-            }`}
-          >
-            {secondaryCta}
-          </button>
+
+          {showInviteActions ? (
+            <div className="mt-3 flex max-w-md flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                className="flex-1 rounded bg-red-600 px-3 py-2 text-center text-xs font-semibold text-white shadow-sm hover:bg-red-700"
+              >
+                {t('searchlist_btn_send_register')}
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded bg-red-600 px-3 py-2 text-center text-xs font-semibold text-white shadow-sm hover:bg-red-700"
+              >
+                {t('searchlist_btn_invite')}
+              </button>
+            </div>
+          ) : null}
+
+          {showAlreadyMember ? (
+            <button
+              type="button"
+              className="mt-3 w-full max-w-xs rounded bg-emerald-600 px-3 py-2 text-center text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 sm:block"
+            >
+              {t('searchlist_btn_member')}
+            </button>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-2 sm:col-span-3">
