@@ -834,6 +834,8 @@ model SportMachine {
   otherPicturesJson       String?  @db.Text
   videoUrl                String?
   descriptionByLanguage   String?  @db.Text
+  /// JSON: { machineTypes, musclesPositioning, correctExecution, criticalMistakes } → Record<lang, html>
+  richSectionsJson        String?  @db.Text
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 

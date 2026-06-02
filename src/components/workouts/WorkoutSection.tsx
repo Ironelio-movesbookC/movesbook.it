@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { FileText, ChevronLeft, ChevronRight } from 'lucide-react';
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 
 // Drag and Drop
 import {
@@ -41,6 +41,7 @@ import { movelapApi } from '@/utils/api.utils';
 // Helper Functions
 import { sectionHelpers } from '@/utils/workout.helpers';
 import { restTypeDisplayToDb } from '@/utils/restTypeDb';
+import { getWorkoutDisplayNumber } from '@/lib/workoutDisplayOrder';
 
 // Custom Hooks
 import { useWorkoutData } from '@/hooks/useWorkoutData';
@@ -53,6 +54,7 @@ import WeeklyWorkoutStructurePanel from '@/components/workouts/WeeklyWorkoutStru
 import WorkoutCalendarView from '@/components/workouts/WorkoutCalendarView';
 import WorkoutTreeView from '@/components/workouts/WorkoutTreeView';
 import DayTableView from '@/components/workouts/tables/DayTableView';
+import { saveWeekToFavorites } from '@/lib/saveFavoriteWeek';
 import StyledTableWrapper from '@/components/workouts/tables/StyledTableWrapper';
 import AddWorkoutModal from '@/components/workouts/AddWorkoutModal';
 import WorkoutInfoModal from '@/components/workouts/WorkoutInfoModal';
@@ -66,6 +68,7 @@ import EditMoveframeModal from '@/components/workouts/modals/EditMoveframeModal'
 import EditMovelapModal from '@/components/workouts/modals/EditMovelapModal';
 import AddEditMovelapModal from '@/components/workouts/AddEditMovelapModal';
 import CopyDayModal from '@/components/workouts/modals/CopyDayModal';
+import ExportDayToTemplateModal from '@/components/workouts/modals/ExportDayToTemplateModal';
 import MoveDayModal from '@/components/workouts/modals/MoveDayModal';
 import CopyWorkoutModal from '@/components/workouts/modals/CopyWorkoutModal';
 import MoveWorkoutModal from '@/components/workouts/modals/MoveWorkoutModal';
@@ -94,8 +97,19 @@ import PlanGymWeekManualModal, {
   type PlanGymWeekRescanParams
 } from '@/components/workouts/modals/PlanGymWeekManualModal';
 import PlanGymWeekFastPlanModal from '@/components/workouts/modals/PlanGymWeekFastPlanModal';
+import SelectGymPlanWeeksModal, { type GymPlanWeekOption } from '@/components/workouts/modals/SelectGymPlanWeeksModal';
+import PlanGymWeekAssignModal from '@/components/workouts/modals/PlanGymWeekAssignModal';
+import PlanGymWeekWeekActionsMenu, {
+  type PlanGymWeekWeekAction,
+} from '@/components/workouts/modals/PlanGymWeekWeekActionsMenu';
 import { type LastWorkoutBySector } from '@/components/workouts/PlanGymWeekWizard';
 import { buildHelpedRoutines } from '@/utils/planGymWeekLogic';
+import type { GymWeekPlanLaunchContext } from '@/types/gymWeekAssignment';
+import {
+  deleteGymWeekAssignment,
+  getGymWeekAssignment,
+  weekHasGymPlan,
+} from '@/utils/gymWeekAssignmentStorage';
 import DayOverviewModal from '@/components/workouts/DayOverviewModal';
 import WorkoutOverviewModal from '@/components/workouts/WorkoutOverviewModal';
 import ExportSharePrint from '@/components/workouts/ExportSharePrint';
@@ -251,6 +265,18 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   /** Modals / print flows only know legacy sections A–D (weekly-structure tab W maps to A for typing). */
   const activeSectionForModals = (activeSection === 'W' ? 'A' : activeSection) as 'A' | 'B' | 'C' | 'D';
 
+  const resolveDayFromPlan = useCallback(
+    (dayId: string | undefined | null) => {
+      if (!dayId || !workoutPlan?.weeks) return null;
+      for (const week of workoutPlan.weeks) {
+        const found = week.days?.find((d: any) => d.id === dayId);
+        if (found) return found;
+      }
+      return null;
+    },
+    [workoutPlan]
+  );
+
   
   // Reload data when subsection changes (for Section A only)
   useEffect(() => {
@@ -309,10 +335,15 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   // Column Settings Hook
   const columnSettings = useColumnSettings();
   
-  // Copy/Paste state
-  const [copiedDay, setCopiedDay] = useState<any>(null);
-  const [copiedWorkout, setCopiedWorkout] = useState<any>(null);
-  const [copiedMoveframe, setCopiedMoveframe] = useState<any>(null);
+  // Copy/Paste state (clipboard is separate from copy-to-another-day / move modals)
+  const [dayClipboard, setDayClipboard] = useState<any>(null);
+  const [dayForCopyMoveModal, setDayForCopyMoveModal] = useState<any>(null);
+  const [workoutClipboard, setWorkoutClipboard] = useState<any>(null);
+  const [workoutForCopyMoveModal, setWorkoutForCopyMoveModal] = useState<any>(null);
+  const [moveframeClipboard, setMoveframeClipboard] = useState<any>(null);
+  const [moveframeForCopyMoveModal, setMoveframeForCopyMoveModal] = useState<any>(null);
+  const [sourceWorkoutDisplayNumber, setSourceWorkoutDisplayNumber] = useState<number | null>(null);
+  const [movelapClipboard, setMovelapClipboard] = useState<any>(null);
   
   // ==================== SELECTION STATES (Properly Typed) ====================
   const [selectedDay, setSelectedDay] = useState<WorkoutDay | null>(null);
@@ -351,6 +382,133 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [planGymWeekRescanParams, setPlanGymWeekRescanParams] = useState<PlanGymWeekRescanParams | null>(null);
   const [planGymWeekTrainingLevel, setPlanGymWeekTrainingLevel] = useState<TrainingLevel | null>(null);
   const [planGymWeekWizardInitialStep, setPlanGymWeekWizardInitialStep] = useState<1 | 2>(1);
+  const [gymWeekLaunch, setGymWeekLaunch] = useState<GymWeekPlanLaunchContext>({ mode: 'ggw' });
+  const [showSelectGymPlanWeeksModal, setShowSelectGymPlanWeeksModal] = useState(false);
+  const [showPlanGymWeekAssignModal, setShowPlanGymWeekAssignModal] = useState(false);
+  const [planPendingAssign, setPlanPendingAssign] = useState<PlanGymWeekManualResult | null>(null);
+  const [assignTargetWeeks, setAssignTargetWeeks] = useState<{ id: string; weekNumber: number }[]>([]);
+  const [editGymWeekAssignment, setEditGymWeekAssignment] = useState<ReturnType<typeof getGymWeekAssignment>>(null);
+  const [gymWeekMenuOpen, setGymWeekMenuOpen] = useState(false);
+  const [gymWeekMenuAnchor, setGymWeekMenuAnchor] = useState<DOMRect | null>(null);
+  const [gymWeekMenuWeekId, setGymWeekMenuWeekId] = useState<string | null>(null);
+
+  const gymPlanWeekOptions: GymPlanWeekOption[] = useMemo(() => {
+    const weeks = workoutPlan?.weeks ?? [];
+    return weeks.map((w) => ({
+      id: w.id,
+      weekNumber: w.weekNumber,
+      periodName: w.period?.name,
+      startDateLabel: w.days?.[0]?.date
+        ? new Date(w.days[0].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+        : undefined,
+    }));
+  }, [workoutPlan?.weeks]);
+
+  const beginGymWeekWizard = useCallback((launch: GymWeekPlanLaunchContext) => {
+    setGymWeekLaunch(launch);
+    setPlanGymWeekWizardInitialStep(1);
+    setPlanGymWeekInitialPlan(null);
+    setPlanGymWeekRescanParams(null);
+    setEditGymWeekAssignment(null);
+    setShowPlanGymWeekModal(true);
+  }, []);
+
+  const openPlanGymWeekFromHeader = useCallback(() => {
+    beginGymWeekWizard({ mode: 'ggw' });
+  }, [beginGymWeekWizard]);
+
+  const openPlanGymWeekForWeek = useCallback(
+    (week: { id: string; weekNumber: number }, anchorEl?: HTMLElement | null) => {
+      const existing = getGymWeekAssignment(week.id);
+      if (weekHasGymPlan(week.id) && existing) {
+        setGymWeekMenuWeekId(week.id);
+        setGymWeekMenuAnchor(anchorEl?.getBoundingClientRect() ?? null);
+        setGymWeekMenuOpen(true);
+        return;
+      }
+      beginGymWeekWizard({
+        mode: 'sgw',
+        targetWeekId: week.id,
+        targetWeekNumber: week.weekNumber,
+      });
+    },
+    [beginGymWeekWizard]
+  );
+
+  const handleGymWeekMenuAction = useCallback(
+    (action: PlanGymWeekWeekAction) => {
+      const weekId = gymWeekMenuWeekId;
+      if (!weekId) return;
+      const existing = getGymWeekAssignment(weekId);
+      const weekMeta = workoutPlan?.weeks?.find((w: { id: string }) => w.id === weekId);
+
+      if (action === 'delete_plan') {
+        if (
+          !confirm(
+            'Delete the gym week plan for this week? All routine assignments on days/workouts will be removed.'
+          )
+        ) {
+          return;
+        }
+        deleteGymWeekAssignment(weekId);
+        showMessage('success', 'Gym week plan removed from this week.');
+        return;
+      }
+
+      if (action === 'plan_new') {
+        const keepSlots = confirm(
+          'Plan a new gym week?\n\nOK = keep current day/workout assignments (you can change them after building the new routines).\nCancel = start without carrying over assignments.'
+        );
+        if (!keepSlots) {
+          deleteGymWeekAssignment(weekId);
+        }
+        beginGymWeekWizard({
+          mode: 'sgw',
+          targetWeekId: weekId,
+          targetWeekNumber: weekMeta?.weekNumber,
+        });
+        return;
+      }
+
+      if (action === 'edit_current' && existing) {
+        setGymWeekLaunch({
+          mode: 'sgw',
+          targetWeekId: weekId,
+          targetWeekNumber: weekMeta?.weekNumber,
+        });
+        setPlanGymWeekGoals(
+          existing.plan.days.map((_, i) => planGymWeekGoals[i] ?? ('hypertrophy' as GoalId))
+        );
+        setPlanGymWeekInitialPlan(existing.plan);
+        setPlanGymWeekManualDaysCount(existing.plan.daysCount);
+        setEditGymWeekAssignment(existing);
+        setShowPlanGymWeekManualForm(true);
+      }
+    },
+    [gymWeekMenuWeekId, workoutPlan?.weeks, beginGymWeekWizard, planGymWeekGoals, showMessage]
+  );
+
+  const afterGymPlanBuilt = useCallback(
+    (plan: PlanGymWeekManualResult) => {
+      setPlanGymWeekCreatedPlan(null);
+      setPlanPendingAssign(plan);
+
+      if (gymWeekLaunch.mode === 'sgw' && gymWeekLaunch.targetWeekId) {
+        const w = workoutPlan?.weeks?.find((wk: { id: string }) => wk.id === gymWeekLaunch.targetWeekId);
+        setAssignTargetWeeks([
+          {
+            id: gymWeekLaunch.targetWeekId,
+            weekNumber: w?.weekNumber ?? gymWeekLaunch.targetWeekNumber ?? 0,
+          },
+        ]);
+        setShowPlanGymWeekAssignModal(true);
+        return;
+      }
+
+      setShowSelectGymPlanWeeksModal(true);
+    },
+    [gymWeekLaunch, workoutPlan?.weeks]
+  );
 
   // ==================== EXPANSION STATE (Using Custom Hook) ====================
   const {
@@ -492,44 +650,22 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
     cycleWorkoutExpansion(workout.id, day.id);
   };
 
-  /**
-   * Handler to save a week to favorites
-   */
   const handleSaveFavoriteWeek = async (week: any) => {
-    console.log('⭐ Save week to favorites:', week);
-    
-    if (!week || !week.id) {
+    if (!week?.id) {
       showMessage('error', 'No week selected');
       return;
     }
-    
-    try {
-      const token = localStorage.getItem('token');
-      const weekNumber = week.weekNumber || 1;
-      const weekName = `Week ${weekNumber}`;
-      
-      const response = await fetch('/api/workouts/weeks/favorites', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          weekId: week.id,
-          name: weekName,
-          description: `Saved from ${new Date().toLocaleDateString()}`
-        })
-      });
-      
-      if (response.ok) {
-        showMessage('success', `"${weekName}" saved to favorites!`);
-      } else {
-        const error = await response.json();
-        showMessage('error', error.error || 'Failed to save to favorites');
-      }
-    } catch (error) {
-      console.error('Error saving week to favorites:', error);
-      showMessage('error', 'Error saving week to favorites');
+
+    const weekNumber = week.weekNumber || 1;
+    const result = await saveWeekToFavorites(week, {
+      name: `Week ${weekNumber}`,
+      description: `Saved from ${new Date().toLocaleDateString()}`,
+    });
+
+    if (result.ok) {
+      showMessage('success', result.message);
+    } else if (!result.skipped) {
+      showMessage('error', result.error);
     }
   };
 
@@ -552,6 +688,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [dayForWorkoutShare, setDayForWorkoutShare] = useState<any>(null);
   const [showShareDayModal, setShowShareDayModal] = useState(false);
   const [dayToShare, setDayToShare] = useState<any>(null);
+  const [showExportDayToTemplateModal, setShowExportDayToTemplateModal] = useState(false);
+  const [dayForExportToTemplate, setDayForExportToTemplate] = useState<any>(null);
   const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
   const [showMoveWeekModal, setShowMoveWeekModal] = useState(false);
   const [showWeekTotalsModal, setShowWeekTotalsModal] = useState(false);
@@ -1634,10 +1772,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setShowWeekTotalsModal(true);
           }
         }}
-        onPlanGymWeek={() => {
-          setPlanGymWeekWizardInitialStep(1);
-          setShowPlanGymWeekModal(true);
-        }}
+        onPlanGymWeek={openPlanGymWeekFromHeader}
         onInsertActions={
           activeSection === 'B' || activeSection === 'C'
             ? () => setShowInsertActionsModal(true)
@@ -2126,41 +2261,65 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                    setWorkoutModalMode('add');
                    modalActions.setShowAddWorkoutModal(true);
                  }}
+                 onCopyDayToClipboard={(day) => {
+                   setDayClipboard(day);
+                   showMessage(
+                     'success',
+                     activeSection === 'A'
+                       ? `Day ${day.dayOfWeek ?? '?'} copied to clipboard. Open another day and choose Paste.`
+                       : 'Day copied to clipboard. Open another day and choose Paste.'
+                   );
+                 }}
+                 hasDayClipboard={Boolean(dayClipboard)}
                  onCopyDay={(day) => {
-                   setCopiedDay(day);
+                   setDayForCopyMoveModal(day);
                    modalActions.setShowCopyDayModal(true);
                  }}
                  onMoveDay={(day) => {
-                   setCopiedDay(day);
+                   setDayForCopyMoveModal(day);
                    modalActions.setShowMoveDayModal(true);
                  }}
                  onPasteDay={async (targetDay) => {
-                   if (!copiedDay) {
-                     showMessage('error', 'No day copied. Please copy a day first.');
+                   if (!dayClipboard?.id) {
+                     showMessage('error', 'No day in clipboard. Use “Copy day in clipboard” first.');
                      return;
                    }
-                   
+                   const sourceDayLive = resolveDayFromPlan(dayClipboard.id);
+                   if (!sourceDayLive) {
+                     setDayClipboard(null);
+                     showMessage(
+                       'error',
+                       'The copied day no longer exists. Copy the day again, then paste.'
+                     );
+                     return;
+                   }
+                   if (dayClipboard.id === targetDay.id) {
+                     showMessage('error', 'Cannot paste onto the same day.');
+                     return;
+                   }
+
                    try {
                      const token = localStorage.getItem('token');
                      const response = await fetch('/api/workouts/days/copy', {
                        method: 'POST',
                        headers: {
                          'Content-Type': 'application/json',
-                         'Authorization': `Bearer ${token}`
+                         Authorization: `Bearer ${token}`,
                        },
-                      body: JSON.stringify({
-                        sourceDayId: copiedDay.id,
-                        targetDate: targetDay.date,
-                        targetWeekId: targetDay.workoutWeekId
-                      })
+                       body: JSON.stringify({
+                         sourceDayId: sourceDayLive.id,
+                         targetDayId: targetDay.id,
+                         targetWeekId: targetDay.workoutWeekId,
+                       }),
                      });
-                     
+
                      if (!response.ok) {
                        const error = await response.json();
                        throw new Error(error.error || 'Failed to paste day');
                      }
-                     
-                     showMessage('success', 'Day pasted successfully');
+
+                     showMessage('success', 'Day pasted from clipboard');
+                     await loadWorkoutData(activeSection);
                    } catch (error: any) {
                      showMessage('error', error.message || 'Failed to paste day');
                    }
@@ -2168,6 +2327,10 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                  onShareDay={(day) => {
                    setDayToShare(day);
                    setShowShareDayModal(true);
+                 }}
+                 onExportDayToTemplate={(day) => {
+                   setDayForExportToTemplate(day);
+                   setShowExportDayToTemplateModal(true);
                  }}
                  onExportPdfDay={(day) => {
                    setDayToPrint(day);
@@ -2188,28 +2351,36 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   setAddWorkoutDay(day);
                   setShowWorkoutInfoModal(true); // Open info modal
                 }}
+                hasWorkoutClipboard={Boolean(workoutClipboard)}
+                onCopyWorkoutToClipboard={(workout) => {
+                  setWorkoutClipboard(workout);
+                  showMessage(
+                    'success',
+                    `Workout #${workout.sessionNumber ?? '?'} copied to clipboard. Open another day’s workout and choose Paste in Options.`
+                  );
+                }}
                 onCopyWorkout={(workout, day) => {
-                  setCopiedWorkout(workout);
+                  setWorkoutForCopyMoveModal(workout);
                   setActiveWorkout(workout);
                   setActiveDay(day);
                   modalActions.openCopyWorkoutModal();
                 }}
                 onPasteWorkout={async (day) => {
-                  if (!copiedWorkout) {
-                    showMessage('error', 'No workout copied. Please copy a workout first.');
+                  if (!workoutClipboard) {
+                    showMessage('error', 'No workout in clipboard. Use “Copy workout in clipboard” first.');
                     return;
                   }
                   
                   try {
                     const token = localStorage.getItem('token');
-                    const response = await fetch('/api/workouts/copy', {
+                    const response = await fetch('/api/workouts/sessions/copy', {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                       },
                       body: JSON.stringify({
-                        sourceWorkoutId: copiedWorkout.id,
+                        sourceWorkoutId: workoutClipboard.id,
                         targetDayId: day.id
                       })
                     });
@@ -2226,7 +2397,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   }
                 }}
                 onMoveWorkout={(workout, day) => {
-                  setCopiedWorkout(workout);
+                  setWorkoutForCopyMoveModal(workout);
                   setActiveWorkout(workout);
                   setActiveDay(day);
                   modalActions.openMoveWorkoutModal();
@@ -2340,39 +2511,66 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   modalActions.setShowAddEditMovelapModal(true);
                 }}
                  onDeleteDay={async (day) => {
-                   if (confirm(`Are you sure you want to delete this day (${new Date(day.date).toLocaleDateString()})? This will also delete all workouts, moveframes, and movelaps for this day.`)) {
-                     try {
-                       const token = localStorage.getItem('token');
-                       const response = await fetch(`/api/workouts/days?dayId=${day.id}`, {
-                         method: 'DELETE',
-                         headers: { 'Authorization': `Bearer ${token}` }
-                       });
-                       
-                       if (response.ok) {
-                         showMessage('success', 'Day deleted successfully');
-                         
-                         // Clear any references to this day
-                         if (addWorkoutDay?.id === day.id) {
-                           setAddWorkoutDay(null);
-                         }
-                         if (activeDay?.id === day.id) {
-                           setActiveDay(null);
-                         }
-                         if (selectedDay === day.id) {
-                           setSelectedDay(null);
-                         }
-                         
-                         // Refresh workout data to remove deleted day from view
-                         await loadWorkoutData(activeSection);
-                       } else {
-                         const error = await response.json();
-                         console.error('Failed to delete day:', error);
-                         showMessage('error', error.error || 'Failed to delete day');
+                   const deleteLabel =
+                     activeSection === 'A'
+                       ? `Week ${day.weekNumber ?? '?'}, Day ${day.dayOfWeek ?? '?'}`
+                       : new Date(day.date).toLocaleDateString();
+                   // Section W uses WeeklyWorkoutStructurePanel; only template section A clears day slots here.
+                   const isTemplatePlan = activeSection === 'A';
+                   const confirmMessage = isTemplatePlan
+                     ? `Clear all workouts from ${deleteLabel}? The day slot will stay in your plan so you can add or copy workouts again.`
+                     : `Are you sure you want to delete this day (${deleteLabel})? This will also delete all workouts, moveframes, and movelaps for this day.`;
+                   if (!confirm(confirmMessage)) {
+                     return;
+                   }
+                   try {
+                     const token = localStorage.getItem('token');
+                     const response = await fetch(
+                       isTemplatePlan
+                         ? `/api/workouts/days/${day.id}/clear`
+                         : `/api/workouts/days?dayId=${day.id}`,
+                       {
+                         method: isTemplatePlan ? 'POST' : 'DELETE',
+                         headers: { Authorization: `Bearer ${token}` },
                        }
-                     } catch (error) {
-                       console.error('Error deleting day:', error);
-                       showMessage('error', 'Error deleting day');
+                     );
+
+                     if (response.ok) {
+                       showMessage(
+                         'success',
+                         isTemplatePlan
+                           ? 'Workouts cleared from day'
+                           : 'Day deleted successfully'
+                       );
+
+                       if (dayClipboard?.id === day.id) {
+                         setDayClipboard(null);
+                       }
+                       if (dayForCopyMoveModal?.id === day.id) {
+                         setDayForCopyMoveModal(null);
+                         modalActions.closeCopyDayModal();
+                         modalActions.closeMoveDayModal();
+                       }
+
+                       if (addWorkoutDay?.id === day.id) {
+                         setAddWorkoutDay(null);
+                       }
+                       if (activeDay?.id === day.id) {
+                         setActiveDay(null);
+                       }
+                       if (selectedDay === day.id) {
+                         setSelectedDay(null);
+                       }
+
+                       await loadWorkoutData(activeSection);
+                     } else {
+                       const error = await response.json();
+                       console.error('Failed to delete/clear day:', error);
+                       showMessage('error', error.error || 'Failed to update day');
                      }
+                   } catch (error) {
+                     console.error('Error deleting/clearing day:', error);
+                     showMessage('error', 'Error updating day');
                    }
                  }}
                 onDeleteWorkout={async (workout, day) => {
@@ -2394,8 +2592,11 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                         if (editingWorkout?.id === workout.id) {
                           setEditingWorkout(null);
                         }
-                        if (copiedWorkout?.id === workout.id) {
-                          setCopiedWorkout(null);
+                        if (workoutClipboard?.id === workout.id) {
+                          setWorkoutClipboard(null);
+                        }
+                        if (workoutForCopyMoveModal?.id === workout.id) {
+                          setWorkoutForCopyMoveModal(null);
                         }
                         
                         // Refresh workout data to remove deleted workout from view
@@ -2477,14 +2678,98 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   setDayForWorkoutOverview(day);
                   setShowWorkoutOverviewModal(true);
                 }}
-                 onCopyMoveframe={(moveframe, workout, day) => {
-                   setCopiedMoveframe(moveframe);
+                 hasMoveframeClipboard={Boolean(moveframeClipboard)}
+                 onCopyMoveframeToClipboard={(moveframe) => {
+                   setMoveframeClipboard(moveframe);
+                   showMessage(
+                     'success',
+                     `Moveframe ${moveframe.letter ?? '?'} copied to clipboard. Open another workout’s moveframes and choose Paste in Options.`
+                   );
+                 }}
+                 onPasteMoveframe={async (targetWorkout) => {
+                   if (!moveframeClipboard) {
+                     showMessage('error', 'No moveframe in clipboard. Use “Copy moveframe in clipboard” first.');
+                     return;
+                   }
+                   if (!targetWorkout?.id) {
+                     showMessage('error', 'Target workout not found.');
+                     return;
+                   }
+                   try {
+                     const token = localStorage.getItem('token');
+                     const response = await fetch('/api/workouts/moveframes/copy', {
+                       method: 'POST',
+                       headers: {
+                         'Content-Type': 'application/json',
+                         Authorization: `Bearer ${token}`,
+                       },
+                       body: JSON.stringify({
+                         sourceMoveframeId: moveframeClipboard.id,
+                         targetWorkoutId: targetWorkout.id,
+                         position: 'after',
+                       }),
+                     });
+                     if (!response.ok) {
+                       const error = await response.json();
+                       throw new Error(error.error || 'Failed to paste moveframe');
+                     }
+                     showMessage('success', 'Moveframe pasted successfully');
+                     await loadWorkoutData(activeSection);
+                   } catch (error: any) {
+                     showMessage('error', error.message || 'Failed to paste moveframe');
+                   }
+                 }}
+                 onCopyMoveframe={async (moveframe, workout, day, workoutIndex) => {
+                   const single =
+                     Array.isArray(moveframe) ? (moveframe.length === 1 ? moveframe[0] : null) : moveframe;
+                   if (!single?.id) {
+                     showMessage(
+                       'error',
+                       Array.isArray(moveframe) && moveframe.length > 1
+                         ? 'Select only one moveframe (checkbox) to copy to another workout.'
+                         : 'Select a moveframe first, or use row Options → Copy moveframe in clipboard.'
+                     );
+                     return;
+                   }
+                   await loadWorkoutData(activeSection);
+                   const displayNum =
+                     workoutIndex != null
+                       ? workoutIndex + 1
+                       : getWorkoutDisplayNumber(day?.workouts, workout?.id);
+                   setSourceWorkoutDisplayNumber(displayNum);
+                   setMoveframeForCopyMoveModal(single);
                    setActiveWorkout(workout);
                    setActiveDay(day);
                    modalActions.setShowCopyMoveframeModal(true);
                  }}
-                 onMoveMoveframe={(moveframe, workout, day) => {
-                   setCopiedMoveframe(moveframe);
+                 hasMovelapClipboard={Boolean(movelapClipboard)}
+                 movelapClipboard={movelapClipboard}
+                 onCopyMovelapToClipboard={(movelap) => {
+                   setMovelapClipboard(movelap);
+                   showMessage(
+                     'success',
+                     'Movelap copied to clipboard. Open another row’s Options and choose Paste to insert after that position.'
+                   );
+                 }}
+                 onMoveMoveframe={async (moveframe, workout, day, workoutIndex) => {
+                   const single =
+                     Array.isArray(moveframe) ? (moveframe.length === 1 ? moveframe[0] : null) : moveframe;
+                   if (!single?.id) {
+                     showMessage(
+                       'error',
+                       Array.isArray(moveframe) && moveframe.length > 1
+                         ? 'Select only one moveframe (checkbox) to move.'
+                         : 'Select a moveframe with the checkbox first.'
+                     );
+                     return;
+                   }
+                   await loadWorkoutData(activeSection);
+                   const displayNum =
+                     workoutIndex != null
+                       ? workoutIndex + 1
+                       : getWorkoutDisplayNumber(day?.workouts, workout?.id);
+                   setSourceWorkoutDisplayNumber(displayNum);
+                   setMoveframeForCopyMoveModal(single);
                    setActiveWorkout(workout);
                    setActiveDay(day);
                    modalActions.setShowMoveMoveframeModal(true);
@@ -2494,10 +2779,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   modalActions.setShowColumnSettingsModal(true);
                 }}
                  columnSettings={columnSettings}
-                onPlanGymWeek={() => {
-                  setPlanGymWeekWizardInitialStep(1);
-                  setShowPlanGymWeekModal(true);
-                }}
+                onPlanGymWeek={openPlanGymWeekForWeek}
                  reloadWorkouts={async () => {
                    await loadWorkoutData(activeSection);
                  }}
@@ -2520,8 +2802,11 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                          if (editingMoveframe?.id === moveframe.id) {
                            setEditingMoveframe(null);
                          }
-                         if (copiedMoveframe?.id === moveframe.id) {
-                           setCopiedMoveframe(null);
+                         if (moveframeClipboard?.id === moveframe.id) {
+                           setMoveframeClipboard(null);
+                         }
+                         if (moveframeForCopyMoveModal?.id === moveframe.id) {
+                           setMoveframeForCopyMoveModal(null);
                          }
                          
                          // Refresh workout data to remove deleted moveframe from view
@@ -2553,6 +2838,9 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                          }
                          if (editingMovelap?.id === movelap.id) {
                            setEditingMovelap(null);
+                         }
+                         if (movelapClipboard?.id === movelap.id) {
+                           setMovelapClipboard(null);
                          }
                          
                          // Refresh workout data to remove deleted movelap from view
@@ -3340,7 +3628,6 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setShowPlanGymWeekManualForm(false);
             setPlanGymWeekInitialPlan(null);
             setPlanGymWeekRescanParams(null);
-            // Keep trainingLevel until Fast Plan closes — needed for Lev 1–2 vs 3–4 vs 5 distribution tables
             setPlanGymWeekCreatedPlan(result);
           }}
         />
@@ -3370,11 +3657,67 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             );
             showMessage(
               'success',
-              `✅ GYM WEEKLY PLAN created: ${plan.daysCount} day(s), ${totalSeries} total series. Saved as template — apply it to your weekly calendar.`
+              `Gym weekly plan ready: ${plan.daysCount} day(s), ${totalSeries} total series. Assign routines to calendar days next.`
             );
+            afterGymPlanBuilt(plan);
           }}
         />
       )}
+
+      <SelectGymPlanWeeksModal
+        isOpen={showSelectGymPlanWeeksModal}
+        weeks={gymPlanWeekOptions}
+        onClose={() => {
+          setShowSelectGymPlanWeeksModal(false);
+          setPlanPendingAssign(null);
+        }}
+        onConfirm={(weekIds) => {
+          const meta = weekIds
+            .map((id) => gymPlanWeekOptions.find((w) => w.id === id))
+            .filter(Boolean)
+            .map((w) => ({ id: w!.id, weekNumber: w!.weekNumber }));
+          setAssignTargetWeeks(meta);
+          setShowSelectGymPlanWeeksModal(false);
+          setShowPlanGymWeekAssignModal(true);
+        }}
+      />
+
+      {planPendingAssign && assignTargetWeeks.length > 0 && (
+        <PlanGymWeekAssignModal
+          isOpen={showPlanGymWeekAssignModal}
+          plan={planPendingAssign}
+          goals={planGymWeekGoals}
+          targetWeeks={assignTargetWeeks}
+          initialAssignment={
+            gymWeekLaunch.mode === 'sgw' && gymWeekLaunch.targetWeekId
+              ? getGymWeekAssignment(gymWeekLaunch.targetWeekId)
+              : editGymWeekAssignment
+          }
+          onClose={() => {
+            setShowPlanGymWeekAssignModal(false);
+            setPlanPendingAssign(null);
+            setAssignTargetWeeks([]);
+          }}
+          onDone={() => {
+            setPlanPendingAssign(null);
+            setAssignTargetWeeks([]);
+            setEditGymWeekAssignment(null);
+            setPlanGymWeekTrainingLevel(null);
+            setViewMode('table');
+            showMessage('success', 'Gym week routines assigned to your calendar week(s).');
+          }}
+        />
+      )}
+
+      <PlanGymWeekWeekActionsMenu
+        isOpen={gymWeekMenuOpen}
+        anchorRect={gymWeekMenuAnchor}
+        assignedDayCount={
+          gymWeekMenuWeekId ? getGymWeekAssignment(gymWeekMenuWeekId)?.slots?.length ?? 0 : 0
+        }
+        onClose={() => setGymWeekMenuOpen(false)}
+        onSelect={handleGymWeekMenuAction}
+      />
 
       {modals.showImportModal && (activeSection === 'A' || activeSection === 'B') && (
         <ImportWorkoutsModal
@@ -3954,30 +4297,40 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       )}
 
       {/* ==================== COPY DAY MODAL ==================== */}
-      {modals.showCopyDayModal && copiedDay && workoutPlan && (
+      {modals.showCopyDayModal && dayForCopyMoveModal && workoutPlan && (
         <CopyDayModal
           isOpen={modals.showCopyDayModal}
           onClose={() => {
             modalActions.closeCopyDayModal();
-            setCopiedDay(null);
+            setDayForCopyMoveModal(null);
           }}
-          sourceDay={copiedDay}
+          sourceDay={
+            resolveDayFromPlan(dayForCopyMoveModal.id) ?? dayForCopyMoveModal
+          }
           workoutPlan={workoutPlan}
           activeSection={activeSectionForModals}
-          onConfirm={async (targetDate, targetWeekId) => {
+          onConfirm={async (payload) => {
+            const sourceDayLive =
+              resolveDayFromPlan(dayForCopyMoveModal.id) ?? dayForCopyMoveModal;
+            if (!sourceDayLive?.id) {
+              showMessage('error', 'Source day not found. Copy again from a valid day.');
+              return;
+            }
             try {
               const token = localStorage.getItem('token');
               const response = await fetch('/api/workouts/days/copy', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`
+                  Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({
-                  sourceDayId: copiedDay.id,
-                  targetDate: targetDate.toISOString(),
-                  targetWeekId
-                })
+                  sourceDayId: sourceDayLive.id,
+                  targetWeekId: payload.targetWeekId,
+                  ...(payload.targetDayId
+                    ? { targetDayId: payload.targetDayId }
+                    : { targetDate: payload.targetDate?.toISOString() }),
+                }),
               });
 
               if (!response.ok) {
@@ -3987,7 +4340,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
 
               showMessage('success', 'Day copied successfully');
               modalActions.closeCopyDayModal();
-              setCopiedDay(null);
+              setDayForCopyMoveModal(null);
+              await loadWorkoutData(activeSection);
             } catch (error: any) {
               showMessage('error', error.message || 'Failed to copy day');
             }
@@ -3996,30 +4350,32 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       )}
 
       {/* ==================== MOVE DAY MODAL ==================== */}
-      {modals.showMoveDayModal && copiedDay && workoutPlan && (
+      {modals.showMoveDayModal && dayForCopyMoveModal && workoutPlan && (
         <MoveDayModal
           isOpen={modals.showMoveDayModal}
           onClose={() => {
             modalActions.closeMoveDayModal();
-            setCopiedDay(null);
+            setDayForCopyMoveModal(null);
           }}
-          sourceDay={copiedDay}
+          sourceDay={dayForCopyMoveModal}
           workoutPlan={workoutPlan}
           activeSection={activeSectionForModals}
-          onConfirm={async (targetDate, targetWeekId) => {
+          onConfirm={async (payload) => {
             try {
               const token = localStorage.getItem('token');
               const response = await fetch('/api/workouts/days/move', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`
+                  Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({
-                  sourceDayId: copiedDay.id,
-                  targetDate: targetDate.toISOString(),
-                  targetWeekId
-                })
+                  sourceDayId: dayForCopyMoveModal.id,
+                  targetWeekId: payload.targetWeekId,
+                  ...(payload.targetDayId
+                    ? { targetDayId: payload.targetDayId }
+                    : { targetDate: payload.targetDate?.toISOString() }),
+                }),
               });
 
               if (!response.ok) {
@@ -4029,7 +4385,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
 
               showMessage('success', 'Day moved successfully');
               modalActions.closeMoveDayModal();
-              setCopiedDay(null);
+              setDayForCopyMoveModal(null);
+              await loadWorkoutData(activeSection);
             } catch (error: any) {
               showMessage('error', error.message || 'Failed to move day');
             }
@@ -4038,14 +4395,14 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       )}
 
       {/* ==================== COPY WORKOUT MODAL ==================== */}
-      {modals.showCopyWorkoutModal && copiedWorkout && workoutPlan && (
+      {modals.showCopyWorkoutModal && workoutForCopyMoveModal && workoutPlan && (
         <CopyWorkoutModal
           isOpen={modals.showCopyWorkoutModal}
           onClose={() => {
             modalActions.closeCopyWorkoutModal();
-            setCopiedWorkout(null);
+            setWorkoutForCopyMoveModal(null);
           }}
-          sourceWorkout={copiedWorkout}
+          sourceWorkout={workoutForCopyMoveModal}
           workoutPlan={workoutPlan}
           activeSection={activeSectionForModals}
           onConfirm={async (targetDayId, sessionNumber) => {
@@ -4058,7 +4415,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                  sourceWorkoutId: copiedWorkout.id,
+                  sourceWorkoutId: workoutForCopyMoveModal.id,
                   targetDayId,
                   sessionNumber
                 })
@@ -4071,7 +4428,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
 
               showMessage('success', 'Workout copied successfully');
               modalActions.closeCopyWorkoutModal();
-              setCopiedWorkout(null);
+              setWorkoutForCopyMoveModal(null);
               
               // Refresh workout data to show the copied workout
               await loadWorkoutData(activeSection);
@@ -4083,17 +4440,17 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       )}
 
       {/* ==================== MOVE WORKOUT MODAL ==================== */}
-      {modals.showMoveWorkoutModal && copiedWorkout && workoutPlan && (
+      {modals.showMoveWorkoutModal && workoutForCopyMoveModal && workoutPlan && (
         <MoveWorkoutModal
           isOpen={modals.showMoveWorkoutModal}
           onClose={() => {
             modalActions.closeMoveWorkoutModal();
-            setCopiedWorkout(null);
+            setWorkoutForCopyMoveModal(null);
           }}
-          sourceWorkout={copiedWorkout}
+          sourceWorkout={workoutForCopyMoveModal}
           workoutPlan={workoutPlan}
           activeSection={activeSectionForModals}
-          onConfirm={async (targetDayId, sessionNumber) => {
+          onConfirm={async (payload) => {
             try {
               const token = localStorage.getItem('token');
               const response = await fetch('/api/workouts/sessions/move', {
@@ -4103,20 +4460,23 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                  workoutId: copiedWorkout.id,
-                  targetDayId,
-                  sessionNumber
+                  workoutId: workoutForCopyMoveModal.id,
+                  targetDayId: payload.targetDayId,
+                  sessionNumber: payload.sessionNumber,
+                  strategy: payload.strategy,
+                  targetWorkoutId: payload.targetWorkoutId,
                 })
               });
 
               if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.error || 'Failed to move workout');
+                throw new Error(error.error || error.details || 'Failed to move workout');
               }
 
-              showMessage('success', 'Workout moved successfully');
+              const data = await response.json().catch(() => ({}));
+              showMessage('success', data.message || 'Workout moved successfully');
               modalActions.closeMoveWorkoutModal();
-              setCopiedWorkout(null);
+              setWorkoutForCopyMoveModal(null);
               
               // Refresh workout data to show the moved workout
               await loadWorkoutData(activeSection);
@@ -4128,31 +4488,31 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       )}
 
       {/* ==================== COPY MOVEFRAME MODAL ==================== */}
-      {modals.showCopyMoveframeModal && copiedMoveframe && workoutPlan && (
+      {modals.showCopyMoveframeModal && moveframeForCopyMoveModal && workoutPlan && (
         <CopyMoveframeModal
           isOpen={modals.showCopyMoveframeModal}
           onClose={() => {
             modalActions.setShowCopyMoveframeModal(false);
-            setCopiedMoveframe(null);
+            setMoveframeForCopyMoveModal(null);
+            setSourceWorkoutDisplayNumber(null);
           }}
-          sourceMoveframe={copiedMoveframe}
+          sourceMoveframe={moveframeForCopyMoveModal}
+          sourceDay={activeDay}
           workoutPlan={workoutPlan}
           activeSection={activeSectionForModals}
-          onConfirm={async (targetWorkoutId, position, targetMoveframeId) => {
+          onConfirm={async (payload) => {
             try {
               const token = localStorage.getItem('token');
+              if (!token) {
+                throw new Error('Please log in again');
+              }
               const response = await fetch('/api/workouts/moveframes/copy', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
                   'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({
-                  sourceMoveframeId: copiedMoveframe.id,
-                  targetWorkoutId,
-                  position,
-                  targetMoveframeId
-                })
+                body: JSON.stringify(payload)
               });
 
               if (!response.ok) {
@@ -4162,7 +4522,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
 
               showMessage('success', 'Moveframe copied successfully');
               modalActions.setShowCopyMoveframeModal(false);
-              setCopiedMoveframe(null);
+              setMoveframeForCopyMoveModal(null);
               await loadWorkoutData(activeSection);
             } catch (error: any) {
               showMessage('error', error.message || 'Failed to copy moveframe');
@@ -4172,20 +4532,26 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       )}
 
       {/* ==================== MOVE MOVEFRAME MODAL ==================== */}
-      {modals.showMoveMoveframeModal && copiedMoveframe && activeWorkout && workoutPlan && (
+      {modals.showMoveMoveframeModal && moveframeForCopyMoveModal && activeWorkout && workoutPlan && (
         <MoveMoveframeModal
           isOpen={modals.showMoveMoveframeModal}
           onClose={() => {
             modalActions.setShowMoveMoveframeModal(false);
-            setCopiedMoveframe(null);
+            setMoveframeForCopyMoveModal(null);
+            setSourceWorkoutDisplayNumber(null);
           }}
-          sourceMoveframe={copiedMoveframe}
+          sourceMoveframe={moveframeForCopyMoveModal}
           sourceWorkout={activeWorkout}
+          sourceDay={activeDay}
+          sourceWorkoutDisplayNumber={sourceWorkoutDisplayNumber}
           workoutPlan={workoutPlan}
           activeSection={activeSectionForModals}
-          onConfirm={async (targetWorkoutId, position, targetMoveframeId) => {
+          onConfirm={async (payload) => {
             try {
               const token = localStorage.getItem('token');
+              if (!token) {
+                throw new Error('Please log in again');
+              }
               const response = await fetch('/api/workouts/moveframes/move', {
                 method: 'POST',
                 headers: {
@@ -4193,10 +4559,10 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                  moveframeId: copiedMoveframe.id,
-                  targetWorkoutId,
-                  position,
-                  targetMoveframeId
+                  moveframeId: payload.sourceMoveframeId,
+                  targetWorkoutId: payload.targetWorkoutId,
+                  position: payload.position,
+                  targetMoveframeId: payload.targetMoveframeId,
                 })
               });
 
@@ -4207,7 +4573,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
 
               showMessage('success', 'Moveframe moved successfully');
               modalActions.setShowMoveMoveframeModal(false);
-              setCopiedMoveframe(null);
+              setMoveframeForCopyMoveModal(null);
               await loadWorkoutData(activeSection);
             } catch (error: any) {
               showMessage('error', error.message || 'Failed to move moveframe');
@@ -4363,6 +4729,60 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setDayToShare(null);
           }}
           day={dayToShare}
+        />
+      )}
+
+      {/* Export day to Template Plans (yearly plan only) */}
+      {showExportDayToTemplateModal && dayForExportToTemplate && (
+        <ExportDayToTemplateModal
+          isOpen={showExportDayToTemplateModal}
+          onClose={() => {
+            setShowExportDayToTemplateModal(false);
+            setDayForExportToTemplate(null);
+          }}
+          sourceDay={
+            resolveDayFromPlan(dayForExportToTemplate.id) ?? dayForExportToTemplate
+          }
+          onConfirm={async ({ targetDayId, targetWeekId, templateSection }) => {
+            const sourceDayLive =
+              resolveDayFromPlan(dayForExportToTemplate.id) ?? dayForExportToTemplate;
+            if (!sourceDayLive?.id) {
+              showMessage('error', 'Source day not found. Try again from a valid day.');
+              return;
+            }
+            if (!(sourceDayLive.workouts?.length ?? 0)) {
+              showMessage('error', 'This day has no workouts to export.');
+              return;
+            }
+            try {
+              const token = localStorage.getItem('token');
+              const response = await fetch('/api/workouts/days/copy', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  sourceDayId: sourceDayLive.id,
+                  targetDayId,
+                  targetWeekId,
+                }),
+              });
+              if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to export day to template');
+              }
+              showMessage(
+                'success',
+                `Day exported to Weekly Plan ${templateSection}. Open Create Template Plans to review.`
+              );
+              setShowExportDayToTemplateModal(false);
+              setDayForExportToTemplate(null);
+            } catch (error: any) {
+              showMessage('error', error.message || 'Failed to export day to template');
+              throw error;
+            }
+          }}
         />
       )}
 

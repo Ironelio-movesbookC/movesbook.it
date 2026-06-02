@@ -4,6 +4,65 @@ import { verifyToken } from '@/lib/auth';
 
 const prisma = new PrismaClient();
 
+function computeDayDateForWeek(
+  weekNumber: number,
+  dayOfWeek: number,
+  reference: { date: Date; dayOfWeek: number }
+): Date {
+  const weekStart = new Date(reference.date);
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - (reference.dayOfWeek - 1));
+  const dayDate = new Date(weekStart);
+  dayDate.setDate(weekStart.getDate() + (dayOfWeek - 1));
+  return dayDate;
+}
+
+async function ensureTargetDaySlot(
+  tx: any,
+  sourceDay: {
+    dayOfWeek: number;
+    weekNumber: number;
+    periodId: string;
+    storageZone: string;
+    date: Date;
+  },
+  targetWeek: { id: string; weekNumber: number; days: any[] },
+  userId: string
+) {
+  const existing = targetWeek.days.find((d: any) => d.dayOfWeek === sourceDay.dayOfWeek);
+  if (existing) return existing;
+
+  const referenceDay =
+    targetWeek.days.find((d: any) => d.dayOfWeek === 1) ??
+    targetWeek.days[0] ??
+    sourceDay;
+
+  const dayDate = computeDayDateForWeek(
+    targetWeek.weekNumber,
+    sourceDay.dayOfWeek,
+    { date: new Date(referenceDay.date), dayOfWeek: referenceDay.dayOfWeek }
+  );
+
+  const created = await tx.workoutDay.create({
+    data: {
+      workoutWeekId: targetWeek.id,
+      userId,
+      dayOfWeek: sourceDay.dayOfWeek,
+      weekNumber: targetWeek.weekNumber,
+      date: dayDate,
+      periodId: sourceDay.periodId,
+      storageZone: sourceDay.storageZone as any,
+      weather: '',
+      feelingStatus: '5',
+      notes: '',
+    },
+  });
+
+  targetWeek.days.push(created);
+  console.log(`✅ Recreated missing target day slot: week ${targetWeek.weekNumber} day ${sourceDay.dayOfWeek}`);
+  return created;
+}
+
 /**
  * POST /api/workouts/weeks/copy
  * Copy a week from one plan (template) to another plan (yearly plan)
@@ -257,12 +316,12 @@ export async function POST(req: NextRequest) {
 
       // Copy workouts from source to target
       for (const sourceDay of sourceWeek.days) {
-        // Find corresponding target day (by day of week)
-        const targetDay = targetWeek.days.find((d: any) => d.dayOfWeek === sourceDay.dayOfWeek);
-        if (!targetDay) {
-          console.warn(`⚠️ Target day not found for ${sourceDay.dayOfWeek}`);
-          continue;
-        }
+        const targetDay = await ensureTargetDaySlot(
+          tx,
+          sourceDay,
+          targetWeek,
+          decoded.userId
+        );
 
         // Copy each workout
         for (const sourceWorkout of sourceDay.workouts) {

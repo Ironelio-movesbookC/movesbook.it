@@ -242,6 +242,23 @@ export function calculateSportSummaries(
   return summaries.slice(0, 4);
 }
 
+/** Sport icons/totals for a single workout (tree view, etc.) */
+export function calculateWorkoutSportSummaries(
+  workout: any,
+  iconType: 'emoji' | 'icon' = 'emoji'
+): SportSummary[] {
+  if (!workout?.moveframes?.length) return [];
+  return calculateSportSummaries({ workouts: [workout] }, iconType);
+}
+
+/** Display label for sport total in tree / compact UIs */
+export function formatSportSummaryTotal(summary: SportSummary): string {
+  if (summary.isSeriesBased) {
+    return summary.distance > 0 ? `${summary.distance} series` : '—';
+  }
+  return summary.distance > 0 ? `${summary.distance}m` : '—';
+}
+
 /**
  * Calculate total distance for a day
  * 

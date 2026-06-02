@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { usePathname } from 'next/navigation';
 import { Star, Plus, Edit2, Trash2, Calendar, Dumbbell, Target, Clock, Search, Filter, Copy, Eye, Download, Globe, Layers } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { SPORTS_LIST, getSportDisplayName } from '@/constants/moveframe.constants';
@@ -11,8 +11,16 @@ import Image from 'next/image';
 import FavoriteWorkoutCard from '@/components/workouts/FavoriteWorkoutCard';
 import WorkoutOverviewModal from '@/components/workouts/WorkoutOverviewModal';
 import UseInPlannerModal from '@/components/workouts/UseInPlannerModal';
-import type { PeriodizationTemplate } from '@/constants/tools.constants';
-import { normalizePeriodizationTemplates } from '@/constants/tools.constants';
+import UseFavoriteWeekModal from '@/components/workouts/UseFavoriteWeekModal';
+import WeekTotalsModal from '@/components/workouts/modals/WeekTotalsModal';
+import { favoritePlanDataToDisplayWeek } from '@/lib/favoriteWeekPlan';
+import { toFavouritesSettingsRow } from '@/lib/favoriteMoveframeFormat';
+import type { PeriodizationTemplate, PeriodizationTemplateBuild } from '@/constants/tools.constants';
+import {
+  normalizePeriodizationTemplates,
+  PERIODIZATION_LEVEL_OPTIONS,
+} from '@/constants/tools.constants';
+import FavouritePeriodizationBuilderModal from '@/components/settings/FavouritePeriodizationBuilderModal';
 
 function pickSportLang(byLang: Record<string, string> | undefined, code: string): string {
   if (!byLang || typeof byLang !== 'object') return '';
@@ -22,6 +30,11 @@ function pickSportLang(byLang: Record<string, string> | undefined, code: string)
   return typeof en === 'string' ? en.trim() : '';
 }
 
+function getFavouritesAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('token') || localStorage.getItem('adminToken');
+}
+
 interface WeeklyPlan {
   id: string;
   name: string;
@@ -29,8 +42,11 @@ interface WeeklyPlan {
   weekStart: string;
   daysCount: number;
   workoutsCount: number;
+  /** ISO date string for sorting and relative display */
   lastUsed: string;
   tags: string[];
+  planData?: any;
+  createdAt?: string;
 }
 
 interface Workout {
@@ -61,8 +77,10 @@ interface Moveframe {
 }
 
 export default function FavouritesSettings() {
-  const router = useRouter();
+  const pathname = usePathname();
+  const isPeriodizationCatalogAdmin = pathname?.startsWith('/settings') ?? false;
   const { t, currentLanguage } = useLanguage();
+  const userLanguageCode = (currentLanguage || 'en').toLowerCase().split('-')[0];
   const iconType = useSportIconType();
   const [activeTab, setActiveTab] = useState<
     'plans' | 'workouts' | 'moveframes' | 'sports' | 'periodizations'
@@ -76,6 +94,8 @@ export default function FavouritesSettings() {
   const [weeklyPlans, setWeeklyPlans] = useState<WeeklyPlan[]>([]);
   const [showPlanDialog, setShowPlanDialog] = useState(false);
   const [editingPlan, setEditingPlan] = useState<WeeklyPlan | null>(null);
+  const [viewWeekPlan, setViewWeekPlan] = useState<WeeklyPlan | null>(null);
+  const [useWeekPlan, setUseWeekPlan] = useState<WeeklyPlan | null>(null);
   
   // Workouts State
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -95,6 +115,11 @@ export default function FavouritesSettings() {
   const [showPeriodizationDialog, setShowPeriodizationDialog] = useState(false);
   const [editingPeriodization, setEditingPeriodization] = useState<PeriodizationTemplate | null>(null);
   const [periodizationTagsInput, setPeriodizationTagsInput] = useState('');
+  const [buildingPeriodization, setBuildingPeriodization] = useState<PeriodizationTemplate | null>(null);
+  const [showPeriodizationArchiveModal, setShowPeriodizationArchiveModal] = useState(false);
+  const [periodizationArchiveLoading, setPeriodizationArchiveLoading] = useState(false);
+  const [periodizationArchiveItems, setPeriodizationArchiveItems] = useState<PeriodizationTemplate[]>([]);
+  const [periodizationArchiveNote, setPeriodizationArchiveNote] = useState<string | null>(null);
   
   const loadPeriodizationTemplatesFromSettings = useCallback(async () => {
     try {
@@ -112,50 +137,82 @@ export default function FavouritesSettings() {
     }
   }, []);
 
-  const persistPeriodizationTemplates = useCallback(async (next: PeriodizationTemplate[]) => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      alert('Please log in');
-      return false;
-    }
-    try {
-      const cur = await fetch('/api/user/settings', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!cur.ok) {
-        alert('Could not load current settings');
+  const syncPeriodizationCatalog = useCallback(
+    async (next: PeriodizationTemplate[]) => {
+      const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+      if (!token) return;
+      const langs = new Set(next.map((t) => (t.language || 'en').toLowerCase().split('-')[0]));
+      for (const lang of Array.from(langs)) {
+        const forLang = next.filter(
+          (t) => (t.language || 'en').toLowerCase().split('-')[0] === lang
+        );
+        try {
+          await fetch('/api/admin/periodization-catalog/sync', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ language: lang, templates: forLang }),
+          });
+        } catch {
+          console.warn('Periodization catalog sync failed for', lang);
+        }
+      }
+    },
+    []
+  );
+
+  const persistPeriodizationTemplates = useCallback(
+    async (next: PeriodizationTemplate[]) => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('Please log in');
         return false;
       }
-      const body = await cur.json();
-      const prev =
-        body.toolsSettings &&
-        typeof body.toolsSettings === 'object' &&
-        !Array.isArray(body.toolsSettings)
-          ? body.toolsSettings
-          : {};
-      const res = await fetch('/api/user/settings', {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          toolsSettings: {
-            ...(prev as Record<string, unknown>),
-            periodizationTemplates: next,
+      try {
+        const cur = await fetch('/api/user/settings', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!cur.ok) {
+          alert('Could not load current settings');
+          return false;
+        }
+        const body = await cur.json();
+        const prev =
+          body.toolsSettings &&
+          typeof body.toolsSettings === 'object' &&
+          !Array.isArray(body.toolsSettings)
+            ? body.toolsSettings
+            : {};
+        const res = await fetch('/api/user/settings', {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
           },
-        }),
-      });
-      if (!res.ok) {
+          body: JSON.stringify({
+            toolsSettings: {
+              ...(prev as Record<string, unknown>),
+              periodizationTemplates: next,
+            },
+          }),
+        });
+        if (!res.ok) {
+          alert('Failed to save periodization presets');
+          return false;
+        }
+        if (isPeriodizationCatalogAdmin) {
+          await syncPeriodizationCatalog(next);
+        }
+        return true;
+      } catch {
         alert('Failed to save periodization presets');
         return false;
       }
-      return true;
-    } catch {
-      alert('Failed to save periodization presets');
-      return false;
-    }
-  }, []);
+    },
+    [isPeriodizationCatalogAdmin, syncPeriodizationCatalog]
+  );
 
   const persistSportTranslationsServer = useCallback(
     async (next: Record<string, Record<string, string>>) => {
@@ -200,6 +257,23 @@ export default function FavouritesSettings() {
   
   // Language-specific defaults state
   const [selectedLanguage, setSelectedLanguage] = useState(currentLanguage || 'en');
+
+  const effectivePeriodizationLanguage = isPeriodizationCatalogAdmin
+    ? selectedLanguage
+    : userLanguageCode;
+
+  const periodizationsForDisplayLanguage = useMemo(() => {
+    const filtered = periodizationTemplates.filter(
+      (tpl) =>
+        (tpl.language || 'en').toLowerCase().split('-')[0] ===
+        effectivePeriodizationLanguage.toLowerCase().split('-')[0]
+    );
+    if (isPeriodizationCatalogAdmin) return filtered;
+    return filtered.slice(0, 1);
+  }, [periodizationTemplates, effectivePeriodizationLanguage, isPeriodizationCatalogAdmin]);
+
+  const userHasPeriodizationSlot = !isPeriodizationCatalogAdmin && periodizationTemplates.length >= 1;
+
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [superAdminPassword, setSuperAdminPassword] = useState('');
   const [showLoadDialog, setShowLoadDialog] = useState(false);
@@ -233,12 +307,100 @@ export default function FavouritesSettings() {
     { code: 'ar', name: 'العربية' },
   ];
 
+  const userLanguageName =
+    supportedLanguages.find((l) => l.code === userLanguageCode)?.name || userLanguageCode.toUpperCase();
+
+  const loadPeriodizationArchive = useCallback(async () => {
+    setPeriodizationArchiveLoading(true);
+    setPeriodizationArchiveNote(null);
+    const lang = userLanguageCode;
+    try {
+      let res = await fetch(`/api/admin/tools-defaults/load?language=${encodeURIComponent(lang)}`);
+      let data: { toolsData?: { periodizationTemplates?: unknown } } = await res.json().catch(() => ({}));
+      let usedEnglishFallback = false;
+      if ((!res.ok || !data.toolsData) && lang !== 'en') {
+        const enRes = await fetch(`/api/admin/tools-defaults/load?language=${encodeURIComponent('en')}`);
+        const enJson = await enRes.json().catch(() => ({}));
+        if (enRes.ok && enJson.toolsData) {
+          res = enRes;
+          data = enJson;
+          usedEnglishFallback = true;
+        }
+      }
+      if (!res.ok || !data.toolsData) {
+        setPeriodizationArchiveItems([]);
+        setPeriodizationArchiveNote(`No Movesbook periodizations published for ${userLanguageName}.`);
+        return;
+      }
+      const list = normalizePeriodizationTemplates(data.toolsData.periodizationTemplates).filter(
+        (t) =>
+          (t.language || 'en').toLowerCase().split('-')[0] === lang ||
+          (usedEnglishFallback && lang !== 'en')
+      );
+      setPeriodizationArchiveItems(list);
+      setPeriodizationArchiveNote(
+        list.length === 0
+          ? 'Archive is empty for your language. Ask Super Admin to publish presets.'
+          : usedEnglishFallback
+            ? `No presets for your language; showing English archive (${list.length}).`
+            : `${list.length} preset(s) in your language.`
+      );
+    } catch {
+      setPeriodizationArchiveItems([]);
+      setPeriodizationArchiveNote('Failed to load Movesbook periodizations.');
+    } finally {
+      setPeriodizationArchiveLoading(false);
+    }
+  }, [userLanguageCode, userLanguageName]);
+
+  useEffect(() => {
+    if (!showPeriodizationArchiveModal) return;
+    void loadPeriodizationArchive();
+  }, [showPeriodizationArchiveModal, loadPeriodizationArchive]);
+
+  const importPeriodizationFromArchive = useCallback(
+    async (tpl: PeriodizationTemplate) => {
+      if (
+        userHasPeriodizationSlot &&
+        !confirm(
+          'You already have a periodization. Importing will replace it. Continue?'
+        )
+      ) {
+        return;
+      }
+      const now = new Date().toISOString();
+      const entry: PeriodizationTemplate = {
+        ...tpl,
+        id: `pt-user-${Date.now()}`,
+        language: userLanguageCode,
+        isUserCreated: true,
+        createdAt: now,
+        updatedAt: now,
+        build: tpl.build ? { ...tpl.build } : undefined,
+      };
+      const next = [entry];
+      setPeriodizationTemplates(next);
+      const ok = await persistPeriodizationTemplates(next);
+      if (ok) {
+        setShowPeriodizationArchiveModal(false);
+        alert(`Imported "${tpl.name}" as your periodization. Open Build to review or apply to your yearly plan.`);
+      }
+    },
+    [persistPeriodizationTemplates, userLanguageCode, userHasPeriodizationSlot]
+  );
+
   // Load data from database APIs
   useEffect(() => {
     loadFavoriteWeeklyPlans();
     loadFavoriteWorkouts();
     loadFavoriteMoveframes();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'moveframes') {
+      void loadFavoriteMoveframes();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab === 'periodizations') {
@@ -301,7 +463,7 @@ export default function FavouritesSettings() {
 
   const loadFavoriteWeeklyPlans = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getFavouritesAuthToken();
       if (!token) {
         console.log('🔒 No token for loading favorite weekly plans');
         return;
@@ -321,12 +483,14 @@ export default function FavouritesSettings() {
         const transformed = Array.isArray(data.plans) ? data.plans.map((plan: any) => ({
           id: plan.id,
           name: plan.name,
-          description: plan.description,
+          description: plan.description || '',
           weekStart: 'Monday',
           daysCount: plan.daysCount || 0,
           workoutsCount: plan.workoutsCount || 0,
-          lastUsed: new Date(plan.lastUsed).toLocaleDateString(),
-          tags: []
+          lastUsed: plan.lastUsed || plan.createdAt || new Date().toISOString(),
+          tags: [] as string[],
+          planData: plan.planData,
+          createdAt: plan.createdAt,
         })) : [];
         setWeeklyPlans(transformed);
       } else {
@@ -455,20 +619,9 @@ export default function FavouritesSettings() {
       if (response.ok) {
         const data = await response.json();
         console.log('✅ Loaded favorite moveframes:', data.moveframes);
-        // Transform to match the Moveframe interface
-        const transformed = Array.isArray(data.moveframes) ? data.moveframes.map((mf: any) => ({
-          id: mf.id,
-          name: mf.name,
-          description: mf.description || '',
-          sets: mf.lapsCount || 0,
-          reps: `${mf.totalDistance}m` || '-',
-          restTime: 0,
-          equipment: [],
-          muscleGroups: [mf.sport],
-          difficulty: 'Intermediate' as const,
-          lastUsed: new Date(mf.lastUsed).toLocaleDateString(),
-          usageCount: 0
-        })) : [];
+        const transformed = Array.isArray(data.moveframes)
+          ? data.moveframes.map((mf: any) => toFavouritesSettingsRow(mf))
+          : [];
         setMoveframes(transformed);
       } else {
         console.log('⚠️ No favorite moveframes found');
@@ -815,7 +968,7 @@ export default function FavouritesSettings() {
     } else if (activeTab === 'workouts') {
       return Array.from(new Set(workouts.flatMap(w => w.tags)));
     } else if (activeTab === 'periodizations') {
-      return Array.from(new Set(periodizationTemplates.flatMap((p) => p.tags || [])));
+      return Array.from(new Set(periodizationsForDisplayLanguage.flatMap((p) => p.tags || [])));
     }
     return [];
   };
@@ -858,7 +1011,111 @@ export default function FavouritesSettings() {
     setShowUsePlannerModal(true);
   };
 
-  const handleAddToPlanner = async (weekId: string, dayId: string) => {
+  const handleDeleteFavoriteWeek = async (planId: string) => {
+    if (!confirm('Remove this week from favourites? (Any duplicate copies of the same week will also be removed.)')) return;
+    try {
+      const token = getFavouritesAuthToken();
+      if (!token) {
+        alert('Please log in');
+        return;
+      }
+      const response = await fetch(`/api/workouts/plans/favorites?id=${encodeURIComponent(planId)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json().catch(() => ({}));
+        await loadFavoriteWeeklyPlans();
+        if (typeof data.deletedCount === 'number' && data.deletedCount > 1) {
+          alert(`Removed ${data.deletedCount} duplicate favourite entries for this week.`);
+        }
+      } else {
+        const err = await response.json().catch(() => ({}));
+        alert(err.error || 'Failed to remove favourite');
+      }
+    } catch (error) {
+      console.error('Error deleting favourite week:', error);
+      alert('Failed to remove favourite');
+    }
+  };
+
+  const handleViewFavoriteWeek = (plan: WeeklyPlan) => {
+    if (!plan.planData) {
+      alert('This favourite has no preview data.');
+      return;
+    }
+    setViewWeekPlan(plan);
+  };
+
+  const handleUseFavoriteWeek = (plan: WeeklyPlan) => {
+    if (!plan.planData?.weeks?.[0]?.days?.length) {
+      alert('This favourite has no week content to apply.');
+      return;
+    }
+    setUseWeekPlan(plan);
+  };
+
+  const handleApplyFavoriteWeek = async (targetWeekIds: string[]) => {
+    if (!useWeekPlan) return;
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert('Please log in');
+      return;
+    }
+    const response = await fetch('/api/workouts/plans/favorites/apply', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        favoriteId: useWeekPlan.id,
+        targetWeekIds,
+      }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || err.details || 'Failed to apply plan');
+    }
+    alert(
+      `“${useWeekPlan.name}” applied to ${targetWeekIds.length} week(s) in your Yearly plan.`
+    );
+    setUseWeekPlan(null);
+    await loadFavoriteWeeklyPlans();
+  };
+
+  const handleDuplicateFavoriteWeek = async (plan: WeeklyPlan) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('Please log in');
+        return;
+      }
+      const response = await fetch('/api/workouts/plans/favorites', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          duplicateFromFavoriteId: plan.id,
+          name: `${plan.name} (copy)`,
+        }),
+      });
+      if (response.ok) {
+        await loadFavoriteWeeklyPlans();
+        alert('Favourite week duplicated');
+      } else {
+        const err = await response.json().catch(() => ({}));
+        alert(err.error || 'Failed to duplicate');
+      }
+    } catch (error) {
+      console.error('Error duplicating favourite week:', error);
+      alert('Failed to duplicate favourite');
+    }
+  };
+
+  const handleAddToPlanner = async (_weekId: string, dayId: string) => {
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -866,42 +1123,35 @@ export default function FavouritesSettings() {
         return;
       }
 
-      // Parse the workout data
-      const workoutData = plannerWorkout.workoutData ? JSON.parse(plannerWorkout.workoutData) : null;
-      
-      if (!workoutData) {
-        alert('Invalid workout data');
+      if (!plannerWorkout?.id) {
+        alert('Invalid favourite workout');
         return;
       }
 
-      // Create a new workout session from the favorite
-      const response = await fetch('/api/workouts/sessions', {
+      const response = await fetch('/api/workouts/favorites/apply', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          favoriteId: plannerWorkout.id,
           dayId,
-          name: workoutData.workout.name,
-          code: workoutData.workout.code,
-          notes: workoutData.workout.notes,
-          mainSport: workoutData.workout.mainSport || null,
-          mainGoal: workoutData.workout.mainGoal || null,
-          intensity: workoutData.workout.intensity || 'Medium',
-          tags: workoutData.workout.tags || null,
-          sports: workoutData.sports,
-          moveframes: workoutData.moveframes
-        })
+        }),
       });
 
+      const data = await response.json().catch(() => ({}));
+
       if (response.ok) {
-        alert('Workout added to your planner successfully!');
+        const mf = data.moveframesCopied ?? 0;
+        const ml = data.movelapsCopied ?? 0;
+        alert(
+          `Workout added to your Yearly Planner successfully (${mf} moveframe${mf === 1 ? '' : 's'}, ${ml} set${ml === 1 ? '' : 's'}).`
+        );
         setShowUsePlannerModal(false);
         setPlannerWorkout(null);
       } else {
-        const error = await response.json();
-        alert(`Failed to add workout: ${error.error || 'Unknown error'}`);
+        alert(`Failed to add workout: ${data.error || data.details || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error adding workout to planner:', error);
@@ -976,7 +1226,7 @@ export default function FavouritesSettings() {
           }`}
         >
           <Layers className="w-4 h-4 inline mr-2" />
-          Periodizations ({periodizationTemplates.length})
+          Periodizations ({periodizationsForDisplayLanguage.length})
         </button>
         <button
           onClick={() => setActiveTab('sports')}
@@ -995,16 +1245,32 @@ export default function FavouritesSettings() {
       <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg">
         <div className="flex items-center gap-3">
           <Globe className="w-4 h-4 text-gray-500" />
-          <span className="text-sm font-medium text-gray-700">Language Defaults:</span>
-          <select
-            value={selectedLanguage}
-            onChange={(e) => setSelectedLanguage(e.target.value)}
-            className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {supportedLanguages.map(lang => (
-              <option key={lang.code} value={lang.code}>{lang.name}</option>
-            ))}
-          </select>
+          {activeTab === 'periodizations' && !isPeriodizationCatalogAdmin ? (
+            <>
+              <span className="text-sm font-medium text-gray-700">Your language:</span>
+              <span className="text-sm font-semibold text-gray-900">
+                {userLanguageName} ({userLanguageCode.toUpperCase()})
+              </span>
+              <span className="text-xs text-gray-500">
+                Movesbook presets and your periodization use this language only.
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="text-sm font-medium text-gray-700">Language displayed:</span>
+              <select
+                value={selectedLanguage}
+                onChange={(e) => setSelectedLanguage(e.target.value)}
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {supportedLanguages.map((lang) => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.name}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
       </div>
 
@@ -1012,8 +1278,31 @@ export default function FavouritesSettings() {
       <div className="flex justify-between items-center">
         <div className="flex gap-3">
           {/* Only show Add button for plans, periodizations, and moveframes — not workouts or sports */}
+          {activeTab === 'periodizations' && !isPeriodizationCatalogAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowPeriodizationArchiveModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition"
+            >
+              <Download className="w-4 h-4" />
+              Load from Movesbook
+            </button>
+          )}
           {activeTab !== 'workouts' && activeTab !== 'sports' && (
             <button
+              disabled={
+                activeTab === 'periodizations' &&
+                !isPeriodizationCatalogAdmin &&
+                userHasPeriodizationSlot &&
+                !editingPeriodization
+              }
+              title={
+                activeTab === 'periodizations' &&
+                !isPeriodizationCatalogAdmin &&
+                userHasPeriodizationSlot
+                  ? 'You can only have one periodization. Delete it first to add another.'
+                  : undefined
+              }
               onClick={() => {
                 if (activeTab === 'plans') {
                   setEditingPlan({
@@ -1028,11 +1317,18 @@ export default function FavouritesSettings() {
                   });
                   setShowPlanDialog(true);
                 } else if (activeTab === 'periodizations') {
+                  if (!isPeriodizationCatalogAdmin && userHasPeriodizationSlot) {
+                    alert(
+                      'You can only have one periodization. Delete your current one or use Load from Movesbook to replace it.'
+                    );
+                    return;
+                  }
                   setEditingPeriodization({
                     id: '',
                     name: '',
                     sport: '',
-                    level: '',
+                    level: PERIODIZATION_LEVEL_OPTIONS[0],
+                    language: effectivePeriodizationLanguage,
                     tags: [],
                   });
                   setPeriodizationTagsInput('');
@@ -1149,12 +1445,9 @@ export default function FavouritesSettings() {
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => {
-                        if (confirm('Remove from favourites?')) {
-                          setWeeklyPlans(weeklyPlans.filter(p => p.id !== plan.id));
-                        }
-                      }}
+                      onClick={() => handleDeleteFavoriteWeek(plan.id)}
                       className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                      title="Remove from favourites"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -1191,13 +1484,27 @@ export default function FavouritesSettings() {
                 </div>
                 
                 <div className="flex gap-2">
-                  <button className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition">
+                  <button
+                    type="button"
+                    onClick={() => handleUseFavoriteWeek(plan)}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition"
+                  >
                     Use Plan
                   </button>
-                  <button className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition">
+                  <button
+                    type="button"
+                    onClick={() => handleDuplicateFavoriteWeek(plan)}
+                    className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition"
+                    title="Duplicate favourite"
+                  >
                     <Copy className="w-4 h-4" />
                   </button>
-                  <button className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition">
+                  <button
+                    type="button"
+                    onClick={() => handleViewFavoriteWeek(plan)}
+                    className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition"
+                    title="Open week overview"
+                  >
                     <Eye className="w-4 h-4" />
                   </button>
                 </div>
@@ -1313,9 +1620,29 @@ export default function FavouritesSettings() {
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => {
-                            if (confirm('Remove from favourites?')) {
-                              setMoveframes(moveframes.filter(m => m.id !== mf.id));
+                          onClick={async () => {
+                            if (!confirm('Remove from favourites?')) return;
+                            try {
+                              const token = localStorage.getItem('token');
+                              if (!token) {
+                                alert('Please log in again');
+                                return;
+                              }
+                              const response = await fetch(
+                                `/api/workouts/moveframes/favorites?moveframeId=${encodeURIComponent(mf.id)}`,
+                                {
+                                  method: 'DELETE',
+                                  headers: { Authorization: `Bearer ${token}` },
+                                }
+                              );
+                              if (response.ok) {
+                                setMoveframes(moveframes.filter((m) => m.id !== mf.id));
+                              } else {
+                                const data = await response.json().catch(() => ({}));
+                                alert(data.error || 'Failed to remove from favourites');
+                              }
+                            } catch {
+                              alert('Failed to remove from favourites');
                             }
                           }}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
@@ -1334,7 +1661,7 @@ export default function FavouritesSettings() {
       {/* Periodizations (from toolsSettings — Super Admin + your own) */}
       {activeTab === 'periodizations' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {periodizationTemplates
+          {periodizationsForDisplayLanguage
             .filter(
               (tpl) =>
                 (searchQuery === '' ||
@@ -1409,6 +1736,13 @@ export default function FavouritesSettings() {
                     <span className="text-gray-500">Level</span>
                     <span className="font-semibold text-gray-900">{tpl.level || '—'}</span>
                   </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Language</span>
+                    <span className="font-semibold text-gray-900">
+                      {supportedLanguages.find((l) => l.code === (tpl.language || 'en'))?.name ||
+                        (tpl.language || 'en').toUpperCase()}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2 mb-4">
@@ -1425,38 +1759,32 @@ export default function FavouritesSettings() {
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      try {
-                        localStorage.setItem('my_settings_active_section', 'tools');
-                        localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
-                      } catch {
-                        /* ignore */
-                      }
-                      router.push('/my-settings');
-                    }}
+                    onClick={() => setBuildingPeriodization(tpl)}
                     className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition"
                   >
-                    Use in periodization
+                    Build this periodization
                   </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const copy: PeriodizationTemplate = {
-                        ...tpl,
-                        id: `pt-${Date.now()}`,
-                        name: `${tpl.name} (copy)`,
-                        isUserCreated: true,
-                        createdAt: new Date().toISOString(),
-                      };
-                      const next = [...periodizationTemplates, copy];
-                      setPeriodizationTemplates(next);
-                      await persistPeriodizationTemplates(next);
-                    }}
-                    className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition"
-                    title="Duplicate"
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
+                  {isPeriodizationCatalogAdmin && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const copy: PeriodizationTemplate = {
+                          ...tpl,
+                          id: `pt-${Date.now()}`,
+                          name: `${tpl.name} (copy)`,
+                          isUserCreated: true,
+                          createdAt: new Date().toISOString(),
+                        };
+                        const next = [...periodizationTemplates, copy];
+                        setPeriodizationTemplates(next);
+                        await persistPeriodizationTemplates(next);
+                      }}
+                      className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition"
+                      title="Duplicate"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -1472,6 +1800,13 @@ export default function FavouritesSettings() {
                 </div>
               </div>
             ))}
+          {periodizationsForDisplayLanguage.length === 0 && (
+            <p className="col-span-full text-center text-gray-600 py-8">
+              No periodizations for{' '}
+              {supportedLanguages.find((l) => l.code === selectedLanguage)?.name || selectedLanguage}. Click
+              &quot;+ Add Periodization&quot; or change Language displayed.
+            </p>
+          )}
         </div>
       )}
 
@@ -1994,15 +2329,46 @@ export default function FavouritesSettings() {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Level *</label>
-                <input
-                  type="text"
-                  value={editingPeriodization.level}
+                <select
+                  value={editingPeriodization.level || PERIODIZATION_LEVEL_OPTIONS[0]}
                   onChange={(e) =>
                     setEditingPeriodization({ ...editingPeriodization, level: e.target.value })
                   }
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. Beginner, Club"
-                />
+                >
+                  {PERIODIZATION_LEVEL_OPTIONS.map((lvl) => (
+                    <option key={lvl} value={lvl}>
+                      {lvl}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Language of periods *
+                </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Period names in the builder use this language (from Tools → Periods).
+                </p>
+                {isPeriodizationCatalogAdmin ? (
+                  <select
+                    value={editingPeriodization.language || selectedLanguage}
+                    onChange={(e) =>
+                      setEditingPeriodization({ ...editingPeriodization, language: e.target.value })
+                    }
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {supportedLanguages.map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="px-4 py-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-800">
+                    {userLanguageName} ({userLanguageCode.toUpperCase()})
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -2044,15 +2410,30 @@ export default function FavouritesSettings() {
                       : `pt-${Date.now()}`;
                   const now = new Date().toISOString();
                   const wasNew = !existingId || !periodizationTemplates.some((p) => p.id === existingId);
+                  if (!isPeriodizationCatalogAdmin && wasNew && periodizationTemplates.length >= 1) {
+                    alert(
+                      'You can only have one periodization. Delete your current one or import from Movesbook.'
+                    );
+                    return;
+                  }
                   const entry: PeriodizationTemplate = {
                     ...editingPeriodization,
                     id,
                     tags,
+                    language: (
+                      isPeriodizationCatalogAdmin
+                        ? editingPeriodization.language || selectedLanguage
+                        : userLanguageCode
+                    )
+                      .trim() || 'en',
                     isUserCreated: wasNew ? true : editingPeriodization.isUserCreated,
                     createdAt: wasNew ? now : editingPeriodization.createdAt || now,
                     updatedAt: now,
                   };
                   const next = (() => {
+                    if (!isPeriodizationCatalogAdmin) {
+                      return [entry];
+                    }
                     const idx = periodizationTemplates.findIndex((p) => p.id === id);
                     if (idx >= 0) {
                       const copy = [...periodizationTemplates];
@@ -2376,6 +2757,111 @@ export default function FavouritesSettings() {
             setPlannerWorkout(null);
           }}
           onConfirm={handleAddToPlanner}
+        />
+      )}
+
+      {/* Favourite week overview */}
+      {viewWeekPlan?.planData && favoritePlanDataToDisplayWeek(viewWeekPlan.planData) && (
+        <WeekTotalsModal
+          isOpen={Boolean(viewWeekPlan)}
+          week={favoritePlanDataToDisplayWeek(viewWeekPlan.planData)!}
+          onClose={() => setViewWeekPlan(null)}
+          activeSection="A"
+        />
+      )}
+
+      {/* Apply favourite week to yearly plan */}
+      {useWeekPlan && (
+        <UseFavoriteWeekModal
+          planName={useWeekPlan.name}
+          onClose={() => setUseWeekPlan(null)}
+          onConfirm={handleApplyFavoriteWeek}
+        />
+      )}
+
+      {showPeriodizationArchiveModal && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Load periodization from Movesbook"
+        >
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[min(90vh,640px)] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-xl font-bold text-gray-900">Load from Movesbook</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Your language: <strong>{userLanguageName}</strong> ({userLanguageCode.toUpperCase()})
+                — only presets in this language are listed.
+              </p>
+              {periodizationArchiveNote && (
+                <p className="text-xs text-gray-500 mt-2">{periodizationArchiveNote}</p>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {periodizationArchiveLoading ? (
+                <p className="text-sm text-gray-500">Loading archive…</p>
+              ) : periodizationArchiveItems.length === 0 ? (
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  No periodizations available for your language yet.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {periodizationArchiveItems.map((tpl) => (
+                    <li
+                      key={tpl.id}
+                      className="flex items-center justify-between gap-3 p-4 border border-gray-200 rounded-lg hover:border-violet-300"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-gray-900 truncate">{tpl.name}</p>
+                        <p className="text-xs text-gray-600">
+                          {tpl.sport} · {tpl.level}
+                          {(tpl.tags || []).length > 0 ? ` · ${(tpl.tags || []).join(', ')}` : ''}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void importPeriodizationFromArchive(tpl)}
+                        className="shrink-0 px-3 py-1.5 text-xs font-semibold rounded-lg bg-violet-600 text-white hover:bg-violet-700"
+                      >
+                        Import
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={() => setShowPeriodizationArchiveModal(false)}
+                className="w-full px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-semibold"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {buildingPeriodization && (
+        <FavouritePeriodizationBuilderModal
+          template={buildingPeriodization}
+          allowApplyToYearlyPlan={!isPeriodizationCatalogAdmin}
+          onClose={() => setBuildingPeriodization(null)}
+          onSaveTemplate={async (build: PeriodizationTemplateBuild) => {
+            const updated: PeriodizationTemplate = {
+              ...buildingPeriodization,
+              build,
+              updatedAt: new Date().toISOString(),
+            };
+            const next = periodizationTemplates.map((p) =>
+              p.id === updated.id ? updated : p
+            );
+            setPeriodizationTemplates(next);
+            const ok = await persistPeriodizationTemplates(next);
+            if (ok) setBuildingPeriodization(updated);
+            return ok;
+          }}
         />
       )}
     </div>

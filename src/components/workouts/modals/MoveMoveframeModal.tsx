@@ -2,14 +2,31 @@
 
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import {
+  resolveMoveframeId,
+  resolveWorkoutSessionId,
+  type MoveframeCopyMovePayload,
+  type MoveframePosition,
+} from '@/lib/moveframeCopyMove';
+import {
+  formatWorkoutSelectLabel,
+  getSortedWorkoutsForPlanDay,
+  getWorkoutDisplayNumber,
+} from '@/lib/workoutDisplayOrder';
+
+export type { MoveframeCopyMovePayload, MoveframePosition };
 
 interface MoveMoveframeModalProps {
   isOpen: boolean;
   onClose: () => void;
   sourceMoveframe: any | any[]; // Can be single or array
   sourceWorkout: any;
+  /** Day the moveframe is copied/moved from — keeps workout # in sync with the planner table */
+  sourceDay?: any;
+  /** Planner slot (1-based), from WorkoutTable workoutIndex + 1 */
+  sourceWorkoutDisplayNumber?: number | null;
   workoutPlan: any;
-  onConfirm: (targetWorkoutId: string, position: 'before' | 'after' | 'replace', targetMoveframeId?: string) => void;
+  onConfirm: (payload: MoveframeCopyMovePayload) => void | Promise<void>;
   activeSection?: 'A' | 'B' | 'C' | 'D';
 }
 
@@ -18,6 +35,8 @@ export default function MoveMoveframeModal({
   onClose,
   sourceMoveframe,
   sourceWorkout,
+  sourceDay,
+  sourceWorkoutDisplayNumber: sourceWorkoutDisplayNumberProp,
   workoutPlan,
   onConfirm,
   activeSection = 'A'
@@ -30,23 +49,29 @@ export default function MoveMoveframeModal({
   const [availableMoveframes, setAvailableMoveframes] = useState<any[]>([]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    if (sourceDay?.id) {
+      setSelectedDay(sourceDay.id);
+    }
+  }, [isOpen, sourceDay?.id]);
+
+  useEffect(() => {
     if (selectedDay && workoutPlan) {
-      // Find all workouts for the selected day
-      const workouts: any[] = [];
-      workoutPlan.weeks?.forEach((week: any) => {
-        week.days?.forEach((day: any) => {
-          if (day.id === selectedDay) {
-            day.workouts?.forEach((workout: any) => {
-              workouts.push(workout);
-            });
-          }
-        });
-      });
-      setAvailableWorkouts(workouts);
+      setAvailableWorkouts(getSortedWorkoutsForPlanDay(workoutPlan, selectedDay));
       setSelectedWorkout('');
       setTargetMoveframe('');
+    } else {
+      setAvailableWorkouts([]);
     }
   }, [selectedDay, workoutPlan]);
+
+  const fromWorkoutNumber =
+    sourceWorkoutDisplayNumberProp ??
+    (sourceDay?.workouts && sourceWorkout?.id
+      ? getWorkoutDisplayNumber(sourceDay.workouts, sourceWorkout.id)
+      : null) ??
+    sourceWorkout?.sessionNumber ??
+    '?';
 
   useEffect(() => {
     if (selectedWorkout) {
@@ -61,7 +86,20 @@ export default function MoveMoveframeModal({
   }, [selectedWorkout, availableWorkouts, sourceMoveframe]);
 
   const handleSubmit = () => {
-    if (!selectedWorkout) {
+    const sourceMoveframeId = resolveMoveframeId(sourceMoveframe);
+    if (!sourceMoveframeId) {
+      alert('Source moveframe is missing an ID. Refresh the page and try again.');
+      return;
+    }
+
+    const targetWorkout = availableWorkouts.find(
+      (w) => w.id === selectedWorkout || w.workoutSessionId === selectedWorkout
+    );
+    const targetWorkoutId =
+      resolveWorkoutSessionId(targetWorkout) ||
+      (selectedWorkout?.trim() ? selectedWorkout.trim() : undefined);
+
+    if (!targetWorkoutId) {
       alert('Please select a target workout');
       return;
     }
@@ -73,7 +111,12 @@ export default function MoveMoveframeModal({
 
     // Confirm move operation
     if (confirm(`Are you sure you want to MOVE this moveframe? It will be removed from the current workout.`)) {
-      onConfirm(selectedWorkout, position, targetMoveframe || undefined);
+      onConfirm({
+        sourceMoveframeId,
+        targetWorkoutId,
+        position,
+        targetMoveframeId: targetMoveframe?.trim() || undefined,
+      });
     }
   };
 
@@ -132,7 +175,7 @@ export default function MoveMoveframeModal({
                 <>
                   <p><strong>Letters:</strong> {moveframes.map((mf: any) => mf.letter).join(' - ')}</p>
                   <p><strong>Total sets:</strong> {totalMovelaps}</p>
-                  <p className="text-orange-700 mt-2"><strong>From:</strong> Workout #{sourceWorkout.sessionNumber}</p>
+                  <p className="text-orange-700 mt-2"><strong>From:</strong> Workout #{fromWorkoutNumber}</p>
                 </>
               ) : (
                 <>
@@ -140,7 +183,7 @@ export default function MoveMoveframeModal({
                   <p><strong>Sport:</strong> {moveframes[0].sport?.replace('_', ' ')}</p>
                   <p><strong>Description:</strong> {moveframes[0].description || 'No description'}</p>
                   <p><strong>Total sets:</strong> {moveframes[0].movelaps?.length || 0}</p>
-                  <p className="text-orange-700 mt-2"><strong>From:</strong> Workout #{sourceWorkout.sessionNumber}</p>
+                  <p className="text-orange-700 mt-2"><strong>From:</strong> Workout #{fromWorkoutNumber}</p>
                 </>
               )}
             </div>
@@ -190,13 +233,19 @@ export default function MoveMoveframeModal({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 >
                   <option value="">-- Choose a workout --</option>
-                  {availableWorkouts.map((workout) => (
-                    <option key={workout.id} value={workout.id}>
-                      Workout #{workout.sessionNumber}: {workout.name || 'Unnamed'} 
-                      ({workout.moveframes?.length || 0} moveframes)
-                      {workout.id === sourceWorkout.id && ' (Same workout - will reorder)'}
+                  {availableWorkouts.map((workout) => {
+                    const workoutId = resolveWorkoutSessionId(workout);
+                    if (!workoutId) return null;
+                    const displayNum =
+                      getWorkoutDisplayNumber(availableWorkouts, workoutId) ?? 0;
+                    const sourceWorkoutId = resolveWorkoutSessionId(sourceWorkout);
+                    return (
+                    <option key={workoutId} value={workoutId}>
+                      {formatWorkoutSelectLabel(workout, Math.max(0, displayNum - 1))}
+                      {sourceWorkoutId && workoutId === sourceWorkoutId && ' — same workout (reorder)'}
                     </option>
-                  ))}
+                    );
+                  })}
                 </select>
               ) : (
                 <p className="text-sm text-gray-500 italic">No workouts available for this day</p>

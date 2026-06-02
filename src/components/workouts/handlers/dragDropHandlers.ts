@@ -138,13 +138,20 @@ export async function handleMoveframeCrossWorkoutDrag(
     : '/api/workouts/moveframes/move';
   
   try {
-    const requestBody: any = {
+    const apiPosition =
+      position === 'end' ? 'after' : position === 'before' ? 'before' : 'after';
+
+    const requestBody: Record<string, string> = {
       sourceMoveframeId: sourceMoveframe.id,
       targetWorkoutId: targetWorkout.id,
-      position,
+      position: apiPosition,
     };
-    
-    if (targetMoveframe) {
+
+    if (action === 'move') {
+      requestBody.moveframeId = sourceMoveframe.id;
+    }
+
+    if (targetMoveframe?.id) {
       requestBody.targetMoveframeId = targetMoveframe.id;
     }
     
@@ -159,8 +166,8 @@ export async function handleMoveframeCrossWorkoutDrag(
     
     const data = await response.json();
     
-    if (response.ok && data.success) {
-      showMessage('success', data.message || `Moveframe ${action}d successfully`);
+    if (response.ok) {
+      showMessage('success', `Moveframe ${action}d successfully`);
       await loadWorkoutData(activeSection);
     } else {
       showMessage('error', data.error || `Failed to ${action} moveframe`);

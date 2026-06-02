@@ -48,11 +48,19 @@ interface WorkoutTableProps {
   onDeleteMovelap?: (movelap: any, moveframe: any) => void;
   onAddMovelap?: (moveframe: any) => void;
   onAddMovelapAfter?: (movelap: any, index: number, moveframe: any, workout: any, day: any) => void;
+  onCopyWorkoutToClipboard?: (workout: any) => void;
+  hasWorkoutClipboard?: boolean;
   onCopyWorkout?: (workout: any, day: any) => void;
   onPasteWorkout?: (day: any) => void;
   onMoveWorkout?: (workout: any, day: any) => void;
+  onCopyMoveframeToClipboard?: (moveframe: any) => void;
+  hasMoveframeClipboard?: boolean;
+  onPasteMoveframe?: (workout: any) => void;
   onCopyMoveframe?: (moveframe: any, workout: any, day: any) => void;
   onMoveMoveframe?: (moveframe: any, workout: any, day: any) => void;
+  hasMovelapClipboard?: boolean;
+  movelapClipboard?: any;
+  onCopyMovelapToClipboard?: (movelap: any) => void;
   onShowMoveframeInfoPanel?: (moveframe: any) => void;
   onOpenColumnSettings?: (tableType: 'day' | 'workout' | 'moveframe' | 'movelap') => void;
   onBulkAddMovelap?: (moveframe: any) => void;
@@ -89,11 +97,19 @@ export default function WorkoutTable({
   onDeleteMovelap,
   onAddMovelap,
   onAddMovelapAfter,
+  onCopyWorkoutToClipboard,
+  hasWorkoutClipboard = false,
   onCopyWorkout,
   onPasteWorkout,
   onMoveWorkout,
+  onCopyMoveframeToClipboard,
+  hasMoveframeClipboard,
+  onPasteMoveframe,
   onCopyMoveframe,
   onMoveMoveframe,
+  hasMovelapClipboard,
+  movelapClipboard,
+  onCopyMovelapToClipboard,
   onOpenColumnSettings,
   onRefreshWorkouts,
   columnSettings
@@ -557,7 +573,7 @@ export default function WorkoutTable({
                 if (onCopyWorkout) onCopyWorkout(workout, day);
               }}
               className="px-2 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600 transition-colors whitespace-nowrap flex-shrink-0"
-              title="Copy Workout"
+              title="Copy to another day…"
             >
               Copy
             </button>
@@ -610,6 +626,39 @@ export default function WorkoutTable({
                   >
                     <span className="text-green-600">✏️</span>
                     <span>Edit</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeDropdown();
+                      onCopyWorkoutToClipboard?.(workout);
+                    }}
+                    className="w-full text-left px-3 py-2 text-[11px] hover:bg-purple-50 transition-colors flex items-center gap-2 border-t border-gray-200"
+                  >
+                    <span className="text-purple-600">📋</span>
+                    <span>Copy workout in clipboard</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!hasWorkoutClipboard) return;
+                      closeDropdown();
+                      onPasteWorkout?.(day);
+                    }}
+                    disabled={!hasWorkoutClipboard}
+                    className={`w-full text-left px-3 py-2 text-[11px] flex items-center gap-2 border-t border-gray-200 ${
+                      hasWorkoutClipboard
+                        ? 'hover:bg-green-50 transition-colors cursor-pointer'
+                        : 'opacity-50 cursor-not-allowed text-gray-400'
+                    }`}
+                    title={
+                      hasWorkoutClipboard
+                        ? 'Paste workout from clipboard into this day'
+                        : 'Copy a workout to clipboard first'
+                    }
+                  >
+                    <span className="text-green-600">📥</span>
+                    <span>Paste</span>
                   </button>
                   <button
                     onClick={(e) => {
@@ -1196,8 +1245,14 @@ export default function WorkoutTable({
             onDeleteMovelap={onDeleteMovelap}
             onAddMovelap={onAddMovelap}
             onAddMovelapAfter={onAddMovelapAfter}
+            onCopyMoveframeToClipboard={onCopyMoveframeToClipboard}
+            hasMoveframeClipboard={hasMoveframeClipboard}
+            onPasteMoveframe={onPasteMoveframe}
             onCopyMoveframe={onCopyMoveframe}
             onMoveMoveframe={onMoveMoveframe}
+            hasMovelapClipboard={hasMovelapClipboard}
+            movelapClipboard={movelapClipboard}
+            onCopyMovelapToClipboard={onCopyMovelapToClipboard}
             onOpenColumnSettings={onOpenColumnSettings}
             onRefreshWorkouts={onRefreshWorkouts}
             columnSettings={columnSettings}

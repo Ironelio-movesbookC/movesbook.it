@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { sortWorkoutsForDisplay } from '@/lib/workoutDisplayOrder';
 import WorkoutTable from './WorkoutTable';
 
 const ACTION_TIME_TAG = /\[ACTION_TIME\](\d{2}:\d{2})\[\/ACTION_TIME\]/;
@@ -54,11 +55,19 @@ interface WorkoutHierarchyViewProps {
   onPrintWorkout?: (workout: any, day: any) => void;
   onDeleteMoveframe?: (moveframe: any, workout: any, day: any) => void;
   onDeleteMovelap?: (movelap: any, moveframe: any, workout: any, day: any) => void;
+  onCopyWorkoutToClipboard?: (workout: any) => void;
+  hasWorkoutClipboard?: boolean;
   onCopyWorkout?: (workout: any, day: any) => void;
   onPasteWorkout?: (day: any) => void;
   onMoveWorkout?: (workout: any, day: any) => void;
-  onCopyMoveframe?: (moveframe: any, workout: any, day: any) => void;
-  onMoveMoveframe?: (moveframe: any, workout: any, day: any) => void;
+  onCopyMoveframeToClipboard?: (moveframe: any) => void;
+  hasMoveframeClipboard?: boolean;
+  onPasteMoveframe?: (workout: any) => void;
+  onCopyMoveframe?: (moveframe: any, workout: any, day: any, workoutDisplayNumber?: number) => void;
+  onMoveMoveframe?: (moveframe: any, workout: any, day: any, workoutDisplayNumber?: number) => void;
+  hasMovelapClipboard?: boolean;
+  movelapClipboard?: any;
+  onCopyMovelapToClipboard?: (movelap: any) => void;
   onOpenColumnSettings?: (tableType: 'day' | 'workout' | 'moveframe' | 'movelap') => void;
   onShowWorkoutOverview?: (workout: any, day: any) => void;
   reloadWorkouts?: () => Promise<void>;
@@ -91,11 +100,19 @@ export default function WorkoutHierarchyView({
   onPrintWorkout,
   onDeleteMoveframe,
   onDeleteMovelap,
+  onCopyWorkoutToClipboard,
+  hasWorkoutClipboard,
   onCopyWorkout,
   onPasteWorkout,
   onMoveWorkout,
+  onCopyMoveframeToClipboard,
+  hasMoveframeClipboard,
+  onPasteMoveframe,
   onCopyMoveframe,
   onMoveMoveframe,
+  hasMovelapClipboard,
+  movelapClipboard,
+  onCopyMovelapToClipboard,
   onOpenColumnSettings,
   onShowWorkoutOverview,
   reloadWorkouts,
@@ -118,14 +135,7 @@ export default function WorkoutHierarchyView({
     });
   };
 
-  // Sort workouts by creation time (earliest = #1)
-  const workouts = day.workouts 
-    ? [...day.workouts].sort((a: any, b: any) => {
-        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : parseInt(a.id) || 0;
-        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : parseInt(b.id) || 0;
-        return timeA - timeB;
-      })
-    : [];
+  const workouts = sortWorkoutsForDisplay(day.workouts);
   
   console.log(`📋 WorkoutHierarchyView rendering for day with ${workouts.length} workouts`);
   console.log(`📋 Expanded workouts in view:`, Array.from(expandedWorkoutsSet));
@@ -226,11 +236,23 @@ export default function WorkoutHierarchyView({
               onDeleteMovelap={(movelap, moveframe) => onDeleteMovelap?.(movelap, moveframe, workout, day)}
               onAddMovelap={(moveframe) => onAddMovelap?.(moveframe, workout, day)}
               onAddMovelapAfter={(movelap, index, moveframe) => onAddMovelapAfter?.(movelap, index, moveframe, workout, day)}
+              onCopyWorkoutToClipboard={() => onCopyWorkoutToClipboard?.(workout)}
+              hasWorkoutClipboard={hasWorkoutClipboard}
               onCopyWorkout={() => onCopyWorkout?.(workout, day)}
               onPasteWorkout={() => onPasteWorkout?.(day)}
               onMoveWorkout={() => onMoveWorkout?.(workout, day)}
-              onCopyMoveframe={(moveframe) => onCopyMoveframe?.(moveframe, workout, day)}
-              onMoveMoveframe={(moveframe) => onMoveMoveframe?.(moveframe, workout, day)}
+              onCopyMoveframeToClipboard={onCopyMoveframeToClipboard}
+              hasMoveframeClipboard={hasMoveframeClipboard}
+              onPasteMoveframe={onPasteMoveframe}
+              onCopyMoveframe={(moveframe) =>
+                onCopyMoveframe?.(moveframe, workout, day, workoutIndex)
+              }
+              onMoveMoveframe={(moveframe) =>
+                onMoveMoveframe?.(moveframe, workout, day, workoutIndex)
+              }
+              hasMovelapClipboard={hasMovelapClipboard}
+              movelapClipboard={movelapClipboard}
+              onCopyMovelapToClipboard={onCopyMovelapToClipboard}
               onOpenColumnSettings={onOpenColumnSettings}
               onRefreshWorkouts={reloadWorkouts}
               columnSettings={columnSettings}

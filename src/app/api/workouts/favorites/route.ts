@@ -172,6 +172,7 @@ export async function POST(req: NextRequest) {
           r2: ml.r2,
           muscularSector: ml.muscularSector,
           exercise: ml.exercise,
+          weight: ml.weight,
           restType: ml.restType,
           pause: ml.pause,
           macroFinal: ml.macroFinal,
