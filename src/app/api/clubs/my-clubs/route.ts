@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import {
+  formatMyClubsSidebarLabel,
+  isClubCreatedFromForm,
+  parseClubDescriptionMeta,
+} from '@/lib/club/clubSidebarLabel';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,8 +62,9 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    return NextResponse.json({
-      clubs: clubs.map(club => ({
+    const mapped = clubs.map((club) => {
+      const meta = parseClubDescriptionMeta(club.description);
+      return {
         id: club.id,
         name: club.name,
         description: club.description,
@@ -66,11 +72,23 @@ export async function GET(request: NextRequest) {
         youtubeChannelUrl: club.youtubeChannelUrl,
         memberCount: club.members.length,
         createdAt: club.createdAt,
-        admin: club.admin ? {
-          username: club.admin.username,
-          name: club.admin.name
-        } : null
-      }))
+        clubUsername: meta.username ?? null,
+        directAccess: meta.directAccess ?? null,
+        sidebarLabel: formatMyClubsSidebarLabel(club),
+        hasClubProfile: isClubCreatedFromForm(club),
+        admin: club.admin
+          ? {
+              username: club.admin.username,
+              name: club.admin.name,
+            }
+          : null,
+      };
+    });
+
+    return NextResponse.json({
+      clubs: mapped,
+      hasClubProfile: mapped.some((c) => c.hasClubProfile),
+      clubProfiles: mapped.filter((c) => c.hasClubProfile),
     });
   } catch (error: any) {
     console.error('Error fetching clubs:', error);

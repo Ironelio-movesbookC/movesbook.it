@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
@@ -110,6 +110,12 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import {
+  formatMyClubsSidebarLabel,
+  getFormCreatedClubsSortedByCreatedAt,
+  isClubCreatedFromForm,
+  userHasClubProfile,
+} from '@/lib/club/clubSidebarLabel';
 import {
   normalizeYoutubeUrlForOpen,
   YOUTUBE_CHANNEL_URL_KEY
@@ -288,12 +294,18 @@ interface DarkSidebarProps {
   onPostsClick?: () => void;
   /** My Club → Music for the club → opens OGP-style panel in dashboard main area */
   onClubAddSongsPlaylistsClick?: () => void;
+  /** General settings → Identification devices (card readers list in dashboard) */
+  onIdentificationDevicesClick?: () => void;
+  /** General settings → Access of outcome settings (dashboard panel) */
+  onAccessOutcomeSettingsClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
   /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
   profileImageFromDb?: string | null;
   /** Called after a successful profile photo upload so parents can sync banner/other UI (passes saved path — avoid immediate refetch-only sync). */
   onProfileImageSaved?: (patch: { image?: string }) => void;
+  /** My clubs → Create a club (club dashboard). */
+  onCreateClubClick?: () => void;
 }
 
 export default function DarkSidebar({
@@ -308,10 +320,13 @@ export default function DarkSidebar({
   onMyCoachingGroupClick,
   onPostsClick,
   onClubAddSongsPlaylistsClick,
+  onIdentificationDevicesClick,
+  onAccessOutcomeSettingsClick,
   activeTab = 'my-page',
   onTabChange,
   profileImageFromDb,
-  onProfileImageSaved
+  onProfileImageSaved,
+  onCreateClubClick
 }: DarkSidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
@@ -320,10 +335,30 @@ export default function DarkSidebar({
   const [showChangeProfilePhotoModal, setShowChangeProfilePhotoModal] = useState(false);
   const [userImageOverride, setUserImageOverride] = useState<string | null | undefined>(undefined);
   const [internalActiveTab, setInternalActiveTab] = useState<'my-page' | 'my-entity'>(activeTab);
+
+  useEffect(() => {
+    setInternalActiveTab(activeTab);
+  }, [activeTab]);
   const [communitiesOpen, setCommunitiesOpen] = useState(false);
   const [currentClubMembersOpen, setCurrentClubMembersOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [myDashboardOpen, setMyDashboardOpen] = useState(false);
+  const [myClubsOpen, setMyClubsOpen] = useState(false);
+
+  const formCreatedClubs = useMemo(
+    () => getFormCreatedClubsSortedByCreatedAt(entities),
+    [entities]
+  );
+  const clubUserHasProfile =
+    !isClubAccountUserType(userType) || userHasClubProfile(entities);
+  const showMyClubTab = clubUserHasProfile;
+
+  useEffect(() => {
+    if (isClubAccountUserType(userType) && entities.length > 0) {
+      setMyClubsOpen(true);
+    }
+  }, [entities.length, userType]);
+
   const [socialSettings, setSocialSettings] = useState<Record<string, unknown>>({});
   /** Personal "My channel on YouTube" — persisted on `User.youtubeChannelUrl` (API merges legacy social JSON). */
   const [userYoutubeChannelUrl, setUserYoutubeChannelUrl] = useState('');
@@ -509,6 +544,12 @@ export default function DarkSidebar({
   const currentTab = onTabChange ? activeTab : internalActiveTab;
   const setCurrentTab = onTabChange ? onTabChange : setInternalActiveTab;
 
+  useEffect(() => {
+    if (!showMyClubTab && currentTab === 'my-entity') {
+      setCurrentTab('my-page');
+    }
+  }, [showMyClubTab, currentTab, setCurrentTab]);
+
   const savedYoutubeUrl = userYoutubeChannelUrl;
 
   const myPageYoutubeOpenHref = normalizeYoutubeUrlForOpen(savedYoutubeUrl);
@@ -618,7 +659,8 @@ export default function DarkSidebar({
   /** Club dashboard + athlete dashboard: "My Club" tab replaces legacy profile strip with club header + primary menus. */
   const showClubMyEntityTop =
     currentTab === 'my-entity' &&
-    (isClubAccountUserType(userType) || userType === 'ATHLETE');
+    (userType === 'ATHLETE' ||
+      (isClubAccountUserType(userType) && formCreatedClubs.length > 0));
 
   const handleMyPage = () => {
     router.push('/privacy');
@@ -674,14 +716,18 @@ export default function DarkSidebar({
   };
 
   const handleMyEntityTab = () => {
-    setCurrentTab('my-entity');
-    if (userType === 'CLUB') {
+    if (isClubAccountUserType(userType) && !showMyClubTab) {
       return;
     }
 
-    if (isClubAccountUserType(userType) && onMyClubClick) {
-      onMyClubClick();
-    } else if (userType === 'TEAM_MANAGER' && onMyTeamClick) {
+    setCurrentTab('my-entity');
+
+    if (isClubAccountUserType(userType)) {
+      onMyClubClick?.();
+      return;
+    }
+
+    if (userType === 'TEAM_MANAGER' && onMyTeamClick) {
       onMyTeamClick();
     } else if (userType === 'GROUP_ADMIN' && onMyGroupClick) {
       onMyGroupClick();
@@ -999,12 +1045,11 @@ export default function DarkSidebar({
   return (
     <>
     <div className="w-full h-full bg-gray-900 text-white flex flex-col overflow-hidden" style={{ width: '320px' }}>
-      {/* Tab Navigation - Always show both buttons */}
-      <div className="flex bg-gray-900 border-b border-gray-700 flex-shrink-0">
+      {/* Tab Navigation — club accounts: My Club tab only after create-club form save */}
+      <div className="flex flex-shrink-0 border-b border-gray-700 bg-gray-900">
         <button
           onClick={handleMyPageTab}
-          
-          className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${
+          className={`${showMyClubTab ? 'flex-1' : 'w-full'} py-3 px-4 text-center font-medium transition-colors ${
             currentTab === 'my-page'
               ? 'bg-gray-700 text-white border-b-2 border-yellow-400'
               : 'bg-gray-800 text-gray-300 hover:bg-gray-750 hover:text-white'
@@ -1012,16 +1057,18 @@ export default function DarkSidebar({
         >
           {t('sidebar_my_page')}
         </button>
-        <button
-          onClick={handleMyEntityTab}
-          className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${
-            currentTab === 'my-entity'
-              ? 'bg-gray-700 text-white border-b-2 border-yellow-400'
-              : 'bg-gray-800 text-gray-300 hover:bg-gray-750 hover:text-white'
-          }`}
-        >
-          {getEntityLabel()}
-        </button>
+        {showMyClubTab && (
+          <button
+            onClick={handleMyEntityTab}
+            className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${
+              currentTab === 'my-entity'
+                ? 'bg-gray-700 text-white border-b-2 border-yellow-400'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-750 hover:text-white'
+            }`}
+          >
+            {getEntityLabel()}
+          </button>
+        )}
       </div>
 
       {/* Top: club accounts on "My Club" = club header + logo/details + primary menus; else legacy profile strip */}
@@ -1185,15 +1232,68 @@ export default function DarkSidebar({
         {currentTab === 'my-page' ? (
           <>
             {/* My Page menu (legacy-style) */}
-            <button
-              className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700"
-            >
-              <div className="flex items-center gap-3">
-                <Building2 className="w-5 h-5" />
-                <span>My clubs</span>
+            <div className="border-b border-teal-700">
+              <div className="flex w-full items-stretch bg-teal-800 text-white">
+                <button
+                  type="button"
+                  onClick={() => setMyClubsOpen((v) => !v)}
+                  aria-expanded={myClubsOpen}
+                  className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left transition-colors hover:bg-teal-700"
+                >
+                  <Mail className="h-5 w-5 shrink-0" />
+                  <span>My clubs</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMyClubsOpen((v) => !v)}
+                  aria-label={myClubsOpen ? t('collapse') : t('expand')}
+                  className="flex shrink-0 items-center border-l border-teal-700/40 px-4 transition-colors hover:bg-teal-700"
+                >
+                  <ChevronDown
+                    className={`h-4 w-4 opacity-80 transition-transform duration-200 ${myClubsOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
               </div>
-              <ChevronDown className="w-4 h-4 opacity-80" />
-            </button>
+              {myClubsOpen && isClubAccountUserType(userType) && (
+                <div className="border-t border-teal-900/40 bg-[#2d2d2d] px-4 py-4">
+                  <button
+                    type="button"
+                    onClick={() => onCreateClubClick?.()}
+                    className="mx-auto block w-full max-w-[220px] rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-2.5 text-center text-sm font-semibold text-white shadow hover:from-red-600 hover:to-red-800"
+                  >
+                    Create a club
+                  </button>
+                  {formCreatedClubs.length > 0 && (
+                    <>
+                      <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15" />
+                      <ul className="mt-3 space-y-1">
+                        {formCreatedClubs.map((club: { id: string; name: string; description?: string | null }) => {
+                          const label = formatMyClubsSidebarLabel(club);
+                          const isSelected = selectedEntityId === club.id;
+                          return (
+                            <li key={club.id}>
+                              <button
+                                type="button"
+                                onClick={() => onEntitySelect?.(club.id)}
+                                className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
+                                  isSelected ? 'bg-zinc-700/60' : ''
+                                }`}
+                              >
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full bg-lime-400 shadow-[0_0_6px_rgba(163,230,53,0.8)]"
+                                  aria-hidden
+                                />
+                                <span className="min-w-0 flex-1 truncate leading-snug">{label}</span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
 
             <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
               <div className="flex items-center gap-3">
@@ -2961,7 +3061,11 @@ export default function DarkSidebar({
                                       Icon: Contact2,
                                       label: "Default for member's profiles",
                                     },
-                                    { Icon: Fingerprint, label: 'Identification devices' },
+                                    {
+                                      Icon: Fingerprint,
+                                      label: 'Identification devices',
+                                      panel: 'identification-devices' as const,
+                                    },
                                     {
                                       Icon: List,
                                       label: 'Typologies of subscription',
@@ -2978,8 +3082,16 @@ export default function DarkSidebar({
                                       label: 'Other settings',
                                       path: '/club/settings/other_settings',
                                     },
-                                    { Icon: LayoutGrid, label: 'Tables' },
-                                    { Icon: Volume2, label: 'Access of outcome settings' },
+                                    {
+                                      Icon: LayoutGrid,
+                                      label: 'Tables',
+                                      path: '/club/settings/tables/areas',
+                                    },
+                                    {
+                                      Icon: Volume2,
+                                      label: 'Access of outcome settings',
+                                      panel: 'outcome-settings' as const,
+                                    },
                                     { Icon: Mic, label: 'Audio messages' },
                                     {
                                       Icon: Import,
@@ -2995,11 +3107,21 @@ export default function DarkSidebar({
                                 ).map((item, subIdx, arr) => {
                                   const { Icon: SubIcon, label: subLabel } = item;
                                   const path = 'path' in item ? item.path : undefined;
+                                  const panel =
+                                    'panel' in item ? item.panel : undefined;
                                   return (
                                     <button
                                       key={subLabel}
                                       type="button"
                                       onClick={() => {
+                                        if (panel === 'identification-devices') {
+                                          onIdentificationDevicesClick?.();
+                                          return;
+                                        }
+                                        if (panel === 'outcome-settings') {
+                                          onAccessOutcomeSettingsClick?.();
+                                          return;
+                                        }
                                         if (path) {
                                           router.push(path);
                                         }

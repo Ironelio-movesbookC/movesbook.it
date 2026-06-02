@@ -12,6 +12,12 @@ import MyBestSettings from '@/components/settings/MyBestSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
 import WorkoutsParametersSettings from '@/components/settings/WorkoutsParametersSettings';
 import { useAuth } from '@/hooks/useAuth';
+import {
+  isFullAdminPanelSession,
+  isStaffPanelSession,
+  readPanelSession,
+  staffHomePath,
+} from '@/lib/panelSession';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { 
   Palette,
@@ -70,8 +76,13 @@ export default function SettingsPage() {
     const adminData = localStorage.getItem('adminUser');
     const adminToken = localStorage.getItem('adminToken');
     
-    if (adminData) {
-      // Check if token might be invalid (this is just a safety check)
+    const session = readPanelSession();
+    if (isStaffPanelSession(session) && session?.id) {
+      router.replace(staffHomePath(session.id));
+      return;
+    }
+
+    if (adminData && adminToken && isFullAdminPanelSession(session)) {
       try {
         JSON.parse(adminData);
         setIsAdmin(true);

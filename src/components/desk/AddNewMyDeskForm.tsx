@@ -44,8 +44,8 @@ export default function AddNewMyDeskForm({
   const sectionOptions = useMemo(() => flattenForSectionSelect(dbSectionTree), [dbSectionTree]);
 
   const [icon, setIcon] = useState('fas fa-address-book');
-  const [bgColor, setBgColor] = useState('#22c55e');
-  const [titleColor, setTitleColor] = useState('#171717');
+  const [bgColor, setBgColor] = useState('#ffffff');
+  const [titleColor, setTitleColor] = useState('#000000');
   const [title, setTitle] = useState('');
   const [sectionId, setSectionId] = useState('');
   const [path, setPath] = useState('');

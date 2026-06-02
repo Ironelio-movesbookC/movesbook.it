@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { getFormCreatedClubs, userHasClubProfile } from '@/lib/club/clubSidebarLabel';
 
 interface User {
   userType: string;
@@ -170,8 +171,13 @@ export function useMyPageData(user: User | null) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  const clubProfiles = useMemo(() => getFormCreatedClubs(clubs), [clubs]);
+  const hasClubProfile = useMemo(() => userHasClubProfile(clubs), [clubs]);
+
   return {
     clubs,
+    clubProfiles,
+    hasClubProfile,
     groups,
     teams,
     coachingGroups,

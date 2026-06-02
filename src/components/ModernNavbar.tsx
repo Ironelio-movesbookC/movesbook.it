@@ -65,10 +65,23 @@ type NetworkSearchResultItem = {
   kind: 'user' | 'team' | 'club';
   id: string;
   title: string;
+  username: string | null;
   categoryLabel: string;
   lines: string[];
   image: string | null;
 };
+
+function networkSearchVisitorHref(
+  item: NetworkSearchResultItem,
+  source?: 'mainpage'
+): string {
+  const slug =
+    item.kind === 'user'
+      ? (item.username?.trim() || item.id)
+      : item.title.trim() || item.id;
+  const base = `/searchresults/search/${encodeURIComponent(slug)}`;
+  return source === 'mainpage' ? `${base}?source=mainpage` : base;
+}
 
 export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavbarProps) {
   const pathname = usePathname();
@@ -347,16 +360,25 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
     return () => window.removeEventListener('keydown', onKey);
   }, [networkSearchModalOpen]);
 
-  const handleAdminLogout = () => {
-    // Clear admin credentials
+  const handleAdminLogout = async () => {
+    const token = localStorage.getItem('adminToken');
+    if (token) {
+      try {
+        await fetch('/api/auth/admin/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        /* continue clearing local session */
+      }
+    }
     localStorage.removeItem('adminToken');
     localStorage.removeItem('adminUser');
     setIsAdmin(false);
     setAdminUser(null);
     setIsUserDropdownOpen(false);
     setIsMobileMenuOpen(false);
-    
-    // Redirect to homepage
+
     router.push('/');
   };
 
@@ -544,17 +566,16 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
         data = await response.json();
 
         if (response.ok && data.user) {
-          // Admin login successful
           localStorage.setItem('adminToken', data.token);
           localStorage.setItem('adminUser', JSON.stringify(data.user));
-          
-          // Clear form
           setLoginUsername('');
           setLoginPassword('');
           setLoginError('');
-          
-          // Redirect to admin dashboard
-          router.push('/admin/dashboard');
+          if (data.user.isStaff) {
+            router.push(`/operators/profile/${data.user.id}`);
+          } else {
+            router.push('/admin/dashboard');
+          }
           return;
         }
       }
@@ -585,17 +606,16 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
         data = await response.json();
 
         if (response.ok && data.user) {
-          // Admin login successful
           localStorage.setItem('adminToken', data.token);
           localStorage.setItem('adminUser', JSON.stringify(data.user));
-          
-          // Clear form
           setLoginUsername('');
           setLoginPassword('');
           setLoginError('');
-          
-          // Redirect to admin dashboard
-          router.push('/admin/dashboard');
+          if (data.user.isStaff) {
+            router.push(`/operators/profile/${data.user.id}`);
+          } else {
+            router.push('/admin/dashboard');
+          }
           return;
         }
       }
@@ -828,7 +848,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
               <form
                 onSubmit={handleNetworkSearchSubmit}
                 data-search-anchor="desktop"
-                className="flex shrink-0 items-center gap-2"
+                className="flex shrink-0 items-center gap-2 lg:-mt-7"
                 role="search"
                 aria-label={t('nav_search_network_form_aria')}
               >
@@ -838,7 +858,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                 <label htmlFor="navbar-network-search-scope" className="sr-only">
                   {t('nav_search_scope_label')}
                 </label>
-                <div className="flex h-9 max-w-[9.5rem] shrink-0 items-center rounded-md bg-white shadow-sm ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-cyan-400/70">
+                <div className="flex h-10 max-w-[5.5rem] shrink-0 items-center rounded-md bg-white shadow-sm ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-cyan-400/70">
                   <select
                     id="navbar-network-search-scope"
                     value={networkSearchScope}
@@ -855,7 +875,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                 </div>
                 <div
                   ref={networkSearchDesktopInputWrapRef}
-                  className="relative flex h-9 w-36 shrink-0 items-center rounded-md bg-white shadow-sm ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-cyan-400/70 sm:w-44"
+                  className="relative flex h-10 w-36 shrink-0 items-center rounded-md bg-white shadow-sm ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-cyan-400/70 sm:w-44"
                 >
                   <label htmlFor="navbar-network-search-query" className="sr-only">
                     {t('nav_search_placeholder')}
@@ -872,7 +892,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                   <button
                     type="button"
                     onClick={() => void runNetworkSearch('desktop')}
-                    className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+                    className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
                     aria-label={t('nav_search_submit')}
                   >
                     <Search className="h-4 w-4" aria-hidden />
@@ -966,7 +986,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
               ) : (
                 /* Inline Login Form */
                 <div className="flex flex-col items-end gap-1">
-                  <form onSubmit={handleInlineLogin} className="flex items-center space-x-2">
+                  <form onSubmit={handleInlineLogin} className="flex items-center gap-2">
                     <input
                       type="text"
                       placeholder="Username"
@@ -975,7 +995,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                         setLoginUsername(e.target.value);
                         setLoginError('');
                       }}
-                      className="px-3 py-2 bg-white bg-opacity-10 border border-cyan-500 border-opacity-30 rounded-lg text-white placeholder-cyan-200 focus:outline-none focus:ring-2 focus:ring-cyan-400 transition-all text-sm w-40"
+                      className="h-10 w-40 rounded-md border border-cyan-500 border-opacity-30 bg-white bg-opacity-10 px-3 text-sm text-white placeholder-cyan-200 transition-all focus:outline-none focus:ring-2 focus:ring-cyan-400"
                       disabled={isLoggingIn}
                     />
                     <input
@@ -986,22 +1006,22 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                         setLoginPassword(e.target.value);
                         setLoginError('');
                       }}
-                      className="px-3 py-2 bg-white bg-opacity-10 border border-cyan-500 border-opacity-30 rounded-lg text-white placeholder-cyan-200 focus:outline-none focus:ring-2 focus:ring-cyan-400 transition-all text-sm w-40"
+                      className="h-10 w-40 rounded-md border border-cyan-500 border-opacity-30 bg-white bg-opacity-10 px-3 text-sm text-white placeholder-cyan-200 transition-all focus:outline-none focus:ring-2 focus:ring-cyan-400"
                       disabled={isLoggingIn}
                       onKeyPress={(e) => e.key === 'Enter' && handleInlineLogin()}
                     />
                   <button
                       type="submit"
                       disabled={isLoggingIn}
-                      className="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-sm font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                      className="h-10 whitespace-nowrap rounded-md bg-cyan-600 px-6 text-sm font-semibold text-white transition-all duration-300 hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                       {isLoggingIn ? '...' : 'Login'}
                   </button>
                   </form>
                   {loginError && (
-                    <span className="text-xs text-red-300 px-2">{loginError}</span>
+                    <span className="text-xs text-red-300">{loginError}</span>
                   )}
-                  <div className="flex items-center gap-3 px-2">
+                  <div className="flex items-center gap-3 pr-1">
                     <Link
                       href="/register"
                       className="text-xs text-green-300 hover:text-green-100 font-semibold underline transition-colors"
@@ -1335,7 +1355,18 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold text-blue-700">{item.title}</p>
+                          <Link
+                            href={networkSearchVisitorHref(
+                              item,
+                              !isAuthenticated && pathname === '/' ? 'mainpage' : undefined
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-semibold text-blue-700 hover:text-blue-900 hover:underline"
+                            onClick={() => setNetworkSearchModalOpen(false)}
+                          >
+                            {item.title}
+                          </Link>
                           {item.lines.map((line, idx) => (
                             <p key={`${item.id}-line-${idx}`} className="text-xs text-zinc-600">
                               {line}

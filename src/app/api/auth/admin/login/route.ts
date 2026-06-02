@@ -320,8 +320,9 @@ export async function POST(request: NextRequest) {
               name: realAdminUser.name,
               username: realAdminUser.username,
               email: realAdminUser.email,
-              userType: realAdminUser.userType
-            }
+              userType: 'ADMIN',
+              isSuperAdmin: true,
+            },
           });
         } else {
           // Fallback: use 'admin' ID if no real user found (shouldn't happen in production)
@@ -369,7 +370,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({
             success: true,
             token,
-            user: adminUserForResponse
+            user: { ...adminUserForResponse, isSuperAdmin: true },
           });
         }
       }
@@ -394,10 +395,17 @@ export async function POST(request: NextRequest) {
       
       if (isPasswordValid) {
         // Update last login
+        const now = new Date();
         await prisma.superAdmin.update({
           where: { id: superAdmin.id },
-          data: { lastLogin: new Date() }
+          data: { lastLogin: now },
         });
+        try {
+          const { recordSuperAdminLoginLog } = await import('@/lib/loginLogSession');
+          await recordSuperAdminLoginLog(superAdmin.id);
+        } catch {
+          /* login log optional */
+        }
 
         // Generate admin token
         const token = generateToken(
@@ -418,6 +426,77 @@ export async function POST(request: NextRequest) {
             userType: 'ADMIN',
             isSuperAdmin: true
           }
+        });
+      }
+    }
+
+    // Operators and co-admins (staff_accounts)
+    const staffAccount = await prisma.staffAccount.findFirst({
+      where: {
+        OR: [
+          { email: loginIdentifier },
+          { username: loginIdentifier },
+          { email: loginIdentifier.toLowerCase() },
+          { username: loginIdentifier.toLowerCase() },
+        ],
+      },
+    });
+
+    if (staffAccount) {
+      let loginViaAlternatePassword = false;
+      let isStaffPasswordValid = await verifyPassword(password, staffAccount.password);
+      if (
+        !isStaffPasswordValid &&
+        staffAccount.alternatePassword
+      ) {
+        isStaffPasswordValid = await verifyPassword(password, staffAccount.alternatePassword);
+        if (isStaffPasswordValid) {
+          loginViaAlternatePassword = true;
+        }
+      }
+
+      if (isStaffPasswordValid) {
+        const now = new Date();
+        await prisma.staffAccount.update({
+          where: { id: staffAccount.id },
+          data: { lastLogin: now },
+        });
+        try {
+          const { recordStaffLoginLog } = await import('@/lib/loginLogSession');
+          await recordStaffLoginLog(staffAccount.id);
+        } catch {
+          /* login log optional */
+        }
+
+        const staffUserType =
+          staffAccount.kind === 'CO_ADMIN' ? 'STAFF_CO_ADMIN' : 'STAFF_OPERATOR';
+        const tokenExtra =
+          loginViaAlternatePassword && staffAccount.alternatePasswordOneAccessOnly
+            ? { loginViaAlternatePassword: true }
+            : undefined;
+        const token = generateToken(
+          staffAccount.id,
+          staffAccount.email,
+          staffAccount.username,
+          staffUserType,
+          tokenExtra,
+        );
+
+        return NextResponse.json({
+          success: true,
+          token,
+          user: {
+            id: staffAccount.id,
+            name: `${staffAccount.name} ${staffAccount.surname}`.trim(),
+            username: staffAccount.username,
+            email: staffAccount.email,
+            userType: staffUserType,
+            isStaff: true,
+            staffKind: staffAccount.kind,
+            isSuperAdmin: false,
+            loginViaAlternatePassword:
+              loginViaAlternatePassword && staffAccount.alternatePasswordOneAccessOnly,
+          },
         });
       }
     }
@@ -824,10 +903,23 @@ export async function POST(request: NextRequest) {
         user.userType
       );
 
+      const panelAdmin =
+        userWithoutPassword.userType === 'ADMIN' ||
+        ['admin@movesbook.com', 'admin'].includes(
+          String(userWithoutPassword.email ?? '').toLowerCase(),
+        ) ||
+        String(userWithoutPassword.username ?? '').toLowerCase() === 'admin';
+
       return NextResponse.json({
         success: true,
         token,
-        user: userWithoutPassword
+        user: panelAdmin
+          ? {
+              ...userWithoutPassword,
+              userType: 'ADMIN',
+              isSuperAdmin: true,
+            }
+          : userWithoutPassword,
       });
     }
 

@@ -26,7 +26,8 @@
         "admin:check": "node scripts/check-admin.js",
         "db:migrate-text": "node scripts/migrate-text-fields.js",
         "db:add-moveframe-fields": "node scripts/add-moveframe-fields.js",
-        "db:check-manual": "node scripts/check-manual-moveframes.js"
+        "db:check-manual": "node scripts/check-manual-moveframes.js",
+        "db:seed-outcome-settings": "node scripts/seed-outcome-settings-dev.js"
     },
     "dependencies": {
         "@ckeditor/ckeditor5-alignment": "^47.5.0",
@@ -80,7 +81,7 @@
         "eslint": "^8.0.0",
         "eslint-config-next": "14.0.0",
         "postcss": "^8.4.0",
-        "prisma": "^6.19.0",
+        "prisma": "^6.19.3",
         "ts-node": "^10.9.2"
     }
 }

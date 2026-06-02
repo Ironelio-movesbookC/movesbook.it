@@ -70,9 +70,9 @@ export default function MyDeskListPage() {
         onToggleToolbar={setShowToolbar}
       />
 
-      <div className="flex w-full flex-1 flex-col py-6">
+      <div className="flex w-full flex-1 flex-col py-2">
         {showAdBanner ? (
-          <div className="mb-6 flex-shrink-0 px-4">
+          <div className="mb-6 flex-shrink-0">
             <AdvertisementCarousel />
           </div>
         ) : null}
@@ -156,7 +156,7 @@ export default function MyDeskListPage() {
             </div>
           ) : null}
 
-          <div className="min-w-0 flex-1 flex-col px-4 py-2">
+          <div className="min-w-0 flex-1 flex-col py-2">
             <DeskUtilityList />
           </div>
 

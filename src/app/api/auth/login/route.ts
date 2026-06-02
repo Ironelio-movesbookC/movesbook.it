@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword, generateToken, hashPassword } from '@/lib/auth';
+import { MOVESBOOK_LOGIN_USER_TYPES } from '@/lib/adminLoginLogLabels';
 import mysql from 'mysql2/promise';
 
 type LegacyDbConfig = {
@@ -594,6 +595,19 @@ export async function POST(request: NextRequest) {
       ...userWithoutPassword,
       language: userSettings?.language || 'en'
     };
+
+    if (MOVESBOOK_LOGIN_USER_TYPES.includes(user.userType)) {
+      try {
+        const { recordUserLoginLog } = await import('@/lib/loginLogSession');
+        await recordUserLoginLog(user.id);
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastSeenAt: new Date() },
+        });
+      } catch {
+        /* login log optional */
+      }
+    }
 
     // Generate JWT token with RSA signing
     const token = generateToken(
