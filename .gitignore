@@ -1,4 +1,5 @@
 # Dependencies
+package.json
 /node_modules
 /.pnp
 .pnp.js
