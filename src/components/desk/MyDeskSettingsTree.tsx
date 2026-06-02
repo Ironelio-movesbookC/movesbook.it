@@ -30,12 +30,14 @@ import {
   EyeOff,
   Landmark,
   type LucideIcon,
+  Pencil,
   Plus,
   Trophy,
   XCircle
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import FontAwesomeIconPicker, { normalizeFaIconClass } from '@/components/desk/FontAwesomeIconPicker';
+import { deskTreeRowInsetStyle } from '@/components/desk/deskTreeDepth';
 
 type DeskIconKey = 'at' | 'book' | 'id' | 'trophy' | 'wheelchair' | 'landmark';
 
@@ -100,6 +102,17 @@ function reorderInTree(
   return changed ? next : null;
 }
 
+function findNodeById(nodes: MyDeskNode[], id: string): MyDeskNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    if (node.children?.length) {
+      const found = findNodeById(node.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 function findSiblingsContext(
   nodes: MyDeskNode[],
   targetId: string,
@@ -149,6 +162,7 @@ function SortableMyDeskRow({
   expanded,
   toggle,
   onAddChild,
+  onEdit,
   onDelete,
   onToggleVisible
 }: {
@@ -157,6 +171,7 @@ function SortableMyDeskRow({
   expanded: Record<string, boolean>;
   toggle: (id: string) => void;
   onAddChild: (parentId: string) => void;
+  onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onToggleVisible: (id: string) => void;
 }) {
@@ -178,19 +193,17 @@ function SortableMyDeskRow({
   };
 
   const childIds = node.children?.map((c) => c.id) ?? [];
+  const insetStyle = deskTreeRowInsetStyle(depth);
 
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{ ...style, ...insetStyle }}
       className="select-none border-b border-zinc-200 last:border-b-0"
     >
       <div
-        className={`flex w-full min-h-[42px] items-center gap-1.5 px-2 py-2 text-xs font-medium tracking-wide ${node.barClass ?? ''} ${
-          depth > 0 ? 'ml-2 border-l-2 border-zinc-300 pl-2' : ''
-        }`}
+        className={`flex min-h-[42px] w-full items-center gap-1.5 px-2 py-2 text-xs font-medium tracking-wide ${node.barClass ?? ''}`}
         style={{
-          paddingLeft: `${6 + depth * 12}px`,
           ...(node.bgColor ? { backgroundColor: node.bgColor } : {}),
           ...(node.titleColor ? { color: node.titleColor } : {})
         }}
@@ -246,6 +259,15 @@ function SortableMyDeskRow({
           ) : null}
           <button
             type="button"
+            onClick={() => onEdit(node.id)}
+            className="inline-flex h-7 w-7 items-center justify-center text-current opacity-85 hover:opacity-100"
+            aria-label={t('desk_edit_item_aria')}
+            title={t('desk_edit_item_aria')}
+          >
+            <Pencil className="h-4 w-4" aria-hidden />
+          </button>
+          <button
+            type="button"
             onClick={() => onAddChild(node.id)}
             className="inline-flex h-7 w-7 items-center justify-center text-current opacity-85 hover:opacity-100"
             aria-label={t('desk_add_sub_item_aria')}
@@ -283,6 +305,7 @@ function SortableMyDeskRow({
               expanded={expanded}
               toggle={toggle}
               onAddChild={onAddChild}
+              onEdit={onEdit}
               onDelete={onDelete}
               onToggleVisible={onToggleVisible}
             />
@@ -293,18 +316,31 @@ function SortableMyDeskRow({
   );
 }
 
+type DeskFormModal =
+  | { mode: 'add'; parentId: string }
+  | { mode: 'edit'; itemId: string };
+
 export default function MyDeskSettingsTree() {
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [items, setItems] = useState<MyDeskNode[]>([]);
   const [loading, setLoading] = useState(true);
-  const [addModalParentId, setAddModalParentId] = useState<string | null>(null);
+  const [formModal, setFormModal] = useState<DeskFormModal | null>(null);
   const [newIcon, setNewIcon] = useState('fas fa-address-book');
-  const [newBgColor, setNewBgColor] = useState('#22c55e');
-  const [newTitleColor, setNewTitleColor] = useState('#171717');
+  const [newBgColor, setNewBgColor] = useState('#ffffff');
+  const [newTitleColor, setNewTitleColor] = useState('#000000');
   const [newTitle, setNewTitle] = useState('');
   const [newPath, setNewPath] = useState('');
   const [newDisplayMode, setNewDisplayMode] = useState<'new_label' | 'central_page'>('new_label');
+
+  const resetFormDefaults = useCallback(() => {
+    setNewIcon('fas fa-address-book');
+    setNewBgColor('#ffffff');
+    setNewTitleColor('#000000');
+    setNewTitle('');
+    setNewPath('');
+    setNewDisplayMode('new_label');
+  }, []);
 
   const fetchItems = useCallback(async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -351,58 +387,90 @@ export default function MyDeskSettingsTree() {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  const onAddChild = useCallback((parentId: string) => {
-    setAddModalParentId(parentId);
-    setNewIcon('fas fa-address-book');
-    setNewBgColor('#22c55e');
-    setNewTitleColor('#171717');
-    setNewTitle('');
-    setNewPath('');
-    setNewDisplayMode('new_label');
+  const onAddChild = useCallback(
+    (parentId: string) => {
+      resetFormDefaults();
+      setFormModal({ mode: 'add', parentId });
+    },
+    [resetFormDefaults]
+  );
+
+  const onEdit = useCallback(
+    (itemId: string) => {
+      const node = findNodeById(items, itemId);
+      if (!node) return;
+      setNewIcon(node.faIconClass ?? 'fas fa-address-book');
+      setNewBgColor(node.bgColor ?? '#ffffff');
+      setNewTitleColor(node.titleColor ?? '#000000');
+      setNewTitle(node.label);
+      setNewPath(node.path ?? '');
+      setNewDisplayMode(node.displayMode ?? 'new_label');
+      setFormModal({ mode: 'edit', itemId });
+    },
+    [items]
+  );
+
+  const closeFormModal = useCallback(() => {
+    setFormModal(null);
   }, []);
 
-  const closeAddModal = useCallback(() => {
-    setAddModalParentId(null);
-  }, []);
-
-  const submitAddChild = useCallback(
+  const submitFormModal = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-      if (!addModalParentId) {
+      if (!formModal) {
         return;
       }
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
       if (!token) return;
 
       const title = newTitle.trim() || newPath.trim() || t('desk_new_item_label');
-      const response = await fetch('/api/my-desk', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          parentId: addModalParentId,
-          title,
-          path: newPath.trim() || null,
-          faIconClass: normalizeFaIconClass(newIcon) || null,
-          bgColor: newBgColor,
-          titleColor: newTitleColor,
-          displayMode: newDisplayMode,
-          visible: true
-        })
-      });
-      if (!response.ok) {
-        throw new Error('Failed to add child item');
+      const payload = {
+        title,
+        path: newPath.trim() || null,
+        faIconClass: normalizeFaIconClass(newIcon) || null,
+        bgColor: newBgColor,
+        titleColor: newTitleColor,
+        displayMode: newDisplayMode
+      };
+
+      if (formModal.mode === 'add') {
+        const response = await fetch('/api/my-desk', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            ...payload,
+            parentId: formModal.parentId,
+            visible: true
+          })
+        });
+        if (!response.ok) {
+          throw new Error('Failed to add child item');
+        }
+        setExpanded((prev) => ({ ...prev, [formModal.parentId]: true }));
+      } else {
+        const response = await fetch(`/api/my-desk/${formModal.itemId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          throw new Error('Failed to update item');
+        }
       }
-      setExpanded((prev) => ({ ...prev, [addModalParentId]: true }));
-      closeAddModal();
+
+      closeFormModal();
       await fetchItems();
     },
     [
-      addModalParentId,
-      closeAddModal,
+      closeFormModal,
       fetchItems,
+      formModal,
       newBgColor,
       newDisplayMode,
       newIcon,
@@ -434,16 +502,7 @@ export default function MyDeskSettingsTree() {
   const onToggleVisible = useCallback(async (id: string) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return;
-    const current = (function find(nodes: MyDeskNode[]): MyDeskNode | null {
-      for (const node of nodes) {
-        if (node.id === id) return node;
-        if (node.children?.length) {
-          const found = find(node.children);
-          if (found) return found;
-        }
-      }
-      return null;
-    })(items);
+    const current = findNodeById(items, id);
     if (!current) return;
 
     const response = await fetch(`/api/my-desk/${id}`, {
@@ -532,6 +591,7 @@ export default function MyDeskSettingsTree() {
                   expanded={expanded}
                   toggle={toggle}
                   onAddChild={onAddChild}
+                  onEdit={onEdit}
                   onDelete={onDelete}
                   onToggleVisible={onToggleVisible}
                 />
@@ -541,11 +601,11 @@ export default function MyDeskSettingsTree() {
         )}
       </div>
 
-      {addModalParentId ? (
+      {formModal ? (
         <div
           className="fixed inset-0 z-[220] flex items-center justify-center bg-black/45 p-4"
           role="presentation"
-          onClick={closeAddModal}
+          onClick={closeFormModal}
         >
           <div
             role="dialog"
@@ -553,10 +613,10 @@ export default function MyDeskSettingsTree() {
             className="relative w-full max-w-xl rounded-xl border border-zinc-300 bg-zinc-100 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <form onSubmit={submitAddChild} className="space-y-4 p-6">
+            <form onSubmit={submitFormModal} className="space-y-4 p-6">
               <button
                 type="button"
-                onClick={closeAddModal}
+                onClick={closeFormModal}
                 className="absolute right-4 top-4 rounded-full border border-zinc-300 bg-white px-2 py-1 text-zinc-600 hover:text-zinc-900"
                 aria-label={t('add_new_mydesk_cancel')}
               >
@@ -564,7 +624,9 @@ export default function MyDeskSettingsTree() {
               </button>
 
               <div className="pr-10">
-                <label className="mb-1 block text-sm font-bold text-zinc-900">{t('add_new_mydesk_title')}</label>
+                <label className="mb-1 block text-sm font-bold text-zinc-900">
+                  {formModal.mode === 'add' ? t('add_new_mydesk_title') : t('edit_mydesk_title')}
+                </label>
               </div>
 
               <div>

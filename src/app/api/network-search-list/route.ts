@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { verifyToken } from '@/lib/auth';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import type { Prisma, UserType } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
@@ -25,7 +27,16 @@ type SearchListRow = {
   country: string | null;
   roleLine: string;
   mutualLine: string | null;
+  subscribedSince: string | null;
+  isClubMember: boolean;
 };
+
+function getTokenUserId(request: NextRequest): string | null {
+  const token = request.headers.get('authorization')?.replace('Bearer ', '');
+  if (!token) return null;
+  const decoded = verifyToken(token);
+  return decoded?.userId ? String(decoded.userId) : null;
+}
 
 function titleCaseUserType(ut: UserType): string {
   return ut
@@ -68,6 +79,21 @@ export async function GET(req: NextRequest) {
   };
 
   try {
+    const viewerUserId = getTokenUserId(req);
+    let viewerClubIds: string[] = [];
+    if (viewerUserId) {
+      const viewer = await prisma.user.findUnique({
+        where: { id: viewerUserId },
+        select: {
+          userType: true,
+          ownedClubs: { select: { id: true }, take: 5 },
+        },
+      });
+      if (viewer && isClubAccountUserType(viewer.userType)) {
+        viewerClubIds = viewer.ownedClubs.map((c) => c.id);
+      }
+    }
+
     const [users, groups, teams, clubs] = await Promise.all([
       prisma.user.findMany({
         where: userWhere,
@@ -80,6 +106,7 @@ export async function GET(req: NextRequest) {
           userType: true,
           country: true,
           image: true,
+          createdAt: true,
           mainSports: { select: { sport: true }, take: 5, orderBy: { order: 'asc' } },
         },
       }),
@@ -117,6 +144,19 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
+    const userIds = users.map((u) => u.id);
+    const clubMemberIds = new Set<string>();
+    if (viewerClubIds.length > 0 && userIds.length > 0) {
+      const memberships = await prisma.clubMember.findMany({
+        where: {
+          clubId: { in: viewerClubIds },
+          memberId: { in: userIds },
+        },
+        select: { memberId: true },
+      });
+      for (const m of memberships) clubMemberIds.add(m.memberId);
+    }
+
     const rows: SearchListRow[] = [];
 
     for (const u of users) {
@@ -134,6 +174,8 @@ export async function GET(req: NextRequest) {
         country: u.country,
         roleLine,
         mutualLine: null,
+        subscribedSince: u.createdAt.toISOString(),
+        isClubMember: clubMemberIds.has(u.id),
       });
     }
 
@@ -152,6 +194,8 @@ export async function GET(req: NextRequest) {
             ? `Group · ${desc.slice(0, 80)}${desc.length > 80 ? '…' : ''}`
             : 'Group',
         mutualLine: null,
+        subscribedSince: null,
+        isClubMember: false,
       });
     }
 
@@ -167,6 +211,8 @@ export async function GET(req: NextRequest) {
         country: null,
         roleLine: parts.length ? `Team · ${parts.join(' · ').slice(0, 100)}` : 'Team',
         mutualLine: null,
+        subscribedSince: null,
+        isClubMember: false,
       });
     }
 
@@ -186,6 +232,8 @@ export async function GET(req: NextRequest) {
             ? `Club · ${d.slice(0, 100)}${d.length > 100 ? '…' : ''}`
             : 'Club',
         mutualLine: null,
+        subscribedSince: null,
+        isClubMember: false,
       });
     }
 
