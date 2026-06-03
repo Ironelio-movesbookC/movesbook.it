@@ -57,25 +57,24 @@ export function useAuth() {
     checkAuth();
   }, [checkAuth]);
 
-  const login = (token: string, userData: AuthUser) => {
+  const login = (token: string, userData: AuthUser, redirectPath?: string | null) => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userData));
     }
     setUser(userData);
     setShowLoginModal(false);
-    
-    // Redirect based on user type to category-specific dashboards
-    if (userData.userType === 'ADMIN') {
-      if (redirectAfterLogin) {
-        router.push(redirectAfterLogin);
-        setRedirectAfterLogin(null);
-      } else {
-        router.push(getDashboardPathForUserType(userData.userType));
-      }
-    } else {
-      router.push(getDashboardPathForUserType(userData.userType));
+
+    let destination = redirectPath?.trim() || null;
+    if (!destination && userData.userType === 'ADMIN' && redirectAfterLogin) {
+      destination = redirectAfterLogin;
+      setRedirectAfterLogin(null);
     }
+    if (!destination) {
+      destination = getDashboardPathForUserType(userData.userType);
+    }
+
+    router.push(destination);
   };
 
   const requireAuth = (redirectPath: string) => {

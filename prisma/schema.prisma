@@ -677,7 +677,7 @@ model CoachingGroup {
   id          String                @id @default(cuid())
   coachId     String
   name        String
-  description String?
+  description String?               @db.Text
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
   members     CoachingGroupMember[]
@@ -705,7 +705,7 @@ model Team {
   id          String       @id @default(cuid())
   adminId     String
   name        String
-  description String?
+  description String?      @db.Text
   sport       String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -767,7 +767,7 @@ model Group {
   id          String        @id @default(cuid())
   adminId     String
   name        String
-  description String?
+  description String?       @db.Text
   groupType   String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt

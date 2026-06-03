@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Users, Shield, Activity, TrendingUp } from 'lucide-react';
 import AdminSuperAdminOGPNewsContent from '@/components/admin/AdminSuperAdminOGPNewsContent';
@@ -47,9 +48,17 @@ function AdminDashboardInner() {
 
   return (
     <div className="p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Home</h1>
-        <p className="text-gray-600">Welcome back, {adminUser.name}!</p>
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Home</h1>
+          <p className="text-gray-600">Welcome back, {adminUser.name}!</p>
+        </div>
+        <Link
+          href="/admin/all"
+          className="inline-flex items-center justify-center px-6 py-3 bg-neutral-900 text-white text-sm font-bold border border-black rounded hover:bg-neutral-800 transition shrink-0"
+        >
+          ALL
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

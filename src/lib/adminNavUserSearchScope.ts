@@ -29,6 +29,8 @@ export type NavUserSearchRow = {
   lastLogin: string;
   imageUrl: string | null;
   userType: string;
+  /** When search matched a specific owned club, open PCU for that club. */
+  matchedClubId?: string | null;
 };
 
 export function navSearchScopeFromLabel(label: string): NavSearchScope {
