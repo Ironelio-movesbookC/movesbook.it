@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { verifyToken } from '@/lib/auth';
+import { getClubAdminPublicContactRows } from '@/lib/club/clubAdminInfo';
+import { loadClubAdminInfoForUser } from '@/lib/user/clubAdminInfoPersistence';
 
 const prisma = new PrismaClient();
 
@@ -65,6 +67,9 @@ export async function GET(
       }
     });
 
+    const { clubAdminInfo } = await loadClubAdminInfoForUser(club.adminId);
+    const adminContactRows = getClubAdminPublicContactRows(clubAdminInfo);
+
     return NextResponse.json({
       club: {
         id: club.id,
@@ -72,6 +77,9 @@ export async function GET(
         description: club.description,
         location: club.location,
         youtubeChannelUrl: club.youtubeChannelUrl
+      },
+      adminContact: {
+        rows: adminContactRows,
       },
       members: members.map(m => ({
         id: m.id,

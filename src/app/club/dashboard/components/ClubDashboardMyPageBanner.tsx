@@ -7,6 +7,9 @@ import { DEFAULT_HERO_BANNER_URL } from '@/lib/profileBannerSequence';
 
 interface ClubDashboardMyPageBannerProps {
   clubName: string;
+  /** When set, shows "Club profile" beside the club name. */
+  clubId?: string | null;
+  onClubProfileClick?: () => void;
   /** Resolved banner URL (same rules as athlete dashboard). */
   coverImageUrl: string;
   /** Crop alignment for cover + strip overlay. */
@@ -19,6 +22,8 @@ interface ClubDashboardMyPageBannerProps {
 
 export default function ClubDashboardMyPageBanner({
   clubName,
+  clubId,
+  onClubProfileClick,
   coverImageUrl,
   coverBannerAlignment,
   onCoverCameraClick,
@@ -80,9 +85,20 @@ export default function ClubDashboardMyPageBanner({
                   unoptimized={imgUnoptimized}
                 />
               </div>
-              <span className="mb-1 px-2 py-0.5 bg-blue-700 text-white text-xs font-semibold uppercase tracking-wide rounded shadow max-w-[min(12rem,100%)] truncate">
-                {displayName}
-              </span>
+              <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
+                <span className="px-2 py-0.5 bg-blue-700 text-white text-xs font-semibold uppercase tracking-wide rounded shadow max-w-[min(12rem,100%)] truncate">
+                  {displayName}
+                </span>
+                {clubId && onClubProfileClick ? (
+                  <button
+                    type="button"
+                    onClick={onClubProfileClick}
+                    className="shrink-0 rounded border border-white/80 bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-gray-800 shadow hover:bg-white transition-colors"
+                  >
+                    Club profile
+                  </button>
+                ) : null}
+              </div>
             </div>
             <div className="flex flex-col gap-2 items-stretch shrink-0 w-[min(100%,15rem)] sm:w-[15rem]">
               <button

@@ -3,6 +3,10 @@ import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { defaultClubSubscriptionEndDate } from '@/lib/admin/clubSubscriptionStatus';
+import {
+  findClubByCompanyUsername,
+  hashClubCompanyPassword,
+} from '@/lib/club/clubDirectLogin';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +28,7 @@ type CreateClubBody = {
   mail?: string;
   directAccess?: string;
   directRegistrationCode?: string;
+  clubPassword?: string;
 };
 
 function isExplicitClubCreate(body: CreateClubBody | null): boolean {
@@ -35,7 +40,7 @@ function isExplicitClubCreate(body: CreateClubBody | null): boolean {
   );
 }
 
-function buildClubDescription(body: CreateClubBody): string | null {
+function buildClubDescription(body: CreateClubBody, clubPasswordHash?: string): string | null {
   const meta = {
     createdViaForm: true,
     subscriptionEnd: defaultClubSubscriptionEndDate(),
@@ -49,6 +54,7 @@ function buildClubDescription(body: CreateClubBody): string | null {
     mail: body.mail?.trim() || undefined,
     directAccess: body.directAccess?.trim() || undefined,
     directRegistrationCode: body.directRegistrationCode?.trim() || undefined,
+    clubPasswordHash: clubPasswordHash || undefined,
   };
   const hasMeta = Object.values(meta).some(Boolean);
   return hasMeta ? JSON.stringify(meta) : null;
@@ -84,12 +90,36 @@ export async function POST(request: NextRequest) {
     }
 
     if (isExplicitClubCreate(body)) {
+      const clubUsername = String(body!.username ?? '').trim();
+      if (!clubUsername) {
+        return NextResponse.json({ error: 'Club username is required' }, { status: 400 });
+      }
+      const clubPassword = String(body!.clubPassword ?? '').trim();
+      if (!clubPassword) {
+        return NextResponse.json({ error: 'My Club password is required' }, { status: 400 });
+      }
+
+      const existingClubs = await prisma.$queryRaw<
+        { id: string; adminId: string; description: string | null }[]
+      >`
+        SELECT id, adminId, description
+        FROM clubs_new
+        WHERE description IS NOT NULL
+      `;
+      if (findClubByCompanyUsername(existingClubs, clubUsername)) {
+        return NextResponse.json(
+          { error: 'This club username is already in use' },
+          { status: 409 },
+        );
+      }
+
       const clubName =
         String(body!.officialName ?? '').trim() ||
-        String(body!.username ?? '').trim() ||
+        clubUsername ||
         'New Club';
       const location = String(body!.location ?? '').trim() || null;
-      const description = buildClubDescription(body!);
+      const clubPasswordHash = await hashClubCompanyPassword(clubPassword);
+      const description = buildClubDescription(body!, clubPasswordHash);
       const id = randomUUID();
 
       await prisma.$executeRaw`

@@ -11,23 +11,36 @@ import { useRouter } from 'next/navigation';
 import { useMyPageData } from './hooks/useMyPageData';
 import { useMyPageHandlers } from './hooks/useMyPageHandlers';
 import { getEntityType } from './utils/myPageUtils';
-import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import {
+  getDashboardPathForUserType,
+  isClubAccountUserType,
+  isGroupAccountUserType,
+  isTeamAccountUserType,
+  hasDedicatedDashboard,
+} from '@/utils/dashboardRouting';
 import WorkoutsSection from './components/WorkoutsSection';
 import ProgressSection from './components/ProgressSection';
 import SettingsSection from './components/SettingsSection';
 import DisplayOptionsToolbar from './components/DisplayOptionsToolbar';
 import PersonalBanner from './components/PersonalBanner';
 import RightSidebar from './components/RightSidebar';
+import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 
 export default function MyPage() {
   const [activeSection, setActiveSection] = useState<'workouts' | 'progress' | 'settings'>('workouts');
-  const [showAdBanner, setShowAdBanner] = useState(true);
-  const [showPersonalBanner, setShowPersonalBanner] = useState(true);
-  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
-  const [showRightSidebar, setShowRightSidebar] = useState(true);
-  const [showToolbar, setShowToolbar] = useState(true);
+  const {
+    showAdBanner,
+    showPersonalBanner,
+    showLeftSidebar,
+    showRightSidebar,
+    setShowAdBanner,
+    setShowPersonalBanner,
+    setShowLeftSidebar,
+    setShowRightSidebar,
+  } = useDisplayLayoutOptions();
   const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-page');
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
 
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -52,10 +65,44 @@ export default function MyPage() {
     handleMyClubSelect
   } = useMyPageHandlers();
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('selectedTeam');
+      if (stored) setSelectedTeamId(stored);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isTeamAccountUserType(user?.userType || '')) return;
+    if (teams.length === 0) return;
+    setSelectedTeamId((prev) => {
+      if (prev && teams.some((t: { id: string }) => t.id === prev)) return prev;
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('selectedTeam');
+        if (stored && teams.some((t: { id: string }) => t.id === stored)) return stored;
+      }
+      return teams[0].id;
+    });
+  }, [teams, user?.userType]);
+
+  useEffect(() => {
+    if (!user || !isTeamAccountUserType(user.userType)) return;
+    if (teams.length === 0 && activeTab === 'my-entity') {
+      setActiveTab('my-page');
+    }
+  }, [teams.length, activeTab, user]);
+
   // Redirect to home if not authenticated
   useEffect(() => {
     if (!loading && !user) {
       router.push('/');
+    }
+  }, [user, loading, router]);
+
+  // Team / group / coach / club / athlete accounts use their own dashboards
+  useEffect(() => {
+    if (!loading && user && hasDedicatedDashboard(user.userType)) {
+      router.replace(getDashboardPathForUserType(user.userType));
     }
   }, [user, loading, router]);
 
@@ -86,12 +133,10 @@ export default function MyPage() {
         showPersonalBanner={showPersonalBanner}
         showLeftSidebar={showLeftSidebar}
         showRightSidebar={showRightSidebar}
-        showToolbar={showToolbar}
         onToggleAdBanner={setShowAdBanner}
         onTogglePersonalBanner={setShowPersonalBanner}
         onToggleLeftSidebar={setShowLeftSidebar}
         onToggleRightSidebar={setShowRightSidebar}
-        onToggleToolbar={setShowToolbar}
       />
 
       <div className="flex-1 flex flex-col w-full py-6">
@@ -117,16 +162,18 @@ export default function MyPage() {
                 entities={
                   isClubAccountUserType(user?.userType || '') ? clubProfiles :
                   user?.userType === 'ATHLETE' ? myClubs :
-                  user?.userType === 'TEAM_MANAGER' ? teams :
-                  user?.userType === 'GROUP_ADMIN' ? groups :
+                  isTeamAccountUserType(user?.userType || '') ? teams :
+                  isGroupAccountUserType(user?.userType || '') ? groups :
                   user?.userType === 'COACH' ? coachingGroups : []
                 }
                 selectedEntityId={
                   isClubAccountUserType(user?.userType || '') ? selectedClub :
                   user?.userType === 'ATHLETE'
                     ? (selectedClub ?? myClubs[0]?.id ?? null)
-                    : user?.userType === 'TEAM_MANAGER' ? null :
-                  user?.userType === 'GROUP_ADMIN' ? null :
+                    : isTeamAccountUserType(user?.userType || '')
+                      ? (selectedTeamId ?? teams[0]?.id ?? null)
+                      :
+                  isGroupAccountUserType(user?.userType || '') ? null :
                   user?.userType === 'COACH' ? null : null
                 }
                 onEntitySelect={(id) => {
@@ -134,9 +181,10 @@ export default function MyPage() {
                     handleClubSelect(id);
                   } else if (user?.userType === 'ATHLETE') {
                     handleMyClubSelect(id);
-                  } else if (user?.userType === 'TEAM_MANAGER') {
+                  } else if (isTeamAccountUserType(user?.userType || '')) {
+                    setSelectedTeamId(id);
                     handleTeamSelect(id);
-                  } else if (user?.userType === 'GROUP_ADMIN') {
+                  } else if (isGroupAccountUserType(user?.userType || '')) {
                     handleGroupSelect(id);
                   } else if (user?.userType === 'COACH') {
                     handleCoachingGroupSelect(id);

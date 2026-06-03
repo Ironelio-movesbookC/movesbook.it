@@ -2,14 +2,28 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
-import { ExternalLink, LayoutGrid, LayoutList, Search as SearchIcon } from 'lucide-react';
+import {
+  ExternalLink,
+  LayoutGrid,
+  LayoutList,
+  Search as SearchIcon,
+  X,
+} from 'lucide-react';
 import type { ClubSubscriptionStatusTone } from '@/lib/admin/clubSubscriptionStatus';
+import { flagEmojiFromCountryName } from '@/lib/admin/countryFlag';
+import { typeBadgeLabel } from '@/lib/admin/userPcuPanel';
+import type { UserType } from '@prisma/client';
+import type { FavouritePriority } from '@/lib/admin/userProfilePanelSettings';
+import { normalizeFavouritePriority } from '@/lib/admin/userProfilePanelSettings';
 import AdminClubsUserProfilePanel from '@/components/admin/AdminClubsUserProfilePanel';
 import AdminClubUserPanelModal, {
   type ClubUserPanelData,
 } from '@/components/admin/AdminClubUserPanelModal';
+import AdminRegisteredUserGridCard from '@/components/admin/AdminRegisteredUserGridCard';
+import { groupRowsForAdminGrid } from '@/lib/admin/groupRegisteredUserGridCards';
+import { getDefaultMembershipSortOrder } from '@/lib/admin/networkSubscriptionHistory';
 
-export type AdminUserSegment = 'single-user' | 'coaches' | 'groups' | 'teams' | 'clubs';
+export type AdminUserSegment = 'all' | 'single-user' | 'coaches' | 'groups' | 'teams' | 'clubs';
 
 export interface AdminRegisteredUsersListProps {
   segment: AdminUserSegment;
@@ -41,15 +55,23 @@ interface ProfilePayload {
     e: string;
     status: string;
   }>;
+  profilePanel?: {
+    tagged: boolean;
+    favouritePriority: FavouritePriority;
+  };
 }
 
+type ActionTarget = { id: string; email: string; username: string; label: string };
+
 interface RowUser {
+  rowKey: string;
   id: string;
   username: string;
   email: string;
   displayName: string;
   userType: string;
   country: string | null;
+  location: string | null;
   dateStart: string;
   dateEnd: string | null;
   version: string;
@@ -58,6 +80,22 @@ interface RowUser {
   clubsOwnedCount?: number;
   companyName?: string;
   statusTone?: ClubSubscriptionStatusTone;
+  primaryClubId?: string | null;
+  entityId?: string | null;
+  entityKind?: 'club' | 'team' | 'group' | 'coaching_group';
+}
+
+function rowListKey(r: RowUser): string {
+  return r.rowKey || r.id;
+}
+
+function CountryFlagCell({ country }: { country: string | null | undefined }) {
+  const flag = flagEmojiFromCountryName(country);
+  return (
+    <td className="px-2 py-2 border-t border-gray-300 text-center text-lg leading-none">
+      {flag || '—'}
+    </td>
+  );
 }
 
 function clubAdminStatusClassName(tone?: ClubSubscriptionStatusTone): string {
@@ -76,7 +114,7 @@ function clubAdminStatusClassName(tone?: ClubSubscriptionStatusTone): string {
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
 
-type MembershipTab = 'all' | 'current' | 'last';
+type MembershipTab = 'lastPerUser' | 'current' | 'last' | 'all';
 
 type LoginFilter = 'all' | 'active7' | 'active24h' | 'never';
 
@@ -84,6 +122,7 @@ interface FilterState {
   country: string;
   mainSport: string;
   version: string;
+  userTypeCategory: string;
   login: LoginFilter;
   subDay: string;
   subMonth: string;
@@ -96,6 +135,7 @@ const EMPTY_FILTERS: FilterState = {
   country: '',
   mainSport: '',
   version: '',
+  userTypeCategory: '',
   login: 'all',
   subDay: '',
   subMonth: '',
@@ -103,6 +143,15 @@ const EMPTY_FILTERS: FilterState = {
   rangeFrom: '',
   rangeTo: '',
 };
+
+const USER_TYPE_CATEGORY_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'All' },
+  { value: 'single-user', label: 'Single User' },
+  { value: 'coaches', label: 'Coach' },
+  { value: 'groups', label: 'Group' },
+  { value: 'teams', label: 'Team' },
+  { value: 'clubs', label: 'Club' },
+];
 
 const ORDER_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'Ordering' },
@@ -154,6 +203,13 @@ const YEAR_OPTIONS: { value: string; label: string }[] = [
 ];
 
 const VERSION_BY_SEGMENT: Record<AdminUserSegment, string[]> = {
+  all: [
+    'User — base version',
+    'Coach — base',
+    'Group account',
+    'Team account',
+    'Club account',
+  ],
   'single-user': ['User — base version'],
   coaches: ['Coach — base'],
   groups: ['Group account'],
@@ -204,6 +260,28 @@ const EMPTY_PROFILE_SUB_FILTERS: ProfileSubscriptionFilterState = {
   ordering: '',
 };
 
+function isClubUserType(userType: string): boolean {
+  return userType === 'CLUB' || userType === 'CLUB_TRAINER';
+}
+
+function inferProfileSegmentFromUserType(userType: string): AdminUserSegment {
+  switch (userType) {
+    case 'COACH':
+      return 'coaches';
+    case 'TEAM':
+    case 'TEAM_MANAGER':
+      return 'teams';
+    case 'CLUB':
+    case 'CLUB_TRAINER':
+      return 'clubs';
+    case 'GROUP':
+    case 'GROUP_ADMIN':
+      return 'groups';
+    default:
+      return 'single-user';
+  }
+}
+
 function normalizeVersionKey(s: string): string {
   return s.toLowerCase().replace(/—/g, '-').replace(/\s+/g, ' ').trim();
 }
@@ -246,6 +324,7 @@ export default function AdminRegisteredUsersList({
   historicalSubtitle,
 }: AdminRegisteredUsersListProps) {
   const [membershipTab, setMembershipTab] = useState<MembershipTab>('all');
+  const [orderBy, setOrderBy] = useState<string>(() => getDefaultMembershipSortOrder('all'));
   const [searchDraft, setSearchDraft] = useState('');
   const [searchApplied, setSearchApplied] = useState('');
   const [page, setPage] = useState(1);
@@ -255,8 +334,7 @@ export default function AdminRegisteredUsersList({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  const [orderBy, setOrderBy] = useState('');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(segment === 'all' ? 'grid' : 'list');
   const [filterOpen, setFilterOpen] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [draftFilters, setDraftFilters] = useState<FilterState>(EMPTY_FILTERS);
@@ -280,6 +358,18 @@ export default function AdminRegisteredUsersList({
   const [clubPanelData, setClubPanelData] = useState<ClubUserPanelData | null>(null);
   const [clubPanelUserId, setClubPanelUserId] = useState<string | null>(null);
 
+  const [msgModalOpen, setMsgModalOpen] = useState(false);
+  const [msgTargets, setMsgTargets] = useState<ActionTarget[]>([]);
+  const [msgDraft, setMsgDraft] = useState('');
+  const [msgSubject, setMsgSubject] = useState('Message from Movesbook Admin');
+  const [msgSending, setMsgSending] = useState(false);
+  const [msgError, setMsgError] = useState('');
+  const [actionBusy, setActionBusy] = useState(false);
+  const [profileTagged, setProfileTagged] = useState(false);
+  const [profileFavouritePriority, setProfileFavouritePriority] =
+    useState<FavouritePriority>('not_selected');
+  const [profilePanelSaving, setProfilePanelSaving] = useState(false);
+
   const filterWrapRef = useRef<HTMLDivElement>(null);
   const profilePanelRef = useRef<HTMLDivElement>(null);
   const profileSubFilterWrapRef = useRef<HTMLDivElement>(null);
@@ -287,7 +377,16 @@ export default function AdminRegisteredUsersList({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const versionOptions = useMemo(() => VERSION_BY_SEGMENT[segment], [segment]);
+  const isAllSegment = segment === 'all';
   const isClubsSegment = segment === 'clubs';
+  const showCompanyColumn = isClubsSegment || isAllSegment;
+  const profileSegment =
+    isAllSegment && profileData
+      ? inferProfileSegmentFromUserType(profileData.userType)
+      : segment;
+  const profileIsClubsSegment = profileSegment === 'clubs';
+
+  const gridCardGroups = useMemo(() => groupRowsForAdminGrid(rows), [rows]);
 
   useEffect(() => {
     let cancelled = false;
@@ -359,12 +458,16 @@ export default function AdminRegisteredUsersList({
       if (appliedFilters.country) params.set('country', appliedFilters.country);
       if (appliedFilters.mainSport) params.set('sport', appliedFilters.mainSport);
       if (appliedFilters.version) params.set('version', appliedFilters.version);
+      if (appliedFilters.userTypeCategory) {
+        params.set('userTypeCategory', appliedFilters.userTypeCategory);
+      }
       if (appliedFilters.login !== 'all') params.set('login', appliedFilters.login);
       if (appliedFilters.subDay) params.set('subDay', appliedFilters.subDay);
       if (appliedFilters.subMonth) params.set('subMonth', appliedFilters.subMonth);
       if (appliedFilters.subYear) params.set('subYear', appliedFilters.subYear);
       if (appliedFilters.rangeFrom) params.set('createdFrom', appliedFilters.rangeFrom);
       if (appliedFilters.rangeTo) params.set('createdTo', appliedFilters.rangeTo);
+      params.set('membership', membershipTab);
 
       const res = await fetch(`/api/admin/registered-users?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -380,7 +483,7 @@ export default function AdminRegisteredUsersList({
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, searchApplied, segment, orderBy, appliedFilters]);
+  }, [page, pageSize, searchApplied, segment, orderBy, appliedFilters, membershipTab]);
 
   useEffect(() => {
     void load();
@@ -389,6 +492,7 @@ export default function AdminRegisteredUsersList({
   useEffect(() => {
     setPage(1);
     setSelected(new Set());
+    setOrderBy(getDefaultMembershipSortOrder(membershipTab));
   }, [membershipTab]);
 
   useEffect(() => {
@@ -398,20 +502,21 @@ export default function AdminRegisteredUsersList({
   useEffect(() => {
     setAppliedFilters(EMPTY_FILTERS);
     setDraftFilters(EMPTY_FILTERS);
-    setOrderBy('');
+    setOrderBy(getDefaultMembershipSortOrder(membershipTab));
     setPage(1);
     setSelected(new Set());
     setFilterOpen(false);
   }, [segment]);
 
-  const allOnPageSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const allOnPageSelected =
+    rows.length > 0 && rows.every((r) => selected.has(rowListKey(r)));
 
   const toggleSelectAll = () => {
     if (allOnPageSelected) {
       setSelected(new Set());
       return;
     }
-    setSelected(new Set(rows.map((r) => r.id)));
+    setSelected(new Set(rows.map((r) => rowListKey(r))));
   };
 
   const toggleRow = (id: string) => {
@@ -420,6 +525,155 @@ export default function AdminRegisteredUsersList({
     else next.add(id);
     setSelected(next);
   };
+
+  const resolveActionTargets = useCallback((): ActionTarget[] => {
+    if (selected.size > 0) {
+      const seen = new Set<string>();
+      return rows
+        .filter((r) => selected.has(rowListKey(r)))
+        .filter((r) => {
+          if (seen.has(r.id)) return false;
+          seen.add(r.id);
+          return true;
+        })
+        .map((r) => ({
+          id: r.id,
+          email: r.email,
+          username: r.username,
+          label: r.displayName || r.username,
+        }));
+    }
+    if (profileState === 'ready' && profileData && profileRowSelected.size > 0) {
+      const userIds = new Set<string>();
+      profileRowSelected.forEach((rowId) => {
+        userIds.add(rowId.startsWith('account-') ? rowId.slice('account-'.length) : profileData.id);
+      });
+      return Array.from(userIds).map((id) => ({
+        id,
+        email: profileData.email,
+        username: profileData.username,
+        label: profileData.fullName || profileData.username,
+      }));
+    }
+    return [];
+  }, [selected, rows, profileState, profileData, profileRowSelected]);
+
+  const profileActionTarget = useMemo((): ActionTarget | null => {
+    if (profileState !== 'ready' || !profileData) return null;
+    return {
+      id: profileData.id,
+      email: profileData.email,
+      username: profileData.username,
+      label: profileData.fullName || profileData.username,
+    };
+  }, [profileState, profileData]);
+
+  const requireActionTargets = useCallback((): ActionTarget[] | null => {
+    const targets = resolveActionTargets();
+    if (targets.length === 0) {
+      window.alert('Select at least one user (checkbox in the list or subscription row in the profile panel).');
+      return null;
+    }
+    return targets;
+  }, [resolveActionTargets]);
+
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
+
+  const handleSendMail = useCallback(() => {
+    const targets = requireActionTargets();
+    if (!targets) return;
+    const emails = targets.map((t) => t.email.trim()).filter(Boolean);
+    if (emails.length === 0) {
+      window.alert('Selected users have no email address.');
+      return;
+    }
+    if (emails.length === 1) {
+      window.location.href = `mailto:${encodeURIComponent(emails[0]!)}`;
+      return;
+    }
+    const bcc = emails.map((e) => encodeURIComponent(e)).join(',');
+    window.location.href = `mailto:?bcc=${bcc}`;
+  }, [requireActionTargets]);
+
+  const openSendMsgModal = useCallback(() => {
+    const targets = requireActionTargets();
+    if (!targets) return;
+    setMsgTargets(targets);
+    setMsgError('');
+    setMsgDraft('');
+    setMsgSubject('Message from Movesbook Admin');
+    setMsgModalOpen(true);
+  }, [requireActionTargets]);
+
+  const handleSendMsgSubmit = useCallback(async () => {
+    const targets = msgTargets;
+    if (targets.length === 0) return;
+    const message = msgDraft.trim();
+    if (!message) {
+      setMsgError('Please enter a message.');
+      return;
+    }
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      setMsgError('Admin session not found. Please log in again.');
+      return;
+    }
+    setMsgSending(true);
+    setMsgError('');
+    try {
+      const res = await fetch('/api/admin/registered-users/actions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          segment,
+          userIds: targets.map((t) => t.id),
+          message,
+          subject: msgSubject.trim() || 'Message from Movesbook Admin',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to send message');
+
+      if (data.mailtoFallback && Array.isArray(data.recipients)) {
+        const emails = data.recipients
+          .map((r: { email?: string }) => r.email?.trim())
+          .filter(Boolean) as string[];
+        if (emails.length === 0) {
+          throw new Error('No email addresses for selected users.');
+        }
+        const body = encodeURIComponent(message);
+        const subj = encodeURIComponent(msgSubject.trim() || 'Message from Movesbook Admin');
+        if (emails.length === 1) {
+          window.location.href = `mailto:${encodeURIComponent(emails[0]!)}?subject=${subj}&body=${body}`;
+        } else {
+          const bcc = emails.map((e) => encodeURIComponent(e)).join(',');
+          window.location.href = `mailto:?bcc=${bcc}&subject=${subj}&body=${body}`;
+        }
+        setMsgModalOpen(false);
+        window.alert('Email service is not configured. Your mail client will open with the message prefilled.');
+        return;
+      }
+
+      const sent = typeof data.sent === 'number' ? data.sent : 0;
+      const failed = Array.isArray(data.failed) ? data.failed.length : 0;
+      setMsgModalOpen(false);
+      setMsgDraft('');
+      if (failed > 0) {
+        window.alert(`Message sent to ${sent} user(s). ${failed} failed — check email addresses.`);
+      } else {
+        window.alert(`Message sent to ${sent} user(s).`);
+      }
+    } catch (e: unknown) {
+      setMsgError(e instanceof Error ? e.message : 'Failed to send message');
+    } finally {
+      setMsgSending(false);
+    }
+  }, [msgTargets, msgDraft, msgSubject, segment]);
 
   const pageNumbers = useMemo(() => {
     const maxButtons = 5;
@@ -464,10 +718,144 @@ export default function AdminRegisteredUsersList({
     setProfileSubFilterDraft(EMPTY_PROFILE_SUB_FILTERS);
     setProfileSubFilterApplied(EMPTY_PROFILE_SUB_FILTERS);
     setProfileOrdering('');
+    setProfileTagged(false);
+    setProfileFavouritePriority('not_selected');
+    setProfilePanelSaving(false);
   }, []);
 
+  const saveProfilePanelSettings = useCallback(
+    async (patch: { tagged?: boolean; favouritePriority?: FavouritePriority }) => {
+      if (!profileData?.id) return;
+      const prevTagged = profileTagged;
+      const prevPriority = profileFavouritePriority;
+      if (patch.tagged !== undefined) setProfileTagged(patch.tagged);
+      if (patch.favouritePriority !== undefined) setProfileFavouritePriority(patch.favouritePriority);
+
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        setProfileTagged(prevTagged);
+        setProfileFavouritePriority(prevPriority);
+        window.alert('Admin session not found. Please log in again.');
+        return;
+      }
+
+      setProfilePanelSaving(true);
+      try {
+        const res = await fetch(
+          `/api/admin/registered-users/${encodeURIComponent(profileData.id)}/profile-panel`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(patch),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to save profile settings');
+        if (data.profilePanel) {
+          setProfileTagged(Boolean(data.profilePanel.tagged));
+          setProfileFavouritePriority(
+            normalizeFavouritePriority(data.profilePanel.favouritePriority),
+          );
+          setProfileData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  profilePanel: {
+                    tagged: Boolean(data.profilePanel.tagged),
+                    favouritePriority: normalizeFavouritePriority(
+                      data.profilePanel.favouritePriority,
+                    ),
+                  },
+                }
+              : prev,
+          );
+        }
+      } catch (e: unknown) {
+        setProfileTagged(prevTagged);
+        setProfileFavouritePriority(prevPriority);
+        window.alert(e instanceof Error ? e.message : 'Failed to save profile settings');
+      } finally {
+        setProfilePanelSaving(false);
+      }
+    },
+    [profileData?.id, profileTagged, profileFavouritePriority],
+  );
+
+  const deleteSubscriptionsForTargets = useCallback(
+    async (targets: ActionTarget[], closeProfileIfDeleted: boolean) => {
+      const names = targets.map((t) => t.label).slice(0, 5).join(', ');
+      const more = targets.length > 5 ? ` and ${targets.length - 5} more` : '';
+      const ok = window.confirm(
+        `Delete ${targets.length} subscription(s)?\n\n${names}${more}\n\nThis permanently removes the user account(s) from Movesbook. This cannot be undone.`,
+      );
+      if (!ok) return;
+
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        window.alert('Admin session not found. Please log in again.');
+        return;
+      }
+      setActionBusy(true);
+      try {
+        const res = await fetch('/api/admin/registered-users/actions', {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            segment,
+            userIds: targets.map((t) => t.id),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to delete subscriptions');
+
+        const deleted = typeof data.deleted === 'number' ? data.deleted : 0;
+        setSelected(new Set());
+        setProfileRowSelected(new Set());
+        if (closeProfileIfDeleted && profileData && targets.some((t) => t.id === profileData.id)) {
+          closeUserProfile();
+        }
+        await load();
+        window.alert(`Deleted ${deleted} user subscription(s).`);
+      } catch (e: unknown) {
+        window.alert(e instanceof Error ? e.message : 'Failed to delete subscriptions');
+      } finally {
+        setActionBusy(false);
+      }
+    },
+    [segment, profileData, closeUserProfile, load],
+  );
+
+  const handleDeleteSubscriptions = useCallback(async () => {
+    const targets = requireActionTargets();
+    if (!targets) return;
+    await deleteSubscriptionsForTargets(targets, true);
+  }, [requireActionTargets, deleteSubscriptionsForTargets]);
+
+  const handleProfileSendMail = useCallback(() => {
+    if (!profileActionTarget?.email) {
+      window.alert('This user has no email address.');
+      return;
+    }
+    window.location.href = `mailto:${encodeURIComponent(profileActionTarget.email)}`;
+  }, [profileActionTarget]);
+
+  const openProfileSendMsgModal = useCallback(() => {
+    if (!profileActionTarget) return;
+    setMsgTargets([profileActionTarget]);
+    setMsgError('');
+    setMsgDraft('');
+    setMsgSubject('Message from Movesbook Admin');
+    setMsgModalOpen(true);
+  }, [profileActionTarget]);
+
   const openUserProfile = useCallback(
-    async (userId: string) => {
+    async (userId: string, clubId?: string | null) => {
       setProfileState('loading');
       setProfileError('');
       setProfileData(null);
@@ -483,8 +871,11 @@ export default function AdminRegisteredUsersList({
           setProfileState('error');
           return;
         }
+        const qs = new URLSearchParams({ segment });
+        if (clubId?.trim()) qs.set('clubId', clubId.trim());
+        if (searchApplied.trim()) qs.set('q', searchApplied.trim());
         const res = await fetch(
-          `/api/admin/registered-users/${userId}/profile?segment=${encodeURIComponent(segment)}`,
+          `/api/admin/registered-users/${userId}/profile?${qs.toString()}`,
           { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
         );
         const data = await res.json().catch(() => ({}));
@@ -523,14 +914,24 @@ export default function AdminRegisteredUsersList({
               status: String(r.status),
             }),
           ),
+          profilePanel: data.profilePanel
+            ? {
+                tagged: Boolean(data.profilePanel.tagged),
+                favouritePriority: normalizeFavouritePriority(data.profilePanel.favouritePriority),
+              }
+            : undefined,
         });
+        setProfileTagged(Boolean(data.profilePanel?.tagged));
+        setProfileFavouritePriority(
+          normalizeFavouritePriority(data.profilePanel?.favouritePriority),
+        );
         setProfileState('ready');
       } catch (e: unknown) {
         setProfileError(e instanceof Error ? e.message : 'Failed to load');
         setProfileState('error');
       }
     },
-    [segment],
+    [segment, searchApplied],
   );
 
   const closeClubUserPanel = useCallback(() => {
@@ -542,7 +943,7 @@ export default function AdminRegisteredUsersList({
   }, []);
 
   const openClubUserPanel = useCallback(
-    async (userId: string) => {
+    async (userId: string, clubId?: string | null) => {
       setClubPanelUserId(userId);
       setClubPanelOpen(true);
       setClubPanelLoading(true);
@@ -555,8 +956,11 @@ export default function AdminRegisteredUsersList({
           setClubPanelLoading(false);
           return;
         }
+        const qs = new URLSearchParams({ segment: 'clubs' });
+        if (clubId?.trim()) qs.set('clubId', clubId.trim());
+        if (searchApplied.trim()) qs.set('q', searchApplied.trim());
         const res = await fetch(
-          `/api/admin/registered-users/${userId}/profile?segment=clubs`,
+          `/api/admin/registered-users/${userId}/profile?${qs.toString()}`,
           { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
         );
         const data = await res.json().catch(() => ({}));
@@ -596,14 +1000,15 @@ export default function AdminRegisteredUsersList({
         setClubPanelLoading(false);
       }
     },
-    [],
+    [searchApplied],
   );
 
   const handleClubPanelControlPanel = useCallback(() => {
     if (!clubPanelUserId) return;
+    const clubId = clubPanelData?.clubId;
     closeClubUserPanel();
-    void openUserProfile(clubPanelUserId);
-  }, [clubPanelUserId, closeClubUserPanel, openUserProfile]);
+    void openUserProfile(clubPanelUserId, clubId);
+  }, [clubPanelUserId, clubPanelData?.clubId, closeClubUserPanel, openUserProfile]);
 
   const filteredProfileSubscriptionRows = useMemo(() => {
     if (!profileData?.subscriptionRows?.length) return [];
@@ -649,11 +1054,11 @@ export default function AdminRegisteredUsersList({
 
   return (
     <div className="max-w-[1800px] mx-auto px-4 sm:px-6 py-6 text-gray-900">
-      {!(profileState !== 'idle' && isClubsSegment) && (
+      {!(profileState !== 'idle' && profileIsClubsSegment) && (
         <>
           <div className="bg-[#b8b8b8] px-4 py-3 border border-gray-400">
             <h1 className="text-lg sm:text-xl font-semibold text-gray-800">
-              Details of subscription{isClubsSegment ? ' · ' : ' — '}
+              Details of subscription{profileIsClubsSegment ? ' · ' : ' — '}
               <span className="text-red-600">{roleTitle}</span>
             </h1>
           </div>
@@ -686,7 +1091,7 @@ export default function AdminRegisteredUsersList({
             </div>
           )}
 
-          {profileState === 'ready' && profileData && isClubsSegment && (
+          {profileState === 'ready' && profileData && profileIsClubsSegment && (
             <AdminClubsUserProfilePanel
               profileData={profileData}
               historicalSubtitle={historicalSubtitle}
@@ -708,7 +1113,7 @@ export default function AdminRegisteredUsersList({
             />
           )}
 
-          {profileState === 'ready' && profileData && !isClubsSegment && (
+          {profileState === 'ready' && profileData && !profileIsClubsSegment && (
             <div className="bg-white border-x border-b border-gray-300">
               <div className="bg-[#b8b8b8] px-4 py-3 border-b border-gray-400">
                 <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
@@ -748,7 +1153,13 @@ export default function AdminRegisteredUsersList({
                       {profileData.typeBadge}
                     </div>
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input type="checkbox" className="rounded border-gray-600" />
+                      <input
+                        type="checkbox"
+                        className="rounded border-gray-600"
+                        checked={profileTagged}
+                        disabled={profilePanelSaving}
+                        onChange={(e) => void saveProfilePanelSettings({ tagged: e.target.checked })}
+                      />
                       Tag the user
                     </label>
                   </div>
@@ -783,23 +1194,32 @@ export default function AdminRegisteredUsersList({
 
                   <div className="flex flex-col gap-2 shrink-0">
                     <span className="text-sm text-gray-600">Put as favourite</span>
-                    <select className="border border-gray-500 bg-white px-2 py-1.5 text-sm rounded min-w-[140px]">
-                      <option>Not selected</option>
-                      <option>Low priority</option>
-                      <option>Medium priority</option>
-                      <option>High priority</option>
+                    <select
+                      className="border border-gray-500 bg-white px-2 py-1.5 text-sm rounded min-w-[140px] disabled:opacity-60"
+                      value={profileFavouritePriority}
+                      disabled={profilePanelSaving}
+                      onChange={(e) =>
+                        void saveProfilePanelSettings({
+                          favouritePriority: normalizeFavouritePriority(e.target.value),
+                        })
+                      }
+                    >
+                      <option value="not_selected">Not selected</option>
+                      <option value="low">Low priority</option>
+                      <option value="medium">Medium priority</option>
+                      <option value="high">High priority</option>
                     </select>
                   </div>
                 </div>
 
                 <div className="flex flex-wrap gap-4 text-sm text-blue-800 underline mt-4 pt-4 border-t border-gray-200">
-                  <button type="button" className="hover:text-blue-950">
+                  <button type="button" onClick={handlePrint} className="hover:text-blue-950">
                     Print
                   </button>
-                  <button type="button" className="hover:text-blue-950">
+                  <button type="button" onClick={openProfileSendMsgModal} className="hover:text-blue-950">
                     Send Msg
                   </button>
-                  <button type="button" className="hover:text-blue-950">
+                  <button type="button" onClick={handleProfileSendMail} className="hover:text-blue-950">
                     Send Mail
                   </button>
                 </div>
@@ -929,10 +1349,14 @@ export default function AdminRegisteredUsersList({
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-sm">
+                <table className="w-full min-w-[1100px] text-sm">
                   <thead>
                     <tr className="bg-[#4a8f96] text-white">
                       <th className="w-10 px-2 py-2 text-left font-semibold border-r border-[#3d7a80]" />
+                      <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Full name</th>
+                      <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Country</th>
+                      <th className="px-2 py-2 text-center font-semibold border-r border-[#3d7a80] w-14">Flag</th>
+                      <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Location</th>
                       <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Date Start</th>
                       <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Date End</th>
                       <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Version</th>
@@ -944,7 +1368,7 @@ export default function AdminRegisteredUsersList({
                   <tbody>
                     {filteredProfileSubscriptionRows.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500 bg-white">
+                        <td colSpan={11} className="px-4 py-8 text-center text-gray-500 bg-white">
                           No subscription rows match the current filter.
                         </td>
                       </tr>
@@ -964,6 +1388,12 @@ export default function AdminRegisteredUsersList({
                               className="rounded border-gray-500"
                             />
                           </td>
+                          <td className="px-3 py-2 border-t border-gray-300 font-medium">
+                            {profileData.fullName || '—'}
+                          </td>
+                          <td className="px-3 py-2 border-t border-gray-300">{profileData.country || '—'}</td>
+                          <CountryFlagCell country={profileData.country} />
+                          <td className="px-3 py-2 border-t border-gray-300">{profileData.location || '—'}</td>
                           <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{row.dateStart}</td>
                           <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{row.dateEnd ?? '—'}</td>
                           <td className="px-3 py-2 border-t border-gray-300">{row.version}</td>
@@ -993,27 +1423,40 @@ export default function AdminRegisteredUsersList({
         <>
       {/* Membership tabs + toolbar */}
       <div className="bg-gray-100 border border-t-0 border-gray-300 p-3 sm:p-4 space-y-3">
-        <div className="flex flex-wrap gap-2">
-          {(
-            [
-              ['all', 'All memberships'],
-              ['current', 'Only current memberships'],
-              ['last', 'Last membership'],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setMembershipTab(key)}
-              className={`px-4 py-2 text-sm font-semibold rounded border transition ${
-                membershipTab === key
-                  ? 'bg-red-600 text-white border-red-700'
-                  : 'bg-neutral-900 text-white border-black hover:bg-neutral-800'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ['lastPerUser', 'Last of each user'],
+                ['current', 'Only current memberships'],
+                ['last', 'Last membership'],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setMembershipTab(key)}
+                className={`px-4 py-2 text-sm font-semibold rounded border transition ${
+                  membershipTab === key
+                    ? 'bg-red-600 text-white border-red-700'
+                    : 'bg-neutral-900 text-white border-black hover:bg-neutral-800'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setMembershipTab('all')}
+            className={`px-4 py-2 text-sm font-semibold rounded border transition ${
+              membershipTab === 'all'
+                ? 'bg-red-600 text-white border-red-700'
+                : 'bg-neutral-900 text-white border-black hover:bg-neutral-800'
+            }`}
+          >
+            All memberships
+          </button>
         </div>
 
         <div className="flex flex-col lg:flex-row lg:items-start gap-3 flex-wrap">
@@ -1085,6 +1528,24 @@ export default function AdminRegisteredUsersList({
                       ))}
                     </select>
                   </FilterRow>
+
+                  {isAllSegment && (
+                    <FilterRow label="Type of user">
+                      <select
+                        value={draftFilters.userTypeCategory}
+                        onChange={(e) =>
+                          setDraftFilters((f) => ({ ...f, userTypeCategory: e.target.value }))
+                        }
+                        className="w-full max-w-[220px] border border-gray-500 bg-white px-2 py-1.5 text-sm ml-auto"
+                      >
+                        {USER_TYPE_CATEGORY_OPTIONS.map((o) => (
+                          <option key={o.value || 'all-types'} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </FilterRow>
+                  )}
 
                   <div className="flex flex-wrap items-center gap-2 justify-between">
                     <span className="font-medium text-gray-900 shrink-0">Subscription</span>
@@ -1219,16 +1680,31 @@ export default function AdminRegisteredUsersList({
         </div>
 
         <div className="flex flex-wrap gap-4 text-sm text-blue-800 underline">
-          <button type="button" className="hover:text-blue-950">
+          <button type="button" onClick={handlePrint} className="hover:text-blue-950">
             Print
           </button>
-          <button type="button" className="hover:text-blue-950">
+          <button
+            type="button"
+            onClick={openSendMsgModal}
+            disabled={actionBusy}
+            className="hover:text-blue-950 disabled:opacity-50"
+          >
             Send Msg
           </button>
-          <button type="button" className="hover:text-blue-950">
+          <button
+            type="button"
+            onClick={handleSendMail}
+            disabled={actionBusy}
+            className="hover:text-blue-950 disabled:opacity-50"
+          >
             Send mail
           </button>
-          <button type="button" className="hover:text-blue-950">
+          <button
+            type="button"
+            onClick={() => void handleDeleteSubscriptions()}
+            disabled={actionBusy}
+            className="hover:text-red-900 text-red-700 disabled:opacity-50"
+          >
             Delete Subscriptions
           </button>
         </div>
@@ -1299,54 +1775,37 @@ export default function AdminRegisteredUsersList({
         <div className="py-16 text-center text-gray-600">Loading…</div>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
-          {rows.map((r) => (
-            <div
-              key={r.id}
-              className="border border-gray-300 bg-white p-4 rounded shadow-sm text-sm space-y-1"
-            >
-              <div className="font-semibold">{r.displayName}</div>
-              {isClubsSegment ? (
-                <button
-                  type="button"
-                  onClick={() => void openClubUserPanel(r.id)}
-                  className="text-blue-800 underline hover:text-blue-950 text-left"
-                >
-                  @{r.username}
-                </button>
-              ) : (
-                <div className="text-gray-600">@{r.username}</div>
-              )}
-              <div>
-                {r.dateStart} — {r.dateEnd ?? '—'}
-              </div>
-              <div>{r.version}</div>
-              {isClubsSegment && (
-                <div className="text-red-600 font-semibold">
-                  Clubs owned: {r.clubsOwnedCount ?? 0}
-                </div>
-              )}
-              <div className={clubAdminStatusClassName(r.statusTone)}>{r.status}</div>
-              <button
-                type="button"
-                onClick={() => void openUserProfile(r.id)}
-                className="text-left text-sm text-blue-800 underline hover:text-blue-950"
-              >
-                View profile (search)
-              </button>
-            </div>
+          {gridCardGroups.map((group) => (
+            <AdminRegisteredUserGridCard
+              key={group.userId}
+              group={group}
+              isAllSegment={isAllSegment}
+              isClubsSegment={isClubsSegment}
+              onOpenClubPanel={(userId, clubId) => void openClubUserPanel(userId, clubId)}
+              onOpenUserProfile={(userId, entityId) => void openUserProfile(userId, entityId)}
+            />
           ))}
         </div>
       ) : (
         <div className="overflow-x-auto border border-t-0 border-gray-300">
-          <table className="w-full min-w-[900px] text-sm">
+          <table className="w-full min-w-[1200px] text-sm">
             <thead>
               <tr className="bg-[#4a8f96] text-white">
                 <th className="w-10 px-2 py-2 text-left font-semibold border-r border-[#3d7a80]" />
+                {isAllSegment && (
+                  <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80] min-w-[7rem]">
+                    Type of User
+                  </th>
+                )}
+                <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Full name</th>
+                <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Country</th>
+                <th className="px-2 py-2 text-center font-semibold border-r border-[#3d7a80] w-14">Flag</th>
+                <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Location</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Date Start</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Date End</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Version</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Username</th>
-                {isClubsSegment && (
+                {showCompanyColumn && (
                   <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80] min-w-[8rem]">
                     Company name
                   </th>
@@ -1359,34 +1818,46 @@ export default function AdminRegisteredUsersList({
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={isClubsSegment ? 9 : 8} className="px-4 py-10 text-center text-gray-500 bg-white">
+                  <td
+                    colSpan={(showCompanyColumn ? 13 : 12) + (isAllSegment ? 1 : 0)}
+                    className="px-4 py-10 text-center text-gray-500 bg-white"
+                  >
                     No registered users in this category yet.
                   </td>
                 </tr>
               ) : (
                 rows.map((r, i) => (
                   <tr
-                    key={r.id}
+                    key={rowListKey(r)}
                     className={i % 2 === 0 ? 'bg-white' : 'bg-[#f3f3f3]'}
                   >
                     <td className="px-2 py-2 border-t border-gray-300">
                       <input
                         type="checkbox"
-                        checked={selected.has(r.id)}
-                        onChange={() => toggleRow(r.id)}
+                        checked={selected.has(rowListKey(r))}
+                        onChange={() => toggleRow(rowListKey(r))}
                         className="rounded border-gray-500"
                       />
                     </td>
+                    {isAllSegment && (
+                      <td className="px-3 py-2 border-t border-gray-300">
+                        {typeBadgeLabel(r.userType as UserType)}
+                      </td>
+                    )}
+                    <td className="px-3 py-2 border-t border-gray-300 font-medium">{r.displayName || '—'}</td>
+                    <td className="px-3 py-2 border-t border-gray-300">{r.country?.trim() || '—'}</td>
+                    <CountryFlagCell country={r.country} />
+                    <td className="px-3 py-2 border-t border-gray-300">{r.location?.trim() || '—'}</td>
                     <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{r.dateStart}</td>
                     <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">
                       {r.dateEnd ?? '—'}
                     </td>
                     <td className="px-3 py-2 border-t border-gray-300">{r.version}</td>
                     <td className="px-3 py-2 border-t border-gray-300 font-medium">
-                      {isClubsSegment ? (
+                      {isClubsSegment || (isAllSegment && isClubUserType(r.userType)) ? (
                         <button
                           type="button"
-                          onClick={() => void openClubUserPanel(r.id)}
+                          onClick={() => void openClubUserPanel(r.id, r.primaryClubId)}
                           className="text-blue-800 underline hover:text-blue-950 font-medium"
                         >
                           {r.username}
@@ -1395,9 +1866,11 @@ export default function AdminRegisteredUsersList({
                         r.username
                       )}
                     </td>
-                    {isClubsSegment && (
+                    {showCompanyColumn && (
                       <td className="px-3 py-2 border-t border-gray-300">
-                        {r.companyName || '—'}
+                        {isAllSegment && r.userType === 'ATHLETE'
+                          ? ''
+                          : r.companyName || '—'}
                       </td>
                     )}
                     <td className="px-2 py-2 border-t border-gray-300 text-gray-700">{r.amount}</td>
@@ -1431,7 +1904,7 @@ export default function AdminRegisteredUsersList({
         </>
       )}
 
-      {isClubsSegment && (
+      {(isClubsSegment || isAllSegment) && (
         <AdminClubUserPanelModal
           isOpen={clubPanelOpen}
           loading={clubPanelLoading}
@@ -1440,6 +1913,58 @@ export default function AdminRegisteredUsersList({
           onClose={closeClubUserPanel}
           onControlPanel={handleClubPanelControlPanel}
         />
+      )}
+
+      {msgModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <button
+              type="button"
+              onClick={() => setMsgModalOpen(false)}
+              className="absolute right-3 top-3 text-gray-400 hover:text-gray-800"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <h2 className="mb-1 text-lg font-semibold text-gray-900">Send message</h2>
+            <p className="mb-4 text-sm text-gray-600">
+              To {msgTargets.map((t) => t.label).join(', ')}
+            </p>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Subject</label>
+            <input
+              type="text"
+              value={msgSubject}
+              onChange={(e) => setMsgSubject(e.target.value)}
+              className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+            />
+            <label className="mb-2 block text-sm font-medium text-gray-700">Message</label>
+            <textarea
+              value={msgDraft}
+              onChange={(e) => setMsgDraft(e.target.value)}
+              rows={5}
+              placeholder="Write your message…"
+              className="mb-3 w-full resize-none rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
+            />
+            {msgError ? <p className="mb-2 text-sm text-red-600">{msgError}</p> : null}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMsgModalOpen(false)}
+                className="rounded border border-gray-400 px-4 py-2 text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSendMsgSubmit()}
+                disabled={msgSending}
+                className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {msgSending ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
