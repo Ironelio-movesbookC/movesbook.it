@@ -62,7 +62,7 @@ export default function AdminRegisteredUserGridCard({
           {isClubAdmin && onOpenClubPanel ? (
             <button
               type="button"
-              onClick={() => onOpenClubPanel(admin.id, admin.primaryClubId)}
+              onClick={() => onOpenClubPanel(admin.id, admin.primaryClubId ?? null)}
               className="text-blue-800 underline hover:text-blue-950 text-left"
             >
               @{admin.accountUsername ?? admin.username}
@@ -108,7 +108,7 @@ export default function AdminRegisteredUserGridCard({
                   type="button"
                   onClick={() =>
                     isClubAdmin && entity.entityKind === 'club' && onOpenClubPanel
-                      ? onOpenClubPanel(admin.id, entity.primaryClubId ?? entity.entityId)
+                      ? onOpenClubPanel(admin.id, (entity.primaryClubId ?? entity.entityId) ?? null)
                       : onOpenUserProfile(admin.id, entity.primaryClubId ?? entity.entityId)
                   }
                   className="text-blue-800 underline hover:text-blue-950"

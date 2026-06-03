@@ -11,7 +11,6 @@ export function useVisitorWallDisplayOptions() {
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
-  const [showToolbar, setShowToolbar] = useState(true);
 
   const rightSidebarVisible = showRightSidebar && !hideRightColumnByPolicy;
 
@@ -30,8 +29,6 @@ export function useVisitorWallDisplayOptions() {
     setShowLeftSidebar,
     showRightSidebar,
     setShowRightSidebar,
-    showToolbar,
-    setShowToolbar,
     hideRightColumnByPolicy,
     rightSidebarVisible,
     centerColSpan,
