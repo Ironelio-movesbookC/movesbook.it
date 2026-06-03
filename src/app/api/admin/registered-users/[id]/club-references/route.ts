@@ -37,7 +37,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       id: true,
       userType: true,
       ownedClubs: {
-        select: { id: true, description: true },
+        select: {
+          id: true,
+          name: true,
+          location: true,
+          description: true,
+          createdAt: true,
+        },
         orderBy: { createdAt: 'desc' },
       },
     },

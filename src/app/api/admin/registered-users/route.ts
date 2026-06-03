@@ -5,6 +5,7 @@ import { requireAdmin } from '@/lib/adminAuth';
 import {
   aggregateClubAdminSubscriptionStatus,
   parseClubSubscriptionEndDate,
+  type ClubSubscriptionStatusTone,
 } from '@/lib/admin/clubSubscriptionStatus';
 import { sortClubsByCreatedAtAsc } from '@/lib/club/clubSidebarLabel';
 import {
@@ -349,7 +350,7 @@ export async function GET(request: NextRequest) {
     let clubsOwnedCount: number | undefined;
     let companyName: string | undefined;
     let status = 'Active';
-    let statusTone: string | undefined;
+    let statusTone: ClubSubscriptionStatusTone | undefined;
 
     let location = '';
     let primaryClubId: string | null = null;

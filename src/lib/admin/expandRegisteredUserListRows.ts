@@ -7,6 +7,7 @@ import {
 import {
   classifyClubSubscriptionEnd,
   parseClubSubscriptionEndDate,
+  type ClubSubscriptionStatusTone,
 } from '@/lib/admin/clubSubscriptionStatus';
 
 export type RegisteredUserListRow = {
@@ -25,7 +26,7 @@ export type RegisteredUserListRow = {
   status: string;
   clubsOwnedCount?: number;
   companyName?: string;
-  statusTone?: string;
+  statusTone?: ClubSubscriptionStatusTone;
   primaryClubId?: string | null;
   entityId?: string | null;
   entityKind?: 'club' | 'team' | 'group' | 'coaching_group';
@@ -90,11 +91,16 @@ function clubCountry(club: ClubEntity, userCountry: string | null): string | nul
   return meta.country?.trim() || userCountry;
 }
 
-function clubStatusForOne(endDate: Date | null): { status: string; statusTone?: string } {
+function clubStatusForOne(endDate: Date | null): {
+  status: string;
+  statusTone: ClubSubscriptionStatusTone;
+} {
   const tone = classifyClubSubscriptionEnd(endDate);
   const label =
     tone === 'expired' ? 'Expired' : tone === 'expiring' ? 'Expiring' : 'Active';
-  return { status: label, statusTone: tone };
+  const statusTone: ClubSubscriptionStatusTone =
+    tone === 'expired' ? 'all-expired' : tone === 'expiring' ? 'expiring' : 'active';
+  return { status: label, statusTone };
 }
 
 export function isClubUserType(userType: string): boolean {

@@ -8,13 +8,11 @@ type Props = {
   showPersonalBanner: boolean;
   showLeftSidebar: boolean;
   showRightSidebar: boolean;
-  showToolbar: boolean;
   hideRightColumnByPolicy: boolean;
   onToggleAdBanner: (value: boolean) => void;
   onTogglePersonalBanner: (value: boolean) => void;
   onToggleLeftSidebar: (value: boolean) => void;
   onToggleRightSidebar: (value: boolean) => void;
-  onToggleToolbar: (value: boolean) => void;
   personalBanner: React.ReactNode;
 };
 
@@ -27,13 +25,11 @@ export function SearchResultVisitorWallDashboardChrome({
   showPersonalBanner,
   showLeftSidebar,
   showRightSidebar,
-  showToolbar,
   hideRightColumnByPolicy,
   onToggleAdBanner,
   onTogglePersonalBanner,
   onToggleLeftSidebar,
   onToggleRightSidebar,
-  onToggleToolbar,
   personalBanner,
 }: Props) {
   return (
@@ -43,12 +39,10 @@ export function SearchResultVisitorWallDashboardChrome({
         showPersonalBanner={showPersonalBanner}
         showLeftSidebar={showLeftSidebar}
         showRightSidebar={hideRightColumnByPolicy ? false : showRightSidebar}
-        showToolbar={showToolbar}
         onToggleAdBanner={onToggleAdBanner}
         onTogglePersonalBanner={onTogglePersonalBanner}
         onToggleLeftSidebar={onToggleLeftSidebar}
         onToggleRightSidebar={hideRightColumnByPolicy ? () => {} : onToggleRightSidebar}
-        onToggleToolbar={onToggleToolbar}
       />
 
       {showAdBanner ? (
