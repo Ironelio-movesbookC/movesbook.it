@@ -33,6 +33,7 @@ type SearchItem = {
   kind: 'user' | 'team' | 'club';
   id: string;
   title: string;
+  username: string | null;
   categoryLabel: string;
   lines: string[];
   image: string | null;
@@ -104,6 +105,7 @@ export async function GET(req: NextRequest) {
           kind: 'user' as const,
           id: u.id,
           title: u.name,
+          username: u.username,
           categoryLabel: titleCaseUserType(u.userType),
           lines,
           image: u.image,
@@ -147,6 +149,7 @@ export async function GET(req: NextRequest) {
           kind: 'user' as const,
           id: u.id,
           title: u.name,
+          username: u.username,
           categoryLabel: titleCaseUserType(u.userType),
           lines,
           image: u.image,
@@ -179,6 +182,7 @@ export async function GET(req: NextRequest) {
         kind: 'team' as const,
         id: t.id,
         title: t.name,
+        username: null,
         categoryLabel: 'Team',
         lines: [t.sport, truncate(t.description, 140)].filter(Boolean) as string[],
         image: null,
@@ -210,6 +214,7 @@ export async function GET(req: NextRequest) {
       kind: 'club' as const,
       id: c.id,
       title: c.name,
+      username: null,
       categoryLabel: 'Club',
       lines: [c.location, truncate(c.description, 140)].filter(Boolean) as string[],
       image: null,

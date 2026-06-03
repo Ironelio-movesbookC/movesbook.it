@@ -2,6 +2,13 @@
 
 import Link from 'next/link';
 import { Home } from 'lucide-react';
+import {
+  SearchResultVisitorWallBanner,
+  type VisitorWallBannerProfile,
+} from '@/components/searchresults/SearchResultVisitorWallBanner';
+import { SearchResultVisitorWallDashboardChrome } from '@/components/searchresults/SearchResultVisitorWallDashboardChrome';
+import { SearchResultVisitorWallMainLayout } from '@/components/searchresults/SearchResultVisitorWallMainLayout';
+import { useVisitorWallDisplayOptions } from '@/hooks/useVisitorWallDisplayOptions';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 export type ClubWallPayload = {
@@ -12,39 +19,59 @@ export type ClubWallPayload = {
   adminDisplayName: string;
   adminCountry: string | null;
   adminImage: string | null;
+  bannerProfile: VisitorWallBannerProfile;
 };
 
 export function SearchResultClubWallClient({ data }: { data: ClubWallPayload }) {
   const { t } = useLanguage();
-  const { selfPath, clubName, description, location, adminDisplayName, adminCountry, adminImage } = data;
+  const { selfPath, clubName, description, location, adminDisplayName, adminCountry, adminImage, bannerProfile } =
+    data;
+
+  const {
+    showAdBanner,
+    setShowAdBanner,
+    showPersonalBanner,
+    setShowPersonalBanner,
+    showLeftSidebar,
+    setShowLeftSidebar,
+    showRightSidebar,
+    setShowRightSidebar,
+    showToolbar,
+    setShowToolbar,
+    hideRightColumnByPolicy,
+    rightSidebarVisible,
+  } = useVisitorWallDisplayOptions();
 
   return (
-    <div className="min-h-0 flex-1 bg-zinc-200 pb-10">
-      <section className="relative h-48 w-full overflow-hidden bg-gradient-to-r from-rose-950 via-slate-900 to-slate-800">
-        <div className="absolute inset-0 bg-black/30" />
-        <div className="relative mx-auto flex h-full max-w-7xl items-end gap-3 px-4 pb-4">
-          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded border-2 border-white bg-zinc-300 shadow-lg">
-            {adminImage ? (
-              <img src={adminImage} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-xs text-zinc-600">—</div>
-            )}
-          </div>
-          <div className="mb-1 rounded bg-blue-700 px-4 py-2 text-lg font-semibold text-white shadow-md">
-            {clubName}
-          </div>
-        </div>
-      </section>
+    <div className="flex min-h-0 w-full flex-1 flex-col bg-zinc-200 pb-10">
+      <SearchResultVisitorWallDashboardChrome
+        showAdBanner={showAdBanner}
+        showPersonalBanner={showPersonalBanner}
+        showLeftSidebar={showLeftSidebar}
+        showRightSidebar={showRightSidebar}
+        showToolbar={showToolbar}
+        hideRightColumnByPolicy={hideRightColumnByPolicy}
+        onToggleAdBanner={setShowAdBanner}
+        onTogglePersonalBanner={setShowPersonalBanner}
+        onToggleLeftSidebar={setShowLeftSidebar}
+        onToggleRightSidebar={setShowRightSidebar}
+        onToggleToolbar={setShowToolbar}
+        personalBanner={<SearchResultVisitorWallBanner profile={bannerProfile} badgeLabel="CLUB" />}
+      />
 
       <nav className="border-b border-zinc-900 bg-zinc-900 px-4 py-1.5 text-xs text-zinc-200">
-        <div className="mx-auto flex max-w-7xl items-center gap-2">
+        <div className="flex w-full items-center gap-2">
           <Home className="h-3.5 w-3.5" aria-hidden />
           <span>{t('searchresult_breadcrumb_home')}</span>
         </div>
       </nav>
 
-      <div className="mx-auto grid max-w-7xl gap-4 px-3 py-6 lg:grid-cols-12 lg:px-4">
-        <aside className="space-y-3 lg:col-span-3">
+      <SearchResultVisitorWallMainLayout
+        showLeftSidebar={showLeftSidebar}
+        rightSidebarVisible={rightSidebarVisible}
+        rightVariant="club"
+        leftSidebar={
+        <aside className="space-y-3">
           <div className="flex gap-1 rounded border border-zinc-400 bg-zinc-100 p-1 text-xs font-semibold shadow-sm">
             <button type="button" className="flex-1 rounded bg-white px-2 py-2 text-zinc-900 shadow-sm">
               {t('searchresult_club_tab_club')}
@@ -102,8 +129,9 @@ export function SearchResultClubWallClient({ data }: { data: ClubWallPayload }) 
             <div className="rounded-b bg-teal-800 px-3 py-2">{t('searchresult_acc_communities')}</div>
           </div>
         </aside>
-
-        <section className="space-y-3 lg:col-span-6">
+        }
+        centerContent={
+        <div className="space-y-3">
           <div className="rounded-t border border-amber-200 bg-amber-100 px-3 py-2 text-sm font-semibold text-zinc-900">
             {adminDisplayName}
           </div>
@@ -188,31 +216,9 @@ export function SearchResultClubWallClient({ data }: { data: ClubWallPayload }) 
               </Link>
             </div>
           </div>
-        </section>
-
-        <aside className="space-y-4 lg:col-span-3">
-          <div className="rounded border border-zinc-400 bg-zinc-800 p-3 text-xs text-zinc-100 shadow">
-            <h3 className="border-b border-zinc-600 pb-2 font-bold uppercase tracking-wide text-amber-200">
-              {t('searchresult_next_event')}
-            </h3>
-            <ul className="mt-2 space-y-2">
-              <li>{t('searchresult_event_birthday')}</li>
-              <li>{t('searchresult_events_my_sports')}</li>
-              <li>{t('searchresult_friends_events')}</li>
-              <li>{t('searchresult_other_sport')}</li>
-            </ul>
-            <Link href="#" className="mt-2 inline-block text-red-400 hover:underline">
-              {t('searchresult_see_all')}
-            </Link>
-          </div>
-          <div className="rounded border border-zinc-400 bg-zinc-800 p-3 text-xs text-zinc-100 shadow">
-            <h3 className="border-b border-zinc-600 pb-2 font-bold uppercase tracking-wide text-amber-200">
-              {t('searchresult_news_by_friends')}
-            </h3>
-            <p className="mt-2 text-zinc-300">{t('searchresult_news_placeholder')}</p>
-          </div>
-        </aside>
-      </div>
+        </div>
+        }
+      />
     </div>
   );
 }

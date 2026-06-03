@@ -1,4 +1,3 @@
-import ModernNavbar from '@/components/ModernNavbar';
 import { NetworkSearchListClient } from '@/components/search/NetworkSearchListClient';
 
 export default function UserSearchListPage({
@@ -20,9 +19,6 @@ export default function UserSearchListPage({
     searchParams.source === 'myclub' ? 'myclub' : 'mypage';
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-100">
-      <ModernNavbar />
-      <NetworkSearchListClient initialQuery={decoded} initialSource={source} />
-    </div>
+    <NetworkSearchListClient initialQuery={decoded} initialSource={source} />
   );
 }
