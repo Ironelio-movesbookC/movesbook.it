@@ -14,6 +14,9 @@ export type ClubDescriptionMeta = {
   directRegistrationCode?: string;
   /** Bcrypt hash — company login password for direct MY CLUB access. */
   clubPasswordHash?: string;
+  /** Rich-text references for the club (not the club admin user). */
+  referencesHtml?: string;
+  referencesLevel?: string;
 };
 
 export function parseClubDescriptionMeta(

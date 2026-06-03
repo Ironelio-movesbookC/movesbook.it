@@ -58,12 +58,11 @@ export default function HistoryUserPage() {
       }
 
       const segmentParam = searchParams?.get('segment') ?? '';
-      const qParam = searchParams?.get('q') ?? '';
       const segment =
-        navScopeToProfileSegment(segmentParam || scope || qParam) ||
-        segmentParam ||
-        scope ||
-        '';
+        navScopeToProfileSegment(segmentParam || scope) ||
+        (['coaches', 'teams', 'clubs', 'groups', 'single-user', 'all'].includes(segmentParam)
+          ? segmentParam
+          : '');
 
       setActionSegment(segment);
 
@@ -86,6 +85,11 @@ export default function HistoryUserPage() {
       }
 
       setUser(panel);
+      setActionSegment(
+        typeof data.segment === 'string' && data.segment.trim()
+          ? data.segment.trim()
+          : segment || panel.segment,
+      );
       setSubscriptionRows(Array.isArray(data.subscriptionRows) ? (data.subscriptionRows as SubscriptionRow[]) : []);
       setProfilePanel(
         data.profilePanel && typeof data.profilePanel === 'object'

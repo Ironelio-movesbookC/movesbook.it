@@ -323,7 +323,10 @@ interface DarkSidebarProps {
   onCreateTeamClick?: () => void;
   /** Group dashboard → Create a group. */
   onCreateGroupClick?: () => void;
-  /** Club dashboard: show My Club tab only while a club workspace is open (hidden on My Page). */
+  /**
+   * Club / team / group / coach dashboards: show the entity tab (My Club, My Team, …)
+   * only while that workspace is open from the sidebar — hidden on My Page.
+   */
   clubMyClubTabVisible?: boolean;
 }
 
@@ -386,18 +389,16 @@ export default function DarkSidebar({
   const isTeamManagerUser = isTeamAccountUserType(userType);
   const isGroupAdminUser = isGroupAccountUserType(userType);
   const athleteHasClubMembership = entities.length > 0;
-  const coachHasTrainedGroup = formCreatedEntities.length > 0;
-  const showMyClubTab = isClubAccountUserType(userType)
+  const isManagedEntityWorkspaceUser =
+    isClubAccountUserType(userType) ||
+    isTeamManagerUser ||
+    isGroupAdminUser ||
+    isCoachUser;
+  const showMyClubTab = isManagedEntityWorkspaceUser
     ? clubMyClubTabVisible === true
     : isAthleteUser
       ? athleteHasClubMembership
-      : isCoachUser
-        ? coachHasTrainedGroup
-        : isTeamManagerUser
-          ? formCreatedEntities.length > 0
-          : isGroupAdminUser
-            ? formCreatedEntities.length > 0
-            : clubUserHasProfile;
+      : clubUserHasProfile;
 
   useEffect(() => {
     if (
@@ -773,7 +774,8 @@ export default function DarkSidebar({
       (isClubAccountUserType(userType) ||
         isCoachUser ||
         isAthleteUser ||
-        isTeamManagerUser) &&
+        isTeamManagerUser ||
+        isGroupAdminUser) &&
       !showMyClubTab
     ) {
       return;
@@ -788,7 +790,7 @@ export default function DarkSidebar({
 
     if (isTeamManagerUser && onMyTeamClick) {
       onMyTeamClick();
-    } else if (userType === 'GROUP_ADMIN' && onMyGroupClick) {
+    } else if (isGroupAdminUser && onMyGroupClick) {
       onMyGroupClick();
     } else if (userType === 'COACH' && onMyCoachingGroupClick) {
       onMyCoachingGroupClick();
@@ -803,7 +805,7 @@ export default function DarkSidebar({
   const getEntityLabel = () => {
     if (isClubAccountUserType(userType)) return t('sidebar_my_club');
     if (isTeamManagerUser) return t('sidebar_my_team');
-    if (userType === 'GROUP_ADMIN') return t('sidebar_my_group');
+    if (isGroupAdminUser) return t('sidebar_my_group');
     if (userType === 'COACH') return t('sidebar_trained_group');
     // For athletes and other users, show "My Club" as default
     return t('sidebar_my_club');
@@ -1572,7 +1574,7 @@ export default function DarkSidebar({
                   <div className="border-t border-teal-900/40 bg-[#2d2d2d] text-sm text-white">
                     <button
                       type="button"
-                      onClick={() => router.push('/profile')}
+                      onClick={() => router.push('/profile#admin-info')}
                       className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90"
                     >
                       <UserCircle className="h-4 w-4 shrink-0 opacity-90" />

@@ -64,6 +64,8 @@ export default function GroupDashboard() {
   const [activeRightTab, setActiveRightTab] = useState<'actions-planner' | 'chat-panel'>('actions-planner');
   const [expandedActionsPlanner, setExpandedActionsPlanner] = useState(true);
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
+  /** My Group tab visible only after opening a group from the sidebar (hidden on My Page). */
+  const [myEntityTabVisible, setMyEntityTabVisible] = useState(false);
 
   const loadGroups = useCallback(async () => {
     try {
@@ -87,9 +89,30 @@ export default function GroupDashboard() {
     storageKey: 'selectedGroup',
     onEntityCreated: (id) => {
       setSelectedGroupId(id);
+      setMyEntityTabVisible(true);
       setActiveTab('my-entity');
     },
   });
+
+  const hideMyEntityTab = useCallback(() => setMyEntityTabVisible(false), []);
+
+  useEffect(() => {
+    setActiveTab('my-page');
+    setMyEntityTabVisible(false);
+  }, []);
+
+  const handleMyPageTabClick = useCallback(() => {
+    hideMyEntityTab();
+    setActiveTab('my-page');
+  }, [hideMyEntityTab]);
+
+  const handleTabChange = useCallback(
+    (tab: 'my-page' | 'my-entity') => {
+      if (tab === 'my-page') hideMyEntityTab();
+      setActiveTab(tab);
+    },
+    [hideMyEntityTab],
+  );
 
   const formCreatedGroups = useMemo(
     () => filterFormCreatedEntities(groups),
@@ -125,6 +148,7 @@ export default function GroupDashboard() {
   useEffect(() => {
     if (activeTab === 'my-page') {
       setShowWorkoutSection(false);
+      setMyEntityTabVisible(false);
     }
   }, [activeTab]);
 
@@ -149,6 +173,7 @@ export default function GroupDashboard() {
   const handleGroupSelect = (groupId: string) => {
     localStorage.setItem('selectedGroup', groupId);
     setSelectedGroupId(groupId);
+    setMyEntityTabVisible(true);
     setActiveTab('my-entity');
   };
 
@@ -348,11 +373,13 @@ export default function GroupDashboard() {
                 userType={user?.userType || ''}
                 entities={groups}
                 selectedEntityId={selectedGroupId}
+                clubMyClubTabVisible={myEntityTabVisible}
                 onEntitySelect={handleGroupSelect}
                 activeTab={activeTab}
-                onTabChange={setActiveTab}
-                onMyPageClick={() => setActiveTab('my-page')}
+                onTabChange={handleTabChange}
+                onMyPageClick={handleMyPageTabClick}
                 onMyGroupClick={() => {
+                  if (!myEntityTabVisible) return;
                   setActiveTab('my-entity');
                   if (selectedGroupId) {
                     window.location.href = `/my-group?groupId=${selectedGroupId}`;

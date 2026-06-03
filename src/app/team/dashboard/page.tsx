@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { Home, Eye, EyeOff, Users } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
@@ -30,17 +30,6 @@ export default function TeamDashboard() {
     handleTeamSelect,
   } = useTeamDashboard();
 
-  const entityCreation = useManagedEntityCreation({
-    createApiPath: '/api/teams',
-    responseEntityKey: 'team',
-    onReload: loadTeams,
-    storageKey: 'selectedTeam',
-    onEntityCreated: (id) => {
-      setSelectedTeamId(id);
-      setActiveTab('my-entity');
-    },
-  });
-
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -48,11 +37,55 @@ export default function TeamDashboard() {
   const [showToolbar, setShowToolbar] = useState(true);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
+  /** My Team tab visible only after opening a team from the sidebar (hidden on My Page). */
+  const [myEntityTabVisible, setMyEntityTabVisible] = useState(false);
 
-  // Reset workout section when switching to my-page
+  const entityCreation = useManagedEntityCreation({
+    createApiPath: '/api/teams',
+    responseEntityKey: 'team',
+    onReload: loadTeams,
+    storageKey: 'selectedTeam',
+    onEntityCreated: (id) => {
+      setSelectedTeamId(id);
+      setMyEntityTabVisible(true);
+      setActiveTab('my-entity');
+    },
+  });
+
+  const showMyEntityTab = useCallback(() => setMyEntityTabVisible(true), []);
+  const hideMyEntityTab = useCallback(() => setMyEntityTabVisible(false), []);
+
+  useEffect(() => {
+    setActiveTab('my-page');
+    setMyEntityTabVisible(false);
+  }, []);
+
+  const handleMyPageTabClick = useCallback(() => {
+    hideMyEntityTab();
+    setActiveTab('my-page');
+  }, [hideMyEntityTab, setActiveTab]);
+
+  const handleTabChange = useCallback(
+    (tab: 'my-page' | 'my-entity') => {
+      if (tab === 'my-page') hideMyEntityTab();
+      setActiveTab(tab);
+    },
+    [hideMyEntityTab, setActiveTab],
+  );
+
+  const handleTeamSelectWithTab = useCallback(
+    (teamId: string) => {
+      showMyEntityTab();
+      handleTeamSelect(teamId);
+    },
+    [showMyEntityTab, handleTeamSelect],
+  );
+
+  // Reset workout section when switching to my-page; hide My Team tab on My Page
   useEffect(() => {
     if (activeTab === 'my-page') {
       setShowWorkoutSection(false);
+      setMyEntityTabVisible(false);
     }
   }, [activeTab]);
 
@@ -266,11 +299,13 @@ export default function TeamDashboard() {
                 userType={user?.userType || ''}
                 entities={teams}
                 selectedEntityId={selectedTeamId}
-                onEntitySelect={handleTeamSelect}
+                clubMyClubTabVisible={myEntityTabVisible}
+                onEntitySelect={handleTeamSelectWithTab}
                 activeTab={activeTab}
-                onTabChange={setActiveTab}
-                onMyPageClick={() => setActiveTab('my-page')}
+                onTabChange={handleTabChange}
+                onMyPageClick={handleMyPageTabClick}
                 onMyTeamClick={() => {
+                  if (!myEntityTabVisible) return;
                   setActiveTab('my-entity');
                   if (selectedTeamId) {
                     window.location.href = `/my-team?teamId=${selectedTeamId}`;
@@ -334,7 +369,7 @@ export default function TeamDashboard() {
             {activeTab === 'my-entity' && showWorkoutSection && (
               <TeamGrid
                 teams={formCreatedTeams}
-                onTeamSelect={handleTeamSelect}
+                onTeamSelect={handleTeamSelectWithTab}
                 onCreateTeam={entityCreation.openCreateFlow}
               />
             )}

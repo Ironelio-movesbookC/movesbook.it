@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
   const segment = String((body as { segment?: string })?.segment || '').trim();
   const message = String((body as { message?: string })?.message || '').trim();
   const subject = String((body as { subject?: string })?.subject || 'Message from Movesbook Admin').trim();
+  const toEmailOverride = String((body as { toEmail?: string })?.toEmail || '').trim();
 
   if (!message) {
     return NextResponse.json({ error: 'Message is required' }, { status: 400 });
@@ -116,32 +117,36 @@ export async function POST(request: NextRequest) {
       sent: 0,
       failed: [],
       mailtoFallback: true,
+      emailNotConfigured: true,
       recipients: users.map((u) => ({ id: u.id, email: u.email, username: u.username })),
-      message: 'Email service not configured. Use your mail client instead.',
+      message:
+        'RESEND_API_KEY is missing or empty in .env. Add your key from https://resend.com/api-keys, set RESEND_FROM_EMAIL to a verified sender, then restart the dev server.',
     });
   }
 
   for (const user of users) {
-    if (!user.email) {
+    const destination =
+      toEmailOverride && users.length === 1 ? toEmailOverride : user.email?.trim() || '';
+    if (!destination) {
       failed.push({ id: user.id, email: '', error: 'No email address' });
       continue;
     }
     try {
       const result = await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL?.trim() || 'onboarding@resend.dev',
-        to: user.email,
+        to: destination,
         subject,
         html: htmlBody,
       });
       if (result.error) {
-        failed.push({ id: user.id, email: user.email, error: result.error.message });
+        failed.push({ id: user.id, email: destination, error: result.error.message });
       } else {
         sent.push(user.id);
       }
     } catch (e: unknown) {
       failed.push({
         id: user.id,
-        email: user.email,
+        email: destination,
         error: e instanceof Error ? e.message : 'Send failed',
       });
     }

@@ -19,6 +19,9 @@ import AdminClubsUserProfilePanel from '@/components/admin/AdminClubsUserProfile
 import AdminClubUserPanelModal, {
   type ClubUserPanelData,
 } from '@/components/admin/AdminClubUserPanelModal';
+import AdminRegisteredUserGridCard from '@/components/admin/AdminRegisteredUserGridCard';
+import { groupRowsForAdminGrid } from '@/lib/admin/groupRegisteredUserGridCards';
+import { getDefaultMembershipSortOrder } from '@/lib/admin/networkSubscriptionHistory';
 
 export type AdminUserSegment = 'all' | 'single-user' | 'coaches' | 'groups' | 'teams' | 'clubs';
 
@@ -61,6 +64,7 @@ interface ProfilePayload {
 type ActionTarget = { id: string; email: string; username: string; label: string };
 
 interface RowUser {
+  rowKey: string;
   id: string;
   username: string;
   email: string;
@@ -76,6 +80,13 @@ interface RowUser {
   clubsOwnedCount?: number;
   companyName?: string;
   statusTone?: ClubSubscriptionStatusTone;
+  primaryClubId?: string | null;
+  entityId?: string | null;
+  entityKind?: 'club' | 'team' | 'group' | 'coaching_group';
+}
+
+function rowListKey(r: RowUser): string {
+  return r.rowKey || r.id;
 }
 
 function CountryFlagCell({ country }: { country: string | null | undefined }) {
@@ -103,7 +114,7 @@ function clubAdminStatusClassName(tone?: ClubSubscriptionStatusTone): string {
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
 
-type MembershipTab = 'all' | 'current' | 'last';
+type MembershipTab = 'lastPerUser' | 'current' | 'last' | 'all';
 
 type LoginFilter = 'all' | 'active7' | 'active24h' | 'never';
 
@@ -313,6 +324,7 @@ export default function AdminRegisteredUsersList({
   historicalSubtitle,
 }: AdminRegisteredUsersListProps) {
   const [membershipTab, setMembershipTab] = useState<MembershipTab>('all');
+  const [orderBy, setOrderBy] = useState<string>(() => getDefaultMembershipSortOrder('all'));
   const [searchDraft, setSearchDraft] = useState('');
   const [searchApplied, setSearchApplied] = useState('');
   const [page, setPage] = useState(1);
@@ -323,7 +335,6 @@ export default function AdminRegisteredUsersList({
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(segment === 'all' ? 'grid' : 'list');
-  const [orderBy, setOrderBy] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [draftFilters, setDraftFilters] = useState<FilterState>(EMPTY_FILTERS);
@@ -374,6 +385,8 @@ export default function AdminRegisteredUsersList({
       ? inferProfileSegmentFromUserType(profileData.userType)
       : segment;
   const profileIsClubsSegment = profileSegment === 'clubs';
+
+  const gridCardGroups = useMemo(() => groupRowsForAdminGrid(rows), [rows]);
 
   useEffect(() => {
     let cancelled = false;
@@ -454,6 +467,7 @@ export default function AdminRegisteredUsersList({
       if (appliedFilters.subYear) params.set('subYear', appliedFilters.subYear);
       if (appliedFilters.rangeFrom) params.set('createdFrom', appliedFilters.rangeFrom);
       if (appliedFilters.rangeTo) params.set('createdTo', appliedFilters.rangeTo);
+      params.set('membership', membershipTab);
 
       const res = await fetch(`/api/admin/registered-users?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -469,7 +483,7 @@ export default function AdminRegisteredUsersList({
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, searchApplied, segment, orderBy, appliedFilters]);
+  }, [page, pageSize, searchApplied, segment, orderBy, appliedFilters, membershipTab]);
 
   useEffect(() => {
     void load();
@@ -478,6 +492,7 @@ export default function AdminRegisteredUsersList({
   useEffect(() => {
     setPage(1);
     setSelected(new Set());
+    setOrderBy(getDefaultMembershipSortOrder(membershipTab));
   }, [membershipTab]);
 
   useEffect(() => {
@@ -487,20 +502,21 @@ export default function AdminRegisteredUsersList({
   useEffect(() => {
     setAppliedFilters(EMPTY_FILTERS);
     setDraftFilters(EMPTY_FILTERS);
-    setOrderBy('');
+    setOrderBy(getDefaultMembershipSortOrder(membershipTab));
     setPage(1);
     setSelected(new Set());
     setFilterOpen(false);
   }, [segment]);
 
-  const allOnPageSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const allOnPageSelected =
+    rows.length > 0 && rows.every((r) => selected.has(rowListKey(r)));
 
   const toggleSelectAll = () => {
     if (allOnPageSelected) {
       setSelected(new Set());
       return;
     }
-    setSelected(new Set(rows.map((r) => r.id)));
+    setSelected(new Set(rows.map((r) => rowListKey(r))));
   };
 
   const toggleRow = (id: string) => {
@@ -512,8 +528,14 @@ export default function AdminRegisteredUsersList({
 
   const resolveActionTargets = useCallback((): ActionTarget[] => {
     if (selected.size > 0) {
+      const seen = new Set<string>();
       return rows
-        .filter((r) => selected.has(r.id))
+        .filter((r) => selected.has(rowListKey(r)))
+        .filter((r) => {
+          if (seen.has(r.id)) return false;
+          seen.add(r.id);
+          return true;
+        })
         .map((r) => ({
           id: r.id,
           email: r.email,
@@ -833,7 +855,7 @@ export default function AdminRegisteredUsersList({
   }, [profileActionTarget]);
 
   const openUserProfile = useCallback(
-    async (userId: string) => {
+    async (userId: string, clubId?: string | null) => {
       setProfileState('loading');
       setProfileError('');
       setProfileData(null);
@@ -849,8 +871,11 @@ export default function AdminRegisteredUsersList({
           setProfileState('error');
           return;
         }
+        const qs = new URLSearchParams({ segment });
+        if (clubId?.trim()) qs.set('clubId', clubId.trim());
+        if (searchApplied.trim()) qs.set('q', searchApplied.trim());
         const res = await fetch(
-          `/api/admin/registered-users/${userId}/profile?segment=${encodeURIComponent(segment)}`,
+          `/api/admin/registered-users/${userId}/profile?${qs.toString()}`,
           { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
         );
         const data = await res.json().catch(() => ({}));
@@ -906,7 +931,7 @@ export default function AdminRegisteredUsersList({
         setProfileState('error');
       }
     },
-    [segment],
+    [segment, searchApplied],
   );
 
   const closeClubUserPanel = useCallback(() => {
@@ -918,7 +943,7 @@ export default function AdminRegisteredUsersList({
   }, []);
 
   const openClubUserPanel = useCallback(
-    async (userId: string) => {
+    async (userId: string, clubId?: string | null) => {
       setClubPanelUserId(userId);
       setClubPanelOpen(true);
       setClubPanelLoading(true);
@@ -931,8 +956,11 @@ export default function AdminRegisteredUsersList({
           setClubPanelLoading(false);
           return;
         }
+        const qs = new URLSearchParams({ segment: 'clubs' });
+        if (clubId?.trim()) qs.set('clubId', clubId.trim());
+        if (searchApplied.trim()) qs.set('q', searchApplied.trim());
         const res = await fetch(
-          `/api/admin/registered-users/${userId}/profile?segment=clubs`,
+          `/api/admin/registered-users/${userId}/profile?${qs.toString()}`,
           { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
         );
         const data = await res.json().catch(() => ({}));
@@ -972,14 +1000,15 @@ export default function AdminRegisteredUsersList({
         setClubPanelLoading(false);
       }
     },
-    [],
+    [searchApplied],
   );
 
   const handleClubPanelControlPanel = useCallback(() => {
     if (!clubPanelUserId) return;
+    const clubId = clubPanelData?.clubId;
     closeClubUserPanel();
-    void openUserProfile(clubPanelUserId);
-  }, [clubPanelUserId, closeClubUserPanel, openUserProfile]);
+    void openUserProfile(clubPanelUserId, clubId);
+  }, [clubPanelUserId, clubPanelData?.clubId, closeClubUserPanel, openUserProfile]);
 
   const filteredProfileSubscriptionRows = useMemo(() => {
     if (!profileData?.subscriptionRows?.length) return [];
@@ -1394,27 +1423,40 @@ export default function AdminRegisteredUsersList({
         <>
       {/* Membership tabs + toolbar */}
       <div className="bg-gray-100 border border-t-0 border-gray-300 p-3 sm:p-4 space-y-3">
-        <div className="flex flex-wrap gap-2">
-          {(
-            [
-              ['all', 'All memberships'],
-              ['current', 'Only current memberships'],
-              ['last', 'Last membership'],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setMembershipTab(key)}
-              className={`px-4 py-2 text-sm font-semibold rounded border transition ${
-                membershipTab === key
-                  ? 'bg-red-600 text-white border-red-700'
-                  : 'bg-neutral-900 text-white border-black hover:bg-neutral-800'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ['lastPerUser', 'Last of each user'],
+                ['current', 'Only current memberships'],
+                ['last', 'Last membership'],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setMembershipTab(key)}
+                className={`px-4 py-2 text-sm font-semibold rounded border transition ${
+                  membershipTab === key
+                    ? 'bg-red-600 text-white border-red-700'
+                    : 'bg-neutral-900 text-white border-black hover:bg-neutral-800'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setMembershipTab('all')}
+            className={`px-4 py-2 text-sm font-semibold rounded border transition ${
+              membershipTab === 'all'
+                ? 'bg-red-600 text-white border-red-700'
+                : 'bg-neutral-900 text-white border-black hover:bg-neutral-800'
+            }`}
+          >
+            All memberships
+          </button>
         </div>
 
         <div className="flex flex-col lg:flex-row lg:items-start gap-3 flex-wrap">
@@ -1733,54 +1775,15 @@ export default function AdminRegisteredUsersList({
         <div className="py-16 text-center text-gray-600">Loading…</div>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
-          {rows.map((r) => (
-            <div
-              key={r.id}
-              className="border border-gray-300 bg-white p-4 rounded shadow-sm text-sm space-y-1"
-            >
-              <div className="font-semibold">{r.displayName || '—'}</div>
-              <div className="text-gray-700">
-                {r.country || '—'}{' '}
-                {flagEmojiFromCountryName(r.country) && (
-                  <span className="ml-1">{flagEmojiFromCountryName(r.country)}</span>
-                )}
-              </div>
-              <div className="text-gray-600">{r.location?.trim() || '—'}</div>
-              {isClubsSegment || (isAllSegment && isClubUserType(r.userType)) ? (
-                <button
-                  type="button"
-                  onClick={() => void openClubUserPanel(r.id)}
-                  className="text-blue-800 underline hover:text-blue-950 text-left"
-                >
-                  @{r.username}
-                </button>
-              ) : (
-                <div className="text-gray-600">@{r.username}</div>
-              )}
-              <div>
-                {r.dateStart} — {r.dateEnd ?? '—'}
-              </div>
-              <div>{r.version}</div>
-              {showCompanyColumn && (
-                <div className="text-gray-700">
-                  Company:{' '}
-                  {isAllSegment && r.userType === 'ATHLETE' ? '' : r.companyName || '—'}
-                </div>
-              )}
-              {(isClubsSegment || isAllSegment) && isClubUserType(r.userType) && (
-                <div className="text-red-600 font-semibold">
-                  Clubs owned: {r.clubsOwnedCount ?? 0}
-                </div>
-              )}
-              <div className={clubAdminStatusClassName(r.statusTone)}>{r.status}</div>
-              <button
-                type="button"
-                onClick={() => void openUserProfile(r.id)}
-                className="text-left text-sm text-blue-800 underline hover:text-blue-950"
-              >
-                View profile (search)
-              </button>
-            </div>
+          {gridCardGroups.map((group) => (
+            <AdminRegisteredUserGridCard
+              key={group.userId}
+              group={group}
+              isAllSegment={isAllSegment}
+              isClubsSegment={isClubsSegment}
+              onOpenClubPanel={(userId, clubId) => void openClubUserPanel(userId, clubId)}
+              onOpenUserProfile={(userId, entityId) => void openUserProfile(userId, entityId)}
+            />
           ))}
         </div>
       ) : (
@@ -1825,14 +1828,14 @@ export default function AdminRegisteredUsersList({
               ) : (
                 rows.map((r, i) => (
                   <tr
-                    key={r.id}
+                    key={rowListKey(r)}
                     className={i % 2 === 0 ? 'bg-white' : 'bg-[#f3f3f3]'}
                   >
                     <td className="px-2 py-2 border-t border-gray-300">
                       <input
                         type="checkbox"
-                        checked={selected.has(r.id)}
-                        onChange={() => toggleRow(r.id)}
+                        checked={selected.has(rowListKey(r))}
+                        onChange={() => toggleRow(rowListKey(r))}
                         className="rounded border-gray-500"
                       />
                     </td>
@@ -1854,7 +1857,7 @@ export default function AdminRegisteredUsersList({
                       {isClubsSegment || (isAllSegment && isClubUserType(r.userType)) ? (
                         <button
                           type="button"
-                          onClick={() => void openClubUserPanel(r.id)}
+                          onClick={() => void openClubUserPanel(r.id, r.primaryClubId)}
                           className="text-blue-800 underline hover:text-blue-950 font-medium"
                         >
                           {r.username}

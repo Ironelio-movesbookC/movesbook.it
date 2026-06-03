@@ -16,6 +16,7 @@ import {
   getClubProfileDisplayRows,
   parseClubDescriptionMeta,
 } from '@/lib/club/clubSidebarLabel';
+import type { ClubAdminPublicContactRow } from '@/lib/club/clubAdminInfo';
 
 export type ClubOverviewTabId =
   | 'admin-profile'
@@ -64,6 +65,7 @@ type ClubOverviewPanelProps = {
   club: Club | null;
   members: ClubMember[];
   clubProfileEditHref: string;
+  adminContactRows?: ClubAdminPublicContactRow[];
   onAddMembers?: () => void;
 };
 
@@ -207,46 +209,17 @@ function TabPlaceholder({ title, children }: { title: string; children?: ReactNo
   );
 }
 
-function MembersEmptyState({ onAddMembers }: { onAddMembers?: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-12 min-h-[240px]">
-      <Users className="w-16 h-16 text-gray-400 mb-5" strokeWidth={1.2} />
-      <div className="rounded-lg border border-amber-300 bg-amber-50 px-10 py-5 text-center max-w-md">
-        <p className="text-base font-semibold text-amber-950">No members yet</p>
-        {onAddMembers ? (
-          <button
-            type="button"
-            onClick={onAddMembers}
-            className="mt-2 text-sm text-gray-800 hover:text-blue-700 underline"
-          >
-            Add members to get started
-          </button>
-        ) : (
-          <p className="mt-2 text-sm text-gray-700">Add members to get started</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function ClubOverviewPanel({
   club,
   members,
   clubProfileEditHref,
+  adminContactRows = [],
   onAddMembers,
 }: ClubOverviewPanelProps) {
   const [activeTab, setActiveTab] = useState<ClubOverviewTabId>('admin-profile');
 
   const profileRows = club ? getClubProfileDisplayRows(club) : [];
   const meta = club ? parseClubDescriptionMeta(club.description) : {};
-
-  const contactRows = profileRows.filter((r) =>
-    ['Club mail', 'Address', 'Zip Code', 'Location', 'Geographic coordinate', 'Country', 'Region'].includes(
-      r.label,
-    ),
-  );
-
-  const showMembersEmptyInTab = members.length === 0 && activeTab === 'admin-profile';
 
   return (
     <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 md:p-8 flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden">
@@ -309,22 +282,18 @@ export default function ClubOverviewPanel({
 
       {/* 5. Tab content */}
       <div className="flex-1 min-h-[280px] bg-white pt-6" role="tabpanel">
-        {showMembersEmptyInTab ? (
-          <MembersEmptyState onAddMembers={onAddMembers} />
-        ) : null}
-
-        {!showMembersEmptyInTab && activeTab === 'admin-profile' && (
+        {activeTab === 'admin-profile' && (
           <div className="space-y-4 p-6">
             <p className="text-sm text-gray-600">
               Club administrator account — personal details for the owner of this club.
             </p>
             <div className="rounded-lg border border-gray-200 overflow-hidden">
-              <UserProfile embedded />
+              <UserProfile embedded embeddedVariant="admin-profile" />
             </div>
           </div>
         )}
 
-        {!showMembersEmptyInTab && activeTab === 'club-profile' && (
+        {activeTab === 'club-profile' && (
           <div className="space-y-4 p-6">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm text-gray-600">Official club information registered for this club.</p>
@@ -350,26 +319,53 @@ export default function ClubOverviewPanel({
           </div>
         )}
 
-        {!showMembersEmptyInTab && activeTab === 'contact-info' && (
-          <div className="p-6">
-            {contactRows.length > 0 ? (
+        {activeTab === 'contact-info' && (
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-gray-600">
+              Club administrator contact details from{' '}
+              <Link href="/profile#admin-info" className="font-semibold text-blue-600 hover:text-blue-800">
+                Admin info
+              </Link>{' '}
+              on your profile. Link fields appear here only when &quot;Show in Club admin info&quot; is checked.
+            </p>
+            {adminContactRows.length > 0 ? (
               <dl className="grid gap-3 sm:grid-cols-2 max-w-3xl">
-                {contactRows.map(({ label, value }) => (
-                  <div key={label}>
+                {adminContactRows.map(({ label, value, href }, index) => (
+                  <div key={`${label}-${index}`} className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
                     <dt className="text-xs font-medium text-gray-500">{label}</dt>
-                    <dd className="text-sm text-gray-900">{value}</dd>
+                    <dd className="text-sm text-gray-900 mt-0.5 break-words whitespace-pre-wrap">
+                      {href && label !== 'About me' ? (
+                        <a
+                          href={href}
+                          {...(/^https?:\/\//i.test(href)
+                            ? { target: '_blank', rel: 'noopener noreferrer' }
+                            : {})}
+                          className="text-blue-600 hover:underline"
+                        >
+                          {value}
+                        </a>
+                      ) : (
+                        value
+                      )}
+                    </dd>
                   </div>
                 ))}
               </dl>
             ) : (
               <TabPlaceholder title="Contact Info">
-                <p className="text-sm text-gray-500">Add contact details in club profile settings.</p>
+                <p className="text-sm text-gray-500">
+                  No admin contact details yet. Fill in{' '}
+                  <Link href="/profile#admin-info" className="font-semibold text-blue-600 hover:underline">
+                    Admin info
+                  </Link>{' '}
+                  on your profile and save.
+                </p>
               </TabPlaceholder>
             )}
           </div>
         )}
 
-        {!showMembersEmptyInTab && activeTab === 'direct-access' && (
+        {activeTab === 'direct-access' && (
           <dl className="grid gap-4 max-w-xl p-6">
             <div>
               <dt className="text-xs font-medium text-gray-500">Direct access</dt>
@@ -390,7 +386,7 @@ export default function ClubOverviewPanel({
           </dl>
         )}
 
-        {!showMembersEmptyInTab && activeTab === 'club-activities' && (
+        {activeTab === 'club-activities' && (
           <div className="p-6">
           <TabPlaceholder title="Club Activities">
             <div className="space-y-2 text-sm text-gray-600 text-left max-w-md mx-auto">
@@ -402,8 +398,7 @@ export default function ClubOverviewPanel({
           </div>
         )}
 
-        {!showMembersEmptyInTab &&
-          ['sharings', 'notifications', 'privacy', 'permissions'].includes(activeTab) && (
+        {['sharings', 'notifications', 'privacy', 'permissions'].includes(activeTab) && (
             <div className="p-6">
               <TabPlaceholder title={OVERVIEW_TABS.find((t) => t.id === activeTab)?.label ?? ''} />
             </div>

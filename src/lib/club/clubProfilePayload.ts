@@ -19,6 +19,9 @@ export type ClubProfileFormPayload = {
   directRegistrationCode: string;
   /** Empty when not changing password (edit mode). */
   clubPassword: string;
+  /** Club-specific references (separate from the club admin account). */
+  referencesHtml: string;
+  referencesLevel: string;
 };
 
 export function clubToFormPayload(club: {
@@ -41,6 +44,8 @@ export function clubToFormPayload(club: {
     officialName: club.name?.trim() ?? '',
     directRegistrationCode: meta.directRegistrationCode?.trim() ?? '',
     clubPassword: '',
+    referencesHtml: meta.referencesHtml?.trim() ?? '',
+    referencesLevel: meta.referencesLevel?.trim() || '1',
   };
 }
 
@@ -66,7 +71,24 @@ export function mergeClubDescriptionForSave(
     directAccess: payload.directAccess.trim() || undefined,
     directRegistrationCode: payload.directRegistrationCode.trim() || undefined,
     clubPasswordHash: options?.clubPasswordHash ?? prev.clubPasswordHash,
+    referencesHtml: payload.referencesHtml.trim() || undefined,
+    referencesLevel: payload.referencesLevel.trim() || undefined,
   };
   const hasMeta = Object.values(meta).some((v) => v !== undefined && v !== '');
   return hasMeta ? JSON.stringify(meta) : JSON.stringify({ createdViaForm: true });
+}
+
+/** Update only club references inside `clubs_new.description` JSON. */
+export function mergeClubReferencesForSave(
+  existingDescription: string | null | undefined,
+  references: { referencesHtml: string; referencesLevel: string },
+): string {
+  const prev = parseClubDescriptionMeta(existingDescription);
+  const meta: ClubDescriptionMeta = {
+    ...prev,
+    createdViaForm: prev.createdViaForm ?? true,
+    referencesHtml: references.referencesHtml.trim() || undefined,
+    referencesLevel: references.referencesLevel.trim() || '1',
+  };
+  return JSON.stringify(meta);
 }

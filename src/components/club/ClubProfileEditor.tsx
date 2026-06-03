@@ -1,7 +1,17 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { User } from 'lucide-react';
+
+const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), {
+  ssr: false,
+  loading: () => (
+    <div className="min-h-[260px] rounded border border-gray-300 bg-white p-4 text-sm text-gray-500">
+      Loading editor…
+    </div>
+  ),
+});
 import { COUNTRIES } from '@/lib/news/countries';
 import { getRegionsForCountry } from '@/constants/countryRegions.constants';
 import {
@@ -66,8 +76,11 @@ export default function ClubProfileEditor({
   const [clubDirectAccess, setClubDirectAccess] = useState('');
   const [clubOfficialName, setClubOfficialName] = useState('');
   const [clubDirectRegCode, setClubDirectRegCode] = useState('');
+  const [clubReferencesHtml, setClubReferencesHtml] = useState('');
+  const [clubReferencesLevel, setClubReferencesLevel] = useState('1');
   const [error, setError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const showClubReferences = entityKind === 'club';
 
   const clubRegionOptions = useMemo(() => {
     const country = clubCountry.trim();
@@ -97,6 +110,8 @@ export default function ClubProfileEditor({
       setClubDirectAccess('');
       setClubOfficialName('');
       setClubDirectRegCode('');
+      setClubReferencesHtml('');
+      setClubReferencesLevel('1');
       setError(null);
       setHydrated(true);
       return;
@@ -116,6 +131,8 @@ export default function ClubProfileEditor({
       setClubDirectAccess(payload.directAccess);
       setClubOfficialName(payload.officialName);
       setClubDirectRegCode(payload.directRegistrationCode);
+      setClubReferencesHtml(payload.referencesHtml);
+      setClubReferencesLevel(payload.referencesLevel);
       setClubNewPassword('');
       setClubRepeatPassword('');
       setError(null);
@@ -171,6 +188,8 @@ export default function ClubProfileEditor({
         directRegistrationCode: clubDirectRegCode.trim(),
         clubPassword:
           mode === 'create' ? clubMyPassword.trim() : clubNewPassword.trim(),
+        referencesHtml: showClubReferences ? clubReferencesHtml : '',
+        referencesLevel: showClubReferences ? clubReferencesLevel : '1',
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : labels.saveError);
@@ -398,6 +417,39 @@ export default function ClubProfileEditor({
             </div>
           </div>
         </div>
+
+        {showClubReferences ? (
+          <div>
+            <div className="mb-2 border border-[#c9bd7a] bg-[#efe7b3] px-4 py-2 text-sm font-semibold text-gray-900">
+              References of the club
+            </div>
+            <p className="mb-2 text-xs text-gray-600">
+              These references belong to the club itself, not to the club admin personal account.
+            </p>
+            <div className="border border-gray-300 bg-white p-3">
+              <CKEditorComponent
+                value={clubReferencesHtml}
+                onChange={(html) => setClubReferencesHtml(html)}
+                minHeightPx={260}
+                placeholder=""
+              />
+              <div className="mt-3 grid max-w-md grid-cols-[160px_1fr] items-center gap-2 text-sm">
+                <label className="text-gray-800">References level</label>
+                <select
+                  value={clubReferencesLevel}
+                  onChange={(e) => setClubReferencesLevel(e.target.value)}
+                  className="w-24 rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
+                >
+                  {['1', '2', '3', '4', '5', '6'].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {error ? <p className="text-center text-sm text-red-600">{error}</p> : null}
 

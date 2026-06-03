@@ -4,6 +4,22 @@ import { parseClubSubscriptionEndDate } from '@/lib/admin/clubSubscriptionStatus
 import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
 
+/** Club (or future entity) fields for the entity profile sub-tab — not the admin user account. */
+export type PcuEntityProfile = {
+  username: string;
+  officialName: string;
+  email: string;
+  country: string;
+  location: string;
+  zipCode: string;
+  /** Geographic / MAP coordinates from the club profile form. */
+  geo: string;
+  phone: string;
+  telegram: string;
+  referencesHtml: string;
+  referencesLevel: string;
+};
+
 export type PcuPanelPayload = {
   userId: string;
   username: string;
@@ -45,6 +61,14 @@ export type PcuPanelPayload = {
   geographical: string | null;
   referencesHtml: string;
   referencesLevel: string;
+  /** Admin account location/contact (User Profile tab). */
+  adminCountry: string;
+  adminCity: string;
+  adminZipCode: string;
+  adminPhoneCell: string;
+  adminPhoneCell2: string;
+  /** Current club profile (Club_profile tab) when segment is clubs. */
+  entityProfile: PcuEntityProfile | null;
 };
 
 export function segmentRoleTitle(segment: string): string {
@@ -76,6 +100,34 @@ export function calcAgeDisplay(birthdate: Date | null | undefined, gender: strin
 export function toIsoDate(d: Date | null | undefined): string {
   if (!d || Number.isNaN(d.getTime())) return '';
   return d.toISOString().slice(0, 10);
+}
+
+/** Segments accepted by `/api/admin/registered-users/actions`. */
+export const REGISTERED_USER_ACTION_SEGMENTS = [
+  'all',
+  'single-user',
+  'coaches',
+  'groups',
+  'teams',
+  'clubs',
+] as const;
+
+export type RegisteredUserActionSegment = (typeof REGISTERED_USER_ACTION_SEGMENTS)[number];
+
+export function isRegisteredUserActionSegment(value: string): value is RegisteredUserActionSegment {
+  return (REGISTERED_USER_ACTION_SEGMENTS as readonly string[]).includes(value);
+}
+
+/** Prefer a valid segment from admin navigation; never pass search tokens like `new`. */
+export function resolveRegisteredUserActionSegment(
+  preferred?: string | null,
+  fallback?: string | null,
+): RegisteredUserActionSegment {
+  for (const candidate of [preferred, fallback, 'single-user']) {
+    const s = (candidate ?? '').trim();
+    if (isRegisteredUserActionSegment(s)) return s;
+  }
+  return 'single-user';
 }
 
 export function inferProfileSegment(userType: UserType): string {
@@ -309,13 +361,37 @@ export function buildPcuPanel(
   const firstName = user.firstName?.trim() || user.name?.split(' ')[0] || '';
   const surname = user.surname?.trim() || '';
 
+  const adminCountry = user.country?.trim() || '';
+  const adminPhoneCell = user.telegramAccount?.trim() || '';
+
+  const entityProfile: PcuEntityProfile | null =
+    segment === 'clubs' && (primaryClub || memberClub)
+      ? {
+          username: clubMeta.username?.trim() || '',
+          officialName: entityName,
+          email: clubMeta.mail?.trim() || '',
+          country: clubMeta.country?.trim() || '',
+          location:
+            primaryClub?.location?.trim() ||
+            memberClub?.location?.trim() ||
+            clubMeta.region?.trim() ||
+            '',
+          zipCode: clubMeta.zipCode?.trim() || '',
+          geo: clubMeta.geo?.trim() || '',
+          phone: '',
+          telegram: '',
+          referencesHtml: clubMeta.referencesHtml?.trim() || '',
+          referencesLevel: clubMeta.referencesLevel?.trim() || '1',
+        }
+      : null;
+
   return {
     userId: user.id,
-    username: clubMeta.username?.trim() || user.username,
+    username: user.username,
     fullname,
     firstName,
     surname,
-    email: clubMeta.mail?.trim() || user.email,
+    email: user.email,
     country,
     cityClubTeam: cityClubTeam || entityName || '—',
     city,
@@ -345,10 +421,16 @@ export function buildPcuPanel(
     birthMonth: user.birthdate ? user.birthdate.getMonth() + 1 : null,
     birthYear: user.birthdate ? user.birthdate.getFullYear() : null,
     ageDisplay: calcAgeDisplay(user.birthdate, user.gender),
-    phoneCell: user.telegramAccount?.trim() || '',
+    phoneCell: adminPhoneCell,
     phoneCell2: '',
-    geographical: mapCoordinates,
+    geographical: segment === 'clubs' ? null : mapCoordinates,
     referencesHtml: '',
     referencesLevel: '1',
+    adminCountry,
+    adminCity: '',
+    adminZipCode: '',
+    adminPhoneCell,
+    adminPhoneCell2: '',
+    entityProfile,
   };
 }

@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
+import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolbar';
+import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 import { useAuth } from '@/hooks/useAuth';
 import ClubOverviewPanel from '@/components/club/ClubOverviewPanel';
 import {
@@ -26,6 +28,7 @@ import {
   parseClubDescriptionMeta,
 } from '@/lib/club/clubSidebarLabel';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import type { ClubAdminPublicContactRow } from '@/lib/club/clubAdminInfo';
 
 interface ClubMember {
   id: string;
@@ -58,12 +61,23 @@ function MyClubContent() {
   const [activeSection, setActiveSection] = useState<'overview' | 'members' | 'workouts' | 'analytics'>('overview');
   const [club, setClub] = useState<Club | null>(null);
   const [members, setMembers] = useState<ClubMember[]>([]);
+  const [adminContactRows, setAdminContactRows] = useState<ClubAdminPublicContactRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [addMemberUsername, setAddMemberUsername] = useState('');
   const [addMemberPassword, setAddMemberPassword] = useState('');
   const [addingMember, setAddingMember] = useState(false);
   const [addMemberError, setAddMemberError] = useState('');
+  const {
+    showAdBanner,
+    showPersonalBanner,
+    showLeftSidebar,
+    showRightSidebar,
+    setShowAdBanner,
+    setShowPersonalBanner,
+    setShowLeftSidebar,
+    setShowRightSidebar,
+  } = useDisplayLayoutOptions();
 
   // Helper function for loading club data
   const loadClubData = useCallback(async () => {
@@ -82,6 +96,9 @@ function MyClubContent() {
         const data = await response.json();
         setClub(data.club);
         setMembers(data.members || []);
+        setAdminContactRows(
+          Array.isArray(data.adminContact?.rows) ? data.adminContact.rows : [],
+        );
       } else {
         console.error('Failed to load club data');
       }
@@ -214,16 +231,28 @@ function MyClubContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex flex-col">
       <ModernNavbar />
-      
+      <DisplayOptionsToolbar
+        showAdBanner={showAdBanner}
+        showPersonalBanner={showPersonalBanner}
+        showLeftSidebar={showLeftSidebar}
+        showRightSidebar={showRightSidebar}
+        onToggleAdBanner={setShowAdBanner}
+        onTogglePersonalBanner={setShowPersonalBanner}
+        onToggleLeftSidebar={setShowLeftSidebar}
+        onToggleRightSidebar={setShowRightSidebar}
+      />
+
       <div className="flex-1 flex flex-col w-full px-4 sm:px-6 lg:px-8 py-8">
-        {/* Advertisement Carousel - Top Section */}
-        <div className="mb-8 flex-shrink-0">
-          <AdvertisementCarousel />
-        </div>
+        {showAdBanner && (
+          <div className="mb-8 flex-shrink-0">
+            <AdvertisementCarousel />
+          </div>
+        )}
 
         {/* Main Content Area - Fills remaining space */}
         <div className="flex-1 flex gap-8 min-h-0 min-w-0 w-full overflow-x-hidden">
           {/* Left Sidebar */}
+          {showLeftSidebar && (
           <div className="w-80 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 h-full flex flex-col">
               <Link
@@ -335,6 +364,7 @@ function MyClubContent() {
               </div>
             </div>
           </div>
+          )}
 
           {/* Main Content - Stretched to fill remaining space */}
           <div className="flex-1 min-w-0 max-w-full flex flex-col overflow-hidden">
@@ -361,6 +391,7 @@ function MyClubContent() {
                     club={club}
                     members={members}
                     clubProfileEditHref={clubProfileEditHref}
+                    adminContactRows={adminContactRows}
                     onAddMembers={() => setShowAddMemberModal(true)}
                   />
                 )}
@@ -372,6 +403,7 @@ function MyClubContent() {
           </div>
 
           {/* Right Sidebar */}
+          {showRightSidebar && (
           <div className="w-96 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 h-full flex flex-col">
               <h3 className="text-xl font-bold text-gray-900 mb-6">
@@ -418,6 +450,7 @@ function MyClubContent() {
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
 

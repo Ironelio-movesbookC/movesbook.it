@@ -16,16 +16,22 @@ import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolba
 import PersonalBanner from '@/app/my-page/components/PersonalBanner';
 import RightSidebar from '@/app/my-page/components/RightSidebar';
 import AddMemberModal from '@/components/AddMemberModal';
+import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 
 /**
  * Legacy route parity: `/users/my_desk_list` — desk utility tree with the same shell as My Page (navbar + sidebars).
  */
 export default function MyDeskListPage() {
-  const [showAdBanner, setShowAdBanner] = useState(true);
-  const [showPersonalBanner, setShowPersonalBanner] = useState(true);
-  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
-  const [showRightSidebar, setShowRightSidebar] = useState(true);
-  const [showToolbar, setShowToolbar] = useState(true);
+  const {
+    showAdBanner,
+    showPersonalBanner,
+    showLeftSidebar,
+    showRightSidebar,
+    setShowAdBanner,
+    setShowPersonalBanner,
+    setShowLeftSidebar,
+    setShowRightSidebar,
+  } = useDisplayLayoutOptions();
   const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-page');
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
 
@@ -62,12 +68,10 @@ export default function MyDeskListPage() {
         showPersonalBanner={showPersonalBanner}
         showLeftSidebar={showLeftSidebar}
         showRightSidebar={showRightSidebar}
-        showToolbar={showToolbar}
         onToggleAdBanner={setShowAdBanner}
         onTogglePersonalBanner={setShowPersonalBanner}
         onToggleLeftSidebar={setShowLeftSidebar}
         onToggleRightSidebar={setShowRightSidebar}
-        onToggleToolbar={setShowToolbar}
       />
 
       <div className="flex w-full flex-1 flex-col py-6">

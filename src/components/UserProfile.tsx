@@ -14,7 +14,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import ProfileSportsMultiSelect from '@/components/profile/ProfileSportsMultiSelect';
 import { formatSportLabel } from '@/lib/profileSports';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
-import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
+import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
+import ClubAdminInfoForm from '@/components/profile/ClubAdminInfoForm';
 
 interface UserProfileData {
   id: string;
@@ -68,10 +69,10 @@ type ProfileFormState = {
   mainSports: string[];
 };
 
-function readProfileHash(): 'member-info' | 'member-profile' | null {
+function readProfileHash(): 'member-info' | 'admin-info' | 'member-profile' | null {
   if (typeof window === 'undefined') return null;
   const id = window.location.hash.replace(/^#/, '');
-  if (id === 'member-info' || id === 'member-profile') return id;
+  if (id === 'member-info' || id === 'admin-info' || id === 'member-profile') return id;
   return null;
 }
 
@@ -112,10 +113,18 @@ function languageLabel(code: string): string {
   return match ? `${match.name} (${code.toUpperCase()})` : code.toUpperCase();
 }
 
-export default function UserProfile({ embedded = false }: { embedded?: boolean }) {
+export default function UserProfile({
+  embedded = false,
+  embeddedVariant,
+}: {
+  embedded?: boolean;
+  embeddedVariant?: 'admin-profile';
+}) {
   const { t } = useLanguage();
   const [profile, setProfile] = useState<UserProfileData | null>(null);
-  const [profileHash, setProfileHash] = useState<'member-info' | 'member-profile' | null>(null);
+  const [profileHash, setProfileHash] = useState<
+    'member-info' | 'admin-info' | 'member-profile' | null
+  >(null);
   const [form, setForm] = useState<ProfileFormState>({
     name: '',
     firstName: '',
@@ -311,6 +320,14 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
 
   const displayName =
     [form.firstName, form.surname].filter(Boolean).join(' ').trim() || form.name || profile.name;
+  const isClubAdmin = isClubAccountUserType(profile.userType);
+  const isEmbeddedAdminProfile = embedded && embeddedVariant === 'admin-profile';
+  const infoSectionId = isClubAdmin ? 'admin-info' : 'member-info';
+  const infoSectionTitle = isClubAdmin ? 'Admin info' : 'Member info';
+  const profileSectionTitle = isEmbeddedAdminProfile ? 'Admin Profile' : 'User Profile';
+  const profileSectionDescription = isEmbeddedAdminProfile
+    ? 'Personal details for the club administrator account.'
+    : 'Edit your details below, then click Save profile to update your account.';
   const editProfileMode = profileHash === 'member-profile';
   const avatarSrc = resolvePublicImageUrl(avatarOverride ?? profile.image);
   const dashboardHref = getDashboardPathForUserType(profile.userType);
@@ -427,12 +444,17 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
               ← Back to dashboard
             </Link>
             <span className="text-gray-300">|</span>
-            <a href="#member-info" className="text-gray-600 hover:text-gray-900">
-              Member info
+            <a href={`#${infoSectionId}`} className="text-gray-600 hover:text-gray-900 font-medium">
+              {infoSectionTitle}
             </a>
-            <a href="#member-profile" className="text-gray-600 hover:text-gray-900 font-medium">
-              User Profile
-            </a>
+            {!isClubAdmin ? (
+              <>
+                <span className="text-gray-300">|</span>
+                <a href="#member-profile" className="text-gray-600 hover:text-gray-900">
+                  User Profile
+                </a>
+              </>
+            ) : null}
           </div>
         )}
         {/* Header */}
@@ -468,21 +490,27 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
           </div>
         )}
 
-        {/* Member info — read-only summary */}
-        {!embedded && (
+        {/* Member info / Admin info */}
+        {(!embedded || isEmbeddedAdminProfile) && (
         <section
-          id="member-info"
-          className="scroll-mt-24 bg-white rounded-lg shadow-lg p-6 mb-6"
+          id={infoSectionId}
+          className={`scroll-mt-24 mb-6 ${isClubAdmin ? '' : 'bg-white rounded-lg shadow-lg p-6'}`}
         >
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Member info</h2>
-          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-            {memberInfoFields.map(({ label, value }) => (
-              <div key={label}>
-                <dt className="text-gray-500 font-medium">{label}</dt>
-                <dd className="text-gray-900 mt-0.5 break-words">{value}</dd>
-              </div>
-            ))}
-          </dl>
+          {isClubAdmin ? (
+            <ClubAdminInfoForm profileYoutubeUrl={profile.youtubeChannelUrl} />
+          ) : (
+            <>
+              <h2 className="text-xl font-bold text-gray-800 mb-4">{infoSectionTitle}</h2>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                {memberInfoFields.map(({ label, value }) => (
+                  <div key={label}>
+                    <dt className="text-gray-500 font-medium">{label}</dt>
+                    <dd className="text-gray-900 mt-0.5 break-words">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </>
+          )}
         </section>
         )}
 
@@ -493,9 +521,9 @@ export default function UserProfile({ embedded = false }: { embedded?: boolean }
             editProfileMode ? 'ring-2 ring-blue-500/40' : ''
           }`}
         >
-          <h2 className="text-xl font-bold text-gray-800 mb-1">User Profile</h2>
+          <h2 className="text-xl font-bold text-gray-800 mb-1">{profileSectionTitle}</h2>
           <p className="text-sm text-gray-600 mb-4">
-            Edit your details below, then click Save profile to update your account.
+            {profileSectionDescription}
           </p>
 
           <div className="flex items-center gap-4 mb-6 pb-6 border-b border-gray-100">

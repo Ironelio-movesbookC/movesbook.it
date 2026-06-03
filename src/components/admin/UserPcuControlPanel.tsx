@@ -32,8 +32,12 @@ import {
   DEFAULT_BUYED_ACCOUNTS_MATRIX,
   DEFAULT_FREE_ACCOUNTS_MATRIX,
   emptyHtmlByLang,
+  LANG_KEYS,
+  mergeBuyedAccountsMatrix,
+  mergeFreeAccountsMatrix,
   mergeHtmlByLang,
   mergeHtmlByLangKeys,
+  type PcuLangKey,
   type BuyedAccountsVersionMatrix,
   type ExpirationEndUserMode,
   type ExpirationFeatureMode,
@@ -53,7 +57,10 @@ import {
   type ProcedureRowsByTab,
   type ProcedureTabId,
 } from '@/lib/admin/userPcuProcedureDefaults';
-import type { PcuPanelPayload } from '@/lib/admin/userPcuPanel';
+import {
+  resolveRegisteredUserActionSegment,
+  type PcuPanelPayload,
+} from '@/lib/admin/userPcuPanel';
 import type { PcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import {
   normalizeFavouritePriority,
@@ -154,6 +161,21 @@ type SubscriptionRow = {
   status: string;
 };
 
+function resolvePcuAccessDates(
+  user: PcuPanelPayload,
+  subscriptionRows: SubscriptionRow[],
+  initialPcuAccess?: PcuAccessSettings,
+): { accessStart: string; accessEnd: string } {
+  const activeRow =
+    subscriptionRows.find((row) => row.status?.toLowerCase() === 'active') ?? subscriptionRows[0];
+  const defaultStart = user.startDateIso || activeRow?.dateStart || '';
+  const defaultEnd = user.endDateIso || activeRow?.dateEnd || '';
+  return {
+    accessStart: initialPcuAccess?.accessStartIso?.trim() || defaultStart,
+    accessEnd: initialPcuAccess?.accessEndIso?.trim() || defaultEnd,
+  };
+}
+
 type UserPcuControlPanelProps = {
   user: PcuPanelPayload;
   backHref: string;
@@ -191,22 +213,21 @@ export default function UserPcuControlPanel({
   overviewHref,
 }: UserPcuControlPanelProps) {
   const router = useRouter();
-  const segmentForActions = actionSegment?.trim() || user.segment || 'single-user';
+  const segmentForActions = resolveRegisteredUserActionSegment(actionSegment, user.segment);
   const loadedPcuSettingsRef = useRef<PcuSettings | null>(null);
   const reloadPcuFromServerRef = useRef<(pcu: PcuSettings | undefined) => void>(() => {});
   const [activeTab, setActiveTab] = useState<TopTabId>(defaultActiveTab);
   const [profileSubTab, setProfileSubTab] = useState<'admin' | 'entity'>('admin');
-  const [accessStart, setAccessStart] = useState(
-    () => initialPcuAccess?.accessStartIso || user.startDateIso,
-  );
-  const [accessEnd, setAccessEnd] = useState(() => initialPcuAccess?.accessEndIso ?? user.endDateIso ?? '');
+  const initialAccessDates = resolvePcuAccessDates(user, subscriptionRows, initialPcuAccess);
+  const [accessStart, setAccessStart] = useState(() => initialAccessDates.accessStart);
+  const [accessEnd, setAccessEnd] = useState(() => initialAccessDates.accessEnd);
   const [suspendAccessControl, setSuspendAccessControl] = useState(
     () => initialPcuAccess?.suspendAccessControl ?? false,
   );
   const [suspend, setSuspend] = useState(() => initialPcuAccess?.suspend ?? false);
   const pcuAccessSnapshotRef = useRef({
-    accessStart: initialPcuAccess?.accessStartIso || user.startDateIso,
-    accessEnd: initialPcuAccess?.accessEndIso ?? user.endDateIso ?? '',
+    accessStart: initialAccessDates.accessStart,
+    accessEnd: initialAccessDates.accessEnd,
     suspendAccessControl: initialPcuAccess?.suspendAccessControl ?? false,
     suspend: initialPcuAccess?.suspend ?? false,
   });
@@ -228,6 +249,7 @@ export default function UserPcuControlPanel({
   const [mailSubject, setMailSubject] = useState('');
   const [mailBody, setMailBody] = useState('');
   const [mailError, setMailError] = useState('');
+  const [mailSending, setMailSending] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterVersion, setFilterVersion] = useState<string>('All');
   const [filterSubscription, setFilterSubscription] = useState<string>('All');
@@ -235,7 +257,7 @@ export default function UserPcuControlPanel({
   const [filterYear, setFilterYear] = useState<string>('2010');
   const [ordering, setOrdering] = useState<OrderingOption>('ordering');
   const [adminTab, setAdminTab] = useState<'operator' | 'blocks' | 'vip'>('operator');
-  const [adminLang, setAdminLang] = useState<'en' | 'fr' | 'de' | 'it' | 'es' | 'por' | 'rus' | 'ind' | 'chin' | 'arab'>('en');
+  const [adminLang, setAdminLang] = useState<PcuLangKey>('en');
   const [adminSaving, setAdminSaving] = useState(false);
   const [adminSaveError, setAdminSaveError] = useState('');
   const [adminSaveSuccess, setAdminSaveSuccess] = useState('');
@@ -301,6 +323,15 @@ export default function UserPcuControlPanel({
   const [vipFavourite, setVipFavourite] = useState(false);
   const [profileReferencesHtml, setProfileReferencesHtml] = useState(user.referencesHtml || '');
   const [profileReferencesLevel, setProfileReferencesLevel] = useState(user.referencesLevel || '1');
+  const [clubReferencesHtml, setClubReferencesHtml] = useState(
+    () => user.entityProfile?.referencesHtml ?? '',
+  );
+  const [clubReferencesLevel, setClubReferencesLevel] = useState(
+    () => user.entityProfile?.referencesLevel ?? '1',
+  );
+  const [clubReferencesSaving, setClubReferencesSaving] = useState(false);
+  const [clubReferencesSaveError, setClubReferencesSaveError] = useState('');
+  const [clubReferencesSaveSuccess, setClubReferencesSaveSuccess] = useState('');
 
   // Admin's settings (single user / athlete) - VIP Settings selections
   const [vipEnabled, setVipEnabled] = useState(false);
@@ -357,9 +388,7 @@ export default function UserPcuControlPanel({
   const [vipBannerImageFileName, setVipBannerImageFileName] = useState('No file chosen');
 
   // Functions tab (club-focused UI)
-  const [functionsLang, setFunctionsLang] = useState<
-    'en' | 'fr' | 'de' | 'it' | 'es' | 'por' | 'rus' | 'ind' | 'chin' | 'arab'
-  >('en');
+  const [functionsLang, setFunctionsLang] = useState<PcuLangKey>('en');
   const [functionsSaving, setFunctionsSaving] = useState(false);
   const [functionsSaveError, setFunctionsSaveError] = useState('');
   const [functionsSaveSuccess, setFunctionsSaveSuccess] = useState('');
@@ -507,9 +536,7 @@ export default function UserPcuControlPanel({
   const [idCardsSaving, setIdCardsSaving] = useState(false);
   const [idCardsSaveError, setIdCardsSaveError] = useState('');
   const [idCardsSaveSuccess, setIdCardsSaveSuccess] = useState('');
-  const [idCardsLang, setIdCardsLang] = useState<
-    'en' | 'fr' | 'de' | 'it' | 'es' | 'por' | 'rus' | 'ind' | 'chin' | 'arab'
-  >('en');
+  const [idCardsLang, setIdCardsLang] = useState<PcuLangKey>('en');
 
   const [idCardsCreditCard, setIdCardsCreditCard] = useState(true);
   const [idCardsSendMoneyLaterDays, setIdCardsSendMoneyLaterDays] = useState('60');
@@ -703,7 +730,6 @@ export default function UserPcuControlPanel({
   const [alertMsgActivated, setAlertMsgActivated] = useState(false);
   const [alertMsgEnableFrom, setAlertMsgEnableFrom] = useState('');
   const [alertMsgEnableTo, setAlertMsgEnableTo] = useState('');
-  const [alertMsgReadOn, setAlertMsgReadOn] = useState('Read on 13th November 2025');
   const [alertMsgShowLogin, setAlertMsgShowLogin] = useState(true);
   const [alertMsgShowLogout, setAlertMsgShowLogout] = useState(true);
   const [alertMsgHtmlByLang, setAlertMsgHtmlByLang] = useState<Record<AlertMsgLang, string>>({
@@ -964,10 +990,29 @@ export default function UserPcuControlPanel({
         setPostActivationHtmlByLang(mergeHtmlByLang(fn.messageAfterActivation.htmlByLang));
       }
     }
-    if (fn.freeAccounts?.durationDays != null && String(fn.freeAccounts.durationDays).trim() !== '') {
-      setFreeAccountsDurationDays(String(fn.freeAccounts.durationDays));
+    if (fn.freeAccounts) {
+      if (fn.freeAccounts.versionMatrix) {
+        const matrix = mergeFreeAccountsMatrix(fn.freeAccounts.versionMatrix);
+        setFreeAccountsMatrix(matrix);
+        const trialDays = matrix.daysDuration.trial?.trim();
+        if (trialDays) {
+          setFreeAccountsDurationDays(trialDays);
+        } else if (
+          fn.freeAccounts.durationDays != null &&
+          String(fn.freeAccounts.durationDays).trim() !== ''
+        ) {
+          setFreeAccountsDurationDays(String(fn.freeAccounts.durationDays));
+        }
+      } else if (
+        fn.freeAccounts.durationDays != null &&
+        String(fn.freeAccounts.durationDays).trim() !== ''
+      ) {
+        setFreeAccountsDurationDays(String(fn.freeAccounts.durationDays));
+      }
     }
-    // versionMatrix is per subscription tier — leave blank until version settings are implemented
+    if (fn.buyedAccountsMatrix) {
+      setBuyedAccountsMatrix(mergeBuyedAccountsMatrix(fn.buyedAccountsMatrix));
+    }
     if (fn.terms) {
       setTermsCreditCard(Boolean(fn.terms.creditCard));
       setTermsSendMoneyLater(Boolean(fn.terms.sendMoneyLater));
@@ -1012,7 +1057,6 @@ export default function UserPcuControlPanel({
       if (fn.stock.price != null) setStockPrice(String(fn.stock.price));
       if (fn.stock.payment != null) setStockPayment(String(fn.stock.payment));
     }
-    // buyedAccountsMatrix is per subscription tier — leave blank until version settings are implemented
     if (fn.procedure) {
       const parsed = parseProcedureFromSaved(fn.procedure);
       setProcedureTab(parsed.tab);
@@ -1285,13 +1329,20 @@ export default function UserPcuControlPanel({
   const countryCode = countryCodeFromName(user.country);
   const entityProfileLabel = `${user.roleTitle}_profile`;
   const isSingleUserProfile = user.segment === 'single-user';
+  /** Club owner accounts share the athlete-style Admin's settings panel (operator, publishing, VIP, etc.). */
+  const showAthleteStyleAdminSettings =
+    user.segment === 'single-user' || user.segment === 'clubs';
 
   useEffect(() => {
     setProfileReferencesHtml(user.referencesHtml || '');
     setProfileReferencesLevel(user.referencesLevel || '1');
+    setClubReferencesHtml(user.entityProfile?.referencesHtml ?? '');
+    setClubReferencesLevel(user.entityProfile?.referencesLevel ?? '1');
+    setClubReferencesSaveError('');
+    setClubReferencesSaveSuccess('');
     setAdminSaveError('');
     setAdminSaveSuccess('');
-  }, [user.userId, user.referencesHtml, user.referencesLevel]);
+  }, [user.userId, user.referencesHtml, user.referencesLevel, user.entityProfile]);
 
   const applyPcuSettingsToForm = useCallback((pcu: PcuSettings | null) => {
     if (!pcu) return;
@@ -1743,21 +1794,24 @@ export default function UserPcuControlPanel({
   }, [profilePanel]);
 
   useEffect(() => {
+    const { accessStart: start, accessEnd: end } = resolvePcuAccessDates(
+      user,
+      subscriptionRows,
+      initialPcuAccess,
+    );
+    setAccessStart(start);
+    setAccessEnd(end);
     if (initialPcuAccess) {
-      const start = initialPcuAccess.accessStartIso || user.startDateIso;
-      const end = initialPcuAccess.accessEndIso ?? '';
-      setAccessStart(start);
-      setAccessEnd(end);
       setSuspendAccessControl(initialPcuAccess.suspendAccessControl);
       setSuspend(initialPcuAccess.suspend);
-      pcuAccessSnapshotRef.current = {
-        accessStart: start,
-        accessEnd: end,
-        suspendAccessControl: initialPcuAccess.suspendAccessControl,
-        suspend: initialPcuAccess.suspend,
-      };
     }
-  }, [initialPcuAccess, user.startDateIso]);
+    pcuAccessSnapshotRef.current = {
+      accessStart: start,
+      accessEnd: end,
+      suspendAccessControl: initialPcuAccess?.suspendAccessControl ?? false,
+      suspend: initialPcuAccess?.suspend ?? false,
+    };
+  }, [initialPcuAccess, user, subscriptionRows]);
 
   useEffect(() => {
     pcuAccessSnapshotRef.current = {
@@ -1769,6 +1823,49 @@ export default function UserPcuControlPanel({
   }, [accessStart, accessEnd, suspendAccessControl, suspend]);
 
   const isFavourite = favouritePriority !== 'not_selected';
+
+  const saveClubReferences = useCallback(async () => {
+    const token = getAdminBearerToken();
+    if (!token) {
+      setClubReferencesSaveError('Admin session not found. Please log in again.');
+      return;
+    }
+    if (!user.entityId) {
+      setClubReferencesSaveError('No club selected for this user.');
+      return;
+    }
+
+    setClubReferencesSaving(true);
+    setClubReferencesSaveError('');
+    setClubReferencesSaveSuccess('');
+    try {
+      const res = await fetch(
+        `/api/admin/registered-users/${encodeURIComponent(user.userId)}/club-references`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            clubId: user.entityId,
+            referencesHtml: clubReferencesHtml,
+            referencesLevel: clubReferencesLevel,
+          }),
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to save club references');
+      setClubReferencesSaveSuccess('Saved');
+      window.setTimeout(() => setClubReferencesSaveSuccess(''), 2500);
+    } catch (e: unknown) {
+      setClubReferencesSaveError(
+        e instanceof Error ? e.message : 'Failed to save club references',
+      );
+    } finally {
+      setClubReferencesSaving(false);
+    }
+  }, [user.userId, user.entityId, clubReferencesHtml, clubReferencesLevel]);
 
   const saveProfilePanelSettings = useCallback(
     async (patch: { tagged?: boolean; favouritePriority?: FavouritePriority }) => {
@@ -1865,8 +1962,11 @@ export default function UserPcuControlPanel({
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error || 'Failed to save access settings');
         if (data.pcuAccess) {
-          const start = data.pcuAccess.accessStartIso || user.startDateIso;
-          const end = data.pcuAccess.accessEndIso ?? '';
+          const { accessStart: start, accessEnd: end } = resolvePcuAccessDates(
+            user,
+            subscriptionRows,
+            data.pcuAccess as PcuAccessSettings,
+          );
           setAccessStart(start);
           setAccessEnd(end);
           setSuspendAccessControl(Boolean(data.pcuAccess.suspendAccessControl));
@@ -1889,7 +1989,7 @@ export default function UserPcuControlPanel({
         setPcuAccessSaving(false);
       }
     },
-    [user.userId, user.startDateIso],
+    [user, subscriptionRows],
   );
 
   const resolveActionUserIds = useCallback((): string[] => {
@@ -1915,7 +2015,7 @@ export default function UserPcuControlPanel({
     setMailModalOpen(true);
   }, [user.email]);
 
-  const handleMailClientOpen = useCallback(() => {
+  const handleMailSubmit = useCallback(async () => {
     const to = mailTo.trim();
     if (!to) {
       setMailError('Please enter an email address.');
@@ -1925,15 +2025,72 @@ export default function UserPcuControlPanel({
       setMailError('Please enter a valid email address.');
       return;
     }
-    const params = new URLSearchParams();
-    const subject = mailSubject.trim();
-    const body = mailBody.trim();
-    if (subject) params.set('subject', subject);
-    if (body) params.set('body', body);
-    const query = params.toString();
-    window.location.href = `mailto:${encodeURIComponent(to)}${query ? `?${query}` : ''}`;
-    setMailModalOpen(false);
-  }, [mailTo, mailSubject, mailBody]);
+    const message = mailBody.trim();
+    if (!message) {
+      setMailError('Please enter a message.');
+      return;
+    }
+    const token = getAdminBearerToken();
+    if (!token) {
+      setMailError('Admin session not found. Please log in again.');
+      return;
+    }
+    setMailSending(true);
+    setMailError('');
+    try {
+      const res = await fetch('/api/admin/registered-users/actions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          segment: segmentForActions,
+          userIds: resolveActionUserIds(),
+          message,
+          subject: mailSubject.trim() || 'Message from Movesbook Admin',
+          toEmail: to,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to send mail');
+
+      if (data.mailtoFallback) {
+        const hint =
+          typeof data.message === 'string' && data.message.trim()
+            ? data.message
+            : 'RESEND_API_KEY is not set. Add it to .env and restart npm run dev.';
+        setMailError(hint);
+        if (!data.emailNotConfigured) {
+          const params = new URLSearchParams();
+          params.set('subject', mailSubject.trim() || 'Message from Movesbook Admin');
+          params.set('body', message);
+          window.location.href = `mailto:${encodeURIComponent(to)}?${params.toString()}`;
+          setMailModalOpen(false);
+        }
+        return;
+      }
+
+      const failed = Array.isArray(data.failed) ? data.failed : [];
+      if (failed.length > 0) {
+        const first = failed[0] as { error?: string };
+        throw new Error(first?.error || 'Failed to send mail.');
+      }
+
+      setMailModalOpen(false);
+      window.alert(`Mail sent successfully to ${to}.`);
+    } catch (e: unknown) {
+      setMailError(e instanceof Error ? e.message : 'Failed to send mail');
+    } finally {
+      setMailSending(false);
+    }
+  }, [
+    mailTo,
+    mailBody,
+    mailSubject,
+    segmentForActions,
+    resolveActionUserIds,
+  ]);
 
   const openSendMsgModal = useCallback(() => {
     setMsgError('');
@@ -2293,7 +2450,7 @@ export default function UserPcuControlPanel({
                   </div>
 
                   <div className="space-y-2">
-                      {profileSubTab === 'admin' || isSingleUserProfile ? (
+                      {isSingleUserProfile ? (
                         <>
                           <ProfileField label="Username*" value={user.username} />
                           <ProfileField label="Name" value={user.firstName} />
@@ -2301,19 +2458,19 @@ export default function UserPcuControlPanel({
                           <ProfileField label="Email*" value={user.email} />
                           <ProfileField label="Password*" value="••••••••" muted />
                           <ProfileField label="Repeat*" value="••••••••" muted />
-                          <SelectField label="Country" value={user.country || ''} options={ALL_COUNTRIES} />
+                          <SelectField label="Country" value={user.adminCountry || ''} options={ALL_COUNTRIES} />
                           <ProfileField label="Geographical" value={user.geographical || ''} mono />
                           <SplitField
                             label="City"
-                            leftValue={user.city || user.locality}
+                            leftValue={user.adminCity || user.city}
                             rightLabel="Zip Code"
-                            rightValue={user.zipCode}
+                            rightValue={user.adminZipCode}
                           />
                           <SplitField
                             label="Phone/cell"
-                            leftValue={user.phoneCell}
+                            leftValue={user.adminPhoneCell}
                             rightLabel=""
-                            rightValue={user.phoneCell2}
+                            rightValue={user.adminPhoneCell2}
                           />
                           <ProfileField label="Gender*" value={user.gender || ''} />
                           <BirthdayField day={user.birthDay} month={user.birthMonth} year={user.birthYear} />
@@ -2361,6 +2518,133 @@ export default function UserPcuControlPanel({
                             </div>
                           </div>
                         </>
+                      ) : profileSubTab === 'admin' ? (
+                        <>
+                          <ProfileField label="Username*" value={user.username} />
+                          <ProfileField label="Name" value={user.firstName} />
+                          <ProfileField label="Surname" value={user.surname} />
+                          <ProfileField label="Email*" value={user.email} />
+                          <ProfileField label="Password*" value="••••••••" muted />
+                          <ProfileField label="Repeat*" value="••••••••" muted />
+                          <SelectField label="Country" value={user.adminCountry || ''} options={ALL_COUNTRIES} />
+                          <SplitField
+                            label="City"
+                            leftValue={user.adminCity || user.city}
+                            rightLabel="Zip Code"
+                            rightValue={user.adminZipCode}
+                          />
+                          <SplitField
+                            label="Phone/cell"
+                            leftValue={user.adminPhoneCell}
+                            rightLabel=""
+                            rightValue={user.adminPhoneCell2}
+                          />
+                          <ProfileField label="Gender*" value={user.gender || ''} />
+                          <BirthdayField day={user.birthDay} month={user.birthMonth} year={user.birthYear} />
+                          <ProfileField label="User Type*" value={user.typeOfUser} />
+                          <ProfileField label="Occupation" value="" />
+                          <div className="mt-6">
+                            <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
+                              References
+                            </div>
+                            <div className="border border-gray-300 p-3 bg-white">
+                              <CKEditorComponent
+                                value={profileReferencesHtml}
+                                onChange={(html) => setProfileReferencesHtml(html)}
+                                minHeightPx={260}
+                                placeholder=""
+                              />
+                              <div className="mt-3 grid grid-cols-[120px_1fr] items-center gap-2">
+                                <label className="text-sm text-gray-700">References level</label>
+                                <select
+                                  value={profileReferencesLevel}
+                                  onChange={(e) => setProfileReferencesLevel(e.target.value)}
+                                  className="px-3 py-1.5 border border-gray-300 rounded bg-white text-sm w-24"
+                                >
+                                  {['1', '2', '3', '4', '5', '6'].map((n) => (
+                                    <option key={n} value={n}>
+                                      {n}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      ) : user.segment === 'clubs' && user.entityProfile ? (
+                        <>
+                          <ProfileField label="Username*" value={user.entityProfile.username} />
+                          <ProfileField label="Official name" value={user.entityProfile.officialName} />
+                          <ProfileField label="Email*" value={user.entityProfile.email} />
+                          <ProfileField label="Password*" value="••••••••" muted />
+                          <ProfileField label="Repeat*" value="••••••••" muted />
+                          <SelectField
+                            label="Country"
+                            value={user.entityProfile.country}
+                            options={ALL_COUNTRIES}
+                          />
+                          <SplitField
+                            label="City / Location"
+                            leftValue={user.entityProfile.location}
+                            rightLabel="Zip Code"
+                            rightValue={user.entityProfile.zipCode}
+                          />
+                          <ProfileField
+                            label="Geographical"
+                            value={user.entityProfile.geo}
+                            mono
+                          />
+                          <ProfileField label="Phone/cell" value={user.entityProfile.phone} />
+                          <ProfileField label="Telegram" value={user.entityProfile.telegram} />
+
+                          <div className="mt-6">
+                            <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
+                              References of the club
+                            </div>
+                            <div className="border border-gray-300 p-3 bg-white">
+                              <CKEditorComponent
+                                value={clubReferencesHtml}
+                                onChange={(html) => setClubReferencesHtml(html)}
+                                minHeightPx={260}
+                                placeholder=""
+                              />
+                              <div className="mt-3 grid grid-cols-[120px_1fr] items-center gap-2">
+                                <label className="text-sm text-gray-700">References level</label>
+                                <select
+                                  value={clubReferencesLevel}
+                                  onChange={(e) => setClubReferencesLevel(e.target.value)}
+                                  className="px-3 py-1.5 border border-gray-300 rounded bg-white text-sm w-24"
+                                >
+                                  {['1', '2', '3', '4', '5', '6'].map((n) => (
+                                    <option key={n} value={n}>
+                                      {n}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => void saveClubReferences()}
+                                  disabled={clubReferencesSaving}
+                                  className="px-8 py-2 bg-red-600 text-white text-sm font-semibold rounded disabled:opacity-50"
+                                >
+                                  {clubReferencesSaving ? 'Saving…' : 'Save'}
+                                </button>
+                              </div>
+                              {clubReferencesSaveError ? (
+                                <p className="mt-2 text-center text-sm text-red-600">
+                                  {clubReferencesSaveError}
+                                </p>
+                              ) : null}
+                              {clubReferencesSaveSuccess ? (
+                                <p className="mt-2 text-center text-sm text-green-700">
+                                  {clubReferencesSaveSuccess}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        </>
                       ) : (
                         <>
                           <ProfileField label="Username*" value={user.username} />
@@ -2377,9 +2661,6 @@ export default function UserPcuControlPanel({
                             rightValue={user.zipCode}
                           />
                           <ProfileField label="Phone/cell" value={user.phoneCell} />
-                          <ProfileField label="Gender*" value={user.gender || ''} />
-                          <ProfileField label="User Type*" value={user.roleTitle} />
-                          <ProfileField label="Occupation" value="" />
 
                           <div className="mt-6">
                             <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
@@ -2761,7 +3042,7 @@ export default function UserPcuControlPanel({
                   </div>
                 </div>
 
-                {isSingleUserProfile ? (
+                {showAthleteStyleAdminSettings ? (
                   <>
                     <div className="bg-slate-700 text-yellow-300 font-semibold px-4 py-2">Other settings</div>
                     <div className="px-4 py-3 text-xs text-gray-700 text-center">
@@ -3299,7 +3580,7 @@ export default function UserPcuControlPanel({
                             </div>
                             <div className="border border-gray-300 p-3 bg-white">
                               <div className="flex flex-wrap gap-3 text-sm mb-2">
-                                {(['en', 'fr', 'de', 'it', 'es', 'por', 'rus', 'ind', 'chin', 'arab'] as const).map((l) => (
+                                {LANG_KEYS.map((l) => (
                                   <button
                                     key={l}
                                     type="button"
@@ -3358,7 +3639,9 @@ export default function UserPcuControlPanel({
                     </div>
                   </>
                 ) : (
-                  <div className="px-4 pb-4">{/* existing club admin settings kept below */}</div>
+                  <div className="px-4 pb-4 text-sm text-gray-600">
+                    Admin settings for this account type are not available in this view yet.
+                  </div>
                 )}
               </div>
             </div>
@@ -3505,7 +3788,7 @@ export default function UserPcuControlPanel({
                     <div className="text-sm">
                       <div className="text-xs text-gray-700 mb-1">Edit for each language</div>
                       <div className="flex flex-wrap gap-3 text-sm mb-2">
-                        {(['en', 'fr', 'de', 'it', 'es', 'por', 'rus', 'ind', 'chin', 'arab'] as const).map((l) => (
+                        {LANG_KEYS.map((l) => (
                           <button
                             key={l}
                             type="button"
@@ -4303,7 +4586,7 @@ export default function UserPcuControlPanel({
                     <div className="text-sm">
                       <div className="text-xs text-gray-700 mb-1">Edit for each language</div>
                       <div className="flex flex-wrap gap-3 text-sm mb-2">
-                        {(['en', 'fr', 'de', 'it', 'es', 'por', 'rus', 'ind', 'chin', 'arab'] as const).map((l) => (
+                        {LANG_KEYS.map((l) => (
                           <button
                             key={l}
                             type="button"
@@ -4359,7 +4642,7 @@ export default function UserPcuControlPanel({
                     <div className="text-sm">
                       <div className="text-xs text-gray-700 mb-1">Enter for each language</div>
                       <div className="flex flex-wrap gap-3 text-sm mb-2">
-                        {(['en', 'fr', 'de', 'it', 'es', 'por', 'rus', 'ind', 'chin', 'arab'] as const).map((l) => (
+                        {LANG_KEYS.map((l) => (
                           <button
                             key={l}
                             type="button"
@@ -4967,9 +5250,10 @@ export default function UserPcuControlPanel({
                     <span className="font-semibold">From</span>
                     <div className="flex items-center gap-2">
                       <input
+                        type="date"
                         value={deletePostsFrom}
                         onChange={(e) => setDeletePostsFrom(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 w-40"
+                        className="px-3 py-2 border border-gray-300"
                       />
                       <span className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center">
                         📅
@@ -4978,9 +5262,10 @@ export default function UserPcuControlPanel({
                     <span className="font-semibold">To</span>
                     <div className="flex items-center gap-2">
                       <input
+                        type="date"
                         value={deletePostsTo}
                         onChange={(e) => setDeletePostsTo(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 w-40"
+                        className="px-3 py-2 border border-gray-300"
                       />
                       <span className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center">
                         📅
@@ -5012,8 +5297,7 @@ export default function UserPcuControlPanel({
         ) : activeTab === 'alert' ? (
           <div className="p-0">
             <div className="px-4 py-6 space-y-6">
-              {(isSingleUserProfile ? [0] : [0, 1]).map((idx) => (
-                <div key={idx} className="border border-gray-300 bg-white">
+              <div className="border border-gray-300 bg-white">
                   <div className="bg-slate-500 text-white font-semibold px-4 py-2 flex items-center justify-between">
                     <span>Alert box to display to the user</span>
                     <div className="flex items-center gap-2">
@@ -5074,8 +5358,6 @@ export default function UserPcuControlPanel({
                           📅
                         </span>
                       </div>
-
-                      <div className="ml-auto text-sm">{alertMsgReadOn}</div>
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center justify-center gap-6 text-sm font-semibold">
@@ -5127,7 +5409,6 @@ export default function UserPcuControlPanel({
                     ) : null}
                   </div>
                 </div>
-              ))}
             </div>
           </div>
         ) : (
@@ -5153,7 +5434,11 @@ export default function UserPcuControlPanel({
               To: {user.fullname || user.username}
               {!user.email?.trim() ? (
                 <span className="block text-xs text-amber-700 mt-1">No email on file — enter an address below.</span>
-              ) : null}
+              ) : (
+                <span className="block text-xs text-gray-500 mt-1">
+                  Mail is sent from Movesbook using the configured email service.
+                </span>
+              )}
             </p>
             <label className="mb-2 block text-sm font-medium text-gray-700">Mail address</label>
             <input
@@ -5171,7 +5456,7 @@ export default function UserPcuControlPanel({
               onChange={(e) => setMailSubject(e.target.value)}
               className="mb-3 w-full rounded border border-gray-400 px-3 py-2 text-sm text-gray-900"
             />
-            <label className="mb-2 block text-sm font-medium text-gray-700">Message (optional)</label>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Message</label>
             <textarea
               value={mailBody}
               onChange={(e) => setMailBody(e.target.value)}
@@ -5184,16 +5469,18 @@ export default function UserPcuControlPanel({
               <button
                 type="button"
                 onClick={() => setMailModalOpen(false)}
-                className="rounded border border-gray-400 px-4 py-2 text-sm hover:bg-gray-50"
+                disabled={mailSending}
+                className="rounded border border-gray-400 px-4 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={handleMailClientOpen}
-                className="rounded bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+                onClick={() => void handleMailSubmit()}
+                disabled={mailSending}
+                className="rounded bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
               >
-                Open in mail client
+                {mailSending ? 'Sending…' : 'Send mail'}
               </button>
             </div>
           </div>

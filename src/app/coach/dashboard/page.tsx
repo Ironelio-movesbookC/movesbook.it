@@ -63,6 +63,8 @@ export default function CoachDashboard() {
   const [activeRightTab, setActiveRightTab] = useState<'actions-planner' | 'chat-panel'>('actions-planner');
   const [expandedActionsPlanner, setExpandedActionsPlanner] = useState(true);
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
+  /** My Coaching Group tab visible only after opening a group from the sidebar (hidden on My Page). */
+  const [myEntityTabVisible, setMyEntityTabVisible] = useState(false);
 
   const loadCoachingGroups = useCallback(async () => {
     try {
@@ -102,9 +104,30 @@ export default function CoachDashboard() {
     storageKey: 'selectedCoachingGroup',
     onEntityCreated: (id) => {
       setSelectedGroupId(id);
+      setMyEntityTabVisible(true);
       setActiveTab('my-entity');
     },
   });
+
+  const hideMyEntityTab = useCallback(() => setMyEntityTabVisible(false), []);
+
+  useEffect(() => {
+    setActiveTab('my-page');
+    setMyEntityTabVisible(false);
+  }, []);
+
+  const handleMyPageTabClick = useCallback(() => {
+    hideMyEntityTab();
+    setActiveTab('my-page');
+  }, [hideMyEntityTab]);
+
+  const handleTabChange = useCallback(
+    (tab: 'my-page' | 'my-entity') => {
+      if (tab === 'my-page') hideMyEntityTab();
+      setActiveTab(tab);
+    },
+    [hideMyEntityTab],
+  );
 
   const formCreatedGroups = useMemo(
     () => filterFormCreatedEntities(coachingGroups),
@@ -141,6 +164,7 @@ export default function CoachDashboard() {
   useEffect(() => {
     if (activeTab === 'my-page') {
       setShowWorkoutSection(false);
+      setMyEntityTabVisible(false);
     }
   }, [activeTab]);
 
@@ -165,6 +189,7 @@ export default function CoachDashboard() {
   const handleCoachingGroupSelect = (groupId: string) => {
     localStorage.setItem('selectedCoachingGroup', groupId);
     setSelectedGroupId(groupId);
+    setMyEntityTabVisible(true);
     setActiveTab('my-entity');
   };
 
@@ -366,11 +391,15 @@ export default function CoachDashboard() {
                 userType={user?.userType || ''}
                 entities={coachingGroups}
                 selectedEntityId={selectedGroupId}
+                clubMyClubTabVisible={myEntityTabVisible}
                 onEntitySelect={handleCoachingGroupSelect}
                 activeTab={activeTab}
-                onTabChange={setActiveTab}
-                onMyPageClick={() => setActiveTab('my-page')}
-                onMyCoachingGroupClick={() => setActiveTab('my-entity')}
+                onTabChange={handleTabChange}
+                onMyPageClick={handleMyPageTabClick}
+                onMyCoachingGroupClick={() => {
+                  if (!myEntityTabVisible) return;
+                  setActiveTab('my-entity');
+                }}
                 onCreateGroupTrainedClick={entityCreation.openCreateFlow}
               />
             </div>

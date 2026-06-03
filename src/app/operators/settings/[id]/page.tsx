@@ -8,6 +8,7 @@ import { COUNTRIES } from '@/lib/news/countries';
 import { getRegionsForCountry } from '@/constants/countryRegions.constants';
 import { User, Mail, X, CalendarDays, CreditCard, Square, CheckSquare } from 'lucide-react';
 import CKEditorComponent from '@/components/news/CKEditor';
+import { emptyHtmlByLang, LANG_KEYS } from '@/lib/admin/userPcuFunctionsSettings';
 type StaffKind = 'OPERATOR' | 'CO_ADMIN';
 
 type StaffDetails = {
@@ -185,18 +186,9 @@ export default function OperatorSettingsPage() {
   const [activationEnabled, setActivationEnabled] = useState<boolean>(true);
   const [activationDaysAfter, setActivationDaysAfter] = useState<string>('1-30');
   const [activationLang, setActivationLang] = useState<string>('en');
-  const [activationContentByLang, setActivationContentByLang] = useState<Record<string, string>>({
-    en: '',
-    fr: '',
-    de: '',
-    it: '',
-    es: '',
-    por: '',
-    rus: '',
-    ind: '',
-    chin: '',
-    arab: '',
-  });
+  const [activationContentByLang, setActivationContentByLang] = useState<Record<string, string>>(() =>
+    emptyHtmlByLang(),
+  );
 
   const [sharingUnlimited, setSharingUnlimited] = useState<boolean>(true);
   const [sharingAvaNo, setSharingAvaNo] = useState<Record<string, string>>({
@@ -1375,7 +1367,7 @@ export default function OperatorSettingsPage() {
                         References
                       </div>
                       <div className="flex flex-wrap gap-3 px-4 py-3 text-sm">
-                        {['en', 'fr', 'de', 'it', 'es', 'por', 'rus', 'ind', 'chin', 'arab'].map((x) => (
+                        {LANG_KEYS.map((x) => (
                           <button key={x} type="button" className={`px-2 py-1 border ${x === 'en' ? 'border-red-500' : 'border-transparent'} hover:border-gray-300`}>
                             {x}
                           </button>
@@ -1464,7 +1456,7 @@ export default function OperatorSettingsPage() {
 
                     <div className="text-sm text-gray-700">Edit for each language</div>
                     <div className="flex flex-wrap gap-3 text-sm">
-                      {['en', 'fr', 'de', 'it', 'es', 'por', 'rus', 'ind', 'chin', 'arab'].map((x) => (
+                      {LANG_KEYS.map((x) => (
                         <button
                           key={x}
                           type="button"

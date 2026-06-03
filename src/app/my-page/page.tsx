@@ -24,14 +24,20 @@ import SettingsSection from './components/SettingsSection';
 import DisplayOptionsToolbar from './components/DisplayOptionsToolbar';
 import PersonalBanner from './components/PersonalBanner';
 import RightSidebar from './components/RightSidebar';
+import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 
 export default function MyPage() {
   const [activeSection, setActiveSection] = useState<'workouts' | 'progress' | 'settings'>('workouts');
-  const [showAdBanner, setShowAdBanner] = useState(true);
-  const [showPersonalBanner, setShowPersonalBanner] = useState(true);
-  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
-  const [showRightSidebar, setShowRightSidebar] = useState(true);
-  const [showToolbar, setShowToolbar] = useState(true);
+  const {
+    showAdBanner,
+    showPersonalBanner,
+    showLeftSidebar,
+    showRightSidebar,
+    setShowAdBanner,
+    setShowPersonalBanner,
+    setShowLeftSidebar,
+    setShowRightSidebar,
+  } = useDisplayLayoutOptions();
   const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-page');
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
@@ -127,12 +133,10 @@ export default function MyPage() {
         showPersonalBanner={showPersonalBanner}
         showLeftSidebar={showLeftSidebar}
         showRightSidebar={showRightSidebar}
-        showToolbar={showToolbar}
         onToggleAdBanner={setShowAdBanner}
         onTogglePersonalBanner={setShowPersonalBanner}
         onToggleLeftSidebar={setShowLeftSidebar}
         onToggleRightSidebar={setShowRightSidebar}
-        onToggleToolbar={setShowToolbar}
       />
 
       <div className="flex-1 flex flex-col w-full py-6">

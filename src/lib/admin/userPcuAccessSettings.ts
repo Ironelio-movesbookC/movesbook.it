@@ -22,13 +22,13 @@ export function readPcuAccessSettings(
     };
   }
   const record = panel as Record<string, unknown>;
+  const storedStart =
+    typeof record.accessStartIso === 'string' ? record.accessStartIso.trim() : '';
+  const storedEnd =
+    typeof record.accessEndIso === 'string' ? record.accessEndIso.trim() : '';
   return {
-    accessStartIso:
-      typeof record.accessStartIso === 'string'
-        ? record.accessStartIso
-        : defaults.accessStartIso,
-    accessEndIso:
-      typeof record.accessEndIso === 'string' ? record.accessEndIso : defaults.accessEndIso,
+    accessStartIso: storedStart || defaults.accessStartIso,
+    accessEndIso: storedEnd || defaults.accessEndIso,
     suspendAccessControl: Boolean(record.suspendAccessControl),
     suspend: Boolean(record.suspend),
   };

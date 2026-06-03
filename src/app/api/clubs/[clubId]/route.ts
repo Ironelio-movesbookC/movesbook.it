@@ -24,6 +24,8 @@ function isClubProfilePatch(body: Record<string, unknown>): boolean {
     'directAccess',
     'directRegistrationCode',
     'clubPassword',
+    'referencesHtml',
+    'referencesLevel',
   ].some((k) => k in body);
 }
 
@@ -124,6 +126,8 @@ export async function PATCH(
         officialName: clubName,
         directRegistrationCode: String(payload.directRegistrationCode ?? ''),
         clubPassword: newPassword,
+        referencesHtml: String(payload.referencesHtml ?? ''),
+        referencesLevel: String(payload.referencesLevel ?? '1'),
       }, { clubPasswordHash });
 
       await prisma.$executeRaw`

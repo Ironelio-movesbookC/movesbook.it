@@ -115,7 +115,37 @@ export type NewVersionAssignMode =
   | 'next_assigned'
   | 'professional';
 
-export const LANG_KEYS = ['en', 'fr', 'de', 'it', 'es', 'por', 'rus', 'ind', 'chin', 'arab'] as const;
+export const LANG_KEYS = [
+  'en',
+  'fr',
+  'de',
+  'it',
+  'es',
+  'por',
+  'rus',
+  'hind',
+  'chin',
+  'arab',
+  'jap',
+  'indo',
+] as const;
+
+export type PcuLangKey = (typeof LANG_KEYS)[number];
+
+const LEGACY_LANG_KEY_ALIASES: Record<string, PcuLangKey> = {
+  ind: 'hind',
+};
+
+function migrateHtmlByLangKeys(saved: HtmlByLang): HtmlByLang {
+  const next = { ...saved };
+  for (const [legacy, canonical] of Object.entries(LEGACY_LANG_KEY_ALIASES)) {
+    if (next[legacy] !== undefined && next[canonical] === undefined) {
+      next[canonical] = next[legacy];
+    }
+    delete next[legacy];
+  }
+  return next;
+}
 
 export function emptyHtmlByLang(): Record<string, string> {
   return Object.fromEntries(LANG_KEYS.map((k) => [k, '']));
@@ -123,7 +153,8 @@ export function emptyHtmlByLang(): Record<string, string> {
 
 /** Merge saved per-language HTML with the full PCU language key set. */
 export function mergeHtmlByLang(saved?: HtmlByLang | null): HtmlByLang {
-  return { ...emptyHtmlByLang(), ...(saved ?? {}) };
+  const migrated = saved ? migrateHtmlByLangKeys(saved) : {};
+  return { ...emptyHtmlByLang(), ...migrated };
 }
 
 export function mergeHtmlByLangKeys<T extends string>(
@@ -436,6 +467,35 @@ export function mergePcuSettingsPatch(
         ...prevMa,
         ...incMa,
         htmlByLang: { ...prevMa.htmlByLang, ...incMa.htmlByLang },
+      };
+    }
+    if (incoming.freeAccounts || prevFn.freeAccounts) {
+      const prevFa = prevFn.freeAccounts ?? {};
+      const incFa = incoming.freeAccounts ?? {};
+      const prevMatrix = mergeFreeAccountsMatrix(prevFa.versionMatrix);
+      const incMatrix = mergeFreeAccountsMatrix(incFa.versionMatrix);
+      merged.freeAccounts = {
+        ...prevFa,
+        ...incFa,
+        durationDays:
+          incFa.durationDays !== undefined && incFa.durationDays !== null
+            ? incFa.durationDays
+            : prevFa.durationDays,
+        versionMatrix: {
+          athletesLoaded: { ...prevMatrix.athletesLoaded, ...incMatrix.athletesLoaded },
+          assigned: { ...prevMatrix.assigned, ...incMatrix.assigned },
+          remaining: { ...prevMatrix.remaining, ...incMatrix.remaining },
+          daysDuration: { ...prevMatrix.daysDuration, ...incMatrix.daysDuration },
+        },
+      };
+    }
+    if (incoming.buyedAccountsMatrix || prevFn.buyedAccountsMatrix) {
+      const prevBuyed = mergeBuyedAccountsMatrix(prevFn.buyedAccountsMatrix);
+      const incBuyed = mergeBuyedAccountsMatrix(incoming.buyedAccountsMatrix);
+      merged.buyedAccountsMatrix = {
+        assigned: { ...prevBuyed.assigned, ...incBuyed.assigned },
+        remaining: { ...prevBuyed.remaining, ...incBuyed.remaining },
+        daysDuration: { ...prevBuyed.daysDuration, ...incBuyed.daysDuration },
       };
     }
     next.functions = merged;
