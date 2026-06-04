@@ -22,6 +22,7 @@ import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolba
 import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 import { useAuth } from '@/hooks/useAuth';
 import ClubOverviewPanel from '@/components/club/ClubOverviewPanel';
+import ManagedEntitySidebarAvatar from '@/components/entity/ManagedEntitySidebarAvatar';
 import {
   getClubMyPageDisplayName,
   isClubCreatedFromForm,
@@ -53,6 +54,7 @@ interface Club {
   name: string;
   description: string | null;
   location: string | null;
+  imageUrl?: string | null;
 }
 
 function MyClubContent() {
@@ -284,8 +286,13 @@ function MyClubContent() {
 
               <div className="mb-6">
                 <div className="text-center mb-4">
-                  <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                    <Users className="w-10 h-10 text-white" />
+                  <div className="mx-auto mb-4 w-20 h-20">
+                    <ManagedEntitySidebarAvatar
+                      description={club?.description}
+                      imageUrl={club?.imageUrl}
+                      userImageUrl={user?.image}
+                      alt={clubDisplayName}
+                    />
                   </div>
                   <div className="flex items-start justify-center gap-2">
                     <h2 className="text-2xl font-bold text-gray-900 text-center flex-1">

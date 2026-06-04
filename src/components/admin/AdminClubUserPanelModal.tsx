@@ -11,9 +11,9 @@ export interface ClubUserPanelData {
   fullName: string;
   username: string;
   officialName: string;
-  clubname: string;
+  region: string;
   country: string;
-  city: string;
+  address: string;
   sport: string;
   dateStart: string;
   dateEnd: string | null;
@@ -34,7 +34,10 @@ interface AdminClubUserPanelModalProps {
   error: string;
   data: ClubUserPanelData | null;
   onClose: () => void;
+  /** Full PCU panel (`/subscriptionuserlists/historyuser/...`). */
   onControlPanel?: () => void;
+  /** Inline subscription details on the registered-users list. */
+  onSubscriptions?: () => void;
 }
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
@@ -77,6 +80,7 @@ export default function AdminClubUserPanelModal({
   data,
   onClose,
   onControlPanel,
+  onSubscriptions,
 }: AdminClubUserPanelModalProps) {
   const router = useRouter();
 
@@ -159,10 +163,10 @@ export default function AdminClubUserPanelModal({
             <div className="px-5 py-3 space-y-0.5">
               <PanelRow label="Full Name:" value={data.fullName} />
               <PanelRow label="Username:" value={data.username} />
-              <PanelRow label="Official:" value={data.officialName} />
-              <PanelRow label="Clubname:" value={data.clubname} />
+              <PanelRow label="Official clubname:" value={data.officialName} />
+              <PanelRow label="Region:" value={data.region} />
               <PanelRow label="Country:" value={data.country} />
-              <PanelRow label="City:" value={data.city} />
+              <PanelRow label="Address:" value={data.address} />
               <PanelRow label="Sport:" value={data.sport} />
               <PanelRow label="Data Start:" value={data.dateStart} />
               <PanelRow label="Data End:" value={data.dateEnd ?? '—'} />
@@ -203,6 +207,10 @@ export default function AdminClubUserPanelModal({
                     onClick={() => {
                       if (action.id === 'control') {
                         onControlPanel?.();
+                        return;
+                      }
+                      if (action.id === 'subscriptions') {
+                        onSubscriptions?.();
                         return;
                       }
                       if (action.id === 'visit' && visitPath) {

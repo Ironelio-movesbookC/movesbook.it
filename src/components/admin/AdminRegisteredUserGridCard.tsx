@@ -9,10 +9,6 @@ import {
   type AdminGridCardGroup,
 } from '@/lib/admin/groupRegisteredUserGridCards';
 import type { ClubSubscriptionStatusTone } from '@/lib/admin/clubSubscriptionStatus';
-import { isClubAccountUserType } from '@/utils/dashboardRouting';
-
-type RowUser = AdminGridCardGroup['admin'];
-
 function clubAdminStatusClassName(tone?: ClubSubscriptionStatusTone): string {
   switch (tone) {
     case 'expiring':
@@ -29,23 +25,23 @@ function clubAdminStatusClassName(tone?: ClubSubscriptionStatusTone): string {
 
 type AdminRegisteredUserGridCardProps = {
   group: AdminGridCardGroup;
-  isAllSegment: boolean;
-  isClubsSegment: boolean;
-  onOpenClubPanel?: (userId: string, clubId: string | null) => void;
-  onOpenUserProfile: (userId: string, entityId?: string | null) => void;
+  /** Opens PCU history user page → Profile tab → Admin Profile sub-tab. */
+  onOpenAdminProfile: (userId: string, userType: string, clubId?: string | null) => void;
+  /** Opens PCU history user page → Profile tab → club/team/group/coach profile sub-tab. */
+  onOpenEntityProfile: (
+    userId: string,
+    userType: string,
+    entityId: string | null,
+  ) => void;
 };
 
 export default function AdminRegisteredUserGridCard({
   group,
-  isAllSegment,
-  isClubsSegment,
-  onOpenClubPanel,
-  onOpenUserProfile,
+  onOpenAdminProfile,
+  onOpenEntityProfile,
 }: AdminRegisteredUserGridCardProps) {
   const { admin, entities } = group;
   const showOwnedList = gridCardShowsOwnedEntities(group);
-  const isClubAdmin =
-    isClubsSegment || (isAllSegment && isClubAccountUserType(admin.userType));
 
   return (
     <div className="border border-gray-300 bg-white p-4 rounded shadow-sm text-sm">
@@ -59,17 +55,24 @@ export default function AdminRegisteredUserGridCard({
             )}
           </div>
           <div className="text-gray-600">{admin.location?.trim() || '—'}</div>
-          {isClubAdmin && onOpenClubPanel ? (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-blue-800 font-medium">
+              @{admin.accountUsername ?? admin.username}
+            </span>
             <button
               type="button"
-              onClick={() => onOpenClubPanel(admin.id, admin.primaryClubId ?? null)}
-              className="text-blue-800 underline hover:text-blue-950 text-left"
+              onClick={() =>
+                onOpenAdminProfile(
+                  admin.id,
+                  admin.userType,
+                  admin.primaryClubId ?? entities[0]?.entityId ?? entities[0]?.primaryClubId ?? null,
+                )
+              }
+              className="text-blue-800 underline hover:text-blue-950"
             >
-              @{admin.accountUsername ?? admin.username}
+              View profile
             </button>
-          ) : (
-            <div className="text-gray-600">@{admin.accountUsername ?? admin.username}</div>
-          )}
+          </div>
           <div className="text-gray-600">
             {admin.dateStart} — {admin.dateEnd ?? '—'}
           </div>
@@ -107,11 +110,13 @@ export default function AdminRegisteredUserGridCard({
                 <button
                   type="button"
                   onClick={() =>
-                    isClubAdmin && entity.entityKind === 'club' && onOpenClubPanel
-                      ? onOpenClubPanel(admin.id, (entity.primaryClubId ?? entity.entityId) ?? null)
-                      : onOpenUserProfile(admin.id, entity.primaryClubId ?? entity.entityId)
+                    onOpenEntityProfile(
+                      admin.id,
+                      admin.userType,
+                      entity.entityId ?? entity.primaryClubId ?? null,
+                    )
                   }
-                  className="text-blue-800 underline hover:text-blue-950"
+                  className="ml-auto text-blue-800 underline hover:text-blue-950 shrink-0"
                 >
                   View profile
                 </button>
@@ -124,10 +129,10 @@ export default function AdminRegisteredUserGridCard({
           <div className={`mt-2 ${clubAdminStatusClassName(admin.statusTone)}`}>{admin.status}</div>
           <button
             type="button"
-            onClick={() => onOpenUserProfile(admin.id, admin.primaryClubId)}
-            className="mt-2 text-left text-sm text-blue-800 underline hover:text-blue-950"
+            onClick={() => onOpenAdminProfile(admin.id, admin.userType, admin.primaryClubId ?? null)}
+            className="mt-2 text-sm text-blue-800 underline hover:text-blue-950"
           >
-            View profile (search)
+            View profile
           </button>
         </>
       )}

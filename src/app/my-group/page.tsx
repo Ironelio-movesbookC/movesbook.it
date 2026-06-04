@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Users, UserPlus, X, Loader2 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
+import ManagedEntitySidebarAvatar from '@/components/entity/ManagedEntitySidebarAvatar';
 import { useAuth } from '@/hooks/useAuth';
 import { useEntityDirectAccessGuard } from '@/hooks/useEntityDirectAccessGuard';
 import {
@@ -31,6 +32,7 @@ interface Group {
   name: string;
   description: string | null;
   groupType: string | null;
+  imageUrl?: string | null;
 }
 
 function MyGroupContent() {
@@ -161,8 +163,13 @@ function MyGroupContent() {
           <div className="w-80 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 h-full flex flex-col">
               <div className="text-center mb-8">
-                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                  <Users className="w-10 h-10 text-white" />
+                <div className="mx-auto mb-4 w-20 h-20">
+                  <ManagedEntitySidebarAvatar
+                    description={group?.description}
+                    imageUrl={group?.imageUrl}
+                    userImageUrl={user?.image}
+                    alt={group?.name || 'Group'}
+                  />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900">{group?.name || 'Loading...'}</h2>
                 <p className="text-gray-600 text-sm mt-2">{group?.description || group?.groupType || 'Group'}</p>

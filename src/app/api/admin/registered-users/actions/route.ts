@@ -3,6 +3,11 @@ import { Resend } from 'resend';
 import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
+import {
+  applySubscriptionPeriodDeletions,
+  type SubscriptionPeriodDeletion,
+} from '@/lib/admin/networkSubscriptionHistory';
+import { verifyAdminActionPassword } from '@/lib/admin/verifyAdminActionPassword';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +41,38 @@ function parseUserIds(body: unknown): string[] {
 function subscriptionRowToUserId(rowId: string): string {
   const prefix = 'account-';
   return rowId.startsWith(prefix) ? rowId.slice(prefix.length) : rowId;
+}
+
+type SubscriptionDeletionRequest = SubscriptionPeriodDeletion & { userId: string };
+
+function parseSubscriptionDeletions(body: unknown): SubscriptionDeletionRequest[] {
+  if (!body || typeof body !== 'object') return [];
+  const raw = (body as { subscriptions?: unknown }).subscriptions;
+  if (!Array.isArray(raw)) return [];
+  const out: SubscriptionDeletionRequest[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const userId = String(rec.userId ?? '').trim();
+    const periodId = String(rec.periodId ?? '').trim();
+    if (!userId || !periodId) continue;
+    out.push({
+      userId,
+      periodId,
+      entityId:
+        rec.entityId === null || rec.entityId === undefined
+          ? undefined
+          : String(rec.entityId).trim() || null,
+      dateStart: typeof rec.dateStart === 'string' ? rec.dateStart.trim() : undefined,
+      dateEnd:
+        rec.dateEnd === null
+          ? null
+          : typeof rec.dateEnd === 'string'
+            ? rec.dateEnd.trim() || null
+            : undefined,
+    });
+  }
+  return out;
 }
 
 /** Turn Resend SDK/API errors into actionable admin messages. */
@@ -185,7 +222,7 @@ export async function POST(request: NextRequest) {
   });
 }
 
-/** DELETE — Remove user accounts (subscription registrations) from Movesbook. */
+/** DELETE — Remove checked subscription periods (requires super admin password). */
 export async function DELETE(request: NextRequest) {
   const auth = await requireAdmin(request);
   if (!auth.ok) {
@@ -200,18 +237,92 @@ export async function DELETE(request: NextRequest) {
   }
 
   const segment = String((body as { segment?: string })?.segment || '').trim();
-  const userIds = parseUserIds(body);
-  const resolved = await resolveSegmentUserIds(segment, userIds);
-  if (!resolved.ok) {
-    return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+  if (!SEGMENT_TYPES[segment]) {
+    return NextResponse.json({ error: 'Invalid segment' }, { status: 400 });
   }
 
-  const result = await prisma.user.deleteMany({
-    where: { id: { in: resolved.ids } },
+  const superAdminPassword = String(
+    (body as { superAdminPassword?: string })?.superAdminPassword || '',
+  ).trim();
+  if (!superAdminPassword) {
+    return NextResponse.json({ error: 'Super admin password is required' }, { status: 400 });
+  }
+
+  const adminUsername = String((body as { adminUsername?: string })?.adminUsername || '').trim();
+  const passwordOk = await verifyAdminActionPassword(
+    superAdminPassword,
+    auth,
+    adminUsername || undefined,
+  );
+  if (!passwordOk) {
+    return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
+  }
+
+  const subscriptions = parseSubscriptionDeletions(body);
+  if (subscriptions.length === 0) {
+    return NextResponse.json({ error: 'No subscriptions selected' }, { status: 400 });
+  }
+
+  const userIds = Array.from(new Set(subscriptions.map((s) => s.userId)));
+  const types = SEGMENT_TYPES[segment]!;
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds }, userType: { in: types } },
+    select: { id: true, settings: { select: { adminSettings: true } } },
   });
 
+  if (users.length === 0) {
+    return NextResponse.json({ error: 'No matching users found for this segment' }, { status: 404 });
+  }
+
+  const byUser = new Map<string, SubscriptionPeriodDeletion[]>();
+  for (const sub of subscriptions) {
+    if (!users.some((u) => u.id === sub.userId)) continue;
+    const list = byUser.get(sub.userId) ?? [];
+    list.push({
+      periodId: sub.periodId,
+      entityId: sub.entityId,
+      dateStart: sub.dateStart,
+      dateEnd: sub.dateEnd,
+    });
+    byUser.set(sub.userId, list);
+  }
+
+  let deleted = 0;
+  for (const [userId, dels] of byUser) {
+    const user = users.find((u) => u.id === userId);
+    if (!user || dels.length === 0) continue;
+
+    const adminSettings = applySubscriptionPeriodDeletions(
+      user.settings?.adminSettings,
+      dels,
+    );
+
+    if (user.settings) {
+      await prisma.userSettings.update({
+        where: { userId },
+        data: { adminSettings },
+      });
+    } else {
+      await prisma.userSettings.create({
+        data: {
+          userId,
+          widgetArrangement: '{}',
+          adminSettings,
+          colorSettings: '{}',
+          toolsSettings: '{}',
+          favouritesSettings: '{}',
+          myBestSettings: '{}',
+          notificationSettings: '{}',
+          socialSettings: '{}',
+          workoutPreferences: '{}',
+        },
+      });
+    }
+    deleted += dels.length;
+  }
+
   return NextResponse.json({
-    deleted: result.count,
-    ids: resolved.ids,
+    deleted,
+    userIds: Array.from(byUser.keys()),
   });
 }

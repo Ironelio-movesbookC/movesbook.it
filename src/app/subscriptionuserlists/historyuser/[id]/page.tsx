@@ -7,7 +7,11 @@ import Link from 'next/link';
 import AdminPcuUserOverview from '@/components/admin/AdminPcuUserOverview';
 import UserPcuControlPanel from '@/components/admin/UserPcuControlPanel';
 import { getAdminBearerToken } from '@/lib/admin/clientAdminAuth';
-import { buildPcuHistoryUserUrl, resolvePcuDefaultTab } from '@/lib/admin/pcuHistoryUserUrl';
+import {
+  buildPcuHistoryUserUrl,
+  resolvePcuDefaultTab,
+  resolvePcuProfileSubTab,
+} from '@/lib/admin/pcuHistoryUserUrl';
 import { navScopeToProfileSegment, type PcuPanelPayload } from '@/lib/admin/userPcuPanel';
 import type { PcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import type { ProfilePanelSettings } from '@/lib/admin/userProfilePanelSettings';
@@ -180,9 +184,9 @@ export default function HistoryUserPage() {
   }
 
   return (
-    <div className="py-4 px-2 sm:px-4">
+    <div className="w-full min-w-0 py-2">
       <UserPcuControlPanel
-        key={`${user.userId}-${resolvePcuDefaultTab(searchParams)}`}
+        key={`${user.userId}-${resolvePcuDefaultTab(searchParams)}-${resolvePcuProfileSubTab(searchParams)}`}
         user={user}
         backHref={backHref}
         subscriptionRows={subscriptionRows}
@@ -190,6 +194,7 @@ export default function HistoryUserPage() {
         initialPcuAccess={pcuAccess}
         initialPcuSettings={pcuSettings}
         defaultActiveTab={resolvePcuDefaultTab(searchParams)}
+        defaultProfileSubTab={resolvePcuProfileSubTab(searchParams)}
         actionSegment={actionSegment || user.segment}
         overviewHref={buildPcuHistoryUserUrl(user.userId, { ...urlOpts, view: 'overview' })}
       />

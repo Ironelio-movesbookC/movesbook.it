@@ -1,5 +1,7 @@
 import {
+  isSubscriptionPeriodDeleted,
   periodDisplayStatus,
+  readDeletedSubscriptionPeriods,
   readNetworkSubscriptionHistory,
   type NetworkSubscriptionPeriod,
 } from '@/lib/admin/networkSubscriptionHistory';
@@ -46,6 +48,7 @@ export function buildProfileSubscriptionRows(
   },
 ): ProfileSubscriptionRow[] {
   const entityId = current.entityId ?? null;
+  const deleted = readDeletedSubscriptionPeriods(adminSettingsRaw);
   const history = readNetworkSubscriptionHistory(adminSettingsRaw).filter((p) => {
     const pEntity = p.entityId ?? null;
     return entityId ? pEntity === entityId : !pEntity;
@@ -66,9 +69,10 @@ export function buildProfileSubscriptionRows(
     p.dateStart === currentPeriod.dateStart &&
     (p.dateEnd ?? '') === (currentPeriod.dateEnd ?? '');
 
-  const merged = [...history.filter((p) => !sameAsCurrent(p)), currentPeriod].sort(
-    (a, b) => new Date(a.dateStart).getTime() - new Date(b.dateStart).getTime(),
-  );
+  const rowKey = entityId ? `${current.id}-entity-${entityId}` : current.id;
+  const merged = [...history.filter((p) => !sameAsCurrent(p)), currentPeriod]
+    .filter((p) => !isSubscriptionPeriodDeleted(p, deleted, rowKey))
+    .sort((a, b) => new Date(a.dateStart).getTime() - new Date(b.dateStart).getTime());
 
   const defaults = {
     username: current.username,

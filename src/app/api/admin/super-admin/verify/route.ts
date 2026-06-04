@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import bcrypt from 'bcryptjs';
+import { verifyPassword } from '@/lib/auth';
 
 
 // Verify Super Admin password (used by save routes)
@@ -27,30 +27,29 @@ export async function POST(request: NextRequest) {
       });
 
       if (superAdmin && superAdmin.isActive) {
-        const isValid = await bcrypt.compare(password, superAdmin.password);
+        const isValid = await verifyPassword(password, superAdmin.password);
         if (isValid) {
           return NextResponse.json({ success: true, valid: true });
         }
       }
     }
 
-    // Fall back to any active super admin (if no username provided)
-    const anySuperAdmin = await prisma.superAdmin.findFirst({
-      where: { isActive: true }
+    const activeSuperAdmins = await prisma.superAdmin.findMany({
+      where: { isActive: true },
+      select: { password: true },
     });
-
-    if (anySuperAdmin) {
-      const isValid = await bcrypt.compare(password, anySuperAdmin.password);
-      if (isValid) {
+    for (const sa of activeSuperAdmins) {
+      if (await verifyPassword(password, sa.password)) {
         return NextResponse.json({ success: true, valid: true });
       }
     }
 
-    // Legacy fallback: Check SuperAdminSettings
-    const settings = await prisma.superAdminSettings.findFirst();
+    const settings = await prisma.superAdminSettings.findFirst({
+      select: { password: true },
+    });
 
-    if (settings) {
-      const isValid = await bcrypt.compare(password, settings.password);
+    if (settings?.password) {
+      const isValid = await verifyPassword(password, settings.password);
       if (isValid) {
         return NextResponse.json({ success: true, valid: true });
       }

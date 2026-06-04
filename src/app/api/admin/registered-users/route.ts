@@ -15,10 +15,14 @@ import {
 } from '@/lib/admin/expandRegisteredUserListRows';
 import {
   buildMembershipListRows,
+  filterListRowsBySubscriptionDateRange,
   getDefaultMembershipSortOrder,
   parseMembershipViewMode,
+  parseSubscriptionDateField,
+  readDeletedSubscriptionPeriods,
   readNetworkSubscriptionHistory,
   type NetworkSubscriptionPeriod,
+  type SubscriptionPeriodDeletion,
 } from '@/lib/admin/networkSubscriptionHistory';
 import {
   buildMovesbookUserTextSearchOr,
@@ -113,11 +117,10 @@ export async function GET(request: NextRequest) {
   const sportRaw = (url.searchParams.get('sport') || '').trim();
   const version = (url.searchParams.get('version') || '').trim();
   const login = (url.searchParams.get('login') || 'all').trim();
-  const subDay = (url.searchParams.get('subDay') || '').trim();
-  const subMonth = (url.searchParams.get('subMonth') || '').trim();
-  const subYear = (url.searchParams.get('subYear') || '').trim();
-  const createdFrom = (url.searchParams.get('createdFrom') || '').trim();
-  const createdTo = (url.searchParams.get('createdTo') || '').trim();
+  const subDateField = (url.searchParams.get('subDateField') || 'dateStart').trim();
+  const subRangeFrom = (url.searchParams.get('subRangeFrom') || '').trim();
+  const subRangeTo = (url.searchParams.get('subRangeTo') || '').trim();
+  const hasSubDateRange = Boolean(subRangeFrom || subRangeTo);
   const userTypeCategory = (url.searchParams.get('userTypeCategory') || '').trim();
   const membershipMode = parseMembershipViewMode(url.searchParams.get('membership'));
   const membershipSort =
@@ -172,53 +175,31 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const d = parseInt(subDay, 10);
-  const m = parseInt(subMonth, 10);
-  const y = parseInt(subYear, 10);
-  if (!Number.isNaN(d) && !Number.isNaN(m) && !Number.isNaN(y) && m >= 1 && m <= 12) {
-    const start = new Date(y, m - 1, d);
-    const end = new Date(y, m - 1, d + 1);
-    if (!Number.isNaN(start.getTime())) {
-      andClauses.push({ createdAt: { gte: start, lt: end } });
-    }
-  }
-
-  if (createdFrom) {
-    const from = new Date(createdFrom);
-    if (!Number.isNaN(from.getTime())) {
-      andClauses.push({ createdAt: { gte: from } });
-    }
-  }
-  if (createdTo) {
-    const to = new Date(createdTo);
-    if (!Number.isNaN(to.getTime())) {
-      to.setHours(23, 59, 59, 999);
-      andClauses.push({ createdAt: { lte: to } });
-    }
-  }
-
   const where: Prisma.UserWhereInput = { AND: andClauses };
   const orderBy = parseOrder(orderParam);
 
-  const [total, rows] = await Promise.all([
+  const userSelect = {
+    id: true,
+    username: true,
+    email: true,
+    name: true,
+    firstName: true,
+    surname: true,
+    userType: true,
+    country: true,
+    createdAt: true,
+    updatedAt: true,
+  } as const;
+
+  const [dbTotal, rows] = await Promise.all([
     prisma.user.count({ where }),
     prisma.user.findMany({
       where,
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        name: true,
-        firstName: true,
-        surname: true,
-        userType: true,
-        country: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: userSelect,
       orderBy,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      ...(hasSubDateRange
+        ? {}
+        : { skip: (page - 1) * pageSize, take: pageSize }),
     }),
   ]);
 
@@ -411,6 +392,7 @@ export async function GET(request: NextRequest) {
   };
 
   const historyByUserId = new Map<string, NetworkSubscriptionPeriod[]>();
+  const deletedByUserId = new Map<string, SubscriptionPeriodDeletion[]>();
   if (userIds.length > 0) {
     const settingsRows = await prisma.userSettings.findMany({
       where: { userId: { in: userIds } },
@@ -418,6 +400,7 @@ export async function GET(request: NextRequest) {
     });
     for (const s of settingsRows) {
       historyByUserId.set(s.userId, readNetworkSubscriptionHistory(s.adminSettings));
+      deletedByUserId.set(s.userId, readDeletedSubscriptionPeriods(s.adminSettings));
     }
   }
 
@@ -434,6 +417,7 @@ export async function GET(request: NextRequest) {
       historyByUserId,
       'lastPerUser',
       membershipSort,
+      deletedByUserId,
     );
   } else {
     const entityExpanded = expandRegisteredUserListRows(baseRows, entityMaps, {
@@ -444,11 +428,32 @@ export async function GET(request: NextRequest) {
       historyByUserId,
       membershipMode,
       membershipSort,
+      deletedByUserId,
     );
   }
 
+  if (hasSubDateRange) {
+    users = filterListRowsBySubscriptionDateRange(
+      users,
+      parseSubscriptionDateField(subDateField),
+      subRangeFrom,
+      subRangeTo,
+    );
+    const totalFiltered = users.length;
+    users = users.slice((page - 1) * pageSize, page * pageSize);
+    return NextResponse.json({
+      total: totalFiltered,
+      page,
+      pageSize,
+      users,
+      membership: membershipMode,
+      membershipSort,
+      expandedRowCount: users.length,
+    });
+  }
+
   return NextResponse.json({
-    total,
+    total: dbTotal,
     page,
     pageSize,
     users,

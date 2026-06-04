@@ -685,15 +685,27 @@ export async function POST(request: NextRequest) {
 
     const userSettings = await prisma.userSettings.findUnique({
       where: { userId: user.id },
-      select: { language: true }
+      select: { language: true, adminSettings: true },
     });
 
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
+    const userLang = userSettings?.language || 'en';
     const userPayload = {
       ...userWithoutPassword,
-      language: userSettings?.language || 'en'
+      language: userLang,
     };
+
+    let pcuAlert: { title: string; bodyHtml: string } | undefined;
+    try {
+      const { readPcuSettings } = await import('@/lib/admin/userPcuSettings');
+      const { resolvePcuAlertDisplay } = await import('@/lib/admin/userPcuAlertMsg');
+      const pcu = readPcuSettings(userSettings?.adminSettings);
+      const resolved = resolvePcuAlertDisplay(pcu, 'login', userLang);
+      if (resolved) pcuAlert = resolved;
+    } catch {
+      /* PCU alert optional */
+    }
 
     if (MOVESBOOK_LOGIN_USER_TYPES.includes(user.userType)) {
       try {
@@ -742,6 +754,7 @@ export async function POST(request: NextRequest) {
       ...(entityId ? { entityId } : {}),
       ...(clubAccessMode ? { clubAccessMode } : {}),
       ...(clubAccessClubId ? { clubId: clubAccessClubId } : {}),
+      ...(pcuAlert ? { pcuAlert } : {}),
     });
 
   } catch (error) {

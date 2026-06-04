@@ -1,8 +1,5 @@
 import { UserType } from '@prisma/client';
-import {
-  getClubMyPageDisplayName,
-  parseClubDescriptionMeta,
-} from '@/lib/club/clubSidebarLabel';
+import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
 import { parseClubSubscriptionEndDate } from '@/lib/admin/clubSubscriptionStatus';
 import type { ClubProfilePickSource } from '@/lib/admin/pickClubForAdminProfile';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
@@ -41,9 +38,9 @@ export type ClubUserPanelPayload = {
   fullName: string;
   username: string;
   officialName: string;
-  clubname: string;
+  region: string;
   country: string;
-  city: string;
+  address: string;
   sport: string;
   dateStart: string;
   dateEnd: string | null;
@@ -73,15 +70,11 @@ export function buildClubUserPanelFields(
 ): ClubUserPanelPayload {
   const meta = parseClubDescriptionMeta(club.description);
   const fullName = [user.firstName, user.surname].filter(Boolean).join(' ').trim() || user.name;
-  const officialName = getClubMyPageDisplayName(club);
+  /** Official club name from create/edit club profile (`clubs_new.name`). */
+  const officialName = club.name?.trim() || '';
   const clubUsername = meta.username?.trim() || user.username;
   const region = cleanLocationPart(meta.region);
   const address = cleanLocationPart(meta.address);
-  const location = cleanLocationPart(club.location);
-  /** Locality shown as “Clubname” (region / town, not the form label “location”). */
-  const clubname = region || location || address || '';
-  /** City line — prefer address, then region, then club location. */
-  const city = address || region || location || '';
   const country = meta.country?.trim() || user.country?.trim() || '';
   const category = meta.category?.trim() ?? '';
   const sport = category && category !== 'Other' ? category : '';
@@ -100,9 +93,9 @@ export function buildClubUserPanelFields(
     fullName,
     username: clubUsername,
     officialName,
-    clubname,
+    region,
     country,
-    city,
+    address,
     sport,
     dateStart,
     dateEnd,

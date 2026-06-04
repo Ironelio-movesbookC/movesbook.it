@@ -34,7 +34,9 @@ import {
   Search
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { usePcuAlert } from '@/contexts/PcuAlertContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { fetchPcuAlert } from '@/lib/user/pcuAlertClient';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
 
 // Map language codes to flag file names
@@ -87,6 +89,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout, isAuthenticated, requireAuth, login } = useAuth();
+  const { showAlert } = usePcuAlert();
   const { currentLanguage, setLanguage, t, availableLanguages } = useLanguage();
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -222,11 +225,20 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
   // Get current language display code
   const currentLangDisplay = currentLanguage.toUpperCase();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
     setIsUserDropdownOpen(false);
     setIsMobileMenuOpen(false);
-    router.push('/');
+    const lang = user?.language || currentLanguage || 'en';
+    const alert = await fetchPcuAlert('logout', lang);
+    const finishLogout = () => {
+      logout();
+      router.push('/');
+    };
+    if (alert) {
+      showAlert(alert, finishLogout);
+    } else {
+      finishLogout();
+    }
   };
 
   const networkSearchScopeLabel = useMemo(() => {
@@ -660,6 +672,15 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
             : typeof data.clubId === 'string'
               ? data.clubId
               : undefined;
+        if (
+          data.pcuAlert &&
+          (data.pcuAlert.bodyHtml?.trim() || data.pcuAlert.title?.trim())
+        ) {
+          showAlert({
+            title: data.pcuAlert.title ?? '',
+            bodyHtml: data.pcuAlert.bodyHtml ?? '',
+          });
+        }
         login(data.token, data.user, redirectTo, {
           entityAccessMode,
           entityKind: entityKind as

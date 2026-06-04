@@ -1,7 +1,9 @@
 'use client';
 
 import Image from 'next/image';
-import { RefObject, useState } from 'react';
+import { RefObject, useEffect, useMemo, useState } from 'react';
+import { resolveProfileAccessDates } from '@/lib/admin/profileAccessDates';
+import type { PcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import {
   CalendarDays,
   CheckSquare,
@@ -46,6 +48,7 @@ export interface ClubsProfileData {
     e: string;
     status: string;
   }>;
+  pcuAccess?: PcuAccessSettings | null;
 }
 
 const PROFILE_SUBSCRIPTION_VERSION_OPTIONS = [
@@ -119,8 +122,21 @@ export default function AdminClubsUserProfilePanel({
   onClose,
 }: AdminClubsUserProfilePanelProps) {
   const countryCode = countryCodeFromName(profileData.country);
-  const [accessStart, setAccessStart] = useState('');
-  const [accessEnd, setAccessEnd] = useState('');
+  const resolvedAccessDates = useMemo(
+    () =>
+      resolveProfileAccessDates(
+        profileData.subscriptionRows,
+        profileData.pcuAccess,
+      ),
+    [profileData.subscriptionRows, profileData.pcuAccess],
+  );
+  const [accessStart, setAccessStart] = useState(resolvedAccessDates.accessStart);
+  const [accessEnd, setAccessEnd] = useState(resolvedAccessDates.accessEnd);
+
+  useEffect(() => {
+    setAccessStart(resolvedAccessDates.accessStart);
+    setAccessEnd(resolvedAccessDates.accessEnd);
+  }, [resolvedAccessDates.accessStart, resolvedAccessDates.accessEnd]);
 
   const allRowsSelected =
     filteredRows.length > 0 && filteredRows.every((r) => profileRowSelected.has(r.id));
@@ -412,8 +428,8 @@ export default function AdminClubsUserProfilePanel({
                   <th className="px-3 py-2 text-left font-semibold">Date Start</th>
                   <th className="px-3 py-2 text-left font-semibold">Date End</th>
                   <th className="px-3 py-2 text-left font-semibold">Version</th>
-                  <th className="px-3 py-2 text-left font-semibold">Username</th>
                   <th className="px-3 py-2 text-left font-semibold">Company name</th>
+                  <th className="px-3 py-2 text-left font-semibold">Username</th>
                   <th className="px-2 py-2 text-left font-semibold w-14">E</th>
                   <th className="px-3 py-2 text-left font-semibold">Status</th>
                 </tr>
@@ -452,8 +468,8 @@ export default function AdminClubsUserProfilePanel({
                       <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{row.dateStart}</td>
                       <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{row.dateEnd ?? '—'}</td>
                       <td className="px-3 py-2 border-t border-gray-300">{row.version}</td>
-                      <td className="px-3 py-2 border-t border-gray-300 font-medium">{row.username}</td>
                       <td className="px-3 py-2 border-t border-gray-300">{row.companyName || '—'}</td>
+                      <td className="px-3 py-2 border-t border-gray-300 font-medium">{row.username}</td>
                       <td className="px-2 py-2 border-t border-gray-300 text-gray-700">{row.e}</td>
                       <td className="px-3 py-2 border-t border-gray-300">
                         <span

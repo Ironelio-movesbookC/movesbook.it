@@ -137,7 +137,7 @@ function expandClubRows(
       primaryClubId: club.id,
       entityId: club.id,
       entityKind: 'club',
-      companyName: getClubMyPageDisplayName(club),
+      companyName: club.name?.trim() || getClubMyPageDisplayName(club),
       location: clubDisplayLocation(club),
       country: clubCountry(club, base.country),
       dateStart: club.createdAt.toISOString().slice(0, 10),

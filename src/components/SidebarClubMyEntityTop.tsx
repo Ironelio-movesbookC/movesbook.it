@@ -15,7 +15,7 @@ import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardS
 import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
-import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
+import { resolveManagedEntityDisplayImageUrl } from '@/lib/entity/resolveManagedEntityDisplayImage';
 
 type ClubEntity = {
   id?: string;
@@ -79,8 +79,11 @@ export default function SidebarClubMyEntityTop({
     clubMeta.category?.trim() ||
     (club?.description?.trim().startsWith('{') ? '' : club?.description?.trim()) ||
     '';
-  const entityLogoUrl = getLogoUrlFromEntityDescription(club?.description);
-  const logoUrl = entityLogoUrl ?? club?.imageUrl ?? userImageUrl;
+  const logoUrl = resolveManagedEntityDisplayImageUrl({
+    description: club?.description,
+    imageUrl: club?.imageUrl,
+    userImageUrl,
+  });
   const country = userCountry ?? fallbackCountry;
 
   return (

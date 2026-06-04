@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Users, UserPlus, X, Loader2 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
+import ManagedEntitySidebarAvatar from '@/components/entity/ManagedEntitySidebarAvatar';
 import { useAuth } from '@/hooks/useAuth';
 import { useEntityDirectAccessGuard } from '@/hooks/useEntityDirectAccessGuard';
 import {
@@ -29,6 +30,7 @@ interface CoachingGroup {
   id: string;
   name: string;
   description: string | null;
+  imageUrl?: string | null;
 }
 
 function MyCoachingGroupContent() {
@@ -159,8 +161,13 @@ function MyCoachingGroupContent() {
           <div className="w-80 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 h-full flex flex-col">
               <div className="text-center mb-8">
-                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                  <Users className="w-10 h-10 text-white" />
+                <div className="mx-auto mb-4 w-20 h-20">
+                  <ManagedEntitySidebarAvatar
+                    description={coachingGroup?.description}
+                    imageUrl={coachingGroup?.imageUrl}
+                    userImageUrl={user?.image}
+                    alt={coachingGroup?.name || 'Coaching group'}
+                  />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900">{coachingGroup?.name || 'Loading...'}</h2>
                 <p className="text-gray-600 text-sm mt-2">{coachingGroup?.description || 'Coaching Group'}</p>

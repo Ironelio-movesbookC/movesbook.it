@@ -204,6 +204,8 @@ type UserPcuControlPanelProps = {
   initialPcuAccess?: PcuAccessSettings;
   /** Tab shown first (history user page uses subscription / iPurchases). */
   defaultActiveTab?: TopTabId;
+  /** Profile tab: Admin Profile vs club/team/group/coach profile (from URL). */
+  defaultProfileSubTab?: 'admin' | 'entity';
   /** Segment for admin actions API (falls back to user.segment). */
   actionSegment?: string;
   /** Saved admin tab settings loaded from the server. */
@@ -228,6 +230,7 @@ export default function UserPcuControlPanel({
   profilePanel,
   initialPcuAccess,
   defaultActiveTab = 'profile',
+  defaultProfileSubTab = 'admin',
   actionSegment,
   initialPcuSettings = null,
   overviewHref,
@@ -239,7 +242,11 @@ export default function UserPcuControlPanel({
   const initialPcuHydratedRef = useRef(false);
   const vipBannerBlobRef = useRef<string | null>(null);
   const [activeTab, setActiveTab] = useState<TopTabId>(defaultActiveTab);
-  const [profileSubTab, setProfileSubTab] = useState<'admin' | 'entity'>('admin');
+  const [profileSubTab, setProfileSubTab] = useState<'admin' | 'entity'>(defaultProfileSubTab);
+
+  useEffect(() => {
+    setProfileSubTab(defaultProfileSubTab);
+  }, [user.userId, defaultProfileSubTab]);
   const initialAccessDates = resolvePcuAccessDates(user, subscriptionRows, initialPcuAccess);
   const [accessStart, setAccessStart] = useState(() => initialAccessDates.accessStart);
   const [accessEnd, setAccessEnd] = useState(() => initialAccessDates.accessEnd);
@@ -2273,18 +2280,12 @@ export default function UserPcuControlPanel({
     }
   }, [backHref, resolveActionUserIds, router, segmentForActions, user.fullname, user.username]);
 
-  const handleOpenProfile = () => {
-    if (user.dashboardPath) {
-      window.open(user.dashboardPath, '_blank', 'noopener,noreferrer');
-    }
-  };
-
   const handleAdminSettings = () => {
     // PCU Admin's settings is handled in-panel; keep routing for future deep-links if needed.
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto">
+    <div className="w-full min-w-0">
       <div className="bg-gray-200 border border-gray-300 rounded shadow-sm">
         <div className="flex items-center justify-between px-4 py-2 border-b border-gray-300">
           <div className="flex items-center gap-3">
@@ -2469,13 +2470,6 @@ export default function UserPcuControlPanel({
                 className="px-3 py-1.5 bg-black text-white text-sm rounded"
               >
                 BACK
-              </button>
-              <button
-                type="button"
-                onClick={handleOpenProfile}
-                className="px-3 py-1.5 bg-gray-600 text-white text-sm rounded"
-              >
-                Open user profile
               </button>
             </div>
 

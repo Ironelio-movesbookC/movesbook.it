@@ -15,6 +15,7 @@ export interface AuthUser {
   userType: string;
   country?: string | null;
   image?: string | null;
+  language?: string;
 }
 
 export function useAuth() {

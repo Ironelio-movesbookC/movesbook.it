@@ -7,6 +7,7 @@ import { ArrowLeft, User } from 'lucide-react';
 import { flagEmojiFromCountryName } from '@/lib/admin/countryFlag';
 import type { PcuPanelPayload } from '@/lib/admin/userPcuPanel';
 import type { PcuSettings } from '@/lib/admin/userPcuSettings';
+import { parseAlertMessagePreview } from '@/lib/admin/userPcuAlertMsg';
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
 
@@ -19,30 +20,6 @@ function toDateInputValue(iso: string | undefined): string {
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return '';
   return d.toISOString().slice(0, 10);
-}
-
-/** Split saved alert HTML into a red headline (first heading) and body for preview. */
-function parseAlertMessagePreview(html: string): { title: string; bodyHtml: string } {
-  const trimmed = html.trim();
-  if (!trimmed) return { title: '', bodyHtml: '' };
-
-  const headingMatch = trimmed.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i);
-  if (headingMatch) {
-    const title = headingMatch[1].replace(/<[^>]+>/g, '').trim();
-    const bodyHtml = trimmed.slice(headingMatch.index! + headingMatch[0].length).trim();
-    return { title, bodyHtml };
-  }
-
-  const pMatch = trimmed.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-  if (pMatch) {
-    const plain = pMatch[1].replace(/<[^>]+>/g, '').trim();
-    if (plain.length > 0 && plain.length < 120) {
-      const bodyHtml = trimmed.slice(pMatch.index! + pMatch[0].length).trim();
-      return { title: plain, bodyHtml };
-    }
-  }
-
-  return { title: '', bodyHtml: trimmed };
 }
 
 /** Parse "lat, lng" (comma or whitespace separated). */

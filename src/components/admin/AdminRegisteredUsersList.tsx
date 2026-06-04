@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
   ExternalLink,
@@ -22,6 +23,8 @@ import AdminClubUserPanelModal, {
 import AdminRegisteredUserGridCard from '@/components/admin/AdminRegisteredUserGridCard';
 import { groupRowsForAdminGrid } from '@/lib/admin/groupRegisteredUserGridCards';
 import { getDefaultMembershipSortOrder } from '@/lib/admin/networkSubscriptionHistory';
+import { buildPcuHistoryUserUrl } from '@/lib/admin/pcuHistoryUserUrl';
+import SuperAdminPasswordConfirmModal from '@/components/admin/SuperAdminPasswordConfirmModal';
 
 export type AdminUserSegment = 'all' | 'single-user' | 'coaches' | 'groups' | 'teams' | 'clubs';
 
@@ -59,9 +62,24 @@ interface ProfilePayload {
     tagged: boolean;
     favouritePriority: FavouritePriority;
   };
+  pcuAccess?: {
+    accessStartIso: string;
+    accessEndIso: string;
+    suspendAccessControl: boolean;
+    suspend: boolean;
+  };
 }
 
 type ActionTarget = { id: string; email: string; username: string; label: string };
+
+type SubscriptionDeleteTarget = {
+  userId: string;
+  periodId: string;
+  entityId?: string | null;
+  dateStart: string;
+  dateEnd: string | null;
+  label: string;
+};
 
 interface RowUser {
   rowKey: string;
@@ -87,6 +105,21 @@ interface RowUser {
 
 function rowListKey(r: RowUser): string {
   return r.rowKey || r.id;
+}
+
+function periodIdFromListRow(r: RowUser): string {
+  const m = r.rowKey.match(/-period-(.+)$/);
+  if (m?.[1]) return m[1];
+  return `current-${r.rowKey}`;
+}
+
+function subscriptionDeleteLabel(
+  displayName: string,
+  dateStart: string,
+  dateEnd: string | null,
+): string {
+  const range = dateEnd ? `${dateStart} – ${dateEnd}` : dateStart;
+  return `${displayName} (${range})`;
 }
 
 function CountryFlagCell({ country }: { country: string | null | undefined }) {
@@ -117,6 +150,7 @@ const isDataUrl = (src?: string | null) => typeof src === 'string' && src.starts
 type MembershipTab = 'lastPerUser' | 'current' | 'last' | 'all';
 
 type LoginFilter = 'all' | 'active7' | 'active24h' | 'never';
+type SubDateFieldFilter = 'dateStart' | 'dateEnd';
 
 interface FilterState {
   country: string;
@@ -124,9 +158,7 @@ interface FilterState {
   version: string;
   userTypeCategory: string;
   login: LoginFilter;
-  subDay: string;
-  subMonth: string;
-  subYear: string;
+  subDateField: SubDateFieldFilter;
   rangeFrom: string;
   rangeTo: string;
 }
@@ -137,9 +169,7 @@ const EMPTY_FILTERS: FilterState = {
   version: '',
   userTypeCategory: '',
   login: 'all',
-  subDay: '',
-  subMonth: '',
-  subYear: '',
+  subDateField: 'dateStart',
   rangeFrom: '',
   rangeTo: '',
 };
@@ -166,40 +196,6 @@ const LOGIN_OPTIONS: { value: LoginFilter; label: string }[] = [
   { value: 'active24h', label: 'Seen in 24h' },
   { value: 'active7', label: 'Seen in 7 days' },
   { value: 'never', label: 'Never logged in' },
-];
-
-const MONTH_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'select' },
-  ...[
-    'jan',
-    'feb',
-    'mar',
-    'apr',
-    'may',
-    'jun',
-    'jul',
-    'aug',
-    'sep',
-    'oct',
-    'nov',
-    'dec',
-  ].map((label, i) => ({ value: String(i + 1), label })),
-];
-
-const DAY_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'select' },
-  ...Array.from({ length: 31 }, (_, i) => ({
-    value: String(i + 1),
-    label: String(i + 1),
-  })),
-];
-
-const YEAR_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'select' },
-  ...Array.from({ length: 2026 - 1990 + 1 }, (_, i) => {
-    const y = 1990 + i;
-    return { value: String(y), label: String(y) };
-  }),
 ];
 
 const VERSION_BY_SEGMENT: Record<AdminUserSegment, string[]> = {
@@ -323,6 +319,7 @@ export default function AdminRegisteredUsersList({
   roleTitle,
   historicalSubtitle,
 }: AdminRegisteredUsersListProps) {
+  const router = useRouter();
   const [membershipTab, setMembershipTab] = useState<MembershipTab>('all');
   const [orderBy, setOrderBy] = useState<string>(() => getDefaultMembershipSortOrder('all'));
   const [searchDraft, setSearchDraft] = useState('');
@@ -365,6 +362,8 @@ export default function AdminRegisteredUsersList({
   const [msgSending, setMsgSending] = useState(false);
   const [msgError, setMsgError] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
+  const [deleteSubModalOpen, setDeleteSubModalOpen] = useState(false);
+  const [deleteSubTargets, setDeleteSubTargets] = useState<SubscriptionDeleteTarget[]>([]);
   const [profileTagged, setProfileTagged] = useState(false);
   const [profileFavouritePriority, setProfileFavouritePriority] =
     useState<FavouritePriority>('not_selected');
@@ -384,7 +383,11 @@ export default function AdminRegisteredUsersList({
     isAllSegment && profileData
       ? inferProfileSegmentFromUserType(profileData.userType)
       : segment;
-  const profileIsClubsSegment = profileSegment === 'clubs';
+  const profileUsesEntitySubscriptionPanel =
+    profileSegment === 'clubs' ||
+    profileSegment === 'teams' ||
+    profileSegment === 'groups' ||
+    profileSegment === 'coaches';
 
   const gridCardGroups = useMemo(() => groupRowsForAdminGrid(rows), [rows]);
 
@@ -462,11 +465,11 @@ export default function AdminRegisteredUsersList({
         params.set('userTypeCategory', appliedFilters.userTypeCategory);
       }
       if (appliedFilters.login !== 'all') params.set('login', appliedFilters.login);
-      if (appliedFilters.subDay) params.set('subDay', appliedFilters.subDay);
-      if (appliedFilters.subMonth) params.set('subMonth', appliedFilters.subMonth);
-      if (appliedFilters.subYear) params.set('subYear', appliedFilters.subYear);
-      if (appliedFilters.rangeFrom) params.set('createdFrom', appliedFilters.rangeFrom);
-      if (appliedFilters.rangeTo) params.set('createdTo', appliedFilters.rangeTo);
+      if (appliedFilters.subDateField) {
+        params.set('subDateField', appliedFilters.subDateField);
+      }
+      if (appliedFilters.rangeFrom) params.set('subRangeFrom', appliedFilters.rangeFrom);
+      if (appliedFilters.rangeTo) params.set('subRangeTo', appliedFilters.rangeTo);
       params.set('membership', membershipTab);
 
       const res = await fetch(`/api/admin/registered-users?${params}`, {
@@ -576,6 +579,59 @@ export default function AdminRegisteredUsersList({
     }
     return targets;
   }, [resolveActionTargets]);
+
+  const resolveSubscriptionDeleteTargets = useCallback((): SubscriptionDeleteTarget[] => {
+    const out: SubscriptionDeleteTarget[] = [];
+    const seen = new Set<string>();
+
+    const push = (target: SubscriptionDeleteTarget) => {
+      const key = `${target.userId}:${target.periodId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(target);
+    };
+
+    for (const r of rows.filter((row) => selected.has(rowListKey(row)))) {
+      push({
+        userId: r.id,
+        periodId: periodIdFromListRow(r),
+        entityId: r.entityId ?? null,
+        dateStart: r.dateStart,
+        dateEnd: r.dateEnd,
+        label: subscriptionDeleteLabel(r.displayName || r.username, r.dateStart, r.dateEnd),
+      });
+    }
+
+    if (profileState === 'ready' && profileData && profileRowSelected.size > 0) {
+      for (const row of profileData.subscriptionRows.filter((r) => profileRowSelected.has(r.id))) {
+        push({
+          userId: profileData.id,
+          periodId: row.id,
+          entityId: null,
+          dateStart: row.dateStart,
+          dateEnd: row.dateEnd,
+          label: subscriptionDeleteLabel(
+            profileData.fullName || profileData.username,
+            row.dateStart,
+            row.dateEnd,
+          ),
+        });
+      }
+    }
+
+    return out;
+  }, [selected, rows, profileState, profileData, profileRowSelected]);
+
+  const requireSubscriptionDeleteTargets = useCallback((): SubscriptionDeleteTarget[] | null => {
+    const targets = resolveSubscriptionDeleteTargets();
+    if (targets.length === 0) {
+      window.alert(
+        'Select at least one subscription (checkbox in the list or in the subscription table of the profile panel).',
+      );
+      return null;
+    }
+    return targets;
+  }, [resolveSubscriptionDeleteTargets]);
 
   const handlePrint = useCallback(() => {
     window.print();
@@ -784,59 +840,6 @@ export default function AdminRegisteredUsersList({
     [profileData?.id, profileTagged, profileFavouritePriority],
   );
 
-  const deleteSubscriptionsForTargets = useCallback(
-    async (targets: ActionTarget[], closeProfileIfDeleted: boolean) => {
-      const names = targets.map((t) => t.label).slice(0, 5).join(', ');
-      const more = targets.length > 5 ? ` and ${targets.length - 5} more` : '';
-      const ok = window.confirm(
-        `Delete ${targets.length} subscription(s)?\n\n${names}${more}\n\nThis permanently removes the user account(s) from Movesbook. This cannot be undone.`,
-      );
-      if (!ok) return;
-
-      const token = localStorage.getItem('adminToken');
-      if (!token) {
-        window.alert('Admin session not found. Please log in again.');
-        return;
-      }
-      setActionBusy(true);
-      try {
-        const res = await fetch('/api/admin/registered-users/actions', {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            segment,
-            userIds: targets.map((t) => t.id),
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.error || 'Failed to delete subscriptions');
-
-        const deleted = typeof data.deleted === 'number' ? data.deleted : 0;
-        setSelected(new Set());
-        setProfileRowSelected(new Set());
-        if (closeProfileIfDeleted && profileData && targets.some((t) => t.id === profileData.id)) {
-          closeUserProfile();
-        }
-        await load();
-        window.alert(`Deleted ${deleted} user subscription(s).`);
-      } catch (e: unknown) {
-        window.alert(e instanceof Error ? e.message : 'Failed to delete subscriptions');
-      } finally {
-        setActionBusy(false);
-      }
-    },
-    [segment, profileData, closeUserProfile, load],
-  );
-
-  const handleDeleteSubscriptions = useCallback(async () => {
-    const targets = requireActionTargets();
-    if (!targets) return;
-    await deleteSubscriptionsForTargets(targets, true);
-  }, [requireActionTargets, deleteSubscriptionsForTargets]);
-
   const handleProfileSendMail = useCallback(() => {
     if (!profileActionTarget?.email) {
       window.alert('This user has no email address.');
@@ -920,6 +923,15 @@ export default function AdminRegisteredUsersList({
                 favouritePriority: normalizeFavouritePriority(data.profilePanel.favouritePriority),
               }
             : undefined,
+          pcuAccess:
+            data.pcuAccess && typeof data.pcuAccess === 'object'
+              ? {
+                  accessStartIso: String(data.pcuAccess.accessStartIso ?? ''),
+                  accessEndIso: String(data.pcuAccess.accessEndIso ?? ''),
+                  suspendAccessControl: Boolean(data.pcuAccess.suspendAccessControl),
+                  suspend: Boolean(data.pcuAccess.suspend),
+                }
+              : undefined,
         });
         setProfileTagged(Boolean(data.profilePanel?.tagged));
         setProfileFavouritePriority(
@@ -933,6 +945,75 @@ export default function AdminRegisteredUsersList({
     },
     [segment, searchApplied],
   );
+
+  const executeDeleteSubscriptions = useCallback(
+    async (targets: SubscriptionDeleteTarget[], superAdminPassword: string) => {
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        window.alert('Admin session not found. Please log in again.');
+        return;
+      }
+
+      let adminUsername: string | undefined;
+      try {
+        const raw = localStorage.getItem('adminUser');
+        if (raw) {
+          const parsed = JSON.parse(raw) as { username?: string; email?: string };
+          adminUsername = parsed.username?.trim() || parsed.email?.trim();
+        }
+      } catch {
+        adminUsername = undefined;
+      }
+
+      setActionBusy(true);
+      try {
+        const res = await fetch('/api/admin/registered-users/actions', {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            segment,
+            superAdminPassword,
+            adminUsername,
+            subscriptions: targets.map((t) => ({
+              userId: t.userId,
+              periodId: t.periodId,
+              entityId: t.entityId,
+              dateStart: t.dateStart,
+              dateEnd: t.dateEnd,
+            })),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to delete subscriptions');
+
+        const deleted = typeof data.deleted === 'number' ? data.deleted : 0;
+        setSelected(new Set());
+        setProfileRowSelected(new Set());
+        setDeleteSubModalOpen(false);
+        setDeleteSubTargets([]);
+        if (profileData && targets.some((t) => t.userId === profileData.id)) {
+          await openUserProfile(profileData.id);
+        }
+        await load();
+        window.alert(`Deleted ${deleted} subscription(s).`);
+      } catch (e: unknown) {
+        window.alert(e instanceof Error ? e.message : 'Failed to delete subscriptions');
+      } finally {
+        setActionBusy(false);
+      }
+    },
+    [segment, profileData, load, openUserProfile],
+  );
+
+  const handleDeleteSubscriptions = useCallback(() => {
+    const targets = requireSubscriptionDeleteTargets();
+    if (!targets) return;
+    setDeleteSubTargets(targets);
+    setDeleteSubModalOpen(true);
+  }, [requireSubscriptionDeleteTargets]);
 
   const closeClubUserPanel = useCallback(() => {
     setClubPanelOpen(false);
@@ -974,9 +1055,9 @@ export default function AdminRegisteredUsersList({
           fullName: String(panel.fullName ?? ''),
           username: String(panel.username ?? ''),
           officialName: String(panel.officialName ?? ''),
-          clubname: String(panel.clubname ?? ''),
+          region: String(panel.region ?? panel.clubname ?? ''),
           country: String(panel.country ?? ''),
-          city: String(panel.city ?? ''),
+          address: String(panel.address ?? panel.city ?? ''),
           sport: String(panel.sport ?? ''),
           dateStart: String(panel.dateStart ?? ''),
           dateEnd: panel.dateEnd != null && panel.dateEnd !== '' ? String(panel.dateEnd) : null,
@@ -1003,12 +1084,50 @@ export default function AdminRegisteredUsersList({
     [searchApplied],
   );
 
-  const handleClubPanelControlPanel = useCallback(() => {
+  const handleClubPanelSubscriptions = useCallback(() => {
     if (!clubPanelUserId) return;
     const clubId = clubPanelData?.clubId;
     closeClubUserPanel();
     void openUserProfile(clubPanelUserId, clubId);
   }, [clubPanelUserId, clubPanelData?.clubId, closeClubUserPanel, openUserProfile]);
+
+  const handleClubPanelControlPanel = useCallback(() => {
+    if (!clubPanelUserId) return;
+    const clubId = clubPanelData?.clubId;
+    closeClubUserPanel();
+    router.push(
+      buildPcuHistoryUserUrl(clubPanelUserId, {
+        scope: segment === 'all' ? 'clubs' : segment,
+        q: searchApplied.trim() || null,
+        clubId: clubId ?? null,
+      }),
+    );
+  }, [clubPanelUserId, clubPanelData?.clubId, closeClubUserPanel, router, segment, searchApplied]);
+
+  const openGridPcuHistoryProfile = useCallback(
+    (
+      userId: string,
+      userType: string,
+      opts: {
+        tab: string;
+        profileSubTab?: 'admin' | 'entity';
+        clubId?: string | null;
+      },
+    ) => {
+      const profileSegment = inferProfileSegmentFromUserType(userType);
+      router.push(
+        buildPcuHistoryUserUrl(userId, {
+          segment: profileSegment,
+          scope: segment === 'all' ? profileSegment : segment,
+          q: searchApplied.trim() || undefined,
+          tab: opts.tab,
+          profileSubTab: opts.profileSubTab,
+          clubId: opts.clubId ?? undefined,
+        }),
+      );
+    },
+    [router, segment, searchApplied],
+  );
 
   const filteredProfileSubscriptionRows = useMemo(() => {
     if (!profileData?.subscriptionRows?.length) return [];
@@ -1052,13 +1171,21 @@ export default function AdminRegisteredUsersList({
     }
   }, [profileState]);
 
+  const profilePanelOpen = profileState !== 'idle';
+
   return (
-    <div className="max-w-[1800px] mx-auto px-4 sm:px-6 py-6 text-gray-900">
-      {!(profileState !== 'idle' && profileIsClubsSegment) && (
+    <div
+      className={
+        profilePanelOpen
+          ? 'w-full min-w-0 px-0 py-2 text-gray-900'
+          : 'max-w-[1800px] mx-auto px-4 sm:px-6 py-6 text-gray-900'
+      }
+    >
+      {!(profileState !== 'idle' && profileUsesEntitySubscriptionPanel) && (
         <>
           <div className="bg-[#b8b8b8] px-4 py-3 border border-gray-400">
             <h1 className="text-lg sm:text-xl font-semibold text-gray-800">
-              Details of subscription{profileIsClubsSegment ? ' · ' : ' — '}
+              Details of subscription{profileUsesEntitySubscriptionPanel ? ' · ' : ' — '}
               <span className="text-red-600">{roleTitle}</span>
             </h1>
           </div>
@@ -1091,7 +1218,7 @@ export default function AdminRegisteredUsersList({
             </div>
           )}
 
-          {profileState === 'ready' && profileData && profileIsClubsSegment && (
+          {profileState === 'ready' && profileData && profileUsesEntitySubscriptionPanel && (
             <AdminClubsUserProfilePanel
               profileData={profileData}
               historicalSubtitle={historicalSubtitle}
@@ -1113,7 +1240,7 @@ export default function AdminRegisteredUsersList({
             />
           )}
 
-          {profileState === 'ready' && profileData && !profileIsClubsSegment && (
+          {profileState === 'ready' && profileData && !profileUsesEntitySubscriptionPanel && (
             <div className="bg-white border-x border-b border-gray-300">
               <div className="bg-[#b8b8b8] px-4 py-3 border-b border-gray-400">
                 <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
@@ -1547,44 +1674,21 @@ export default function AdminRegisteredUsersList({
                     </FilterRow>
                   )}
 
-                  <div className="flex flex-wrap items-center gap-2 justify-between">
-                    <span className="font-medium text-gray-900 shrink-0">Subscription</span>
-                    <div className="flex flex-wrap gap-1 justify-end">
-                      <select
-                        value={draftFilters.subDay}
-                        onChange={(e) => setDraftFilters((f) => ({ ...f, subDay: e.target.value }))}
-                        className="border border-gray-500 bg-white px-1 py-1 text-xs sm:text-sm"
-                      >
-                        {DAY_OPTIONS.map((d) => (
-                          <option key={d.value || 'd0'} value={d.value}>
-                            {d.label}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        value={draftFilters.subMonth}
-                        onChange={(e) => setDraftFilters((f) => ({ ...f, subMonth: e.target.value }))}
-                        className="border border-gray-500 bg-white px-1 py-1 text-xs sm:text-sm"
-                      >
-                        {MONTH_OPTIONS.map((m) => (
-                          <option key={m.value || 'm0'} value={m.value}>
-                            {m.label}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        value={draftFilters.subYear}
-                        onChange={(e) => setDraftFilters((f) => ({ ...f, subYear: e.target.value }))}
-                        className="border border-gray-500 bg-white px-1 py-1 text-xs sm:text-sm"
-                      >
-                        {YEAR_OPTIONS.map((y) => (
-                          <option key={y.value || 'y0'} value={y.value}>
-                            {y.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+                  <FilterRow label="Subscription">
+                    <select
+                      value={draftFilters.subDateField}
+                      onChange={(e) =>
+                        setDraftFilters((f) => ({
+                          ...f,
+                          subDateField: e.target.value as SubDateFieldFilter,
+                        }))
+                      }
+                      className="w-full max-w-[220px] border border-gray-500 bg-white px-2 py-1.5 text-sm ml-auto"
+                    >
+                      <option value="dateStart">Date start</option>
+                      <option value="dateEnd">Date end</option>
+                    </select>
+                  </FilterRow>
 
                   <div className="space-y-1">
                     <span className="font-medium text-gray-900">Datarange</span>
@@ -1779,10 +1883,20 @@ export default function AdminRegisteredUsersList({
             <AdminRegisteredUserGridCard
               key={group.userId}
               group={group}
-              isAllSegment={isAllSegment}
-              isClubsSegment={isClubsSegment}
-              onOpenClubPanel={(userId, clubId) => void openClubUserPanel(userId, clubId)}
-              onOpenUserProfile={(userId, entityId) => void openUserProfile(userId, entityId)}
+              onOpenAdminProfile={(userId, userType, clubId) =>
+                openGridPcuHistoryProfile(userId, userType, {
+                  tab: 'profile',
+                  profileSubTab: 'admin',
+                  clubId,
+                })
+              }
+              onOpenEntityProfile={(userId, userType, entityId) =>
+                openGridPcuHistoryProfile(userId, userType, {
+                  tab: 'profile',
+                  profileSubTab: 'entity',
+                  clubId: entityId,
+                })
+              }
             />
           ))}
         </div>
@@ -1797,6 +1911,11 @@ export default function AdminRegisteredUsersList({
                     Type of User
                   </th>
                 )}
+                {showCompanyColumn && (
+                  <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80] min-w-[6rem]">
+                    Admin username
+                  </th>
+                )}
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Full name</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Country</th>
                 <th className="px-2 py-2 text-center font-semibold border-r border-[#3d7a80] w-14">Flag</th>
@@ -1804,12 +1923,12 @@ export default function AdminRegisteredUsersList({
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Date Start</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Date End</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Version</th>
-                <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Username</th>
                 {showCompanyColumn && (
                   <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80] min-w-[8rem]">
                     Company name
                   </th>
                 )}
+                <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Username</th>
                 <th className="px-2 py-2 text-left font-semibold border-r border-[#3d7a80] w-14">E</th>
                 <th className="px-3 py-2 text-left font-semibold border-r border-[#3d7a80]">Status</th>
                 <th className="w-12 px-2 py-2 text-center font-semibold"> </th>
@@ -1819,7 +1938,7 @@ export default function AdminRegisteredUsersList({
               {rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={(showCompanyColumn ? 13 : 12) + (isAllSegment ? 1 : 0)}
+                    colSpan={(showCompanyColumn ? 14 : 12) + (isAllSegment ? 1 : 0)}
                     className="px-4 py-10 text-center text-gray-500 bg-white"
                   >
                     No registered users in this category yet.
@@ -1844,6 +1963,11 @@ export default function AdminRegisteredUsersList({
                         {typeBadgeLabel(r.userType as UserType)}
                       </td>
                     )}
+                    {showCompanyColumn && (
+                      <td className="px-3 py-2 border-t border-gray-300 font-medium">
+                        {r.accountUsername?.trim() || r.username || '—'}
+                      </td>
+                    )}
                     <td className="px-3 py-2 border-t border-gray-300 font-medium">{r.displayName || '—'}</td>
                     <td className="px-3 py-2 border-t border-gray-300">{r.country?.trim() || '—'}</td>
                     <CountryFlagCell country={r.country} />
@@ -1853,6 +1977,13 @@ export default function AdminRegisteredUsersList({
                       {r.dateEnd ?? '—'}
                     </td>
                     <td className="px-3 py-2 border-t border-gray-300">{r.version}</td>
+                    {showCompanyColumn && (
+                      <td className="px-3 py-2 border-t border-gray-300">
+                        {isAllSegment && r.userType === 'ATHLETE'
+                          ? ''
+                          : r.companyName || '—'}
+                      </td>
+                    )}
                     <td className="px-3 py-2 border-t border-gray-300 font-medium">
                       {isClubsSegment || (isAllSegment && isClubUserType(r.userType)) ? (
                         <button
@@ -1866,13 +1997,6 @@ export default function AdminRegisteredUsersList({
                         r.username
                       )}
                     </td>
-                    {showCompanyColumn && (
-                      <td className="px-3 py-2 border-t border-gray-300">
-                        {isAllSegment && r.userType === 'ATHLETE'
-                          ? ''
-                          : r.companyName || '—'}
-                      </td>
-                    )}
                     <td className="px-2 py-2 border-t border-gray-300 text-gray-700">{r.amount}</td>
                     <td className="px-3 py-2 border-t border-gray-300">
                       <span className={clubAdminStatusClassName(r.statusTone)}>{r.status}</span>
@@ -1912,8 +2036,39 @@ export default function AdminRegisteredUsersList({
           data={clubPanelData}
           onClose={closeClubUserPanel}
           onControlPanel={handleClubPanelControlPanel}
+          onSubscriptions={handleClubPanelSubscriptions}
         />
       )}
+
+      <SuperAdminPasswordConfirmModal
+        isOpen={deleteSubModalOpen}
+        title="Delete subscriptions"
+        confirmLabel="Delete"
+        description={
+          <>
+            <p className="mb-2">
+              You are about to permanently delete{' '}
+              <strong>{deleteSubTargets.length}</strong> checked subscription
+              {deleteSubTargets.length === 1 ? '' : 's'}. This cannot be undone.
+            </p>
+            <ul className="list-disc pl-5 max-h-32 overflow-y-auto text-gray-800">
+              {deleteSubTargets.slice(0, 8).map((t) => (
+                <li key={`${t.userId}-${t.periodId}`}>{t.label}</li>
+              ))}
+              {deleteSubTargets.length > 8 ? (
+                <li>…and {deleteSubTargets.length - 8} more</li>
+              ) : null}
+            </ul>
+            <p className="mt-3 text-gray-600">Enter the super admin password to confirm.</p>
+          </>
+        }
+        onClose={() => {
+          if (actionBusy) return;
+          setDeleteSubModalOpen(false);
+          setDeleteSubTargets([]);
+        }}
+        onVerified={(password) => executeDeleteSubscriptions(deleteSubTargets, password)}
+      />
 
       {msgModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
