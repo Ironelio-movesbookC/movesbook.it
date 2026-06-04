@@ -15,6 +15,10 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useMyPageData } from '@/app/my-page/hooks/useMyPageData';
 import { useMyPageHandlers } from '@/app/my-page/hooks/useMyPageHandlers';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import {
+  useEntityDirectAccessGuard,
+  useEntityDirectAccessLockedForKind,
+} from '@/hooks/useEntityDirectAccessGuard';
 import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLegacyBanner';
 import { profileToBannerProfile } from '@/components/layout/StandardPageBanners';
 
@@ -34,6 +38,8 @@ export default function ClubSettingsLayout({ children }: { children: React.React
   const { user, loading } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
+  const clubDirectAccessLocked = useEntityDirectAccessLockedForKind('club');
+  useEntityDirectAccessGuard(!loading && !!user);
 
   const {
     clubProfiles,
@@ -124,6 +130,7 @@ export default function ClubSettingsLayout({ children }: { children: React.React
           <aside className="w-80 flex-shrink-0 sticky top-0 self-start">
             <DarkSidebar
               userType={userType}
+              hideMyPageTab={clubDirectAccessLocked && isClubAccount}
               entities={
                 isClubAccount ? clubProfiles :
                 userType === 'TEAM_MANAGER' ? teams :

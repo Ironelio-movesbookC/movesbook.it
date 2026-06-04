@@ -118,10 +118,10 @@ export function persistOperatorNavContext(
 export function resolveOperatorNavVariant(pathname: string | null): OperatorNavVariant {
   const fromPath = parseOperatorSubNavFromPath(pathname);
   const fromSession = readOperatorNavVariantFromSession();
-  if (fromPath && fromPath.variant.kind !== 'standard') {
+  if (fromPath) {
     return {
       ...fromPath.variant,
-      viewedStaffKind: fromSession.viewedStaffKind ?? fromPath.variant.viewedStaffKind,
+      viewedStaffKind: fromPath.variant.viewedStaffKind ?? fromSession.viewedStaffKind,
     };
   }
   return fromSession;

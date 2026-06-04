@@ -87,6 +87,10 @@ import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import AthleteMyPageRightSidebarExtras from '@/components/dashboard/AthleteMyPageRightSidebarExtras';
 import AthleteMyClubRightSidebar from '@/components/dashboard/AthleteMyClubRightSidebar';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import {
+  getEntityDirectAccessLock,
+  getEntityDirectAccessProfilePath,
+} from '@/lib/entity/entityDirectAccessSession';
 
 function heroBannerStripBgUrl(p: AthleteLegacyBannerProfile | null): string {
   return getHeroBannerDisplayUrl(p);
@@ -174,6 +178,11 @@ function AthleteDashboardContent() {
   useEffect(() => {
     if (user && !['ATHLETE', 'ADMIN'].includes(user.userType)) {
       if (isClubAccountUserType(user.userType)) {
+        const lock = getEntityDirectAccessLock();
+        if (lock) {
+          router.replace(getEntityDirectAccessProfilePath(lock));
+          return;
+        }
         const q = typeof window !== 'undefined' ? window.location.search.replace(/^\?/, '') : '';
         router.replace(q ? `/club/dashboard?${q}` : '/club/dashboard');
       } else {

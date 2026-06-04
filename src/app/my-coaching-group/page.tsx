@@ -6,6 +6,11 @@ import { Users, UserPlus, X, Loader2 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import { useAuth } from '@/hooks/useAuth';
+import { useEntityDirectAccessGuard } from '@/hooks/useEntityDirectAccessGuard';
+import {
+  getEntityDirectAccessLock,
+  getEntityDirectAccessProfilePath,
+} from '@/lib/entity/entityDirectAccessSession';
 
 interface CoachingGroupMember {
   id: string;
@@ -30,6 +35,7 @@ function MyCoachingGroupContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  useEntityDirectAccessGuard(!authLoading && !!user);
   const groupId = searchParams?.get('groupId');
 
   const [coachingGroup, setCoachingGroup] = useState<CoachingGroup | null>(null);
@@ -74,14 +80,22 @@ function MyCoachingGroupContent() {
 
   useEffect(() => {
     if (authLoading || !user) return;
+    const lock = getEntityDirectAccessLock();
     if (!groupId) {
-      // If no groupId selected, redirect to My Page to select a coaching group
+      if (lock?.kind === 'coach') {
+        router.replace(getEntityDirectAccessProfilePath(lock));
+        return;
+      }
       if (user?.userType === 'COACH') {
-        router.push('/my-page');
+        router.replace('/coach/dashboard');
         return;
       }
       setLoading(false);
     } else {
+      if (lock?.kind === 'coach' && groupId !== lock.entityId) {
+        router.replace(getEntityDirectAccessProfilePath(lock));
+        return;
+      }
       loadCoachingGroupData();
     }
   }, [groupId, user, router, authLoading, loadCoachingGroupData]);

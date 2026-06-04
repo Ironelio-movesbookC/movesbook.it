@@ -38,6 +38,26 @@ function subscriptionRowToUserId(rowId: string): string {
   return rowId.startsWith(prefix) ? rowId.slice(prefix.length) : rowId;
 }
 
+/** Turn Resend SDK/API errors into actionable admin messages. */
+function formatResendSendError(message: string): string {
+  if (message === 'Unable to fetch data. The request could not be resolved.') {
+    return (
+      'Could not reach the Resend email API. Check your internet connection and firewall/proxy, ' +
+      'confirm RESEND_API_KEY in .env, then restart the dev server (npm run dev).'
+    );
+  }
+  if (message.includes('verify a domain')) {
+    return (
+      `${message} Add RESEND_FROM_EMAIL in .env using an address on your verified Resend domain ` +
+      '(see https://resend.com/domains).'
+    );
+  }
+  if (message === 'API key is invalid') {
+    return 'RESEND_API_KEY in .env is invalid. Create a new key at https://resend.com/api-keys and restart the dev server.';
+  }
+  return message;
+}
+
 type ResolvedUsers =
   | { ok: false; error: string; status: number }
   | {
@@ -139,15 +159,20 @@ export async function POST(request: NextRequest) {
         html: htmlBody,
       });
       if (result.error) {
-        failed.push({ id: user.id, email: destination, error: result.error.message });
+        failed.push({
+          id: user.id,
+          email: destination,
+          error: formatResendSendError(result.error.message),
+        });
       } else {
         sent.push(user.id);
       }
     } catch (e: unknown) {
+      const raw = e instanceof Error ? e.message : 'Send failed';
       failed.push({
         id: user.id,
         email: destination,
-        error: e instanceof Error ? e.message : 'Send failed',
+        error: formatResendSendError(raw),
       });
     }
   }

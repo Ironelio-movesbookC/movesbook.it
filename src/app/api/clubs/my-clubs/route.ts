@@ -6,6 +6,7 @@ import {
   isClubCreatedFromForm,
   parseClubDescriptionMeta,
 } from '@/lib/club/clubSidebarLabel';
+import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,6 +77,7 @@ export async function GET(request: NextRequest) {
         directAccess: meta.directAccess ?? null,
         sidebarLabel: formatMyClubsSidebarLabel(club),
         hasClubProfile: isClubCreatedFromForm(club),
+        imageUrl: getLogoUrlFromEntityDescription(club.description),
         admin: club.admin
           ? {
               username: club.admin.username,

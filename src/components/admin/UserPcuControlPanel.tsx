@@ -7,9 +7,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { CalendarDays, CreditCard, Mail, User, X } from 'lucide-react';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
 import { COUNTRIES_WITH_CODES } from '@/lib/news/countries';
-import AdminPcuDatePicker, { isoToMmDdYyyy, mmDdYyyyToIso, parseIsoDate } from '@/components/admin/AdminPcuDatePicker';
+import AdminPcuDatePicker, {
+  isoToMmDdYyyy,
+  mmDdYyyyToIso,
+  parseIsoDate,
+  toIsoDate,
+} from '@/components/admin/AdminPcuDatePicker';
 import NewsCategoriesMultiSelect from '@/components/admin/NewsCategoriesMultiSelect';
 import { getAdminBearerToken } from '@/lib/admin/clientAdminAuth';
+import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import {
   createNewsCategoriesState,
   createVipCountriesState,
@@ -176,6 +182,20 @@ function resolvePcuAccessDates(
   };
 }
 
+/** Extended expiration = actual subscription end + N days (-1 = no auto date). */
+function computeExtendedExpirationIso(actualIso: string, daysStr: string): string {
+  const actual = actualIso.trim();
+  const daysRaw = daysStr.trim();
+  if (!actual || actual.startsWith('0000') || !daysRaw || daysRaw === '-1') return '';
+  const days = Number(daysRaw);
+  if (!Number.isFinite(days) || days < 0) return '';
+  const base = parseIsoDate(actual);
+  if (!base) return '';
+  const next = new Date(base);
+  next.setDate(next.getDate() + days);
+  return toIsoDate(next);
+}
+
 type UserPcuControlPanelProps = {
   user: PcuPanelPayload;
   backHref: string;
@@ -216,6 +236,8 @@ export default function UserPcuControlPanel({
   const segmentForActions = resolveRegisteredUserActionSegment(actionSegment, user.segment);
   const loadedPcuSettingsRef = useRef<PcuSettings | null>(null);
   const reloadPcuFromServerRef = useRef<(pcu: PcuSettings | undefined) => void>(() => {});
+  const initialPcuHydratedRef = useRef(false);
+  const vipBannerBlobRef = useRef<string | null>(null);
   const [activeTab, setActiveTab] = useState<TopTabId>(defaultActiveTab);
   const [profileSubTab, setProfileSubTab] = useState<'admin' | 'entity'>('admin');
   const initialAccessDates = resolvePcuAccessDates(user, subscriptionRows, initialPcuAccess);
@@ -308,6 +330,8 @@ export default function UserPcuControlPanel({
   const [vipUsername, setVipUsername] = useState(() => user.username || '');
   const [vipYoutubeUrl, setVipYoutubeUrl] = useState('');
   const [vipBannerImagePath, setVipBannerImagePath] = useState<string | null>(null);
+  const [vipBannerPreviewBlob, setVipBannerPreviewBlob] = useState<string | null>(null);
+  const [vipBannerVersion, setVipBannerVersion] = useState(0);
   const [vipBannerUploading, setVipBannerUploading] = useState(false);
   const [vipBannerUploadError, setVipBannerUploadError] = useState('');
   const [vipReferencesHtmlByLang, setVipReferencesHtmlByLang] = useState<Record<string, string>>(() =>
@@ -386,6 +410,23 @@ export default function UserPcuControlPanel({
   const [vipAllowVisitorsMail, setVipAllowVisitorsMail] = useState(true);
 
   const [vipBannerImageFileName, setVipBannerImageFileName] = useState('No file chosen');
+
+  const clearVipBannerPreviewBlob = useCallback(() => {
+    if (vipBannerBlobRef.current) {
+      URL.revokeObjectURL(vipBannerBlobRef.current);
+      vipBannerBlobRef.current = null;
+    }
+    setVipBannerPreviewBlob(null);
+  }, []);
+
+  const vipBannerDisplaySrc = useMemo(() => {
+    if (vipBannerPreviewBlob) return vipBannerPreviewBlob;
+    const resolved = resolvePublicImageUrl(vipBannerImagePath);
+    if (!resolved) return null;
+    return vipBannerVersion > 0 ? `${resolved}?v=${vipBannerVersion}` : resolved;
+  }, [vipBannerPreviewBlob, vipBannerImagePath, vipBannerVersion]);
+
+  useEffect(() => () => clearVipBannerPreviewBlob(), [clearVipBannerPreviewBlob]);
 
   // Functions tab (club-focused UI)
   const [functionsLang, setFunctionsLang] = useState<PcuLangKey>('en');
@@ -475,12 +516,34 @@ export default function UserPcuControlPanel({
   const [trainingMemberPages, setTrainingMemberPages] = useState(false);
 
   const currentSubscriptionExpirationIso = useMemo(() => {
+    const access = accessEnd.trim();
+    if (access && !access.startsWith('0000')) return access;
     const lic = subscriptionExpiration.trim();
     if (lic && !lic.startsWith('0000')) return lic;
-    const end = user.endDateIso?.trim() || '';
-    if (end && !end.startsWith('0000')) return end;
+    const profile = user.endDateIso?.trim() || '';
+    if (profile && !profile.startsWith('0000')) return profile;
     return '';
-  }, [subscriptionExpiration, user.endDateIso]);
+  }, [accessEnd, subscriptionExpiration, user.endDateIso]);
+
+  useEffect(() => {
+    const actual = currentSubscriptionExpirationIso;
+    if (!actual) return;
+    if (subscriptionExpiration !== actual) {
+      setSubscriptionExpiration(actual);
+    }
+  }, [currentSubscriptionExpirationIso, subscriptionExpiration]);
+
+  useEffect(() => {
+    if (!expireExtendEnabled) return;
+    const extended = computeExtendedExpirationIso(
+      currentSubscriptionExpirationIso,
+      expireExtendDays,
+    );
+    if (extended) {
+      setExpireExtendedTo(extended);
+      setExpirationExtendDateError('');
+    }
+  }, [currentSubscriptionExpirationIso, expireExtendEnabled, expireExtendDays]);
 
   const handleExpireExtendedToChange = useCallback(
     (iso: string) => {
@@ -1441,6 +1504,7 @@ export default function UserPcuControlPanel({
     }
     if (pcu.vip) {
       const vip = pcu.vip;
+      clearVipBannerPreviewBlob();
       setVipShowInReferenceList(Boolean(vip.showInReferenceList));
       setVipShowInBanner(Boolean(vip.showInBanner));
       setVipUsernameEnabled(
@@ -1453,6 +1517,7 @@ export default function UserPcuControlPanel({
       setVipYoutubeUrl(vip.youtubeUrl ?? '');
       const bannerPath = vip.bannerImage?.trim() || null;
       setVipBannerImagePath(bannerPath);
+      setVipBannerVersion(bannerPath ? Date.now() : 0);
       setVipBannerImageFileName(
         bannerPath ? bannerPath.split('/').pop() || 'No file chosen' : 'No file chosen',
       );
@@ -1484,7 +1549,7 @@ export default function UserPcuControlPanel({
     if (pcu.functions) {
       applyFunctionsSettingsToForm(pcu.functions);
     }
-  }, [user.username, applyFunctionsSettingsToForm]);
+  }, [user.username, applyFunctionsSettingsToForm, clearVipBannerPreviewBlob]);
 
   const reloadPcuFromServer = useCallback((pcu: PcuSettings | undefined) => {
     if (!pcu) return;
@@ -1497,6 +1562,13 @@ export default function UserPcuControlPanel({
   }, [reloadPcuFromServer]);
 
   useEffect(() => {
+    initialPcuHydratedRef.current = false;
+    clearVipBannerPreviewBlob();
+  }, [user.userId, clearVipBannerPreviewBlob]);
+
+  useEffect(() => {
+    if (!initialPcuSettings || initialPcuHydratedRef.current) return;
+    initialPcuHydratedRef.current = true;
     applyPcuSettingsToForm(initialPcuSettings);
   }, [initialPcuSettings, applyPcuSettingsToForm]);
 
@@ -1652,6 +1724,11 @@ export default function UserPcuControlPanel({
     setVipBannerUploading(true);
     setVipBannerImageFileName(file.name);
 
+    clearVipBannerPreviewBlob();
+    const localPreview = URL.createObjectURL(file);
+    vipBannerBlobRef.current = localPreview;
+    setVipBannerPreviewBlob(localPreview);
+
     try {
       const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
@@ -1669,9 +1746,18 @@ export default function UserPcuControlPanel({
       const path = typeof uploadData.path === 'string' ? uploadData.path : '';
       if (!path) throw new Error('Upload did not return a file path');
 
+      clearVipBannerPreviewBlob();
       setVipBannerImagePath(path);
+      setVipBannerVersion(Date.now());
       await persistVipBannerImage(path);
+      if (loadedPcuSettingsRef.current?.vip) {
+        loadedPcuSettingsRef.current = {
+          ...loadedPcuSettingsRef.current,
+          vip: { ...loadedPcuSettingsRef.current.vip, bannerImage: path },
+        };
+      }
     } catch (err: unknown) {
+      clearVipBannerPreviewBlob();
       setVipBannerUploadError(err instanceof Error ? err.message : 'Failed to upload banner');
       setVipBannerImageFileName(
         vipBannerImagePath ? vipBannerImagePath.split('/').pop() || 'No file chosen' : 'No file chosen',
@@ -1686,7 +1772,9 @@ export default function UserPcuControlPanel({
     setVipBannerUploadError('');
     setVipBannerUploading(true);
     try {
+      clearVipBannerPreviewBlob();
       setVipBannerImagePath(null);
+      setVipBannerVersion(0);
       setVipBannerImageFileName('No file chosen');
       await persistVipBannerImage(null);
     } catch (err: unknown) {
@@ -3139,11 +3227,10 @@ export default function UserPcuControlPanel({
                                   checked={enableBlogs}
                                   onChange={(e) => setEnableBlogs(e.target.checked)}
                                 />
-                                <input
-                                  type="date"
+                                <AdminPcuDatePicker
                                   value={blogsDate}
-                                  onChange={(e) => setBlogsDate(e.target.value)}
-                                  className="px-2 py-1 border border-gray-300 flex-1"
+                                  onChange={setBlogsDate}
+                                  className="flex-1"
                                 />
                               </div>
                             </div>
@@ -3354,7 +3441,19 @@ export default function UserPcuControlPanel({
                                   <input
                                     type="checkbox"
                                     checked={!!vipTypes[k]}
-                                    onChange={(e) => setVipTypes((p) => ({ ...p, [k]: e.target.checked }))}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setVipTypes((p) => {
+                                        if (k === 'all') {
+                                          const next: Record<string, boolean> = { ...p, all: checked };
+                                          for (const key of Object.keys(p)) {
+                                            if (key !== 'all') next[key] = checked;
+                                          }
+                                          return next;
+                                        }
+                                        return { ...p, [k]: checked, all: false };
+                                      });
+                                    }}
                                   />
                                   <span className={k === 'all' ? 'font-semibold' : ''}>{label}</span>
                                 </label>
@@ -3380,9 +3479,19 @@ export default function UserPcuControlPanel({
                                   <input
                                     type="checkbox"
                                     checked={!!vipVisibleToUserTypes[k]}
-                                    onChange={(e) =>
-                                      setVipVisibleToUserTypes((p) => ({ ...p, [k]: e.target.checked }))
-                                    }
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setVipVisibleToUserTypes((p) => {
+                                        if (k === 'all') {
+                                          const next: Record<string, boolean> = { ...p, all: checked };
+                                          for (const key of Object.keys(p)) {
+                                            if (key !== 'all') next[key] = checked;
+                                          }
+                                          return next;
+                                        }
+                                        return { ...p, [k]: checked, all: false };
+                                      });
+                                    }}
                                   />
                                   <span className={k === 'all' ? 'font-semibold' : ''}>{label}</span>
                                 </label>
@@ -3398,7 +3507,19 @@ export default function UserPcuControlPanel({
                                   <input
                                     type="checkbox"
                                     checked={!!vipLanguagesAllowed[k]}
-                                    onChange={(e) => setVipLanguagesAllowed((p) => ({ ...p, [k]: e.target.checked }))}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setVipLanguagesAllowed((p) => {
+                                        if (k === 'all') {
+                                          const next: Record<string, boolean> = { ...p, all: checked };
+                                          for (const key of Object.keys(p)) {
+                                            if (key !== 'all') next[key] = checked;
+                                          }
+                                          return next;
+                                        }
+                                        return { ...p, [k]: checked, all: false };
+                                      });
+                                    }}
                                   />
                                   <span className={k === 'all' ? 'font-semibold' : ''}>
                                     {k === 'all' ? 'select all languages' : k}
@@ -3529,12 +3650,18 @@ export default function UserPcuControlPanel({
                               </div>
 
                               <div className="mt-3 bg-gray-100 border border-gray-200 h-44 flex items-center justify-center overflow-hidden relative">
-                                {vipBannerImagePath ? (
+                                {vipBannerDisplaySrc ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
-                                    src={vipBannerImagePath}
+                                    key={vipBannerDisplaySrc}
+                                    src={vipBannerDisplaySrc}
                                     alt="VIP reference banner"
                                     className="w-full h-full object-contain"
+                                    onError={() =>
+                                      setVipBannerUploadError(
+                                        'Banner preview could not load. Save again or re-upload the image.',
+                                      )
+                                    }
                                   />
                                 ) : (
                                   <span className="text-4xl font-semibold text-gray-400 text-center leading-tight">
@@ -4219,13 +4346,39 @@ export default function UserPcuControlPanel({
                         <input
                           type="checkbox"
                           checked={expireExtendEnabled}
-                          onChange={(e) => setExpireExtendEnabled(e.target.checked)}
+                          onChange={(e) => {
+                            const enabled = e.target.checked;
+                            setExpireExtendEnabled(enabled);
+                            if (enabled) {
+                              const extended = computeExtendedExpirationIso(
+                                currentSubscriptionExpirationIso,
+                                expireExtendDays,
+                              );
+                              if (extended) {
+                                setExpireExtendedTo(extended);
+                                setExpirationExtendDateError('');
+                              }
+                            }
+                          }}
                         />
                         enable the extension of date for
                       </label>
                       <input
                         value={expireExtendDays}
-                        onChange={(e) => setExpireExtendDays(e.target.value)}
+                        onChange={(e) => {
+                          const nextDays = e.target.value;
+                          setExpireExtendDays(nextDays);
+                          if (expireExtendEnabled) {
+                            const extended = computeExtendedExpirationIso(
+                              currentSubscriptionExpirationIso,
+                              nextDays,
+                            );
+                            if (extended) {
+                              setExpireExtendedTo(extended);
+                              setExpirationExtendDateError('');
+                            }
+                          }
+                        }}
                         className="px-2 py-1 border border-gray-300 w-16 text-center"
                       />
                       <span>days after the expiration date of the current subscription</span>

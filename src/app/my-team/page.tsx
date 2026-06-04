@@ -6,6 +6,12 @@ import { Users, UserPlus, X, Loader2 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import { useAuth } from '@/hooks/useAuth';
+import { useEntityDirectAccessGuard } from '@/hooks/useEntityDirectAccessGuard';
+import {
+  getEntityDirectAccessLock,
+  getEntityDirectAccessProfilePath,
+} from '@/lib/entity/entityDirectAccessSession';
+import { isTeamAccountUserType } from '@/utils/dashboardRouting';
 
 interface TeamMember {
   id: string;
@@ -32,6 +38,7 @@ function MyTeamContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  useEntityDirectAccessGuard(!authLoading && !!user);
   const teamId = searchParams?.get('teamId');
 
   const [team, setTeam] = useState<Team | null>(null);
@@ -76,14 +83,22 @@ function MyTeamContent() {
 
   useEffect(() => {
     if (authLoading || !user) return;
+    const lock = getEntityDirectAccessLock();
     if (!teamId) {
-      // If no teamId selected, redirect to My Page to select a team
-      if (user?.userType === 'TEAM_MANAGER') {
-        router.push('/my-page');
+      if (lock?.kind === 'team') {
+        router.replace(getEntityDirectAccessProfilePath(lock));
+        return;
+      }
+      if (user && isTeamAccountUserType(user.userType)) {
+        router.replace('/team/dashboard');
         return;
       }
       setLoading(false);
     } else {
+      if (lock?.kind === 'team' && teamId !== lock.entityId) {
+        router.replace(getEntityDirectAccessProfilePath(lock));
+        return;
+      }
       loadTeamData();
     }
   }, [teamId, user, router, authLoading, loadTeamData]);

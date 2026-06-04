@@ -646,7 +646,32 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
             localStorage.setItem('selectedTeam', decodeURIComponent(teamMatch[1]));
           }
         }
-        login(data.token, data.user, redirectTo);
+        const entityAccessMode =
+          typeof data.entityAccessMode === 'string'
+            ? data.entityAccessMode
+            : typeof data.clubAccessMode === 'string'
+              ? data.clubAccessMode
+              : undefined;
+        const entityKind =
+          typeof data.entityKind === 'string' ? data.entityKind : undefined;
+        const entityId =
+          typeof data.entityId === 'string'
+            ? data.entityId
+            : typeof data.clubId === 'string'
+              ? data.clubId
+              : undefined;
+        login(data.token, data.user, redirectTo, {
+          entityAccessMode,
+          entityKind: entityKind as
+            | 'club'
+            | 'team'
+            | 'group'
+            | 'coach'
+            | undefined,
+          entityId,
+          clubAccessMode: entityAccessMode,
+          clubId: entityKind === 'club' ? entityId : undefined,
+        });
         
         // Clear form
         setLoginUsername('');

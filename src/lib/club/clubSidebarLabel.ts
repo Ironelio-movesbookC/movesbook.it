@@ -17,6 +17,8 @@ export type ClubDescriptionMeta = {
   /** Rich-text references for the club (not the club admin user). */
   referencesHtml?: string;
   referencesLevel?: string;
+  /** Public path under `/uploads/entity_logos/` (or absolute URL). */
+  logoUrl?: string;
 };
 
 export function parseClubDescriptionMeta(

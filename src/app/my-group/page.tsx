@@ -6,6 +6,12 @@ import { Users, UserPlus, X, Loader2 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import { useAuth } from '@/hooks/useAuth';
+import { useEntityDirectAccessGuard } from '@/hooks/useEntityDirectAccessGuard';
+import {
+  getEntityDirectAccessLock,
+  getEntityDirectAccessProfilePath,
+} from '@/lib/entity/entityDirectAccessSession';
+import { isGroupAccountUserType } from '@/utils/dashboardRouting';
 
 interface GroupMember {
   id: string;
@@ -31,6 +37,7 @@ function MyGroupContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  useEntityDirectAccessGuard(!authLoading && !!user);
   const groupId = searchParams?.get('groupId');
 
   const [group, setGroup] = useState<Group | null>(null);
@@ -75,14 +82,22 @@ function MyGroupContent() {
 
   useEffect(() => {
     if (authLoading || !user) return;
+    const lock = getEntityDirectAccessLock();
     if (!groupId) {
-      // If no groupId selected, redirect to My Page to select a group
-      if (user?.userType === 'GROUP_ADMIN') {
-        router.push('/my-page');
+      if (lock?.kind === 'group') {
+        router.replace(getEntityDirectAccessProfilePath(lock));
+        return;
+      }
+      if (user && isGroupAccountUserType(user.userType)) {
+        router.replace('/group/dashboard');
         return;
       }
       setLoading(false);
     } else {
+      if (lock?.kind === 'group' && groupId !== lock.entityId) {
+        router.replace(getEntityDirectAccessProfilePath(lock));
+        return;
+      }
       loadGroupData();
     }
   }, [groupId, user, router, authLoading, loadGroupData]);

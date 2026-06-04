@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
+import {
+  clearEntityDirectAccessLock,
+  setEntityDirectAccessLock,
+} from '@/lib/entity/entityDirectAccessSession';
+import type { EntityDirectAccessKind } from '@/lib/entity/entityDirectAccessMeta';
 
 export interface AuthUser {
   id: string;
@@ -30,6 +35,7 @@ export function useAuth() {
       }
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      clearEntityDirectAccessLock();
     }
     setUser(null);
     router.push('/');
@@ -57,10 +63,30 @@ export function useAuth() {
     checkAuth();
   }, [checkAuth]);
 
-  const login = (token: string, userData: AuthUser, redirectPath?: string | null) => {
+  const login = (
+    token: string,
+    userData: AuthUser,
+    redirectPath?: string | null,
+    options?: {
+      entityAccessMode?: string;
+      entityKind?: EntityDirectAccessKind;
+      entityId?: string;
+      /** @deprecated Use entityAccessMode + entityKind + entityId */
+      clubAccessMode?: string;
+      clubId?: string;
+    },
+  ) => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userData));
+      const mode = options?.entityAccessMode ?? options?.clubAccessMode;
+      const kind = options?.entityKind ?? (options?.clubId ? 'club' : undefined);
+      const entityId = options?.entityId ?? options?.clubId;
+      if (mode === 'direct-access-only' && kind && entityId) {
+        setEntityDirectAccessLock(kind, entityId);
+      } else {
+        clearEntityDirectAccessLock();
+      }
     }
     setUser(userData);
     setShowLoginModal(false);

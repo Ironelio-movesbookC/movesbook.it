@@ -28,7 +28,11 @@ import {
   parseClubDescriptionMeta,
 } from '@/lib/club/clubSidebarLabel';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
-import type { ClubAdminPublicContactRow } from '@/lib/club/clubAdminInfo';
+import { useEntityDirectAccessGuard } from '@/hooks/useEntityDirectAccessGuard';
+import {
+  getEntityDirectAccessLock,
+  getEntityDirectAccessProfilePath,
+} from '@/lib/entity/entityDirectAccessSession';
 
 interface ClubMember {
   id: string;
@@ -55,13 +59,13 @@ function MyClubContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  useEntityDirectAccessGuard(!authLoading && !!user);
   const clubId = searchParams?.get('clubId');
 
   // All hooks must be called before any conditional returns
   const [activeSection, setActiveSection] = useState<'overview' | 'members' | 'workouts' | 'analytics'>('overview');
   const [club, setClub] = useState<Club | null>(null);
   const [members, setMembers] = useState<ClubMember[]>([]);
-  const [adminContactRows, setAdminContactRows] = useState<ClubAdminPublicContactRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [addMemberUsername, setAddMemberUsername] = useState('');
@@ -96,9 +100,6 @@ function MyClubContent() {
         const data = await response.json();
         setClub(data.club);
         setMembers(data.members || []);
-        setAdminContactRows(
-          Array.isArray(data.adminContact?.rows) ? data.adminContact.rows : [],
-        );
       } else {
         console.error('Failed to load club data');
       }
@@ -185,7 +186,12 @@ function MyClubContent() {
 
   // Load club data when clubId changes (only for clubs created via profile form)
   useEffect(() => {
+    const lock = getEntityDirectAccessLock();
     if (!clubId) {
+      if (lock?.kind === 'club') {
+        router.replace(getEntityDirectAccessProfilePath(lock));
+        return;
+      }
       if (user && isClubAccountUserType(user.userType)) {
         router.replace('/club/dashboard');
         return;
@@ -194,12 +200,21 @@ function MyClubContent() {
       return;
     }
 
+    if (lock?.kind === 'club' && clubId !== lock.entityId) {
+      router.replace(getEntityDirectAccessProfilePath(lock));
+      return;
+    }
+
     let cancelled = false;
     void (async () => {
       const allowed = await verifyClubProfileAccess();
       if (cancelled) return;
       if (!allowed) {
-        router.replace('/club/dashboard');
+        if (lock?.kind === 'club') {
+          router.replace(getEntityDirectAccessProfilePath(lock));
+        } else {
+          router.replace('/club/dashboard');
+        }
         return;
       }
       await loadClubData();
@@ -226,7 +241,11 @@ function MyClubContent() {
   const clubProfileEditHref = clubId
     ? `/my-club/edit?clubId=${encodeURIComponent(clubId)}`
     : '/my-club/edit';
-  const backToMenuHref = '/club/dashboard';
+  const directAccessLock = getEntityDirectAccessLock();
+  const backToMenuHref =
+    directAccessLock?.kind === 'club'
+      ? getEntityDirectAccessProfilePath(directAccessLock)
+      : '/club/dashboard';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex flex-col">
@@ -391,7 +410,6 @@ function MyClubContent() {
                     club={club}
                     members={members}
                     clubProfileEditHref={clubProfileEditHref}
-                    adminContactRows={adminContactRows}
                     onAddMembers={() => setShowAddMemberModal(true)}
                   />
                 )}

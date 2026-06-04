@@ -33,6 +33,8 @@ import SimpleFooter from '@/components/SimpleFooter';
 import AddMemberModal from '@/components/AddMemberModal';
 import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
 import CreateClubModal, { type CreateClubFormPayload } from '@/components/club/CreateClubModal';
+import { clubProfilePayloadForApi } from '@/lib/club/clubProfilePayload';
+import { applyEntityLogoOnSave } from '@/lib/entity/applyEntityLogoOnSave';
 import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolbar';
 import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 import {
@@ -52,12 +54,18 @@ import ClubAccessOutcomeSettingsPanel from './components/ClubAccessOutcomeSettin
 import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLegacyBanner';
 import ChangeBannerModal, { type BannerAlignment } from '@/components/athlete/ChangeBannerModal';
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
+import {
+  useEntityDirectAccessGuard,
+  useEntityDirectAccessLockedForKind,
+} from '@/hooks/useEntityDirectAccessGuard';
 
 function ClubDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
   const { t } = useLanguage();
+  const clubDirectAccessLocked = useEntityDirectAccessLockedForKind('club');
+  useEntityDirectAccessGuard(!loading && !!user);
 
   // All useState hooks must be declared before any early returns
   const {
@@ -199,16 +207,20 @@ function ClubDashboardContent() {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ create: true, ...payload }),
+        body: JSON.stringify({ create: true, ...clubProfilePayloadForApi(payload) }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data.error || 'Failed to create club');
       }
+      const clubId = data.club?.id as string | undefined;
+      if (clubId && (payload.logoFile || payload.removeLogo)) {
+        await applyEntityLogoOnSave('club', clubId, payload);
+      }
       await loadClubs();
-      if (data.club?.id) {
-        setSelectedClubId(data.club.id);
-        localStorage.setItem('selectedClub', data.club.id);
+      if (clubId) {
+        setSelectedClubId(clubId);
+        localStorage.setItem('selectedClub', clubId);
       }
       setShowCreateClubModal(false);
     } finally {
@@ -335,7 +347,8 @@ function ClubDashboardContent() {
                 userType={user?.userType || ''}
                 entities={formClubs}
                 selectedEntityId={selectedClubId}
-                clubMyClubTabVisible={myClubTabVisible}
+                clubMyClubTabVisible={myClubTabVisible || clubDirectAccessLocked}
+                hideMyPageTab={clubDirectAccessLocked}
                 onEntitySelect={handleClubSelect}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}

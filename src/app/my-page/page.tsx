@@ -25,6 +25,11 @@ import DisplayOptionsToolbar from './components/DisplayOptionsToolbar';
 import PersonalBanner from './components/PersonalBanner';
 import RightSidebar from './components/RightSidebar';
 import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
+import { useEntityDirectAccessGuard } from '@/hooks/useEntityDirectAccessGuard';
+import {
+  getEntityDirectAccessLock,
+  getEntityDirectAccessProfilePath,
+} from '@/lib/entity/entityDirectAccessSession';
 
 export default function MyPage() {
   const [activeSection, setActiveSection] = useState<'workouts' | 'progress' | 'settings'>('workouts');
@@ -44,6 +49,7 @@ export default function MyPage() {
 
   const { user, loading } = useAuth();
   const router = useRouter();
+  useEntityDirectAccessGuard(!loading && !!user);
 
   // All hooks must be called before any conditional returns
   const {
@@ -102,6 +108,11 @@ export default function MyPage() {
   // Team / group / coach / club / athlete accounts use their own dashboards
   useEffect(() => {
     if (!loading && user && hasDedicatedDashboard(user.userType)) {
+      const lock = getEntityDirectAccessLock();
+      if (lock) {
+        router.replace(getEntityDirectAccessProfilePath(lock));
+        return;
+      }
       router.replace(getDashboardPathForUserType(user.userType));
     }
   }, [user, loading, router]);

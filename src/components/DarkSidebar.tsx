@@ -328,6 +328,8 @@ interface DarkSidebarProps {
    * only while that workspace is open from the sidebar — hidden on My Page.
    */
   clubMyClubTabVisible?: boolean;
+  /** Direct Access login: hide My Page tab; user stays on My Club only. */
+  hideMyPageTab?: boolean;
 }
 
 export default function DarkSidebar({
@@ -354,6 +356,7 @@ export default function DarkSidebar({
   onCreateTeamClick,
   onCreateGroupClick,
   clubMyClubTabVisible = false,
+  hideMyPageTab = false,
 }: DarkSidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
@@ -761,6 +764,7 @@ export default function DarkSidebar({
   };
 
   const handleMyPageTab = () => {
+    if (hideMyPageTab) return;
     setCurrentTab('my-page');
     if (onMyPageClick) {
       onMyPageClick();
@@ -1108,17 +1112,19 @@ export default function DarkSidebar({
     <div className="w-full h-full bg-gray-900 text-white flex flex-col overflow-hidden" style={{ width: '320px' }}>
       {/* Tab Navigation — club accounts: My Club tab appears when a sidebar club is opened */}
       <div className="flex flex-shrink-0 border-b border-gray-700 bg-gray-900">
-        <button
-          onClick={handleMyPageTab}
-          className={`${showMyClubTab ? 'flex-1' : 'w-full'} py-3 px-4 text-center font-medium transition-colors ${
-            currentTab === 'my-page'
-              ? 'bg-gray-700 text-white border-b-2 border-yellow-400'
-              : 'bg-gray-800 text-gray-300 hover:bg-gray-750 hover:text-white'
-          }`}
-        >
-          {t('sidebar_my_page')}
-        </button>
-        {showMyClubTab && (
+        {!hideMyPageTab && (
+          <button
+            onClick={handleMyPageTab}
+            className={`${showMyClubTab ? 'flex-1' : 'w-full'} py-3 px-4 text-center font-medium transition-colors ${
+              currentTab === 'my-page'
+                ? 'bg-gray-700 text-white border-b-2 border-yellow-400'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-750 hover:text-white'
+            }`}
+          >
+            {t('sidebar_my_page')}
+          </button>
+        )}
+        {(showMyClubTab || hideMyPageTab) && (
           <button
             onClick={handleMyEntityTab}
             className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${

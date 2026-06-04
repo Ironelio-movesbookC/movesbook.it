@@ -2,10 +2,10 @@
 
 import { X } from 'lucide-react';
 import ClubProfileEditor, {
-  type ClubProfileFormPayload,
+  type ClubProfileSavePayload,
 } from '@/components/club/ClubProfileEditor';
 
-export type CreateClubFormPayload = ClubProfileFormPayload;
+export type CreateClubFormPayload = ClubProfileSavePayload;
 
 export { CLUB_CATEGORY_OPTIONS } from '@/components/club/ClubProfileEditor';
 

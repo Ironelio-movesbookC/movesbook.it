@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import { UserType, SportType } from '@prisma/client';
+import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 
 
@@ -125,25 +125,7 @@ export async function POST(request: NextRequest) {
 
     console.log('User settings created with admin defaults');
 
-    // Create default main sports
-    const defaultSports = [
-      { sport: SportType.SWIM, order: 0 },
-      { sport: SportType.BIKE, order: 1 },
-      { sport: SportType.RUN, order: 2 },
-      { sport: SportType.BODY_BUILDING, order: 3 }
-    ];
-
-    for (const sportData of defaultSports) {
-      await prisma.userMainSport.create({
-        data: {
-          userId: user.id,
-          sport: sportData.sport,
-          order: sportData.order
-        }
-      });
-    }
-
-    console.log('Default sports created');
+    // Main sports: intentionally empty until the user selects them in profile.
 
     // Create default periods
     const defaultPeriods = [

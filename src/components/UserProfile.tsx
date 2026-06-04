@@ -490,8 +490,8 @@ export default function UserProfile({
           </div>
         )}
 
-        {/* Member info / Admin info */}
-        {(!embedded || isEmbeddedAdminProfile) && (
+        {/* Member info / Admin info (full profile page only; my-club Contact Info tab uses ClubAdminInfoForm) */}
+        {!embedded && (
         <section
           id={infoSectionId}
           className={`scroll-mt-24 mb-6 ${isClubAdmin ? '' : 'bg-white rounded-lg shadow-lg p-6'}`}
