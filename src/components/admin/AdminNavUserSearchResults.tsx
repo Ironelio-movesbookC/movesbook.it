@@ -11,6 +11,7 @@ import {
   type NavSearchScope,
   type NavUserSearchRow,
 } from '@/lib/adminNavUserSearchScope';
+import { buildPcuHistoryUserUrl } from '@/lib/admin/pcuHistoryUserUrl';
 
 const PAGE_SIZE = 10;
 
@@ -95,8 +96,25 @@ export default function AdminNavUserSearchResults({
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
-  const openPcu = (userId: string) => {
-    router.push(`/subscriptionuserlists/historyuser/${userId}`);
+  const openPcuOverview = (row: { id: string; matchedClubId?: string | null }) => {
+    router.push(
+      buildPcuHistoryUserUrl(row.id, {
+        scope: scope && scope !== 'all' ? scope : null,
+        q: query.trim() || null,
+        clubId: row.matchedClubId ?? null,
+        view: 'overview',
+      }),
+    );
+  };
+
+  const openPcuPanel = (row: { id: string; matchedClubId?: string | null }) => {
+    router.push(
+      buildPcuHistoryUserUrl(row.id, {
+        scope: scope && scope !== 'all' ? scope : null,
+        q: query.trim() || null,
+        clubId: row.matchedClubId ?? null,
+      }),
+    );
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -252,7 +270,7 @@ export default function AdminNavUserSearchResults({
                     <td className="px-4 py-3">
                       <button
                         type="button"
-                        onClick={() => openPcu(row.id)}
+                        onClick={() => openPcuOverview(row)}
                         className="text-red-600 hover:text-red-700 hover:underline font-medium"
                       >
                         {row.username}
@@ -266,17 +284,17 @@ export default function AdminNavUserSearchResults({
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => openPcu(row.id)}
+                          onClick={() => openPcuPanel(row)}
                           className="p-1.5 text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded"
-                          title="Open panel control (PCU)"
+                          title="Open full PCU (tabs)"
                         >
                           <Link2 className="w-4 h-4" />
                         </button>
                         <button
                           type="button"
-                          onClick={() => openPcu(row.id)}
+                          onClick={() => openPcuOverview(row)}
                           className="p-1.5 text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded"
-                          title="View PCU"
+                          title="View PCU overview"
                         >
                           <Eye className="w-4 h-4" />
                         </button>

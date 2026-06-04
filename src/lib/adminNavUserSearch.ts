@@ -1,5 +1,10 @@
 import { Prisma, UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import {
+  buildMovesbookUserTextSearchOr,
+  segmentShouldMatchOwnedClubs,
+} from '@/lib/admin/movesbookUserTextSearch';
+import { pickClubForAdminProfile } from '@/lib/admin/pickClubForAdminProfile';
 import type { NavSearchScope, NavUserSearchRow } from '@/lib/adminNavUserSearchScope';
 
 const SCOPE_USER_TYPES: Record<Exclude<NavSearchScope, 'all'>, UserType[]> = {
@@ -43,15 +48,11 @@ export async function searchMovesbookUsersForNav(
   const andClauses: Prisma.UserWhereInput[] = [{ userType: { in: types } }];
 
   if (q) {
-    andClauses.push({
-      OR: [
-        { username: { contains: q } },
-        { email: { contains: q } },
-        { name: { contains: q } },
-        { firstName: { contains: q } },
-        { surname: { contains: q } },
-      ],
-    });
+    andClauses.push(
+      buildMovesbookUserTextSearchOr(q, {
+        matchOwnedClubs: segmentShouldMatchOwnedClubs(scope),
+      }),
+    );
   }
 
   const where: Prisma.UserWhereInput = { AND: andClauses };
@@ -71,6 +72,17 @@ export async function searchMovesbookUsersForNav(
         userType: true,
         lastSeenAt: true,
         settings: { select: { language: true } },
+        ownedClubs: {
+          select: {
+            id: true,
+            name: true,
+            location: true,
+            description: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 25,
+        },
       },
       orderBy: { username: 'asc' },
       take: limit,
@@ -82,6 +94,10 @@ export async function searchMovesbookUsersForNav(
     users: rows.map((u) => {
       const displayName =
         [u.firstName, u.surname].filter(Boolean).join(' ').trim() || u.name || u.username;
+      const pickedClub =
+        q && u.ownedClubs.length
+          ? pickClubForAdminProfile(u.ownedClubs, { searchQuery: q })
+          : null;
       return {
         id: u.id,
         username: u.username,
@@ -91,6 +107,7 @@ export async function searchMovesbookUsersForNav(
         lastLogin: formatLastLogin(u.lastSeenAt),
         imageUrl: u.image,
         userType: u.userType,
+        matchedClubId: pickedClub?.id ?? null,
       };
     }),
   };

@@ -58,7 +58,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   DndContext, 
   closestCenter,
@@ -135,7 +135,12 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
 
   const [openSubSections, setOpenSubSections] = useState<Record<string, boolean>>({});
   const [internalIsOpen, setInternalIsOpen] = useState(true);
+  const [isDndMounted, setIsDndMounted] = useState(false);
   const isSidebarOpen = isOpen !== undefined ? isOpen : internalIsOpen;
+
+  useEffect(() => {
+    setIsDndMounted(true);
+  }, []);
 
   const handleToggle = () => {
     if (onToggle) onToggle();
@@ -1054,16 +1059,6 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
               <div className="font-bold text-white">Movesbook Admin</div>
             </Link>
             
-            <Link href="/operators/usersAssignedStaff" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
-              <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
-                  <ShieldCheck className="w-8 h-8 text-white" strokeWidth={1.5} />
-              </div>
-              <div className="bg-black border border-white p-0.5 rounded-full flex-shrink-0">
-                  <User className="w-3 h-3 text-white" />
-              </div>
-              <div className="font-bold text-white">Co-admins</div>
-            </Link>
-
             <Link href="/admin/all-staff" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
               <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
                   <Users2 className="w-8 h-8 text-white" strokeWidth={1.5} />
@@ -1072,6 +1067,16 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                   <User className="w-3 h-3 text-white" />
               </div>
               <div className="font-bold text-white">All Staff</div>
+            </Link>
+
+            <Link href="/operators/usersAssignedStaff" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
+              <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
+                  <ShieldCheck className="w-8 h-8 text-white" strokeWidth={1.5} />
+              </div>
+              <div className="bg-black border border-white p-0.5 rounded-full flex-shrink-0">
+                  <User className="w-3 h-3 text-white" />
+              </div>
+              <div className="font-bold text-white">Co-admins</div>
             </Link>
 
             {/* Breakline */}
@@ -1089,23 +1094,31 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
           </div>
         </div>
 
-        {/* Draggable Sections */}
-        <DndContext 
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext 
-            items={items}
-            strategy={verticalListSortingStrategy}
+        {/* Draggable Sections — client-only to avoid dnd-kit aria-describedby hydration mismatch */}
+        {isDndMounted ? (
+          <DndContext
+            id="admin-left-sidebar"
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
           >
-            {items.map(id => (
-              <SortableItem key={id} id={id}>
+            <SortableContext items={items} strategy={verticalListSortingStrategy}>
+              {items.map((id) => (
+                <SortableItem key={id} id={id}>
+                  {renderSection(id)}
+                </SortableItem>
+              ))}
+            </SortableContext>
+          </DndContext>
+        ) : (
+          <div>
+            {items.map((id) => (
+              <div key={id} className="mb-0 mt-1">
                 {renderSection(id)}
-              </SortableItem>
+              </div>
             ))}
-          </SortableContext>
-        </DndContext>
+          </div>
+        )}
       </div>
     </div>
   );

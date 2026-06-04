@@ -129,6 +129,7 @@ function AthleteDashboardContent() {
   const [myCoaches, setMyCoaches] = useState<any[]>([]);
   const [myTeams, setMyTeams] = useState<any[]>([]);
   const [myClubs, setMyClubs] = useState<any[]>([]);
+  const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [myGroups, setMyGroups] = useState<any[]>([]);
   const [bannerProfile, setBannerProfile] = useState<AthleteLegacyBannerProfile | null>(null);
   const [showChangeBannerModal, setShowChangeBannerModal] = useState(false);
@@ -196,6 +197,12 @@ function AthleteDashboardContent() {
       setClubAddSongsOgpExpanded(false);
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (myClubs.length === 0 && activeTab === 'my-entity') {
+      setActiveTab('my-page');
+    }
+  }, [myClubs.length, activeTab]);
 
   // Load entities the athlete belongs to
   useEffect(() => {
@@ -333,7 +340,22 @@ function AthleteDashboardContent() {
       });
       if (response.ok) {
         const data = await response.json();
-        setMyClubs(data.clubs || []);
+        const clubs = data.clubs || [];
+        setMyClubs(clubs);
+        if (clubs.length > 0) {
+          setSelectedClubId((prev) => {
+            if (prev && clubs.some((c: { id: string }) => c.id === prev)) {
+              return prev;
+            }
+            if (typeof window !== 'undefined') {
+              const stored = localStorage.getItem('selectedClub');
+              if (stored && clubs.some((c: { id: string }) => c.id === stored)) {
+                return stored;
+              }
+            }
+            return clubs[0].id;
+          });
+        }
       }
     } catch (error) {
       console.error('Error loading my clubs:', error);
@@ -408,9 +430,9 @@ function AthleteDashboardContent() {
     window.location.href = `/my-team?teamId=${teamId}`;
   };
 
-  const handleMyClubSelect = (clubId: string) => {
+  const handleAthleteClubSelect = (clubId: string) => {
     storeSelectedEntity('Club', clubId);
-    window.location.href = `/my-club?clubId=${clubId}`;
+    setSelectedClubId(clubId);
   };
 
   const handleMyGroupSelect = (groupId: string) => {
@@ -545,7 +567,9 @@ function AthleteDashboardContent() {
           <div className="flex-shrink-0 px-0">
             <AthleteLegacyBanner
               profile={bannerProfile}
-              primaryClubName={myClubs[0]?.name}
+              primaryClubName={
+                myClubs.find((c) => c.id === selectedClubId)?.name ?? myClubs[0]?.name
+              }
               onCoverCameraClick={() => setShowChangeBannerModal(true)}
               onAvatarCameraClick={() => setShowChangeProfilePhotoModal(true)}
               t={t}
@@ -728,8 +752,8 @@ function AthleteDashboardContent() {
               <DarkSidebar
                 userType={user?.userType || ''}
                 entities={myClubs}
-                selectedEntityId={null}
-                onEntitySelect={(id) => {}}
+                selectedEntityId={selectedClubId ?? myClubs[0]?.id ?? null}
+                onEntitySelect={handleAthleteClubSelect}
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
                 profileImageFromDb={bannerProfile?.image}

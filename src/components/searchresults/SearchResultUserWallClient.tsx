@@ -39,8 +39,6 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
     setShowLeftSidebar,
     showRightSidebar,
     setShowRightSidebar,
-    showToolbar,
-    setShowToolbar,
     hideRightColumnByPolicy,
     rightSidebarVisible,
   } = useVisitorWallDisplayOptions();
@@ -71,13 +69,11 @@ export function SearchResultUserWallClient({ data }: { data: UserWallPayload }) 
         showPersonalBanner={showPersonalBanner}
         showLeftSidebar={showLeftSidebar}
         showRightSidebar={showRightSidebar}
-        showToolbar={showToolbar}
         hideRightColumnByPolicy={hideRightColumnByPolicy}
         onToggleAdBanner={setShowAdBanner}
         onTogglePersonalBanner={setShowPersonalBanner}
         onToggleLeftSidebar={setShowLeftSidebar}
         onToggleRightSidebar={setShowRightSidebar}
-        onToggleToolbar={setShowToolbar}
         personalBanner={
           <SearchResultVisitorWallBanner
             profile={bannerProfile}

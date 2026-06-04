@@ -12,13 +12,20 @@ type TabItem = {
 
 type ClubSettingsTypologyTabsProps = {
   timetableTypologyId?: string | null;
+  listPriceTypologyId?: string | null;
 };
 
-export default function ClubSettingsTypologyTabs({ timetableTypologyId }: ClubSettingsTypologyTabsProps) {
+export default function ClubSettingsTypologyTabs({
+  timetableTypologyId,
+  listPriceTypologyId
+}: ClubSettingsTypologyTabsProps) {
   const pathname = usePathname() ?? '';
   const timetableHref = timetableTypologyId
     ? `/club/settings/typology_subscription/timetable/${encodeURIComponent(timetableTypologyId)}`
     : '/club/settings/typology_subscription/timetable';
+  const listPriceHref = listPriceTypologyId
+    ? `/club/settings/typology_subscription/pricelist?typologyId=${encodeURIComponent(listPriceTypologyId)}`
+    : '/club/settings/typology_subscription/pricelist';
 
   const tabs: TabItem[] = [
     {
@@ -28,9 +35,8 @@ export default function ClubSettingsTypologyTabs({ timetableTypologyId }: ClubSe
     },
     {
       label: 'List prices',
-      href: '#',
-      match: () => false,
-      disabled: true
+      href: listPriceHref,
+      match: (path) => path.includes('/typology_subscription/pricelist')
     },
     {
       label: 'Timetable',
@@ -39,15 +45,13 @@ export default function ClubSettingsTypologyTabs({ timetableTypologyId }: ClubSe
     },
     {
       label: 'RfId/Card readers',
-      href: '#',
-      match: () => false,
-      disabled: true
+      href: '/club/settings/typology_subscription/active_reader',
+      match: (path) => path.includes('/typology_subscription/active_reader')
     },
     {
       label: 'Overview',
-      href: '#',
-      match: () => false,
-      disabled: true
+      href: '/club/settings/typology_subscription/activity_overview',
+      match: (path) => path.includes('/typology_subscription/activity_overview')
     }
   ];
 
@@ -59,14 +63,6 @@ export default function ClubSettingsTypologyTabs({ timetableTypologyId }: ClubSe
           const className = `border-r border-gray-200 px-4 py-3 text-sm font-semibold transition ${
             active ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700 hover:bg-white'
           } ${tab.disabled ? 'cursor-not-allowed opacity-60' : ''}`;
-
-          if (tab.disabled) {
-            return (
-              <span key={tab.label} className={className}>
-                {tab.label}
-              </span>
-            );
-          }
 
           return (
             <Link key={tab.label} href={tab.href} className={className}>

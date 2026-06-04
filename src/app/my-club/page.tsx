@@ -1,27 +1,34 @@
 'use client';
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   Users, 
-  Settings, 
   BarChart3, 
   Calendar,
   UserPlus,
   FileText,
-  Trophy,
   Award,
   Target,
-  Star,
   TrendingUp,
-  X,
-  Loader2
+  Loader2,
+  ArrowLeft,
+  Pencil
 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
+import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolbar';
+import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 import { useAuth } from '@/hooks/useAuth';
-import { isClubCreatedFromForm } from '@/lib/club/clubSidebarLabel';
+import ClubOverviewPanel from '@/components/club/ClubOverviewPanel';
+import {
+  getClubMyPageDisplayName,
+  isClubCreatedFromForm,
+  parseClubDescriptionMeta,
+} from '@/lib/club/clubSidebarLabel';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import type { ClubAdminPublicContactRow } from '@/lib/club/clubAdminInfo';
 
 interface ClubMember {
   id: string;
@@ -54,12 +61,23 @@ function MyClubContent() {
   const [activeSection, setActiveSection] = useState<'overview' | 'members' | 'workouts' | 'analytics'>('overview');
   const [club, setClub] = useState<Club | null>(null);
   const [members, setMembers] = useState<ClubMember[]>([]);
+  const [adminContactRows, setAdminContactRows] = useState<ClubAdminPublicContactRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [addMemberUsername, setAddMemberUsername] = useState('');
   const [addMemberPassword, setAddMemberPassword] = useState('');
   const [addingMember, setAddingMember] = useState(false);
   const [addMemberError, setAddMemberError] = useState('');
+  const {
+    showAdBanner,
+    showPersonalBanner,
+    showLeftSidebar,
+    showRightSidebar,
+    setShowAdBanner,
+    setShowPersonalBanner,
+    setShowLeftSidebar,
+    setShowRightSidebar,
+  } = useDisplayLayoutOptions();
 
   // Helper function for loading club data
   const loadClubData = useCallback(async () => {
@@ -78,6 +96,9 @@ function MyClubContent() {
         const data = await response.json();
         setClub(data.club);
         setMembers(data.members || []);
+        setAdminContactRows(
+          Array.isArray(data.adminContact?.rows) ? data.adminContact.rows : [],
+        );
       } else {
         console.error('Failed to load club data');
       }
@@ -194,27 +215,80 @@ function MyClubContent() {
     return null;
   }
 
+  const clubDisplayName = club ? getClubMyPageDisplayName(club) : 'Loading...';
+  const clubSubtitle = club
+    ? (() => {
+        const meta = parseClubDescriptionMeta(club.description);
+        const parts = [meta.category?.trim(), club.location?.trim()].filter(Boolean);
+        return parts.join(' · ') || meta.username?.trim() || '';
+      })()
+    : '';
+  const clubProfileEditHref = clubId
+    ? `/my-club/edit?clubId=${encodeURIComponent(clubId)}`
+    : '/my-club/edit';
+  const backToMenuHref = '/club/dashboard';
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex flex-col">
       <ModernNavbar />
-      
+      <DisplayOptionsToolbar
+        showAdBanner={showAdBanner}
+        showPersonalBanner={showPersonalBanner}
+        showLeftSidebar={showLeftSidebar}
+        showRightSidebar={showRightSidebar}
+        onToggleAdBanner={setShowAdBanner}
+        onTogglePersonalBanner={setShowPersonalBanner}
+        onToggleLeftSidebar={setShowLeftSidebar}
+        onToggleRightSidebar={setShowRightSidebar}
+      />
+
       <div className="flex-1 flex flex-col w-full px-4 sm:px-6 lg:px-8 py-8">
-        {/* Advertisement Carousel - Top Section */}
-        <div className="mb-8 flex-shrink-0">
-          <AdvertisementCarousel />
-        </div>
+        {showAdBanner && (
+          <div className="mb-8 flex-shrink-0">
+            <AdvertisementCarousel />
+          </div>
+        )}
 
         {/* Main Content Area - Fills remaining space */}
-        <div className="flex-1 flex gap-8 min-h-0">
+        <div className="flex-1 flex gap-8 min-h-0 min-w-0 w-full overflow-x-hidden">
           {/* Left Sidebar */}
+          {showLeftSidebar && (
           <div className="w-80 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 h-full flex flex-col">
-              <div className="text-center mb-8">
-                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                  <Users className="w-10 h-10 text-white" />
+              <Link
+                href={backToMenuHref}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 mb-4"
+              >
+                <ArrowLeft className="w-4 h-4 shrink-0" />
+                Back to menu
+              </Link>
+
+              <div className="mb-6">
+                <div className="text-center mb-4">
+                  <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+                    <Users className="w-10 h-10 text-white" />
+                  </div>
+                  <div className="flex items-start justify-center gap-2">
+                    <h2 className="text-2xl font-bold text-gray-900 text-center flex-1">
+                      {clubDisplayName}
+                    </h2>
+                    {clubId && (
+                      <Link
+                        href={clubProfileEditHref}
+                        className="inline-flex items-center gap-1 shrink-0 text-sm font-semibold text-red-600 hover:text-red-800 mt-1"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit
+                      </Link>
+                    )}
+                  </div>
                 </div>
-                <h2 className="text-2xl font-bold text-gray-900">{club?.name || 'Loading...'}</h2>
-                <p className="text-gray-600 text-sm mt-2">{club?.description || club?.location || 'Club'}</p>
+
+                {clubSubtitle ? (
+                  <p className="text-gray-600 text-sm text-center border-t border-gray-100 pt-4 px-1">
+                    {clubSubtitle}
+                  </p>
+                ) : null}
               </div>
 
               <nav className="space-y-3 flex-1">
@@ -290,9 +364,10 @@ function MyClubContent() {
               </div>
             </div>
           </div>
+          )}
 
           {/* Main Content - Stretched to fill remaining space */}
-          <div className="flex-1 min-w-0 flex flex-col">
+          <div className="flex-1 min-w-0 max-w-full flex flex-col overflow-hidden">
             {loading ? (
               <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8 flex items-center justify-center">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -311,7 +386,15 @@ function MyClubContent() {
               </div>
             ) : (
               <>
-                {activeSection === 'overview' && <ClubOverview club={club} members={members} />}
+                {activeSection === 'overview' && (
+                  <ClubOverviewPanel
+                    club={club}
+                    members={members}
+                    clubProfileEditHref={clubProfileEditHref}
+                    adminContactRows={adminContactRows}
+                    onAddMembers={() => setShowAddMemberModal(true)}
+                  />
+                )}
                 {activeSection === 'members' && <MembersSection members={members} />}
                 {activeSection === 'workouts' && <ClubWorkouts />}
                 {activeSection === 'analytics' && <AnalyticsSection />}
@@ -320,6 +403,7 @@ function MyClubContent() {
           </div>
 
           {/* Right Sidebar */}
+          {showRightSidebar && (
           <div className="w-96 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 h-full flex flex-col">
               <h3 className="text-xl font-bold text-gray-900 mb-6">
@@ -366,8 +450,62 @@ function MyClubContent() {
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
+
+      {showAddMemberModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">Add New Member</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <input
+                  type="text"
+                  value={addMemberUsername}
+                  onChange={(e) => setAddMemberUsername(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Member username"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input
+                  type="password"
+                  value={addMemberPassword}
+                  onChange={(e) => setAddMemberPassword(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Member password"
+                />
+              </div>
+              {addMemberError && (
+                <p className="text-sm text-red-600">{addMemberError}</p>
+              )}
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddMemberModal(false);
+                  setAddMemberError('');
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleAddMember()}
+                disabled={addingMember}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60"
+              >
+                {addingMember ? 'Adding…' : 'Add Member'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -381,89 +519,6 @@ export default function MyClub() {
     }>
       <MyClubContent />
     </Suspense>
-  );
-}
-
-// Sub-components for club sections
-function ClubOverview({ club, members }: { club: Club | null; members: ClubMember[] }) {
-  return (
-    <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8 flex-1 flex flex-col">
-      <div className="flex items-center justify-between mb-8">
-        <h2 className="text-3xl font-bold text-gray-900">Club Overview</h2>
-        <button className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-8 py-3 rounded-xl text-base font-semibold hover:shadow-2xl transition-all duration-300 transform hover:scale-105">
-          Manage Club
-        </button>
-      </div>
-
-      {/* Club Stats Grid */}
-      <div className="grid grid-cols-4 gap-6 mb-8">
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-2xl text-white shadow-2xl">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold opacity-90">Total Members</h3>
-            <Users className="w-6 h-6 opacity-90" />
-          </div>
-          <p className="text-4xl font-bold mt-4">{members.length}</p>
-        </div>
-        
-        <div className="bg-gradient-to-br from-green-500 to-green-600 p-6 rounded-2xl text-white shadow-2xl">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold opacity-90">Active Today</h3>
-            <TrendingUp className="w-6 h-6 opacity-90" />
-          </div>
-          <p className="text-4xl font-bold mt-4">8</p>
-        </div>
-        
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-2xl text-white shadow-2xl">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold opacity-90">This Week</h3>
-            <Calendar className="w-6 h-6 opacity-90" />
-          </div>
-          <p className="text-4xl font-bold mt-4">42</p>
-        </div>
-        
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-6 rounded-2xl text-white shadow-2xl">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold opacity-90">Completion Rate</h3>
-            <Trophy className="w-6 h-6 opacity-90" />
-          </div>
-          <p className="text-4xl font-bold mt-4">78%</p>
-        </div>
-      </div>
-
-      {/* Recent Members */}
-      <div className="flex-1">
-        <h3 className="text-xl font-bold text-gray-900 mb-6">Recent Members</h3>
-        <div className="space-y-4 h-full overflow-y-auto">
-          {members.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <Users className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p className="text-lg">No members yet</p>
-              <p className="text-sm">Add members to get started</p>
-            </div>
-          ) : (
-            members.slice(0, 10).map((member) => (
-              <div key={member.id} className="flex items-center justify-between p-6 border-2 border-gray-200 rounded-2xl hover:border-blue-300 hover:bg-blue-50 transition-all duration-300 group">
-                <div className="flex items-center space-x-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-blue-400 to-purple-500 rounded-2xl flex items-center justify-center text-white font-bold text-lg">
-                    {member.member.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900 text-lg">{member.member.name}</h4>
-                    <p className="text-sm text-gray-500">@{member.member.username} • Joined {new Date(member.joinedAt).toLocaleDateString()}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium text-gray-600">{member.member.userType}</p>
-                  {member.role && (
-                    <p className="text-xs text-gray-500">{member.role}</p>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
   );
 }
 
