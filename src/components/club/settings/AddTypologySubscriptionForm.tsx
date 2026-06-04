@@ -9,6 +9,7 @@ import {
   LANE_DAY_LABELS,
   type LanesForDaysMatrix
 } from '@/lib/lanesForDays';
+import { todayIsoDate } from '@/lib/typologySubscriptionAudio.shared';
 import RichTextEditor from '@/components/shared/RichTextEditor';
 import {
   ArrowLeft,
@@ -17,6 +18,8 @@ import {
   ChevronUp,
   Loader2,
   Mic,
+  Pause,
+  Play,
   Save,
   Square,
   Star,
@@ -306,8 +309,20 @@ function validateForm(form: FormState): FormErrors {
     }
   });
 
-  if (form.audioMessageStart && form.audioMessageEnd && form.audioMessageEnd < form.audioMessageStart) {
-    nextErrors.audioMessageEnd = 'Expiration date must be after the start date.';
+  if (form.audioMessageEnabled) {
+    if (!cleanText(form.audioMessageStart)) {
+      nextErrors.audioMessageStart = 'Please enter a start date.';
+    }
+    if (!cleanText(form.audioMessageEnd)) {
+      nextErrors.audioMessageEnd = 'Please enter an expiration date.';
+    }
+    if (
+      cleanText(form.audioMessageStart) &&
+      cleanText(form.audioMessageEnd) &&
+      form.audioMessageEnd < form.audioMessageStart
+    ) {
+      nextErrors.audioMessageEnd = 'Expiration date must be on or after the start date.';
+    }
   }
 
   if (form.popupMessageStart && form.popupMessageEnd && form.popupMessageEnd < form.popupMessageStart) {
@@ -335,8 +350,16 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
   const [dailyAvailabilityOpen, setDailyAvailabilityOpen] = useState(false);
   const [savingDailyAvailability, setSavingDailyAvailability] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioPreviewUrl, setAudioPreviewUrl] = useState<string | null>(null);
+  const [pendingAudioFile, setPendingAudioFile] = useState<File | null>(null);
+  const [playingAudio, setPlayingAudio] = useState(false);
   const iconInputRef = useRef<HTMLInputElement | null>(null);
   const audioInputRef = useRef<HTMLInputElement | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
@@ -419,6 +442,14 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
             ? (payload as { lanesForDays: LanesForDaysMatrix }).lanesForDays
             : createEmptyLanesForDays()
         });
+        const loadedAudioUrl =
+          typeof (payload as { audioUrl?: string }).audioUrl === 'string'
+            ? (payload as { audioUrl?: string }).audioUrl
+            : null;
+        setAudioUrl(loadedAudioUrl || null);
+        setAudioPreviewUrl(null);
+        setPendingAudioFile(null);
+        setPlayingAudio(false);
       } catch (error) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : 'Unable to load this typology.');
@@ -436,6 +467,167 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
       cancelled = true;
     };
   }, [props.typologyId]);
+
+  const playableAudioUrl = audioPreviewUrl || audioUrl;
+
+  useEffect(() => {
+    return () => {
+      if (audioPreviewUrl) {
+        URL.revokeObjectURL(audioPreviewUrl);
+      }
+    };
+  }, [audioPreviewUrl]);
+
+  const togglePlayAudio = () => {
+    const player = audioPlayerRef.current;
+    if (!player || !playableAudioUrl) return;
+
+    if (!player.paused && playingAudio) {
+      player.pause();
+      setPlayingAudio(false);
+      return;
+    }
+
+    player.src = playableAudioUrl;
+    void player.play().then(() => setPlayingAudio(true)).catch(() => {
+      setPlayingAudio(false);
+      window.alert('Unable to play this audio file. Check that the file exists on the server.');
+    });
+    player.onended = () => setPlayingAudio(false);
+  };
+
+  const handleAudioMessageEnabledChange = (enabled: boolean) => {
+    if (enabled) {
+      const start = form.audioMessageStart || todayIsoDate();
+      const end = form.audioMessageEnd || todayIsoDate();
+      setForm({
+        ...form,
+        audioMessageEnabled: true,
+        audioMessageStart: start,
+        audioMessageEnd: end
+      });
+      clearFieldError('audioMessageStart');
+      clearFieldError('audioMessageEnd');
+      return;
+    }
+
+    setForm({
+      ...form,
+      audioMessageEnabled: false,
+      audioMessageStart: '',
+      audioMessageEnd: ''
+    });
+    clearFieldError('audioMessageStart');
+    clearFieldError('audioMessageEnd');
+  };
+
+  const setPendingAudioPreview = (file: File) => {
+    if (audioPreviewUrl) {
+      URL.revokeObjectURL(audioPreviewUrl);
+    }
+    setPendingAudioFile(file);
+    setAudioPreviewUrl(URL.createObjectURL(file));
+    setPlayingAudio(false);
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current.removeAttribute('src');
+    }
+  };
+
+  const uploadTypologyAudio = async (typologyId: string, file: File) => {
+    const token = localStorage.getItem('token');
+    const formData = new FormData();
+    formData.append('typologyId', typologyId);
+    formData.append('file', file);
+
+    const response = await fetch('/api/club/settings/typology-subscription/audio', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(data?.error || 'Unable to save the audio message.');
+    }
+
+    const nextUrl = typeof data?.audioUrl === 'string' ? data.audioUrl : null;
+    if (nextUrl) {
+      setAudioUrl(nextUrl);
+    }
+    if (audioPreviewUrl) {
+      URL.revokeObjectURL(audioPreviewUrl);
+    }
+    setAudioPreviewUrl(null);
+    setPendingAudioFile(null);
+  };
+
+  const handleAudioImport = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
+    if (!/\.(mp3|mp4|wav|webm)$/.test(lowerName)) {
+      window.alert('Only .mp3, .mp4, .wav, or .webm files are allowed.');
+      event.target.value = '';
+      return;
+    }
+
+    setPendingAudioPreview(file);
+    event.target.value = '';
+  };
+
+  const startAudioRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      window.alert('Audio recording is not supported in this browser.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = stream;
+      recordingChunksRef.current = [];
+
+      const recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const extension = blob.type.includes('wav') ? 'wav' : 'webm';
+        const file = new File([blob], `recording-${Date.now()}.${extension}`, { type: blob.type });
+        setPendingAudioPreview(file);
+        stream.getTracks().forEach((track) => track.stop());
+        recordingStreamRef.current = null;
+        mediaRecorderRef.current = null;
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch {
+      window.alert('Microphone access is required to record audio.');
+    }
+  };
+
+  const stopAudioRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
+    setRecording(false);
+  };
+
+  const handleRecordClick = () => {
+    if (recording) {
+      stopAudioRecording();
+      return;
+    }
+    void startAudioRecording();
+  };
 
   const selectedIconLabel = useMemo(() => getTypologyIconLabel(form.image), [form.image]);
   const iconPreviewUrl = useMemo(() => getTypologyIconUrl(form.image), [form.image]);
@@ -649,13 +841,23 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
         })
       });
 
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
-        const data = await response.json().catch(() => null);
         if (data?.fieldErrors && typeof data.fieldErrors === 'object') {
           applyErrors(data.fieldErrors);
           return;
         }
         throw new Error(data?.error || 'Unable to save this typology.');
+      }
+
+      const savedTypologyId = isEditMode
+        ? props.typologyId
+        : typeof data?.id === 'string' || typeof data?.id === 'number'
+          ? String(data.id)
+          : null;
+
+      if (pendingAudioFile && savedTypologyId) {
+        await uploadTypologyAudio(savedTypologyId, pendingAudioFile);
       }
 
       if (props.onSaved) {
@@ -1136,7 +1338,7 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                   <input
                     type="checkbox"
                     checked={form.audioMessageEnabled}
-                    onChange={(event) => setForm({ ...form, audioMessageEnabled: event.target.checked })}
+                    onChange={(event) => handleAudioMessageEnabledChange(event.target.checked)}
                     className="h-4 w-4 accent-gray-900"
                   />
                   Start
@@ -1145,38 +1347,83 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                   <input
                     type="date"
                     value={form.audioMessageStart}
+                    min={todayIsoDate()}
+                    disabled={!form.audioMessageEnabled}
                     onChange={(event) => {
                       clearFieldError('audioMessageStart');
                       setForm({ ...form, audioMessageStart: event.target.value });
                     }}
-                    className={fieldClass('audioMessageStart', 'h-10 w-full rounded-md border border-gray-300 px-3 text-sm')}
+                    onFocus={() => {
+                      if (!form.audioMessageEnabled) {
+                        handleAudioMessageEnabledChange(true);
+                      }
+                    }}
+                    className={fieldClass(
+                      'audioMessageStart',
+                      'h-10 w-full rounded-md border border-gray-300 px-3 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400'
+                    )}
                   />
                   <FieldError message={errors.audioMessageStart} />
                 </div>
-                <FieldLabel>Expiration date</FieldLabel>
+                <FieldLabel>
+                  <span className={!form.audioMessageEnabled ? 'text-gray-400' : undefined}>Expiration date</span>
+                </FieldLabel>
                 <div ref={registerField('audioMessageEnd')}>
                   <input
                     type="date"
                     value={form.audioMessageEnd}
+                    min={form.audioMessageStart || todayIsoDate()}
+                    disabled={!form.audioMessageEnabled}
                     onChange={(event) => {
                       clearFieldError('audioMessageEnd');
                       setForm({ ...form, audioMessageEnd: event.target.value });
                     }}
-                    className={fieldClass('audioMessageEnd', 'h-10 w-full rounded-md border border-gray-300 px-3 text-sm')}
+                    onFocus={() => {
+                      if (!form.audioMessageEnabled) {
+                        handleAudioMessageEnabledChange(true);
+                      }
+                    }}
+                    className={fieldClass(
+                      'audioMessageEnd',
+                      'h-10 w-full rounded-md border border-gray-300 px-3 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400'
+                    )}
                   />
                   <FieldError message={errors.audioMessageEnd} />
                 </div>
               </div>
-              <div className="mt-4 flex justify-end gap-2">
+              <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                <audio ref={audioPlayerRef} className="hidden" preload="metadata" />
                 <button
                   type="button"
-                  onClick={() => setRecording((value) => !value)}
+                  onClick={togglePlayAudio}
+                  disabled={!playableAudioUrl}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-gray-100 px-4 text-sm font-semibold text-gray-800 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
+                  title={
+                    playableAudioUrl
+                      ? playingAudio
+                        ? 'Pause audio preview'
+                        : 'Play audio preview'
+                      : 'No audio to play — record or import first'
+                  }
+                >
+                  {playingAudio ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  {playingAudio ? 'Pause' : 'Play'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRecordClick}
                   className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-gray-100 px-4 text-sm font-semibold text-gray-800 hover:bg-gray-200"
                 >
                   {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                   {recording ? 'Stop' : 'Record'}
                 </button>
-                <input ref={audioInputRef} type="file" accept="audio/*,video/mp4" className="hidden" />
+                <input
+                  ref={audioInputRef}
+                  type="file"
+                  accept=".mp3,.mp4,.wav,audio/mpeg,audio/wav,video/mp4"
+                  className="hidden"
+                  onChange={handleAudioImport}
+                />
                 <button
                   type="button"
                   onClick={() => audioInputRef.current?.click()}
@@ -1186,6 +1433,18 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                   Import
                 </button>
               </div>
+              {playableAudioUrl && (
+                <p className="mt-2 text-right text-xs text-gray-500">
+                  {pendingAudioFile
+                    ? 'Unsaved audio — click Save to store the file on the server.'
+                    : 'Playing saved subscription audio.'}
+                </p>
+              )}
+              {form.audioMessageEnabled && (
+                <p className="mt-1 text-right text-xs text-gray-500">
+                  Audio message active from {form.audioMessageStart || '—'} to {form.audioMessageEnd || '—'}.
+                </p>
+              )}
             </section>
 
             <section className="p-4">

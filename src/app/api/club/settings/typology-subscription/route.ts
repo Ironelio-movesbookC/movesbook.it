@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unserialize } from 'php-serialize';
 import { prisma } from '@/lib/prisma';
+import { normalizeTypologyDateInput } from '@/lib/typologySubscriptionAudio.shared';
 import { verifyToken } from '@/lib/auth';
 import { fetchLanesForDays, saveLanesForDays } from '@/lib/lanesForDays.server';
 
@@ -522,8 +523,12 @@ function buildTypologyValues(body: any, areaActivity: string): Record<string, un
     accesses_allow: yesNo(body.doNotStoreAllowedAccesses),
     accesses_not_allow: yesNo(body.doNotStoreDeniedAccesses),
     audio_message_status: yesNo(body.audioMessageEnabled),
-    audio_message_start: String(body.audioMessageStart ?? '').trim(),
-    audio_message_end: String(body.audioMessageEnd ?? '').trim(),
+    audio_message_start: yesNo(body.audioMessageEnabled) === 'Y'
+      ? String(body.audioMessageStart ?? '').trim()
+      : '',
+    audio_message_end: yesNo(body.audioMessageEnabled) === 'Y'
+      ? String(body.audioMessageEnd ?? '').trim()
+      : '',
     pop_up_status: yesNo(body.popupMessageEnabled),
     pop_up_start: String(body.popupMessageStart ?? '').trim(),
     pop_up_end: String(body.popupMessageEnd ?? '').trim(),
@@ -547,6 +552,13 @@ function buildTypologyValues(body: any, areaActivity: string): Record<string, un
   }
 
   return values;
+}
+
+function buildTypologyAudioUrl(row: Record<string, unknown>): string | null {
+  const song = text(row.song);
+  const userId = text(row.user_id);
+  if (!song || !userId) return null;
+  return `/subscription_file/playlist/User_${userId}/${song}`;
 }
 
 function mapDbRowToTypologyForm(row: Record<string, unknown>) {
@@ -589,8 +601,14 @@ function mapDbRowToTypologyForm(row: Record<string, unknown>) {
     doNotStoreAllowedAccesses: boolFromYesNo(row.accesses_allow),
     doNotStoreDeniedAccesses: boolFromYesNo(row.accesses_not_allow),
     audioMessageEnabled: boolFromYesNo(row.audio_message_status),
-    audioMessageStart: text(row.audio_message_start),
-    audioMessageEnd: text(row.audio_message_end),
+    audioMessageStart: boolFromYesNo(row.audio_message_status) === true
+      ? normalizeTypologyDateInput(text(row.audio_message_start))
+      : '',
+    audioMessageEnd: boolFromYesNo(row.audio_message_status) === true
+      ? normalizeTypologyDateInput(text(row.audio_message_end))
+      : '',
+    song: text(row.song) || null,
+    audioUrl: buildTypologyAudioUrl(row),
     popupMessageEnabled: boolFromYesNo(row.pop_up_status),
     popupMessageStart: text(row.pop_up_start),
     popupMessageEnd: text(row.pop_up_end),
@@ -637,14 +655,24 @@ function validateScalarFields(body: any, fieldErrors: Record<string, string>) {
     fieldErrors.afterExpireLaneDays = 'Days cannot be greater than 30.';
   }
 
-  if (!isDateText(body.audioMessageStart)) {
-    fieldErrors.audioMessageStart = 'Please enter a valid start date.';
-  }
-  if (!isDateText(body.audioMessageEnd)) {
-    fieldErrors.audioMessageEnd = 'Please enter a valid expiration date.';
-  }
-  if (text(body.audioMessageStart) && text(body.audioMessageEnd) && text(body.audioMessageEnd) < text(body.audioMessageStart)) {
-    fieldErrors.audioMessageEnd = 'Expiration date must be after the start date.';
+  if (yesNo(body.audioMessageEnabled) === 'Y') {
+    if (!text(body.audioMessageStart)) {
+      fieldErrors.audioMessageStart = 'Please enter a start date.';
+    } else if (!isDateText(body.audioMessageStart)) {
+      fieldErrors.audioMessageStart = 'Please enter a valid start date.';
+    }
+    if (!text(body.audioMessageEnd)) {
+      fieldErrors.audioMessageEnd = 'Please enter an expiration date.';
+    } else if (!isDateText(body.audioMessageEnd)) {
+      fieldErrors.audioMessageEnd = 'Please enter a valid expiration date.';
+    }
+    if (
+      text(body.audioMessageStart) &&
+      text(body.audioMessageEnd) &&
+      text(body.audioMessageEnd) < text(body.audioMessageStart)
+    ) {
+      fieldErrors.audioMessageEnd = 'Expiration date must be on or after the start date.';
+    }
   }
 
   if (!isDateText(body.popupMessageStart)) {
