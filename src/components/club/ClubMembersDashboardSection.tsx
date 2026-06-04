@@ -7,6 +7,7 @@ import {
   Mail,
   ChevronDown,
   ClipboardList,
+  MessagesSquare,
   Settings,
   Star,
   Youtube
@@ -258,6 +259,24 @@ export default function ClubMembersDashboardSection({
                   e.stopPropagation();
                   openModal();
                 }}
+                className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex min-h-[44px] w-full items-stretch">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-700/90"
+              >
+                <MessagesSquare className="h-4 w-4 shrink-0 opacity-90" />
+                <span className="truncate">{t('sidebar_club_topics')}</span>
+              </button>
+              <button
+                type="button"
+                title={t('sidebar_club_topics_settings_aria')}
+                aria-label={t('sidebar_club_topics_settings_aria')}
                 className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90"
               >
                 <Settings className="h-4 w-4" />

@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { 
   Home,
+  Globe,
   Users,
   Building2,
   Trophy,
@@ -124,6 +125,21 @@ import SidebarClubMyEntityTop from '@/components/SidebarClubMyEntityTop';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
+
+function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
+  return (
+    <span className="relative inline-flex h-4 w-4 shrink-0 items-end justify-center" aria-hidden>
+      <Globe className="h-3.5 w-3.5 opacity-95" />
+      {badge === 'star' ? (
+        <Star className="absolute -top-0.5 left-1/2 h-2 w-2 -translate-x-1/2 fill-white text-white" strokeWidth={2} />
+      ) : (
+        <span className="absolute -top-1 left-1/2 -translate-x-1/2 text-[8px] font-bold leading-none text-white">
+          {badge}
+        </span>
+      )}
+    </span>
+  );
+}
 
 type ClubAdminInsertItem =
   | { kind: 'icon'; Icon: LucideIcon; label: string }
@@ -400,6 +416,9 @@ export default function DarkSidebar({
   const [clubUserGuidesOpen, setClubUserGuidesOpen] = useState(false);
   const [clubPostsOpen, setClubPostsOpen] = useState(false);
   const [musicForClubOpen, setMusicForClubOpen] = useState(false);
+  const [clubInternetLinksOpen, setClubInternetLinksOpen] = useState(false);
+  const [clubInternetSocialSitesOpen, setClubInternetSocialSitesOpen] = useState(false);
+  const [clubInternetFavouriteLinksOpen, setClubInternetFavouriteLinksOpen] = useState(false);
   const [clubMarketingOpen, setClubMarketingOpen] = useState(false);
   const [clubMarketingClubStaffOpen, setClubMarketingClubStaffOpen] = useState(false);
   const [clubMarketingCoursesOpen, setClubMarketingCoursesOpen] = useState(false);
@@ -2068,19 +2087,134 @@ export default function DarkSidebar({
                   <ChevronDown className="w-4 h-4 opacity-90" />
                 </button>
 
-                <button
-                  type="button"
-                  className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <LinkIcon className="w-5 h-5 shrink-0" />
-                    <span className="font-semibold tracking-wide truncate">Internet links</span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <ChevronDown className="w-4 h-4 opacity-90" />
-                    <Settings className="w-4 h-4 opacity-90" />
-                  </div>
-                </button>
+                <div className="w-full border-b border-teal-700">
+                  <button
+                    type="button"
+                    onClick={() => setClubInternetLinksOpen((v) => !v)}
+                    aria-expanded={clubInternetLinksOpen}
+                    className="flex w-full items-center justify-between bg-teal-800 py-2.5 px-3 text-white transition-colors hover:bg-teal-700"
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <Globe className="h-5 w-5 shrink-0" />
+                      <span className="truncate font-semibold tracking-wide">
+                        {t('sidebar_internet_links')}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <ChevronDown
+                        className={`h-4 w-4 opacity-90 transition-transform duration-200 ${
+                          clubInternetLinksOpen ? 'rotate-180' : ''
+                        }`}
+                      />
+                      <Settings className="h-4 w-4 opacity-90" aria-hidden />
+                    </div>
+                  </button>
+                  {clubInternetLinksOpen && (
+                    <div className="bg-[#4a4a4a] text-white">
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                      >
+                        <Globe className="h-4 w-4 shrink-0 opacity-95" aria-hidden />
+                        <span className="min-w-0 leading-snug">{t('sidebar_club_official_website')}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between gap-2 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                      >
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <SidebarStackedGlobeIcon badge="M" />
+                          <span className="min-w-0 leading-snug">{t('sidebar_club_movesbook_website')}</span>
+                        </div>
+                        <span className="shrink-0 text-[12px] font-medium text-[#d4a017]">
+                          {t('sidebar_club_get_link')}
+                        </span>
+                      </button>
+
+                      <div className="flex min-h-[44px] w-full items-stretch border-b border-gray-500/60">
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                        >
+                          <Home className="h-4 w-4 shrink-0 opacity-95" aria-hidden />
+                          <span className="min-w-0 truncate leading-snug">{t('sidebar_club_website_editor')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="flex shrink-0 items-center border-l border-gray-500/60 px-3 text-gray-300 transition-colors hover:bg-[#555]"
+                          aria-label={t('sidebar_options')}
+                        >
+                          <Settings className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2.5 border-b border-gray-500/60 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                      >
+                        <SidebarStackedGlobeIcon badge="F" />
+                        <span className="min-w-0 leading-snug">{t('sidebar_club_facebook_website')}</span>
+                      </button>
+
+                      <div className="border-b border-gray-500/60">
+                        <button
+                          type="button"
+                          onClick={() => setClubInternetSocialSitesOpen((v) => !v)}
+                          aria-expanded={clubInternetSocialSitesOpen}
+                          className="flex w-full items-center justify-between px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                        >
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <Globe className="h-4 w-4 shrink-0 opacity-95" aria-hidden />
+                            <span className="min-w-0 leading-snug">{t('sidebar_club_social_sites')}</span>
+                          </div>
+                          <ChevronDown
+                            className={`h-4 w-4 shrink-0 opacity-90 transition-transform duration-200 ${
+                              clubInternetSocialSitesOpen ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </button>
+                        {clubInternetSocialSitesOpen && (
+                          <div className="border-t border-gray-600/50 bg-[#3a3a3a]" />
+                        )}
+                      </div>
+
+                      <div className="flex min-h-[44px] w-full items-stretch">
+                        <button
+                          type="button"
+                          onClick={() => setClubInternetFavouriteLinksOpen((v) => !v)}
+                          aria-expanded={clubInternetFavouriteLinksOpen}
+                          className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
+                        >
+                          <SidebarStackedGlobeIcon badge="star" />
+                          <span className="min-w-0 truncate leading-snug">{t('sidebar_club_favourite_links')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="flex shrink-0 items-center border-l border-gray-500/60 px-3 text-gray-300 transition-colors hover:bg-[#555]"
+                          aria-label={t('sidebar_options')}
+                        >
+                          <Settings className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setClubInternetFavouriteLinksOpen((v) => !v)}
+                          aria-label={clubInternetFavouriteLinksOpen ? t('collapse') : t('expand')}
+                          className="flex shrink-0 items-center border-l border-gray-500/60 px-3 transition-colors hover:bg-[#555]"
+                        >
+                          <ChevronDown
+                            className={`h-4 w-4 opacity-90 transition-transform duration-200 ${
+                              clubInternetFavouriteLinksOpen ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </button>
+                      </div>
+                      {clubInternetFavouriteLinksOpen && (
+                        <div className="border-t border-gray-600/50 bg-[#3a3a3a]" />
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 {/* TRAINING section header */}
                 <div className="w-full bg-[#7a0d1c] text-white border-b border-teal-700">
