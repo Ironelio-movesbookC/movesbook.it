@@ -125,6 +125,7 @@ import SidebarClubMyEntityTop from '@/components/SidebarClubMyEntityTop';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
+import { CLUB_WEBSITE_SETTINGS_INDEX_PATH } from '@/lib/clubWebsiteSettingsPaths';
 
 function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
   return (
@@ -2140,13 +2141,15 @@ export default function DarkSidebar({
                           <Home className="h-4 w-4 shrink-0 opacity-95" aria-hidden />
                           <span className="min-w-0 truncate leading-snug">{t('sidebar_club_website_editor')}</span>
                         </button>
-                        <button
-                          type="button"
-                          className="flex shrink-0 items-center border-l border-gray-500/60 px-3 text-gray-300 transition-colors hover:bg-[#555]"
-                          aria-label={t('sidebar_options')}
+                        <a
+                          href={CLUB_WEBSITE_SETTINGS_INDEX_PATH}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex shrink-0 items-center border-l border-gray-500/60 px-3 text-gray-300 no-underline transition-colors hover:bg-[#555]"
+                          aria-label={t('sidebar_club_website_editor_aria')}
                         >
                           <Settings className="h-4 w-4" />
-                        </button>
+                        </a>
                       </div>
 
                       <button
