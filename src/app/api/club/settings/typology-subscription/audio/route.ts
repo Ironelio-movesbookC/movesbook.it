@@ -10,6 +10,11 @@ import {
   normalizeTypologyAudioExtension,
   typologyAudioUserDir
 } from '@/lib/typologySubscriptionAudio';
+import {
+  formatUploadCause,
+  typologyUploadError,
+  typologyUploadSuccess
+} from '@/lib/typologyUploadResponse';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +33,18 @@ function getTokenPayload(request: NextRequest) {
   const token = request.headers.get('authorization')?.replace('Bearer ', '');
   if (!token) return null;
   return verifyToken(token);
+}
+
+function resolveAudioSource(
+  formSource: unknown,
+  uploadFileName: string
+): 'import' | 'recording' {
+  const source = text(formSource).toLowerCase();
+  if (source === 'recording' || source === 'import') return source;
+  if (/^recording-/i.test(uploadFileName) || uploadFileName.toLowerCase().endsWith('.webm')) {
+    return 'recording';
+  }
+  return 'import';
 }
 
 async function findExistingTable(candidates: string[]): Promise<string | null> {
@@ -89,59 +106,115 @@ async function removeTypologyAudioFile(storageUserId: string, fileName: string) 
 }
 
 export async function POST(request: NextRequest) {
+  let uploadDir = '';
+  let typologyId = '';
+  let source: 'import' | 'recording' = 'import';
+
   try {
     const decoded = getTokenPayload(request);
     if (!decoded?.userId || !decoded.userType) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return typologyUploadError('Unauthorized', 401, {
+        kind: 'typology-audio',
+        uploadDir: uploadDir || 'unknown'
+      });
     }
     if (!isClubAccountUserType(String(decoded.userType))) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return typologyUploadError('Forbidden', 403, {
+        kind: 'typology-audio',
+        uploadDir: uploadDir || 'unknown'
+      });
     }
 
     const formData = await request.formData();
-    const typologyId = text(formData.get('typologyId'));
+    typologyId = text(formData.get('typologyId'));
     const file = formData.get('file');
+    const uploadFileName = file instanceof File ? file.name : 'upload.mp3';
+    source = resolveAudioSource(formData.get('source'), uploadFileName);
 
     if (!typologyId) {
-      return NextResponse.json({ error: 'Typology id is required.' }, { status: 400 });
+      return typologyUploadError('Typology id is required.', 400, {
+        kind: 'typology-audio',
+        uploadDir: uploadDir || 'unknown',
+        source
+      });
     }
     if (!file || typeof file === 'string' || !(file instanceof Blob)) {
-      return NextResponse.json({ error: 'No audio file provided.' }, { status: 400 });
+      return typologyUploadError('No audio file provided.', 400, {
+        kind: 'typology-audio',
+        typologyId,
+        source
+      });
     }
     if (file.size > MAX_AUDIO_BYTES) {
-      return NextResponse.json({ error: 'Audio file exceeds 25MB.' }, { status: 400 });
+      return typologyUploadError('Audio file exceeds 25MB.', 400, {
+        kind: 'typology-audio',
+        typologyId,
+        source,
+        bytesWritten: file.size
+      });
     }
     if (file.size === 0) {
-      return NextResponse.json({ error: 'The uploaded file is empty.' }, { status: 400 });
+      return typologyUploadError('The uploaded file is empty.', 400, {
+        kind: 'typology-audio',
+        typologyId,
+        source
+      });
     }
 
-    const uploadFileName = file instanceof File ? file.name : 'upload.mp3';
     const extension = normalizeTypologyAudioExtension(uploadFileName);
     if (!extension) {
-      return NextResponse.json({ error: 'Only .mp3, .mp4, .wav, or recorded .webm files are allowed.' }, { status: 400 });
+      return typologyUploadError(
+        'Only .mp3, .mp4, .wav, or recorded .webm files are allowed.',
+        400,
+        { kind: 'typology-audio', typologyId, source }
+      );
     }
 
     const existing = await fetchTypologySong(typologyId, String(decoded.userId));
     if (!existing) {
-      return NextResponse.json({ error: 'Typology not found.' }, { status: 404 });
+      return typologyUploadError('Typology not found.', 404, {
+        kind: 'typology-audio',
+        typologyId,
+        source
+      });
     }
 
     const columns = await getTableColumns(existing.table);
     if (!columns.has('song')) {
-      return NextResponse.json({ error: 'Song column not found on typology table.' }, { status: 500 });
+      return typologyUploadError('Song column not found on typology table.', 500, {
+        kind: 'typology-audio',
+        typologyId,
+        storageUserId: existing.storageUserId,
+        source
+      });
     }
 
+    uploadDir = typologyAudioUserDir(existing.storageUserId);
     const fileName = buildTypologyAudioFileName(extension);
-    const uploadDir = typologyAudioUserDir(existing.storageUserId);
-    await mkdir(uploadDir, { recursive: true });
     const savedPath = join(uploadDir, fileName);
+    const servedUrl = typologyAudioPublicUrl(existing.storageUserId, fileName);
+
+    await mkdir(uploadDir, { recursive: true });
     const buffer = Buffer.from(await file.arrayBuffer());
     await writeFile(savedPath, buffer);
 
-    if (!(await verifyPublicFile(savedPath))) {
-      return NextResponse.json(
-        { error: 'Audio upload could not be verified on disk. Check server public directory configuration.' },
-        { status: 500 }
+    const verified = await verifyPublicFile(savedPath);
+    if (!verified) {
+      return typologyUploadError(
+        'Audio was written but could not be verified on disk. The file may be in a folder that Next.js does not serve.',
+        500,
+        {
+          kind: 'typology-audio',
+          uploadDir,
+          savedPath,
+          servedUrl,
+          fileName,
+          bytesWritten: buffer.length,
+          verifiedOnDisk: false,
+          typologyId,
+          storageUserId: existing.storageUserId,
+          source
+        }
       );
     }
 
@@ -156,17 +229,39 @@ export async function POST(request: NextRequest) {
       await removeTypologyAudioFile(existing.storageUserId, existing.song);
     }
 
-    const audioUrl = typologyAudioPublicUrl(existing.storageUserId, fileName);
-    return NextResponse.json({
-      success: true,
-      fileName,
-      song: fileName,
-      audioUrl,
-      message: 'Audio successfully saved.'
-    });
+    return typologyUploadSuccess(
+      'typology-audio',
+      {
+        message:
+          source === 'recording'
+            ? 'Recording saved on disk, database updated, and verified. Open Browser URL in details to confirm playback.'
+            : 'Audio import saved on disk, database updated, and verified. Open Browser URL in details to confirm playback.',
+        fileName,
+        song: fileName,
+        audioUrl: servedUrl
+      },
+      {
+        uploadDir,
+        savedPath,
+        servedUrl,
+        fileName,
+        bytesWritten: buffer.length,
+        verifiedOnDisk: true,
+        typologyId,
+        storageUserId: existing.storageUserId,
+        source,
+        dbSongUpdated: true
+      }
+    );
   } catch (error) {
     console.error('POST /api/club/settings/typology-subscription/audio:', error);
-    return NextResponse.json({ error: 'Audio upload failed.' }, { status: 500 });
+    return typologyUploadError('Audio upload failed.', 500, {
+      kind: 'typology-audio',
+      uploadDir: uploadDir || 'unknown',
+      typologyId,
+      source,
+      cause: formatUploadCause(error)
+    });
   }
 }
 

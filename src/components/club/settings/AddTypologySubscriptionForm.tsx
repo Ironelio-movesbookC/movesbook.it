@@ -11,6 +11,7 @@ import {
   type LanesForDaysMatrix
 } from '@/lib/lanesForDays';
 import { todayIsoDate } from '@/lib/typologySubscriptionAudio.shared';
+import { formatTypologyUploadAlert } from '@/lib/typologyUploadResponse.shared';
 import RichTextEditor from '@/components/shared/RichTextEditor';
 import {
   ArrowLeft,
@@ -541,11 +542,16 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
     }
   };
 
-  const uploadTypologyAudio = async (typologyId: string, file: File) => {
+  const uploadTypologyAudio = async (
+    typologyId: string,
+    file: File,
+    source: 'import' | 'recording' = 'import'
+  ) => {
     const token = localStorage.getItem('token');
     const formData = new FormData();
     formData.append('typologyId', typologyId);
     formData.append('file', file);
+    formData.append('source', source);
 
     const response = await fetch('/api/club/settings/typology-subscription/audio', {
       method: 'POST',
@@ -555,7 +561,13 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
 
     const data = await response.json().catch(() => null);
     if (!response.ok) {
-      throw new Error(data?.error || 'Unable to save the audio message.');
+      throw new Error(
+        formatTypologyUploadAlert(data, 'Unable to save the audio message.')
+      );
+    }
+
+    if (data?.details) {
+      console.info('[typology audio upload]', data.details);
     }
 
     const nextUrl = typeof data?.audioUrl === 'string' ? data.audioUrl : null;
@@ -818,17 +830,30 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
 
       const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(data?.error || 'Unable to upload the typology icon.');
+        throw new Error(
+          formatTypologyUploadAlert(data, 'Unable to upload the typology icon.')
+        );
+      }
+
+      if (data?.details) {
+        console.info('[typology icon upload]', data.details);
       }
 
       const imageName = String(data?.image || data?.fileName || '').trim();
       if (!imageName) {
-        throw new Error('The uploaded icon did not return a valid filename.');
+        throw new Error(
+          formatTypologyUploadAlert(
+            data,
+            'Upload succeeded but no filename was returned.'
+          )
+        );
       }
 
       setForm((current) => ({ ...current, image: imageName }));
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'Unable to upload the typology icon.');
+      window.alert(
+        error instanceof Error ? error.message : 'Unable to upload the typology icon.'
+      );
     } finally {
       setUploadingIcon(false);
       event.target.value = '';
@@ -875,7 +900,10 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
           : null;
 
       if (pendingAudioFile && savedTypologyId) {
-        await uploadTypologyAudio(savedTypologyId, pendingAudioFile);
+        const audioSource = /^recording-/i.test(pendingAudioFile.name)
+          ? 'recording'
+          : 'import';
+        await uploadTypologyAudio(savedTypologyId, pendingAudioFile, audioSource);
       }
 
       if (props.onSaved) {
