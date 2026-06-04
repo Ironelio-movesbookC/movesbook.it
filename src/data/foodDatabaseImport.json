@@ -1,0 +1,189 @@
+{
+  "sections": [
+    { "legacyId": 1, "name": "Appetizers", "displayOrder": 1 },
+    { "legacyId": 2, "name": "Milk", "displayOrder": 2 },
+    { "legacyId": 3, "name": "Cereals", "displayOrder": 3 },
+    { "legacyId": 4, "name": "Meat & Fish", "displayOrder": 4 },
+    { "legacyId": 5, "name": "Vegetables", "displayOrder": 5 },
+    { "legacyId": 6, "name": "Fruits", "displayOrder": 6 },
+    { "legacyId": 7, "name": "Oils & Sweets", "displayOrder": 7 }
+  ],
+  "foods": [
+    {
+      "legacyId": 1,
+      "sectionName": "Appetizers",
+      "name": "APPETIZER OF HAM & MELON",
+      "per100": { "calories": 82.7, "proteins": 3.5, "carbohydrates": 10.9, "fats": 3.2, "fiber": 0.5, "sodium": 420 },
+      "nameTranslations": {
+        "en": "APPETIZER OF HAM & MELON",
+        "fr": "ENTRÉE DE JAMBON ET MELON",
+        "de": "APERITIF AUS SCHINKEN UND MELON",
+        "it": "ANTIPASTO DI PROSCIUTTO E MELONE",
+        "es": "APERITIVO DE JAMÓN Y MELÓN",
+        "pt": "ENTRADA DE PRESUNTO E MELÃO",
+        "ru": "ЗАКУСКА ИЗ ВЕТЧИНЫ И ДЫНИ"
+      }
+    },
+    {
+      "legacyId": 2,
+      "sectionName": "Appetizers",
+      "name": "BRUSCHETTA WITH TOMATO",
+      "per100": { "calories": 145.2, "proteins": 4.1, "carbohydrates": 18.6, "fats": 6.3, "fiber": 2.1, "vitC": 12 }
+    },
+    {
+      "legacyId": 3,
+      "sectionName": "Appetizers",
+      "name": "RICE ARANCINI",
+      "per100": { "calories": 298.93, "proteins": 13.16, "carbohydrates": 44.25, "fats": 6.96, "fiber": 1.8, "calcium": 45 }
+    },
+    {
+      "legacyId": 4,
+      "sectionName": "Appetizers",
+      "name": "CAPRESE SALAD",
+      "per100": { "calories": 176.4, "proteins": 9.8, "carbohydrates": 4.2, "fats": 13.5, "calcium": 220, "vitA": 180 }
+    },
+    {
+      "legacyId": 5,
+      "sectionName": "Appetizers",
+      "name": "STUFFED MUSHROOMS",
+      "per100": { "calories": 132.5, "proteins": 6.2, "carbohydrates": 8.4, "fats": 8.9, "fiber": 1.6, "iron": 1.2 }
+    },
+    {
+      "legacyId": 6,
+      "sectionName": "Appetizers",
+      "name": "MINI QUICHE LORRAINE",
+      "per100": { "calories": 265.8, "proteins": 11.4, "carbohydrates": 16.2, "fats": 17.5, "vitB12": 0.6 }
+    },
+    {
+      "legacyId": 7,
+      "sectionName": "Appetizers",
+      "name": "CARPACCIO OF BRESAOLA WITH PARMESAN",
+      "per100": { "calories": 198.7, "proteins": 25.02, "carbohydrates": 3.83, "fats": 9.4, "iron": 2.1, "calcium": 180 }
+    },
+    {
+      "legacyId": 8,
+      "sectionName": "Appetizers",
+      "name": "GRILLED VEGETABLE PLatter",
+      "per100": { "calories": 68.3, "proteins": 2.1, "carbohydrates": 9.8, "fats": 2.4, "fiber": 3.2, "vitC": 22 }
+    },
+    {
+      "legacyId": 101,
+      "sectionName": "Milk",
+      "name": "SOYA MILK",
+      "isLiquid": true,
+      "per100": { "calories": 32, "proteins": 3, "carbohydrates": 1.8, "fats": 1.8, "fiber": 0.4, "calcium": 120, "vitB12": 0.4 }
+    },
+    {
+      "legacyId": 102,
+      "sectionName": "Milk",
+      "name": "MILK semi-skimmed",
+      "isLiquid": true,
+      "per100": { "calories": 46, "proteins": 3.3, "carbohydrates": 4.8, "fats": 1.6, "calcium": 120, "vitB12": 0.4, "potassium": 150 }
+    },
+    {
+      "legacyId": 103,
+      "sectionName": "Milk",
+      "name": "GREEK YOGURT",
+      "per100": { "calories": 97, "proteins": 9, "carbohydrates": 3.6, "fats": 5, "calcium": 110, "potassium": 141 }
+    },
+    {
+      "legacyId": 201,
+      "sectionName": "Cereals",
+      "name": "OATS",
+      "per100": { "calories": 389, "proteins": 17, "carbohydrates": 66, "fats": 7, "fiber": 10, "iron": 4.7, "magnesium": 177, "zinc": 4 }
+    },
+    {
+      "legacyId": 202,
+      "sectionName": "Cereals",
+      "name": "BARLEY FLOUR",
+      "per100": { "calories": 360, "proteins": 10, "carbohydrates": 78, "fats": 2, "fiber": 15, "iron": 3.6, "magnesium": 133 }
+    },
+    {
+      "legacyId": 203,
+      "sectionName": "Cereals",
+      "name": "RICE WHITE (cooked)",
+      "per100": { "calories": 130, "proteins": 2.7, "carbohydrates": 28, "fats": 0.3, "fiber": 0.4 }
+    },
+    {
+      "legacyId": 204,
+      "sectionName": "Cereals",
+      "name": "BREAD whole wheat",
+      "per100": { "calories": 247, "proteins": 13, "carbohydrates": 41, "fats": 3.4, "fiber": 7, "iron": 2.5, "magnesium": 82 }
+    },
+    {
+      "legacyId": 301,
+      "sectionName": "Meat & Fish",
+      "name": "CHICKEN BREAST",
+      "per100": { "calories": 165, "proteins": 31, "carbohydrates": 0, "fats": 3.6, "iron": 1, "potassium": 256, "vitB6": 0.5 }
+    },
+    {
+      "legacyId": 302,
+      "sectionName": "Meat & Fish",
+      "name": "SALMON",
+      "per100": { "calories": 208, "proteins": 20, "carbohydrates": 0, "fats": 13, "omega3": 2.5, "potassium": 363, "vitB12": 3.2 }
+    },
+    {
+      "legacyId": 303,
+      "sectionName": "Meat & Fish",
+      "name": "EGGS whole",
+      "per100": { "calories": 155, "proteins": 13, "carbohydrates": 1.1, "fats": 11, "vitA": 160, "iron": 1.8, "vitB12": 1.1 }
+    },
+    {
+      "legacyId": 401,
+      "sectionName": "Vegetables",
+      "name": "BROCCOLI",
+      "per100": { "calories": 34, "proteins": 2.8, "carbohydrates": 7, "fats": 0.4, "fiber": 2.6, "vitC": 89, "vitA": 31, "calcium": 47, "iron": 0.7 }
+    },
+    {
+      "legacyId": 402,
+      "sectionName": "Vegetables",
+      "name": "SPINACH",
+      "per100": { "calories": 23, "proteins": 2.9, "carbohydrates": 3.6, "fats": 0.4, "fiber": 2.2, "vitA": 469, "vitC": 28, "iron": 2.7, "calcium": 99, "magnesium": 79 }
+    },
+    {
+      "legacyId": 501,
+      "sectionName": "Fruits",
+      "name": "BANANA",
+      "per100": { "calories": 89, "proteins": 1.1, "carbohydrates": 23, "fats": 0.3, "fiber": 2.6, "potassium": 358, "vitC": 8.7, "vitB6": 0.4 }
+    },
+    {
+      "legacyId": 502,
+      "sectionName": "Fruits",
+      "name": "APPLE",
+      "per100": { "calories": 52, "proteins": 0.3, "carbohydrates": 14, "fats": 0.2, "fiber": 2.4, "vitC": 4.6, "potassium": 107 }
+    },
+    {
+      "legacyId": 601,
+      "sectionName": "Oils & Sweets",
+      "name": "OLIVE OIL",
+      "per100": { "calories": 884, "proteins": 0, "carbohydrates": 0, "fats": 100 }
+    },
+    {
+      "legacyId": 602,
+      "sectionName": "Oils & Sweets",
+      "name": "DARK CHOCOLATE",
+      "per100": { "calories": 546, "proteins": 4.9, "carbohydrates": 61, "fats": 31, "fiber": 7, "iron": 8, "magnesium": 146 }
+    }
+  ],
+  "recipes": [
+    {
+      "legacyId": 1,
+      "sectionName": "Appetizers",
+      "name": "CAPRESE SKEWERS",
+      "description": "Skewer cherry tomato, mozzarella and basil. Drizzle with olive oil.",
+      "nameTranslations": {
+        "en": "CAPRESE SKEWERS",
+        "it": "SPIEDINI CAPRESE"
+      },
+      "preparationTranslations": {
+        "en": "1. Cut mozzarella and tomatoes.\n2. Thread on skewers with basil.\n3. Season and serve chilled.",
+        "it": "1. Tagliare mozzarella e pomodorini.\n2. Infilzare con basilico.\n3. Condire e servire freddo."
+      },
+      "components": [
+        { "name": "TOMATO", "grams": 60 },
+        { "name": "GREEK YOGURT", "grams": 40, "foodLegacyId": 103 }
+      ],
+      "totals": { "calories": 142, "proteins": 8.2, "carbohydrates": 6.5, "fats": 9.1, "calcium": 95 }
+    }
+  ]
+}
