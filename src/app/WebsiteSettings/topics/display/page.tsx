@@ -14,8 +14,8 @@ import { useState, useEffect } from 'react';
 
 function TopicMemberDisplayContent() {
   const searchParams = useSearchParams();
-  const topicId = searchParams.get('id');
-  const lang = (searchParams.get('lang') as ClubWebsiteLanguageCode) || 'en';
+  const topicId = searchParams?.get('id');
+  const lang = (searchParams?.get('lang') as ClubWebsiteLanguageCode) || 'en';
   const { clubId, clubDisplayName, loading, clubsLoading } = useClubWebsiteSettingsPage();
   const [topics, setTopics] = useState<ClubWebsiteTopic[]>([]);
 

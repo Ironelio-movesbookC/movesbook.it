@@ -8,7 +8,7 @@ import ClubWebsiteSettingsPageShell from '@/components/club/websiteSettings/Club
 
 function ClubWebsiteTopicsContent() {
   const searchParams = useSearchParams();
-  const topicId = searchParams.get('id');
+  const topicId = searchParams?.get('id');
 
   return (
     <ClubWebsiteSettingsPageShell>
