@@ -7,6 +7,7 @@ import { getTypologyIconUrl } from '@/lib/typologyIcon';
 import {
   createEmptyLanesForDays,
   LANE_DAY_LABELS,
+  syncLanesForDaysWithAvailability,
   type LanesForDaysMatrix
 } from '@/lib/lanesForDays';
 import { todayIsoDate } from '@/lib/typologySubscriptionAudio.shared';
@@ -428,6 +429,16 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
           throw new Error('Typology data is missing.');
         }
 
+        const loadedLanes =
+          Array.isArray(payload.lanes) && payload.lanes.length > 0
+            ? payload.lanes
+            : initialForm().lanes;
+        const loadedLanesForDays = Array.isArray(
+          (payload as { lanesForDays?: LanesForDaysMatrix }).lanesForDays
+        )
+          ? (payload as { lanesForDays: LanesForDaysMatrix }).lanesForDays
+          : createEmptyLanesForDays();
+
         setForm({
           ...initialForm(),
           ...payload,
@@ -435,12 +446,8 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
             ...createAdmissions(),
             ...(payload.admissions ?? {})
           },
-          lanes: Array.isArray(payload.lanes) && payload.lanes.length > 0
-            ? payload.lanes
-            : initialForm().lanes,
-          lanesForDays: Array.isArray((payload as { lanesForDays?: LanesForDaysMatrix }).lanesForDays)
-            ? (payload as { lanesForDays: LanesForDaysMatrix }).lanesForDays
-            : createEmptyLanesForDays()
+          lanes: loadedLanes,
+          lanesForDays: syncLanesForDaysWithAvailability(loadedLanesForDays, loadedLanes)
         });
         const loadedAudioUrl =
           typeof (payload as { audioUrl?: string }).audioUrl === 'string'
@@ -688,19 +695,29 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
         laneIndex === index ? { ...lane, ...patch } : lane
       );
 
-      let nextLanesForDays = current.lanesForDays;
-      if ('available' in patch && patch.available === false) {
-        nextLanesForDays = current.lanesForDays.map((day) =>
-          day.map((enabled, laneIndex) => (laneIndex === index ? false : enabled))
-        );
+      let nextEnableLanesBooths = current.enableLanesBooths;
+      if ('available' in patch && patch.available === true) {
+        nextEnableLanesBooths = true;
       }
+
+      const nextLanesForDays = syncLanesForDaysWithAvailability(current.lanesForDays, nextLanes);
 
       return {
         ...current,
+        enableLanesBooths: nextEnableLanesBooths,
         lanes: nextLanes,
         lanesForDays: nextLanesForDays
       };
     });
+  };
+
+  const openDailyAvailability = () => {
+    setForm((current) => ({
+      ...current,
+      enableLanesBooths: true,
+      lanesForDays: syncLanesForDaysWithAvailability(current.lanesForDays, current.lanes)
+    }));
+    setDailyAvailabilityOpen(true);
   };
 
   const updateLaneForDay = (dayIndex: number, laneIndex: number, enabled: boolean) => {
@@ -744,7 +761,8 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
           action: 'save-lanes-for-days',
           id: props.typologyId,
           lanesForDays: form.lanesForDays,
-          lanes: form.lanes
+          lanes: form.lanes,
+          enableLanesBooths: form.enableLanesBooths
         })
       });
 
@@ -1213,14 +1231,22 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                 checked={form.enableLanesBooths}
                 onChange={(checked) => {
                   clearFieldError('enableLanesBooths');
-                  setForm({ ...form, enableLanesBooths: checked });
+                  setForm((current) => ({
+                    ...current,
+                    enableLanesBooths: checked,
+                    lanesForDays: checked
+                      ? current.lanesForDays
+                      : syncLanesForDaysWithAvailability(current.lanesForDays, [])
+                  }));
                 }}
                 label="Enable management for the control of availability of lanes and booths"
               />
               <div ref={registerField('enableLanesBooths')}>
                 <FieldError message={errors.enableLanesBooths} />
               </div>
-              <div className="mt-4 overflow-x-auto">
+              <div
+                className={`mt-4 overflow-x-auto ${form.enableLanesBooths ? '' : 'pointer-events-none opacity-50'}`}
+              >
                 <div className="grid min-w-[620px] grid-cols-[120px_repeat(10,42px)_1fr] items-center gap-2 text-sm">
                   <div></div>
                   {form.lanes.map((_, index) => (
@@ -1239,8 +1265,9 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                   ))}
                   <button
                     type="button"
-                    onClick={() => setDailyAvailabilityOpen(true)}
-                    className="justify-self-end rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-200"
+                    onClick={openDailyAvailability}
+                    disabled={!form.enableLanesBooths && !form.lanes.some((lane) => lane.available)}
+                    className="justify-self-end rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Daily Availability
                   </button>
@@ -1605,8 +1632,15 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
             </div>
             <div className="overflow-x-auto p-5">
               <p className="mb-3 text-sm text-gray-600">
-                Enable lanes or units that can be used for each day. Only lanes marked available above can be selected.
+                Enable lanes or units that can be used for each day. Only lanes marked{' '}
+                <strong>Available</strong> in the grid above can be selected (save the main form or use Save
+                here to persist).
               </p>
+              {form.lanes.every((lane) => !lane.available) && (
+                <p className="mb-3 text-sm font-medium text-amber-700">
+                  No lanes are marked available yet. Check Availability for at least one lane first.
+                </p>
+              )}
               <table className="w-full min-w-[720px] border-collapse text-sm">
                 <thead>
                   <tr className="bg-gray-100 text-left">
