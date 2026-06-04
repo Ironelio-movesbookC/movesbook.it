@@ -3,6 +3,7 @@ import { mkdir, unlink, writeFile } from 'fs/promises';
 import path from 'path';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { resolvePublicPath, verifyPublicFile } from '@/lib/serverPublicDir';
 import { seedOutcomeSettingsIfEmpty } from '@/lib/outcomeSettingsSeed';
 import type { OutcomeSettingItem, OutcomeSettingsTab } from '@/types/clubOutcomeSettings';
 
@@ -473,9 +474,7 @@ export async function PATCH(request: NextRequest) {
       );
       const audioFile = text(rows[0]?.audio);
       if (audioFile) {
-        const filePath = path.join(
-          process.cwd(),
-          'public',
+        const filePath = resolvePublicPath(
           'outcome_messages',
           'club',
           clubStorageFolder(auth.clubIdsForQuery),
@@ -550,15 +549,21 @@ export async function POST(request: NextRequest) {
     }
 
     const filename = `${Date.now()}.${ext}`;
-    const dir = path.join(
-      process.cwd(),
-      'public',
+    const dir = resolvePublicPath(
       'outcome_messages',
       'club',
       clubStorageFolder(auth.clubIdsForQuery)
     );
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, filename), buffer);
+    const savedPath = path.join(dir, filename);
+    await writeFile(savedPath, buffer);
+
+    if (!(await verifyPublicFile(savedPath))) {
+      return NextResponse.json(
+        { error: 'Audio upload could not be verified on disk. Check server public directory configuration.' },
+        { status: 500 }
+      );
+    }
 
     await prisma.$executeRawUnsafe(
       `UPDATE \`${settingsTable}\` SET audio = ? WHERE id = ?`,

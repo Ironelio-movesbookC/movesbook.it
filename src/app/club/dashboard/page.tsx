@@ -258,6 +258,27 @@ function ClubDashboardContent() {
     }
   }, [selectedClubId, activeTab]);
 
+  // Deep-link support (used by legacy settings tabs).
+  useEffect(() => {
+    const panel = searchParams?.get('panel');
+    if (panel === 'identification-devices') {
+      setActiveTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('identification-devices');
+      router.replace('/club/dashboard', { scroll: false });
+    }
+    if (panel === 'outcome-settings') {
+      setActiveTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('outcome-settings');
+      router.replace('/club/dashboard', { scroll: false });
+    }
+  }, [searchParams, router]);
+
   useEffect(() => {
     if (user && !isClubAccountUserType(user.userType)) {
       router.push('/my-page');
