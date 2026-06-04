@@ -1,13 +1,17 @@
 import { existsSync } from 'fs';
+import { stat } from 'fs/promises';
 import { join, normalize } from 'path';
 
 /**
- * Absolute path to the `public` folder the running Node process uses for static files.
- * Upload routes write here; URLs like `/uploads/...` only work if this matches what Next serves.
+ * Absolute path to the `public` folder that Next.js serves for static URLs.
+ * Upload routes must write here or `/img/...` and `/outcome_messages/...` return 404.
  *
- * On VPS with `output: 'standalone'`, if PM2 runs `node .next/standalone/server.js` while
- * `process.cwd()` is the repo root, uploads defaulted to `repo/public` but static files may
- * be served from `.next/standalone/public` — set `MOVESBOOK_PUBLIC_DIR` to that folder (absolute).
+ * - `npm run dev` / `next start` from repo root → `{cwd}/public`
+ * - Docker / PM2 running `node server.js` inside standalone → `{cwd}/public` (cwd is standalone dir)
+ * - Override with `MOVESBOOK_PUBLIC_DIR` (absolute path) when layout differs
+ *
+ * Do not use `.next/standalone/public` when the app runs via `next start` from the repo root;
+ * that folder is only for the standalone server bundle, not for `next start` static serving.
  */
 export function getServerPublicDir(): string {
   const env = process.env.MOVESBOOK_PUBLIC_DIR?.trim();
@@ -17,20 +21,24 @@ export function getServerPublicDir(): string {
 
   const cwd = process.cwd();
 
-  // `node server.js` from inside `.next/standalone` (typical PM2 layout).
+  // `node server.js` from inside `.next/standalone` (Docker CMD, PM2 cwd = standalone).
   if (existsSync(join(cwd, 'server.js')) && existsSync(join(cwd, 'public'))) {
     return normalize(join(cwd, 'public'));
   }
 
-  if (process.env.NODE_ENV === 'production') {
-    const standalonePublic = join(cwd, '.next', 'standalone', 'public');
-    if (
-      existsSync(standalonePublic) &&
-      existsSync(join(cwd, '.next', 'standalone', 'server.js'))
-    ) {
-      return normalize(standalonePublic);
-    }
-  }
-
   return normalize(join(cwd, 'public'));
+}
+
+export function resolvePublicPath(...segments: string[]): string {
+  return join(getServerPublicDir(), ...segments);
+}
+
+/** True if path exists, is a non-empty file (post-upload sanity check). */
+export async function verifyPublicFile(filePath: string): Promise<boolean> {
+  try {
+    const info = await stat(filePath);
+    return info.isFile() && info.size > 0;
+  } catch {
+    return false;
+  }
 }

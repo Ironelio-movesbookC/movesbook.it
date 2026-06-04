@@ -1,8 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { mkdir, readdir, writeFile } from 'fs/promises';
 import { extname, join } from 'path';
 import { verifyToken } from '@/lib/auth';
-import { getServerPublicDir } from '@/lib/serverPublicDir';
+import { getServerPublicDir, verifyPublicFile } from '@/lib/serverPublicDir';
+import {
+  formatUploadCause,
+  typologyUploadError,
+  typologyUploadSuccess
+} from '@/lib/typologyUploadResponse';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,7 +45,6 @@ function normalizeExtension(fileName: string): TypologyIconExtension | null {
   return extension as TypologyIconExtension;
 }
 
-/** Detect PNG/JPEG/GIF/BMP from magic bytes (do not trust filename or MIME alone). */
 function detectImageFormat(buffer: Buffer): TypologyIconExtension | null {
   if (
     buffer.length > 8 &&
@@ -111,31 +115,40 @@ async function writeNextCatIcon(
 }
 
 export async function POST(request: NextRequest) {
+  const uploadDir = join(getServerPublicDir(), ...TYPOLOGY_ICON_DIR);
+
   try {
     const decoded = getTokenPayload(request);
     if (!decoded?.userId || !decoded.userType) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return typologyUploadError('Unauthorized', 401, {
+        kind: 'typology-icon',
+        uploadDir
+      });
     }
 
     if (!isClubAccountUserType(String(decoded.userType))) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return typologyUploadError('Forbidden', 403, { kind: 'typology-icon', uploadDir });
     }
 
     const formData = await request.formData();
     const file = formData.get('file');
 
     if (!file || typeof file === 'string' || !(file instanceof Blob)) {
-      return NextResponse.json({ error: 'No icon file provided' }, { status: 400 });
+      return typologyUploadError('No icon file provided', 400, { kind: 'typology-icon', uploadDir });
     }
 
     if (file.size > MAX_ICON_BYTES) {
-      return NextResponse.json({ error: 'Icon file exceeds 5MB' }, { status: 400 });
+      return typologyUploadError('Icon file exceeds 5MB', 400, {
+        kind: 'typology-icon',
+        uploadDir,
+        bytesWritten: file.size
+      });
     }
 
     const uploadFileName = file instanceof File ? file.name : 'upload.png';
     const nameExtension = normalizeExtension(uploadFileName);
     if (!nameExtension) {
-      return NextResponse.json({ error: ALLOWED_FORMATS_ERROR }, { status: 400 });
+      return typologyUploadError(ALLOWED_FORMATS_ERROR, 400, { kind: 'typology-icon', uploadDir });
     }
 
     if (
@@ -143,38 +156,74 @@ export async function POST(request: NextRequest) {
       file.type !== 'application/octet-stream' &&
       !ALLOWED_MIME_TYPES.has(file.type)
     ) {
-      return NextResponse.json({ error: ALLOWED_FORMATS_ERROR }, { status: 400 });
+      return typologyUploadError(ALLOWED_FORMATS_ERROR, 400, { kind: 'typology-icon', uploadDir });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
     if (buffer.length === 0) {
-      return NextResponse.json(
-        { error: 'The uploaded file is empty. Check server/proxy upload limits.' },
-        { status: 400 }
+      return typologyUploadError(
+        'The uploaded file is empty. Check server/proxy upload limits (nginx client_max_body_size).',
+        400,
+        { kind: 'typology-icon', uploadDir }
       );
     }
 
     const detectedFormat = detectImageFormat(buffer);
     if (!detectedFormat) {
-      return NextResponse.json({ error: 'The selected file is not a valid image icon' }, { status: 400 });
+      return typologyUploadError('The selected file is not a valid image icon', 400, {
+        kind: 'typology-icon',
+        uploadDir,
+        bytesWritten: buffer.length
+      });
     }
 
-    const extension = detectedFormat;
-
-    const uploadDir = join(getServerPublicDir(), ...TYPOLOGY_ICON_DIR);
     await mkdir(uploadDir, { recursive: true });
 
-    const fileName = await writeNextCatIcon(uploadDir, extension, buffer);
+    const fileName = await writeNextCatIcon(uploadDir, detectedFormat, buffer);
+    const savedPath = join(uploadDir, fileName);
+    const servedUrl = `/img/typology_image/${fileName}`;
+    const verified = await verifyPublicFile(savedPath);
 
-    return NextResponse.json({
-      success: true,
-      image: fileName,
-      fileName,
-      url: `/img/typology_image/${fileName}`,
-      path: `/img/typology_image/${fileName}`
-    });
+    if (!verified) {
+      return typologyUploadError(
+        'Icon was written but could not be verified on disk. The file may be in a folder that Next.js does not serve.',
+        500,
+        {
+          kind: 'typology-icon',
+          uploadDir,
+          savedPath,
+          servedUrl,
+          fileName,
+          bytesWritten: buffer.length,
+          verifiedOnDisk: false
+        }
+      );
+    }
+
+    return typologyUploadSuccess(
+      'typology-icon',
+      {
+        message: 'Icon saved on disk and verified. Open Browser URL in details to confirm it is reachable.',
+        image: fileName,
+        fileName,
+        url: servedUrl,
+        path: servedUrl
+      },
+      {
+        uploadDir,
+        savedPath,
+        servedUrl,
+        fileName,
+        bytesWritten: buffer.length,
+        verifiedOnDisk: true
+      }
+    );
   } catch (error) {
     console.error('POST /api/club/settings/typology-subscription/icon:', error);
-    return NextResponse.json({ error: 'Icon upload failed' }, { status: 500 });
+    return typologyUploadError('Icon upload failed', 500, {
+      kind: 'typology-icon',
+      uploadDir,
+      cause: formatUploadCause(error)
+    });
   }
 }

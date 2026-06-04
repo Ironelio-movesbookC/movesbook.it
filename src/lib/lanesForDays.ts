@@ -27,6 +27,18 @@ export function createEmptyLanesForDays(): LanesForDaysMatrix {
   return Array.from({ length: 7 }, () => Array.from({ length: 10 }, () => false));
 }
 
+type LaneAvailability = { available: boolean; limit?: string };
+
+/** Clear per-day flags for lanes that are not marked available in the main grid. */
+export function syncLanesForDaysWithAvailability(
+  matrix: LanesForDaysMatrix,
+  lanes: LaneAvailability[]
+): LanesForDaysMatrix {
+  return matrix.map((day) =>
+    day.map((enabled, laneIndex) => (lanes[laneIndex]?.available ? enabled : false))
+  );
+}
+
 export function parseLanesForDaysRows(rows: Array<Record<string, unknown>>): LanesForDaysMatrix {
   const matrix = createEmptyLanesForDays();
 

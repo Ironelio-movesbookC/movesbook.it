@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { unserialize } from 'php-serialize';
+import { serialize, unserialize } from 'php-serialize';
 import { prisma } from '@/lib/prisma';
+import { normalizeTypologyDateInput } from '@/lib/typologySubscriptionAudio.shared';
 import { verifyToken } from '@/lib/auth';
 import { fetchLanesForDays, saveLanesForDays } from '@/lib/lanesForDays.server';
 
@@ -432,20 +433,15 @@ async function resolveAreaActivity(areaActivity: unknown, userIds: string[], clu
   return rows[0]?.id != null ? String(rows[0].id) : null;
 }
 
-function serializePhpString(value: unknown): string {
-  const next = text(value);
-  return `s:${next.length}:"${next}";`;
-}
-
 function serializeLaneAvailability(lanes: any[]): string {
-  const normalizedLanes = Array.from({ length: 10 }, (_, index) => lanes[index] ?? {});
-  const serializedItems = normalizedLanes.map((lane, index) => {
-    const enabled = yesNo(lane?.available);
+  const items = Array.from({ length: 10 }, (_, index) => {
+    const lane = lanes[index] ?? {};
+    const enabled = yesNo(lane?.available) === 'Y';
     const limit = text(lane?.limit);
-    return `i:${index};a:1:{s:1:"${enabled}";${serializePhpString(limit)}}`;
+    return enabled ? { Y: limit } : { N: limit };
   });
 
-  return `a:${normalizedLanes.length}:{${serializedItems.join('')}}`;
+  return serialize(items);
 }
 
 function boolFromYesNo(value: unknown): boolean {
@@ -459,31 +455,36 @@ function parseLaneAvailability(raw: unknown): { available: boolean; limit: strin
   }
 
   try {
-    const parsed = unserialize(raw) as Record<string | number, Record<string, string>> | null;
+    const parsed = unserialize(raw) as unknown;
     if (!parsed || typeof parsed !== 'object') {
       return defaults;
     }
 
+    const items = Array.isArray(parsed)
+      ? parsed
+      : Array.from({ length: 10 }, (_, index) => (parsed as Record<number, unknown>)[index]);
+
     return Array.from({ length: 10 }, (_, index) => {
-      const lane = parsed[index] ?? parsed[String(index)];
+      const lane = items[index];
       if (!lane || typeof lane !== 'object') {
         return { available: false, limit: '' };
       }
 
-      if ('Y' in lane) {
-        return { available: true, limit: text(lane.Y) };
+      const record = lane as Record<string, string>;
+      if ('Y' in record) {
+        return { available: true, limit: text(record.Y) };
       }
 
-      if ('N' in lane) {
-        return { available: false, limit: text(lane.N) };
+      if ('N' in record) {
+        return { available: false, limit: text(record.N) };
       }
 
-      const [flag, limitValue] = Object.entries(lane)[0] ?? [];
+      const [flag, limitValue] = Object.entries(record)[0] ?? [];
       if (flag === 'Y') {
         return { available: true, limit: text(limitValue) };
       }
 
-      return { available: false, limit: '' };
+      return { available: false, limit: text(limitValue) };
     });
   } catch {
     return defaults;
@@ -522,8 +523,12 @@ function buildTypologyValues(body: any, areaActivity: string): Record<string, un
     accesses_allow: yesNo(body.doNotStoreAllowedAccesses),
     accesses_not_allow: yesNo(body.doNotStoreDeniedAccesses),
     audio_message_status: yesNo(body.audioMessageEnabled),
-    audio_message_start: String(body.audioMessageStart ?? '').trim(),
-    audio_message_end: String(body.audioMessageEnd ?? '').trim(),
+    audio_message_start: yesNo(body.audioMessageEnabled) === 'Y'
+      ? String(body.audioMessageStart ?? '').trim()
+      : '',
+    audio_message_end: yesNo(body.audioMessageEnabled) === 'Y'
+      ? String(body.audioMessageEnd ?? '').trim()
+      : '',
     pop_up_status: yesNo(body.popupMessageEnabled),
     pop_up_start: String(body.popupMessageStart ?? '').trim(),
     pop_up_end: String(body.popupMessageEnd ?? '').trim(),
@@ -547,6 +552,13 @@ function buildTypologyValues(body: any, areaActivity: string): Record<string, un
   }
 
   return values;
+}
+
+function buildTypologyAudioUrl(row: Record<string, unknown>): string | null {
+  const song = text(row.song);
+  const userId = text(row.user_id);
+  if (!song || !userId) return null;
+  return `/subscription_file/playlist/User_${userId}/${song}`;
 }
 
 function mapDbRowToTypologyForm(row: Record<string, unknown>) {
@@ -589,8 +601,14 @@ function mapDbRowToTypologyForm(row: Record<string, unknown>) {
     doNotStoreAllowedAccesses: boolFromYesNo(row.accesses_allow),
     doNotStoreDeniedAccesses: boolFromYesNo(row.accesses_not_allow),
     audioMessageEnabled: boolFromYesNo(row.audio_message_status),
-    audioMessageStart: text(row.audio_message_start),
-    audioMessageEnd: text(row.audio_message_end),
+    audioMessageStart: boolFromYesNo(row.audio_message_status) === true
+      ? normalizeTypologyDateInput(text(row.audio_message_start))
+      : '',
+    audioMessageEnd: boolFromYesNo(row.audio_message_status) === true
+      ? normalizeTypologyDateInput(text(row.audio_message_end))
+      : '',
+    song: text(row.song) || null,
+    audioUrl: buildTypologyAudioUrl(row),
     popupMessageEnabled: boolFromYesNo(row.pop_up_status),
     popupMessageStart: text(row.pop_up_start),
     popupMessageEnd: text(row.pop_up_end),
@@ -637,14 +655,24 @@ function validateScalarFields(body: any, fieldErrors: Record<string, string>) {
     fieldErrors.afterExpireLaneDays = 'Days cannot be greater than 30.';
   }
 
-  if (!isDateText(body.audioMessageStart)) {
-    fieldErrors.audioMessageStart = 'Please enter a valid start date.';
-  }
-  if (!isDateText(body.audioMessageEnd)) {
-    fieldErrors.audioMessageEnd = 'Please enter a valid expiration date.';
-  }
-  if (text(body.audioMessageStart) && text(body.audioMessageEnd) && text(body.audioMessageEnd) < text(body.audioMessageStart)) {
-    fieldErrors.audioMessageEnd = 'Expiration date must be after the start date.';
+  if (yesNo(body.audioMessageEnabled) === 'Y') {
+    if (!text(body.audioMessageStart)) {
+      fieldErrors.audioMessageStart = 'Please enter a start date.';
+    } else if (!isDateText(body.audioMessageStart)) {
+      fieldErrors.audioMessageStart = 'Please enter a valid start date.';
+    }
+    if (!text(body.audioMessageEnd)) {
+      fieldErrors.audioMessageEnd = 'Please enter an expiration date.';
+    } else if (!isDateText(body.audioMessageEnd)) {
+      fieldErrors.audioMessageEnd = 'Please enter a valid expiration date.';
+    }
+    if (
+      text(body.audioMessageStart) &&
+      text(body.audioMessageEnd) &&
+      text(body.audioMessageEnd) < text(body.audioMessageStart)
+    ) {
+      fieldErrors.audioMessageEnd = 'Expiration date must be on or after the start date.';
+    }
   }
 
   if (!isDateText(body.popupMessageStart)) {
@@ -1313,6 +1341,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid typology id' }, { status: 400 });
       }
 
+      const typologyTable = await getTypologyTableForWrite();
       const existing = await fetchTypologyRowById(typologyId, context.userIds, context.club?.id ?? null);
       if (!existing) {
         return NextResponse.json({ error: 'Typology not found' }, { status: 404 });
@@ -1322,8 +1351,25 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'lanesForDays and lanes are required' }, { status: 400 });
       }
 
-      const persisted = await saveLanesForDays(typologyId, body.lanesForDays, body.lanes);
-      return NextResponse.json({ success: true, persisted });
+      const lanesPersisted = await saveLanesForDays(typologyId, body.lanesForDays, body.lanes);
+      const mergedForm = {
+        ...mapDbRowToTypologyForm(existing),
+        lanes: body.lanes,
+        enableLanesBooths:
+          typeof body.enableLanesBooths === 'boolean' ? body.enableLanesBooths : true
+      };
+      const laneGridPersisted = await updateTypology(
+        typologyTable,
+        typologyId,
+        mergedForm,
+        context.userIds,
+        text(existing.area_activity)
+      );
+
+      return NextResponse.json({
+        success: true,
+        persisted: lanesPersisted && laneGridPersisted
+      });
     }
 
     if (body.action !== 'booking-settings') {

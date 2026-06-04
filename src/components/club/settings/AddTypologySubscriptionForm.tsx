@@ -7,8 +7,11 @@ import { getTypologyIconUrl } from '@/lib/typologyIcon';
 import {
   createEmptyLanesForDays,
   LANE_DAY_LABELS,
+  syncLanesForDaysWithAvailability,
   type LanesForDaysMatrix
 } from '@/lib/lanesForDays';
+import { todayIsoDate } from '@/lib/typologySubscriptionAudio.shared';
+import { formatTypologyUploadAlert } from '@/lib/typologyUploadResponse.shared';
 import RichTextEditor from '@/components/shared/RichTextEditor';
 import {
   ArrowLeft,
@@ -17,6 +20,8 @@ import {
   ChevronUp,
   Loader2,
   Mic,
+  Pause,
+  Play,
   Save,
   Square,
   Star,
@@ -306,8 +311,20 @@ function validateForm(form: FormState): FormErrors {
     }
   });
 
-  if (form.audioMessageStart && form.audioMessageEnd && form.audioMessageEnd < form.audioMessageStart) {
-    nextErrors.audioMessageEnd = 'Expiration date must be after the start date.';
+  if (form.audioMessageEnabled) {
+    if (!cleanText(form.audioMessageStart)) {
+      nextErrors.audioMessageStart = 'Please enter a start date.';
+    }
+    if (!cleanText(form.audioMessageEnd)) {
+      nextErrors.audioMessageEnd = 'Please enter an expiration date.';
+    }
+    if (
+      cleanText(form.audioMessageStart) &&
+      cleanText(form.audioMessageEnd) &&
+      form.audioMessageEnd < form.audioMessageStart
+    ) {
+      nextErrors.audioMessageEnd = 'Expiration date must be on or after the start date.';
+    }
   }
 
   if (form.popupMessageStart && form.popupMessageEnd && form.popupMessageEnd < form.popupMessageStart) {
@@ -335,8 +352,16 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
   const [dailyAvailabilityOpen, setDailyAvailabilityOpen] = useState(false);
   const [savingDailyAvailability, setSavingDailyAvailability] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioPreviewUrl, setAudioPreviewUrl] = useState<string | null>(null);
+  const [pendingAudioFile, setPendingAudioFile] = useState<File | null>(null);
+  const [playingAudio, setPlayingAudio] = useState(false);
   const iconInputRef = useRef<HTMLInputElement | null>(null);
   const audioInputRef = useRef<HTMLInputElement | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
@@ -405,6 +430,16 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
           throw new Error('Typology data is missing.');
         }
 
+        const loadedLanes =
+          Array.isArray(payload.lanes) && payload.lanes.length > 0
+            ? payload.lanes
+            : initialForm().lanes;
+        const loadedLanesForDays = Array.isArray(
+          (payload as { lanesForDays?: LanesForDaysMatrix }).lanesForDays
+        )
+          ? (payload as { lanesForDays: LanesForDaysMatrix }).lanesForDays
+          : createEmptyLanesForDays();
+
         setForm({
           ...initialForm(),
           ...payload,
@@ -412,13 +447,17 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
             ...createAdmissions(),
             ...(payload.admissions ?? {})
           },
-          lanes: Array.isArray(payload.lanes) && payload.lanes.length > 0
-            ? payload.lanes
-            : initialForm().lanes,
-          lanesForDays: Array.isArray((payload as { lanesForDays?: LanesForDaysMatrix }).lanesForDays)
-            ? (payload as { lanesForDays: LanesForDaysMatrix }).lanesForDays
-            : createEmptyLanesForDays()
+          lanes: loadedLanes,
+          lanesForDays: syncLanesForDaysWithAvailability(loadedLanesForDays, loadedLanes)
         });
+        const loadedAudioUrl =
+          typeof (payload as { audioUrl?: string }).audioUrl === 'string'
+            ? (payload as { audioUrl?: string }).audioUrl
+            : null;
+        setAudioUrl(loadedAudioUrl || null);
+        setAudioPreviewUrl(null);
+        setPendingAudioFile(null);
+        setPlayingAudio(false);
       } catch (error) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : 'Unable to load this typology.');
@@ -436,6 +475,178 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
       cancelled = true;
     };
   }, [props.typologyId]);
+
+  const playableAudioUrl = audioPreviewUrl || audioUrl;
+
+  useEffect(() => {
+    return () => {
+      if (audioPreviewUrl) {
+        URL.revokeObjectURL(audioPreviewUrl);
+      }
+    };
+  }, [audioPreviewUrl]);
+
+  const togglePlayAudio = () => {
+    const player = audioPlayerRef.current;
+    if (!player || !playableAudioUrl) return;
+
+    if (!player.paused && playingAudio) {
+      player.pause();
+      setPlayingAudio(false);
+      return;
+    }
+
+    player.src = playableAudioUrl;
+    void player.play().then(() => setPlayingAudio(true)).catch(() => {
+      setPlayingAudio(false);
+      window.alert('Unable to play this audio file. Check that the file exists on the server.');
+    });
+    player.onended = () => setPlayingAudio(false);
+  };
+
+  const handleAudioMessageEnabledChange = (enabled: boolean) => {
+    if (enabled) {
+      const start = form.audioMessageStart || todayIsoDate();
+      const end = form.audioMessageEnd || todayIsoDate();
+      setForm({
+        ...form,
+        audioMessageEnabled: true,
+        audioMessageStart: start,
+        audioMessageEnd: end
+      });
+      clearFieldError('audioMessageStart');
+      clearFieldError('audioMessageEnd');
+      return;
+    }
+
+    setForm({
+      ...form,
+      audioMessageEnabled: false,
+      audioMessageStart: '',
+      audioMessageEnd: ''
+    });
+    clearFieldError('audioMessageStart');
+    clearFieldError('audioMessageEnd');
+  };
+
+  const setPendingAudioPreview = (file: File) => {
+    if (audioPreviewUrl) {
+      URL.revokeObjectURL(audioPreviewUrl);
+    }
+    setPendingAudioFile(file);
+    setAudioPreviewUrl(URL.createObjectURL(file));
+    setPlayingAudio(false);
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current.removeAttribute('src');
+    }
+  };
+
+  const uploadTypologyAudio = async (
+    typologyId: string,
+    file: File,
+    source: 'import' | 'recording' = 'import'
+  ) => {
+    const token = localStorage.getItem('token');
+    const formData = new FormData();
+    formData.append('typologyId', typologyId);
+    formData.append('file', file);
+    formData.append('source', source);
+
+    const response = await fetch('/api/club/settings/typology-subscription/audio', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(
+        formatTypologyUploadAlert(data, 'Unable to save the audio message.')
+      );
+    }
+
+    if (data?.details) {
+      console.info('[typology audio upload]', data.details);
+    }
+
+    const nextUrl = typeof data?.audioUrl === 'string' ? data.audioUrl : null;
+    if (nextUrl) {
+      setAudioUrl(nextUrl);
+    }
+    if (audioPreviewUrl) {
+      URL.revokeObjectURL(audioPreviewUrl);
+    }
+    setAudioPreviewUrl(null);
+    setPendingAudioFile(null);
+  };
+
+  const handleAudioImport = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
+    if (!/\.(mp3|mp4|wav|webm)$/.test(lowerName)) {
+      window.alert('Only .mp3, .mp4, .wav, or .webm files are allowed.');
+      event.target.value = '';
+      return;
+    }
+
+    setPendingAudioPreview(file);
+    event.target.value = '';
+  };
+
+  const startAudioRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      window.alert('Audio recording is not supported in this browser.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = stream;
+      recordingChunksRef.current = [];
+
+      const recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const extension = blob.type.includes('wav') ? 'wav' : 'webm';
+        const file = new File([blob], `recording-${Date.now()}.${extension}`, { type: blob.type });
+        setPendingAudioPreview(file);
+        stream.getTracks().forEach((track) => track.stop());
+        recordingStreamRef.current = null;
+        mediaRecorderRef.current = null;
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch {
+      window.alert('Microphone access is required to record audio.');
+    }
+  };
+
+  const stopAudioRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
+    setRecording(false);
+  };
+
+  const handleRecordClick = () => {
+    if (recording) {
+      stopAudioRecording();
+      return;
+    }
+    void startAudioRecording();
+  };
 
   const selectedIconLabel = useMemo(() => getTypologyIconLabel(form.image), [form.image]);
   const iconPreviewUrl = useMemo(() => getTypologyIconUrl(form.image), [form.image]);
@@ -496,19 +707,29 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
         laneIndex === index ? { ...lane, ...patch } : lane
       );
 
-      let nextLanesForDays = current.lanesForDays;
-      if ('available' in patch && patch.available === false) {
-        nextLanesForDays = current.lanesForDays.map((day) =>
-          day.map((enabled, laneIndex) => (laneIndex === index ? false : enabled))
-        );
+      let nextEnableLanesBooths = current.enableLanesBooths;
+      if ('available' in patch && patch.available === true) {
+        nextEnableLanesBooths = true;
       }
+
+      const nextLanesForDays = syncLanesForDaysWithAvailability(current.lanesForDays, nextLanes);
 
       return {
         ...current,
+        enableLanesBooths: nextEnableLanesBooths,
         lanes: nextLanes,
         lanesForDays: nextLanesForDays
       };
     });
+  };
+
+  const openDailyAvailability = () => {
+    setForm((current) => ({
+      ...current,
+      enableLanesBooths: true,
+      lanesForDays: syncLanesForDaysWithAvailability(current.lanesForDays, current.lanes)
+    }));
+    setDailyAvailabilityOpen(true);
   };
 
   const updateLaneForDay = (dayIndex: number, laneIndex: number, enabled: boolean) => {
@@ -552,7 +773,8 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
           action: 'save-lanes-for-days',
           id: props.typologyId,
           lanesForDays: form.lanesForDays,
-          lanes: form.lanes
+          lanes: form.lanes,
+          enableLanesBooths: form.enableLanesBooths
         })
       });
 
@@ -608,17 +830,30 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
 
       const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(data?.error || 'Unable to upload the typology icon.');
+        throw new Error(
+          formatTypologyUploadAlert(data, 'Unable to upload the typology icon.')
+        );
+      }
+
+      if (data?.details) {
+        console.info('[typology icon upload]', data.details);
       }
 
       const imageName = String(data?.image || data?.fileName || '').trim();
       if (!imageName) {
-        throw new Error('The uploaded icon did not return a valid filename.');
+        throw new Error(
+          formatTypologyUploadAlert(
+            data,
+            'Upload succeeded but no filename was returned.'
+          )
+        );
       }
 
       setForm((current) => ({ ...current, image: imageName }));
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'Unable to upload the typology icon.');
+      window.alert(
+        error instanceof Error ? error.message : 'Unable to upload the typology icon.'
+      );
     } finally {
       setUploadingIcon(false);
       event.target.value = '';
@@ -649,13 +884,26 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
         })
       });
 
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
-        const data = await response.json().catch(() => null);
         if (data?.fieldErrors && typeof data.fieldErrors === 'object') {
           applyErrors(data.fieldErrors);
           return;
         }
         throw new Error(data?.error || 'Unable to save this typology.');
+      }
+
+      const savedTypologyId = isEditMode
+        ? props.typologyId
+        : typeof data?.id === 'string' || typeof data?.id === 'number'
+          ? String(data.id)
+          : null;
+
+      if (pendingAudioFile && savedTypologyId) {
+        const audioSource = /^recording-/i.test(pendingAudioFile.name)
+          ? 'recording'
+          : 'import';
+        await uploadTypologyAudio(savedTypologyId, pendingAudioFile, audioSource);
       }
 
       if (props.onSaved) {
@@ -1011,14 +1259,22 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                 checked={form.enableLanesBooths}
                 onChange={(checked) => {
                   clearFieldError('enableLanesBooths');
-                  setForm({ ...form, enableLanesBooths: checked });
+                  setForm((current) => ({
+                    ...current,
+                    enableLanesBooths: checked,
+                    lanesForDays: checked
+                      ? current.lanesForDays
+                      : syncLanesForDaysWithAvailability(current.lanesForDays, [])
+                  }));
                 }}
                 label="Enable management for the control of availability of lanes and booths"
               />
               <div ref={registerField('enableLanesBooths')}>
                 <FieldError message={errors.enableLanesBooths} />
               </div>
-              <div className="mt-4 overflow-x-auto">
+              <div
+                className={`mt-4 overflow-x-auto ${form.enableLanesBooths ? '' : 'pointer-events-none opacity-50'}`}
+              >
                 <div className="grid min-w-[620px] grid-cols-[120px_repeat(10,42px)_1fr] items-center gap-2 text-sm">
                   <div></div>
                   {form.lanes.map((_, index) => (
@@ -1037,8 +1293,9 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                   ))}
                   <button
                     type="button"
-                    onClick={() => setDailyAvailabilityOpen(true)}
-                    className="justify-self-end rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-200"
+                    onClick={openDailyAvailability}
+                    disabled={!form.enableLanesBooths && !form.lanes.some((lane) => lane.available)}
+                    className="justify-self-end rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Daily Availability
                   </button>
@@ -1136,7 +1393,7 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                   <input
                     type="checkbox"
                     checked={form.audioMessageEnabled}
-                    onChange={(event) => setForm({ ...form, audioMessageEnabled: event.target.checked })}
+                    onChange={(event) => handleAudioMessageEnabledChange(event.target.checked)}
                     className="h-4 w-4 accent-gray-900"
                   />
                   Start
@@ -1145,38 +1402,83 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                   <input
                     type="date"
                     value={form.audioMessageStart}
+                    min={todayIsoDate()}
+                    disabled={!form.audioMessageEnabled}
                     onChange={(event) => {
                       clearFieldError('audioMessageStart');
                       setForm({ ...form, audioMessageStart: event.target.value });
                     }}
-                    className={fieldClass('audioMessageStart', 'h-10 w-full rounded-md border border-gray-300 px-3 text-sm')}
+                    onFocus={() => {
+                      if (!form.audioMessageEnabled) {
+                        handleAudioMessageEnabledChange(true);
+                      }
+                    }}
+                    className={fieldClass(
+                      'audioMessageStart',
+                      'h-10 w-full rounded-md border border-gray-300 px-3 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400'
+                    )}
                   />
                   <FieldError message={errors.audioMessageStart} />
                 </div>
-                <FieldLabel>Expiration date</FieldLabel>
+                <FieldLabel>
+                  <span className={!form.audioMessageEnabled ? 'text-gray-400' : undefined}>Expiration date</span>
+                </FieldLabel>
                 <div ref={registerField('audioMessageEnd')}>
                   <input
                     type="date"
                     value={form.audioMessageEnd}
+                    min={form.audioMessageStart || todayIsoDate()}
+                    disabled={!form.audioMessageEnabled}
                     onChange={(event) => {
                       clearFieldError('audioMessageEnd');
                       setForm({ ...form, audioMessageEnd: event.target.value });
                     }}
-                    className={fieldClass('audioMessageEnd', 'h-10 w-full rounded-md border border-gray-300 px-3 text-sm')}
+                    onFocus={() => {
+                      if (!form.audioMessageEnabled) {
+                        handleAudioMessageEnabledChange(true);
+                      }
+                    }}
+                    className={fieldClass(
+                      'audioMessageEnd',
+                      'h-10 w-full rounded-md border border-gray-300 px-3 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400'
+                    )}
                   />
                   <FieldError message={errors.audioMessageEnd} />
                 </div>
               </div>
-              <div className="mt-4 flex justify-end gap-2">
+              <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                <audio ref={audioPlayerRef} className="hidden" preload="metadata" />
                 <button
                   type="button"
-                  onClick={() => setRecording((value) => !value)}
+                  onClick={togglePlayAudio}
+                  disabled={!playableAudioUrl}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-gray-100 px-4 text-sm font-semibold text-gray-800 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
+                  title={
+                    playableAudioUrl
+                      ? playingAudio
+                        ? 'Pause audio preview'
+                        : 'Play audio preview'
+                      : 'No audio to play — record or import first'
+                  }
+                >
+                  {playingAudio ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  {playingAudio ? 'Pause' : 'Play'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRecordClick}
                   className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-gray-100 px-4 text-sm font-semibold text-gray-800 hover:bg-gray-200"
                 >
                   {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                   {recording ? 'Stop' : 'Record'}
                 </button>
-                <input ref={audioInputRef} type="file" accept="audio/*,video/mp4" className="hidden" />
+                <input
+                  ref={audioInputRef}
+                  type="file"
+                  accept=".mp3,.mp4,.wav,audio/mpeg,audio/wav,video/mp4"
+                  className="hidden"
+                  onChange={handleAudioImport}
+                />
                 <button
                   type="button"
                   onClick={() => audioInputRef.current?.click()}
@@ -1186,6 +1488,18 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
                   Import
                 </button>
               </div>
+              {playableAudioUrl && (
+                <p className="mt-2 text-right text-xs text-gray-500">
+                  {pendingAudioFile
+                    ? 'Unsaved audio — click Save to store the file on the server.'
+                    : 'Playing saved subscription audio.'}
+                </p>
+              )}
+              {form.audioMessageEnabled && (
+                <p className="mt-1 text-right text-xs text-gray-500">
+                  Audio message active from {form.audioMessageStart || '—'} to {form.audioMessageEnd || '—'}.
+                </p>
+              )}
             </section>
 
             <section className="p-4">
@@ -1346,8 +1660,15 @@ export default function AddTypologySubscriptionForm(props: AddTypologySubscripti
             </div>
             <div className="overflow-x-auto p-5">
               <p className="mb-3 text-sm text-gray-600">
-                Enable lanes or units that can be used for each day. Only lanes marked available above can be selected.
+                Enable lanes or units that can be used for each day. Only lanes marked{' '}
+                <strong>Available</strong> in the grid above can be selected (save the main form or use Save
+                here to persist).
               </p>
+              {form.lanes.every((lane) => !lane.available) && (
+                <p className="mb-3 text-sm font-medium text-amber-700">
+                  No lanes are marked available yet. Check Availability for at least one lane first.
+                </p>
+              )}
               <table className="w-full min-w-[720px] border-collapse text-sm">
                 <thead>
                   <tr className="bg-gray-100 text-left">
