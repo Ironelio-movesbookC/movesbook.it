@@ -19,6 +19,26 @@ export type ClubSubscriptionRowStatus = {
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const EXPIRING_WINDOW_DAYS = 30;
 
+/** Fixed renewal duration until per-version durations are configured. */
+export const MEMBERSHIP_RENEWAL_DURATION_DAYS = 365;
+
+export function parseClubSubscriptionStartDate(
+  description: string | null | undefined,
+  clubCreatedAt?: Date | string | null,
+): string {
+  const meta = parseClubDescriptionMeta(description) as { subscriptionStart?: string };
+  const raw = meta.subscriptionStart?.trim();
+  if (raw) {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  if (clubCreatedAt) {
+    const created = new Date(clubCreatedAt);
+    if (!Number.isNaN(created.getTime())) return created.toISOString().slice(0, 10);
+  }
+  return '';
+}
+
 export function parseClubSubscriptionEndDate(
   description: string | null | undefined,
   clubCreatedAt?: Date | string | null

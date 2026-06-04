@@ -22,8 +22,10 @@ import {
   readDeletedSubscriptionPeriods,
   readNetworkSubscriptionHistory,
   type NetworkSubscriptionPeriod,
+  type PcuAccessWindow,
   type SubscriptionPeriodDeletion,
 } from '@/lib/admin/networkSubscriptionHistory';
+import { readPcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import {
   buildMovesbookUserTextSearchOr,
   segmentShouldMatchOwnedClubs,
@@ -393,6 +395,7 @@ export async function GET(request: NextRequest) {
 
   const historyByUserId = new Map<string, NetworkSubscriptionPeriod[]>();
   const deletedByUserId = new Map<string, SubscriptionPeriodDeletion[]>();
+  const pcuAccessByUserId = new Map<string, PcuAccessWindow>();
   if (userIds.length > 0) {
     const settingsRows = await prisma.userSettings.findMany({
       where: { userId: { in: userIds } },
@@ -401,6 +404,16 @@ export async function GET(request: NextRequest) {
     for (const s of settingsRows) {
       historyByUserId.set(s.userId, readNetworkSubscriptionHistory(s.adminSettings));
       deletedByUserId.set(s.userId, readDeletedSubscriptionPeriods(s.adminSettings));
+      const pcu = readPcuAccessSettings(s.adminSettings, {
+        accessStartIso: '',
+        accessEndIso: '',
+      });
+      if (pcu.accessStartIso.trim()) {
+        pcuAccessByUserId.set(s.userId, {
+          accessStartIso: pcu.accessStartIso,
+          accessEndIso: pcu.accessEndIso,
+        });
+      }
     }
   }
 
@@ -418,6 +431,7 @@ export async function GET(request: NextRequest) {
       'lastPerUser',
       membershipSort,
       deletedByUserId,
+      pcuAccessByUserId,
     );
   } else {
     const entityExpanded = expandRegisteredUserListRows(baseRows, entityMaps, {
@@ -429,6 +443,7 @@ export async function GET(request: NextRequest) {
       membershipMode,
       membershipSort,
       deletedByUserId,
+      pcuAccessByUserId,
     );
   }
 

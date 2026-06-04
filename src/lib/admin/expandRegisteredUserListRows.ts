@@ -7,6 +7,7 @@ import {
 import {
   classifyClubSubscriptionEnd,
   parseClubSubscriptionEndDate,
+  parseClubSubscriptionStartDate,
   type ClubSubscriptionStatusTone,
 } from '@/lib/admin/clubSubscriptionStatus';
 
@@ -129,6 +130,9 @@ function expandClubRows(
     const { status, statusTone } = clubStatusForOne(endDate);
     const meta = parseClubDescriptionMeta(club.description);
     const clubUsername = meta.username?.trim();
+    const dateStart =
+      parseClubSubscriptionStartDate(club.description, club.createdAt) ||
+      club.createdAt.toISOString().slice(0, 10);
 
     return {
       ...base,
@@ -140,7 +144,7 @@ function expandClubRows(
       companyName: club.name?.trim() || getClubMyPageDisplayName(club),
       location: clubDisplayLocation(club),
       country: clubCountry(club, base.country),
-      dateStart: club.createdAt.toISOString().slice(0, 10),
+      dateStart,
       dateEnd: endDate?.toISOString().slice(0, 10) ?? null,
       version: clubVersionFromDescription(club.description),
       status,

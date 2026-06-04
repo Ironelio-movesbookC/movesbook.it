@@ -3,7 +3,10 @@ import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
 import { parseClubDescriptionMeta, getClubMyPageDisplayName } from '@/lib/club/clubSidebarLabel';
-import { parseClubSubscriptionEndDate } from '@/lib/admin/clubSubscriptionStatus';
+import {
+  parseClubSubscriptionEndDate,
+  parseClubSubscriptionStartDate,
+} from '@/lib/admin/clubSubscriptionStatus';
 import { getUserPersonalWebsiteHref } from '@/lib/userPersonalWebsite';
 import {
   buildPcuPanel,
@@ -238,9 +241,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       primaryOwned.description,
       primaryOwned.createdAt,
     );
+    const dateStart =
+      parseClubSubscriptionStartDate(primaryOwned.description, primaryOwned.createdAt) ||
+      primaryOwned.createdAt.toISOString().slice(0, 10);
     subscriptionCurrent = {
       id: `account-${user.id}`,
-      dateStart: primaryOwned.createdAt.toISOString().slice(0, 10),
+      dateStart,
       dateEnd: endDate?.toISOString().slice(0, 10) ?? null,
       version:
         clubMeta.category?.trim() && clubMeta.category !== 'Other'
@@ -308,9 +314,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       primaryOwned.description,
       primaryOwned.createdAt,
     );
+    const dateStart =
+      parseClubSubscriptionStartDate(primaryOwned.description, primaryOwned.createdAt) ||
+      primaryOwned.createdAt.toISOString().slice(0, 10);
     subscriptionCurrent = {
       id: `account-${user.id}`,
-      dateStart: primaryOwned.createdAt.toISOString().slice(0, 10),
+      dateStart,
       dateEnd: endDate?.toISOString().slice(0, 10) ?? null,
       version:
         clubMeta.category?.trim() && clubMeta.category !== 'Other'
@@ -326,9 +335,23 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   const personalWebsiteHref =
     segment === 'clubs' ? await getUserPersonalWebsiteHref(user.id) : null;
 
+  const pcuAccessDefaults = {
+    accessStartIso: subscriptionCurrent.dateStart,
+    accessEndIso: subscriptionCurrent.dateEnd ?? '',
+  };
+  const pcuAccess = readPcuAccessSettings(user.settings?.adminSettings, pcuAccessDefaults);
+  if (pcuAccess.accessStartIso.trim()) {
+    subscriptionCurrent = {
+      ...subscriptionCurrent,
+      dateStart: pcuAccess.accessStartIso.trim().slice(0, 10),
+      dateEnd: pcuAccess.accessEndIso.trim().slice(0, 10) || null,
+    };
+  }
+
   const subscriptionRows = buildProfileSubscriptionRows(
     user.settings?.adminSettings,
     subscriptionCurrent,
+    pcuAccess.accessStartIso.trim() ? pcuAccess : null,
   );
 
   const pcuPanel = buildPcuPanel(user, segment, loginLogCount, planCount);
@@ -350,10 +373,6 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 
   const profilePanel = readProfilePanelSettings(user.settings?.adminSettings);
-  const pcuAccess = readPcuAccessSettings(user.settings?.adminSettings, {
-    accessStartIso: subscriptionCurrent.dateStart,
-    accessEndIso: subscriptionCurrent.dateEnd ?? '',
-  });
   const pcuSettings = readPcuSettings(user.settings?.adminSettings);
 
   return NextResponse.json({

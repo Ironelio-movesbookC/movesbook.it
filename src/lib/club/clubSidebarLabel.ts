@@ -1,5 +1,7 @@
 export type ClubDescriptionMeta = {
   createdViaForm?: boolean;
+  /** ISO date (YYYY-MM-DD) — current network subscription start for this club. */
+  subscriptionStart?: string;
   /** ISO date (YYYY-MM-DD) — network subscription end for this club. */
   subscriptionEnd?: string;
   username?: string;

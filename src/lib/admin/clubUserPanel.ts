@@ -1,6 +1,6 @@
 import { UserType } from '@prisma/client';
 import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
-import { parseClubSubscriptionEndDate } from '@/lib/admin/clubSubscriptionStatus';
+import { parseClubSubscriptionEndDate, parseClubSubscriptionStartDate } from '@/lib/admin/clubSubscriptionStatus';
 import type { ClubProfilePickSource } from '@/lib/admin/pickClubForAdminProfile';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
 import { typeBadgeLabel } from '@/lib/admin/userPcuPanel';
@@ -79,7 +79,9 @@ export function buildClubUserPanelFields(
   const category = meta.category?.trim() ?? '';
   const sport = category && category !== 'Other' ? category : '';
   const clubCreatedAt = club.createdAt;
-  const dateStart = clubCreatedAt.toISOString().slice(0, 10);
+  const dateStart =
+    parseClubSubscriptionStartDate(club.description, clubCreatedAt) ||
+    clubCreatedAt.toISOString().slice(0, 10);
   const subscriptionEnd = parseClubSubscriptionEndDate(club.description, club.createdAt);
   const dateEnd = subscriptionEnd?.toISOString().slice(0, 10) ?? null;
   const panelVersion =

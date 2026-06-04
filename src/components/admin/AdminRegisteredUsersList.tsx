@@ -81,6 +81,17 @@ type SubscriptionDeleteTarget = {
   label: string;
 };
 
+type MembershipRenewTarget = {
+  userId: string;
+  entityId: string;
+  dateStart: string;
+  dateEnd: string | null;
+  version: string;
+  companyName?: string;
+  username: string;
+  label: string;
+};
+
 interface RowUser {
   rowKey: string;
   id: string;
@@ -95,6 +106,7 @@ interface RowUser {
   version: string;
   amount: string;
   status: string;
+  accountUsername?: string;
   clubsOwnedCount?: number;
   companyName?: string;
   statusTone?: ClubSubscriptionStatusTone;
@@ -120,6 +132,12 @@ function subscriptionDeleteLabel(
 ): string {
   const range = dateEnd ? `${dateStart} – ${dateEnd}` : dateStart;
   return `${displayName} (${range})`;
+}
+
+function subscriptionRenewLabel(r: RowUser): string {
+  const name = r.companyName?.trim() || r.displayName || r.username;
+  const range = r.dateEnd ? `${r.dateStart} – ${r.dateEnd}` : r.dateStart;
+  return `${name} (${range})`;
 }
 
 function CountryFlagCell({ country }: { country: string | null | undefined }) {
@@ -364,6 +382,8 @@ export default function AdminRegisteredUsersList({
   const [actionBusy, setActionBusy] = useState(false);
   const [deleteSubModalOpen, setDeleteSubModalOpen] = useState(false);
   const [deleteSubTargets, setDeleteSubTargets] = useState<SubscriptionDeleteTarget[]>([]);
+  const [renewSubModalOpen, setRenewSubModalOpen] = useState(false);
+  const [renewSubTargets, setRenewSubTargets] = useState<MembershipRenewTarget[]>([]);
   const [profileTagged, setProfileTagged] = useState(false);
   const [profileFavouritePriority, setProfileFavouritePriority] =
     useState<FavouritePriority>('not_selected');
@@ -632,6 +652,45 @@ export default function AdminRegisteredUsersList({
     }
     return targets;
   }, [resolveSubscriptionDeleteTargets]);
+
+  const resolveMembershipRenewTargets = useCallback((): MembershipRenewTarget[] => {
+    const out: MembershipRenewTarget[] = [];
+    const seen = new Set<string>();
+
+    const push = (target: MembershipRenewTarget) => {
+      const key = `${target.userId}:${target.entityId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(target);
+    };
+
+    for (const r of rows.filter((row) => selected.has(rowListKey(row)))) {
+      if (r.entityKind !== 'club' || !r.entityId?.trim()) continue;
+      push({
+        userId: r.id,
+        entityId: r.entityId,
+        dateStart: r.dateStart,
+        dateEnd: r.dateEnd,
+        version: r.version,
+        companyName: r.companyName,
+        username: r.username,
+        label: subscriptionRenewLabel(r),
+      });
+    }
+
+    return out;
+  }, [selected, rows]);
+
+  const requireMembershipRenewTargets = useCallback((): MembershipRenewTarget[] | null => {
+    const targets = resolveMembershipRenewTargets();
+    if (targets.length === 0) {
+      window.alert(
+        'Select at least one club membership to renew (use “Last of each user”, check one or more clubs, then renew).',
+      );
+      return null;
+    }
+    return targets;
+  }, [resolveMembershipRenewTargets]);
 
   const handlePrint = useCallback(() => {
     window.print();
@@ -1015,6 +1074,73 @@ export default function AdminRegisteredUsersList({
     setDeleteSubModalOpen(true);
   }, [requireSubscriptionDeleteTargets]);
 
+  const executeRenewMemberships = useCallback(
+    async (targets: MembershipRenewTarget[], superAdminPassword: string) => {
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        window.alert('Admin session not found. Please log in again.');
+        return;
+      }
+
+      let adminUsername: string | undefined;
+      try {
+        const raw = localStorage.getItem('adminUser');
+        if (raw) {
+          const parsed = JSON.parse(raw) as { username?: string; email?: string };
+          adminUsername = parsed.username?.trim() || parsed.email?.trim();
+        }
+      } catch {
+        adminUsername = undefined;
+      }
+
+      setActionBusy(true);
+      try {
+        const res = await fetch('/api/admin/registered-users/actions', {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            segment,
+            superAdminPassword,
+            adminUsername,
+            memberships: targets.map((t) => ({
+              userId: t.userId,
+              entityId: t.entityId,
+              dateStart: t.dateStart,
+              dateEnd: t.dateEnd,
+              version: t.version,
+              companyName: t.companyName,
+              username: t.username,
+            })),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to renew memberships');
+
+        const renewed = typeof data.renewed === 'number' ? data.renewed : 0;
+        setSelected(new Set());
+        setRenewSubModalOpen(false);
+        setRenewSubTargets([]);
+        await load();
+        window.alert(`Renewed ${renewed} club membership(s).`);
+      } catch (e: unknown) {
+        window.alert(e instanceof Error ? e.message : 'Failed to renew memberships');
+      } finally {
+        setActionBusy(false);
+      }
+    },
+    [segment, load],
+  );
+
+  const handleRenewMemberships = useCallback(() => {
+    const targets = requireMembershipRenewTargets();
+    if (!targets) return;
+    setRenewSubTargets(targets);
+    setRenewSubModalOpen(true);
+  }, [requireMembershipRenewTargets]);
+
   const closeClubUserPanel = useCallback(() => {
     setClubPanelOpen(false);
     setClubPanelLoading(false);
@@ -1123,6 +1249,21 @@ export default function AdminRegisteredUsersList({
           tab: opts.tab,
           profileSubTab: opts.profileSubTab,
           clubId: opts.clubId ?? undefined,
+        }),
+      );
+    },
+    [router, segment, searchApplied],
+  );
+
+  const openGridPcuControlPanel = useCallback(
+    (userId: string, userType: string, clubId?: string | null) => {
+      const profileSegment = inferProfileSegmentFromUserType(userType);
+      router.push(
+        buildPcuHistoryUserUrl(userId, {
+          segment: profileSegment,
+          scope: segment === 'all' ? profileSegment : segment,
+          q: searchApplied.trim() || undefined,
+          clubId: clubId ?? undefined,
         }),
       );
     },
@@ -1865,7 +2006,9 @@ export default function AdminRegisteredUsersList({
 
         <button
           type="button"
-          className="px-4 py-2 bg-neutral-900 text-white text-sm font-semibold border border-black rounded sm:ml-4"
+          onClick={handleRenewMemberships}
+          disabled={actionBusy}
+          className="px-4 py-2 bg-neutral-900 text-white text-sm font-semibold border border-black rounded sm:ml-4 disabled:opacity-50"
         >
           Renewal selected memberships
         </button>
@@ -1896,6 +2039,9 @@ export default function AdminRegisteredUsersList({
                   profileSubTab: 'entity',
                   clubId: entityId,
                 })
+              }
+              onOpenEntityPcu={(userId, userType, entityId) =>
+                openGridPcuControlPanel(userId, userType, entityId)
               }
             />
           ))}
@@ -2039,6 +2185,37 @@ export default function AdminRegisteredUsersList({
           onSubscriptions={handleClubPanelSubscriptions}
         />
       )}
+
+      <SuperAdminPasswordConfirmModal
+        isOpen={renewSubModalOpen}
+        title="Renew selected memberships"
+        confirmLabel="Renew"
+        description={
+          <>
+            <p className="mb-2">
+              You are about to renew <strong>{renewSubTargets.length}</strong> club membership
+              {renewSubTargets.length === 1 ? '' : 's'}. Each renewal keeps the same Movesbook
+              version, applies the standard start-date rules, and sets a{' '}
+              <strong>365-day</strong> period.
+            </p>
+            <ul className="list-disc pl-5 max-h-32 overflow-y-auto text-gray-800">
+              {renewSubTargets.slice(0, 8).map((t) => (
+                <li key={`${t.userId}-${t.entityId}`}>{t.label}</li>
+              ))}
+              {renewSubTargets.length > 8 ? (
+                <li>…and {renewSubTargets.length - 8} more</li>
+              ) : null}
+            </ul>
+            <p className="mt-3 text-gray-600">Enter the super admin password to confirm renewal.</p>
+          </>
+        }
+        onClose={() => {
+          if (actionBusy) return;
+          setRenewSubModalOpen(false);
+          setRenewSubTargets([]);
+        }}
+        onVerified={(password) => executeRenewMemberships(renewSubTargets, password)}
+      />
 
       <SuperAdminPasswordConfirmModal
         isOpen={deleteSubModalOpen}

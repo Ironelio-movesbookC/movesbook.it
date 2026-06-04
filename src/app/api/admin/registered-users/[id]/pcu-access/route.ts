@@ -3,7 +3,11 @@ import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
 import { parseClubSubscriptionEndDate } from '@/lib/admin/clubSubscriptionStatus';
 import { pickClubForAdminProfile } from '@/lib/admin/pickClubForAdminProfile';
-import { appendArchivedPeriodIfChanged } from '@/lib/admin/networkSubscriptionHistory';
+import {
+  appendArchivedPeriodIfChanged,
+  computeRenewalStartDate,
+  sliceYmd,
+} from '@/lib/admin/networkSubscriptionHistory';
 import {
   mergePcuAccessIntoAdminSettings,
   readPcuAccessSettings,
@@ -108,6 +112,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       accessEndIso:
         patch.accessEndIso !== undefined ? patch.accessEndIso : previousAccess.accessEndIso,
     };
+    const prevStart = sliceYmd(previousAccess.accessStartIso);
+    const prevEnd = sliceYmd(previousAccess.accessEndIso);
+    const nextStart = sliceYmd(nextAccess.accessStartIso);
+    // New membership (start changed): enforce Movesbook renewal start rules.
+    if (nextStart && nextStart !== prevStart) {
+      nextAccess.accessStartIso = computeRenewalStartDate(prevEnd || null);
+      patch.accessStartIso = nextAccess.accessStartIso;
+    }
     const clubMeta = primaryClub ? parseClubDescriptionMeta(primaryClub.description) : {};
     adminSettingsRaw = appendArchivedPeriodIfChanged(
       adminSettingsRaw,

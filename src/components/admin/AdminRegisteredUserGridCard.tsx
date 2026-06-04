@@ -33,12 +33,19 @@ type AdminRegisteredUserGridCardProps = {
     userType: string,
     entityId: string | null,
   ) => void;
+  /** Opens full Panel Control for a specific club/team/group/coaching group. */
+  onOpenEntityPcu: (
+    userId: string,
+    userType: string,
+    entityId: string | null,
+  ) => void;
 };
 
 export default function AdminRegisteredUserGridCard({
   group,
   onOpenAdminProfile,
   onOpenEntityProfile,
+  onOpenEntityPcu,
 }: AdminRegisteredUserGridCardProps) {
   const { admin, entities } = group;
   const showOwnedList = gridCardShowsOwnedEntities(group);
@@ -79,10 +86,10 @@ export default function AdminRegisteredUserGridCard({
           <div className="text-gray-700">{admin.version}</div>
         </div>
         <div
-          className="w-14 h-14 shrink-0 border-2 border-red-600 bg-gray-50 flex items-center justify-center"
+          className="w-[4.5rem] h-[4.5rem] shrink-0 border-2 border-red-600 bg-gray-50 flex items-center justify-center"
           aria-hidden
         >
-          <User className="w-7 h-7 text-gray-400" />
+          <User className="w-9 h-9 text-gray-400" />
         </div>
       </div>
 
@@ -99,7 +106,19 @@ export default function AdminRegisteredUserGridCard({
               >
                 <span className="text-gray-800">
                   {entityCompanyLabel(entity.entityKind)}:{' '}
-                  <span className="font-medium">{entity.companyName?.trim() || '—'}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenEntityPcu(
+                        admin.id,
+                        admin.userType,
+                        entity.entityId ?? entity.primaryClubId ?? null,
+                      )
+                    }
+                    className="font-medium text-blue-800 underline hover:text-blue-950"
+                  >
+                    {entity.companyName?.trim() || '—'}
+                  </button>
                 </span>
                 <span className="text-red-600 whitespace-nowrap">
                   {entity.dateEnd ?? '—'}

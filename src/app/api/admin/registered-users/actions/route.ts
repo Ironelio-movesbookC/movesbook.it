@@ -4,9 +4,21 @@ import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
 import {
+  applyMembershipRenewalToAdminSettings,
   applySubscriptionPeriodDeletions,
+  computeRenewalEndDate,
+  computeRenewalStartDate,
+  shouldSyncPcuAccessOnRenewal,
+  type MembershipRenewalInput,
   type SubscriptionPeriodDeletion,
 } from '@/lib/admin/networkSubscriptionHistory';
+import { mergeClubSubscriptionDates } from '@/lib/club/clubProfilePayload';
+import { pickClubForAdminProfile } from '@/lib/admin/pickClubForAdminProfile';
+import { parseClubSubscriptionEndDate, parseClubSubscriptionStartDate } from '@/lib/admin/clubSubscriptionStatus';
+import {
+  mergePcuAccessIntoAdminSettings,
+  readPcuAccessSettings,
+} from '@/lib/admin/userPcuAccessSettings';
 import { verifyAdminActionPassword } from '@/lib/admin/verifyAdminActionPassword';
 
 export const dynamic = 'force-dynamic';
@@ -73,6 +85,66 @@ function parseSubscriptionDeletions(body: unknown): SubscriptionDeletionRequest[
     });
   }
   return out;
+}
+
+type MembershipRenewalRequest = MembershipRenewalInput & {
+  userId: string;
+  entityId: string;
+};
+
+function parseMembershipRenewals(body: unknown): MembershipRenewalRequest[] {
+  if (!body || typeof body !== 'object') return [];
+  const raw = (body as { memberships?: unknown }).memberships;
+  if (!Array.isArray(raw)) return [];
+  const out: MembershipRenewalRequest[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const userId = String(rec.userId ?? '').trim();
+    const entityId = String(rec.entityId ?? '').trim();
+    const dateStart = String(rec.dateStart ?? '').trim().slice(0, 10);
+    if (!userId || !entityId || !dateStart) continue;
+    out.push({
+      userId,
+      entityId,
+      dateStart,
+      dateEnd:
+        rec.dateEnd === null
+          ? null
+          : typeof rec.dateEnd === 'string'
+            ? rec.dateEnd.trim().slice(0, 10) || null
+            : null,
+      version: typeof rec.version === 'string' ? rec.version.trim() : undefined,
+      companyName: typeof rec.companyName === 'string' ? rec.companyName.trim() : undefined,
+      username: typeof rec.username === 'string' ? rec.username.trim() : undefined,
+    });
+  }
+  return out;
+}
+
+async function upsertUserAdminSettings(userId: string, adminSettings: string) {
+  const existing = await prisma.userSettings.findUnique({ where: { userId } });
+  if (existing) {
+    await prisma.userSettings.update({
+      where: { userId },
+      data: { adminSettings },
+    });
+    return;
+  }
+  await prisma.userSettings.create({
+    data: {
+      userId,
+      widgetArrangement: '{}',
+      adminSettings,
+      colorSettings: '{}',
+      toolsSettings: '{}',
+      favouritesSettings: '{}',
+      myBestSettings: '{}',
+      notificationSettings: '{}',
+      socialSettings: '{}',
+      workoutPreferences: '{}',
+    },
+  });
 }
 
 /** Turn Resend SDK/API errors into actionable admin messages. */
@@ -288,7 +360,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   let deleted = 0;
-  for (const [userId, dels] of byUser) {
+  for (const [userId, dels] of Array.from(byUser.entries())) {
     const user = users.find((u) => u.id === userId);
     if (!user || dels.length === 0) continue;
 
@@ -324,5 +396,182 @@ export async function DELETE(request: NextRequest) {
   return NextResponse.json({
     deleted,
     userIds: Array.from(byUser.keys()),
+  });
+}
+
+/** PUT — Renew selected club memberships (requires super admin password). */
+export async function PUT(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const segment = String((body as { segment?: string })?.segment || '').trim();
+  if (!SEGMENT_TYPES[segment]) {
+    return NextResponse.json({ error: 'Invalid segment' }, { status: 400 });
+  }
+
+  const superAdminPassword = String(
+    (body as { superAdminPassword?: string })?.superAdminPassword || '',
+  ).trim();
+  if (!superAdminPassword) {
+    return NextResponse.json({ error: 'Super admin password is required' }, { status: 400 });
+  }
+
+  const adminUsername = String((body as { adminUsername?: string })?.adminUsername || '').trim();
+  const passwordOk = await verifyAdminActionPassword(
+    superAdminPassword,
+    auth,
+    adminUsername || undefined,
+  );
+  if (!passwordOk) {
+    return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
+  }
+
+  const memberships = parseMembershipRenewals(body);
+  if (memberships.length === 0) {
+    return NextResponse.json({ error: 'No memberships selected' }, { status: 400 });
+  }
+
+  const userIds = Array.from(new Set(memberships.map((m) => m.userId)));
+  const types = SEGMENT_TYPES[segment]!;
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds }, userType: { in: types } },
+    select: {
+      id: true,
+      settings: { select: { adminSettings: true } },
+      ownedClubs: {
+        select: {
+          id: true,
+          name: true,
+          location: true,
+          description: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      },
+    },
+  });
+
+  if (users.length === 0) {
+    return NextResponse.json({ error: 'No matching users found for this segment' }, { status: 404 });
+  }
+
+  const renewed: { userId: string; entityId: string; dateStart: string; dateEnd: string }[] = [];
+  const errors: string[] = [];
+  const adminSettingsByUser = new Map<string, string>();
+  for (const user of users) {
+    adminSettingsByUser.set(user.id, user.settings?.adminSettings?.trim() || '{}');
+  }
+
+  for (const target of memberships) {
+    const user = users.find((u) => u.id === target.userId);
+    if (!user) {
+      errors.push(`User not found: ${target.userId}`);
+      continue;
+    }
+
+    const club = user.ownedClubs.find((c) => c.id === target.entityId);
+    if (!club) {
+      errors.push(`Club ${target.entityId} not owned by user ${target.userId}`);
+      continue;
+    }
+
+    const previousStart =
+      target.dateStart ||
+      parseClubSubscriptionStartDate(club.description, club.createdAt) ||
+      club.createdAt.toISOString().slice(0, 10);
+    const previousEnd =
+      target.dateEnd ??
+      parseClubSubscriptionEndDate(club.description, club.createdAt)?.toISOString().slice(0, 10) ??
+      null;
+
+    const previous: MembershipRenewalInput = {
+      dateStart: previousStart,
+      dateEnd: previousEnd,
+      version: target.version,
+      entityId: target.entityId,
+      companyName: target.companyName ?? club.name?.trim(),
+      username: target.username,
+    };
+
+    const nextStart = computeRenewalStartDate(previousEnd);
+    const nextEnd = computeRenewalEndDate(nextStart);
+    const primaryClub = pickClubForAdminProfile(user.ownedClubs);
+
+    let adminSettingsRaw = adminSettingsByUser.get(user.id) ?? '{}';
+    adminSettingsRaw = applyMembershipRenewalToAdminSettings(
+      adminSettingsRaw,
+      previous,
+      nextStart,
+      nextEnd,
+    );
+
+    const pcuDefaults = {
+      accessStartIso: previousStart,
+      accessEndIso: previousEnd ?? '',
+    };
+    const pcuAccess = readPcuAccessSettings(adminSettingsRaw, pcuDefaults);
+    if (
+      shouldSyncPcuAccessOnRenewal(
+        target.entityId,
+        primaryClub?.id ?? null,
+        previous,
+        pcuAccess,
+      )
+    ) {
+      adminSettingsRaw = mergePcuAccessIntoAdminSettings(adminSettingsRaw, {
+        accessStartIso: nextStart,
+        accessEndIso: nextEnd,
+      });
+    }
+
+    adminSettingsByUser.set(user.id, adminSettingsRaw);
+
+    const nextDescription = mergeClubSubscriptionDates(
+      club.description,
+      nextStart,
+      nextEnd,
+    );
+
+    await prisma.club.update({
+      where: { id: club.id },
+      data: { description: nextDescription },
+    });
+
+    club.description = nextDescription;
+
+    renewed.push({
+      userId: user.id,
+      entityId: club.id,
+      dateStart: nextStart,
+      dateEnd: nextEnd,
+    });
+  }
+
+  for (const [userId, adminSettings] of Array.from(adminSettingsByUser.entries())) {
+    if (!renewed.some((r) => r.userId === userId)) continue;
+    await upsertUserAdminSettings(userId, adminSettings);
+  }
+
+  if (renewed.length === 0) {
+    return NextResponse.json(
+      { error: errors[0] || 'Could not renew any memberships', errors },
+      { status: 400 },
+    );
+  }
+
+  return NextResponse.json({
+    renewed: renewed.length,
+    memberships: renewed,
+    errors: errors.length > 0 ? errors : undefined,
   });
 }

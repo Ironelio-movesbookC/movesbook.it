@@ -1,9 +1,12 @@
 import {
   isSubscriptionPeriodDeleted,
   periodDisplayStatus,
+  pickCurrentSubscriptionPeriod,
   readDeletedSubscriptionPeriods,
   readNetworkSubscriptionHistory,
+  resolveMembershipPeriodStatus,
   type NetworkSubscriptionPeriod,
+  type PcuAccessWindow,
 } from '@/lib/admin/networkSubscriptionHistory';
 
 export type ProfileSubscriptionRow = {
@@ -46,6 +49,7 @@ export function buildProfileSubscriptionRows(
     e: string;
     entityId?: string | null;
   },
+  pcuAccess?: PcuAccessWindow | null,
 ): ProfileSubscriptionRow[] {
   const entityId = current.entityId ?? null;
   const deleted = readDeletedSubscriptionPeriods(adminSettingsRaw);
@@ -74,11 +78,20 @@ export function buildProfileSubscriptionRows(
     .filter((p) => !isSubscriptionPeriodDeleted(p, deleted, rowKey))
     .sort((a, b) => new Date(a.dateStart).getTime() - new Date(b.dateStart).getTime());
 
+  const currentPeriodResolved = pickCurrentSubscriptionPeriod(merged, pcuAccess);
   const defaults = {
     username: current.username,
     companyName: current.companyName,
     e: current.e,
   };
 
-  return merged.map((p) => periodToProfileRow(p, defaults));
+  return merged.map((p) =>
+    periodToProfileRow(
+      {
+        ...p,
+        status: resolveMembershipPeriodStatus(p, currentPeriodResolved),
+      },
+      defaults,
+    ),
+  );
 }
