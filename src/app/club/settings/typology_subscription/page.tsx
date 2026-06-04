@@ -1,7 +1,9 @@
 'use client';
 
+import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getTypologyIconUrlWithDefault } from '@/lib/typologyIcon';
 import {
   CalendarCheck,
   Check,
@@ -26,6 +28,7 @@ type TypologyRow = {
   id: string;
   area: string;
   blockAccess: boolean;
+  image: string;
   activityName: string;
   room: string;
   cost: string;
@@ -83,6 +86,7 @@ export default function TypologySubscriptionPage() {
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookingSettings, setBookingSettings] = useState<BookingSettings>(DEFAULT_BOOKING_SETTINGS);
   const [savingBooking, setSavingBooking] = useState(false);
+  const [copying, setCopying] = useState(false);
 
   const selectedRow = rows.find((row) => row.id === selectedId) ?? null;
 
@@ -173,19 +177,55 @@ export default function TypologySubscriptionPage() {
     router.push(`/club/settings/typology_subscription/timetable/${encodeURIComponent(row.id)}`);
   };
 
-  const copySelected = () => {
+  const copySelected = async () => {
     const row = requireSelection();
     if (!row) return;
 
-    const copyRow: TypologyRow = {
-      ...row,
-      id: `local-copy-${Date.now()}`,
-      activityName: `${row.activityName} copy`,
-      isDefault: false
-    };
+    if (row.id.startsWith('local-')) {
+      window.alert('Save this typology to the database before copying it.');
+      return;
+    }
 
-    setRows((current) => [copyRow, ...current]);
-    setSelectedId(copyRow.id);
+    setCopying(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/club/settings/typology-subscription', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          action: 'copy-typology',
+          sourceId: row.id
+        })
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || 'Unable to copy this typology.');
+      }
+
+      const newId = String(data.id ?? '');
+      const activityName = String(data.activityName ?? `${row.activityName} copy`);
+      if (!newId) {
+        throw new Error('Copy did not return a new typology id.');
+      }
+
+      const copyRow: TypologyRow = {
+        ...row,
+        id: newId,
+        activityName,
+        isDefault: false
+      };
+
+      setRows((current) => [copyRow, ...current]);
+      setSelectedId(copyRow.id);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to copy this typology.');
+    } finally {
+      setCopying(false);
+    }
   };
 
   const deleteSelected = async () => {
@@ -304,7 +344,7 @@ export default function TypologySubscriptionPage() {
   return (
     <div className="p-4 lg:p-6 print:p-0">
       <section className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm print:border-0 print:shadow-none">
-        <ClubSettingsTypologyTabs timetableTypologyId={selectedId} />
+        <ClubSettingsTypologyTabs timetableTypologyId={selectedId} listPriceTypologyId={selectedId} />
 
         <div className="border-b border-gray-200 px-4 py-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -357,7 +397,12 @@ export default function TypologySubscriptionPage() {
           <div className="mt-4 flex flex-wrap gap-2 print:hidden">
             <ToolbarButton icon={Plus} label="Add new" onClick={() => router.push('/club/settings/typology_subscription/add')} />
             <ToolbarButton icon={Pencil} label="Modify" onClick={openEditPage} disabled={!selectedRow} />
-            <ToolbarButton icon={Copy} label="Copy" onClick={copySelected} disabled={!selectedRow} />
+            <ToolbarButton
+              icon={Copy}
+              label={copying ? 'Copying…' : 'Copy'}
+              onClick={copySelected}
+              disabled={!selectedRow || copying}
+            />
             <ToolbarButton icon={Printer} label="Print" onClick={() => window.print()} />
             <ToolbarButton icon={Trash2} label="Delete" onClick={deleteSelected} disabled={!selectedRow} danger />
             <ToolbarButton icon={X} label="Remove selection" onClick={removeSelection} disabled={!selectedRow} />
@@ -432,7 +477,19 @@ export default function TypologySubscriptionPage() {
                             className="h-4 w-4 rounded border-gray-300 accent-gray-900"
                           />
                         </td>
-                        <td className="px-4 py-3 text-gray-900">{row.activityName}</td>
+                        <td className="px-4 py-3 text-gray-900">
+                          <div className="flex items-center gap-2">
+                            <Image
+                              src={getTypologyIconUrlWithDefault(row.image)}
+                              alt=""
+                              width={32}
+                              height={32}
+                              unoptimized
+                              className="h-8 w-8 shrink-0 object-contain"
+                            />
+                            <span>{row.activityName}</span>
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-center text-gray-700">{row.room || '-'}</td>
                         <td className="px-4 py-3 text-center text-gray-700">{row.cost || '-'}</td>
                         <td className={`px-4 py-3 text-center ${row.limitEnabled ? 'text-gray-900' : 'text-gray-400'}`}>
@@ -473,8 +530,12 @@ export default function TypologySubscriptionPage() {
                             <div className="absolute right-0 z-20 mt-1 hidden min-w-[120px] rounded-md border border-gray-300 bg-white py-1 text-left shadow-lg group-open:block">
                               <button
                                 type="button"
-                                className="block w-full px-3 py-2 text-left text-sm text-gray-400"
-                                disabled
+                                onClick={() =>
+                                  router.push(
+                                    `/club/settings/typology_subscription/pricelist?typologyId=${encodeURIComponent(row.id)}`
+                                  )
+                                }
+                                className="block w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-100"
                               >
                                 List prices
                               </button>

@@ -8,8 +8,20 @@ export const dynamic = 'force-dynamic';
 
 const MAX_ICON_BYTES = 5 * 1024 * 1024;
 const TYPOLOGY_ICON_DIR = ['img', 'typology_image'];
-const ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg']);
-const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
+const ALLOWED_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/gif',
+  'image/bmp',
+  'image/x-ms-bmp'
+]);
+const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp']);
+const ALLOWED_FORMATS_ERROR = 'Only JPG, PNG, GIF, or BMP icons are allowed';
+
+type TypologyIconExtension = '.png' | '.jpg' | '.gif' | '.bmp';
+
+const CAT_ICON_FILE_PATTERN = /^Cat_(\d+)\.(png|jpe?g|gif|bmp)$/i;
 
 function isClubAccountUserType(userType: string): boolean {
   return userType === 'CLUB' || userType === 'CLUB_TRAINER';
@@ -21,35 +33,52 @@ function getTokenPayload(request: NextRequest) {
   return verifyToken(token);
 }
 
-function normalizeExtension(fileName: string): '.png' | '.jpg' | null {
+function normalizeExtension(fileName: string): TypologyIconExtension | null {
   const extension = extname(fileName).toLowerCase();
+  if (extension === '.jpeg') return '.jpg';
   if (!ALLOWED_EXTENSIONS.has(extension)) return null;
-  return extension === '.png' ? '.png' : '.jpg';
+  return extension as TypologyIconExtension;
 }
 
-function hasValidImageSignature(buffer: Buffer, extension: '.png' | '.jpg'): boolean {
-  if (extension === '.png') {
-    return (
-      buffer.length > 8 &&
-      buffer[0] === 0x89 &&
-      buffer[1] === 0x50 &&
-      buffer[2] === 0x4e &&
-      buffer[3] === 0x47
-    );
+/** Detect PNG/JPEG/GIF/BMP from magic bytes (do not trust filename or MIME alone). */
+function detectImageFormat(buffer: Buffer): TypologyIconExtension | null {
+  if (
+    buffer.length > 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return '.png';
   }
 
-  return (
-    buffer.length > 3 &&
-    buffer[0] === 0xff &&
-    buffer[1] === 0xd8 &&
-    buffer[2] === 0xff
-  );
+  if (buffer.length > 2 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+    return '.jpg';
+  }
+
+  if (
+    buffer.length > 6 &&
+    buffer[0] === 0x47 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x38 &&
+    (buffer[4] === 0x37 || buffer[4] === 0x39) &&
+    buffer[5] === 0x61
+  ) {
+    return '.gif';
+  }
+
+  if (buffer.length > 2 && buffer[0] === 0x42 && buffer[1] === 0x4d) {
+    return '.bmp';
+  }
+
+  return null;
 }
 
-async function getNextCatFileName(uploadDir: string, extension: '.png' | '.jpg') {
+async function getNextCatFileName(uploadDir: string, extension: TypologyIconExtension) {
   const files = await readdir(uploadDir).catch(() => []);
   const highestNumber = files.reduce((highest, fileName) => {
-    const match = fileName.match(/^Cat_(\d+)\.(png|jpe?g)$/i);
+    const match = fileName.match(CAT_ICON_FILE_PATTERN);
     if (!match) return highest;
     return Math.max(highest, Number(match[1]) || 0);
   }, 0);
@@ -57,7 +86,11 @@ async function getNextCatFileName(uploadDir: string, extension: '.png' | '.jpg')
   return `Cat_${highestNumber + 1}${extension}`;
 }
 
-async function writeNextCatIcon(uploadDir: string, extension: '.png' | '.jpg', buffer: Buffer) {
+async function writeNextCatIcon(
+  uploadDir: string,
+  extension: TypologyIconExtension,
+  buffer: Buffer
+) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const fileName = await getNextCatFileName(uploadDir, extension);
 
@@ -89,9 +122,9 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const file = formData.get('file') as File | null;
+    const file = formData.get('file');
 
-    if (!file) {
+    if (!file || typeof file === 'string' || !(file instanceof Blob)) {
       return NextResponse.json({ error: 'No icon file provided' }, { status: 400 });
     }
 
@@ -99,19 +132,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Icon file exceeds 5MB' }, { status: 400 });
     }
 
-    const extension = normalizeExtension(file.name);
-    if (!extension) {
-      return NextResponse.json({ error: 'Only PNG or JPG icons are allowed' }, { status: 400 });
+    const uploadFileName = file instanceof File ? file.name : 'upload.png';
+    const nameExtension = normalizeExtension(uploadFileName);
+    if (!nameExtension) {
+      return NextResponse.json({ error: ALLOWED_FORMATS_ERROR }, { status: 400 });
     }
 
-    if (file.type && !ALLOWED_MIME_TYPES.has(file.type)) {
-      return NextResponse.json({ error: 'Only PNG or JPG icons are allowed' }, { status: 400 });
+    if (
+      file.type &&
+      file.type !== 'application/octet-stream' &&
+      !ALLOWED_MIME_TYPES.has(file.type)
+    ) {
+      return NextResponse.json({ error: ALLOWED_FORMATS_ERROR }, { status: 400 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    if (!hasValidImageSignature(buffer, extension)) {
+    if (buffer.length === 0) {
+      return NextResponse.json(
+        { error: 'The uploaded file is empty. Check server/proxy upload limits.' },
+        { status: 400 }
+      );
+    }
+
+    const detectedFormat = detectImageFormat(buffer);
+    if (!detectedFormat) {
       return NextResponse.json({ error: 'The selected file is not a valid image icon' }, { status: 400 });
     }
+
+    const extension = detectedFormat;
 
     const uploadDir = join(getServerPublicDir(), ...TYPOLOGY_ICON_DIR);
     await mkdir(uploadDir, { recursive: true });

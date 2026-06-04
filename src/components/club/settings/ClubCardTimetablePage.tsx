@@ -1,17 +1,22 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Save } from 'lucide-react';
 import ClubSettingsTypologyTabs from '@/components/club/settings/ClubSettingsTypologyTabs';
+import TimetableDayRow from '@/components/club/settings/TimetableDayRow';
+import TimetableBookingPropertiesTable from '@/components/club/settings/TimetableBookingPropertiesTable';
 import {
   CardTimetableForm,
   PERMIT_MINUTE_OPTIONS,
   TIMETABLE_DAY_KEYS,
   TIMETABLE_DAY_LABELS,
   TimetableDayKey,
+  TimetableOperator,
   createEmptyTimetableForm,
-  minutesToDisplayTime
+  resetAllDays,
+  validateTimetableForm
 } from '@/lib/clubCardTimetable';
 
 type TypologyOption = {
@@ -19,7 +24,10 @@ type TypologyOption = {
   name: string;
 };
 
+type ViewMode = 'schedule' | 'properties' | 'bookings';
+
 const TYPOLOGY_LIST_PATH = '/club/settings/typology_subscription';
+const COURSE_TIMETABLE_SUMMARY_PATH = '/club/settings/typology_subscription/timetable/summary';
 
 type ClubCardTimetablePageProps = {
   initialTypologyId?: string;
@@ -28,9 +36,16 @@ type ClubCardTimetablePageProps = {
 export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCardTimetablePageProps) {
   const router = useRouter();
   const [typologies, setTypologies] = useState<TypologyOption[]>([]);
+  const [importSources, setImportSources] = useState<TypologyOption[]>([]);
+  const [operators, setOperators] = useState<TimetableOperator[]>([]);
   const [form, setForm] = useState<CardTimetableForm>(() => createEmptyTimetableForm(initialTypologyId));
   const [selectedTypologyId, setSelectedTypologyId] = useState(initialTypologyId);
+  const [activeDay, setActiveDay] = useState<TimetableDayKey>('mon');
+  const [viewMode, setViewMode] = useState<ViewMode>('schedule');
+  const [copyFromId, setCopyFromId] = useState('');
   const [loading, setLoading] = useState(true);
+  const [importLoading, setImportLoading] = useState(false);
+  const [copyLoading, setCopyLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +54,31 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
     [typologies, selectedTypologyId]
   );
 
+  const loadTimetable = useCallback(async (typologyId: string, sourceTypologyId?: string) => {
+    const token = localStorage.getItem('token');
+    const params = new URLSearchParams();
+    if (typologyId) params.set('typologyId', typologyId);
+    if (sourceTypologyId) params.set('copyFrom', sourceTypologyId);
+
+    const response = await fetch(`/api/club/settings/card-timetable?${params.toString()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(data?.error || 'Unable to load timetable.');
+    }
+
+    setTypologies(Array.isArray(data.typologies) ? data.typologies : []);
+    setImportSources(Array.isArray(data.importSources) ? data.importSources : []);
+    setOperators(Array.isArray(data.operators) ? data.operators : []);
+
+    if (data.timetable) {
+      setForm(data.timetable as CardTimetableForm);
+    } else if (typologyId) {
+      setForm(createEmptyTimetableForm(typologyId));
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -46,28 +86,7 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
       try {
         setLoading(true);
         setError(null);
-        const token = localStorage.getItem('token');
-        const query = selectedTypologyId
-          ? `?typologyId=${encodeURIComponent(selectedTypologyId)}`
-          : '';
-        const response = await fetch(`/api/club/settings/card-timetable${query}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
-
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(data?.error || 'Unable to load timetable.');
-        }
-
-        if (cancelled) return;
-
-        setTypologies(Array.isArray(data.typologies) ? data.typologies : []);
-
-        if (data.timetable) {
-          setForm(data.timetable as CardTimetableForm);
-        } else if (selectedTypologyId) {
-          setForm(createEmptyTimetableForm(selectedTypologyId));
-        }
+        await loadTimetable(selectedTypologyId);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Unable to load timetable.');
@@ -80,11 +99,10 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
     }
 
     load();
-
     return () => {
       cancelled = true;
     };
-  }, [selectedTypologyId]);
+  }, [selectedTypologyId, loadTimetable]);
 
   useEffect(() => {
     if (initialTypologyId && initialTypologyId !== selectedTypologyId) {
@@ -92,41 +110,91 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
     }
   }, [initialTypologyId, selectedTypologyId]);
 
-  const updateDay = (key: TimetableDayKey, patch: Partial<CardTimetableForm['days'][TimetableDayKey]>) => {
-    setForm((current) => ({
-      ...current,
-      days: {
-        ...current.days,
-        [key]: {
-          ...current.days[key],
-          ...patch
-        }
-      }
-    }));
-  };
-
-  const updateDayRange = (key: TimetableDayKey, rangeStart: number, rangeEnd: number) => {
-    const safeEnd = rangeEnd > rangeStart ? rangeEnd : rangeStart + 15;
-    updateDay(key, {
-      rangeStart,
-      rangeEnd: safeEnd,
-      amTime: minutesToDisplayTime(rangeStart),
-      pmTime: minutesToDisplayTime(safeEnd)
-    });
-  };
-
-  const handleLoadTypology = () => {
+  const handleLoadTypology = async () => {
     if (!selectedTypologyId) {
       window.alert('Please select a typology first.');
       return;
     }
-    router.push(`/club/settings/typology_subscription/timetable/${encodeURIComponent(selectedTypologyId)}`);
+    const confirmed = window.confirm('Are you sure you want to proceed with this typology?');
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+      await loadTimetable(selectedTypologyId);
+      router.push(`/club/settings/typology_subscription/timetable/${encodeURIComponent(selectedTypologyId)}`);
+      setViewMode('schedule');
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Unable to load timetable.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImportSources = async () => {
+    if (!selectedTypologyId) {
+      window.alert('Please select a typology first.');
+      return;
+    }
+    setImportLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `/api/club/settings/card-timetable?typologyId=${encodeURIComponent(selectedTypologyId)}&listImport=1`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      );
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || 'Unable to load import list.');
+      }
+      setImportSources(Array.isArray(data.importSources) ? data.importSources : []);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Unable to load import list.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleCopyLoad = async () => {
+    if (!selectedTypologyId) {
+      window.alert('Please select a typology first.');
+      return;
+    }
+    if (!copyFromId) {
+      window.alert('Please select an option');
+      return;
+    }
+
+    setCopyLoading(true);
+    try {
+      await loadTimetable(selectedTypologyId, copyFromId);
+      setViewMode('schedule');
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Unable to copy timetable.');
+    } finally {
+      setCopyLoading(false);
+    }
+  };
+
+  const updateDay = (key: TimetableDayKey, day: CardTimetableForm['days'][TimetableDayKey]) => {
+    setForm((current) => ({
+      ...current,
+      days: {
+        ...current.days,
+        [key]: day
+      }
+    }));
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedTypologyId) {
       window.alert('Please select a typology first.');
+      return;
+    }
+
+    const validationError = validateTimetableForm(form);
+    if (validationError) {
+      window.alert(validationError);
       return;
     }
 
@@ -159,6 +227,9 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
     }
   };
 
+  const btnClass =
+    'inline-flex h-9 items-center rounded-md border border-gray-300 bg-gray-100 px-3 text-sm font-semibold text-gray-900 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50';
+
   return (
     <div className="p-4 lg:p-6 print:p-0">
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -177,9 +248,118 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
         <ClubSettingsTypologyTabs timetableTypologyId={selectedTypologyId || null} />
 
         <form onSubmit={handleSubmit}>
-          <div className="px-4 py-4">
-            <h1 className="text-xl font-semibold text-gray-950">Setting typologies of subscription to the club</h1>
+          <div className="border-b border-gray-200 bg-gray-50 px-4 py-4">
+            <h1 className="text-xl font-semibold text-gray-950">
+              Setting typologies of subscription to the club
+            </h1>
             <p className="mt-1 text-sm text-gray-500">Timetable · {selectedTypologyName || 'Select a typology'}</p>
+          </div>
+
+          <div className="flex flex-wrap gap-2 border-b border-gray-200 bg-white px-4 py-3">
+            <button type="button" className={btnClass} disabled>
+              Print
+            </button>
+            <button
+              type="button"
+              onClick={handleImportSources}
+              disabled={importLoading || !selectedTypologyId}
+              className={btnClass}
+            >
+              {importLoading ? 'Loading…' : 'Click here to import a timetable'}
+            </button>
+            <select
+              value={copyFromId}
+              onChange={(event) => setCopyFromId(event.target.value)}
+              className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm"
+            >
+              <option value="">Select Option</option>
+              {importSources.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleCopyLoad}
+              disabled={copyLoading}
+              className={btnClass}
+            >
+              {copyLoading ? 'Loading…' : 'Load'}
+            </button>
+          </div>
+
+          <div className="mx-4 mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 px-4 py-4 shadow-sm">
+            <div className="flex min-w-max flex-nowrap items-center gap-3">
+              <span className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-700">
+                Select typology you want manage
+              </span>
+              <select
+                value={selectedTypologyId}
+                onChange={(event) => setSelectedTypologyId(event.target.value)}
+                className="h-10 w-[220px] shrink-0 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 shadow-sm"
+              >
+                <option value="">Select</option>
+                {typologies.map((typology) => (
+                  <option key={typology.id} value={typology.id}>
+                    {typology.name}
+                  </option>
+                ))}
+              </select>
+              <button type="button" onClick={handleLoadTypology} className={btnClass}>
+                Load Timetable
+              </button>
+              <Link href={COURSE_TIMETABLE_SUMMARY_PATH} className={btnClass}>
+                Summary
+              </Link>
+              <button
+                type="button"
+                onClick={() => setViewMode('bookings')}
+                className={btnClass}
+              >
+                Bookings
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode(viewMode === 'properties' ? 'schedule' : 'properties')}
+                className={btnClass}
+              >
+                Set Propriety
+              </button>
+              <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={form.editableSubscriptionTimetable}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      editableSubscriptionTimetable: event.target.checked
+                    }))
+                  }
+                  className="h-4 w-4 accent-gray-900"
+                />
+                Editable for each subscription
+              </label>
+            </div>
+          </div>
+
+          <div className="mx-4 mt-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3">
+            <label className="text-sm font-medium text-gray-800">
+              Maximum number of current reservation available from each person:
+              <select
+                value={form.reserveMaxNumber}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, reserveMaxNumber: event.target.value }))
+                }
+                className="ml-2 h-9 rounded-md border border-gray-300 bg-white px-2 text-sm"
+              >
+                {['1', '2', '3', '4', '5'].map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           {loading ? (
@@ -191,155 +371,102 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
             <div className="px-4 py-10 text-center text-sm text-red-600">{error}</div>
           ) : (
             <>
-              <div className="mx-4 mb-4 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 px-4 py-4 shadow-sm">
-                <div className="flex min-w-max flex-nowrap items-center gap-3">
-                  <span className="shrink-0 text-sm font-medium text-gray-700 whitespace-nowrap">
-                    Select typology you want manage
-                  </span>
-                  <select
-                    value={selectedTypologyId}
-                    onChange={(event) => setSelectedTypologyId(event.target.value)}
-                    className="h-10 w-[220px] shrink-0 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 shadow-sm outline-none focus:border-gray-500 focus:ring-1 focus:ring-gray-400"
-                  >
-                    <option value="">Select</option>
-                    {typologies.map((typology) => (
-                      <option key={typology.id} value={typology.id}>
-                        {typology.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={handleLoadTypology}
-                    className="h-10 shrink-0 rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold whitespace-nowrap text-gray-800 shadow-sm hover:bg-gray-100"
-                  >
-                    Load Timetable
-                  </button>
-                  <label className="flex shrink-0 items-center gap-2 text-sm text-gray-700 whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      checked={form.editableSubscriptionTimetable}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          editableSubscriptionTimetable: event.target.checked
-                        }))
-                      }
-                      className="h-4 w-4 shrink-0 accent-gray-900"
-                    />
-                    Editable for each subscription
-                  </label>
-                </div>
-              </div>
+              {viewMode === 'schedule' && (
+                <div className="px-4 py-4">
+                  <div className="mb-3 overflow-x-auto" style={{paddingLeft: 83, paddingRight: 111}}>
+                    <div className="flex justify-between text-xs text-gray-500">
+                      {Array.from({ length: 25 }, (_, hour) => (
+                        <span key={hour} className="w-4 text-center">
+                          {hour}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
 
-              <div className="mx-4 mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3">
-                <label className="text-sm font-medium text-gray-800">
-                  Maximum number of current reservation available from each person:
-                  <select
-                    value={form.reserveMaxNumber}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, reserveMaxNumber: event.target.value }))
-                    }
-                    className="ml-2 h-9 rounded-md border border-gray-300 bg-white px-2 text-sm"
-                  >
-                    {['1', '2', '3', '4', '5'].map((value) => (
-                      <option key={value} value={value}>{value}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <div className="px-4 py-4">
-                <div className="mb-3 grid grid-cols-[72px_1fr_120px_120px] gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  <span>Day</span>
-                  <span>Time range (0–24h)</span>
-                  <span>From</span>
-                  <span>To</span>
-                </div>
-
-                <div className="space-y-3">
-                  {TIMETABLE_DAY_KEYS.map((key) => {
-                    const day = form.days[key];
-                    return (
-                      <div
+                  <div className="space-y-3">
+                    {TIMETABLE_DAY_KEYS.map((key) => (
+                      <TimetableDayRow
                         key={key}
-                        className="grid grid-cols-[72px_1fr_120px_120px] items-center gap-2 rounded-md border border-gray-200 bg-gray-50 p-3"
-                      >
-                        <label className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-                          <input
-                            type="checkbox"
-                            checked={day.enabled}
-                            onChange={(event) => updateDay(key, { enabled: event.target.checked })}
-                            className="h-4 w-4 accent-gray-900"
-                          />
-                          {TIMETABLE_DAY_LABELS[key]}
-                        </label>
-                        <div className="space-y-2">
-                          <input
-                            type="range"
-                            min={0}
-                            max={1440}
-                            step={15}
-                            disabled={!day.enabled}
-                            value={day.rangeStart}
-                            onChange={(event) =>
-                              updateDayRange(key, Number(event.target.value), day.rangeEnd)
-                            }
-                            className="w-full accent-gray-900 disabled:opacity-40"
-                          />
-                          <input
-                            type="range"
-                            min={0}
-                            max={1440}
-                            step={15}
-                            disabled={!day.enabled}
-                            value={day.rangeEnd}
-                            onChange={(event) =>
-                              updateDayRange(key, day.rangeStart, Number(event.target.value))
-                            }
-                            className="w-full accent-gray-900 disabled:opacity-40"
-                          />
-                        </div>
-                        <span className="text-sm text-gray-700">{day.amTime}</span>
-                        <span className="text-sm text-gray-700">{day.pmTime}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+                        dayKey={key}
+                        label={TIMETABLE_DAY_LABELS[key]}
+                        day={form.days[key]}
+                        active={activeDay === key}
+                        onSelect={() => setActiveDay(key)}
+                        onChange={(day) => updateDay(key, day)}
+                      />
+                    ))}
+                  </div>
 
-                <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  <label className="block text-sm text-gray-700">
-                    Minutes in advance permitted for access
-                    <select
-                      value={form.permitMinuteAccess}
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, permitMinuteAccess: event.target.value }))
-                      }
-                      className="mt-1 h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const confirmed = window.confirm('Reset all time ranges?');
+                        if (confirmed) {
+                          setForm((current) => resetAllDays(current));
+                        }
+                      }}
+                      className={btnClass}
                     >
-                      <option value="">Select</option>
-                      {PERMIT_MINUTE_OPTIONS.map((value) => (
-                        <option key={value} value={value}>{value}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-sm text-gray-700">
-                    Minutes early for blocking access on the official time to the end of the course
-                    <select
-                      value={form.blockingMinuteAccess}
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, blockingMinuteAccess: event.target.value }))
-                      }
-                      className="mt-1 h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
-                    >
-                      <option value="">Select</option>
-                      {PERMIT_MINUTE_OPTIONS.map((value) => (
-                        <option key={value} value={value}>{value}</option>
-                      ))}
-                    </select>
-                  </label>
+                      Reset all
+                    </button>
+                  </div>
+
+                  <div className="mt-6 grid gap-4 md:grid-cols-2">
+                    <label className="block text-sm text-gray-700">
+                      Minutes in advance permitted for access
+                      <select
+                        value={form.permitMinuteAccess}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, permitMinuteAccess: event.target.value }))
+                        }
+                        className="mt-1 h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+                      >
+                        <option value="">Select</option>
+                        {PERMIT_MINUTE_OPTIONS.map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-sm text-gray-700">
+                      Minutes early for blocking access on the official time to the end of the course
+                      <select
+                        value={form.blockingMinuteAccess}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, blockingMinuteAccess: event.target.value }))
+                        }
+                        className="mt-1 h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+                      >
+                        <option value="">Select</option>
+                        {PERMIT_MINUTE_OPTIONS.map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {viewMode === 'properties' && (
+                <div className="px-4 py-4">
+                  <TimetableBookingPropertiesTable
+                    form={form}
+                    operators={operators}
+                    onChange={setForm}
+                  />
+                </div>
+              )}
+
+              {viewMode === 'bookings' && (
+                <div className="px-4 py-10 text-center text-sm text-gray-600">
+                  Member bookings list (booked / waiting list) uses legacy club reservation APIs and is not yet ported.
+                  Use Set Propriety to configure slot booking rules for this typology.
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 border-t border-gray-200 px-4 py-4">
                 <button

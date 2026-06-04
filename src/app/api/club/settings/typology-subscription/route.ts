@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { unserialize } from 'php-serialize';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { fetchLanesForDays, saveLanesForDays } from '@/lib/lanesForDays.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +10,7 @@ type TypologyRow = {
   id: string;
   area: string;
   blockAccess: boolean;
+  image: string;
   activityName: string;
   room: string;
   cost: string;
@@ -48,6 +50,7 @@ type LegacyTypologyRow = {
   area?: string | null;
   blockAccess?: string | null;
   activityName?: string | null;
+  image?: string | null;
   room?: string | number | null;
   cost?: string | number | null;
   limitValue?: string | number | null;
@@ -746,6 +749,33 @@ async function hasDuplicateTypology(
   return rows.length > 0;
 }
 
+async function resolveCopyActivityName(
+  baseName: string,
+  areaActivity: string,
+  tableName: string,
+  userIds: string[],
+  clubId: string | null
+): Promise<string> {
+  const trimmed = baseName.trim() || 'Untitled course';
+  const root = trimmed.replace(/\s+copy(?:\s+\d+)?$/i, '').trim() || trimmed;
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const candidate = attempt === 0 ? `${root} copy` : `${root} copy ${attempt + 1}`;
+    const duplicate = await hasDuplicateTypology(
+      tableName,
+      candidate,
+      areaActivity,
+      userIds,
+      clubId
+    );
+    if (!duplicate) {
+      return candidate;
+    }
+  }
+
+  return `${root} copy ${Date.now()}`;
+}
+
 async function validateTypologyPayload(
   body: any,
   tableName: string,
@@ -919,6 +949,7 @@ function normalizeLegacyRow(row: LegacyTypologyRow): TypologyRow {
     id: String(row.id),
     area: row.area?.trim() || 'Unassigned',
     blockAccess: yesNo(row.blockAccess) === 'Y',
+    image: row.image?.trim() || 'Cat_1.png',
     activityName: row.activityName?.trim() || 'Untitled course',
     room: row.room != null ? String(row.room) : '',
     cost: row.cost != null ? String(row.cost) : '',
@@ -965,6 +996,7 @@ async function fetchLegacyRows(userIds: string[], clubId: string | null) {
       t.user_id AS userId,
       ${areaSelect},
       COALESCE(t.block_access, 'N') AS blockAccess,
+      COALESCE(t.image, 'Cat_1.png') AS image,
       COALESCE(t.activity_name, '') AS activityName,
       COALESCE(t.room, '') AS room,
       COALESCE(t.cost_for_lesson, '') AS cost,
@@ -1038,10 +1070,13 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Typology not found' }, { status: 404 });
       }
 
+      const typology = mapDbRowToTypologyForm(row);
+      const lanesForDays = await fetchLanesForDays(typologyId);
+
       return NextResponse.json({
         club: context.club,
         areas,
-        typology: mapDbRowToTypologyForm(row),
+        typology: { ...typology, lanesForDays },
         source: 'database'
       });
     }
@@ -1156,7 +1191,85 @@ export async function POST(request: NextRequest) {
         validation.areaActivity
       );
 
+      if (Array.isArray(body.lanesForDays) && Array.isArray(body.lanes)) {
+        await saveLanesForDays(String(id), body.lanesForDays, body.lanes);
+      }
+
       return NextResponse.json({ success: true, persisted: true, id });
+    }
+
+    if (body.action === 'copy-typology') {
+      const sourceId = String(body.sourceId ?? body.id ?? '');
+      if (!sourceId || sourceId.startsWith('local-')) {
+        return NextResponse.json({ error: 'Invalid typology id' }, { status: 400 });
+      }
+
+      const sourceRow = await fetchTypologyRowById(
+        sourceId,
+        context.userIds,
+        context.club?.id ?? null
+      );
+      if (!sourceRow) {
+        return NextResponse.json({ error: 'Typology not found' }, { status: 404 });
+      }
+
+      const typologyTable = await getTypologyTableForWrite();
+      const formPayload = mapDbRowToTypologyForm(sourceRow);
+      const lanesForDays = await fetchLanesForDays(sourceId);
+
+      const areaActivity = await resolveAreaActivity(
+        formPayload.areaActivity,
+        context.userIds,
+        context.club?.id ?? null
+      );
+      if (!areaActivity) {
+        return NextResponse.json({ error: 'Invalid area activity for this typology.' }, { status: 400 });
+      }
+
+      const activityName = await resolveCopyActivityName(
+        formPayload.activityName,
+        areaActivity,
+        typologyTable,
+        context.userIds,
+        context.club?.id ?? null
+      );
+
+      const copyBody = {
+        ...formPayload,
+        activityName,
+        lanesForDays
+      };
+
+      const validation = await validateTypologyPayload(copyBody, typologyTable, context);
+      if (Object.keys(validation.fieldErrors).length > 0) {
+        return NextResponse.json({
+          error: 'Validation failed',
+          fieldErrors: validation.fieldErrors
+        }, { status: 400 });
+      }
+
+      const newId = await insertTypology(
+        typologyTable,
+        copyBody,
+        context.userIds,
+        context.club?.id ?? null,
+        areaActivity
+      );
+
+      if (!newId) {
+        return NextResponse.json({ error: 'Unable to create typology copy.' }, { status: 500 });
+      }
+
+      if (Array.isArray(copyBody.lanes)) {
+        await saveLanesForDays(newId, lanesForDays, copyBody.lanes);
+      }
+
+      return NextResponse.json({
+        success: true,
+        persisted: true,
+        id: newId,
+        activityName
+      });
     }
 
     if (body.action === 'update-typology') {
@@ -1187,7 +1300,30 @@ export async function POST(request: NextRequest) {
         validation.areaActivity
       );
 
+      if (Array.isArray(body.lanesForDays) && Array.isArray(body.lanes)) {
+        await saveLanesForDays(typologyId, body.lanesForDays, body.lanes);
+      }
+
       return NextResponse.json({ success: true, persisted, id: typologyId });
+    }
+
+    if (body.action === 'save-lanes-for-days') {
+      const typologyId = String(body.id ?? '');
+      if (!typologyId || typologyId.startsWith('local-')) {
+        return NextResponse.json({ error: 'Invalid typology id' }, { status: 400 });
+      }
+
+      const existing = await fetchTypologyRowById(typologyId, context.userIds, context.club?.id ?? null);
+      if (!existing) {
+        return NextResponse.json({ error: 'Typology not found' }, { status: 404 });
+      }
+
+      if (!Array.isArray(body.lanesForDays) || !Array.isArray(body.lanes)) {
+        return NextResponse.json({ error: 'lanesForDays and lanes are required' }, { status: 400 });
+      }
+
+      const persisted = await saveLanesForDays(typologyId, body.lanesForDays, body.lanes);
+      return NextResponse.json({ success: true, persisted });
     }
 
     if (body.action !== 'booking-settings') {
