@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { mkdir, readdir, writeFile } from 'fs/promises';
 import { extname, join } from 'path';
 import { verifyToken } from '@/lib/auth';
-import { getServerPublicDir } from '@/lib/serverPublicDir';
+import { getServerPublicDir, verifyPublicFile } from '@/lib/serverPublicDir';
 
 export const dynamic = 'force-dynamic';
 
@@ -165,6 +165,20 @@ export async function POST(request: NextRequest) {
     await mkdir(uploadDir, { recursive: true });
 
     const fileName = await writeNextCatIcon(uploadDir, extension, buffer);
+    const savedPath = join(uploadDir, fileName);
+
+    if (!(await verifyPublicFile(savedPath))) {
+      console.error(
+        'POST /api/club/settings/typology-subscription/icon: write succeeded but file missing:',
+        savedPath,
+        'publicDir=',
+        getServerPublicDir()
+      );
+      return NextResponse.json(
+        { error: 'Icon upload could not be verified on disk. Check server public directory configuration.' },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
