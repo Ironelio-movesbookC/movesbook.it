@@ -32,8 +32,23 @@ export const LISTPRICE_REALTIME_FIELDS = new Set([
   'firstCostInstallnment',
   'installnment',
   'daysRecursion',
+  'saleNumberAccess',
+  'saleRelatedDays',
   'saleMaxNumber'
 ]);
+
+function validateIntegerField(
+  value: string,
+  range?: { min: number; max: number; message: string }
+): string | undefined {
+  if (value === '') return undefined;
+  if (!INTEGER_PATTERN.test(value)) return 'Numbers only.';
+  if (range) {
+    const numeric = Number(value);
+    if (numeric < range.min || numeric > range.max) return range.message;
+  }
+  return undefined;
+}
 
 export function validateListpriceForm(form: TypologyListpriceForm): Record<string, string> {
   const errors: Record<string, string> = {};
@@ -80,27 +95,39 @@ export function validateListpriceForm(form: TypologyListpriceForm): Record<strin
   }
 
   const daysRecursion = form.daysRecursion.trim();
-  if (daysRecursion !== '') {
-    if (!INTEGER_PATTERN.test(daysRecursion)) {
-      errors.daysRecursion = 'Numbers only.';
-    } else {
-      const value = Number(daysRecursion);
-      if (value < 1 || value > 99) {
-        errors.daysRecursion = 'Range is 1 - 99, number only';
-      }
-    }
+  const daysRecursionError = validateIntegerField(daysRecursion, {
+    min: 1,
+    max: 99,
+    message: 'Range is 1 - 99, number only'
+  });
+  if (daysRecursionError) errors.daysRecursion = daysRecursionError;
+
+  if (form.saleNumberAccessStatus) {
+    const saleNumberAccess = form.saleNumberAccess.trim();
+    const saleNumberAccessError = validateIntegerField(saleNumberAccess, {
+      min: 1,
+      max: 999,
+      message: 'Range of Number of accesses is from 1 to 999'
+    });
+    if (saleNumberAccessError) errors.saleNumberAccess = saleNumberAccessError;
+
+    const saleRelatedDays = form.saleRelatedDays.trim();
+    const saleRelatedDaysError = validateIntegerField(saleRelatedDays, {
+      min: 1,
+      max: 99,
+      message: 'Range is 1 - 99, number only'
+    });
+    if (saleRelatedDaysError) errors.saleRelatedDays = saleRelatedDaysError;
   }
 
   const saleMaxNumber = form.saleMaxNumber.trim();
-  if (saleMaxNumber !== '') {
-    if (!INTEGER_PATTERN.test(saleMaxNumber)) {
-      errors.saleMaxNumber = 'Numbers only.';
-    } else {
-      const value = Number(saleMaxNumber);
-      if (value < 1 || value > 999) {
-        errors.saleMaxNumber = 'Range of Max accesses is from 1 to 999';
-      }
-    }
+  if (form.saleMaxNumberStatus && saleMaxNumber !== '') {
+    const saleMaxNumberError = validateIntegerField(saleMaxNumber, {
+      min: 1,
+      max: 999,
+      message: 'Range of Max accesses is from 1 to 999'
+    });
+    if (saleMaxNumberError) errors.saleMaxNumber = saleMaxNumberError;
   }
 
   return errors;
@@ -125,9 +152,13 @@ export function pickListpriceFieldErrors(
             ? form.installnment.trim() !== ''
             : field === 'daysRecursion'
               ? form.daysRecursion.trim() !== ''
-              : field === 'saleMaxNumber'
-                ? form.saleMaxNumber.trim() !== ''
-                : false;
+              : field === 'saleNumberAccess'
+                ? form.saleNumberAccessStatus && form.saleNumberAccess.trim() !== ''
+                : field === 'saleRelatedDays'
+                  ? form.saleNumberAccessStatus && form.saleRelatedDays.trim() !== ''
+                  : field === 'saleMaxNumber'
+                    ? form.saleMaxNumberStatus && form.saleMaxNumber.trim() !== ''
+                    : false;
 
     if (showAlways && (hasValue || touched[field])) {
       if (allErrors[field]) picked[field] = allErrors[field];

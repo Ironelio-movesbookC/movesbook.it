@@ -78,6 +78,35 @@ export default function TypologyListpriceForm({ mode, listpriceId, initialTypolo
   };
 
   const set = updateField;
+
+  const setAccessLimitMode = (mode: 'number' | 'max') => {
+    setForm((current) => {
+      const nextForm = {
+        ...current,
+        saleNumberAccessStatus: mode === 'number',
+        saleMaxNumberStatus: mode === 'max'
+      };
+      formRef.current = nextForm;
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        if (mode === 'number') {
+          delete next.saleMaxNumber;
+        } else {
+          delete next.saleNumberAccess;
+          delete next.saleRelatedDays;
+        }
+        return next;
+      });
+      if (mode === 'max') {
+        syncValidation(nextForm, ['saleMaxNumber'], touchedRef.current);
+      } else {
+        syncValidation(nextForm, ['saleNumberAccess', 'saleRelatedDays'], touchedRef.current);
+      }
+      return nextForm;
+    });
+  };
+
+  const accessLimitMode: 'number' | 'max' = form.saleMaxNumberStatus ? 'max' : 'number';
   const [loading, setLoading] = useState(mode === 'edit');
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -305,37 +334,72 @@ export default function TypologyListpriceForm({ mode, listpriceId, initialTypolo
             </Section>
 
             <Section title="Conditions of sale">
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-4">
                 <Field label="Duration months">
                   <input
                     value={form.saleDurationMonths}
                     onChange={(e) => set('saleDurationMonths', e.target.value)}
-                    className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm"
+                    className={inputClass(false)}
                   />
                 </Field>
-                <Field label="Max accesses" error={fieldErrors.saleMaxNumber}>
-                  <input
-                    inputMode="numeric"
-                    value={form.saleMaxNumber}
-                    onChange={(e) => set('saleMaxNumber', sanitizeIntegerInput(e.target.value))}
-                    onBlur={() => touchField('saleMaxNumber')}
-                    className={inputClass(Boolean(fieldErrors.saleMaxNumber))}
-                  />
-                </Field>
-                <Field label="Number of accesses">
-                  <input
-                    value={form.saleNumberAccess}
-                    onChange={(e) => set('saleNumberAccess', e.target.value)}
-                    className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm"
-                  />
-                </Field>
-                <Field label="Related days">
-                  <input
-                    value={form.saleRelatedDays}
-                    onChange={(e) => set('saleRelatedDays', e.target.value)}
-                    className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm"
-                  />
-                </Field>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <RadioAccessField
+                    name="access-limit-mode"
+                    label="Number of accesses"
+                    checked={accessLimitMode === 'number'}
+                    onSelect={() => setAccessLimitMode('number')}
+                    error={fieldErrors.saleNumberAccess}
+                  >
+                    <input
+                      inputMode="numeric"
+                      value={form.saleNumberAccess}
+                      onChange={(e) =>
+                        set('saleNumberAccess', sanitizeIntegerInput(e.target.value))
+                      }
+                      onBlur={() => touchField('saleNumberAccess')}
+                      disabled={accessLimitMode !== 'number'}
+                      className={inputClass(
+                        Boolean(fieldErrors.saleNumberAccess),
+                        accessLimitMode !== 'number'
+                      )}
+                    />
+                  </RadioAccessField>
+                  <Field label="Related days" error={fieldErrors.saleRelatedDays}>
+                    <input
+                      inputMode="numeric"
+                      value={form.saleRelatedDays}
+                      onChange={(e) =>
+                        set('saleRelatedDays', sanitizeIntegerInput(e.target.value))
+                      }
+                      onBlur={() => touchField('saleRelatedDays')}
+                      disabled={accessLimitMode !== 'number'}
+                      className={inputClass(
+                        Boolean(fieldErrors.saleRelatedDays),
+                        accessLimitMode !== 'number'
+                      )}
+                    />
+                  </Field>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <RadioAccessField
+                    name="access-limit-mode"
+                    label="Max accesses"
+                    checked={accessLimitMode === 'max'}
+                    onSelect={() => setAccessLimitMode('max')}
+                    error={fieldErrors.saleMaxNumber}
+                  >
+                    <input
+                      inputMode="numeric"
+                      value={form.saleMaxNumber}
+                      onChange={(e) => set('saleMaxNumber', sanitizeIntegerInput(e.target.value))}
+                      onBlur={() => touchField('saleMaxNumber')}
+                      disabled={accessLimitMode !== 'max'}
+                      className={inputClass(Boolean(fieldErrors.saleMaxNumber), accessLimitMode !== 'max')}
+                    />
+                  </RadioAccessField>
+                </div>
               </div>
               <label className="mt-3 flex items-center gap-2 text-sm">
                 <input
@@ -375,10 +439,47 @@ export default function TypologyListpriceForm({ mode, listpriceId, initialTypolo
   );
 }
 
-function inputClass(hasError: boolean): string {
+function inputClass(hasError: boolean, disabled = false): string {
   return `h-10 w-full rounded-md border px-3 text-sm ${
-    hasError ? 'border-red-500 focus:border-red-500' : 'border-gray-300'
+    disabled
+      ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-500'
+      : hasError
+        ? 'border-red-500 focus:border-red-500'
+        : 'border-gray-300'
   }`;
+}
+
+function RadioAccessField({
+  name,
+  label,
+  checked,
+  onSelect,
+  error,
+  children
+}: {
+  name: string;
+  label: string;
+  checked: boolean;
+  onSelect: () => void;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700">
+        <input
+          type="radio"
+          name={name}
+          checked={checked}
+          onChange={onSelect}
+          className="h-4 w-4 accent-gray-900"
+        />
+        {label}
+      </label>
+      <div className="mt-1">{children}</div>
+      {error && <Err msg={error} />}
+    </div>
+  );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
