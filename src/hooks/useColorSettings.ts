@@ -167,10 +167,14 @@ export function useColorSettings() {
   }, [dbSettings, loading]);
 
   // Helper function to get border style
-  const getBorderStyle = (type: 'day' | 'workout' | 'moveframe' | 'movelap') => {
-    const enabled = colors[`${type}BorderEnabled`];
-    const color = colors[`${type}BorderColor`];
-    const width = colors[`${type}BorderWidth`];
+  const getBorderStyle = (type: 'day' | 'workout' | 'moveframe' | 'movelap' | 'nutritionFood' | 'nutritionComponent') => {
+    const normalizedType =
+      type === 'nutritionFood' ? 'moveframe' :
+      type === 'nutritionComponent' ? 'movelap' :
+      type;
+    const enabled = colors[`${normalizedType}BorderEnabled` as keyof ColorSettings];
+    const color = colors[`${normalizedType}BorderColor` as keyof ColorSettings];
+    const width = colors[`${normalizedType}BorderWidth` as keyof ColorSettings];
 
     if (!enabled) return undefined;
 

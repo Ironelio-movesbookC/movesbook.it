@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { 
   DndContext, 
   closestCenter,
@@ -110,7 +111,11 @@ interface SystemDashboardSidebarProps {
   onToggle?: () => void;
 }
 
-const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProps) => {
+const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSidebarProps) => {
+  const searchParams = useSearchParams();
+  const foodsPanelActive =
+    searchParams?.get('panel') === 'foods-and-dishes' || searchParams?.get('panel') === 'foods';
+
   const [internalIsOpen, setInternalIsOpen] = useState(true);
   const isSidebarOpen = isOpen !== undefined ? isOpen : internalIsOpen;
   // State for open sections (main categories)
@@ -138,6 +143,12 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
 
   // State for open sub-sections (nested menus)
   const [openSubSections, setOpenSubSections] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (foodsPanelActive) {
+      setOpenSections((prev) => ({ ...prev, general: true }));
+    }
+  }, [foodsPanelActive]);
 
   const toggleSection = (section: string) => {
     setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -450,7 +461,7 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
             { label: 'Activities for the clubs' }
           ]
         },
-        { label: 'Foods And Dishes', icon: Utensils },
+        { label: 'Foods And Dishes', icon: Utensils, href: '/admin/global-settings?panel=foods-and-dishes' },
         { label: 'Path for social buttons', icon: Share2 }
       ]
     },
@@ -669,5 +680,11 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
   );
 };
 
-export default SystemDashboardSidebar;
+export default function SystemDashboardSidebar(props: SystemDashboardSidebarProps) {
+  return (
+    <React.Suspense fallback={<div className="w-64 shrink-0 bg-gray-100" />}>
+      <SystemDashboardSidebarContent {...props} />
+    </React.Suspense>
+  );
+}
 

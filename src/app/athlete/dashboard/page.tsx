@@ -68,6 +68,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import WorkoutSection from '@/components/workouts/WorkoutSection';
+import NutritionSection from '@/components/nutrition/NutritionSection';
 import ChatPanel from '@/components/chat/ChatPanel';
 import BackgroundsColorsSettings from '@/components/settings/BackgroundsColorsSettings';
 import ToolsSettings from '@/components/settings/ToolsSettings';
@@ -106,7 +107,7 @@ function AthleteDashboardContent() {
   const { t } = useLanguage();
   
   // All hooks must be called before any conditional returns
-  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'progress' | 'settings' | 'personal-settings' | 'chat' | 'news' | 'posts'>('overview');
+  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'nutrition' | 'progress' | 'settings' | 'personal-settings' | 'chat' | 'news' | 'posts'>('overview');
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -289,7 +290,7 @@ function AthleteDashboardContent() {
 
   // Hide right sidebar when workout section or personal settings opens
   useEffect(() => {
-    if (activeTab === 'my-page' && (activeSection === 'workouts' || activeSection === 'personal-settings')) {
+    if (activeTab === 'my-page' && (activeSection === 'workouts' || activeSection === 'nutrition' || activeSection === 'personal-settings')) {
       setShowRightSidebar(false);
     } else {
       setShowRightSidebar(true);
@@ -497,6 +498,15 @@ function AthleteDashboardContent() {
                 >
                   My Workouts
                 </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('my-page');
+                    setActiveSection('nutrition');
+                  }}
+                  className="bg-green-800/90 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-green-700/90 transition-colors cursor-pointer text-sm"
+                >
+                  My Nutrition
+                </button>
               </div>
             )}
             <label className="flex items-center gap-2 text-sm cursor-pointer ml-auto">
@@ -537,6 +547,15 @@ function AthleteDashboardContent() {
                   className="bg-blue-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700/90 transition-colors cursor-pointer"
                 >
                   My Workouts
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('my-page');
+                    setActiveSection('nutrition');
+                  }}
+                  className="bg-green-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700/90 transition-colors cursor-pointer"
+                >
+                  My Nutrition
                 </button>
               </div>
             </div>
@@ -655,6 +674,15 @@ function AthleteDashboardContent() {
                       My Workouts
                     </button>
                     <button
+                      onClick={() => {
+                        setActiveTab('my-page');
+                        setActiveSection('nutrition');
+                      }}
+                      className="bg-green-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700/90 transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      My Nutrition
+                    </button>
+                    <button
                       onClick={handleChatPanelClick}
                       className="bg-white hover:bg-gray-100 text-gray-800 px-4 py-2 rounded transition-colors whitespace-nowrap text-sm font-medium flex items-center gap-2 border border-gray-300"
                     >
@@ -702,6 +730,15 @@ function AthleteDashboardContent() {
                   className="bg-blue-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700/90 transition-colors cursor-pointer"
                 >
                   My Workouts
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('my-page');
+                    setActiveSection('nutrition');
+                  }}
+                  className="bg-green-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700/90 transition-colors cursor-pointer"
+                >
+                  My Nutrition
                 </button>
               </div>
             </div>
@@ -754,6 +791,7 @@ function AthleteDashboardContent() {
                   />
                 )}
                 {activeSection === 'workouts' && <WorkoutSection onClose={() => setActiveSection('overview')} />}
+                {activeSection === 'nutrition' && <NutritionSection onClose={() => setActiveSection('overview')} />}
                 {activeSection === 'progress' && <AthleteProgress t={t} />}
                 {activeSection === 'settings' && <AthleteSettings t={t} />}
                 {activeSection === 'personal-settings' && <PersonalSettingsContent t={t} user={user} />}

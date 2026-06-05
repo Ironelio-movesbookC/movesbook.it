@@ -1,0 +1,267 @@
+/* NutritionMeal Tables - Custom Color Settings */
+
+/* Apply background to the workout section */
+.workout-tables-container {
+  background-color: var(--page-bg);
+  opacity: var(--page-bg-opacity, 0.89);
+}
+
+/* Day Row Styles */
+.day-row-table tr {
+  background-color: var(--day-header-bg);
+  color: var(--day-header-text);
+  border-width: var(--day-border-width, 1px);
+  border-style: var(--day-border-style, solid);
+  border-color: var(--day-border-color, #e5e7eb);
+}
+
+.day-row-table tr:nth-child(even) {
+  background-color: var(--day-alt-bg);
+  color: var(--day-alt-text);
+}
+
+.day-row-table td {
+  border-width: var(--day-border-width, 1px);
+  border-style: var(--day-border-style, solid);
+  border-color: var(--day-border-color, #e5e7eb);
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+.day-row-gap td {
+  height: 3mm;
+  min-height: 3mm;
+  line-height: 3mm;
+  font-size: 0;
+  padding: 0;
+  border: 0;
+  background-color: #ffffff;
+}
+.day-row-gap {
+  background-color: #ffffff;
+}
+
+/* NutritionMeal Row Styles */
+.workout-row-table {
+  background-color: var(--workout-1-bg);
+  color: var(--workout-1-text);
+  border-width: var(--workout-border-width, 1px);
+  border-style: var(--workout-border-style, solid);
+  border-color: var(--workout-border-color, #e5e7eb);
+}
+
+.workout-row-table:nth-of-type(2) {
+  background-color: var(--workout-2-bg);
+  color: var(--workout-2-text);
+}
+
+.workout-row-table:nth-of-type(3) {
+  background-color: var(--workout-3-bg);
+  color: var(--workout-3-text);
+}
+
+.workout-row-table td {
+  border-width: var(--workout-border-width, 1px);
+  border-style: var(--workout-border-style, solid);
+  border-color: var(--workout-border-color, #e5e7eb);
+}
+
+/* NutritionFood Row Styles */
+.nutritionFood-row-table tr {
+  background-color: var(--nutritionFood-header-bg);
+  color: var(--nutritionFood-header-text);
+  border-width: var(--nutritionFood-border-width, 1px);
+  border-style: var(--nutritionFood-border-style, solid);
+  border-color: var(--nutritionFood-border-color, #e5e7eb);
+}
+
+.nutritionFood-row-table tr:nth-child(even) {
+  background-color: var(--nutritionFood-alt-bg);
+  color: var(--nutritionFood-alt-text);
+}
+
+.nutritionFood-row-table td {
+  border-width: var(--nutritionFood-border-width, 1px);
+  border-style: var(--nutritionFood-border-style, solid);
+  border-color: var(--nutritionFood-border-color, #e5e7eb);
+}
+
+/* Rip column - always white background, no matter the row color */
+.rip-column {
+  background-color: #ffffff !important;
+}
+
+/* NutritionComponent Row Styles */
+.nutritionComponent-row-table tr {
+  background-color: var(--nutritionComponent-header-bg);
+  color: var(--nutritionComponent-header-text);
+  border-width: var(--nutritionComponent-border-width, 1px);
+  border-style: var(--nutritionComponent-border-style, solid);
+  border-color: var(--nutritionComponent-border-color, #e5e7eb);
+}
+
+.nutritionComponent-row-table tr:nth-child(even) {
+  background-color: var(--nutritionComponent-alt-bg);
+  color: var(--nutritionComponent-alt-text);
+}
+
+.nutritionComponent-row-table td {
+  border-width: var(--nutritionComponent-border-width, 1px);
+  border-style: var(--nutritionComponent-border-style, solid);
+  border-color: var(--nutritionComponent-border-color, #e5e7eb);
+}
+
+/* Selected/Hover States - Only apply to the specific row being hovered */
+/* Background color change on hover - applies to the row itself */
+.day-row-table tbody > tr:hover,
+.workout-row-table tbody > tr:hover,
+.nutritionFood-row-table tbody > tr:hover,
+.nutritionComponent-row-table tbody > tr:hover {
+  background-color: var(--selected-bg);
+}
+
+/* Text color on hover - only apply to cells without specific text colors */
+/* This prevents overriding intentional colors like red text in RIP column */
+.day-row-table tbody > tr:hover > td:not([class*="text-red"]):not([class*="text-blue"]):not([class*="text-green"]),
+.workout-row-table tbody > tr:hover > td:not([class*="text-red"]):not([class*="text-blue"]):not([class*="text-green"]),
+.nutritionFood-row-table tbody > tr:hover > td:not([class*="text-red"]):not([class*="text-blue"]):not([class*="text-green"]),
+.nutritionComponent-row-table tbody > tr:hover > td:not([class*="text-red"]):not([class*="text-blue"]):not([class*="text-green"]) {
+  /* Don't change text color on hover to prevent entire table from turning red */
+  /* color: var(--selected-text); */
+}
+
+/* Button Styles */
+.workout-tables-container button[data-btn="add"] {
+  background-color: var(--btn-add-bg);
+  color: var(--btn-add-text);
+}
+
+.workout-tables-container button[data-btn="add"]:hover {
+  background-color: var(--btn-add-hover);
+}
+
+.workout-tables-container button[data-btn="edit"] {
+  background-color: var(--btn-edit-bg);
+  color: var(--btn-edit-text);
+}
+
+.workout-tables-container button[data-btn="edit"]:hover {
+  background-color: var(--btn-edit-hover);
+}
+
+.workout-tables-container button[data-btn="delete"] {
+  background-color: var(--btn-delete-bg);
+  color: var(--btn-delete-text);
+}
+
+.workout-tables-container button[data-btn="delete"]:hover {
+  background-color: var(--btn-delete-hover);
+}
+
+.workout-tables-container button[data-btn="print"] {
+  background-color: var(--btn-print-bg);
+  color: var(--btn-print-text);
+}
+
+.workout-tables-container button[data-btn="print"]:hover {
+  background-color: var(--btn-print-hover);
+}
+
+/* Rich Text Formatting for Manual NutritionFood Content */
+.manual-content-preview b,
+.manual-content-preview strong,
+.manual-content-display b,
+.manual-content-display strong {
+  font-weight: bold !important;
+}
+
+.manual-content-preview i,
+.manual-content-preview em,
+.manual-content-display i,
+.manual-content-display em {
+  font-style: italic !important;
+}
+
+.manual-content-preview u,
+.manual-content-display u {
+  text-decoration: underline !important;
+}
+
+.manual-content-preview s,
+.manual-content-preview strike,
+.manual-content-display s,
+.manual-content-display strike {
+  text-decoration: line-through !important;
+}
+
+.manual-content-preview[style*="text-align: left"],
+.manual-content-preview *[style*="text-align: left"],
+.manual-content-display[style*="text-align: left"],
+.manual-content-display *[style*="text-align: left"] {
+  text-align: left !important;
+}
+
+.manual-content-preview[style*="text-align: center"],
+.manual-content-preview *[style*="text-align: center"],
+.manual-content-display[style*="text-align: center"],
+.manual-content-display *[style*="text-align: center"] {
+  text-align: center !important;
+}
+
+.manual-content-preview[style*="text-align: right"],
+.manual-content-preview *[style*="text-align: right"],
+.manual-content-display[style*="text-align: right"],
+.manual-content-display *[style*="text-align: right"] {
+  text-align: right !important;
+}
+
+.manual-content-preview[style*="text-align: justify"],
+.manual-content-preview *[style*="text-align: justify"],
+.manual-content-display[style*="text-align: justify"],
+.manual-content-display *[style*="text-align: justify"] {
+  text-align: justify !important;
+}
+
+.manual-content-preview ul,
+.manual-content-display ul {
+  list-style-type: disc !important;
+  margin-left: 1.5rem !important;
+  padding-left: 0.5rem !important;
+}
+
+.manual-content-preview ol,
+.manual-content-display ol {
+  list-style-type: decimal !important;
+  margin-left: 1.5rem !important;
+  padding-left: 0.5rem !important;
+}
+
+.manual-content-preview li,
+.manual-content-display li {
+  display: list-item !important;
+  margin-bottom: 0.25rem !important;
+}
+
+.manual-content-preview p,
+.manual-content-display p {
+  margin-bottom: 0.5rem !important;
+}
+
+.manual-content-preview br,
+.manual-content-display br {
+  display: block !important;
+  content: "" !important;
+  margin-top: 0.25rem !important;
+}
+
+/* Preserve inline styles for colors, fonts, sizes */
+.manual-content-preview [style*="color:"],
+.manual-content-preview [style*="font-size:"],
+.manual-content-preview [style*="font-family:"],
+.manual-content-preview [style*="background-color:"],
+.manual-content-display [style*="color:"],
+.manual-content-display [style*="font-size:"],
+.manual-content-display [style*="font-family:"],
+.manual-content-display [style*="background-color:"] {
+  all: revert !important;
+}
+

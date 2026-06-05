@@ -663,6 +663,7 @@ export interface LanguageStrings {
         'dashboard_workout_session': 'Workout Session',
         'dashboard_completed_on': 'Completed on',
         'dashboard_my_workouts': 'My Workouts',
+        'dashboard_my_nutrition': 'My Nutrition',
         'dashboard_personal_workout_plans': 'Personal Workout Plans',
         'dashboard_progress_analytics': 'Progress & Analytics',
         'dashboard_chart_placeholder': 'Chart Placeholder',

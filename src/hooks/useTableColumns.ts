@@ -12,12 +12,19 @@ import {
   COLUMN_CONFIG_STORAGE_KEYS 
 } from '@/config/table.columns.config';
 
-type TableType = 'workout' | 'moveframe' | 'movelap';
+type TableType = 'workout' | 'moveframe' | 'movelap' | 'nutritionFood' | 'nutritionComponent';
+
+function normalizeTableType(tableType: TableType): 'workout' | 'moveframe' | 'movelap' {
+  if (tableType === 'nutritionFood') return 'moveframe';
+  if (tableType === 'nutritionComponent') return 'movelap';
+  return tableType;
+}
 
 export function useTableColumns(tableType: TableType) {
+  const normalizedType = normalizeTableType(tableType);
   const [columns, setColumns] = useState<ColumnConfig[]>(() => {
     // Initialize with default columns based on table type
-    switch (tableType) {
+    switch (normalizedType) {
       case 'workout':
         return DEFAULT_WORKOUT_COLUMNS;
       case 'moveframe':
@@ -33,7 +40,7 @@ export function useTableColumns(tableType: TableType) {
 
   // Load column configuration from localStorage on mount
   useEffect(() => {
-    const storageKey = getStorageKey(tableType);
+    const storageKey = getStorageKey(normalizedType);
     const versionKey = `${storageKey}_version`;
     const currentVersion = '2.0'; // Increment this to force reset
     const saved = localStorage.getItem(storageKey);
@@ -43,7 +50,7 @@ export function useTableColumns(tableType: TableType) {
     if (savedVersion !== currentVersion) {
       console.log(`Column config version mismatch. Resetting ${tableType} columns...`);
       let defaultColumns: ColumnConfig[];
-      switch (tableType) {
+      switch (normalizedType) {
         case 'workout':
           defaultColumns = DEFAULT_WORKOUT_COLUMNS;
           break;
@@ -70,14 +77,14 @@ export function useTableColumns(tableType: TableType) {
         console.error('Failed to load column config:', error);
       }
     }
-  }, [tableType]);
+  }, [normalizedType]);
 
   // Save column configuration to localStorage
   const saveColumns = useCallback((newColumns: ColumnConfig[]) => {
-    const storageKey = getStorageKey(tableType);
+    const storageKey = getStorageKey(normalizedType);
     localStorage.setItem(storageKey, JSON.stringify(newColumns));
     setColumns(newColumns);
-  }, [tableType]);
+  }, [normalizedType]);
 
   // Toggle column visibility
   const toggleColumn = useCallback((columnId: string) => {
@@ -93,7 +100,7 @@ export function useTableColumns(tableType: TableType) {
   // Reset to default configuration
   const resetToDefault = useCallback(() => {
     let defaultColumns: ColumnConfig[];
-    switch (tableType) {
+    switch (normalizedType) {
       case 'workout':
         defaultColumns = DEFAULT_WORKOUT_COLUMNS;
         break;
@@ -107,7 +114,7 @@ export function useTableColumns(tableType: TableType) {
         defaultColumns = [];
     }
     saveColumns(defaultColumns);
-  }, [tableType, saveColumns]);
+  }, [normalizedType, saveColumns]);
 
   // Get only visible columns
   const visibleColumns = columns.filter(col => col.visible);
@@ -128,7 +135,7 @@ export function useTableColumns(tableType: TableType) {
 }
 
 // Helper function to get storage key
-function getStorageKey(tableType: TableType): string {
+function getStorageKey(tableType: 'workout' | 'moveframe' | 'movelap'): string {
   switch (tableType) {
     case 'workout':
       return COLUMN_CONFIG_STORAGE_KEYS.WORKOUT;
