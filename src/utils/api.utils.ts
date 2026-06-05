@@ -258,3 +258,13 @@ export const coachApi = {
   }
 };
 
+// ==================== NUTRITION API (parallel My Nutrition section) ====================
+export {
+  nutritionPlanApi,
+  nutritionMealApi,
+  nutritionFoodApi,
+  nutritionComponentApi,
+  dayApi as nutritionDayApi,
+  periodsApi as nutritionPeriodsApi,
+} from '@/utils/nutrition-api.utils';
+

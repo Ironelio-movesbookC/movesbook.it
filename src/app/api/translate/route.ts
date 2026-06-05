@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { mapLangForTranslationApi } from '@/utils/richTextTranslation';
 
 export async function POST(request: NextRequest) {
   try {
     const { text, targetLanguages } = await request.json();
+    const sourceText = typeof text === 'string' ? text.trim() : '';
 
-    if (!text || !targetLanguages || !Array.isArray(targetLanguages)) {
+    if (!sourceText || !targetLanguages || !Array.isArray(targetLanguages)) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -17,14 +19,15 @@ export async function POST(request: NextRequest) {
     if (!apiKey) {
       // Fallback: Use free LibreTranslate API or return mock translations
       console.warn('Google Translate API key not found, using fallback translation');
-      return fallbackTranslation(text, targetLanguages);
+      return fallbackTranslation(sourceText, targetLanguages);
     }
 
     // Use Google Translate API
-    const translations: Record<string, string> = { en: text };
+    const translations: Record<string, string> = { en: sourceText };
 
     for (const lang of targetLanguages) {
       if (lang === 'en') continue;
+      const apiTarget = mapLangForTranslationApi(lang);
 
       try {
         const response = await fetch(
@@ -35,9 +38,9 @@ export async function POST(request: NextRequest) {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              q: text,
+              q: sourceText,
               source: 'en',
-              target: lang,
+              target: apiTarget,
               format: 'text',
             }),
           }
@@ -114,6 +117,7 @@ async function fallbackTranslation(text: string, targetLanguages: string[]) {
     // Try multiple translation services in order of quality
     for (const lang of targetLanguages) {
       if (lang === 'en') continue;
+      const apiLang = mapLangForTranslationApi(lang);
 
       let translationSuccess = false;
       let translatedChunks: string[] = [];
@@ -130,7 +134,7 @@ async function fallbackTranslation(text: string, targetLanguages: string[]) {
             
             const encodedChunk = encodeURIComponent(chunk);
             const response = await fetch(
-              `https://api.mymemory.translated.net/get?q=${encodedChunk}&langpair=en|${lang}`,
+              `https://api.mymemory.translated.net/get?q=${encodedChunk}&langpair=en|${apiLang}`,
               { signal: AbortSignal.timeout(8000) }
             );
 
@@ -164,7 +168,7 @@ async function fallbackTranslation(text: string, targetLanguages: string[]) {
           console.log(`Attempting MyMemory API for ${lang}...`);
           const encodedText = encodeURIComponent(text);
           const response = await fetch(
-            `https://api.mymemory.translated.net/get?q=${encodedText}&langpair=en|${lang}`,
+            `https://api.mymemory.translated.net/get?q=${encodedText}&langpair=en|${apiLang}`,
             { signal: AbortSignal.timeout(8000) }
           );
 

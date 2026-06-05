@@ -1,0 +1,196 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { verifyToken } from '@/lib/auth';
+
+/**
+ * GET /api/nutrition/periods
+ * Get all workout periods for the authenticated user
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const decoded = verifyToken(token);
+    if (!decoded || !decoded.userId) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
+
+    // Handle fallback admin - return default periods
+    if (decoded.userId === 'admin') {
+      const defaultPeriods = [
+        { id: 'admin-base', name: 'Base', description: 'Base training period', color: '#93C5FD' },
+        { id: 'admin-build', name: 'Build', description: 'Build training period', color: '#FCD34D' },
+        { id: 'admin-peak', name: 'Peak', description: 'Peak/Competition period', color: '#FCA5A5' },
+        { id: 'admin-recovery', name: 'Recovery', description: 'Recovery period', color: '#86EFAC' }
+      ];
+      return NextResponse.json({ periods: defaultPeriods });
+    }
+
+    // Verify user exists in database
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { id: true }
+    });
+
+    if (!user) {
+      console.error(`❌ User ${decoded.userId} not found in database`);
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
+
+    // Get all periods for this user
+    const periods = await prisma.period.findMany({
+      where: { userId: decoded.userId },
+      orderBy: { displayOrder: 'asc' }
+    });
+
+    console.log(`📊 Found ${periods.length} periods for user ${decoded.userId}`);
+    periods.forEach((p, i) => console.log(`  ${i+1}. ${p.name} (ID: ${p.id}, Color: ${p.color})`));
+
+    // If user has no periods, create default ones
+    if (periods.length === 0) {
+      console.log('🔨 Creating default periods...');
+      const defaultPeriods = await prisma.$transaction([
+        prisma.period.create({
+          data: {
+            userId: decoded.userId,
+            name: 'Base',
+            description: 'Base training period',
+            color: '#93C5FD' // Light Blue
+          }
+        }),
+        prisma.period.create({
+          data: {
+            userId: decoded.userId,
+            name: 'Build',
+            description: 'Build training period',
+            color: '#FCD34D' // Yellow
+          }
+        }),
+        prisma.period.create({
+          data: {
+            userId: decoded.userId,
+            name: 'Peak',
+            description: 'Peak/Competition period',
+            color: '#FCA5A5' // Red
+          }
+        }),
+        prisma.period.create({
+          data: {
+            userId: decoded.userId,
+            name: 'Recovery',
+            description: 'Recovery period',
+            color: '#86EFAC' // Green
+          }
+        })
+      ]);
+
+      console.log('✅ Created default periods:', defaultPeriods.map(p => p.name).join(', '));
+      return NextResponse.json({ periods: defaultPeriods });
+    }
+
+    console.log('✅ Returning periods:', periods.map(p => p.name).join(', '));
+    return NextResponse.json({ periods });
+
+  } catch (error) {
+    console.error('❌ Error fetching periods:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : 'No stack trace';
+    console.error('❌ Error details:', { message: errorMessage, stack: errorStack });
+    return NextResponse.json(
+      { error: 'Failed to fetch periods', details: errorMessage },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/nutrition/periods
+ * Create a new workout period
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const decoded = verifyToken(token);
+    if (!decoded || !decoded.userId) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
+
+    // Handle fallback admin - accept but don't save
+    if (decoded.userId === 'admin') {
+      const body = await request.json();
+      return NextResponse.json({ 
+        period: { 
+          id: `admin-${Date.now()}`, 
+          userId: 'admin',
+          ...body 
+        },
+        message: 'Admin period accepted (not persisted to database)'
+      }, { status: 201 });
+    }
+
+    // Verify user exists in database
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { id: true }
+    });
+
+    if (!user) {
+      console.error(`❌ User ${decoded.userId} not found in database`);
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { name, description, color, descriptionByLanguage, titleByLanguage } = body;
+
+    if (!name) {
+      return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    }
+
+    let descriptionTranslations: string | null = null;
+    if (descriptionByLanguage && typeof descriptionByLanguage === 'object') {
+      const cleaned: Record<string, string> = {};
+      for (const [k, v] of Object.entries(descriptionByLanguage)) {
+        if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim().slice(0, 2000);
+      }
+      if (Object.keys(cleaned).length > 0) descriptionTranslations = JSON.stringify(cleaned);
+    }
+
+    let nameTranslations: string | null = null;
+    if (titleByLanguage && typeof titleByLanguage === 'object') {
+      const cleaned: Record<string, string> = {};
+      for (const [k, v] of Object.entries(titleByLanguage)) {
+        if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim().slice(0, 255);
+      }
+      if (Object.keys(cleaned).length > 0) nameTranslations = JSON.stringify(cleaned);
+    }
+
+    const period = await prisma.period.create({
+      data: {
+        userId: decoded.userId,
+        name,
+        description: description || '',
+        descriptionTranslations,
+        nameTranslations,
+        color: color || '#9CA3AF' // Gray default
+      }
+    });
+
+    return NextResponse.json({ period }, { status: 201 });
+
+  } catch (error) {
+    console.error('❌ Error creating period:', error);
+    return NextResponse.json(
+      { error: 'Failed to create period', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
+}

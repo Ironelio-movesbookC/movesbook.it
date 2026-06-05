@@ -56,3 +56,6 @@ export function movelapPauseFieldLabel(restType: string | null | undefined): str
   if (upper === 'SET_METERS' || raw === 'Set meters') return 'Set meters';
   return restTypeDbToDisplay(raw);
 }
+
+/** Alias for nutrition components (same pause labels as movelaps). */
+export const nutritionComponentPauseFieldLabel = movelapPauseFieldLabel;
