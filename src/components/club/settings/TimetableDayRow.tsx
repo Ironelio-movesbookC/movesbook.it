@@ -60,11 +60,11 @@ export default function TimetableDayRow({
     }
   };
 
-  const handleRemove = () => {
+  const handleRemoveSlot = (slotIndex: number) => {
     if (!active) {
       onSelect();
     }
-    onChange(removeSlotFromDay(day));
+    onChange(removeSlotFromDay(day, slotIndex));
   };
 
   const handleSlotRangeChange = (slotIndex: number, rangeStart: number, rangeEnd: number) => {
@@ -122,15 +122,6 @@ export default function TimetableDayRow({
         >
           <Plus className="h-4 w-4" />
         </button>
-        <button
-          type="button"
-          onClick={handleRemove}
-          disabled={!day.enabled || day.slots.length <= 1}
-          className="rounded border border-gray-300 p-1 text-gray-700 hover:bg-gray-100 disabled:opacity-40"
-          title="Remove last slot"
-        >
-          <Minus className="h-4 w-4" />
-        </button>
         <input
           type="radio"
           name="timetable-active-day"
@@ -170,7 +161,18 @@ export default function TimetableDayRow({
                 />
               </div>
               <span className="text-sm text-gray-700">{slot.amTime}</span>
-              <span className="text-sm text-gray-700">{slot.pmTime}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-700">{slot.pmTime}</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveSlot(index)}
+                  disabled={day.slots.length <= 1}
+                  className="rounded border border-gray-300 p-1 text-gray-700 hover:bg-gray-100 disabled:opacity-40"
+                  title="Remove this slot"
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           ))}
         </div>

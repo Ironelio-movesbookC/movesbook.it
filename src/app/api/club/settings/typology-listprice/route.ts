@@ -9,6 +9,7 @@ import {
   text,
   type TypologyListpriceForm
 } from '@/lib/clubTypologyListprice';
+import { validateListpriceForm } from '@/lib/clubTypologyListprice.validation';
 
 export const dynamic = 'force-dynamic';
 
@@ -293,11 +294,7 @@ function parseFormBody(body: Record<string, unknown>): TypologyListpriceForm {
 }
 
 function validateForm(form: TypologyListpriceForm): Record<string, string> {
-  const errors: Record<string, string> = {};
-  if (!form.typologyId) errors.typologyId = 'Please select a typology.';
-  if (!form.subscriptionName.trim()) errors.subscriptionName = 'Please enter the subscription name.';
-  if (form.searchKeyword.length > 5) errors.searchKeyword = 'Max 5 characters.';
-  return errors;
+  return validateListpriceForm(form);
 }
 
 async function insertListprice(form: TypologyListpriceForm, userIds: string[], clubId: string | null) {
