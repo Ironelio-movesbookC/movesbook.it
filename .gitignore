@@ -95,3 +95,5 @@ test-*.js
 !*-COMPLETE.md
 temp_auto_push.bat
 temp_interactive_push.bat
+
+package-lock.json
