@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { usePathname } from 'next/navigation';
 import type { PcuAlertDisplayPayload } from '@/lib/admin/userPcuAlertMsg';
 import UserPcuAlertModal from '@/components/user/UserPcuAlertModal';
 import { consumePendingPcuAlert } from '@/lib/user/pcuAlertClient';
@@ -19,6 +20,7 @@ type PcuAlertContextValue = {
 const PcuAlertContext = createContext<PcuAlertContextValue | null>(null);
 
 export function PcuAlertProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [alert, setAlert] = useState<PcuAlertDisplayPayload | null>(null);
   const [onDismiss, setOnDismiss] = useState<(() => void) | undefined>(undefined);
@@ -45,7 +47,7 @@ export function PcuAlertProvider({ children }: { children: ReactNode }) {
     if (pending) {
       showAlert(pending);
     }
-  }, [showAlert]);
+  }, [pathname, showAlert]);
 
   return (
     <PcuAlertContext.Provider value={{ showAlert }}>

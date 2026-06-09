@@ -36,7 +36,11 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { usePcuAlert } from '@/contexts/PcuAlertContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { fetchPcuAlert } from '@/lib/user/pcuAlertClient';
+import {
+  fetchPcuAlert,
+  shouldShowPcuAtLogin,
+  storePendingPcuAlert,
+} from '@/lib/user/pcuAlertClient';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
 
 // Map language codes to flag file names
@@ -648,9 +652,9 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
           }
           if (groupIdMatch?.[1]) {
             const id = decodeURIComponent(groupIdMatch[1]);
-            if (path.includes('my-coaching-group')) {
+            if (path.includes('my-coaching-group') || path.includes('/coach/dashboard')) {
               localStorage.setItem('selectedCoachingGroup', id);
-            } else if (path.includes('my-group')) {
+            } else if (path.includes('my-group') || path.includes('/group/dashboard')) {
               localStorage.setItem('selectedGroup', id);
             }
           }
@@ -674,9 +678,10 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
               : undefined;
         if (
           data.pcuAlert &&
-          (data.pcuAlert.bodyHtml?.trim() || data.pcuAlert.title?.trim())
+          (data.pcuAlert.bodyHtml?.trim() || data.pcuAlert.title?.trim()) &&
+          shouldShowPcuAtLogin(data.user.userType, entityAccessMode)
         ) {
-          showAlert({
+          storePendingPcuAlert({
             title: data.pcuAlert.title ?? '',
             bodyHtml: data.pcuAlert.bodyHtml ?? '',
           });

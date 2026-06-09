@@ -7,13 +7,24 @@ export type PcuAlertDisplayPayload = {
   bodyHtml: string;
 };
 
-function normalizeDateKey(value: string | undefined): string | null {
-  if (!value?.trim()) return null;
+/** Normalize stored PCU alert dates for `<input type="date">` (local calendar day). */
+export function normalizePcuAlertDateToInput(
+  value: string | undefined | null,
+): string {
+  if (!value?.trim()) return '';
   const s = value.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function normalizeDateKey(value: string | undefined): string | null {
+  const normalized = normalizePcuAlertDateToInput(value);
+  return normalized || null;
 }
 
 function todayKey(now: Date): string {

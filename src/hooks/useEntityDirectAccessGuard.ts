@@ -11,6 +11,7 @@ import {
   isWrongEntityProfilePath,
   type EntityDirectAccessKind,
 } from '@/lib/entity/entityDirectAccessMeta';
+import { isLegacyEntityProfilePath } from '@/lib/entity/entityWorkspaceDashboard';
 
 /**
  * When logged in via entity username + Direct Access, block My Page routes
@@ -29,6 +30,11 @@ export function useEntityDirectAccessGuard(enabled = true) {
     const search = typeof window !== 'undefined' ? window.location.search : '';
 
     if (isMyPageBlockedForEntityKind(pathname, lock.kind)) {
+      router.replace(target);
+      return;
+    }
+
+    if (isLegacyEntityProfilePath(lock.kind, pathname)) {
       router.replace(target);
       return;
     }

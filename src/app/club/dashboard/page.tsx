@@ -45,6 +45,7 @@ import {
 } from '@/lib/club/clubSidebarLabel';
 import RightSidebar from '@/components/dashboard/RightSidebar';
 import { useAuth } from '@/hooks/useAuth';
+import { usePcuAlert } from '@/contexts/PcuAlertContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
@@ -58,11 +59,15 @@ import {
   useEntityDirectAccessGuard,
   useEntityDirectAccessLockedForKind,
 } from '@/hooks/useEntityDirectAccessGuard';
+import { clearEntityCompanyLoginSession, isEntityWorkspaceSession } from '@/lib/entity/entityDirectAccessSession';
+import { fetchPcuAlert } from '@/lib/user/pcuAlertClient';
+import { useEntityWorkspaceDashboardNav } from '@/hooks/useEntityWorkspaceDashboardNav';
 
 function ClubDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
+  const { showAlert } = usePcuAlert();
   const { t } = useLanguage();
   const clubDirectAccessLocked = useEntityDirectAccessLockedForKind('club');
   useEntityDirectAccessGuard(!loading && !!user);
@@ -108,13 +113,16 @@ function ClubDashboardContent() {
     'default' | 'identification-devices' | 'outcome-settings'
   >('default');
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const savedClubId = localStorage.getItem('selectedClub');
-    if (savedClubId) setSelectedClubId(savedClubId);
-    setActiveTab('my-page');
-    setMyClubTabVisible(false);
-  }, []);
+  useEntityWorkspaceDashboardNav({
+    kind: 'club',
+    searchParams,
+    router,
+    entityDirectAccessLocked: clubDirectAccessLocked,
+    activeTab,
+    setActiveTab,
+    setSelectedEntityId: setSelectedClubId,
+    setMyEntityTabVisible: setMyClubTabVisible,
+  });
 
   const formClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(clubs),
@@ -173,14 +181,30 @@ function ClubDashboardContent() {
     }
   };
 
-  const handleClubSelect = (clubId: string) => {
-    localStorage.setItem('selectedClub', clubId);
-    setSelectedClubId(clubId);
-    showMyClubTab();
-    setActiveTab('my-entity');
-  };
+  const handleClubSelect = useCallback(
+    async (clubId: string) => {
+      const openMyClub = () => {
+        localStorage.setItem('selectedClub', clubId);
+        setSelectedClubId(clubId);
+        showMyClubTab();
+        setActiveTab('my-entity');
+      };
+
+      if (!isEntityWorkspaceSession('club')) {
+        const alert = await fetchPcuAlert('login', user?.language || 'en');
+        if (alert) {
+          showAlert(alert, openMyClub);
+          return;
+        }
+      }
+
+      openMyClub();
+    },
+    [showAlert, showMyClubTab, user?.language],
+  );
 
   const handleMyPageTabClick = useCallback(() => {
+    clearEntityCompanyLoginSession();
     hideMyClubTab();
     setActiveTab('my-page');
   }, [hideMyClubTab]);
@@ -188,6 +212,7 @@ function ClubDashboardContent() {
   const handleTabChange = useCallback(
     (tab: 'my-page' | 'my-entity') => {
       if (tab === 'my-page') {
+        clearEntityCompanyLoginSession();
         hideMyClubTab();
       }
       setActiveTab(tab);
@@ -253,6 +278,7 @@ function ClubDashboardContent() {
   }, [searchParams, router, formClubs, selectedClubId]);
 
   useEffect(() => {
+    if (isEntityWorkspaceSession('club')) return;
     if (!selectedClubId && activeTab === 'my-entity') {
       setActiveTab('my-page');
     }
@@ -296,11 +322,14 @@ function ClubDashboardContent() {
   useEffect(() => {
     if (activeTab === 'my-page') {
       setShowWorkoutSection(false);
-      setMyClubTabVisible(false);
+      if (!isEntityWorkspaceSession('club')) {
+        setMyClubTabVisible(false);
+      }
     }
   }, [activeTab]);
 
   useEffect(() => {
+    if (isEntityWorkspaceSession('club')) return;
     if (!hasFormClub && activeTab === 'my-entity') {
       setActiveTab('my-page');
     }
@@ -319,7 +348,13 @@ function ClubDashboardContent() {
   }
 
   const dashboardShellActiveTab: 'my-page' | 'my-entity' =
-    selectedClubId && hasFormClub ? activeTab : 'my-page';
+    activeTab === 'my-entity' &&
+    selectedClubId &&
+    (myClubTabVisible || clubDirectAccessLocked)
+      ? 'my-entity'
+      : selectedClubId && hasFormClub
+        ? activeTab
+        : 'my-page';
   const bannerClub = activeClub ?? formClubs[0] ?? null;
 
   return (

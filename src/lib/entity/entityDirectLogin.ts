@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { verifyClubCompanyPassword } from '@/lib/club/clubDirectLogin';
+import { getEntityWorkspaceDashboardPath } from '@/lib/entity/entityWorkspaceDashboard';
 import { parseEntityDescriptionMeta } from '@/lib/entity/entityForm';
 
 export type EntityCompanyLoginResult = {
@@ -60,7 +61,7 @@ export async function tryEntityCompanyLogin(
     const hit = await matchEntityLogin(
       clubRow,
       password,
-      `/my-club?clubId=${encodeURIComponent(clubRow.id)}`,
+      getEntityWorkspaceDashboardPath('club', clubRow.id),
     );
     if (hit) return hit;
   }
@@ -79,7 +80,7 @@ export async function tryEntityCompanyLogin(
     const hit = await matchEntityLogin(
       coachRow,
       password,
-      `/my-coaching-group?groupId=${encodeURIComponent(coachRow.id)}`,
+      getEntityWorkspaceDashboardPath('coach', coachRow.id),
     );
     if (hit) return hit;
   }
@@ -100,7 +101,7 @@ export async function tryEntityCompanyLogin(
     const hit = await matchEntityLogin(
       teamRow,
       password,
-      `/my-team?teamId=${encodeURIComponent(teamRow.id)}`,
+      getEntityWorkspaceDashboardPath('team', teamRow.id),
     );
     if (hit) return hit;
   }
@@ -121,7 +122,7 @@ export async function tryEntityCompanyLogin(
     const hit = await matchEntityLogin(
       groupRow,
       password,
-      `/my-group?groupId=${encodeURIComponent(groupRow.id)}`,
+      getEntityWorkspaceDashboardPath('group', groupRow.id),
     );
     if (hit) return hit;
   }

@@ -7,11 +7,26 @@ export function getAdminBearerToken(): string | null {
 
   try {
     const raw = localStorage.getItem('adminUser');
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { token?: string; accessToken?: string };
-    const token = parsed?.token ?? parsed?.accessToken;
-    return typeof token === 'string' && token.trim() ? token.trim() : null;
+    if (raw) {
+      const parsed = JSON.parse(raw) as { token?: string; accessToken?: string };
+      const token = parsed?.token ?? parsed?.accessToken;
+      if (typeof token === 'string' && token.trim()) return token.trim();
+    }
   } catch {
-    return null;
+    /* ignore */
   }
+
+  // Panel admin may be signed in via the main navbar (`token` + `user`, not `adminToken`).
+  try {
+    const token = localStorage.getItem('token')?.trim();
+    const userRaw = localStorage.getItem('user');
+    if (token && userRaw) {
+      const user = JSON.parse(userRaw) as { userType?: string };
+      if (user?.userType === 'ADMIN') return token;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return null;
 }

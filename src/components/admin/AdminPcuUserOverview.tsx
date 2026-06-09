@@ -7,20 +7,14 @@ import { ArrowLeft, User } from 'lucide-react';
 import { flagEmojiFromCountryName } from '@/lib/admin/countryFlag';
 import type { PcuPanelPayload } from '@/lib/admin/userPcuPanel';
 import type { PcuSettings } from '@/lib/admin/userPcuSettings';
-import { parseAlertMessagePreview } from '@/lib/admin/userPcuAlertMsg';
+import {
+  normalizePcuAlertDateToInput,
+  parseAlertMessagePreview,
+} from '@/lib/admin/userPcuAlertMsg';
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
 
 type AlertMsgLang = 'en' | 'it';
-
-function toDateInputValue(iso: string | undefined): string {
-  if (!iso?.trim()) return '';
-  const s = iso.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString().slice(0, 10);
-}
 
 /** Parse "lat, lng" (comma or whitespace separated). */
 function parseLatLng(coords: string | null | undefined): { lat: number; lng: number } | null {
@@ -105,8 +99,8 @@ export default function AdminPcuUserOverview({
     .trim();
   const countryFlag = flagEmojiFromCountryName(user.country);
 
-  const enableFromValue = toDateInputValue(alertMsg?.enableFrom);
-  const enableToValue = toDateInputValue(alertMsg?.enableTo);
+  const enableFromValue = normalizePcuAlertDateToInput(alertMsg?.enableFrom);
+  const enableToValue = normalizePcuAlertDateToInput(alertMsg?.enableTo);
   const mapLatLng = parseLatLng(user.mapCoordinates);
   const mapHref = mapLatLng ? googleMapsUrl(mapLatLng.lat, mapLatLng.lng) : null;
 

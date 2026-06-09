@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
 import { mergePcuSettingsPatch } from '@/lib/admin/userPcuFunctionsSettings';
+import { normalizePcuAlertDateToInput } from '@/lib/admin/userPcuAlertMsg';
 import { readPcuSettings, type PcuSettings } from '@/lib/admin/userPcuSettings';
 
 export const dynamic = 'force-dynamic';
@@ -46,6 +47,19 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   const body = (await request.json().catch(() => null)) as PcuSettingsPayload | null;
   if (!body || typeof body !== 'object') {
     return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
+  }
+
+  if (body.alertMsg && typeof body.alertMsg === 'object') {
+    const alertMsg = body.alertMsg as {
+      enableFrom?: string;
+      enableTo?: string;
+    };
+    if (alertMsg.enableFrom !== undefined) {
+      alertMsg.enableFrom = normalizePcuAlertDateToInput(alertMsg.enableFrom);
+    }
+    if (alertMsg.enableTo !== undefined) {
+      alertMsg.enableTo = normalizePcuAlertDateToInput(alertMsg.enableTo);
+    }
   }
 
   const settings = await prisma.userSettings.findUnique({ where: { userId } });

@@ -28,6 +28,7 @@ import {
   mergeVipCountriesAllowed,
   type PcuSettings,
 } from '@/lib/admin/userPcuSettings';
+import { normalizePcuAlertDateToInput } from '@/lib/admin/userPcuAlertMsg';
 import {
   flushSharedLangEditors,
   useLangHtmlEditor,
@@ -821,14 +822,19 @@ export default function UserPcuControlPanel({
 
       const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
+      const enableFrom = normalizePcuAlertDateToInput(alertMsgEnableFrom);
+      const enableTo = normalizePcuAlertDateToInput(alertMsgEnableTo);
+      setAlertMsgEnableFrom(enableFrom);
+      setAlertMsgEnableTo(enableTo);
+
       const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           alertMsg: {
             activated: alertMsgActivated,
-            enableFrom: alertMsgEnableFrom,
-            enableTo: alertMsgEnableTo,
+            enableFrom,
+            enableTo,
             showAt: { login: alertMsgShowLogin, logout: alertMsgShowLogout },
             htmlByLang,
           },
@@ -1476,8 +1482,8 @@ export default function UserPcuControlPanel({
     if (pcu.alertMsg) {
       const am = pcu.alertMsg;
       if (am.activated != null) setAlertMsgActivated(Boolean(am.activated));
-      if (am.enableFrom != null) setAlertMsgEnableFrom(String(am.enableFrom));
-      if (am.enableTo != null) setAlertMsgEnableTo(String(am.enableTo));
+      setAlertMsgEnableFrom(normalizePcuAlertDateToInput(am.enableFrom));
+      setAlertMsgEnableTo(normalizePcuAlertDateToInput(am.enableTo));
       if (am.showAt) {
         if (am.showAt.login != null) setAlertMsgShowLogin(Boolean(am.showAt.login));
         if (am.showAt.logout != null) setAlertMsgShowLogout(Boolean(am.showAt.logout));
@@ -2284,19 +2290,40 @@ export default function UserPcuControlPanel({
     // PCU Admin's settings is handled in-panel; keep routing for future deep-links if needed.
   };
 
+  const pcuHeaderUserLabel =
+    user.fullname?.trim() ||
+    user.entityName?.trim() ||
+    user.username?.trim() ||
+    '—';
+  const pcuHeaderUserHint = [user.username, user.email]
+    .map((v) => v?.trim())
+    .filter(Boolean)
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .join(' · ');
+
   return (
     <div className="w-full min-w-0">
       <div className="bg-gray-200 border border-gray-300 rounded shadow-sm">
-        <div className="flex items-center justify-between px-4 py-2 border-b border-gray-300">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-gray-300">
+          <div className="flex items-center gap-3 min-w-0 shrink-0">
             <button type="button" className="p-1.5 rounded hover:bg-gray-300" title="Menu">
               <span className="block w-5 h-0.5 bg-gray-700 mb-1" />
               <span className="block w-5 h-0.5 bg-gray-700 mb-1" />
               <span className="block w-5 h-0.5 bg-gray-700" />
             </button>
-            <div className="text-sm font-semibold text-red-700">Panel control about the User</div>
+            <div className="text-sm font-semibold text-red-700 whitespace-nowrap">
+              Panel control about the User
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div
+            className="flex-1 min-w-0 text-center px-2"
+            title={pcuHeaderUserHint || pcuHeaderUserLabel}
+          >
+            <div className="text-sm sm:text-base font-semibold text-gray-900 truncate">
+              {pcuHeaderUserLabel}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
             {overviewHref ? (
               <button
                 type="button"
@@ -2442,6 +2469,13 @@ export default function UserPcuControlPanel({
             onClick={() => {
               setActiveTab(tab.id);
               if (tab.id === 'admin') handleAdminSettings();
+              if (typeof window !== 'undefined') {
+                const params = new URLSearchParams(window.location.search);
+                params.set('tab', tab.id);
+                router.replace(`${window.location.pathname}?${params.toString()}`, {
+                  scroll: false,
+                });
+              }
             }}
             className={`px-3 py-2 text-xs sm:text-sm font-medium border-r border-gray-400 last:border-r-0 ${
               activeTab === tab.id

@@ -1,32 +1,24 @@
+import {
+  ENTITY_WORKSPACE_DASHBOARD,
+  getEntityWorkspaceDashboardPath,
+} from '@/lib/entity/entityWorkspaceDashboard';
+
 export type EntityDirectAccessKind = 'club' | 'team' | 'group' | 'coach';
+
+/** @deprecated Use `getEntityWorkspaceDashboardPath('club', clubId)`. */
+export function getClubEntityDashboardPath(clubId: string): string {
+  return getEntityWorkspaceDashboardPath('club', clubId);
+}
 
 export function getEntityProfilePath(
   kind: EntityDirectAccessKind,
   entityId: string,
 ): string {
-  switch (kind) {
-    case 'club':
-      return `/my-club?clubId=${encodeURIComponent(entityId)}`;
-    case 'team':
-      return `/my-team?teamId=${encodeURIComponent(entityId)}`;
-    case 'group':
-      return `/my-group?groupId=${encodeURIComponent(entityId)}`;
-    case 'coach':
-      return `/my-coaching-group?groupId=${encodeURIComponent(entityId)}`;
-  }
+  return getEntityWorkspaceDashboardPath(kind, entityId);
 }
 
 export function getEntityDashboardPath(kind: EntityDirectAccessKind): string {
-  switch (kind) {
-    case 'club':
-      return '/club/dashboard';
-    case 'team':
-      return '/team/dashboard';
-    case 'group':
-      return '/group/dashboard';
-    case 'coach':
-      return '/coach/dashboard';
-  }
+  return ENTITY_WORKSPACE_DASHBOARD[kind].dashboardPath;
 }
 
 export function parseEntityRedirectMeta(redirectTo: string): {
@@ -34,44 +26,30 @@ export function parseEntityRedirectMeta(redirectTo: string): {
   entityId: string;
 } | null {
   const path = redirectTo.split('?')[0] ?? '';
-  if (path.includes('/my-club')) {
-    const m = redirectTo.match(/[?&]clubId=([^&]+)/);
-    return m?.[1] ? { kind: 'club', entityId: decodeURIComponent(m[1]) } : null;
+
+  for (const kind of Object.keys(ENTITY_WORKSPACE_DASHBOARD) as EntityDirectAccessKind[]) {
+    const config = ENTITY_WORKSPACE_DASHBOARD[kind];
+    if (
+      path.includes(config.dashboardPath) ||
+      path.includes(config.legacyProfilePrefix)
+    ) {
+      const m = redirectTo.match(
+        new RegExp(`[?&]${config.idQueryParam}=([^&]+)`),
+      );
+      return m?.[1]
+        ? { kind, entityId: decodeURIComponent(m[1]) }
+        : null;
+    }
   }
-  if (path.includes('/my-coaching-group')) {
-    const m = redirectTo.match(/[?&]groupId=([^&]+)/);
-    return m?.[1] ? { kind: 'coach', entityId: decodeURIComponent(m[1]) } : null;
-  }
-  if (path.includes('/my-team')) {
-    const m = redirectTo.match(/[?&]teamId=([^&]+)/);
-    return m?.[1] ? { kind: 'team', entityId: decodeURIComponent(m[1]) } : null;
-  }
-  if (path.includes('/my-group')) {
-    const m = redirectTo.match(/[?&]groupId=([^&]+)/);
-    return m?.[1] ? { kind: 'group', entityId: decodeURIComponent(m[1]) } : null;
-  }
+
   return null;
 }
 
 const BLOCKED_DASHBOARD_PREFIXES: Record<EntityDirectAccessKind, string[]> = {
-  club: ['/club/dashboard', '/my-page'],
-  team: ['/team/dashboard', '/my-page'],
-  group: ['/group/dashboard', '/my-page'],
-  coach: ['/coach/dashboard', '/my-page'],
-};
-
-const PROFILE_PREFIX: Record<EntityDirectAccessKind, string> = {
-  club: '/my-club',
-  team: '/my-team',
-  group: '/my-group',
-  coach: '/my-coaching-group',
-};
-
-const ID_QUERY_PARAM: Record<EntityDirectAccessKind, string> = {
-  club: 'clubId',
-  team: 'teamId',
-  group: 'groupId',
-  coach: 'groupId',
+  club: ['/my-page'],
+  team: ['/my-page'],
+  group: ['/my-page'],
+  coach: ['/my-page'],
 };
 
 export function isMyPageBlockedForEntityKind(
@@ -88,9 +66,17 @@ export function isWrongEntityProfilePath(
   kind: EntityDirectAccessKind,
   entityId: string,
 ): boolean {
-  const prefix = PROFILE_PREFIX[kind];
-  if (!pathname.startsWith(prefix)) return false;
+  const config = ENTITY_WORKSPACE_DASHBOARD[kind];
   const params = new URLSearchParams(search);
-  const id = params.get(ID_QUERY_PARAM[kind]);
-  return Boolean(id && id !== entityId);
+  const id = params.get(config.idQueryParam);
+
+  if (pathname.startsWith(config.dashboardPath)) {
+    return Boolean(id && id !== entityId);
+  }
+
+  if (pathname.startsWith(config.legacyProfilePrefix)) {
+    return Boolean(id && id !== entityId);
+  }
+
+  return false;
 }

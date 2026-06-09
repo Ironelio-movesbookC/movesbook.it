@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { Users } from 'lucide-react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Users, Loader2 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
@@ -26,9 +26,12 @@ import {
   useEntityDirectAccessGuard,
   useEntityDirectAccessLockedForKind,
 } from '@/hooks/useEntityDirectAccessGuard';
+import { clearEntityCompanyLoginSession, isEntityWorkspaceSession } from '@/lib/entity/entityDirectAccessSession';
+import { useEntityWorkspaceDashboardNav } from '@/hooks/useEntityWorkspaceDashboardNav';
 
-export default function TeamDashboard() {
+function TeamDashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t } = useLanguage();
   const {
     user,
@@ -80,19 +83,29 @@ export default function TeamDashboard() {
   const showMyEntityTab = useCallback(() => setMyEntityTabVisible(true), []);
   const hideMyEntityTab = useCallback(() => setMyEntityTabVisible(false), []);
 
-  useEffect(() => {
-    setActiveTab('my-page');
-    setMyEntityTabVisible(false);
-  }, []);
+  useEntityWorkspaceDashboardNav({
+    kind: 'team',
+    searchParams,
+    router,
+    entityDirectAccessLocked,
+    activeTab,
+    setActiveTab,
+    setSelectedEntityId: setSelectedTeamId,
+    setMyEntityTabVisible: setMyEntityTabVisible,
+  });
 
   const handleMyPageTabClick = useCallback(() => {
+    clearEntityCompanyLoginSession();
     hideMyEntityTab();
     setActiveTab('my-page');
   }, [hideMyEntityTab, setActiveTab]);
 
   const handleTabChange = useCallback(
     (tab: 'my-page' | 'my-entity') => {
-      if (tab === 'my-page') hideMyEntityTab();
+      if (tab === 'my-page') {
+        clearEntityCompanyLoginSession();
+        hideMyEntityTab();
+      }
       setActiveTab(tab);
     },
     [hideMyEntityTab, setActiveTab],
@@ -110,7 +123,9 @@ export default function TeamDashboard() {
   useEffect(() => {
     if (activeTab === 'my-page') {
       setShowWorkoutSection(false);
-      setMyEntityTabVisible(false);
+      if (!isEntityWorkspaceSession('team')) {
+        setMyEntityTabVisible(false);
+      }
     }
   }, [activeTab]);
 
@@ -128,7 +143,13 @@ export default function TeamDashboard() {
     : null;
   const bannerTeam = activeTeam ?? formCreatedTeams[0] ?? null;
   const dashboardShellActiveTab: 'my-page' | 'my-entity' =
-    selectedTeamId && hasFormTeam ? activeTab : 'my-page';
+    activeTab === 'my-entity' &&
+    selectedTeamId &&
+    (myEntityTabVisible || entityDirectAccessLocked)
+      ? 'my-entity'
+      : selectedTeamId && hasFormTeam
+        ? activeTab
+        : 'my-page';
 
   // Don't render if not authenticated
   if (loading || !user) {
@@ -335,5 +356,19 @@ export default function TeamDashboard() {
 
       <SimpleFooter />
     </div>
+  );
+}
+
+export default function TeamDashboard() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      }
+    >
+      <TeamDashboardContent />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { 
   Users, 
   Dumbbell,
@@ -23,7 +23,8 @@ import {
   FolderOpen,
   CalendarRange,
   Mail,
-  Filter
+  Filter,
+  Loader2,
 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
@@ -45,16 +46,19 @@ import {
   filterFormCreatedEntities,
   useManagedEntityCreation,
 } from '@/hooks/useManagedEntityCreation';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getDashboardPathForUserType, isGroupAccountUserType } from '@/utils/dashboardRouting';
 import {
   useEntityDirectAccessGuard,
   useEntityDirectAccessLockedForKind,
 } from '@/hooks/useEntityDirectAccessGuard';
+import { clearEntityCompanyLoginSession, isEntityWorkspaceSession } from '@/lib/entity/entityDirectAccessSession';
+import { useEntityWorkspaceDashboardNav } from '@/hooks/useEntityWorkspaceDashboardNav';
 
-export default function GroupDashboard() {
+function GroupDashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading } = useAuth();
   const { t } = useLanguage();
   const entityDirectAccessLocked = useEntityDirectAccessLockedForKind('group');
@@ -113,19 +117,29 @@ export default function GroupDashboard() {
 
   const hideMyEntityTab = useCallback(() => setMyEntityTabVisible(false), []);
 
-  useEffect(() => {
-    setActiveTab('my-page');
-    setMyEntityTabVisible(false);
-  }, []);
+  useEntityWorkspaceDashboardNav({
+    kind: 'group',
+    searchParams,
+    router,
+    entityDirectAccessLocked,
+    activeTab,
+    setActiveTab,
+    setSelectedEntityId: setSelectedGroupId,
+    setMyEntityTabVisible: setMyEntityTabVisible,
+  });
 
   const handleMyPageTabClick = useCallback(() => {
+    clearEntityCompanyLoginSession();
     hideMyEntityTab();
     setActiveTab('my-page');
   }, [hideMyEntityTab]);
 
   const handleTabChange = useCallback(
     (tab: 'my-page' | 'my-entity') => {
-      if (tab === 'my-page') hideMyEntityTab();
+      if (tab === 'my-page') {
+        clearEntityCompanyLoginSession();
+        hideMyEntityTab();
+      }
       setActiveTab(tab);
     },
     [hideMyEntityTab],
@@ -165,11 +179,14 @@ export default function GroupDashboard() {
   useEffect(() => {
     if (activeTab === 'my-page') {
       setShowWorkoutSection(false);
-      setMyEntityTabVisible(false);
+      if (!isEntityWorkspaceSession('group')) {
+        setMyEntityTabVisible(false);
+      }
     }
   }, [activeTab]);
 
   useEffect(() => {
+    if (isEntityWorkspaceSession('group')) return;
     if (!hasFormGroup && activeTab === 'my-entity') {
       setActiveTab('my-page');
     }
@@ -199,7 +216,13 @@ export default function GroupDashboard() {
     : null;
   const bannerGroup = activeGroup ?? formCreatedGroups[0] ?? null;
   const dashboardShellActiveTab: 'my-page' | 'my-entity' =
-    selectedGroupId && hasFormGroup ? activeTab : 'my-page';
+    activeTab === 'my-entity' &&
+    selectedGroupId &&
+    (myEntityTabVisible || entityDirectAccessLocked)
+      ? 'my-entity'
+      : selectedGroupId && hasFormGroup
+        ? activeTab
+        : 'my-page';
 
   return (
     <div className="bg-gray-50 flex flex-col" style={{ minHeight: '100vh' }}>
@@ -451,6 +474,20 @@ export default function GroupDashboard() {
 
       <SimpleFooter />
     </div>
+  );
+}
+
+export default function GroupDashboard() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      }
+    >
+      <GroupDashboardContent />
+    </Suspense>
   );
 }
 

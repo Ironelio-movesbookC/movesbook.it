@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 import {
+  clearEntityCompanyLoginSession,
   clearEntityDirectAccessLock,
+  setEntityCompanyLoginSession,
   setEntityDirectAccessLock,
 } from '@/lib/entity/entityDirectAccessSession';
 import type { EntityDirectAccessKind } from '@/lib/entity/entityDirectAccessMeta';
@@ -37,6 +39,7 @@ export function useAuth() {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       clearEntityDirectAccessLock();
+      clearEntityCompanyLoginSession();
     }
     setUser(null);
     router.push('/');
@@ -85,8 +88,12 @@ export function useAuth() {
       const entityId = options?.entityId ?? options?.clubId;
       if (mode === 'direct-access-only' && kind && entityId) {
         setEntityDirectAccessLock(kind, entityId);
+      } else if (mode === 'company-password' && kind && entityId) {
+        clearEntityDirectAccessLock();
+        setEntityCompanyLoginSession(kind, entityId);
       } else {
         clearEntityDirectAccessLock();
+        clearEntityCompanyLoginSession();
       }
     }
     setUser(userData);

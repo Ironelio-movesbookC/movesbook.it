@@ -1,6 +1,30 @@
 import type { PcuAlertDisplayPayload, PcuAlertTrigger } from '@/lib/admin/userPcuAlertMsg';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 export const PENDING_PCU_ALERT_KEY = 'pendingPcuAlert';
+
+function hasPcuAlertContent(alert: PcuAlertDisplayPayload | undefined | null): boolean {
+  return Boolean(alert?.bodyHtml?.trim() || alert?.title?.trim());
+}
+
+/** Club admin personal login: show PCU when opening My Club, not at sign-in. */
+export function shouldDeferPcuLoginToClubOpen(
+  userType: string,
+  entityAccessMode?: string,
+): boolean {
+  if (!isClubAccountUserType(userType)) return false;
+  return (
+    entityAccessMode !== 'company-password' &&
+    entityAccessMode !== 'direct-access-only'
+  );
+}
+
+export function shouldShowPcuAtLogin(
+  userType: string,
+  entityAccessMode?: string,
+): boolean {
+  return !shouldDeferPcuLoginToClubOpen(userType, entityAccessMode);
+}
 
 export function storePendingPcuAlert(alert: PcuAlertDisplayPayload): void {
   if (typeof window === 'undefined') return;
@@ -44,9 +68,9 @@ export async function fetchPcuAlert(
   if (!res.ok) return null;
 
   const data = (await res.json()) as { show?: boolean; alert?: PcuAlertDisplayPayload };
-  if (!data.show || !data.alert?.bodyHtml) return null;
+  if (!data.show || !hasPcuAlertContent(data.alert)) return null;
   return {
-    title: data.alert.title ?? '',
-    bodyHtml: data.alert.bodyHtml,
+    title: data.alert?.title ?? '',
+    bodyHtml: data.alert?.bodyHtml ?? '',
   };
 }
