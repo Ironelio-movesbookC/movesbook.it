@@ -85,6 +85,7 @@ echo ""
 
 # Step 9: Build the application
 echo -e "${BLUE}🏗️  Step 9/10: Building application...${NC}"
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=2048}"
 npm run build
 echo -e "${GREEN}✅ Application built${NC}"
 echo ""

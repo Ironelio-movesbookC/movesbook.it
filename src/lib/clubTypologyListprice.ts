@@ -71,7 +71,7 @@ export function createEmptyListpriceForm(typologyId = ''): TypologyListpriceForm
     cost: '',
     discount: '',
     expiryDate: '',
-    installnment: '',
+    installnment: '1',
     firstCostInstallnment: '',
     daysRecursion: '',
     fixExpiryDayStatus: false,
@@ -85,7 +85,7 @@ export function createEmptyListpriceForm(typologyId = ''): TypologyListpriceForm
     saleRelatedDays: '',
     saleMaxNumber: '',
     saleCostAccess: '',
-    saleNumberAccessStatus: false,
+    saleNumberAccessStatus: true,
     saleMaxNumberStatus: false,
     recursiveExpires: false,
     subscriptionPointsStatus: false,
@@ -94,6 +94,7 @@ export function createEmptyListpriceForm(typologyId = ''): TypologyListpriceForm
 }
 
 export function mapDbRowToListpriceForm(row: Record<string, unknown>): TypologyListpriceForm {
+  const maxAccessSelected = boolFromYesNo(row.sale_max_number_status);
   return {
     typologyId: text(row.typology_id),
     activeStatus: boolFromYesNo(row.active_status),
@@ -102,7 +103,7 @@ export function mapDbRowToListpriceForm(row: Record<string, unknown>): TypologyL
     cost: text(row.cost),
     discount: text(row.discount),
     expiryDate: text(row.expiry_date),
-    installnment: text(row.installnment),
+    installnment: text(row.installnment) || '1',
     firstCostInstallnment: text(row.first_cost_installnment),
     daysRecursion: text(row.days_recursion),
     fixExpiryDayStatus: boolFromYesNo(row.fix_expiry_day_status),
@@ -116,8 +117,8 @@ export function mapDbRowToListpriceForm(row: Record<string, unknown>): TypologyL
     saleRelatedDays: text(row.sale_related_days),
     saleMaxNumber: text(row.sale_max_number),
     saleCostAccess: text(row.sale_cost_access),
-    saleNumberAccessStatus: boolFromYesNo(row.sale_number_access_status),
-    saleMaxNumberStatus: boolFromYesNo(row.sale_max_number_status),
+    saleNumberAccessStatus: maxAccessSelected ? false : true,
+    saleMaxNumberStatus: maxAccessSelected,
     recursiveExpires: boolFromYesNo(row.recursive_expires),
     subscriptionPointsStatus: boolFromYesNo(row.subscripion_points_status),
     subscriptionPoints: text(row.subscripion_points)

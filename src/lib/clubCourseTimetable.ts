@@ -70,12 +70,24 @@ function splitDayTimes(raw: string): string[] {
     .filter(Boolean);
 }
 
+function formatTimeRange(start: string, end: string): string {
+  const from = text(start);
+  const to = text(end);
+  if (from && to) return `${from} - ${to}`;
+  return from || to;
+}
+
 function collectDayTimes(amRaw: string, pmRaw: string): string[] {
+  const amTimes = splitDayTimes(amRaw);
+  const pmTimes = splitDayTimes(pmRaw);
+  const slotCount = Math.max(amTimes.length, pmTimes.length);
   const times: string[] = [];
-  for (const value of [...splitDayTimes(amRaw), ...splitDayTimes(pmRaw)]) {
-    const clean = text(value);
-    if (clean) times.push(clean);
+
+  for (let index = 0; index < slotCount; index += 1) {
+    const range = formatTimeRange(amTimes[index] ?? '', pmTimes[index] ?? '');
+    if (range) times.push(range);
   }
+
   return times;
 }
 
@@ -89,9 +101,17 @@ export function parseDisplayTimeMinutes(value: string): number {
   return hours * 60 + Number(match[2]);
 }
 
+function parseSlotSortMinutes(value: string): number {
+  const rangeMatch = text(value).match(/^(.+?)\s*-\s*.+$/);
+  if (rangeMatch) {
+    return parseDisplayTimeMinutes(rangeMatch[1]);
+  }
+  return parseDisplayTimeMinutes(value);
+}
+
 export function sortTimeSlots(times: string[]): string[] {
   return Array.from(new Set(times)).sort(
-    (a, b) => parseDisplayTimeMinutes(a) - parseDisplayTimeMinutes(b)
+    (a, b) => parseSlotSortMinutes(a) - parseSlotSortMinutes(b)
   );
 }
 
