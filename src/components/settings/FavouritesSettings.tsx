@@ -11,7 +11,21 @@ import Image from 'next/image';
 import FavoriteWorkoutCard from '@/components/workouts/FavoriteWorkoutCard';
 import WorkoutOverviewModal from '@/components/workouts/WorkoutOverviewModal';
 import UseInPlannerModal from '@/components/workouts/UseInPlannerModal';
-import UseFavoriteWeekModal from '@/components/workouts/UseFavoriteWeekModal';
+import ApplyFavoriteWeekModal, {
+  type FavoriteWeekDestination,
+} from '@/components/workouts/modals/ApplyFavoriteWeekModal';
+import ApplyFavoriteWorkoutModal, {
+  type FavoriteWorkoutDestination,
+} from '@/components/workouts/modals/ApplyFavoriteWorkoutModal';
+import ApplyFavoriteMoveframeModal, {
+  type FavoriteMoveframeDestination,
+} from '@/components/workouts/modals/ApplyFavoriteMoveframeModal';
+import ApplyFavoriteToStructureModal from '@/components/workouts/modals/ApplyFavoriteToStructureModal';
+import QuickTrainingEntryModal from '@/components/workouts/modals/QuickTrainingEntryModal';
+import {
+  buildQuickEntryFavoriteMoveframe,
+  type QuickTrainingEntryForm,
+} from '@/lib/quickTrainingEntry';
 import WeekTotalsModal from '@/components/workouts/modals/WeekTotalsModal';
 import { favoritePlanDataToDisplayWeek } from '@/lib/favoriteWeekPlan';
 import { toFavouritesSettingsRow } from '@/lib/favoriteMoveframeFormat';
@@ -64,6 +78,7 @@ interface Workout {
 
 interface Moveframe {
   id: string;
+  workoutSessionId?: string;
   name: string;
   description: string;
   sets: number;
@@ -95,7 +110,10 @@ export default function FavouritesSettings() {
   const [showPlanDialog, setShowPlanDialog] = useState(false);
   const [editingPlan, setEditingPlan] = useState<WeeklyPlan | null>(null);
   const [viewWeekPlan, setViewWeekPlan] = useState<WeeklyPlan | null>(null);
-  const [useWeekPlan, setUseWeekPlan] = useState<WeeklyPlan | null>(null);
+  const [weekExportModal, setWeekExportModal] = useState<{
+    plan: WeeklyPlan;
+    destination: FavoriteWeekDestination | 'STRUCTURE';
+  } | null>(null);
   
   // Workouts State
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -105,9 +123,18 @@ export default function FavouritesSettings() {
   const [overviewWorkout, setOverviewWorkout] = useState<any>(null);
   const [showUsePlannerModal, setShowUsePlannerModal] = useState(false);
   const [plannerWorkout, setPlannerWorkout] = useState<any>(null);
+  const [workoutExportModal, setWorkoutExportModal] = useState<{
+    workout: any;
+    destination: FavoriteWorkoutDestination | 'STRUCTURE';
+  } | null>(null);
   
   // Moveframes State
   const [moveframes, setMoveframes] = useState<Moveframe[]>([]);
+  const [moveframeExportModal, setMoveframeExportModal] = useState<{
+    moveframe: Moveframe;
+    destination: FavoriteMoveframeDestination;
+  } | null>(null);
+  const [favoriteQuickEntryWorkout, setFavoriteQuickEntryWorkout] = useState<any>(null);
   const [showMoveframeDialog, setShowMoveframeDialog] = useState(false);
   const [editingMoveframe, setEditingMoveframe] = useState<Moveframe | null>(null);
 
@@ -1047,16 +1074,19 @@ export default function FavouritesSettings() {
     setViewWeekPlan(plan);
   };
 
-  const handleUseFavoriteWeek = (plan: WeeklyPlan) => {
-    if (!plan.planData?.weeks?.[0]?.days?.length) {
+  const handleUseFavoriteWeek = (
+    plan: WeeklyPlan,
+    destination: FavoriteWeekDestination | 'STRUCTURE'
+  ) => {
+    if (destination !== 'STRUCTURE' && !plan.planData?.weeks?.[0]?.days?.length) {
       alert('This favourite has no week content to apply.');
       return;
     }
-    setUseWeekPlan(plan);
+    setWeekExportModal({ plan, destination });
   };
 
   const handleApplyFavoriteWeek = async (targetWeekIds: string[]) => {
-    if (!useWeekPlan) return;
+    if (!weekExportModal || weekExportModal.destination === 'STRUCTURE') return;
     const token = localStorage.getItem('token');
     if (!token) {
       alert('Please log in');
@@ -1069,22 +1099,31 @@ export default function FavouritesSettings() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        favoriteId: useWeekPlan.id,
+        favoriteId: weekExportModal.plan.id,
         targetWeekIds,
+        targetPlanType: weekExportModal.destination,
       }),
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
       throw new Error(err.error || err.details || 'Failed to apply plan');
     }
+    const destLabel =
+      weekExportModal.destination === 'WORKOUTS_DONE'
+        ? 'Workouts Done'
+        : weekExportModal.destination === 'ARCHIVE'
+          ? 'Archive'
+          : 'Yearly Plan';
     alert(
-      `“${useWeekPlan.name}” applied to ${targetWeekIds.length} week(s) in your Yearly plan.`
+      `"${weekExportModal.plan.name}" exported to ${targetWeekIds.length} week(s) in ${destLabel}.`
     );
-    setUseWeekPlan(null);
+    setWeekExportModal(null);
     await loadFavoriteWeeklyPlans();
   };
 
   const handleDuplicateFavoriteWeek = async (plan: WeeklyPlan) => {
+    const name = prompt('Name for the copy:', `${plan.name} (copy)`);
+    if (!name?.trim()) return;
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -1099,7 +1138,7 @@ export default function FavouritesSettings() {
         },
         body: JSON.stringify({
           duplicateFromFavoriteId: plan.id,
-          name: `${plan.name} (copy)`,
+          name: name.trim(),
         }),
       });
       if (response.ok) {
@@ -1113,6 +1152,176 @@ export default function FavouritesSettings() {
       console.error('Error duplicating favourite week:', error);
       alert('Failed to duplicate favourite');
     }
+  };
+
+  const handleDuplicateFavoriteWorkout = async (workout: any) => {
+    const name = prompt('Name for the copy:', `${workout.name} (copy)`);
+    if (!name?.trim()) return;
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('Please log in');
+        return;
+      }
+      const response = await fetch('/api/workouts/favorites', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          duplicateFromFavoriteId: workout.id,
+          name: name.trim(),
+        }),
+      });
+      if (response.ok) {
+        await loadFavoriteWorkouts();
+        alert('Favourite workout duplicated');
+      } else {
+        const err = await response.json().catch(() => ({}));
+        alert(err.error || 'Failed to duplicate');
+      }
+    } catch (error) {
+      console.error('Error duplicating favourite workout:', error);
+      alert('Failed to duplicate favourite');
+    }
+  };
+
+  const handleCloneFavoriteMoveframe = async (mf: Moveframe) => {
+    const name = prompt('Name for the copy:', `${mf.name} (copy)`);
+    if (!name?.trim()) return;
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('Please log in');
+        return;
+      }
+      const response = await fetch('/api/workouts/moveframes/favorites/clone', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ moveframeId: mf.id, name: name.trim() }),
+      });
+      if (response.ok) {
+        await loadFavoriteMoveframes();
+        alert('Moveframe cloned in favourites');
+      } else {
+        const err = await response.json().catch(() => ({}));
+        alert(err.error || 'Failed to clone');
+      }
+    } catch {
+      alert('Failed to clone moveframe');
+    }
+  };
+
+  const handleExportFavoriteWorkout = (
+    workout: any,
+    destination: FavoriteWorkoutDestination | 'STRUCTURE'
+  ) => {
+    setWorkoutExportModal({ workout, destination });
+  };
+
+  const handleApplyFavoriteWorkout = async (payload: {
+    dayId: string;
+    sessionNumber: number;
+    replaceExisting: boolean;
+  }) => {
+    if (!workoutExportModal || workoutExportModal.destination === 'STRUCTURE') return;
+    const token = localStorage.getItem('token');
+    if (!token) throw new Error('Please log in');
+
+    const response = await fetch('/api/workouts/favorites/apply', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        favoriteId: workoutExportModal.workout.id,
+        dayId: payload.dayId,
+        sessionNumber: payload.sessionNumber,
+        replaceExisting: payload.replaceExisting,
+      }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || err.details || 'Failed to export workout');
+    }
+    const destLabel =
+      workoutExportModal.destination === 'WORKOUTS_DONE'
+        ? 'Workouts Done'
+        : workoutExportModal.destination === 'ARCHIVE'
+          ? 'Archive'
+          : 'Yearly Plan';
+    alert(`Workout exported to ${destLabel}.`);
+    setWorkoutExportModal(null);
+  };
+
+  const handleApplyFavoriteMoveframe = async (targetWorkoutId: string) => {
+    if (!moveframeExportModal) return;
+    const token = localStorage.getItem('token');
+    if (!token) throw new Error('Please log in');
+
+    const response = await fetch('/api/workouts/moveframes/copy', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sourceMoveframeId: moveframeExportModal.moveframe.id,
+        targetWorkoutId,
+        position: 'after',
+      }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || err.details || 'Failed to export moveframe');
+    }
+    const destLabel =
+      moveframeExportModal.destination === 'WORKOUTS_DONE' ? 'Workouts Done' : 'Yearly Plan';
+    alert(`Moveframe exported to ${destLabel}.`);
+    setMoveframeExportModal(null);
+  };
+
+  const handleFavoriteQuickEntrySave = async (form: QuickTrainingEntryForm) => {
+    if (!favoriteQuickEntryWorkout?.id) {
+      throw new Error('No favourite workout selected');
+    }
+    const token = localStorage.getItem('token');
+    if (!token) throw new Error('Please log in');
+
+    let parsed: any;
+    try {
+      parsed = favoriteQuickEntryWorkout.workoutData
+        ? JSON.parse(favoriteQuickEntryWorkout.workoutData)
+        : { workout: {}, sports: [], moveframes: [] };
+    } catch {
+      throw new Error('Invalid favourite workout data');
+    }
+
+    const newMf = buildQuickEntryFavoriteMoveframe(form);
+    const existing = parsed.moveframes ?? [];
+    newMf.letter = String.fromCharCode(65 + existing.length);
+    parsed.moveframes = [...existing, newMf];
+
+    const response = await fetch(`/api/workouts/favorites/${favoriteQuickEntryWorkout.id}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        workoutData: JSON.stringify(parsed),
+      }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to save moveframe');
+    }
+    await loadFavoriteWorkouts();
   };
 
   const handleAddToPlanner = async (_weekId: string, dayId: string) => {
@@ -1483,30 +1692,46 @@ export default function FavouritesSettings() {
                   ))}
                 </div>
                 
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleUseFavoriteWeek(plan)}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition"
-                  >
-                    Use Plan
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDuplicateFavoriteWeek(plan)}
-                    className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition"
-                    title="Duplicate favourite"
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleViewFavoriteWeek(plan)}
-                    className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition"
-                    title="Open week overview"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </button>
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <select
+                      defaultValue=""
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (!v) return;
+                        handleUseFavoriteWeek(
+                          plan,
+                          v as FavoriteWeekDestination | 'STRUCTURE'
+                        );
+                        e.target.value = '';
+                      }}
+                      className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg border-0 cursor-pointer"
+                    >
+                      <option value="" disabled>
+                        Export to…
+                      </option>
+                      <option value="YEARLY_PLAN">Yearly Plan</option>
+                      <option value="WORKOUTS_DONE">Workouts Done</option>
+                      <option value="ARCHIVE">Archive</option>
+                      <option value="STRUCTURE">Weekly Structure</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => handleDuplicateFavoriteWeek(plan)}
+                      className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition"
+                      title="Clone favourite week"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleViewFavoriteWeek(plan)}
+                      className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition"
+                      title="Open week overview"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1533,6 +1758,8 @@ export default function FavouritesSettings() {
                 onDelete={handleDeleteWorkout}
                 onOverview={handleOverviewWorkout}
                 onUseInPlanner={handleUseInPlanner}
+                onDuplicate={handleDuplicateFavoriteWorkout}
+                onExport={handleExportFavoriteWorkout}
                 onUpdate={loadFavoriteWorkouts}
               />
             ))}
@@ -1609,7 +1836,32 @@ export default function FavouritesSettings() {
                       <div className="text-sm text-gray-600">{formatDate(mf.lastUsed)}</div>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-end gap-2 items-center">
+                        <select
+                          defaultValue=""
+                          onChange={(e) => {
+                            const v = e.target.value as FavoriteMoveframeDestination | '';
+                            if (!v) return;
+                            setMoveframeExportModal({ moveframe: mf, destination: v });
+                            e.target.value = '';
+                          }}
+                          className="text-xs px-2 py-1 border rounded-lg"
+                          title="Export moveframe"
+                        >
+                          <option value="" disabled>
+                            Export…
+                          </option>
+                          <option value="YEARLY_PLAN">Yearly</option>
+                          <option value="WORKOUTS_DONE">Done</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => void handleCloneFavoriteMoveframe(mf)}
+                          className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition"
+                          title="Clone moveframe"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => {
                             setEditingMoveframe(mf);
@@ -2745,6 +2997,19 @@ export default function FavouritesSettings() {
             setShowOverviewModal(false);
             setOverviewWorkout(null);
           }}
+          onQuickTrainingEntry={() => {
+            setFavoriteQuickEntryWorkout(overviewWorkout);
+          }}
+        />
+      )}
+
+      {favoriteQuickEntryWorkout && (
+        <QuickTrainingEntryModal
+          isOpen={Boolean(favoriteQuickEntryWorkout)}
+          context="FAV"
+          workout={favoriteQuickEntryWorkout}
+          onClose={() => setFavoriteQuickEntryWorkout(null)}
+          onSave={handleFavoriteQuickEntrySave}
         />
       )}
 
@@ -2770,12 +3035,50 @@ export default function FavouritesSettings() {
         />
       )}
 
-      {/* Apply favourite week to yearly plan */}
-      {useWeekPlan && (
-        <UseFavoriteWeekModal
-          planName={useWeekPlan.name}
-          onClose={() => setUseWeekPlan(null)}
+      {/* Apply favourite week export modals */}
+      {weekExportModal && weekExportModal.destination !== 'STRUCTURE' && (
+        <ApplyFavoriteWeekModal
+          planName={weekExportModal.plan.name}
+          destination={weekExportModal.destination}
+          onClose={() => setWeekExportModal(null)}
           onConfirm={handleApplyFavoriteWeek}
+        />
+      )}
+
+      {weekExportModal && weekExportModal.destination === 'STRUCTURE' && (
+        <ApplyFavoriteToStructureModal
+          mode="week"
+          itemName={weekExportModal.plan.name}
+          planData={weekExportModal.plan.planData}
+          onClose={() => setWeekExportModal(null)}
+        />
+      )}
+
+      {workoutExportModal && workoutExportModal.destination !== 'STRUCTURE' && (
+        <ApplyFavoriteWorkoutModal
+          workoutName={workoutExportModal.workout.name}
+          destination={workoutExportModal.destination}
+          onClose={() => setWorkoutExportModal(null)}
+          onConfirm={handleApplyFavoriteWorkout}
+        />
+      )}
+
+      {workoutExportModal && workoutExportModal.destination === 'STRUCTURE' && (
+        <ApplyFavoriteToStructureModal
+          mode="workout"
+          itemName={workoutExportModal.workout.name}
+          workoutData={workoutExportModal.workout.workoutData}
+          onClose={() => setWorkoutExportModal(null)}
+        />
+      )}
+
+      {moveframeExportModal && (
+        <ApplyFavoriteMoveframeModal
+          moveframeName={moveframeExportModal.moveframe.name}
+          moveframeId={moveframeExportModal.moveframe.id}
+          destination={moveframeExportModal.destination}
+          onClose={() => setMoveframeExportModal(null)}
+          onConfirm={handleApplyFavoriteMoveframe}
         />
       )}
 

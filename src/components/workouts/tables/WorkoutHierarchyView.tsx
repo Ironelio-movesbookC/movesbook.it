@@ -45,6 +45,7 @@ interface WorkoutHierarchyViewProps {
   onEditMoveframe?: (moveframe: any, workout: any, day: any) => void;
   onEditMovelap?: (movelap: any, moveframe: any, workout: any, day: any) => void;
   onAddMoveframe?: (workout: any, day: any) => void;
+  onQuickTrainingEntry?: (workout: any, day: any) => void;
   onAddMoveframeAfter?: (moveframe: any, index: number, workout: any, day: any) => void;
   onAddMovelap?: (moveframe: any, workout: any, day: any) => void;
   onAddMovelapAfter?: (movelap: any, index: number, moveframe: any, workout: any, day: any) => void;
@@ -52,6 +53,9 @@ interface WorkoutHierarchyViewProps {
   onSaveFavoriteWorkout?: (workout: any, day: any) => void;
   onShareWorkout?: (workout: any, day: any) => void;
   onExportPdfWorkout?: (workout: any, day: any) => void;
+  onExportWorkoutToArchive?: (workout: any, day: any) => void;
+  onExportWorkoutToDone?: (workout: any, day: any) => void;
+  onExportWorkoutToYearly?: (workout: any, day: any) => void;
   onPrintWorkout?: (workout: any, day: any) => void;
   onDeleteMoveframe?: (moveframe: any, workout: any, day: any) => void;
   onDeleteMovelap?: (movelap: any, moveframe: any, workout: any, day: any) => void;
@@ -90,6 +94,7 @@ export default function WorkoutHierarchyView({
   onEditMoveframe,
   onEditMovelap,
   onAddMoveframe,
+  onQuickTrainingEntry,
   onAddMoveframeAfter,
   onAddMovelap,
   onAddMovelapAfter,
@@ -97,6 +102,9 @@ export default function WorkoutHierarchyView({
   onSaveFavoriteWorkout,
   onShareWorkout,
   onExportPdfWorkout,
+  onExportWorkoutToArchive,
+  onExportWorkoutToDone,
+  onExportWorkoutToYearly,
   onPrintWorkout,
   onDeleteMoveframe,
   onDeleteMovelap,
@@ -226,9 +234,13 @@ export default function WorkoutHierarchyView({
               onSaveFavorite={() => onSaveFavoriteWorkout?.(workout, day)}
               onShareWorkout={(workout, day) => onShareWorkout?.(workout, day)}
               onExportPdfWorkout={(workout, day) => onExportPdfWorkout?.(workout, day)}
+              onExportWorkoutToArchive={(workout, day) => onExportWorkoutToArchive?.(workout, day)}
+              onExportWorkoutToDone={(workout, day) => onExportWorkoutToDone?.(workout, day)}
+              onExportWorkoutToYearly={(workout, day) => onExportWorkoutToYearly?.(workout, day)}
               onPrintWorkout={(workout, day) => onPrintWorkout?.(workout, day)}
               onShowOverview={() => onShowWorkoutOverview?.(workout, day)}
               onAddMoveframe={() => onAddMoveframe?.(workout, day)}
+              onQuickTrainingEntry={() => onQuickTrainingEntry?.(workout, day)}
               onAddMoveframeAfter={(moveframe, index) => onAddMoveframeAfter?.(moveframe, index, workout, day)}
               onEditMoveframe={(moveframe) => onEditMoveframe?.(moveframe, workout, day)}
               onDeleteMoveframe={(moveframe) => onDeleteMoveframe?.(moveframe, workout, day)}

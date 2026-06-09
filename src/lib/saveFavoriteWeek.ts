@@ -5,18 +5,25 @@ export type SaveFavoriteWeekResult =
   | { ok: false; error: string; skipped?: boolean };
 
 export async function saveWeekToFavorites(
-  week: { id: string; weekNumber?: number },
+  week: { id: string; weekNumber?: number; workoutPlanId?: string },
   options?: { name?: string; description?: string }
 ): Promise<SaveFavoriteWeekResult> {
   if (!week?.id) {
     return { ok: false, error: 'No week selected' };
   }
 
-  if (inFlightWeekIds.has(week.id)) {
+  const lockKey =
+    week.weekNumber != null && week.workoutPlanId
+      ? `plan-week-${week.workoutPlanId}-${week.weekNumber}`
+      : week.weekNumber != null
+        ? `week-num-${week.weekNumber}`
+        : week.id;
+
+  if (inFlightWeekIds.has(lockKey)) {
     return { ok: false, error: 'Save already in progress', skipped: true };
   }
 
-  inFlightWeekIds.add(week.id);
+  inFlightWeekIds.add(lockKey);
 
   try {
     const token =
@@ -56,6 +63,6 @@ export async function saveWeekToFavorites(
     console.error('Error saving week to favorites:', error);
     return { ok: false, error: 'Error saving week to favorites' };
   } finally {
-    inFlightWeekIds.delete(week.id);
+    inFlightWeekIds.delete(lockKey);
   }
 }

@@ -66,8 +66,86 @@ export async function POST(req: NextRequest) {
     }
     
     const userId = decoded.userId;
-    const { workoutId } = await req.json();
-    
+    const {
+      workoutId,
+      structureWorkout,
+      name: customName,
+      description: customDescription,
+      duplicateFromFavoriteId,
+    } = await req.json();
+
+    if (duplicateFromFavoriteId) {
+      const source = await prisma.favoriteWorkout.findFirst({
+        where: { id: duplicateFromFavoriteId, userId },
+      });
+      if (!source) {
+        return NextResponse.json({ error: 'Source favourite not found' }, { status: 404 });
+      }
+      const duplicate = await prisma.favoriteWorkout.create({
+        data: {
+          userId,
+          name: customName || `${source.name} (copy)`,
+          description: source.description,
+          workoutData: source.workoutData,
+          sports: source.sports,
+          totalDistance: source.totalDistance,
+          totalDuration: source.totalDuration,
+        },
+      });
+      return NextResponse.json(
+        { message: 'Favourite workout duplicated', favorite: duplicate },
+        { status: 201 }
+      );
+    }
+
+    if (structureWorkout?.workout) {
+      const workoutDataObj = {
+        ...structureWorkout,
+        workoutId: structureWorkout.workoutId ?? `structure_${Date.now()}`,
+      };
+      let workoutDataStr: string;
+      try {
+        workoutDataStr = JSON.stringify(workoutDataObj);
+        JSON.parse(workoutDataStr);
+      } catch {
+        return NextResponse.json({ error: 'Invalid structure workout data' }, { status: 400 });
+      }
+
+      const sportsSet = new Set<string>();
+      (structureWorkout.sports ?? []).forEach((s: { sport?: string } | string) => {
+        const sport = typeof s === 'string' ? s : s?.sport;
+        if (sport) sportsSet.add(sport);
+      });
+      if (structureWorkout.workout.mainSport) sportsSet.add(structureWorkout.workout.mainSport);
+
+      let totalDistance = 0;
+      (structureWorkout.moveframes ?? []).forEach((mf: { movelaps?: Array<{ distance?: number | null }> }) => {
+        (mf.movelaps ?? []).forEach((ml) => {
+          if (ml.distance != null) totalDistance += Number(ml.distance) || 0;
+        });
+      });
+
+      const favorite = await prisma.favoriteWorkout.create({
+        data: {
+          userId,
+          name: customName || structureWorkout.workout.name || 'Structure workout',
+          description:
+            customDescription ||
+            structureWorkout.workout.notes ||
+            `Saved from weekly structure on ${new Date().toLocaleDateString()}`,
+          workoutData: workoutDataStr,
+          sports: Array.from(sportsSet).join(','),
+          totalDistance,
+          totalDuration: 0,
+        },
+      });
+
+      return NextResponse.json(
+        { message: 'Workout saved to favorites successfully', favorite },
+        { status: 201 }
+      );
+    }
+
     if (!workoutId) {
       return NextResponse.json({ error: 'Workout ID is required' }, { status: 400 });
     }

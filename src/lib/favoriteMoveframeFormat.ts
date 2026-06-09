@@ -4,6 +4,7 @@
 
 export function formatFavoriteMoveframe(mf: {
   id: string;
+  workoutSessionId?: string;
   letter: string;
   sport: string;
   type: string;
@@ -31,6 +32,7 @@ export function formatFavoriteMoveframe(mf: {
     weight?: string | null;
   }>;
   workoutSession: {
+    id?: string;
     name: string;
     sessionNumber: number;
     workoutDay?: { date: Date } | null;
@@ -46,6 +48,7 @@ export function formatFavoriteMoveframe(mf: {
 
   return {
     id: mf.id,
+    workoutSessionId: mf.workoutSessionId ?? mf.workoutSession?.id ?? '',
     name: mf.description || `Moveframe ${mf.letter}`,
     description: mf.notes || '',
     sport: mf.sport,
@@ -91,6 +94,7 @@ export function formatFavoriteMoveframe(mf: {
 export function toFavouritesSettingsRow(mf: ReturnType<typeof formatFavoriteMoveframe>) {
   return {
     id: mf.id,
+    workoutSessionId: mf.workoutSessionId,
     name: mf.name,
     description: mf.description || '',
     sets: mf.lapsCount || 0,

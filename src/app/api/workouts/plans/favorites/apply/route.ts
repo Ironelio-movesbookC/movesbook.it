@@ -34,13 +34,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    const { favoriteId, targetWeekIds } = await req.json();
+    const { favoriteId, targetWeekIds, targetPlanType = 'YEARLY_PLAN' } = await req.json();
 
     if (!favoriteId || !Array.isArray(targetWeekIds) || targetWeekIds.length === 0) {
       return NextResponse.json(
         { error: 'favoriteId and targetWeekIds[] are required' },
         { status: 400 }
       );
+    }
+
+    const allowedTypes = ['YEARLY_PLAN', 'WORKOUTS_DONE', 'ARCHIVE'] as const;
+    if (!allowedTypes.includes(targetPlanType)) {
+      return NextResponse.json({ error: 'Invalid targetPlanType' }, { status: 400 });
     }
 
     const favorite = await prisma.favoriteWeeklyPlan.findFirst({
@@ -73,7 +78,7 @@ export async function POST(req: NextRequest) {
         const targetWeek = await tx.workoutWeek.findFirst({
           where: {
             id: targetWeekId,
-            workoutPlan: { userId: decoded.userId, type: 'YEARLY_PLAN' },
+            workoutPlan: { userId: decoded.userId, type: targetPlanType },
           },
           include: weekInclude,
         });

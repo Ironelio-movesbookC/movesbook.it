@@ -121,7 +121,47 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 401 });
     }
 
-    const { planId, name, description, duplicateFromFavoriteId } = await req.json();
+    const {
+      planId,
+      name,
+      description,
+      duplicateFromFavoriteId,
+      weeklyStructurePlan,
+    } = await req.json();
+
+    if (weeklyStructurePlan && typeof weeklyStructurePlan === 'object') {
+      const snapshot = weeklyStructurePlan as {
+        name?: string;
+        weeksCount?: number;
+        daysCount?: number;
+        workoutsCount?: number;
+      };
+      let planDataStr: string;
+      try {
+        planDataStr = JSON.stringify(weeklyStructurePlan);
+        JSON.parse(planDataStr);
+      } catch {
+        return NextResponse.json({ error: 'Invalid weekly structure snapshot' }, { status: 400 });
+      }
+
+      const favoritePlan = await prisma.favoriteWeeklyPlan.create({
+        data: {
+          userId: dbUserId,
+          name: name || snapshot.name || 'Weekly structure',
+          description:
+            description || `Saved from weekly structure on ${new Date().toLocaleDateString()}`,
+          planData: planDataStr,
+          weeksCount: snapshot.weeksCount ?? 1,
+          daysCount: snapshot.daysCount ?? 0,
+          workoutsCount: snapshot.workoutsCount ?? 0,
+        },
+      });
+
+      return NextResponse.json(
+        { message: 'Weekly structure saved to favourites', favorite: favoritePlan },
+        { status: 201 }
+      );
+    }
 
     if (duplicateFromFavoriteId) {
       const source = await prisma.favoriteWeeklyPlan.findFirst({

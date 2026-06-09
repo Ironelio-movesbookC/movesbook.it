@@ -32,6 +32,7 @@ export default function CopyDayModal({
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTargetDayId, setSelectedTargetDayId] = useState<string>('');
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
+  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
 
   const selectedWeekData = useMemo(
     () => workoutPlan?.weeks?.find((w: any) => w.id === selectedWeek),
@@ -58,6 +59,7 @@ export default function CopyDayModal({
     setSelectedDate('');
     setSelectedTargetDayId('');
     setAvailableDates([]);
+    setConfirmOverwrite(false);
   }, [isOpen, sourceDay?.id]);
 
   useEffect(() => {
@@ -79,6 +81,12 @@ export default function CopyDayModal({
 
   const handleCopy = () => {
     if (!selectedWeek) return;
+    const targetDay = isTemplate
+      ? templateDaysInWeek.find((d: any) => d.id === selectedTargetDayId)
+      : yearlyDaysInWeek.find((d: any) => d.id === selectedTargetDayId);
+    const targetCount = targetDay?.workouts?.length ?? 0;
+    if (targetCount > 0 && !confirmOverwrite) return;
+
     if (isTemplate) {
       if (!selectedTargetDayId) return;
       onConfirm({ targetWeekId: selectedWeek, targetDayId: selectedTargetDayId });
@@ -98,7 +106,11 @@ export default function CopyDayModal({
 
   if (!isOpen) return null;
 
-  const canSubmit = Boolean(selectedWeek && selectedTargetDayId);
+  const targetDayData = isTemplate
+    ? templateDaysInWeek.find((d: any) => d.id === selectedTargetDayId)
+    : yearlyDaysInWeek.find((d: any) => d.id === selectedTargetDayId);
+  const targetHasContent = (targetDayData?.workouts?.length ?? 0) > 0;
+  const canSubmit = Boolean(selectedWeek && selectedTargetDayId && (!targetHasContent || confirmOverwrite));
 
   return (
     <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black bg-opacity-50 p-4">
@@ -159,11 +171,15 @@ export default function CopyDayModal({
               <div className="grid grid-cols-2 gap-2">
                 {templateDaysInWeek.map((day: any) => {
                   const isSource = day.id === sourceDay.id;
+                  const workoutCount = day.workouts?.length ?? 0;
                   return (
                     <button
                       key={day.id}
                       type="button"
-                      onClick={() => setSelectedTargetDayId(day.id)}
+                      onClick={() => {
+                        setSelectedTargetDayId(day.id);
+                        setConfirmOverwrite(false);
+                      }}
                       disabled={isSource}
                       className={`px-3 py-2 text-sm rounded border transition-colors ${
                         selectedTargetDayId === day.id
@@ -174,6 +190,9 @@ export default function CopyDayModal({
                       }`}
                     >
                       {templateDaySlotLabel(day)}
+                      <span className="block text-xs opacity-80">
+                        {workoutCount === 0 ? 'Empty' : `${workoutCount} workout(s)`}
+                      </span>
                       {isSource && <span className="block text-xs">(Source)</span>}
                     </button>
                   );
@@ -201,6 +220,7 @@ export default function CopyDayModal({
                       onClick={() => {
                         setSelectedTargetDayId(day.id);
                         setSelectedDate(dateObj.toISOString().split('T')[0]);
+                        setConfirmOverwrite(false);
                       }}
                       disabled={isSource}
                       className={`px-3 py-2 text-sm rounded border transition-colors ${
@@ -217,7 +237,7 @@ export default function CopyDayModal({
                         day: 'numeric',
                       })}
                       <span className="block text-xs opacity-80">
-                        {workoutCount} workout{workoutCount === 1 ? '' : 's'}
+                        {workoutCount === 0 ? 'Empty' : `${workoutCount} workout(s)`}
                       </span>
                       {isSource && <span className="block text-xs">(Source)</span>}
                     </button>
@@ -225,6 +245,20 @@ export default function CopyDayModal({
                 })}
               </div>
             </div>
+          )}
+
+          {targetHasContent && (
+            <label className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={confirmOverwrite}
+                onChange={(e) => setConfirmOverwrite(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span className="text-sm text-amber-900">
+                The target day already has workouts. Replace them with the copied day.
+              </span>
+            </label>
           )}
         </div>
 

@@ -39,8 +39,12 @@ interface WorkoutTableProps {
   onShowOverview?: () => void;
   onShareWorkout?: (workout: any, day: any) => void;
   onExportPdfWorkout?: (workout: any, day: any) => void;
+  onExportWorkoutToArchive?: (workout: any, day: any) => void;
+  onExportWorkoutToDone?: (workout: any, day: any) => void;
+  onExportWorkoutToYearly?: (workout: any, day: any) => void;
   onPrintWorkout?: (workout: any, day: any) => void;
   onAddMoveframe: () => void;
+  onQuickTrainingEntry?: () => void;
   onAddMoveframeAfter?: (moveframe: any, index: number, workout: any, day: any) => void;
   onEditMoveframe?: (moveframe: any) => void;
   onDeleteMoveframe?: (moveframe: any) => void;
@@ -88,8 +92,12 @@ export default function WorkoutTable({
   onShowOverview,
   onShareWorkout,
   onExportPdfWorkout,
+  onExportWorkoutToArchive,
+  onExportWorkoutToDone,
+  onExportWorkoutToYearly,
   onPrintWorkout,
   onAddMoveframe,
+  onQuickTrainingEntry,
   onAddMoveframeAfter,
   onEditMoveframe,
   onDeleteMoveframe,
@@ -567,15 +575,27 @@ export default function WorkoutTable({
             >
               Add a Moveframe
             </button>
+            {onQuickTrainingEntry && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onQuickTrainingEntry();
+                }}
+                className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors font-medium whitespace-nowrap flex-shrink-0"
+                title="Quick training entry"
+              >
+                Quick entry
+              </button>
+            )}
             <button 
               onClick={(e) => {
                 e.stopPropagation();
                 if (onCopyWorkout) onCopyWorkout(workout, day);
               }}
               className="px-2 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600 transition-colors whitespace-nowrap flex-shrink-0"
-              title="Copy to another day…"
+              title={activeSection === 'D' ? 'Clone to another archive day…' : 'Copy to another day…'}
             >
-              Copy
+              {activeSection === 'D' ? 'Clone' : 'Copy'}
             </button>
             <button
               onClick={(e) => {
@@ -682,6 +702,45 @@ export default function WorkoutTable({
                     <span className="text-red-600">📕</span>
                     <span>Export PDF</span>
                   </button>
+                  {onExportWorkoutToDone && activeSection === 'B' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeDropdown();
+                        onExportWorkoutToDone(workout, day);
+                      }}
+                      className="w-full text-left px-3 py-2 text-[11px] hover:bg-emerald-50 transition-colors flex items-center gap-2 border-t border-gray-200"
+                    >
+                      <span className="text-emerald-700">✓</span>
+                      <span>Export to Workouts Done</span>
+                    </button>
+                  )}
+                  {onExportWorkoutToYearly && (activeSection === 'C' || activeSection === 'D') && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeDropdown();
+                        onExportWorkoutToYearly(workout, day);
+                      }}
+                      className="w-full text-left px-3 py-2 text-[11px] hover:bg-blue-50 transition-colors flex items-center gap-2 border-t border-gray-200"
+                    >
+                      <span className="text-blue-700">📅</span>
+                      <span>Export to Yearly Plan</span>
+                    </button>
+                  )}
+                  {onExportWorkoutToArchive && (activeSection === 'A' || activeSection === 'B' || activeSection === 'C') && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeDropdown();
+                        onExportWorkoutToArchive(workout, day);
+                      }}
+                      className="w-full text-left px-3 py-2 text-[11px] hover:bg-gray-100 transition-colors flex items-center gap-2 border-t border-gray-200"
+                    >
+                      <span className="text-gray-700">📦</span>
+                      <span>Export to Archive</span>
+                    </button>
+                  )}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1238,6 +1297,7 @@ export default function WorkoutTable({
             expandedMoveframeId={expandedMoveframeId}
             autoExpandAll={expandMovelaps}
             onAddMoveframe={onAddMoveframe}
+            onQuickTrainingEntry={onQuickTrainingEntry}
             onAddMoveframeAfter={onAddMoveframeAfter}
             onEditMoveframe={onEditMoveframe}
             onDeleteMoveframe={onDeleteMoveframe}

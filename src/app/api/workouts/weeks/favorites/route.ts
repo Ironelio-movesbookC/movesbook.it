@@ -209,15 +209,34 @@ export async function POST(req: NextRequest) {
     // Replace any existing favourite for the same plan week (prevents duplicate saves).
     const existingFavorites = await prisma.favoriteWeeklyPlan.findMany({
       where: { userId: dbUserId },
-      select: { id: true, planData: true },
+      select: { id: true, planData: true, name: true },
     });
 
     const newKey = getFavoriteWeeklyPlanDedupeKey(planDataObject);
+
     const duplicateIds = existingFavorites
       .filter((fav) => {
         const parsed = parseFavoriteWeeklyPlanData(fav.planData);
-        if (!parsed || !newKey) return false;
-        return getFavoriteWeeklyPlanDedupeKey(parsed) === newKey;
+        if (!parsed || typeof parsed !== 'object') return false;
+        const p = parsed as Record<string, unknown>;
+        if (newKey && getFavoriteWeeklyPlanDedupeKey(parsed) === newKey) return true;
+        if (
+          typeof p.sourcePlanId === 'string' &&
+          p.sourcePlanId === week.workoutPlanId &&
+          Number(p.sourceWeekNumber) === week.weekNumber
+        ) {
+          return true;
+        }
+        const weeksArr = p.weeks as Array<{ weekNumber?: number }> | undefined;
+        if (
+          weeksArr?.[0]?.weekNumber === week.weekNumber &&
+          (fav.name === displayName ||
+            fav.name === `Week ${week.weekNumber}` ||
+            String(p.name ?? '') === displayName)
+        ) {
+          return true;
+        }
+        return false;
       })
       .map((fav) => fav.id);
 

@@ -54,6 +54,7 @@ import WeeklyWorkoutStructurePanel from '@/components/workouts/WeeklyWorkoutStru
 import WorkoutCalendarView from '@/components/workouts/WorkoutCalendarView';
 import WorkoutTreeView from '@/components/workouts/WorkoutTreeView';
 import DayTableView from '@/components/workouts/tables/DayTableView';
+import ArchiveWorkoutLibrary from '@/components/workouts/ArchiveWorkoutLibrary';
 import { saveWeekToFavorites } from '@/lib/saveFavoriteWeek';
 import StyledTableWrapper from '@/components/workouts/tables/StyledTableWrapper';
 import AddWorkoutModal from '@/components/workouts/AddWorkoutModal';
@@ -67,6 +68,11 @@ import AddMovelapModal from '@/components/workouts/modals/AddMovelapModal';
 import EditMoveframeModal from '@/components/workouts/modals/EditMoveframeModal';
 import EditMovelapModal from '@/components/workouts/modals/EditMovelapModal';
 import AddEditMovelapModal from '@/components/workouts/AddEditMovelapModal';
+import QuickTrainingEntryModal from '@/components/workouts/modals/QuickTrainingEntryModal';
+import {
+  buildQuickEntryMoveframePayload,
+  type QuickTrainingEntryForm,
+} from '@/lib/quickTrainingEntry';
 import CopyDayModal from '@/components/workouts/modals/CopyDayModal';
 import ExportDayToTemplateModal from '@/components/workouts/modals/ExportDayToTemplateModal';
 import MoveDayModal from '@/components/workouts/modals/MoveDayModal';
@@ -87,6 +93,9 @@ import ShareDayModal from '@/components/workouts/modals/ShareDayModal';
 import WeekTotalsModal from '@/components/workouts/modals/WeekTotalsModal';
 import WeeklyInfoModal from '@/components/workouts/WeeklyInfoModal';
 import CopyWeekModal from '@/components/workouts/modals/CopyWeekModal';
+import ExportWorkoutToArchiveModal from '@/components/workouts/modals/ExportWorkoutToArchiveModal';
+import ExportWorkoutToDoneModal from '@/components/workouts/modals/ExportWorkoutToDoneModal';
+import ExportWorkoutToYearlyModal from '@/components/workouts/modals/ExportWorkoutToYearlyModal';
 import PlanGymWeekModal, {
   type PlanGymWeekAnswers,
   type GoalId,
@@ -690,6 +699,12 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [dayToShare, setDayToShare] = useState<any>(null);
   const [showExportDayToTemplateModal, setShowExportDayToTemplateModal] = useState(false);
   const [dayForExportToTemplate, setDayForExportToTemplate] = useState<any>(null);
+  const [showExportWorkoutToArchiveModal, setShowExportWorkoutToArchiveModal] = useState(false);
+  const [workoutForExportToArchive, setWorkoutForExportToArchive] = useState<any>(null);
+  const [showExportWorkoutToDoneModal, setShowExportWorkoutToDoneModal] = useState(false);
+  const [workoutForExportToDone, setWorkoutForExportToDone] = useState<any>(null);
+  const [showExportWorkoutToYearlyModal, setShowExportWorkoutToYearlyModal] = useState(false);
+  const [workoutForExportToYearly, setWorkoutForExportToYearly] = useState<any>(null);
   const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
   const [showMoveWeekModal, setShowMoveWeekModal] = useState(false);
   const [showWeekTotalsModal, setShowWeekTotalsModal] = useState(false);
@@ -707,6 +722,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const moveframeModalMode = modes.moveframeModalMode;
   const setMoveframeModalMode = setters.setMoveframeModalMode;
   const [moveframeInsertIndex, setMoveframeInsertIndex] = useState<number | null>(null); // For "Add MF" after specific moveframe
+  const [showQuickTrainingEntry, setShowQuickTrainingEntry] = useState(false);
   
   // ==================== DRAG & DROP STATE ====================
   // Note: activeWorkout and activeMoveframe already defined above for workout context
@@ -969,6 +985,31 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
     setEditingMoveframe(null);
     setMoveframeInsertIndex(null); // Reset insert index for regular add (append to end)
     modalActions.openAddMoveframeModal();
+  };
+
+  const openQuickTrainingEntry = (workout: any, day: any) => {
+    if (!day) {
+      showMessage('warning', 'Please select a day first');
+      return;
+    }
+    if (!workout) {
+      showMessage('warning', 'Please select a workout first');
+      return;
+    }
+    setActiveWorkout(workout);
+    setActiveDay(day);
+    setSelectedWorkout(workout.id);
+    setSelectedDay(day);
+    setShowQuickTrainingEntry(true);
+  };
+
+  const handleQuickTrainingSave = async (form: QuickTrainingEntryForm) => {
+    if (!activeWorkout?.id) {
+      throw new Error('No workout selected');
+    }
+    const payload = buildQuickEntryMoveframePayload(form, activeWorkout.id, 'default');
+    await moveframeHandlers.createMoveframe(payload, getHandlerDeps());
+    showMessage('success', 'Quick training entry saved');
   };
   
   /**
@@ -1795,9 +1836,6 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 Exclude stretching from the totals
               </label>
             </div>
-            <span className="text-xs text-yellow-700">
-              ⚠️ Note: Stretching is auto-excluded when 4+ sports are selected in a day
-            </span>
           </div>
         }
           />
@@ -1868,6 +1906,96 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
               <div className="flex items-center justify-center h-96">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
               </div>
+            ) : activeSection === 'D' ? (
+              <ArchiveWorkoutLibrary
+                workoutPlan={workoutPlan}
+                reloadWorkouts={async () => {
+                  await loadWorkoutData(activeSection);
+                }}
+                onCloneWorkout={(workout, day) => {
+                  setWorkoutForCopyMoveModal(workout);
+                  setActiveWorkout(workout);
+                  setActiveDay(day);
+                  modalActions.openCopyWorkoutModal();
+                }}
+                onExportWorkoutToYearly={(workout) => {
+                  setWorkoutForExportToYearly(workout);
+                  setShowExportWorkoutToYearlyModal(true);
+                }}
+                onSaveFavoriteWorkout={async (workout) => {
+                  try {
+                    const token = localStorage.getItem('token');
+                    const response = await fetch('/api/workouts/favorites', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                      },
+                      body: JSON.stringify({ workoutId: workout.id }),
+                    });
+                    if (response.ok) {
+                      showMessage('success', `"${workout.name}" saved to favourites!`);
+                    } else if (response.status === 409) {
+                      showMessage('warning', 'This workout is already in your favourites.');
+                    } else {
+                      const error = await response.json();
+                      showMessage('error', error.error || 'Failed to save to favourites');
+                    }
+                  } catch {
+                    showMessage('error', 'Error saving workout to favourites');
+                  }
+                }}
+                onOverviewWorkout={(workout, day) => {
+                  const transformedWorkout = {
+                    ...workout,
+                    workoutData: JSON.stringify({
+                      workout: {
+                        id: workout.id,
+                        name: workout.name,
+                        code: workout.code,
+                        notes: workout.notes,
+                        description: workout.description,
+                      },
+                      moveframes: workout.moveframes || [],
+                      sports: Array.from(
+                        new Set(
+                          (workout.moveframes || [])
+                            .map((mf: { sport?: string }) => mf.sport)
+                            .filter(Boolean)
+                        )
+                      ),
+                    }),
+                  };
+                  setWorkoutForOverview(transformedWorkout);
+                  setDayForWorkoutOverview(day);
+                  setShowWorkoutOverviewModal(true);
+                }}
+                onEditWorkout={(workout, day) => {
+                  setEditingWorkout(workout);
+                  setActiveWorkout(workout);
+                  setActiveDay(day);
+                  setWorkoutModalMode('edit');
+                  modalActions.setShowAddWorkoutModal(true);
+                }}
+                onDeleteWorkout={async (workout) => {
+                  if (!confirm('Delete this archived workout?')) return;
+                  try {
+                    const token = localStorage.getItem('token');
+                    const response = await fetch(`/api/workouts/sessions/${workout.id}`, {
+                      method: 'DELETE',
+                      headers: { Authorization: `Bearer ${token}` },
+                    });
+                    if (response.ok) {
+                      showMessage('success', 'Workout deleted');
+                      await loadWorkoutData(activeSection);
+                    } else {
+                      showMessage('error', 'Failed to delete workout');
+                    }
+                  } catch {
+                    showMessage('error', 'Error deleting workout');
+                  }
+                }}
+              />
             ) : viewMode === 'tree' ? (
               <div className="flex flex-col h-full">
                 {/* CSS for rich text preview */}
@@ -2089,7 +2217,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                           title="Copy this week"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                          Copy
+                          Assign
                         </button>
 
                         {/* Overview Button */}
@@ -2206,9 +2334,6 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                        Exclude stretching from the totals
                      </label>
                      </div>
-                     <span className="text-xs text-yellow-700">
-                       ⚠️ Note: Stretching is auto-excluded when 4+ sports are selected in a day
-                     </span>
                    </div>
                  }
                  totalYearWeeks={52}
@@ -2236,6 +2361,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                      : workoutPlan
                  }
                 activeSection={activeSection}
+                activeSubSection={activeSubSection}
                 iconType={iconType}
                 currentPageStart={currentPageStart}
                 setCurrentPageStart={setCurrentPageStart}
@@ -2411,6 +2537,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   setEditingMoveframe(null);
                   modalActions.setShowAddMoveframeModal(true);
                 }}
+                onQuickTrainingEntry={openQuickTrainingEntry}
                 onAddMoveframeAfter={handleAddMoveframeAfter}
                 onEditMoveframe={(moveframe, workout, day) => {
                   const notes = typeof moveframe?.notes === 'string' ? moveframe.notes : '';
@@ -2649,6 +2776,18 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   setDayForWorkoutPrint(day);
                   setAutoPrintWorkout(true);
                   setShowWorkoutPrintModal(true);
+                }}
+                onExportWorkoutToArchive={(workout) => {
+                  setWorkoutForExportToArchive(workout);
+                  setShowExportWorkoutToArchiveModal(true);
+                }}
+                onExportWorkoutToDone={(workout) => {
+                  setWorkoutForExportToDone(workout);
+                  setShowExportWorkoutToDoneModal(true);
+                }}
+                onExportWorkoutToYearly={(workout) => {
+                  setWorkoutForExportToYearly(workout);
+                  setShowExportWorkoutToYearlyModal(true);
                 }}
                 onPrintWorkout={(workout, day) => {
                   setWorkoutToPrint(workout);
@@ -3558,6 +3697,20 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
            }}
         />
        )}
+
+      {showQuickTrainingEntry && activeWorkout && activeDay && (
+        <QuickTrainingEntryModal
+          isOpen={showQuickTrainingEntry}
+          context={activeSection === 'W' ? 'W' : (activeSection as 'A' | 'B' | 'C' | 'D')}
+          workout={activeWorkout}
+          onClose={() => {
+            setShowQuickTrainingEntry(false);
+            setActiveWorkout(null);
+            setActiveDay(null);
+          }}
+          onSave={handleQuickTrainingSave}
+        />
+      )}
        
       <PlanGymWeekModal
         isOpen={showPlanGymWeekModal}
@@ -4405,6 +4558,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           sourceWorkout={workoutForCopyMoveModal}
           workoutPlan={workoutPlan}
           activeSection={activeSectionForModals}
+          title={activeSectionForModals === 'D' ? 'Clone Workout (Archive)' : 'Copy Workout'}
+          actionLabel={activeSectionForModals === 'D' ? 'Clone Workout' : 'Copy Workout'}
           onConfirm={async (targetDayId, sessionNumber) => {
             try {
               const token = localStorage.getItem('token');
@@ -4426,7 +4581,12 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 throw new Error(error.error || 'Failed to copy workout');
               }
 
-              showMessage('success', 'Workout copied successfully');
+              showMessage(
+                'success',
+                activeSectionForModals === 'D'
+                  ? 'Workout cloned in Archive successfully.'
+                  : 'Workout copied successfully'
+              );
               modalActions.closeCopyWorkoutModal();
               setWorkoutForCopyMoveModal(null);
               
@@ -4870,18 +5030,147 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
         />
       )}
 
+      {/* Export workout to Archive */}
+      {showExportWorkoutToArchiveModal && workoutForExportToArchive && (
+        <ExportWorkoutToArchiveModal
+          isOpen={showExportWorkoutToArchiveModal}
+          sourceWorkout={workoutForExportToArchive}
+          onClose={() => {
+            setShowExportWorkoutToArchiveModal(false);
+            setWorkoutForExportToArchive(null);
+          }}
+          onConfirm={async (targetDayId, sessionNumber) => {
+            try {
+              const token = localStorage.getItem('token');
+              const response = await fetch('/api/workouts/sessions/copy', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  sourceWorkoutId: workoutForExportToArchive.id,
+                  targetDayId,
+                  sessionNumber,
+                }),
+              });
+              if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to export workout to archive');
+              }
+              showMessage('success', 'Workout exported to Archive successfully.');
+              setShowExportWorkoutToArchiveModal(false);
+              setWorkoutForExportToArchive(null);
+            } catch (error: any) {
+              showMessage('error', error.message || 'Failed to export workout to archive');
+            }
+          }}
+        />
+      )}
+
+      {showExportWorkoutToDoneModal && workoutForExportToDone && (
+        <ExportWorkoutToDoneModal
+          isOpen={showExportWorkoutToDoneModal}
+          sourceWorkout={workoutForExportToDone}
+          onClose={() => {
+            setShowExportWorkoutToDoneModal(false);
+            setWorkoutForExportToDone(null);
+          }}
+          onConfirm={async (targetDayIds) => {
+            try {
+              const token = localStorage.getItem('token');
+              let exported = 0;
+              for (const targetDayId of targetDayIds) {
+                const response = await fetch('/api/workouts/sessions/duplicate', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({
+                    workoutId: workoutForExportToDone.id,
+                    targetDayId,
+                  }),
+                });
+                if (!response.ok) {
+                  const error = await response.json();
+                  throw new Error(error.error || 'Failed to export workout to Done');
+                }
+                exported++;
+              }
+              showMessage(
+                'success',
+                `Workout exported to ${exported} day(s) in Workouts Done.`
+              );
+              setShowExportWorkoutToDoneModal(false);
+              setWorkoutForExportToDone(null);
+            } catch (error: any) {
+              showMessage('error', error.message || 'Failed to export workout to Done');
+              throw error;
+            }
+          }}
+        />
+      )}
+
+      {showExportWorkoutToYearlyModal && workoutForExportToYearly && (
+        <ExportWorkoutToYearlyModal
+          isOpen={showExportWorkoutToYearlyModal}
+          sourceWorkout={workoutForExportToYearly}
+          onClose={() => {
+            setShowExportWorkoutToYearlyModal(false);
+            setWorkoutForExportToYearly(null);
+          }}
+          onConfirm={async (targetDayIds) => {
+            try {
+              const token = localStorage.getItem('token');
+              let exported = 0;
+              for (const targetDayId of targetDayIds) {
+                const response = await fetch('/api/workouts/sessions/duplicate', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({
+                    workoutId: workoutForExportToYearly.id,
+                    targetDayId,
+                  }),
+                });
+                if (!response.ok) {
+                  const error = await response.json();
+                  throw new Error(error.error || 'Failed to export workout to Yearly Plan');
+                }
+                exported++;
+              }
+              showMessage(
+                'success',
+                `Workout exported to ${exported} day(s) in Yearly Plan.`
+              );
+              setShowExportWorkoutToYearlyModal(false);
+              setWorkoutForExportToYearly(null);
+            } catch (error: any) {
+              showMessage('error', error.message || 'Failed to export workout to Yearly Plan');
+              throw error;
+            }
+          }}
+        />
+      )}
+
       {/* Copy Week Modal */}
       {showCopyWeekModal && currentWeek && (
         <CopyWeekModal
           isOpen={showCopyWeekModal}
           sourceWeek={currentWeek}
           allWeeks={targetWeeks}
+          title="Assign Week"
+          actionLabel="Assign"
           onClose={() => {
             setShowCopyWeekModal(false);
             setCurrentWeek(null);
             setTargetWeeks([]);
           }}
           onCopy={handleCopyWeek}
+          checkRecipientStatus
         />
       )}
 

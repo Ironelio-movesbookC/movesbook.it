@@ -9,7 +9,7 @@ import {
 
 /**
  * POST /api/workouts/favorites/apply
- * Copy a favourite workout snapshot onto a yearly-plan day.
+ * Copy a favourite workout snapshot onto a planner day (Yearly, Done, or Archive).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -23,7 +23,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    const { favoriteId, dayId } = await req.json();
+    const {
+      favoriteId,
+      dayId,
+      sessionNumber,
+      replaceExisting = false,
+    } = await req.json();
     if (!favoriteId || !dayId) {
       return NextResponse.json(
         { error: 'favoriteId and dayId are required' },
@@ -58,15 +63,50 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Target day not found' }, { status: 404 });
     }
 
+    const planType = workoutDay.workoutWeek?.workoutPlan?.type;
+    const allowedPlanTypes = ['YEARLY_PLAN', 'WORKOUTS_DONE', 'ARCHIVE'];
+    if (!planType || !allowedPlanTypes.includes(planType)) {
+      return NextResponse.json({ error: 'Target day must belong to a valid planner section' }, { status: 400 });
+    }
+
+    const targetSessionNumber =
+      typeof sessionNumber === 'number' && sessionNumber >= 1 && sessionNumber <= 3
+        ? sessionNumber
+        : null;
+
+    const existingAtSlot = targetSessionNumber
+      ? await prisma.workoutSession.findFirst({
+          where: { workoutDayId: dayId, sessionNumber: targetSessionNumber },
+        })
+      : null;
+
+    if (existingAtSlot && !replaceExisting) {
+      return NextResponse.json(
+        { error: 'Target workout slot is occupied. Confirm replace to overwrite.' },
+        { status: 409 }
+      );
+    }
+
     const existingCount = await prisma.workoutSession.count({
       where: { workoutDayId: dayId },
     });
 
-    if (existingCount >= 3) {
+    if (!existingAtSlot && existingCount >= 3) {
       return NextResponse.json(
         { error: 'Maximum 3 workouts per day allowed' },
         { status: 400 }
       );
+    }
+
+    if (existingAtSlot && replaceExisting) {
+      for (const mf of await prisma.moveframe.findMany({
+        where: { workoutSessionId: existingAtSlot.id },
+        select: { id: true },
+      })) {
+        await prisma.movelap.deleteMany({ where: { moveframeId: mf.id } });
+      }
+      await prisma.moveframe.deleteMany({ where: { workoutSessionId: existingAtSlot.id } });
+      await prisma.workoutSession.delete({ where: { id: existingAtSlot.id } });
     }
 
     const lastSession = await prisma.workoutSession.findFirst({
@@ -75,7 +115,8 @@ export async function POST(req: NextRequest) {
       select: { sessionNumber: true },
     });
 
-    const sessionNumber = (lastSession?.sessionNumber ?? 0) + 1;
+    const resolvedSessionNumber =
+      targetSessionNumber ?? (lastSession?.sessionNumber ?? 0) + 1;
 
     let defaultSection = await prisma.workoutSection.findFirst({
       where: { userId: decoded.userId },
@@ -101,7 +142,7 @@ export async function POST(req: NextRequest) {
         mainGoal: parsed.workout.mainGoal ?? null,
         intensity: parsed.workout.intensity ?? 'Medium',
         tags: parsed.workout.tags ?? null,
-        ...buildFavoriteSessionCreateData(parsed, sessionNumber, defaultSection.id),
+        ...buildFavoriteSessionCreateData(parsed, resolvedSessionNumber, defaultSection.id),
       },
       include: {
         sports: true,

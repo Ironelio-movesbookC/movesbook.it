@@ -11,6 +11,7 @@ import FavouritesSettings from '@/components/settings/FavouritesSettings';
 import MyBestSettings from '@/components/settings/MyBestSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
 import WorkoutsParametersSettings from '@/components/settings/WorkoutsParametersSettings';
+import GlobalWorkoutArchiveClient from '@/components/admin/GlobalWorkoutArchiveClient';
 import { useAuth } from '@/hooks/useAuth';
 import {
   isFullAdminPanelSession,
@@ -28,6 +29,7 @@ import {
   Trophy,
   Grid,
   Save,
+  Archive,
 } from 'lucide-react';
 import {
   SettingsLayoutExpandProvider,
@@ -38,6 +40,7 @@ type SettingsSection =
   | 'backgrounds'
   | 'tools'
   | 'technical'
+  | 'globalWorkoutArchive'
   | 'workoutParameters'
   | 'favourites'
   | 'mybest'
@@ -60,6 +63,7 @@ export default function SettingsPage() {
       'backgrounds',
       'tools',
       'technical',
+      'globalWorkoutArchive',
       'workoutParameters',
       'favourites',
       'mybest',
@@ -132,6 +136,7 @@ export default function SettingsPage() {
       'backgrounds',
       'tools',
       'technical',
+      'globalWorkoutArchive',
       'workoutParameters',
       'favourites',
       'grid',
@@ -160,6 +165,11 @@ export default function SettingsPage() {
         { id: 'backgrounds' as SettingsSection, label: t('settings_backgrounds'), icon: Palette },
         { id: 'tools' as SettingsSection, label: 'Tools Settings', icon: SettingsIcon },
         { id: 'technical' as SettingsSection, label: 'Technical Settings', icon: Wrench },
+        {
+          id: 'globalWorkoutArchive' as SettingsSection,
+          label: 'Global archive of workouts & weekly plans',
+          icon: Archive,
+        },
         { id: 'workoutParameters' as SettingsSection, label: 'Workouts parameters settings', icon: SlidersHorizontal },
         { id: 'favourites' as SettingsSection, label: t('settings_favourites'), icon: Star },
       ]
@@ -233,7 +243,7 @@ function SettingsPageLayout({
 
   const handleSectionChange = useCallback(
     (section: SettingsSection) => {
-      if (section !== 'technical' && section !== 'tools') {
+      if (section !== 'technical' && section !== 'tools' && section !== 'globalWorkoutArchive') {
         layoutExpand?.setContentExpanded(false);
       }
       setActiveSection(section);
@@ -242,7 +252,7 @@ function SettingsPageLayout({
   );
 
   useEffect(() => {
-    if (activeSection !== 'technical' && activeSection !== 'tools') {
+    if (activeSection !== 'technical' && activeSection !== 'tools' && activeSection !== 'globalWorkoutArchive') {
       layoutExpand?.setContentExpanded(false);
     }
   }, [activeSection, layoutExpand]);
@@ -332,8 +342,10 @@ function SettingsPageLayout({
                           : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
                       }`}
                     >
-                      <Icon className="w-5 h-5 mr-3" />
-                      <span className="font-semibold text-sm xl:text-base">{section.label}</span>
+                      <Icon className="w-5 h-5 mr-3 shrink-0" />
+                      <span className="font-semibold text-sm xl:text-base leading-snug">
+                        {section.label}
+                      </span>
                     </button>
                   );
                 })}
@@ -364,6 +376,7 @@ function SettingsPageLayout({
             {activeSection === 'backgrounds' && <BackgroundsColorsSettings isAdmin={isAdmin} />}
             {activeSection === 'tools' && <ToolsSettings isAdmin={isAdmin} userType={user?.userType} mode="tools" initialTab={requestedTab as any} />}
             {activeSection === 'technical' && <ToolsSettings isAdmin={isAdmin} userType={user?.userType} mode="technical" initialTab={requestedTab as any} />}
+            {activeSection === 'globalWorkoutArchive' && isAdmin && <GlobalWorkoutArchiveClient />}
             {activeSection === 'workoutParameters' && <WorkoutsParametersSettings initialTab={requestedWorkoutTab} />}
             {activeSection === 'favourites' && <FavouritesSettings />}
               {activeSection === 'mybest' && <MyBestSettings />}

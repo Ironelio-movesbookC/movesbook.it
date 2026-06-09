@@ -4,6 +4,66 @@ import { verifyToken } from '@/lib/auth';
 
 const prisma = new PrismaClient();
 
+function planTypeToStorageZone(type: string): 'A' | 'B' | 'C' | 'D' {
+  if (type === 'TEMPLATE_WEEKS') return 'A';
+  if (type === 'YEARLY_PLAN') return 'B';
+  if (type === 'WORKOUTS_DONE') return 'C';
+  if (type === 'ARCHIVE') return 'D';
+  return 'B';
+}
+
+const dayIncludeTree = {
+  workouts: {
+    include: {
+      moveframes: {
+        include: {
+          movelaps: true,
+        },
+      },
+    },
+  },
+} as const;
+
+/** Yearly / Done weeks may be split across multiple DB week rows — merge all days for copy. */
+async function expandWeekWithAllPlanDays(week: {
+  id: string;
+  weekNumber: number;
+  workoutPlanId: string;
+  workoutPlan?: { type: string; id?: string } | null;
+  days: any[];
+}) {
+  const planType = week.workoutPlan?.type;
+  if (planType !== 'YEARLY_PLAN' && planType !== 'WORKOUTS_DONE') {
+    return week;
+  }
+
+  const planId = week.workoutPlanId || week.workoutPlan?.id;
+  if (!planId) return week;
+
+  const storageZone = planTypeToStorageZone(planType);
+  const allDays = await prisma.workoutDay.findMany({
+    where: {
+      weekNumber: week.weekNumber,
+      storageZone: storageZone as any,
+      workoutWeek: { workoutPlanId: planId },
+    },
+    include: dayIncludeTree,
+    orderBy: { dayOfWeek: 'asc' },
+  });
+
+  const byId = new Map<string, any>();
+  for (const day of allDays) {
+    if (day?.id) byId.set(day.id, day);
+  }
+
+  return {
+    ...week,
+    days: Array.from(byId.values()).sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    ),
+  };
+}
+
 function computeDayDateForWeek(
   weekNumber: number,
   dayOfWeek: number,
@@ -27,7 +87,8 @@ async function ensureTargetDaySlot(
     date: Date;
   },
   targetWeek: { id: string; weekNumber: number; days: any[] },
-  userId: string
+  userId: string,
+  targetStorageZone: 'A' | 'B' | 'C' | 'D'
 ) {
   const existing = targetWeek.days.find((d: any) => d.dayOfWeek === sourceDay.dayOfWeek);
   if (existing) return existing;
@@ -51,7 +112,7 @@ async function ensureTargetDaySlot(
       weekNumber: targetWeek.weekNumber,
       date: dayDate,
       periodId: sourceDay.periodId,
-      storageZone: sourceDay.storageZone as any,
+      storageZone: targetStorageZone as any,
       weather: '',
       feelingStatus: '5',
       notes: '',
@@ -137,7 +198,8 @@ export async function POST(req: NextRequest) {
                 }
               }
             }
-          }
+          },
+          workoutPlan: { select: { type: true, id: true } }
         }
       });
 
@@ -147,6 +209,8 @@ export async function POST(req: NextRequest) {
           { status: 404 }
         );
       }
+
+      sourceWeek = await expandWeekWithAllPlanDays(sourceWeek);
 
       targetWeek = await prisma.workoutWeek.findFirst({
         where: {
@@ -166,7 +230,8 @@ export async function POST(req: NextRequest) {
                 }
               }
             }
-          }
+          },
+          workoutPlan: { select: { type: true, id: true } }
         }
       });
 
@@ -176,6 +241,8 @@ export async function POST(req: NextRequest) {
           { status: 404 }
         );
       }
+
+      targetWeek = await expandWeekWithAllPlanDays(targetWeek);
 
       console.log(`📋 Copying from week ${sourceWeek.weekNumber} (${sourceWeek.days.length} days) to week ${targetWeek.weekNumber}`);
     } else {
@@ -293,6 +360,21 @@ export async function POST(req: NextRequest) {
     }
 
     // Use transaction to copy all data
+    let targetStorageZone: 'A' | 'B' | 'C' | 'D' = 'B';
+    if (targetWeek.workoutPlan?.type) {
+      targetStorageZone = planTypeToStorageZone(targetWeek.workoutPlan.type);
+    } else if (!useIdBased && targetSection) {
+      const targetType =
+        targetSection === 'B'
+          ? 'YEARLY_PLAN'
+          : targetSection === 'C'
+            ? 'WORKOUTS_DONE'
+            : targetSection === 'D'
+              ? 'ARCHIVE'
+              : 'TEMPLATE_WEEKS';
+      targetStorageZone = planTypeToStorageZone(targetType);
+    }
+
     await prisma.$transaction(async (tx) => {
       // Delete existing workouts in target week
       for (const day of targetWeek.days) {
@@ -320,7 +402,8 @@ export async function POST(req: NextRequest) {
           tx,
           sourceDay,
           targetWeek,
-          decoded.userId
+          decoded.userId,
+          targetStorageZone
         );
 
         // Copy each workout

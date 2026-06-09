@@ -233,7 +233,7 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
                   </Link>
                 ) : (
                   <Link
-                    href="/settings"
+                    href="/settings?section=globalWorkoutArchive"
                     className="p-2 hover:bg-red-600 rounded-lg transition"
                     title="Sport settings"
                   >
@@ -366,7 +366,7 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
               </Link>
 
               <Link 
-                href="/settings"
+                href="/settings?section=globalWorkoutArchive"
                 className="flex items-center gap-2 px-3 lg:px-4 py-2.5 lg:py-3 hover:bg-gray-600 transition border-r border-gray-600 text-sm"
               >
                 <Settings className="w-4 h-4" />
@@ -536,7 +536,7 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
             </Link>
 
             <Link 
-              href="/settings"
+              href="/settings?section=globalWorkoutArchive"
               onClick={() => setMobileMenuOpen(false)}
               className="flex items-center gap-3 px-5 py-3 hover:bg-gray-600 transition border-b border-gray-600"
             >
@@ -590,7 +590,7 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
                   Account
                 </div>
                 <Link
-                  href="/settings"
+                  href="/settings?section=globalWorkoutArchive"
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-3 px-6 py-4 hover:bg-gray-600 transition"
                 >

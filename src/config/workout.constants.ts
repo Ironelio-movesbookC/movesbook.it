@@ -56,7 +56,7 @@ export const WORKOUT_SECTIONS = {
     id: 'D' as const,
     name: 'Archive',
     description: 'Archived workouts and historical data',
-    planType: 'WORKOUTS_DONE',
+    planType: 'ARCHIVE',
     maxWeeks: 52,
     maxDays: 364,
     canAddDays: true,

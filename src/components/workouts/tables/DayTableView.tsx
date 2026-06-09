@@ -11,6 +11,9 @@ import WorkoutHierarchyView from './WorkoutHierarchyView';
 import WeeklyInfoModal from '../WeeklyInfoModal';
 import WeekTotalsModal from '../modals/WeekTotalsModal';
 import CopyWeekModal from '../modals/CopyWeekModal';
+import CloneWeekModal from '../modals/CloneWeekModal';
+import ExportWeekToPlanModal, { type ExportWeekDestination } from '../modals/ExportWeekToPlanModal';
+import CloneArchiveWeekModal from '../modals/CloneArchiveWeekModal';
 import MoveWeekModal from '../modals/MoveWeekModal';
 import DayInfoModal from '../DayInfoModal';
 import '../../../styles/sticky-table.css';
@@ -21,6 +24,7 @@ interface DayTableViewProps {
   workoutPlan: any;
   allWeeks?: any[]; // All weeks (unfiltered) for modal navigation
   activeSection?: 'A' | 'B' | 'C' | 'D'; // Active section for conditional display
+  activeSubSection?: 'A' | 'B' | 'C'; // Template plan A/B/C when in section A
   iconType?: 'emoji' | 'icon'; // Icon type override from parent
   currentPageStart?: number; // Current page start for Section B navigation
   setCurrentPageStart?: (page: number) => void; // Setter for current page start
@@ -55,6 +59,7 @@ interface DayTableViewProps {
   onEditMoveframe?: (moveframe: any, workout: any, day: any) => void;
   onEditMovelap?: (movelap: any, moveframe: any, workout: any, day: any) => void;
   onAddMoveframe?: (workout: any, day: any) => void;
+  onQuickTrainingEntry?: (workout: any, day: any) => void;
   onAddMoveframeAfter?: (moveframe: any, index: number, workout: any, day: any) => void;
   onAddMovelap?: (moveframe: any, workout: any, day: any) => void;
   onAddMovelapAfter?: (movelap: any, index: number, moveframe: any, workout: any, day: any) => void;
@@ -63,6 +68,9 @@ interface DayTableViewProps {
   onSaveFavoriteWorkout?: (workout: any, day: any) => void;
   onShareWorkout?: (workout: any, day: any) => void;
   onExportPdfWorkout?: (workout: any, day: any) => void;
+  onExportWorkoutToArchive?: (workout: any, day: any) => void;
+  onExportWorkoutToDone?: (workout: any, day: any) => void;
+  onExportWorkoutToYearly?: (workout: any, day: any) => void;
   onPrintWorkout?: (workout: any, day: any) => void;
   onShowWorkoutOverview?: (workout: any, day: any) => void;
   onDeleteMoveframe?: (moveframe: any, workout: any, day: any) => void;
@@ -107,6 +115,7 @@ export default function DayTableView({
   workoutPlan,
   allWeeks,
   activeSection = 'A',
+  activeSubSection = 'A',
   iconType: iconTypeProp,
   currentPageStart = 1,
   setCurrentPageStart,
@@ -141,6 +150,7 @@ export default function DayTableView({
   onEditMoveframe,
   onEditMovelap,
   onAddMoveframe,
+  onQuickTrainingEntry,
   onAddMoveframeAfter,
   onAddMovelap,
   onAddMovelapAfter,
@@ -150,6 +160,9 @@ export default function DayTableView({
   onSaveFavoriteWorkout,
   onShareWorkout,
   onExportPdfWorkout,
+  onExportWorkoutToArchive,
+  onExportWorkoutToDone,
+  onExportWorkoutToYearly,
   onPrintWorkout,
   onShowWorkoutOverview,
   onDeleteMoveframe,
@@ -193,6 +206,11 @@ export default function DayTableView({
   const [expandState, setExpandState] = useState<number>(0);
   const [showWeekTotalsModal, setShowWeekTotalsModal] = useState(false);
   const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
+  const [copyWeekModalMode, setCopyWeekModalMode] = useState<'assign' | 'copy'>('copy');
+  const [showCloneWeekModal, setShowCloneWeekModal] = useState(false);
+  const [showCloneArchiveWeekModal, setShowCloneArchiveWeekModal] = useState(false);
+  const [showExportWeekModal, setShowExportWeekModal] = useState(false);
+  const [exportWeekDestination, setExportWeekDestination] = useState<ExportWeekDestination>('ARCHIVE');
   const [showMoveWeekModal, setShowMoveWeekModal] = useState(false);
   const [autoPrintWeek, setAutoPrintWeek] = useState(false);
   const [showAllWeeksInModal, setShowAllWeeksInModal] = useState(false);
@@ -441,16 +459,51 @@ export default function DayTableView({
       ? mergeWeeksByWeekNumber(sortedWeeks)
       : [sortedWeeks[currentWeekIndex]].filter(Boolean);
 
-  const handleSaveWeekFavorite = async (week: any) => {
-    if (!week?.id || savingFavoriteWeekId) return;
+  const resolveDayFromPlan = (dayId: string): any | null => {
+    const merged = mergeWeeksByWeekNumber(workoutPlan?.weeks ?? []);
+    for (const week of merged) {
+      const day = week.days?.find((d: any) => d.id === dayId);
+      if (day) {
+        return { ...day, weekNumber: week.weekNumber };
+      }
+    }
+    for (const week of workoutPlan?.weeks ?? []) {
+      const day = week.days?.find((d: any) => d.id === dayId);
+      if (day) {
+        return { ...day, weekNumber: week.weekNumber };
+      }
+    }
+    return null;
+  };
 
-    setSavingFavoriteWeekId(week.id);
+  const getSaveWeekLockKey = (week: any) =>
+    `${workoutPlan?.id ?? 'plan'}-week-${week?.weekNumber ?? week?.id ?? '0'}`;
+
+  const handleSaveWeekFavorite = async (week: any) => {
+    if (!week?.id) return;
+
+    const logicalWeek =
+      activeSection === 'B' || activeSection === 'C'
+        ? mergeWeeksByWeekNumber(sortedWeeks).find((w) => w.weekNumber === week.weekNumber) || week
+        : week;
+
+    const lockKey = getSaveWeekLockKey(logicalWeek);
+    if (savingFavoriteWeekId === lockKey) return;
+
+    setSavingFavoriteWeekId(lockKey);
     try {
-      const weekNumber = week.weekNumber || 1;
-      const result = await saveWeekToFavorites(week, {
-        name: `Week ${weekNumber}`,
-        description: `Saved from ${new Date().toLocaleDateString()}`,
-      });
+      const weekNumber = logicalWeek.weekNumber || 1;
+      const defaultName =
+        activeSection === 'D'
+          ? `Archive Week ${weekNumber}`
+          : `Week ${weekNumber}`;
+      const result = await saveWeekToFavorites(
+        { ...logicalWeek, workoutPlanId: workoutPlan?.id },
+        {
+          name: defaultName,
+          description: `Saved from ${new Date().toLocaleDateString()}`,
+        }
+      );
 
       if (result.ok) {
         alert(result.message);
@@ -459,6 +512,160 @@ export default function DayTableView({
       }
     } finally {
       setSavingFavoriteWeekId(null);
+    }
+  };
+
+  const executeBulkDayAction = async () => {
+    if (selectedDays.size === 0) {
+      alert('Please select at least one day by checking the checkbox.');
+      return;
+    }
+    if (!selectedAction) {
+      alert('Please select an action from the dropdown.');
+      return;
+    }
+
+    const resolvedDays = Array.from(selectedDays)
+      .map((id) => resolveDayFromPlan(id))
+      .filter(Boolean) as any[];
+
+    if (resolvedDays.length === 0) {
+      alert('Could not resolve selected days. Refresh and try again.');
+      return;
+    }
+
+    switch (selectedAction) {
+      case 'copy': {
+        if (resolvedDays.length !== 1) {
+          alert('Select exactly one day to copy, then choose the target week and day.');
+          return;
+        }
+        onCopyDay?.(resolvedDays[0]);
+        break;
+      }
+      case 'move': {
+        if (resolvedDays.length !== 1) {
+          alert('Select exactly one day to move, then choose the target week and day.');
+          return;
+        }
+        onMoveDay?.(resolvedDays[0]);
+        break;
+      }
+      case 'delete': {
+        const dayCount = resolvedDays.length;
+        const isTemplate = activeSection === 'A';
+        const confirmMessage = isTemplate
+          ? `Clear all workouts from ${dayCount} selected day slot(s)?`
+          : `Delete ${dayCount} selected day(s) and all their workouts? This cannot be undone.`;
+        if (!confirm(confirmMessage)) return;
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+          alert('Please log in first');
+          return;
+        }
+
+        try {
+          for (const day of resolvedDays) {
+            const response = await fetch(
+              isTemplate
+                ? `/api/workouts/days/${day.id}/clear`
+                : `/api/workouts/days?dayId=${day.id}`,
+              {
+                method: isTemplate ? 'POST' : 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            );
+            if (!response.ok) {
+              const error = await response.json().catch(() => ({}));
+              throw new Error(error.error || 'Failed to delete day');
+            }
+          }
+          setSelectedDays(new Set());
+          setSelectedAction('');
+          if (reloadWorkouts) await reloadWorkouts();
+          alert(
+            isTemplate
+              ? `Cleared workouts from ${dayCount} day(s).`
+              : `Deleted ${dayCount} day(s).`
+          );
+        } catch (error) {
+          alert(error instanceof Error ? error.message : 'Failed to delete day(s)');
+        }
+        break;
+      }
+      case 'save-favorite': {
+        const weekNumbers = new Set(
+          resolvedDays.map((d) => d.weekNumber).filter((n) => n != null)
+        );
+
+        if (
+          weekNumbers.size === 1 &&
+          (activeSection === 'B' || activeSection === 'C') &&
+          resolvedDays.length >= 1
+        ) {
+          const weekNumber = Array.from(weekNumbers)[0];
+          const mergedWeek = mergeWeeksByWeekNumber(sortedWeeks).find(
+            (w) => w.weekNumber === weekNumber
+          );
+          if (mergedWeek) {
+            if (
+              !confirm(
+                `Save Week ${weekNumber} (${mergedWeek.days?.length ?? 0} days) as one favourite weekly plan?`
+              )
+            ) {
+              return;
+            }
+            await handleSaveWeekFavorite(mergedWeek);
+            setSelectedDays(new Set());
+            setSelectedAction('');
+            return;
+          }
+        }
+
+        if (!confirm(
+            `Save all workouts from ${resolvedDays.length} selected day(s) to favourite workouts?`
+          )
+        ) {
+          return;
+        }
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+          alert('Please log in first');
+          return;
+        }
+
+        let saved = 0;
+        let skipped = 0;
+        for (const day of resolvedDays) {
+          for (const workout of day.workouts ?? []) {
+            const response = await fetch('/api/workouts/favorites', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ workoutId: workout.id }),
+            });
+            if (response.ok) {
+              saved++;
+            } else {
+              skipped++;
+            }
+          }
+        }
+        setSelectedDays(new Set());
+        setSelectedAction('');
+        alert(
+          saved > 0
+            ? `Saved ${saved} workout(s) to favourites${skipped ? ` (${skipped} skipped)` : ''}.`
+            : 'No workouts were saved (days may be empty or already in favourites).'
+        );
+        break;
+      }
+      default:
+        alert('Please select a valid action.');
     }
   };
   
@@ -629,13 +836,12 @@ export default function DayTableView({
     setDayInfoModalOpen(true);
   };
 
-  const openCopyWeekModalForWeek = (sourceWeek: any) => {
-    if (activeSection === 'A') {
-      setTargetWeeks(sortedWeeks);
-      setCurrentWeekForModal(sourceWeek);
-      setShowCopyWeekModal(true);
-      return;
-    }
+  const openCloneWeekModalForWeek = (sourceWeek: any) => {
+    setCurrentWeekForModal(sourceWeek);
+    setShowCloneWeekModal(true);
+  };
+
+  const openAssignWeekModalForWeek = (sourceWeek: any) => {
     void (async () => {
       const token = localStorage.getItem('token');
       if (!token) return;
@@ -645,8 +851,94 @@ export default function DayTableView({
         });
         if (response.ok) {
           const data = await response.json();
-          setTargetWeeks(data.plan?.weeks || []);
+          const weeks = data.plan?.weeks || [];
+          setTargetWeeks(
+            activeSection === 'B' ? mergeWeeksByWeekNumber(weeks) : weeks
+          );
           setCurrentWeekForModal(sourceWeek);
+          setCopyWeekModalMode('assign');
+          setShowCopyWeekModal(true);
+        }
+      } catch (error) {
+        console.error('Error loading yearly plan weeks:', error);
+      }
+    })();
+  };
+
+  const openExportWeekModalForWeek = (sourceWeek: any, destination: ExportWeekDestination) => {
+    const mergedSource =
+      activeSection === 'B' || activeSection === 'C'
+        ? mergeWeeksByWeekNumber(sortedWeeks).find(
+            (w) => w.weekNumber === sourceWeek.weekNumber
+          ) || sourceWeek
+        : sourceWeek;
+    setCurrentWeekForModal(mergedSource);
+    setExportWeekDestination(destination);
+    setShowExportWeekModal(true);
+  };
+
+  const openExportWeekToArchiveModalForWeek = (sourceWeek: any) => {
+    openExportWeekModalForWeek(sourceWeek, 'ARCHIVE');
+  };
+
+  const openCloneArchiveWeekModalForWeek = (sourceWeek: any) => {
+    setCurrentWeekForModal(sourceWeek);
+    setShowCloneArchiveWeekModal(true);
+  };
+
+  const handleCloneArchiveWeek = async (targetWeekId: string) => {
+    const sourceWeek = currentWeekForModal || currentWeek;
+    const sourceWeekId = sourceWeek?.id;
+    if (!sourceWeekId) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const response = await fetch('/api/workouts/weeks/copy', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sourceWeekId, targetWeekId }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to clone week');
+      }
+
+      setShowCloneArchiveWeekModal(false);
+      setCurrentWeekForModal(null);
+      alert('Week cloned in Archive successfully. You can edit and rename the target week.');
+      if (reloadWorkouts) await reloadWorkouts();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to clone week');
+    }
+  };
+
+  const openCopyWeekModalForWeek = (sourceWeek: any) => {
+    if (activeSection === 'A') {
+      openAssignWeekModalForWeek(sourceWeek);
+      return;
+    }
+    const planType = activeSection === 'C' ? 'WORKOUTS_DONE' : 'YEARLY_PLAN';
+    void (async () => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      try {
+        const response = await fetch(`/api/workouts/plan?type=${planType}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const weeks = mergeWeeksByWeekNumber(data.plan?.weeks || []);
+          const mergedSource =
+            weeks.find((w) => w.weekNumber === sourceWeek.weekNumber) || sourceWeek;
+          setTargetWeeks(weeks);
+          setCurrentWeekForModal(mergedSource);
+          setCopyWeekModalMode('copy');
           setShowCopyWeekModal(true);
         }
       } catch (error) {
@@ -674,7 +966,10 @@ export default function DayTableView({
         });
         if (response.ok) {
           const data = await response.json();
-          setTargetWeeks(data.plan?.weeks || []);
+          const weeks = data.plan?.weeks || [];
+          setTargetWeeks(
+            activeSection === 'B' ? mergeWeeksByWeekNumber(weeks) : weeks
+          );
           setCurrentWeekForModal(sourceWeek);
           setShowMoveWeekModal(true);
         } else {
@@ -739,6 +1034,83 @@ export default function DayTableView({
     } catch (error) {
       console.error('❌ Error copying week:', error);
       alert(error instanceof Error ? error.message : 'Failed to copy week');
+    }
+  };
+
+  const handleCloneWeek = async (targetWeekId: string) => {
+    const sourceWeek = currentWeekForModal || currentWeek;
+    const sourceWeekId = sourceWeek?.id;
+    if (!sourceWeekId) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const response = await fetch('/api/workouts/weeks/copy', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sourceWeekId, targetWeekId }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to clone week');
+      }
+
+      setShowCloneWeekModal(false);
+      setCurrentWeekForModal(null);
+      if (reloadWorkouts) await reloadWorkouts();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to clone week');
+    }
+  };
+
+  const handleExportWeekToArchive = async (targetWeekIdOrIds: string | string[]) => {
+    const targetIds = Array.isArray(targetWeekIdOrIds) ? targetWeekIdOrIds : [targetWeekIdOrIds];
+    const sourceWeek = currentWeekForModal || currentWeek;
+    const mergedSource =
+      activeSection === 'B' || activeSection === 'C'
+        ? mergeWeeksByWeekNumber(sortedWeeks).find((w) => w.weekNumber === sourceWeek.weekNumber) ||
+          sourceWeek
+        : sourceWeek;
+    const sourceWeekId = mergedSource?.id;
+    if (!sourceWeekId || targetIds.length === 0) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      for (const targetWeekId of targetIds) {
+        const response = await fetch('/api/workouts/weeks/copy', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ sourceWeekId, targetWeekId }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to export week');
+        }
+      }
+
+      setShowExportWeekModal(false);
+      setCurrentWeekForModal(null);
+      const successMessage =
+        exportWeekDestination === 'ARCHIVE'
+          ? 'Week exported to Archive successfully.'
+          : exportWeekDestination === 'WORKOUTS_DONE'
+            ? 'Week exported to Workouts Done successfully.'
+            : `Week exported to ${targetIds.length} Yearly Plan week(s) successfully.`;
+      alert(successMessage);
+      if (reloadWorkouts) await reloadWorkouts();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to export week');
     }
   };
 
@@ -1008,10 +1380,22 @@ export default function DayTableView({
                 </button>
               )}
               
-              {/* Copy Week Button - Only show in Section A (3 Weeks Plan) */}
+              {/* Clone Week — template to template (Plans A/B/C) */}
               {activeSection === 'A' && (
               <button
-                onClick={() => openCopyWeekModalForWeek(currentWeek)}
+                onClick={() => openCloneWeekModalForWeek(currentWeek)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all shadow-md hover:shadow-lg bg-purple-600 text-white hover:bg-purple-700"
+                  title="Clone this week to another template plan (A, B, or C)"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Clone
+              </button>
+              )}
+
+              {/* Assign Week — template to yearly plan */}
+              {activeSection === 'A' && (
+              <button
+                onClick={() => openAssignWeekModalForWeek(currentWeek)}
                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all shadow-md hover:shadow-lg"
                   style={{ 
                     backgroundColor: colors.buttonAdd,
@@ -1019,14 +1403,91 @@ export default function DayTableView({
                   }}
                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.buttonAddHover}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.buttonAdd}
-                  title="Copy this week to Yearly Plan"
+                  title="Assign this week to the Yearly Plan"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Assign
+              </button>
+              )}
+
+              {/* Export Week — template to archive */}
+              {activeSection === 'A' && (
+              <button
+                onClick={() => openExportWeekToArchiveModalForWeek(currentWeek)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-all shadow-md hover:shadow-lg"
+                  title="Export this week to Archive workouts & weekly plans"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                Export
+              </button>
+              )}
+              
+              {/* Copy / Export for Section B — use per-week header buttons (multi-week grid) */}
+
+              {/* Copy / Export — Workouts Done (Section C) */}
+              {activeSection === 'C' && (
+              <button
+                onClick={() => openCopyWeekModalForWeek(currentWeek)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all shadow-md hover:shadow-lg"
+                style={{
+                  backgroundColor: colors.buttonAdd,
+                  color: colors.buttonAddText,
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.buttonAddHover}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.buttonAdd}
+                title="Copy this week within Workouts Done (max 2 target weeks)"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 Copy
               </button>
               )}
+
+              {activeSection === 'C' && (
+              <button
+                onClick={() => openExportWeekModalForWeek(currentWeek, 'YEARLY_PLAN')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg"
+                title="Export this week to Yearly Plan (update planned workouts)"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                Export Yearly
+              </button>
+              )}
+
+              {activeSection === 'C' && (
+              <button
+                onClick={() => openExportWeekToArchiveModalForWeek(currentWeek)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-all shadow-md hover:shadow-lg"
+                title="Export this week to Archive workouts & weekly plans"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                Export Archive
+              </button>
+              )}
+
+              {/* Clone / Export — Archive (Section D) */}
+              {activeSection === 'D' && (
+              <button
+                onClick={() => openCloneArchiveWeekModalForWeek(currentWeek)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-all shadow-md hover:shadow-lg"
+                title="Clone this archive week for editing and renaming"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Clone Week
+              </button>
+              )}
+
+              {activeSection === 'D' && (
+              <button
+                onClick={() => openExportWeekModalForWeek(currentWeek, 'YEARLY_PLAN')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg"
+                title="Export this archive week to Yearly Plan (one or more target weeks)"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                Export Yearly
+              </button>
+              )}
               
-              {/* Overview Button - For Section A/C */}
+              {/* Overview Button - For Section A/C/D */}
               {activeSection !== 'B' && (
               <button
                 onClick={() => {
@@ -1045,7 +1506,7 @@ export default function DayTableView({
               </button>
               )}
               
-              {/* Save in Favourites Button - Only for Section A/C */}
+              {/* Save in Favourites Button - Section A/C/D (not yearly grid) */}
               {activeSection !== 'B' && (
               <button
                 type="button"
@@ -1183,44 +1644,7 @@ export default function DayTableView({
             <button
               className="px-4 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
               disabled={selectedDays.size === 0 || !selectedAction}
-              onClick={() => {
-                if (selectedDays.size === 0) {
-                  alert('Please select at least one day by checking the checkbox.');
-                  return;
-                }
-                if (!selectedAction) {
-                  alert('Please select an action from the dropdown.');
-                  return;
-                }
-                const dayCount = selectedDays.size;
-                const selectedDayIds = Array.from(selectedDays);
-                switch (selectedAction) {
-                  case 'copy':
-                    if (confirm(`Copy ${dayCount} selected day(s)?`)) {
-                      console.log('Copy days:', selectedDayIds);
-                      alert(`Copying ${dayCount} day(s)... (Not yet implemented)`);
-                    }
-                    break;
-                  case 'move':
-                    if (confirm(`Move ${dayCount} selected day(s)?`)) {
-                      console.log('Move days:', selectedDayIds);
-                      alert(`Moving ${dayCount} day(s)... (Not yet implemented)`);
-                    }
-                    break;
-                  case 'delete':
-                    if (confirm(`Delete ${dayCount} selected day(s)?`)) {
-                      console.log('Delete days:', selectedDayIds);
-                      alert(`Deleting ${dayCount} day(s)... (Not yet implemented)`);
-                    }
-                    break;
-                  case 'save-favorite':
-                    if (confirm(`Save ${dayCount} selected day(s) in favourites?`)) {
-                      console.log('Save to favourites:', selectedDayIds);
-                      alert(`Saving ${dayCount} day(s) to favourites... (Not yet implemented)`);
-                    }
-                    break;
-                }
-              }}
+              onClick={() => void executeBulkDayAction()}
             >
               Execute
             </button>
@@ -1230,7 +1654,6 @@ export default function DayTableView({
           </div>
 
           {/* Show all weeks */}
-          {console.log('🔍 [DEBUG] weeksToDisplay count:', weeksToDisplay.length)}
           {weeksToDisplay.length === 0 && (
             <div className="text-center py-8 text-red-600 font-bold">
               ⚠️ No weeks to display! weeksToDisplay is empty.
@@ -1243,13 +1666,6 @@ export default function DayTableView({
             const weekTextColor = getContrastTextColor(weekBgColor);
             const badgeBgColor = 'rgba(255, 255, 255, 0.9)';
             const badgeTextColor = getContrastTextColor('#ffffff');
-            
-            console.log(`🔍 [DEBUG] Week ${weekIdx + 1}:`, {
-              weekId: week.id,
-              weekNumber: week.weekNumber,
-              daysCount: weekDays.length,
-              sortedDaysCount: sortedWeekDays.length
-            });
             
             return (
               <div key={week.id} className="mb-6">
@@ -1369,6 +1785,22 @@ export default function DayTableView({
                       </svg>
                       Copy
                     </button>
+
+                    <button
+                      onClick={() => openExportWeekModalForWeek(week, 'WORKOUTS_DONE')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-md"
+                      title="Export week to Workouts Done"
+                    >
+                      Export Done
+                    </button>
+
+                    <button
+                      onClick={() => openExportWeekToArchiveModalForWeek(week)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-all shadow-md"
+                      title="Export week to Archive"
+                    >
+                      Export Archive
+                    </button>
                     
                     {/* Move Button */}
                     <button
@@ -1388,7 +1820,7 @@ export default function DayTableView({
                         e.stopPropagation();
                         void handleSaveWeekFavorite(week);
                       }}
-                      disabled={savingFavoriteWeekId === week.id}
+                      disabled={savingFavoriteWeekId === getSaveWeekLockKey(week)}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-all shadow-md"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1610,6 +2042,7 @@ export default function DayTableView({
                                         onEditMoveframe={onEditMoveframe}
                                         onEditMovelap={onEditMovelap}
                                         onAddMoveframe={onAddMoveframe}
+                                        onQuickTrainingEntry={onQuickTrainingEntry}
                                         onAddMoveframeAfter={onAddMoveframeAfter}
                                         onAddMovelap={onAddMovelap}
                                         onAddMovelapAfter={onAddMovelapAfter}
@@ -1617,6 +2050,9 @@ export default function DayTableView({
                                         onSaveFavoriteWorkout={onSaveFavoriteWorkout}
                                         onShareWorkout={onShareWorkout}
                                         onExportPdfWorkout={onExportPdfWorkout}
+                                        onExportWorkoutToArchive={onExportWorkoutToArchive}
+                                        onExportWorkoutToDone={onExportWorkoutToDone}
+                                        onExportWorkoutToYearly={onExportWorkoutToYearly}
                                         onPrintWorkout={onPrintWorkout}
                                         onShowWorkoutOverview={onShowWorkoutOverview}
                                         onDeleteMoveframe={onDeleteMoveframe}
@@ -1701,49 +2137,7 @@ export default function DayTableView({
                   <button
                     className="px-4 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                     disabled={selectedDays.size === 0 || !selectedAction}
-                    onClick={() => {
-                      if (selectedDays.size === 0) {
-                        alert('Please select at least one day by checking the checkbox.');
-                        return;
-                      }
-                      if (!selectedAction) {
-                        alert('Please select an action from the dropdown.');
-                        return;
-                      }
-
-                      const dayCount = selectedDays.size;
-                      const selectedDayIds = Array.from(selectedDays);
-
-                      switch (selectedAction) {
-                        case 'copy':
-                          if (confirm(`Copy ${dayCount} selected day(s)?`)) {
-                            console.log('Copy days:', selectedDayIds);
-                            alert(`Copying ${dayCount} day(s)... (Not yet implemented)`);
-                          }
-                          break;
-                        case 'move':
-                          if (confirm(`Move ${dayCount} selected day(s)?`)) {
-                            console.log('Move days:', selectedDayIds);
-                            alert(`Moving ${dayCount} day(s)... (Not yet implemented)`);
-                          }
-                          break;
-                        case 'delete':
-                          if (confirm(`Are you sure you want to delete ${dayCount} selected day(s)? This action cannot be undone.`)) {
-                            console.log('Delete days:', selectedDayIds);
-                            alert(`Deleting ${dayCount} day(s)... (Not yet implemented)`);
-                            setSelectedDays(new Set());
-                          }
-                          break;
-                        case 'save-favorite':
-                          if (confirm(`Save ${dayCount} selected day(s) to favourites?`)) {
-                            console.log('Save to favourites:', selectedDayIds);
-                            alert(`Saving ${dayCount} day(s) to favourites... (Not yet implemented)`);
-                          }
-                          break;
-                        default:
-                          alert('Please select a valid action.');
-                      }
-                    }}
+                    onClick={() => void executeBulkDayAction()}
                   >
                     Proceed
                   </button>
@@ -2007,6 +2401,7 @@ export default function DayTableView({
                               onEditMoveframe={onEditMoveframe}
                               onEditMovelap={onEditMovelap}
                               onAddMoveframe={onAddMoveframe}
+                              onQuickTrainingEntry={onQuickTrainingEntry}
                               onAddMoveframeAfter={onAddMoveframeAfter}
                               onAddMovelap={onAddMovelap}
                               onAddMovelapAfter={onAddMovelapAfter}
@@ -2014,6 +2409,9 @@ export default function DayTableView({
                               onSaveFavoriteWorkout={onSaveFavoriteWorkout}
                               onShareWorkout={onShareWorkout}
                               onExportPdfWorkout={onExportPdfWorkout}
+                              onExportWorkoutToArchive={onExportWorkoutToArchive}
+                              onExportWorkoutToDone={onExportWorkoutToDone}
+                              onExportWorkoutToYearly={onExportWorkoutToYearly}
                               onPrintWorkout={onPrintWorkout}
                               onShowWorkoutOverview={onShowWorkoutOverview}
                               onDeleteMoveframe={onDeleteMoveframe}
@@ -2131,17 +2529,68 @@ export default function DayTableView({
         }}
       />
 
-      {/* Copy Week Modal */}
+      {/* Assign / Copy Week Modal */}
       <CopyWeekModal
         isOpen={showCopyWeekModal}
         sourceWeek={currentWeekForModal || currentWeek}
         allWeeks={targetWeeks}
+        title={copyWeekModalMode === 'assign' ? 'Assign Week' : 'Copy Week'}
+        actionLabel={copyWeekModalMode === 'assign' ? 'Assign' : 'Copy'}
         onClose={() => {
           setShowCopyWeekModal(false);
           setTargetWeeks([]);
           setCurrentWeekForModal(null);
         }}
         onCopy={handleCopyWeek}
+        checkRecipientStatus
+        disableConsecutiveMode={activeSection === 'C'}
+        maxSelectableWeeks={activeSection === 'C' ? 2 : undefined}
+      />
+
+      {/* Clone Week Modal (template → template) */}
+      <CloneWeekModal
+        isOpen={showCloneWeekModal}
+        sourceWeek={currentWeekForModal || currentWeek}
+        sourceTemplate={activeSubSection}
+        onClose={() => {
+          setShowCloneWeekModal(false);
+          setCurrentWeekForModal(null);
+        }}
+        onConfirm={async ({ targetWeekId }) => {
+          await handleCloneWeek(targetWeekId);
+        }}
+      />
+
+      {/* Export Week to Archive / Workouts Done */}
+      <ExportWeekToPlanModal
+        isOpen={showExportWeekModal}
+        sourceWeek={currentWeekForModal || currentWeek}
+        sourceLabel={
+          activeSection === 'B'
+            ? `Yearly Plan, Week ${(currentWeekForModal || currentWeek)?.weekNumber ?? '?'}`
+            : activeSection === 'C'
+              ? `Workouts Done, Week ${(currentWeekForModal || currentWeek)?.weekNumber ?? '?'}`
+              : activeSection === 'D'
+                ? `Archive, Week ${(currentWeekForModal || currentWeek)?.weekNumber ?? '?'}`
+                : `Weekly Plan ${activeSubSection}, Week ${(currentWeekForModal || currentWeek)?.weekNumber ?? '?'}`
+        }
+        destination={exportWeekDestination}
+        onClose={() => {
+          setShowExportWeekModal(false);
+          setCurrentWeekForModal(null);
+        }}
+        onConfirm={handleExportWeekToArchive}
+      />
+
+      {/* Clone Week — Archive to Archive */}
+      <CloneArchiveWeekModal
+        isOpen={showCloneArchiveWeekModal}
+        sourceWeek={currentWeekForModal || currentWeek}
+        onClose={() => {
+          setShowCloneArchiveWeekModal(false);
+          setCurrentWeekForModal(null);
+        }}
+        onConfirm={handleCloneArchiveWeek}
       />
 
       {/* Move Week Modal */}

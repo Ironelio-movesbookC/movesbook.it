@@ -14,6 +14,7 @@ interface MoveframesSectionProps {
   expandedMoveframeId?: string | null;
   autoExpandAll?: boolean;
   onAddMoveframe: () => void;
+  onQuickTrainingEntry?: () => void;
   onAddMoveframeAfter?: (moveframe: any, index: number, workout: any, day: any) => void;
   onEditMoveframe?: (moveframe: any) => void;
   onDeleteMoveframe?: (moveframe: any) => void;
@@ -43,6 +44,7 @@ export default function MoveframesSection({
   expandedMoveframeId,
   autoExpandAll = false,
   onAddMoveframe,
+  onQuickTrainingEntry,
   onAddMoveframeAfter,
   onEditMoveframe,
   onDeleteMoveframe,
@@ -358,6 +360,18 @@ export default function MoveframesSection({
           >
             Add a Moveframe
           </button>
+          {onQuickTrainingEntry && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onQuickTrainingEntry();
+              }}
+              className="px-2 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600"
+              title="Quick training entry"
+            >
+              Quick entry
+            </button>
+          )}
           {/* Action Buttons - Now beside Add button */}
           <button
             onClick={(e) => {
