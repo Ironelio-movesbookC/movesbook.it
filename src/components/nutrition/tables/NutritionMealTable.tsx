@@ -248,8 +248,6 @@ export default function NutritionMealTable({
     console.log(`🔍 [NutritionMealTable] calculateSportTotals - workout.sports:`, workout.sports);
     console.log(`🔍 [NutritionMealTable] workout.nutritionFoods:`, workout.nutritionFoods?.length || 0);
     
-    // IMPORTANT: workout.sports is often empty, so we calculate sports from nutrition_foods
-    // Get unique sports from nutritionFoods in the order they appear
     const sportsFromNutritionFoods: string[] = [];
     (workout.nutritionFoods || []).forEach((mf: any) => {
       if (mf.sport && !sportsFromNutritionFoods.includes(mf.sport)) {
@@ -257,19 +255,15 @@ export default function NutritionMealTable({
       }
     });
     
-    // IMPORTANT FIX: Only use workout.sports if there are NO nutrition_foods
-    // This prevents "ghost" sports from showing in new workouts
     const workoutSportNames = (workout.nutritionFoods && workout.nutritionFoods.length > 0)
       ? sportsFromNutritionFoods 
-      : [];  // Empty array for workouts with no nutritionFoods, regardless of workout.sports
+      : [];
     
     console.log(`🔍 [NutritionMealTable] Sports found in nutritionFoods:`, sportsFromNutritionFoods);
     console.log(`🔍 [NutritionMealTable] Using sports:`, workoutSportNames);
     
-    // Build a map of totals from nutrition_foods
     const sportMap = new Map<string, { distance: number; durationSeconds: number; series: number; repetitions: number; k: string }>();
     
-    // Calculate from nutrition_foods
     (workout.nutritionFoods || []).forEach((mf: any) => {
       const sport = mf.sport || 'Unknown';
       if (!sportMap.has(sport)) {
@@ -280,16 +274,12 @@ export default function NutritionMealTable({
       const isSeries = isSeriesBasedSport(sport);
       
       if (isSeries) {
-        // For NON-AEROBIC (series-based) sports
         if (mf.manualMode) {
-          // For manual input: use the repetitions field from nutritionFood (since nutrition_components may not exist)
           const totalSeries = mf.repetitions || 0;
           totals.series += totalSeries;
           
-          // Manual mode series-based sports don't have nutritionComponents, so repetitions is the count
           totals.repetitions += totalSeries;
         } else {
-          // For standard mode: count nutrition_components as series
           const totalSeries = mf.nutritionComponents?.length || 0;
           totals.series += totalSeries;
           
