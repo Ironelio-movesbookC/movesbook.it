@@ -256,13 +256,21 @@ export function addSlotToDay(day: TimetableDaySchedule): TimetableDaySchedule {
   };
 }
 
-export function removeSlotFromDay(day: TimetableDaySchedule): TimetableDaySchedule {
+export function removeSlotFromDay(
+  day: TimetableDaySchedule,
+  slotIndex?: number
+): TimetableDaySchedule {
   if (day.slots.length <= 1) {
+    return day;
+  }
+  const index =
+    slotIndex === undefined ? day.slots.length - 1 : slotIndex;
+  if (index < 0 || index >= day.slots.length) {
     return day;
   }
   return {
     ...day,
-    slots: day.slots.slice(0, -1)
+    slots: day.slots.filter((_, i) => i !== index)
   };
 }
 
