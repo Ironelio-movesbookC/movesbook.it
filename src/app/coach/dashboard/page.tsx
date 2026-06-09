@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Image from 'next/image';
 import { 
   Users, 
@@ -34,8 +34,14 @@ import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
 import SimpleFooter from '@/components/SimpleFooter';
 import AddMemberModal from '@/components/AddMemberModal';
+import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
+import CreateEntityModal from '@/components/entity/CreateEntityModal';
 import RightSidebar from '@/components/dashboard/RightSidebar';
 import { useAuth } from '@/hooks/useAuth';
+import {
+  filterFormCreatedEntities,
+  useManagedEntityCreation,
+} from '@/hooks/useManagedEntityCreation';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -57,6 +63,77 @@ export default function CoachDashboard() {
   const [activeRightTab, setActiveRightTab] = useState<'actions-planner' | 'chat-panel'>('actions-planner');
   const [expandedActionsPlanner, setExpandedActionsPlanner] = useState(true);
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
+  /** My Coaching Group tab visible only after opening a group from the sidebar (hidden on My Page). */
+  const [myEntityTabVisible, setMyEntityTabVisible] = useState(false);
+
+  const loadCoachingGroups = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/coaching-groups/my-coaching-groups', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const groups = data.coachingGroups || [];
+        setCoachingGroups(groups);
+        const formGroups = filterFormCreatedEntities(groups);
+        if (formGroups.length > 0) {
+          setSelectedGroupId((prev) => {
+            if (prev && formGroups.some((g) => g.id === prev)) {
+              return prev;
+            }
+            if (typeof window !== 'undefined') {
+              const stored = localStorage.getItem('selectedCoachingGroup');
+              if (stored && formGroups.some((g) => g.id === stored)) {
+                return stored;
+              }
+            }
+            return formGroups[0].id;
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading coaching groups:', error);
+    }
+  }, []);
+
+  const entityCreation = useManagedEntityCreation({
+    createApiPath: '/api/coaching-groups',
+    responseEntityKey: 'coachingGroup',
+    onReload: loadCoachingGroups,
+    storageKey: 'selectedCoachingGroup',
+    onEntityCreated: (id) => {
+      setSelectedGroupId(id);
+      setMyEntityTabVisible(true);
+      setActiveTab('my-entity');
+    },
+  });
+
+  const hideMyEntityTab = useCallback(() => setMyEntityTabVisible(false), []);
+
+  useEffect(() => {
+    setActiveTab('my-page');
+    setMyEntityTabVisible(false);
+  }, []);
+
+  const handleMyPageTabClick = useCallback(() => {
+    hideMyEntityTab();
+    setActiveTab('my-page');
+  }, [hideMyEntityTab]);
+
+  const handleTabChange = useCallback(
+    (tab: 'my-page' | 'my-entity') => {
+      if (tab === 'my-page') hideMyEntityTab();
+      setActiveTab(tab);
+    },
+    [hideMyEntityTab],
+  );
+
+  const formCreatedGroups = useMemo(
+    () => filterFormCreatedEntities(coachingGroups),
+    [coachingGroups],
+  );
+  const hasFormGroup = formCreatedGroups.length > 0;
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -80,18 +157,23 @@ export default function CoachDashboard() {
 
   useEffect(() => {
     if (user && user.userType === 'COACH') {
-      loadCoachingGroups();
+      void loadCoachingGroups();
     }
-  }, [user]);
+  }, [user, loadCoachingGroups]);
 
-  // Reset workout section when switching to my-page
   useEffect(() => {
     if (activeTab === 'my-page') {
       setShowWorkoutSection(false);
+      setMyEntityTabVisible(false);
     }
   }, [activeTab]);
 
-  // Auto-hide left sidebar when workout section opens
+  useEffect(() => {
+    if (!hasFormGroup && activeTab === 'my-entity') {
+      setActiveTab('my-page');
+    }
+  }, [hasFormGroup, activeTab]);
+
   useEffect(() => {
     if (showWorkoutSection) {
       setShowLeftSidebar(false);
@@ -100,29 +182,15 @@ export default function CoachDashboard() {
     }
   }, [showWorkoutSection]);
 
-  // Don't render if not authenticated (after all hooks are called)
   if (loading || !user) {
     return null;
   }
 
-  const loadCoachingGroups = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/coaching-groups/my-coaching-groups', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setCoachingGroups(data.coachingGroups || []);
-      }
-    } catch (error) {
-      console.error('Error loading coaching groups:', error);
-    }
-  };
-
   const handleCoachingGroupSelect = (groupId: string) => {
     localStorage.setItem('selectedCoachingGroup', groupId);
-    window.location.href = `/my-coaching-group?groupId=${groupId}`;
+    setSelectedGroupId(groupId);
+    setMyEntityTabVisible(true);
+    setActiveTab('my-entity');
   };
 
   return (
@@ -235,7 +303,9 @@ export default function CoachDashboard() {
 
               <div className="absolute bottom-4 left-4 mt-12">
                 <div className="bg-blue-800/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg font-medium">
-                  {coachingGroups[0]?.name || 'Club Magliw Awellino Club'}
+                  {coachingGroups.find((g) => g.id === selectedGroupId)?.name ??
+                    coachingGroups[0]?.name ??
+                    'Club Magliw Awellino Club'}
                 </div>
               </div>
             </div>
@@ -321,18 +391,16 @@ export default function CoachDashboard() {
                 userType={user?.userType || ''}
                 entities={coachingGroups}
                 selectedEntityId={selectedGroupId}
+                clubMyClubTabVisible={myEntityTabVisible}
                 onEntitySelect={handleCoachingGroupSelect}
                 activeTab={activeTab}
-                onTabChange={setActiveTab}
-                onMyPageClick={() => setActiveTab('my-page')}
+                onTabChange={handleTabChange}
+                onMyPageClick={handleMyPageTabClick}
                 onMyCoachingGroupClick={() => {
+                  if (!myEntityTabVisible) return;
                   setActiveTab('my-entity');
-                  if (selectedGroupId) {
-                    window.location.href = `/my-coaching-group?groupId=${selectedGroupId}`;
-                  } else if (coachingGroups.length > 0) {
-                    window.location.href = `/my-coaching-group?groupId=${coachingGroups[0].id}`;
-                  }
                 }}
+                onCreateGroupTrainedClick={entityCreation.openCreateFlow}
               />
             </div>
           )}
@@ -340,22 +408,42 @@ export default function CoachDashboard() {
           <div className="flex-1 min-w-0 flex flex-col px-4">
             {activeTab === 'my-page' && (
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900">My Page</h2>
-                </div>
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center text-gray-500">
-                    <p className="text-xl font-semibold mb-2">Welcome to Your Personal Page</p>
-                    <p className="text-gray-600">Your personal dashboard content goes here</p>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">My Page</h2>
+                {!hasFormGroup ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center text-gray-500">
+                      <Users className="w-20 h-20 mx-auto mb-6 opacity-60" />
+                      <p className="text-2xl font-bold mb-2">Set up your trained group</p>
+                      <p className="text-lg mb-4 max-w-md">
+                        Expand <strong>My groups trained</strong> in the sidebar, click{' '}
+                        <strong>Create a group trained</strong>, and save your group details.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={entityCreation.openCreateFlow}
+                        className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700"
+                      >
+                        Create a group trained
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="max-w-2xl space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-6">
+                    <p className="text-gray-700">
+                      Your personal coach page. Use the left sidebar to open a trained group or
+                      manage workouts.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
             
             {activeTab === 'my-entity' && !showWorkoutSection && (
               <div className="bg-white rounded-lg shadow-sm border p-8 flex-1 flex items-center justify-center">
                 <div className="text-center">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to Your Coaching Group</h2>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                    {t('sidebar_trained_group')}
+                  </h2>
                   <p className="text-gray-600 mb-6">Click on "Workouts section" in the navigation bar above to view and manage workouts.</p>
                   <button 
                     onClick={() => setShowWorkoutSection(true)}
@@ -376,24 +464,35 @@ export default function CoachDashboard() {
                   </button>
                 </div>
 
-                {coachingGroups.length === 0 ? (
+                {formCreatedGroups.length === 0 ? (
                   <div className="flex-1 flex items-center justify-center">
                     <div className="text-center text-gray-500">
                       <Users className="w-20 h-20 mx-auto mb-6 opacity-60" />
-                      <p className="text-2xl font-bold mb-2">No Athlete Groups Yet</p>
+                      <p className="text-2xl font-bold mb-2">No trained groups yet</p>
                       <p className="text-lg mb-4">Create your first group to start managing athletes</p>
-                      <button className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">
-                        Create Group
+                      <button
+                        type="button"
+                        onClick={entityCreation.openCreateFlow}
+                        className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700"
+                      >
+                        Create a group trained
                       </button>
                     </div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {coachingGroups.map((group) => (
+                    {formCreatedGroups.map((group) => (
                       <div
                         key={group.id}
-                        onClick={() => handleCoachingGroupSelect(group.id)}
-                        className="p-6 border-2 border-gray-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all duration-300 cursor-pointer"
+                        onClick={() => {
+                          handleCoachingGroupSelect(group.id);
+                          setActiveTab('my-entity');
+                        }}
+                        className={`p-6 border-2 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all duration-300 cursor-pointer ${
+                          selectedGroupId === group.id
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200'
+                        }`}
                       >
                         <div className="flex items-center justify-between mb-4">
                           <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-purple-500 rounded-xl flex items-center justify-center">
@@ -438,6 +537,24 @@ export default function CoachDashboard() {
               setShowAddMemberModal(false);
             }}
             entityType="coaching-group"
+          />
+
+          <AdminPasswordConfirmModal
+            isOpen={entityCreation.showAdminPasswordConfirm}
+            onClose={() => entityCreation.setShowAdminPasswordConfirm(false)}
+            onVerified={entityCreation.handleAdminPasswordVerified}
+            adminUsername={user?.username ?? user?.name ?? 'username'}
+            entityKind="coaching-group"
+          />
+
+          <CreateEntityModal
+            key={entityCreation.createModalKey}
+            entityKind="coaching-group"
+            isOpen={entityCreation.showCreateModal}
+            onClose={() => entityCreation.setShowCreateModal(false)}
+            adminUsername={user?.username ?? user?.name ?? 'username'}
+            saving={entityCreation.createSaving}
+            onSave={entityCreation.handleCreateSave}
           />
         </div>
       </div>

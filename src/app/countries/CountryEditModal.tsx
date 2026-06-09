@@ -2,6 +2,14 @@
 
 import { useEffect, useId, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
+import type { CountryEditSavePayload, CountryExtendedSettings } from './countryEditTypes';
+import { CountryPartnersListModal } from './CountryPartnersListModal';
+import { CountryRegionsModal } from './CountryRegionsModal';
+import {
+  loadCountryExtendedSettings,
+  saveCountryExtendedSettings,
+} from '@/lib/countries/countrySettingsStorage';
+import { countryFlagSrc } from '@/lib/countries/countryFlag';
 
 export type CountryRow = {
   id: number;
@@ -70,39 +78,70 @@ const CURRENCY_NAMES: Record<string, string> = {
   BBD: 'Dollar',
 };
 
-function flagUrl(iso2: string) {
-  return `https://flagcdn.com/24x18/${iso2.toLowerCase()}.png`;
-}
-
 function describeCurrency(code: string) {
   return CURRENCY_NAMES[code] ?? code;
 }
 
-function rowToForm(row: CountryRow) {
+function rowToForm(row: CountryRow, extended: CountryExtendedSettings) {
   const safeEur = row.eurRate || 1;
   const safeUsd = row.usdRate || 1;
   return {
     completed: row.settingCompleted ?? false,
     abbreviation: row.iso2.toUpperCase(),
     population: String(row.population),
-    annualIncome: '7000.00',
-    incomeCurrency: 'EUR',
-    ratioWithUs: '71.4',
-    percentageOr: 45,
-    virtualCost: '21.74',
+    annualIncome: extended.annualIncome,
+    incomeCurrency: extended.incomeCurrency,
+    ratioWithUs: extended.ratioWithUs,
+    percentageOr: extended.percentageOr,
+    virtualCost: extended.virtualCost,
     continent: row.continent,
     officialLanguage: row.officialLanguage,
     primaryLanguage: row.primaryLanguage,
     secondaryLanguage: row.secondaryLanguage === '—' ? '—' : row.secondaryLanguage,
     currencyCode: row.currencyCode,
-    currencyDescription: describeCurrency(row.currencyCode),
-    exchangeEurPerAfn: (1 / safeEur).toFixed(4),
-    exchange1EurAfn: safeEur.toFixed(3),
-    exchangeUsdPerAfn: (1 / safeUsd).toFixed(4),
-    exchange1UsdAfn: safeUsd.toFixed(3),
-    flagSrc: flagUrl(row.iso2),
-    countryPictureName: '',
-    countryPicturePreview: '' as string | null,
+    currencyDescription: extended.currencyDescription || describeCurrency(row.currencyCode),
+    exchangeEurPerAfn: extended.exchangeEurPerUnit || (1 / safeEur).toFixed(4),
+    exchange1EurAfn: extended.exchange1Eur || safeEur.toFixed(3),
+    exchangeUsdPerAfn: extended.exchangeUsdPerUnit || (1 / safeUsd).toFixed(4),
+    exchange1UsdAfn: extended.exchange1Usd || safeUsd.toFixed(3),
+    flagSrc: countryFlagSrc(row.iso2),
+    countryPictureName: extended.countryPictureName,
+    countryPictureDataUrl: extended.countryPictureDataUrl ?? '',
+    countryPicturePreview: extended.countryPictureDataUrl || null,
+  };
+}
+
+function formToSavePayload(form: FormState, extended: CountryExtendedSettings): CountryEditSavePayload {
+  const eurRate = Number.parseFloat(form.exchange1EurAfn) || 1;
+  const usdRate = Number.parseFloat(form.exchange1UsdAfn) || 1;
+
+  return {
+    settingCompleted: form.completed,
+    iso2: form.abbreviation.toLowerCase(),
+    population: Number.parseInt(form.population, 10) || 0,
+    continent: form.continent,
+    officialLanguage: form.officialLanguage,
+    primaryLanguage: form.primaryLanguage,
+    secondaryLanguage: form.secondaryLanguage,
+    currencyCode: form.currencyCode,
+    eurRate,
+    usdRate,
+    regions: extended.regions.length,
+    extended: {
+      ...extended,
+      annualIncome: form.annualIncome,
+      incomeCurrency: form.incomeCurrency,
+      ratioWithUs: form.ratioWithUs,
+      percentageOr: form.percentageOr,
+      virtualCost: form.virtualCost,
+      currencyDescription: form.currencyDescription,
+      exchangeEurPerUnit: form.exchangeEurPerAfn,
+      exchange1Eur: form.exchange1EurAfn,
+      exchangeUsdPerUnit: form.exchangeUsdPerAfn,
+      exchange1Usd: form.exchange1UsdAfn,
+      countryPictureName: form.countryPictureName,
+      countryPictureDataUrl: form.countryPictureDataUrl || undefined,
+    },
   };
 }
 
@@ -126,16 +165,30 @@ function FormRow({
 type Props = {
   row: CountryRow | null;
   onClose: () => void;
+  onSave: (countryId: number, payload: CountryEditSavePayload) => void;
+  onRegionsCountChange?: (countryId: number, regionsCount: number) => void;
 };
 
-export function CountryEditModal({ row, onClose }: Props) {
+type SubModal = 'regions' | 'distributors' | 'dealers' | null;
+
+export function CountryEditModal({ row, onClose, onSave, onRegionsCountChange }: Props) {
   const titleId = useId();
   const flagInputId = useId();
   const [form, setForm] = useState<FormState | null>(null);
+  const [extended, setExtended] = useState<CountryExtendedSettings | null>(null);
+  const [subModal, setSubModal] = useState<SubModal>(null);
 
   useEffect(() => {
-    if (row) setForm(rowToForm(row));
-    else setForm(null);
+    if (row) {
+      const loaded = loadCountryExtendedSettings(row.id, row.name);
+      setExtended(loaded);
+      setForm(rowToForm(row, loaded));
+      setSubModal(null);
+    } else {
+      setExtended(null);
+      setForm(null);
+      setSubModal(null);
+    }
   }, [row]);
 
   useEffect(() => {
@@ -152,8 +205,26 @@ export function CountryEditModal({ row, onClose }: Props) {
     };
   }, [row, onClose]);
 
+  const updateExtended = (next: CountryExtendedSettings) => {
+    setExtended(next);
+    if (row) saveCountryExtendedSettings(row.id, next);
+  };
+
+  const handleSave = () => {
+    if (!row || !form || !extended) return;
+    const payload = formToSavePayload(form, extended);
+    saveCountryExtendedSettings(row.id, payload.extended);
+    onSave(row.id, payload);
+    onClose();
+  };
+
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((f) => (f ? { ...f, [key]: value } : f));
+  };
+
+  const persistExtended = (next: CountryExtendedSettings) => {
+    updateExtended(next);
+    if (row) onRegionsCountChange?.(row.id, next.regions.length);
   };
 
   const onFlagFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -167,25 +238,34 @@ export function CountryEditModal({ row, onClose }: Props) {
   const clearFlag = () => {
     if (!form || !row) return;
     if (form.flagSrc.startsWith('blob:')) URL.revokeObjectURL(form.flagSrc);
-    update('flagSrc', flagUrl(row.iso2));
+    update('flagSrc', countryFlagSrc(row.iso2));
   };
 
   const onCountryPicture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !form) return;
-    const url = URL.createObjectURL(file);
-    if (form.countryPicturePreview?.startsWith('blob:')) {
-      URL.revokeObjectURL(form.countryPicturePreview);
-    }
-    setForm({ ...form, countryPictureName: file.name, countryPicturePreview: url });
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!dataUrl) return;
+      setForm({
+        ...form,
+        countryPictureName: file.name,
+        countryPictureDataUrl: dataUrl,
+        countryPicturePreview: dataUrl,
+      });
+    };
+    reader.readAsDataURL(file);
   };
 
   const clearCountryPicture = () => {
     if (!form) return;
-    if (form.countryPicturePreview?.startsWith('blob:')) {
-      URL.revokeObjectURL(form.countryPicturePreview);
-    }
-    setForm({ ...form, countryPictureName: '', countryPicturePreview: null });
+    setForm({
+      ...form,
+      countryPictureName: '',
+      countryPictureDataUrl: '',
+      countryPicturePreview: null,
+    });
   };
 
   const continentOptions = useMemo(() => {
@@ -209,7 +289,7 @@ export function CountryEditModal({ row, onClose }: Props) {
     return LANGUAGE_OPTIONS;
   }, [form]);
 
-  if (!row || !form) return null;
+  if (!row || !form || !extended) return null;
 
   return (
     <div
@@ -237,11 +317,18 @@ export function CountryEditModal({ row, onClose }: Props) {
         </div>
 
         <div className="px-3 pt-3 pb-2 flex gap-2 shrink-0 border-b border-gray-200">
-          {(['Regions', 'Distributors', 'Dealers'] as const).map((label) => (
+          {(
+            [
+              ['regions', 'Regions'],
+              ['distributors', 'Distributors'],
+              ['dealers', 'Dealers'],
+            ] as const
+          ).map(([key, label]) => (
             <button
-              key={label}
+              key={key}
               type="button"
               className="bg-black text-white text-xs font-bold px-3 py-1.5 rounded-sm hover:bg-gray-900"
+              onClick={() => setSubModal(key)}
             >
               {label}
             </button>
@@ -347,9 +434,9 @@ export function CountryEditModal({ row, onClose }: Props) {
           <FormRow label="Ratio with us">
             <input
               type="text"
-              readOnly
               value={form.ratioWithUs}
-              className="w-full max-w-[200px] border border-gray-300 px-2 py-1 text-sm bg-gray-100 text-gray-700"
+              onChange={(e) => update('ratioWithUs', e.target.value)}
+              className="w-full max-w-[200px] border border-gray-300 px-2 py-1 text-sm"
             />
           </FormRow>
 
@@ -517,9 +604,7 @@ export function CountryEditModal({ row, onClose }: Props) {
             <button
               type="button"
               className="bg-gradient-to-b from-[#444] to-[#222] text-white px-6 py-2 text-sm font-bold rounded-sm border border-black hover:from-[#555] hover:to-[#333]"
-              onClick={() => {
-                onClose();
-              }}
+              onClick={handleSave}
             >
               Save
             </button>
@@ -533,6 +618,35 @@ export function CountryEditModal({ row, onClose }: Props) {
           </div>
         </div>
       </div>
+
+      {subModal === 'regions' ? (
+        <CountryRegionsModal
+          countryName={row.name}
+          regions={extended.regions}
+          onChange={(regions) => persistExtended({ ...extended, regions })}
+          onClose={() => setSubModal(null)}
+        />
+      ) : null}
+
+      {subModal === 'distributors' ? (
+        <CountryPartnersListModal
+          countryName={row.name}
+          titlePrefix="Distributor"
+          records={extended.distributors}
+          onChange={(distributors) => persistExtended({ ...extended, distributors })}
+          onClose={() => setSubModal(null)}
+        />
+      ) : null}
+
+      {subModal === 'dealers' ? (
+        <CountryPartnersListModal
+          countryName={row.name}
+          titlePrefix="Dealer"
+          records={extended.dealers}
+          onChange={(dealers) => persistExtended({ ...extended, dealers })}
+          onClose={() => setSubModal(null)}
+        />
+      ) : null}
     </div>
   );
 }

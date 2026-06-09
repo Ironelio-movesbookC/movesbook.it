@@ -11,22 +11,9 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { COUNTRIES_WITH_CODES } from '@/lib/news/countries';
+import { flagEmojiFromCountryName, countryCodeFromName } from '@/lib/admin/countryFlag';
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
-
-function flagEmojiFromCode(code: string): string {
-  const cc = (code || '').trim().toUpperCase();
-  if (cc.length !== 2) return '';
-  const A = 0x1f1e6;
-  const base = 'A'.charCodeAt(0);
-  return String.fromCodePoint(A + cc.charCodeAt(0) - base, A + cc.charCodeAt(1) - base);
-}
-
-function countryCodeFromName(name: string): string {
-  if (!name.trim()) return '';
-  return COUNTRIES_WITH_CODES.find((c) => c.name === name.trim())?.id ?? '';
-}
 
 type ProfileSubFilterIn = 'dateStart' | 'dateEnd';
 type ProfileSubOrdering = '' | 'dateStart' | 'dateEnd' | 'version';
@@ -203,7 +190,7 @@ export default function AdminClubsUserProfilePanel({
                 <div>
                   <strong>Country :</strong> {profileData.country || '—'}
                   {countryCode ? ` (${countryCode})` : ''}
-                  {countryCode ? ` ${flagEmojiFromCode(countryCode)}` : ''}
+                  {countryCode ? ` ${flagEmojiFromCountryName(profileData.country)}` : ''}
                 </div>
               </div>
             </div>
@@ -414,10 +401,14 @@ export default function AdminClubsUserProfilePanel({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px] text-sm">
+            <table className="w-full min-w-[1100px] text-sm">
               <thead>
                 <tr className="bg-teal-800 text-white">
                   <th className="w-10 px-2 py-2 text-left font-semibold" />
+                  <th className="px-3 py-2 text-left font-semibold">Full name</th>
+                  <th className="px-3 py-2 text-left font-semibold">Country</th>
+                  <th className="px-2 py-2 text-center font-semibold w-14">Flag</th>
+                  <th className="px-3 py-2 text-left font-semibold">Location</th>
                   <th className="px-3 py-2 text-left font-semibold">Date Start</th>
                   <th className="px-3 py-2 text-left font-semibold">Date End</th>
                   <th className="px-3 py-2 text-left font-semibold">Version</th>
@@ -430,7 +421,7 @@ export default function AdminClubsUserProfilePanel({
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500 bg-white">
+                    <td colSpan={12} className="px-4 py-8 text-center text-gray-500 bg-white">
                       No subscription rows match the current filter.
                     </td>
                   </tr>
@@ -450,6 +441,14 @@ export default function AdminClubsUserProfilePanel({
                           className="rounded border-gray-500"
                         />
                       </td>
+                      <td className="px-3 py-2 border-t border-gray-300 font-medium">
+                        {profileData.fullName || '—'}
+                      </td>
+                      <td className="px-3 py-2 border-t border-gray-300">{profileData.country || '—'}</td>
+                      <td className="px-2 py-2 border-t border-gray-300 text-center text-lg leading-none">
+                        {flagEmojiFromCountryName(profileData.country) || '—'}
+                      </td>
+                      <td className="px-3 py-2 border-t border-gray-300">{profileData.location || '—'}</td>
                       <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{row.dateStart}</td>
                       <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{row.dateEnd ?? '—'}</td>
                       <td className="px-3 py-2 border-t border-gray-300">{row.version}</td>

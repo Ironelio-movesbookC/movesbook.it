@@ -2,12 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
+import {
+  getAdminPasswordConfirmCopy,
+  type ManagedEntityKind,
+} from '@/lib/entity/entityProfileLabels';
 
 type AdminPasswordConfirmModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onVerified: () => void;
   adminUsername?: string;
+  entityKind?: ManagedEntityKind;
 };
 
 export default function AdminPasswordConfirmModal({
@@ -15,7 +20,9 @@ export default function AdminPasswordConfirmModal({
   onClose,
   onVerified,
   adminUsername = 'username',
+  entityKind = 'club',
 }: AdminPasswordConfirmModalProps) {
+  const copy = getAdminPasswordConfirmCopy(entityKind);
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
@@ -92,14 +99,12 @@ export default function AdminPasswordConfirmModal({
           id="admin-password-confirm-title"
           className="bg-[#6b1020] px-4 py-2.5 pr-10 text-sm font-semibold text-white"
         >
-          Confirm Club Admin password
+          {copy.title}
         </div>
 
         <div className="space-y-4 p-5">
           <p className="text-sm text-gray-700">
-            Retype the password for Club Admin{' '}
-            <span className="font-semibold text-gray-900">&lt;{adminUsername}&gt;</span> to
-            create another club.
+            {copy.description(adminUsername)}
           </p>
           <div>
             <label htmlFor="club-admin-retype-password" className="mb-1 block text-sm text-gray-800">

@@ -68,6 +68,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import WorkoutSection from '@/components/workouts/WorkoutSection';
+import NutritionSection from '@/components/nutrition/NutritionSection';
 import ChatPanel from '@/components/chat/ChatPanel';
 import BackgroundsColorsSettings from '@/components/settings/BackgroundsColorsSettings';
 import ToolsSettings from '@/components/settings/ToolsSettings';
@@ -106,7 +107,7 @@ function AthleteDashboardContent() {
   const { t } = useLanguage();
   
   // All hooks must be called before any conditional returns
-  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'progress' | 'settings' | 'personal-settings' | 'chat' | 'news' | 'posts'>('overview');
+  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'nutrition' | 'progress' | 'settings' | 'personal-settings' | 'chat' | 'news' | 'posts'>('overview');
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -128,6 +129,7 @@ function AthleteDashboardContent() {
   const [myCoaches, setMyCoaches] = useState<any[]>([]);
   const [myTeams, setMyTeams] = useState<any[]>([]);
   const [myClubs, setMyClubs] = useState<any[]>([]);
+  const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [myGroups, setMyGroups] = useState<any[]>([]);
   const [bannerProfile, setBannerProfile] = useState<AthleteLegacyBannerProfile | null>(null);
   const [showChangeBannerModal, setShowChangeBannerModal] = useState(false);
@@ -195,6 +197,12 @@ function AthleteDashboardContent() {
       setClubAddSongsOgpExpanded(false);
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (myClubs.length === 0 && activeTab === 'my-entity') {
+      setActiveTab('my-page');
+    }
+  }, [myClubs.length, activeTab]);
 
   // Load entities the athlete belongs to
   useEffect(() => {
@@ -282,7 +290,7 @@ function AthleteDashboardContent() {
 
   // Hide right sidebar when workout section or personal settings opens
   useEffect(() => {
-    if (activeTab === 'my-page' && (activeSection === 'workouts' || activeSection === 'personal-settings')) {
+    if (activeTab === 'my-page' && (activeSection === 'workouts' || activeSection === 'nutrition' || activeSection === 'personal-settings')) {
       setShowRightSidebar(false);
     } else {
       setShowRightSidebar(true);
@@ -332,7 +340,22 @@ function AthleteDashboardContent() {
       });
       if (response.ok) {
         const data = await response.json();
-        setMyClubs(data.clubs || []);
+        const clubs = data.clubs || [];
+        setMyClubs(clubs);
+        if (clubs.length > 0) {
+          setSelectedClubId((prev) => {
+            if (prev && clubs.some((c: { id: string }) => c.id === prev)) {
+              return prev;
+            }
+            if (typeof window !== 'undefined') {
+              const stored = localStorage.getItem('selectedClub');
+              if (stored && clubs.some((c: { id: string }) => c.id === stored)) {
+                return stored;
+              }
+            }
+            return clubs[0].id;
+          });
+        }
       }
     } catch (error) {
       console.error('Error loading my clubs:', error);
@@ -407,9 +430,9 @@ function AthleteDashboardContent() {
     window.location.href = `/my-team?teamId=${teamId}`;
   };
 
-  const handleMyClubSelect = (clubId: string) => {
+  const handleAthleteClubSelect = (clubId: string) => {
     storeSelectedEntity('Club', clubId);
-    window.location.href = `/my-club?clubId=${clubId}`;
+    setSelectedClubId(clubId);
   };
 
   const handleMyGroupSelect = (groupId: string) => {
@@ -475,6 +498,15 @@ function AthleteDashboardContent() {
                 >
                   My Workouts
                 </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('my-page');
+                    setActiveSection('nutrition');
+                  }}
+                  className="bg-green-800/90 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-green-700/90 transition-colors cursor-pointer text-sm"
+                >
+                  My Nutrition
+                </button>
               </div>
             )}
             <label className="flex items-center gap-2 text-sm cursor-pointer ml-auto">
@@ -516,6 +548,15 @@ function AthleteDashboardContent() {
                 >
                   My Workouts
                 </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('my-page');
+                    setActiveSection('nutrition');
+                  }}
+                  className="bg-green-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700/90 transition-colors cursor-pointer"
+                >
+                  My Nutrition
+                </button>
               </div>
             </div>
           </div>
@@ -526,7 +567,9 @@ function AthleteDashboardContent() {
           <div className="flex-shrink-0 px-0">
             <AthleteLegacyBanner
               profile={bannerProfile}
-              primaryClubName={myClubs[0]?.name}
+              primaryClubName={
+                myClubs.find((c) => c.id === selectedClubId)?.name ?? myClubs[0]?.name
+              }
               onCoverCameraClick={() => setShowChangeBannerModal(true)}
               onAvatarCameraClick={() => setShowChangeProfilePhotoModal(true)}
               t={t}
@@ -631,6 +674,15 @@ function AthleteDashboardContent() {
                       My Workouts
                     </button>
                     <button
+                      onClick={() => {
+                        setActiveTab('my-page');
+                        setActiveSection('nutrition');
+                      }}
+                      className="bg-green-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700/90 transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      My Nutrition
+                    </button>
+                    <button
                       onClick={handleChatPanelClick}
                       className="bg-white hover:bg-gray-100 text-gray-800 px-4 py-2 rounded transition-colors whitespace-nowrap text-sm font-medium flex items-center gap-2 border border-gray-300"
                     >
@@ -679,6 +731,15 @@ function AthleteDashboardContent() {
                 >
                   My Workouts
                 </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('my-page');
+                    setActiveSection('nutrition');
+                  }}
+                  className="bg-green-800/90 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700/90 transition-colors cursor-pointer"
+                >
+                  My Nutrition
+                </button>
               </div>
             </div>
           </div>
@@ -691,8 +752,8 @@ function AthleteDashboardContent() {
               <DarkSidebar
                 userType={user?.userType || ''}
                 entities={myClubs}
-                selectedEntityId={null}
-                onEntitySelect={(id) => {}}
+                selectedEntityId={selectedClubId ?? myClubs[0]?.id ?? null}
+                onEntitySelect={handleAthleteClubSelect}
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
                 profileImageFromDb={bannerProfile?.image}
@@ -730,6 +791,7 @@ function AthleteDashboardContent() {
                   />
                 )}
                 {activeSection === 'workouts' && <WorkoutSection onClose={() => setActiveSection('overview')} />}
+                {activeSection === 'nutrition' && <NutritionSection onClose={() => setActiveSection('overview')} />}
                 {activeSection === 'progress' && <AthleteProgress t={t} />}
                 {activeSection === 'settings' && <AthleteSettings t={t} />}
                 {activeSection === 'personal-settings' && <PersonalSettingsContent t={t} user={user} />}
