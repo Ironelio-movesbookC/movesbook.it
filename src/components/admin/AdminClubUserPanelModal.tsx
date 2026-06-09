@@ -11,7 +11,9 @@ export interface ClubUserPanelData {
   fullName: string;
   username: string;
   officialName: string;
+  officialNameLabel?: string;
   region: string;
+  cityLocality: string;
   country: string;
   address: string;
   sport: string;
@@ -163,8 +165,12 @@ export default function AdminClubUserPanelModal({
             <div className="px-5 py-3 space-y-0.5">
               <PanelRow label="Full Name:" value={data.fullName} />
               <PanelRow label="Username:" value={data.username} />
-              <PanelRow label="Official clubname:" value={data.officialName} />
+              <PanelRow
+                label={data.officialNameLabel?.trim() || 'Official clubname:'}
+                value={data.officialName}
+              />
               <PanelRow label="Region:" value={data.region} />
+              <PanelRow label="City\\Locality:" value={data.cityLocality} />
               <PanelRow label="Country:" value={data.country} />
               <PanelRow label="Address:" value={data.address} />
               <PanelRow label="Sport:" value={data.sport} />

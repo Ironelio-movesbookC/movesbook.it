@@ -18,7 +18,7 @@ import { readPcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import { pickClubForAdminProfile } from '@/lib/admin/pickClubForAdminProfile';
 import { readPcuSettings } from '@/lib/admin/userPcuSettings';
 import { loadClubAdminInfoForUser } from '@/lib/user/clubAdminInfoPersistence';
-import { buildClubUserPanelFields } from '@/lib/admin/clubUserPanel';
+import { buildAdminUserPanelFields } from '@/lib/admin/clubUserPanel';
 import { buildProfileSubscriptionRows } from '@/lib/admin/buildProfileSubscriptionRows';
 
 export const dynamic = 'force-dynamic';
@@ -354,7 +354,18 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     pcuAccess.accessStartIso.trim() ? pcuAccess : null,
   );
 
-  const pcuPanel = buildPcuPanel(user, segment, loginLogCount, planCount);
+  const pcuUser =
+    segment === 'clubs' && primaryOwned
+      ? {
+          ...user,
+          ownedClubs: [
+            primaryOwned,
+            ...user.ownedClubs.filter((c) => c.id !== primaryOwned.id),
+          ],
+        }
+      : user;
+
+  const pcuPanel = buildPcuPanel(pcuUser, segment, loginLogCount, planCount);
 
   if (segment === 'clubs' && pcuPanel.entityProfile) {
     const { clubAdminInfo } = await loadClubAdminInfoForUser(user.id);
@@ -393,13 +404,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     profilePanel,
     pcuAccess,
     pcuSettings,
-    ...(segment === 'clubs' && primaryOwned
-      ? {
-          userPanel: buildClubUserPanelFields(user, primaryOwned, {
-            planCount,
-            websiteUrl: personalWebsiteHref,
-          }),
-        }
-      : {}),
+    userPanel: buildAdminUserPanelFields(user, segment, {
+      planCount,
+      websiteUrl: personalWebsiteHref,
+      cityLocality: location,
+      club: primaryOwned ?? undefined,
+      team: primaryTeam ?? undefined,
+      group: primaryGroup ?? undefined,
+      coachingGroup: primaryCoaching ?? undefined,
+    }),
   });
 }

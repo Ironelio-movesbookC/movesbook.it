@@ -1,6 +1,8 @@
 'use client';
 
+import Image from 'next/image';
 import { User } from 'lucide-react';
+import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { flagEmojiFromCountryName } from '@/lib/admin/countryFlag';
 import {
   entityCompanyLabel,
@@ -9,6 +11,9 @@ import {
   type AdminGridCardGroup,
 } from '@/lib/admin/groupRegisteredUserGridCards';
 import type { ClubSubscriptionStatusTone } from '@/lib/admin/clubSubscriptionStatus';
+const isDataUrl = (src: string) =>
+  src.startsWith('data:image/') || src.startsWith('blob:');
+
 function clubAdminStatusClassName(tone?: ClubSubscriptionStatusTone): string {
   switch (tone) {
     case 'expiring':
@@ -33,22 +38,19 @@ type AdminRegisteredUserGridCardProps = {
     userType: string,
     entityId: string | null,
   ) => void;
-  /** Opens full Panel Control for a specific club/team/group/coaching group. */
-  onOpenEntityPcu: (
-    userId: string,
-    userType: string,
-    entityId: string | null,
-  ) => void;
+  /** Opens the online_new_* / online_old_* user panel modal. */
+  onOpenUserPanel: (userId: string, entityId: string | null) => void;
 };
 
 export default function AdminRegisteredUserGridCard({
   group,
   onOpenAdminProfile,
   onOpenEntityProfile,
-  onOpenEntityPcu,
+  onOpenUserPanel,
 }: AdminRegisteredUserGridCardProps) {
   const { admin, entities } = group;
   const showOwnedList = gridCardShowsOwnedEntities(group);
+  const adminAvatarSrc = resolvePublicImageUrl(admin.imageUrl);
 
   return (
     <div className="border border-gray-300 bg-white p-4 rounded shadow-sm text-sm">
@@ -63,9 +65,18 @@ export default function AdminRegisteredUserGridCard({
           </div>
           <div className="text-gray-600">{admin.location?.trim() || '—'}</div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-blue-800 font-medium">
+            <button
+              type="button"
+              onClick={() =>
+                onOpenUserPanel(
+                  admin.id,
+                  admin.primaryClubId ?? entities[0]?.entityId ?? entities[0]?.primaryClubId ?? null,
+                )
+              }
+              className="text-blue-800 font-medium hover:text-blue-950 underline underline-offset-2"
+            >
               @{admin.accountUsername ?? admin.username}
-            </span>
+            </button>
             <button
               type="button"
               onClick={() =>
@@ -85,11 +96,24 @@ export default function AdminRegisteredUserGridCard({
           </div>
           <div className="text-gray-700">{admin.version}</div>
         </div>
-        <div
-          className="w-[4.5rem] h-[4.5rem] shrink-0 border-2 border-red-600 bg-gray-50 flex items-center justify-center"
-          aria-hidden
-        >
-          <User className="w-9 h-9 text-gray-400" />
+        <div className="w-[4.5rem] h-[4.5rem] shrink-0 border-2 border-red-600 bg-gray-50 flex items-center justify-center overflow-hidden">
+          {adminAvatarSrc ? (
+            isDataUrl(adminAvatarSrc) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={adminAvatarSrc} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <Image
+                src={adminAvatarSrc}
+                alt=""
+                width={72}
+                height={72}
+                className="object-cover w-full h-full"
+                unoptimized
+              />
+            )
+          ) : (
+            <User className="w-9 h-9 text-gray-400" aria-hidden />
+          )}
         </div>
       </div>
 
@@ -109,9 +133,8 @@ export default function AdminRegisteredUserGridCard({
                   <button
                     type="button"
                     onClick={() =>
-                      onOpenEntityPcu(
+                      onOpenUserPanel(
                         admin.id,
-                        admin.userType,
                         entity.entityId ?? entity.primaryClubId ?? null,
                       )
                     }
@@ -148,7 +171,9 @@ export default function AdminRegisteredUserGridCard({
           <div className={`mt-2 ${clubAdminStatusClassName(admin.statusTone)}`}>{admin.status}</div>
           <button
             type="button"
-            onClick={() => onOpenAdminProfile(admin.id, admin.userType, admin.primaryClubId ?? null)}
+            onClick={() =>
+              onOpenUserPanel(admin.id, admin.primaryClubId ?? null)
+            }
             className="mt-2 text-sm text-blue-800 underline hover:text-blue-950"
           >
             View profile

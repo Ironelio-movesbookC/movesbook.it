@@ -1405,6 +1405,15 @@ export default function UserPcuControlPanel({
   const countryCode = countryCodeFromName(user.country);
   const entityProfileLabel = `${user.roleTitle}_profile`;
   const isSingleUserProfile = user.segment === 'single-user';
+  const profileAvatarRaw =
+    !isSingleUserProfile && profileSubTab === 'entity'
+      ? user.entityImageUrl
+      : user.imageUrl;
+  const profileAvatarSrc = resolvePublicImageUrl(profileAvatarRaw) ?? profileAvatarRaw;
+  const profileAvatarCaption =
+    !isSingleUserProfile && profileSubTab === 'entity' && user.entityProfile
+      ? user.entityProfile.officialName || user.entityProfile.username || user.username
+      : user.username;
   /** Club owner accounts share the athlete-style Admin's settings panel (operator, publishing, VIP, etc.). */
   const showAthleteStyleAdminSettings =
     user.segment === 'single-user' || user.segment === 'clubs';
@@ -2290,23 +2299,12 @@ export default function UserPcuControlPanel({
     // PCU Admin's settings is handled in-panel; keep routing for future deep-links if needed.
   };
 
-  const pcuHeaderUserLabel =
-    user.fullname?.trim() ||
-    user.entityName?.trim() ||
-    user.username?.trim() ||
-    '—';
-  const pcuHeaderUserHint = [user.username, user.email]
-    .map((v) => v?.trim())
-    .filter(Boolean)
-    .filter((v, i, arr) => arr.indexOf(v) === i)
-    .join(' · ');
-
   return (
     <div className="w-full min-w-0">
       <div className="bg-gray-200 border border-gray-300 rounded shadow-sm">
         <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-gray-300">
-          <div className="flex items-center gap-3 min-w-0 shrink-0">
-            <button type="button" className="p-1.5 rounded hover:bg-gray-300" title="Menu">
+          <div className="flex items-center gap-3 min-w-0">
+            <button type="button" className="p-1.5 rounded hover:bg-gray-300 shrink-0" title="Menu">
               <span className="block w-5 h-0.5 bg-gray-700 mb-1" />
               <span className="block w-5 h-0.5 bg-gray-700 mb-1" />
               <span className="block w-5 h-0.5 bg-gray-700" />
@@ -2314,15 +2312,15 @@ export default function UserPcuControlPanel({
             <div className="text-sm font-semibold text-red-700 whitespace-nowrap">
               Panel control about the User
             </div>
+            <button
+              type="button"
+              className="text-sm font-semibold text-red-700 hover:underline whitespace-nowrap"
+              onClick={() => router.push('/admin/all')}
+            >
+              Back to the List
+            </button>
           </div>
-          <div
-            className="flex-1 min-w-0 text-center px-2"
-            title={pcuHeaderUserHint || pcuHeaderUserLabel}
-          >
-            <div className="text-sm sm:text-base font-semibold text-gray-900 truncate">
-              {pcuHeaderUserLabel}
-            </div>
-          </div>
+          <div className="flex-1 min-w-0" />
           <div className="flex items-center gap-2 shrink-0">
             {overviewHref ? (
               <button
@@ -2545,24 +2543,25 @@ export default function UserPcuControlPanel({
                 <div className="grid gap-4 md:grid-cols-[160px_1fr]">
                   <div className="flex flex-col items-center gap-2">
                     <div className="w-24 h-24 bg-gray-200 border border-gray-300 overflow-hidden flex items-center justify-center">
-                      {user.imageUrl ? (
-                        isDataUrl(user.imageUrl) ? (
+                      {profileAvatarSrc ? (
+                        isDataUrl(profileAvatarSrc) ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={user.imageUrl} alt="" className="w-full h-full object-cover" />
+                          <img src={profileAvatarSrc} alt="" className="w-full h-full object-cover" />
                         ) : (
                           <Image
-                            src={user.imageUrl}
+                            src={profileAvatarSrc}
                             alt=""
                             width={96}
                             height={96}
                             className="object-cover w-full h-full"
+                            unoptimized
                           />
                         )
                       ) : (
                         <User className="w-10 h-10 text-gray-500" />
                       )}
                     </div>
-                    <div className="text-sm text-gray-600 text-center">{user.username}</div>
+                    <div className="text-sm text-gray-600 text-center">{profileAvatarCaption}</div>
                   </div>
 
                   <div className="space-y-2">

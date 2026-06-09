@@ -1,5 +1,6 @@
 import type { UserType } from '@prisma/client';
 import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
+import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
 import { parseClubSubscriptionEndDate } from '@/lib/admin/clubSubscriptionStatus';
 import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
@@ -44,6 +45,8 @@ export type PcuPanelPayload = {
   endDateIso: string;
   logs: number;
   imageUrl: string | null;
+  /** Club / entity logo for the entity profile sub-tab (not the admin account photo). */
+  entityImageUrl: string | null;
   dashboardPath: string;
   adminSegmentPath: string;
   entityId: string | null;
@@ -409,6 +412,18 @@ export function buildPcuPanel(
     endDateIso: toIsoDate(endDate),
     logs: loginLogCount,
     imageUrl: user.image?.trim() || null,
+    entityImageUrl:
+      segment === 'clubs' && (primaryClub || memberClub)
+        ? getLogoUrlFromEntityDescription(
+            primaryClub?.description ?? memberClub?.description ?? null,
+          )
+        : segment === 'teams' && primaryTeam
+          ? getLogoUrlFromEntityDescription(primaryTeam.description)
+          : segment === 'groups' && primaryGroup
+            ? getLogoUrlFromEntityDescription(primaryGroup.description)
+            : segment === 'coaches' && primaryCoaching
+              ? getLogoUrlFromEntityDescription(primaryCoaching.description)
+              : null,
     dashboardPath: getDashboardPathForUserType(user.userType),
     adminSegmentPath: adminSegmentPath(segment),
     entityId,

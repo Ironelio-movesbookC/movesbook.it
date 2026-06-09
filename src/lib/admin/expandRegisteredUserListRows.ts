@@ -33,6 +33,8 @@ export type RegisteredUserListRow = {
   entityKind?: 'club' | 'team' | 'group' | 'coaching_group';
   /** Login username (unchanged when `username` is a club/entity handle). */
   accountUsername?: string;
+  /** Admin account profile photo (`users_new.image`). */
+  imageUrl?: string | null;
 };
 
 type ClubEntity = {
@@ -46,6 +48,7 @@ type ClubEntity = {
 type TeamEntity = {
   id: string;
   name: string;
+  description: string | null;
   sport: string | null;
   createdAt: Date;
 };
@@ -53,6 +56,7 @@ type TeamEntity = {
 type GroupEntity = {
   id: string;
   name: string;
+  description: string | null;
   groupType: string | null;
   createdAt: Date;
 };
@@ -60,6 +64,7 @@ type GroupEntity = {
 type CoachingGroupEntity = {
   id: string;
   name: string;
+  description: string | null;
   createdAt: Date;
 };
 
@@ -164,19 +169,25 @@ function expandTeamRows(
 
   const accountUsername = base.accountUsername ?? base.username;
 
-  return sorted.map((team) => ({
-    ...base,
-    accountUsername,
-    rowKey: `${base.id}-team-${team.id}`,
-    entityId: team.id,
-    entityKind: 'team',
-    companyName: team.name.trim(),
-    location: team.sport?.trim() || '',
-    dateStart: team.createdAt.toISOString().slice(0, 10),
-    version: team.sport?.trim() ? `Team ${team.sport.trim()}` : 'Team account',
-    status: 'Active',
-    statusTone: 'active',
-  }));
+  return sorted.map((team) => {
+    const meta = parseClubDescriptionMeta(team.description);
+    const teamUsername = meta.username?.trim();
+    return {
+      ...base,
+      accountUsername,
+      rowKey: `${base.id}-team-${team.id}`,
+      entityId: team.id,
+      entityKind: 'team',
+      companyName: team.name.trim(),
+      location: team.sport?.trim() || cleanLocationPart(meta.region) || '',
+      country: meta.country?.trim() || base.country,
+      dateStart: team.createdAt.toISOString().slice(0, 10),
+      version: team.sport?.trim() ? `Team ${team.sport.trim()}` : 'Team account',
+      status: 'Active',
+      statusTone: 'active',
+      username: teamUsername || base.username,
+    };
+  });
 }
 
 function expandGroupRows(
@@ -188,21 +199,27 @@ function expandGroupRows(
 
   const accountUsername = base.accountUsername ?? base.username;
 
-  return sorted.map((group) => ({
-    ...base,
-    accountUsername,
-    rowKey: `${base.id}-group-${group.id}`,
-    entityId: group.id,
-    entityKind: 'group',
-    companyName: group.name.trim(),
-    location: group.groupType?.trim() || '',
-    dateStart: group.createdAt.toISOString().slice(0, 10),
-    version: group.groupType?.trim()
-      ? `Group ${group.groupType.trim()}`
-      : 'Group account',
-    status: 'Active',
-    statusTone: 'active',
-  }));
+  return sorted.map((group) => {
+    const meta = parseClubDescriptionMeta(group.description);
+    const groupUsername = meta.username?.trim();
+    return {
+      ...base,
+      accountUsername,
+      rowKey: `${base.id}-group-${group.id}`,
+      entityId: group.id,
+      entityKind: 'group',
+      companyName: group.name.trim(),
+      location: group.groupType?.trim() || cleanLocationPart(meta.region) || '',
+      country: meta.country?.trim() || base.country,
+      dateStart: group.createdAt.toISOString().slice(0, 10),
+      version: group.groupType?.trim()
+        ? `Group ${group.groupType.trim()}`
+        : 'Group account',
+      status: 'Active',
+      statusTone: 'active',
+      username: groupUsername || base.username,
+    };
+  });
 }
 
 function expandCoachingGroupRows(
@@ -214,18 +231,25 @@ function expandCoachingGroupRows(
 
   const accountUsername = base.accountUsername ?? base.username;
 
-  return sorted.map((group) => ({
-    ...base,
-    accountUsername,
-    rowKey: `${base.id}-coach-group-${group.id}`,
-    entityId: group.id,
-    entityKind: 'coaching_group',
-    companyName: group.name.trim(),
-    dateStart: group.createdAt.toISOString().slice(0, 10),
-    version: 'Coach account',
-    status: 'Active',
-    statusTone: 'active',
-  }));
+  return sorted.map((group) => {
+    const meta = parseClubDescriptionMeta(group.description);
+    const groupUsername = meta.username?.trim();
+    return {
+      ...base,
+      accountUsername,
+      rowKey: `${base.id}-coach-group-${group.id}`,
+      entityId: group.id,
+      entityKind: 'coaching_group',
+      companyName: group.name.trim(),
+      location: cleanLocationPart(meta.region) || '',
+      country: meta.country?.trim() || base.country,
+      dateStart: group.createdAt.toISOString().slice(0, 10),
+      version: 'Coach account',
+      status: 'Active',
+      statusTone: 'active',
+      username: groupUsername || base.username,
+    };
+  });
 }
 
 /** One list row per owned club / team / group (admin “all” and clubs pages). */

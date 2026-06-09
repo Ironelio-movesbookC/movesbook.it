@@ -461,8 +461,13 @@ export default function UserProfile({
         {!embedded && (
           <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
             <div className="flex items-center gap-4">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-3xl font-bold">
-                {displayName.charAt(0).toUpperCase()}
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-3xl font-bold overflow-hidden shrink-0">
+                {avatarSrc ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatarSrc} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  displayName.charAt(0).toUpperCase()
+                )}
               </div>
               <div className="flex-1">
                 <h1 className="text-3xl font-bold text-gray-800">{displayName}</h1>

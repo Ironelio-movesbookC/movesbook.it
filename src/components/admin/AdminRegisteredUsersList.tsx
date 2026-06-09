@@ -274,10 +274,6 @@ const EMPTY_PROFILE_SUB_FILTERS: ProfileSubscriptionFilterState = {
   ordering: '',
 };
 
-function isClubUserType(userType: string): boolean {
-  return userType === 'CLUB' || userType === 'CLUB_TRAINER';
-}
-
 function inferProfileSegmentFromUserType(userType: string): AdminUserSegment {
   switch (userType) {
     case 'COACH':
@@ -398,7 +394,12 @@ export default function AdminRegisteredUsersList({
   const versionOptions = useMemo(() => VERSION_BY_SEGMENT[segment], [segment]);
   const isAllSegment = segment === 'all';
   const isClubsSegment = segment === 'clubs';
-  const showCompanyColumn = isClubsSegment || isAllSegment;
+  const showCompanyColumn =
+    isClubsSegment ||
+    isAllSegment ||
+    segment === 'teams' ||
+    segment === 'groups' ||
+    segment === 'coaches';
   const profileSegment =
     isAllSegment && profileData
       ? inferProfileSegmentFromUserType(profileData.userType)
@@ -1150,7 +1151,7 @@ export default function AdminRegisteredUsersList({
   }, []);
 
   const openClubUserPanel = useCallback(
-    async (userId: string, clubId?: string | null) => {
+    async (userId: string, entityId?: string | null) => {
       setClubPanelUserId(userId);
       setClubPanelOpen(true);
       setClubPanelLoading(true);
@@ -1163,27 +1164,30 @@ export default function AdminRegisteredUsersList({
           setClubPanelLoading(false);
           return;
         }
-        const qs = new URLSearchParams({ segment: 'clubs' });
-        if (clubId?.trim()) qs.set('clubId', clubId.trim());
+        const qs = new URLSearchParams({ segment });
+        if (entityId?.trim()) qs.set('clubId', entityId.trim());
         if (searchApplied.trim()) qs.set('q', searchApplied.trim());
         const res = await fetch(
           `/api/admin/registered-users/${userId}/profile?${qs.toString()}`,
           { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
         );
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.error || 'Failed to load club profile');
+        if (!res.ok) throw new Error(data?.error || 'Failed to load user profile');
         const panel = data.userPanel;
         if (!panel || typeof panel !== 'object') {
-          throw new Error('Club profile data is not available for this user.');
+          throw new Error('User panel data is not available for this user.');
         }
         setClubPanelData({
-          modalTitle: String(panel.modalTitle ?? 'online_old_Club'),
+          modalTitle: String(panel.modalTitle ?? 'online_old_User'),
           fullName: String(panel.fullName ?? ''),
           username: String(panel.username ?? ''),
           officialName: String(panel.officialName ?? ''),
+          officialNameLabel:
+            panel.officialNameLabel != null ? String(panel.officialNameLabel) : undefined,
           region: String(panel.region ?? panel.clubname ?? ''),
+          cityLocality: String(panel.cityLocality ?? panel.location ?? panel.city ?? ''),
           country: String(panel.country ?? ''),
-          address: String(panel.address ?? panel.city ?? ''),
+          address: String(panel.address ?? ''),
           sport: String(panel.sport ?? ''),
           dateStart: String(panel.dateStart ?? ''),
           dateEnd: panel.dateEnd != null && panel.dateEnd !== '' ? String(panel.dateEnd) : null,
@@ -1191,7 +1195,7 @@ export default function AdminRegisteredUsersList({
           paid: typeof panel.paid === 'number' ? panel.paid : parseInt(String(panel.paid ?? '0'), 10) || 0,
           adminImageUrl: panel.adminImageUrl != null ? String(panel.adminImageUrl) : null,
           clubId: panel.clubId != null ? String(panel.clubId) : null,
-          typeBadge: String(panel.typeBadge ?? 'Club'),
+          typeBadge: String(panel.typeBadge ?? 'User'),
           visitPagePath:
             panel.visitPagePath != null && String(panel.visitPagePath).trim() !== ''
               ? String(panel.visitPagePath)
@@ -1202,12 +1206,12 @@ export default function AdminRegisteredUsersList({
               : null,
         });
       } catch (e: unknown) {
-        setClubPanelError(e instanceof Error ? e.message : 'Failed to load club profile');
+        setClubPanelError(e instanceof Error ? e.message : 'Failed to load user profile');
       } finally {
         setClubPanelLoading(false);
       }
     },
-    [searchApplied],
+    [searchApplied, segment],
   );
 
   const handleClubPanelSubscriptions = useCallback(() => {
@@ -1223,7 +1227,7 @@ export default function AdminRegisteredUsersList({
     closeClubUserPanel();
     router.push(
       buildPcuHistoryUserUrl(clubPanelUserId, {
-        scope: segment === 'all' ? 'clubs' : segment,
+        scope: segment,
         q: searchApplied.trim() || null,
         clubId: clubId ?? null,
       }),
@@ -1249,21 +1253,6 @@ export default function AdminRegisteredUsersList({
           tab: opts.tab,
           profileSubTab: opts.profileSubTab,
           clubId: opts.clubId ?? undefined,
-        }),
-      );
-    },
-    [router, segment, searchApplied],
-  );
-
-  const openGridPcuControlPanel = useCallback(
-    (userId: string, userType: string, clubId?: string | null) => {
-      const profileSegment = inferProfileSegmentFromUserType(userType);
-      router.push(
-        buildPcuHistoryUserUrl(userId, {
-          segment: profileSegment,
-          scope: segment === 'all' ? profileSegment : segment,
-          q: searchApplied.trim() || undefined,
-          clubId: clubId ?? undefined,
         }),
       );
     },
@@ -2040,9 +2029,7 @@ export default function AdminRegisteredUsersList({
                   clubId: entityId,
                 })
               }
-              onOpenEntityPcu={(userId, userType, entityId) =>
-                openGridPcuControlPanel(userId, userType, entityId)
-              }
+              onOpenUserPanel={(userId, entityId) => void openClubUserPanel(userId, entityId)}
             />
           ))}
         </div>
@@ -2131,17 +2118,15 @@ export default function AdminRegisteredUsersList({
                       </td>
                     )}
                     <td className="px-3 py-2 border-t border-gray-300 font-medium">
-                      {isClubsSegment || (isAllSegment && isClubUserType(r.userType)) ? (
-                        <button
-                          type="button"
-                          onClick={() => void openClubUserPanel(r.id, r.primaryClubId)}
-                          className="text-blue-800 underline hover:text-blue-950 font-medium"
-                        >
-                          {r.username}
-                        </button>
-                      ) : (
-                        r.username
-                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void openClubUserPanel(r.id, r.entityId ?? r.primaryClubId ?? null)
+                        }
+                        className="text-blue-800 underline hover:text-blue-950 font-medium"
+                      >
+                        {r.username}
+                      </button>
                     </td>
                     <td className="px-2 py-2 border-t border-gray-300 text-gray-700">{r.amount}</td>
                     <td className="px-3 py-2 border-t border-gray-300">
@@ -2174,17 +2159,15 @@ export default function AdminRegisteredUsersList({
         </>
       )}
 
-      {(isClubsSegment || isAllSegment) && (
-        <AdminClubUserPanelModal
-          isOpen={clubPanelOpen}
-          loading={clubPanelLoading}
-          error={clubPanelError}
-          data={clubPanelData}
-          onClose={closeClubUserPanel}
-          onControlPanel={handleClubPanelControlPanel}
-          onSubscriptions={handleClubPanelSubscriptions}
-        />
-      )}
+      <AdminClubUserPanelModal
+        isOpen={clubPanelOpen}
+        loading={clubPanelLoading}
+        error={clubPanelError}
+        data={clubPanelData}
+        onClose={closeClubUserPanel}
+        onControlPanel={handleClubPanelControlPanel}
+        onSubscriptions={handleClubPanelSubscriptions}
+      />
 
       <SuperAdminPasswordConfirmModal
         isOpen={renewSubModalOpen}

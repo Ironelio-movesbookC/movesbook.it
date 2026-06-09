@@ -290,7 +290,6 @@ function MyClubContent() {
                     <ManagedEntitySidebarAvatar
                       description={club?.description}
                       imageUrl={club?.imageUrl}
-                      userImageUrl={user?.image}
                       alt={clubDisplayName}
                     />
                   </div>

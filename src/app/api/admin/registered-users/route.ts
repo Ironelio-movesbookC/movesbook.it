@@ -30,6 +30,7 @@ import {
   buildMovesbookUserTextSearchOr,
   segmentShouldMatchOwnedClubs,
 } from '@/lib/admin/movesbookUserTextSearch';
+import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 
 export const dynamic = 'force-dynamic';
 
@@ -189,6 +190,7 @@ export async function GET(request: NextRequest) {
     surname: true,
     userType: true,
     country: true,
+    image: true,
     createdAt: true,
     updatedAt: true,
   } as const;
@@ -206,7 +208,17 @@ export async function GET(request: NextRequest) {
   ]);
 
   const isClubsSegment = segment === 'clubs';
+  const isTeamsSegment = segment === 'teams';
+  const isGroupsSegment = segment === 'groups';
+  const isCoachesSegment = segment === 'coaches';
   const isAllSegment = segment === 'all';
+  const shouldExpandEntityRows =
+    (isClubsSegment ||
+      isAllSegment ||
+      isTeamsSegment ||
+      isGroupsSegment ||
+      isCoachesSegment) &&
+    membershipMode !== 'lastPerUser';
   const userIds = rows.map((u) => u.id);
 
   const clubsByAdmin = new Map<
@@ -259,43 +271,75 @@ export async function GET(request: NextRequest) {
 
   const teamsByAdmin = new Map<
     string,
-    { id: string; name: string; sport: string | null; createdAt: Date }[]
+    { id: string; name: string; description: string | null; sport: string | null; createdAt: Date }[]
   >();
   const groupsByAdmin = new Map<
     string,
-    { id: string; name: string; groupType: string | null; createdAt: Date }[]
+    {
+      id: string;
+      name: string;
+      description: string | null;
+      groupType: string | null;
+      createdAt: Date;
+    }[]
   >();
   const coachingGroupsByCoach = new Map<
     string,
-    { id: string; name: string; createdAt: Date }[]
+    { id: string; name: string; description: string | null; createdAt: Date }[]
   >();
 
-  if (isAllSegment && userIds.length > 0) {
-    const teamAdminIds = rows
-      .filter((u) => u.userType === UserType.TEAM || u.userType === UserType.TEAM_MANAGER)
-      .map((u) => u.id);
-    const groupAdminIds = rows
-      .filter((u) => u.userType === UserType.GROUP || u.userType === UserType.GROUP_ADMIN)
-      .map((u) => u.id);
-    const coachIds = rows.filter((u) => u.userType === UserType.COACH).map((u) => u.id);
+  if ((isAllSegment || isTeamsSegment || isGroupsSegment || isCoachesSegment) && userIds.length > 0) {
+    const teamAdminIds = isTeamsSegment
+      ? userIds
+      : rows
+          .filter((u) => u.userType === UserType.TEAM || u.userType === UserType.TEAM_MANAGER)
+          .map((u) => u.id);
+    const groupAdminIds = isGroupsSegment
+      ? userIds
+      : rows
+          .filter((u) => u.userType === UserType.GROUP || u.userType === UserType.GROUP_ADMIN)
+          .map((u) => u.id);
+    const coachIds = isCoachesSegment
+      ? userIds
+      : rows.filter((u) => u.userType === UserType.COACH).map((u) => u.id);
 
     const [ownedTeams, ownedGroups, ownedCoaching] = await Promise.all([
       teamAdminIds.length > 0
         ? prisma.team.findMany({
             where: { adminId: { in: teamAdminIds } },
-            select: { adminId: true, id: true, name: true, sport: true, createdAt: true },
+            select: {
+              adminId: true,
+              id: true,
+              name: true,
+              description: true,
+              sport: true,
+              createdAt: true,
+            },
           })
         : [],
       groupAdminIds.length > 0
         ? prisma.group.findMany({
             where: { adminId: { in: groupAdminIds } },
-            select: { adminId: true, id: true, name: true, groupType: true, createdAt: true },
+            select: {
+              adminId: true,
+              id: true,
+              name: true,
+              description: true,
+              groupType: true,
+              createdAt: true,
+            },
           })
         : [],
       coachIds.length > 0
         ? prisma.coachingGroup.findMany({
             where: { coachId: { in: coachIds } },
-            select: { coachId: true, id: true, name: true, createdAt: true },
+            select: {
+              coachId: true,
+              id: true,
+              name: true,
+              description: true,
+              createdAt: true,
+            },
           })
         : [],
     ]);
@@ -305,6 +349,7 @@ export async function GET(request: NextRequest) {
       list.push({
         id: team.id,
         name: team.name,
+        description: team.description,
         sport: team.sport,
         createdAt: team.createdAt,
       });
@@ -315,6 +360,7 @@ export async function GET(request: NextRequest) {
       list.push({
         id: group.id,
         name: group.name,
+        description: group.description,
         groupType: group.groupType,
         createdAt: group.createdAt,
       });
@@ -322,7 +368,12 @@ export async function GET(request: NextRequest) {
     }
     for (const cg of ownedCoaching) {
       const list = coachingGroupsByCoach.get(cg.coachId) ?? [];
-      list.push({ id: cg.id, name: cg.name, createdAt: cg.createdAt });
+      list.push({
+        id: cg.id,
+        name: cg.name,
+        description: cg.description,
+        createdAt: cg.createdAt,
+      });
       coachingGroupsByCoach.set(cg.coachId, list);
     }
   }
@@ -338,6 +389,12 @@ export async function GET(request: NextRequest) {
     let location = '';
     let primaryClubId: string | null = null;
     const userIsClubAdmin = isClubUserType(u.userType);
+    const userIsTeamAdmin =
+      u.userType === UserType.TEAM || u.userType === UserType.TEAM_MANAGER;
+    const userIsGroupAdmin =
+      u.userType === UserType.GROUP || u.userType === UserType.GROUP_ADMIN;
+    const userIsCoach = u.userType === UserType.COACH;
+
     if (isClubsSegment || (isAllSegment && userIsClubAdmin)) {
       const adminClubs = clubsByAdmin.get(u.id) ?? [];
       clubsOwnedCount = adminClubs.length;
@@ -353,6 +410,35 @@ export async function GET(request: NextRequest) {
       const aggregated = aggregateClubAdminSubscriptionStatus(endDates);
       status = aggregated.label;
       statusTone = aggregated.tone;
+    } else if (isTeamsSegment || (isAllSegment && userIsTeamAdmin)) {
+      const adminTeams = teamsByAdmin.get(u.id) ?? [];
+      if (adminTeams.length > 0) {
+        const first = [...adminTeams].sort(
+          (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+        )[0]!;
+        primaryClubId = first.id;
+        companyName = first.name?.trim() || '';
+        location = first.sport?.trim() || '';
+      }
+    } else if (isGroupsSegment || (isAllSegment && userIsGroupAdmin)) {
+      const adminGroups = groupsByAdmin.get(u.id) ?? [];
+      if (adminGroups.length > 0) {
+        const first = [...adminGroups].sort(
+          (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+        )[0]!;
+        primaryClubId = first.id;
+        companyName = first.name?.trim() || '';
+        location = first.groupType?.trim() || '';
+      }
+    } else if (isCoachesSegment || (isAllSegment && userIsCoach)) {
+      const coachGroups = coachingGroupsByCoach.get(u.id) ?? [];
+      if (coachGroups.length > 0) {
+        const first = [...coachGroups].sort(
+          (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+        )[0]!;
+        primaryClubId = first.id;
+        companyName = first.name?.trim() || '';
+      }
     } else {
       location = locationByUserId.get(u.id) ?? '';
       if (isAllSegment && u.userType === UserType.ATHLETE) {
@@ -369,20 +455,26 @@ export async function GET(request: NextRequest) {
       displayName,
       userType: u.userType,
       country: u.country,
+      imageUrl: resolvePublicImageUrl(u.image),
       location,
       dateStart: u.createdAt.toISOString().slice(0, 10),
       dateEnd: null as string | null,
       version: versionLabel(u.userType),
       amount: '—',
       status,
-      ...(isClubsSegment || isAllSegment
+      ...((isClubsSegment || isAllSegment) && clubsOwnedCount !== undefined
         ? {
             clubsOwnedCount,
             companyName,
             statusTone,
             primaryClubId: isClubsSegment || userIsClubAdmin ? primaryClubId : null,
           }
-        : {}),
+        : isTeamsSegment || isGroupsSegment || isCoachesSegment || isAllSegment
+          ? {
+              companyName,
+              primaryClubId,
+            }
+          : {}),
     };
   });
 
@@ -417,13 +509,15 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const expandEntities =
-    (isClubsSegment || isAllSegment) && membershipMode !== 'lastPerUser';
-
   let users: RegisteredUserListRow[];
   if (membershipMode === 'lastPerUser') {
     const allEntities = expandRegisteredUserListRows(baseRows, entityMaps, {
-      expandEntities: isClubsSegment || isAllSegment,
+      expandEntities:
+        isClubsSegment ||
+        isAllSegment ||
+        isTeamsSegment ||
+        isGroupsSegment ||
+        isCoachesSegment,
     });
     users = buildMembershipListRows(
       allEntities,
@@ -435,7 +529,7 @@ export async function GET(request: NextRequest) {
     );
   } else {
     const entityExpanded = expandRegisteredUserListRows(baseRows, entityMaps, {
-      expandEntities,
+      expandEntities: shouldExpandEntityRows,
     });
     users = buildMembershipListRows(
       entityExpanded,

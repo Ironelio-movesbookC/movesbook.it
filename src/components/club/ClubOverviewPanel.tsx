@@ -14,6 +14,7 @@ import {
 import UserProfile from '@/components/UserProfile';
 import ClubAdminInfoForm from '@/components/profile/ClubAdminInfoForm';
 import ClubReferencesDisplay from '@/components/club/ClubReferencesDisplay';
+import ManagedEntitySidebarAvatar from '@/components/entity/ManagedEntitySidebarAvatar';
 import {
   getClubProfileDisplayRows,
   parseClubDescriptionMeta,
@@ -60,6 +61,7 @@ interface Club {
   name: string;
   description: string | null;
   location: string | null;
+  imageUrl?: string | null;
 }
 
 type ClubOverviewPanelProps = {
@@ -301,6 +303,24 @@ export default function ClubOverviewPanel({
 
         {activeTab === 'club-profile' && (
           <div className="space-y-4 p-6">
+            <div>
+              <h3 className="text-xl font-bold text-gray-800 mb-1">Club Profile</h3>
+              <p className="text-sm text-gray-600 mb-4">Personal details for the club account.</p>
+              <div className="flex items-center gap-4 mb-6 pb-6 border-b border-gray-100">
+                <ManagedEntitySidebarAvatar
+                  description={club?.description}
+                  imageUrl={club?.imageUrl}
+                  alt={club?.name ?? 'Club logo'}
+                  className="w-20 h-20 rounded-2xl"
+                />
+                <Link
+                  href={clubProfileEditHref}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium underline underline-offset-2"
+                >
+                  Change profile photo
+                </Link>
+              </div>
+            </div>
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm text-gray-600">Official club information registered for this club.</p>
               <Link
