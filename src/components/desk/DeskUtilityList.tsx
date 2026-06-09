@@ -1,30 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import {
-  DndContext,
-  type DragEndEvent,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  arrayMove,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Accessibility,
   AtSign,
   BookOpen,
   ChevronDown,
   CreditCard,
-  GripVertical,
   Landmark,
   type LucideIcon,
   Trophy
@@ -33,6 +16,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { deskTreeRowInsetStyle } from '@/components/desk/deskTreeDepth';
 
 type DeskIconKey = 'at' | 'book' | 'id' | 'trophy' | 'wheelchair' | 'landmark';
+type DeskDisplayMode = 'new_label' | 'central_page';
 
 const ICONS: Record<DeskIconKey, LucideIcon> = {
   at: AtSign,
@@ -52,9 +36,45 @@ export type DeskUtilityNode = {
   faIconClass?: string;
   bgColor?: string;
   titleColor?: string;
+  path?: string;
+  displayMode?: DeskDisplayMode;
   visible?: boolean;
   children?: DeskUtilityNode[];
 };
+
+function resolveDeskItemUrl(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith('/')) return trimmed;
+  return `https://${trimmed}`;
+}
+
+function isExternalDeskUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+function openDeskItemPath(
+  path: string,
+  displayMode: DeskDisplayMode | undefined,
+  router: ReturnType<typeof useRouter>
+) {
+  const url = resolveDeskItemUrl(path);
+  if (!url) return;
+
+  const mode = displayMode ?? 'new_label';
+  if (mode === 'new_label') {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
+  if (isExternalDeskUrl(url)) {
+    window.location.assign(url);
+    return;
+  }
+
+  router.push(url);
+}
 
 /** Demo tree for `variant="demo"` only. */
 export const DEMO_DESK_UTILITY_TREE: DeskUtilityNode[] = [
@@ -168,6 +188,11 @@ function mapApiToDeskUtility(node: ApiMyDeskNode): DeskUtilityNode {
     faIconClass: node.faIconClass ?? undefined,
     bgColor: node.bgColor ?? undefined,
     titleColor: node.titleColor ?? undefined,
+    path: node.path?.trim() || undefined,
+    displayMode:
+      node.displayMode === 'new_label' || node.displayMode === 'central_page'
+        ? node.displayMode
+        : undefined,
     visible: node.visible,
     children: (node.children ?? []).map(mapApiToDeskUtility)
   };
@@ -184,91 +209,39 @@ function filterVisibleDeskNodes(nodes: DeskUtilityNode[]): DeskUtilityNode[] {
     });
 }
 
-function findSiblingsContext(
-  nodes: DeskUtilityNode[],
-  targetId: string,
-  parentId: string | null = null
-): { parentId: string | null; siblingIds: string[] } | null {
-  if (nodes.some((n) => n.id === targetId)) {
-    return { parentId, siblingIds: nodes.map((n) => n.id) };
-  }
-  for (const node of nodes) {
-    if (!node.children?.length) continue;
-    const result = findSiblingsContext(node.children, targetId, node.id);
-    if (result) return result;
-  }
-  return null;
-}
-
-function reorderAmongSiblings(
-  items: DeskUtilityNode[],
-  activeId: string,
-  overId: string
-): DeskUtilityNode[] | null {
-  const activeIndex = items.findIndex((i) => i.id === activeId);
-  const overIndex = items.findIndex((i) => i.id === overId);
-  if (activeIndex === -1 || overIndex === -1) {
-    return null;
-  }
-  return arrayMove(items, activeIndex, overIndex);
-}
-
-function reorderInTree(
-  items: DeskUtilityNode[],
-  activeId: string,
-  overId: string
-): DeskUtilityNode[] | null {
-  const atLevel = reorderAmongSiblings(items, activeId, overId);
-  if (atLevel !== null) {
-    return atLevel;
-  }
-  let changed = false;
-  const next = items.map((item) => {
-    if (!item.children?.length) {
-      return item;
-    }
-    const reordered = reorderInTree(item.children, activeId, overId);
-    if (reordered !== null) {
-      changed = true;
-      return { ...item, children: reordered };
-    }
-    return item;
-  });
-  return changed ? next : null;
-}
-
-function SortableDeskRow({
+function DeskDisplayRow({
   node,
   depth,
   expanded,
-  toggle
+  toggle,
+  onPathClick
 }: {
   node: DeskUtilityNode;
   depth: number;
   expanded: Record<string, boolean>;
   toggle: (id: string) => void;
+  onPathClick: (node: DeskUtilityNode) => void;
 }) {
   const { t } = useLanguage();
   const hasChildren = Boolean(node.children?.length);
+  const hasPath = Boolean(node.path?.trim());
   const open = expanded[node.id] ?? false;
   const Icon = node.icon ? ICONS[node.icon] : null;
   const faIconClass = node.faIconClass?.trim();
-
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: node.id
-  });
-
-  const style: CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.55 : undefined
-  };
-
-  const childIds = node.children?.map((c) => c.id) ?? [];
   const insetStyle = deskTreeRowInsetStyle(depth);
 
+  const onTitleClick = () => {
+    if (hasPath) {
+      onPathClick(node);
+      return;
+    }
+    if (hasChildren) {
+      toggle(node.id);
+    }
+  };
+
   return (
-    <div ref={setNodeRef} style={{ ...style, ...insetStyle }} className="select-none border-b border-black/10 last:border-b-0">
+    <div style={insetStyle} className="select-none border-b border-black/10 last:border-b-0">
       <div
         className={`flex min-h-[40px] w-full items-center gap-2 px-2 py-2 text-xs font-medium tracking-wide shadow-sm ${node.barClass ?? ''}`}
         style={{
@@ -276,16 +249,6 @@ function SortableDeskRow({
           ...(node.titleColor ? { color: node.titleColor } : {})
         }}
       >
-        <button
-          type="button"
-          className="touch-none inline-flex h-7 w-7 shrink-0 cursor-grab items-center justify-center rounded opacity-70 hover:opacity-100 active:cursor-grabbing"
-          aria-label={t('desk_drag_handle_aria')}
-          title={t('desk_drag_handle_aria')}
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4 pointer-events-none" aria-hidden />
-        </button>
         {faIconClass ? (
           <span
             className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none text-[0.875rem] opacity-90"
@@ -299,12 +262,12 @@ function SortableDeskRow({
             <Icon className="h-4 w-4" aria-hidden />
           </span>
         ) : null}
-        {hasChildren ? (
+        {hasPath || hasChildren ? (
           <button
             type="button"
-            className="min-w-0 flex-1 truncate text-left uppercase transition-opacity hover:opacity-95"
-            onClick={() => toggle(node.id)}
-            aria-expanded={open}
+            className={`min-w-0 flex-1 truncate text-left uppercase transition-opacity hover:opacity-95 ${hasPath ? 'cursor-pointer underline-offset-2 hover:underline' : ''}`}
+            onClick={onTitleClick}
+            aria-expanded={hasChildren ? open : undefined}
           >
             {node.label}
           </button>
@@ -328,19 +291,18 @@ function SortableDeskRow({
           </button>
         ) : null}
       </div>
-      {hasChildren && open ? (
-        <SortableContext items={childIds} strategy={verticalListSortingStrategy}>
-          {node.children!.map((child) => (
-            <SortableDeskRow
+      {hasChildren && open
+        ? node.children!.map((child) => (
+            <DeskDisplayRow
               key={child.id}
               node={child}
               depth={depth + 1}
               expanded={expanded}
               toggle={toggle}
+              onPathClick={onPathClick}
             />
-          ))}
-        </SortableContext>
-      ) : null}
+          ))
+        : null}
     </div>
   );
 }
@@ -349,11 +311,12 @@ export default function DeskUtilityList({
   variant = 'live',
   nodes
 }: {
-  /** `live`: load from `/api/my-desk`, persist reorder. `demo`: static `nodes` or built-in demo. */
+  /** `live`: load from `/api/my-desk`. `demo`: static `nodes` or built-in demo. */
   variant?: 'live' | 'demo';
   nodes?: DeskUtilityNode[];
 }) {
   const { t } = useLanguage();
+  const router = useRouter();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [items, setItems] = useState<DeskUtilityNode[]>(
     variant === 'demo' ? (nodes ?? DEMO_DESK_UTILITY_TREE) : []
@@ -403,64 +366,15 @@ export default function DeskUtilityList({
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  const onPathClick = useCallback(
+    (node: DeskUtilityNode) => {
+      if (!node.path?.trim()) return;
+      openDeskItemPath(node.path, node.displayMode, router);
+    },
+    [router]
   );
 
   const displayItems = useMemo(() => filterVisibleDeskNodes(items), [items]);
-  const rootIds = displayItems.map((n) => n.id);
-
-  const onDragEnd = useCallback(
-    async (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (!over || active.id === over.id) {
-        return;
-      }
-      const activeId = String(active.id);
-      const overId = String(over.id);
-
-      if (variant !== 'live') {
-        setItems((prev) => {
-          const next = reorderInTree(prev, activeId, overId);
-          return next ?? prev;
-        });
-        return;
-      }
-
-      const activeCtx = findSiblingsContext(items, activeId);
-      const overCtx = findSiblingsContext(items, overId);
-      if (!activeCtx || !overCtx || activeCtx.parentId !== overCtx.parentId) {
-        return;
-      }
-
-      const nextSiblingIds = arrayMove(
-        activeCtx.siblingIds,
-        activeCtx.siblingIds.indexOf(activeId),
-        activeCtx.siblingIds.indexOf(overId)
-      );
-
-      setItems((prev) => reorderInTree(prev, activeId, overId) ?? prev);
-
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      if (!token) return;
-      const response = await fetch('/api/my-desk/reorder', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          parentId: activeCtx.parentId,
-          orderedIds: nextSiblingIds
-        })
-      });
-      if (!response.ok) {
-        await fetchItems();
-      }
-    },
-    [fetchItems, items, variant]
-  );
 
   return (
     <div className="w-full overflow-hidden rounded border border-zinc-300 bg-white shadow-sm">
@@ -472,13 +386,16 @@ export default function DeskUtilityList({
       ) : displayItems.length === 0 ? (
         <div className="px-4 py-6 text-sm text-zinc-500">{t('desk_utility_list_empty')}</div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={rootIds} strategy={verticalListSortingStrategy}>
-            {displayItems.map((node) => (
-              <SortableDeskRow key={node.id} node={node} depth={0} expanded={expanded} toggle={toggle} />
-            ))}
-          </SortableContext>
-        </DndContext>
+        displayItems.map((node) => (
+          <DeskDisplayRow
+            key={node.id}
+            node={node}
+            depth={0}
+            expanded={expanded}
+            toggle={toggle}
+            onPathClick={onPathClick}
+          />
+        ))
       )}
     </div>
   );
