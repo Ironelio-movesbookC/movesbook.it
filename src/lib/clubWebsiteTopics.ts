@@ -1,4 +1,10 @@
 import { emptyClubWebsiteLangRecord } from '@/lib/clubWebsiteLanguages';
+import { dispatchClubWebsiteSettingsChanged } from '@/lib/clubWebsiteSettingsEvents';
+import {
+  DEFAULT_TOPIC_SETTINGS_FIELDS,
+  normalizeTopicSettingsFields,
+  type ClubWebsiteTopicSettingsFields,
+} from '@/lib/clubWebsiteTopicSettingsFields';
 
 export type ClubWebsiteTopic = {
   id: string;
@@ -14,7 +20,7 @@ export type ClubWebsiteTopic = {
   lastUpdate: string;
   contentsByLang: Record<string, string>;
   keywordsByLang: Record<string, string>;
-};
+} & ClubWebsiteTopicSettingsFields;
 
 const STORAGE_PREFIX = 'club-website-topics';
 
@@ -34,6 +40,24 @@ export function createClubWebsiteTopic(name: string): ClubWebsiteTopic {
     lastUpdate: '',
     contentsByLang: emptyClubWebsiteLangRecord(),
     keywordsByLang: emptyClubWebsiteLangRecord(),
+    ...DEFAULT_TOPIC_SETTINGS_FIELDS,
+  };
+}
+
+export function normalizeClubWebsiteTopic(raw: Partial<ClubWebsiteTopic> & { id: string; name: string }): ClubWebsiteTopic {
+  const settings = normalizeTopicSettingsFields(raw);
+  return {
+    id: raw.id,
+    name: raw.name,
+    activated: raw.activated ?? true,
+    title: raw.title ?? raw.name,
+    sectionName: raw.sectionName ?? raw.name,
+    bannerColor: raw.bannerColor ?? DEFAULT_TOPIC_BANNER_COLOR,
+    titleColor: raw.titleColor ?? DEFAULT_TOPIC_TITLE_COLOR,
+    lastUpdate: raw.lastUpdate ?? '',
+    contentsByLang: raw.contentsByLang ?? emptyClubWebsiteLangRecord(),
+    keywordsByLang: raw.keywordsByLang ?? emptyClubWebsiteLangRecord(),
+    ...settings,
   };
 }
 
@@ -45,6 +69,23 @@ export function filterClubWebsiteTopicsForMembers(topics: ClubWebsiteTopic[]): C
   return topics.filter(isClubWebsiteTopicVisibleToMembers);
 }
 
+export function filterClubWebsiteTopicsForDashboard(topics: ClubWebsiteTopic[]): ClubWebsiteTopic[] {
+  return filterClubWebsiteTopicsForMembers(topics).filter((t) => t.showInClubDashboardTopics);
+}
+
+export function topicToSettingsFormItem(topic: ClubWebsiteTopic) {
+  return {
+    id: topic.id,
+    name: topic.name,
+    activated: topic.activated,
+    showInClubDashboardTopics: topic.showInClubDashboardTopics,
+    contentDisplayMode: topic.contentDisplayMode,
+    externalUrl: topic.externalUrl,
+    openInSamePage: topic.openInSamePage,
+    audience: topic.audience,
+  };
+}
+
 function storageKey(clubId: string): string {
   return `${STORAGE_PREFIX}:${clubId}`;
 }
@@ -54,8 +95,8 @@ export function loadClubWebsiteTopics(clubId: string): ClubWebsiteTopic[] {
   try {
     const raw = localStorage.getItem(storageKey(clubId));
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as ClubWebsiteTopic[];
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(raw) as Partial<ClubWebsiteTopic>[];
+    return Array.isArray(parsed) ? parsed.map((t) => normalizeClubWebsiteTopic(t as ClubWebsiteTopic)) : [];
   } catch {
     return [];
   }
@@ -64,4 +105,5 @@ export function loadClubWebsiteTopics(clubId: string): ClubWebsiteTopic[] {
 export function saveClubWebsiteTopics(clubId: string, topics: ClubWebsiteTopic[]): void {
   if (typeof window === 'undefined' || !clubId) return;
   localStorage.setItem(storageKey(clubId), JSON.stringify(topics));
+  dispatchClubWebsiteSettingsChanged(clubId);
 }

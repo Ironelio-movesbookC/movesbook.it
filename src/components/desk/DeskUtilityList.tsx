@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
   DndContext,
   type DragEndEvent,
@@ -173,6 +173,17 @@ function mapApiToDeskUtility(node: ApiMyDeskNode): DeskUtilityNode {
   };
 }
 
+/** Reading/display mode — omit rows hidden in settings (and their descendants). */
+function filterVisibleDeskNodes(nodes: DeskUtilityNode[]): DeskUtilityNode[] {
+  return nodes
+    .filter((node) => node.visible !== false)
+    .map((node) => {
+      if (!node.children?.length) return node;
+      const children = filterVisibleDeskNodes(node.children);
+      return children.length > 0 ? { ...node, children } : { ...node, children: undefined };
+    });
+}
+
 function findSiblingsContext(
   nodes: DeskUtilityNode[],
   targetId: string,
@@ -242,7 +253,6 @@ function SortableDeskRow({
   const open = expanded[node.id] ?? false;
   const Icon = node.icon ? ICONS[node.icon] : null;
   const faIconClass = node.faIconClass?.trim();
-  const dimmed = node.visible === false;
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: node.id
@@ -251,7 +261,7 @@ function SortableDeskRow({
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.55 : dimmed ? 0.45 : undefined
+    opacity: isDragging ? 0.55 : undefined
   };
 
   const childIds = node.children?.map((c) => c.id) ?? [];
@@ -398,7 +408,8 @@ export default function DeskUtilityList({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const rootIds = items.map((n) => n.id);
+  const displayItems = useMemo(() => filterVisibleDeskNodes(items), [items]);
+  const rootIds = displayItems.map((n) => n.id);
 
   const onDragEnd = useCallback(
     async (event: DragEndEvent) => {
@@ -458,12 +469,12 @@ export default function DeskUtilityList({
       </div>
       {loading ? (
         <div className="px-4 py-6 text-sm text-zinc-500">{t('desk_utility_list_loading')}</div>
-      ) : items.length === 0 ? (
+      ) : displayItems.length === 0 ? (
         <div className="px-4 py-6 text-sm text-zinc-500">{t('desk_utility_list_empty')}</div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={rootIds} strategy={verticalListSortingStrategy}>
-            {items.map((node) => (
+            {displayItems.map((node) => (
               <SortableDeskRow key={node.id} node={node} depth={0} expanded={expanded} toggle={toggle} />
             ))}
           </SortableContext>

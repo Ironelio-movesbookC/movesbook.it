@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Settings, Trash2 } from 'lucide-react';
+import { Eye, Settings, Trash2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
   CLUB_WEBSITE_LANGUAGE_TABS,
@@ -10,12 +10,20 @@ import {
 } from '@/lib/clubWebsiteLanguages';
 import type { ClubWebsiteTopic } from '@/lib/clubWebsiteTopics';
 import { useClubWebsiteTopics } from '@/hooks/useClubWebsiteTopics';
-import { CLUB_WEBSITE_TOPICS_PATH, clubWebsiteTopicEditorUrl } from '@/lib/clubWebsiteSettingsPaths';
+import { useClubWebsiteFriendList } from '@/hooks/useClubWebsiteFriendList';
+import {
+  clubWebsiteFriendEditorUrl,
+  CLUB_WEBSITE_TOPICS_PATH,
+  clubWebsiteTopicDisplayUrl,
+  clubWebsiteTopicEditorUrl,
+} from '@/lib/clubWebsiteSettingsPaths';
+import ClubWebsiteAddTopicModal from '@/components/club/websiteSettings/ClubWebsiteAddTopicModal';
 import ClubWebsiteSettingsSidebar from '@/components/club/websiteSettings/ClubWebsiteSettingsSidebar';
 import ClubWebsiteLastUpdatePicker, {
   LEGACY_FIELD_CLASS,
 } from '@/components/club/websiteSettings/ClubWebsiteLastUpdatePicker';
-import ClubWebsiteTopicSettingsModal from '@/components/club/websiteSettings/ClubWebsiteTopicSettingsModal';
+import ClubWebsiteTopicSettingsFormModal from '@/components/club/websiteSettings/ClubWebsiteTopicSettingsFormModal';
+import { topicToSettingsFormItem } from '@/lib/clubWebsiteTopics';
 
 const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), { ssr: false });
 
@@ -41,10 +49,19 @@ export default function ClubWebsiteTopicsEditor({
   const { t } = useLanguage();
   const { topics, hydrated, addTopic, updateTopic, toggleActivated, removeTopic } =
     useClubWebsiteTopics(clubId);
+  const {
+    items: friendItems,
+    updateItem: updateFriendItem,
+    toggleActivated: toggleFriendActivated,
+    removeItem: removeFriendItem,
+    moveItem: moveFriendItem,
+    addSubtopicUnder,
+  } = useClubWebsiteFriendList(clubId);
 
   const [selectedId, setSelectedId] = useState<string | null>(initialTopicId ?? null);
   const [activeLang, setActiveLang] = useState<ClubWebsiteLanguageCode>('en');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [addTopicOpen, setAddTopicOpen] = useState(false);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -57,17 +74,20 @@ export default function ClubWebsiteTopicsEditor({
     [topics, selectedId]
   );
 
-  const handleAddTopic = useCallback(() => {
-    const name = window.prompt(t('club_topic_prompt_name'));
-    if (!name?.trim()) return;
-    const created = addTopic(name);
-    if (created) {
-      setSelectedId(created.id);
-      if (typeof window !== 'undefined' && window.location.pathname !== CLUB_WEBSITE_TOPICS_PATH) {
-        window.open(clubWebsiteTopicEditorUrl(created.id), '_blank', 'noopener,noreferrer');
+  const handleCreateTopic = useCallback(
+    (name: string) => {
+      const created = addTopic(name);
+      if (created) {
+        setSelectedId(created.id);
+        if (typeof window !== 'undefined' && window.location.pathname !== CLUB_WEBSITE_TOPICS_PATH) {
+          window.open(clubWebsiteTopicEditorUrl(created.id), '_blank', 'noopener,noreferrer');
+        }
       }
-    }
-  }, [addTopic, t]);
+    },
+    [addTopic]
+  );
+
+  const handleAddTopic = useCallback(() => setAddTopicOpen(true), []);
 
   const patchSelected = useCallback(
     (patch: Partial<ClubWebsiteTopic>) => {
@@ -112,6 +132,16 @@ export default function ClubWebsiteTopicsEditor({
         onAddTopic={handleAddTopic}
         onSelectCustomTopic={(id) => openTopic(id)}
         onToggleCustomTopicActivated={toggleActivated}
+        friendListItems={friendItems}
+        friendListAdminMode
+        onFriendToggleActivated={toggleFriendActivated}
+        onFriendDelete={removeFriendItem}
+        onFriendMove={moveFriendItem}
+        onFriendUpdateItem={updateFriendItem}
+        onFriendEditContent={(id) => {
+          window.open(clubWebsiteFriendEditorUrl(id), '_blank', 'noopener,noreferrer');
+        }}
+        onFriendAddSubtopic={(parentId, name) => addSubtopicUnder(parentId, name)}
         highlightTopicsSection
         onSelectTopic={() => {}}
       />
@@ -143,6 +173,17 @@ export default function ClubWebsiteTopicsEditor({
                 style={{ color: selected.titleColor }}
               />
               <div className="flex shrink-0 items-center border-l border-white/25">
+                <a
+                  href={clubWebsiteTopicDisplayUrl(selected.id, activeLang)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-2 opacity-90 hover:opacity-100"
+                  style={{ color: selected.titleColor }}
+                  aria-label={t('club_topic_preview_members_aria')}
+                  title={t('club_topic_preview_members_aria')}
+                >
+                  <Eye className="h-4 w-4" />
+                </a>
                 <button
                   type="button"
                   onClick={() => {
@@ -237,8 +278,8 @@ export default function ClubWebsiteTopicsEditor({
               />
             </div>
 
-            <ClubWebsiteTopicSettingsModal
-              topic={selected}
+            <ClubWebsiteTopicSettingsFormModal
+              item={topicToSettingsFormItem(selected)}
               open={settingsOpen}
               onClose={() => setSettingsOpen(false)}
               onSave={(patch) => patchSelected(patch)}
@@ -246,6 +287,12 @@ export default function ClubWebsiteTopicsEditor({
           </>
         )}
       </div>
+
+      <ClubWebsiteAddTopicModal
+        open={addTopicOpen}
+        onClose={() => setAddTopicOpen(false)}
+        onCreate={handleCreateTopic}
+      />
     </div>
   );
 }

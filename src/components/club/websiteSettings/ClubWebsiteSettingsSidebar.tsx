@@ -5,6 +5,7 @@ import { ChevronDown, Globe, Home, Settings, User } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { CLUB_WEBSITE_BACHECA_PATH } from '@/lib/clubWebsiteSettingsPaths';
 import type { ClubWebsiteTopic } from '@/lib/clubWebsiteTopics';
+import type { ClubWebsiteFriendItem } from '@/lib/clubWebsiteFriendList';
 import ClubWebsiteFriendListSection from '@/components/club/websiteSettings/ClubWebsiteFriendListSection';
 import {
   LEGACY_SIDEBAR_BLUE,
@@ -103,10 +104,20 @@ export default function ClubWebsiteSettingsSidebar({
   onSelectTopic,
   highlightBacheca = false,
   highlightTopicsSection = false,
+  /** Read-only member view — no admin controls. */
+  displayMode = false,
   customTopics = [],
   onAddTopic,
   onSelectCustomTopic,
   onToggleCustomTopicActivated,
+  friendListItems = [],
+  friendListAdminMode = true,
+  onFriendToggleActivated,
+  onFriendDelete,
+  onFriendMove,
+  onFriendUpdateItem,
+  onFriendEditContent,
+  onFriendAddSubtopic,
 }: {
   adminDisplayName: string;
   clubDisplayName: string;
@@ -118,10 +129,19 @@ export default function ClubWebsiteSettingsSidebar({
   onSelectTopic: (id: string, label: string) => void;
   highlightBacheca?: boolean;
   highlightTopicsSection?: boolean;
+  displayMode?: boolean;
   customTopics?: ClubWebsiteTopic[];
   onAddTopic?: () => void;
   onSelectCustomTopic?: (id: string) => void;
   onToggleCustomTopicActivated?: (id: string) => void;
+  friendListItems?: ClubWebsiteFriendItem[];
+  friendListAdminMode?: boolean;
+  onFriendToggleActivated?: (id: string) => void;
+  onFriendDelete?: (id: string) => void;
+  onFriendMove?: (id: string, direction: 'up' | 'down') => void;
+  onFriendUpdateItem?: (id: string, patch: Partial<ClubWebsiteFriendItem>) => void;
+  onFriendEditContent?: (id: string, label: string) => void;
+  onFriendAddSubtopic?: (parentId: string, name: string) => void;
 }) {
   const { t } = useLanguage();
   const [socialSitesOpen, setSocialSitesOpen] = useState(false);
@@ -156,14 +176,16 @@ export default function ClubWebsiteSettingsSidebar({
 
       {/* Profile card */}
       <div className="border-b border-zinc-500 p-2" style={{ backgroundColor: LEGACY_SIDEBAR_PANEL }}>
-        <div className="mb-2 flex justify-end">
-          <button
-            type="button"
-            className="rounded border border-zinc-400 bg-zinc-600 px-2 py-0.5 text-[11px] text-white hover:bg-zinc-500"
-          >
-            {t('club_website_like')}
-          </button>
-        </div>
+        {!displayMode ? (
+          <div className="mb-2 flex justify-end">
+            <button
+              type="button"
+              className="rounded border border-zinc-400 bg-zinc-600 px-2 py-0.5 text-[11px] text-white hover:bg-zinc-500"
+            >
+              {t('club_website_like')}
+            </button>
+          </div>
+        ) : null}
 
         <div className="mb-2 flex items-center gap-1.5 font-semibold">
           <User className="h-4 w-4 shrink-0" aria-hidden />
@@ -181,9 +203,11 @@ export default function ClubWebsiteSettingsSidebar({
                 </div>
               )}
             </div>
-            <button type="button" className="mt-1 text-[11px] text-white underline hover:text-zinc-200">
-              {t('club_website_change_logo')}
-            </button>
+            {!displayMode ? (
+              <button type="button" className="mt-1 text-[11px] text-white underline hover:text-zinc-200">
+                {t('club_website_change_logo')}
+              </button>
+            ) : null}
           </div>
           <dl className="min-w-0 flex-1 space-y-1">
             <div>
@@ -230,17 +254,25 @@ export default function ClubWebsiteSettingsSidebar({
 
         <MenuRow
           className={`justify-between ${highlightBacheca ? 'ring-2 ring-inset ring-amber-400' : ''}`}
+          onClick={displayMode ? () => onSelectTopic('bacheca', t('club_website_bacheca')) : undefined}
         >
-          <span className={highlightBacheca ? 'font-bold underline' : ''}>{t('club_website_bacheca')}</span>
-          <a
-            href={CLUB_WEBSITE_BACHECA_PATH}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-white no-underline hover:text-zinc-200"
-            aria-label={t('club_bacheca_open_editor_aria')}
+          <span
+            className={`${highlightBacheca || selectedTopicId === 'bacheca' ? 'font-bold underline' : ''}`}
           >
-            <Settings className="h-3.5 w-3.5" />
-          </a>
+            {t('club_website_bacheca')}
+          </span>
+          {!displayMode ? (
+            <a
+              href={CLUB_WEBSITE_BACHECA_PATH}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-white no-underline hover:text-zinc-200"
+              aria-label={t('club_bacheca_open_editor_aria')}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </a>
+          ) : null}
         </MenuRow>
 
         <MenuRow
@@ -248,37 +280,55 @@ export default function ClubWebsiteSettingsSidebar({
           className={`justify-between font-medium ${highlightTopicsSection ? 'ring-2 ring-inset ring-amber-400' : ''}`}
         >
           <span>{t('club_website_topics_available')}</span>
-          <button
-            type="button"
-            onClick={() => onAddTopic?.()}
-            className="text-white hover:underline"
-          >
-            + {t('club_website_add_topic')}
-          </button>
+          {!displayMode ? (
+            <button
+              type="button"
+              onClick={() => onAddTopic?.()}
+              className="text-white hover:underline"
+            >
+              + {t('club_website_add_topic')}
+            </button>
+          ) : null}
         </MenuRow>
 
         {customTopics.map((topic) => (
           <MenuRow
             key={topic.id}
             className="justify-between font-medium"
-            onClick={() => onSelectCustomTopic?.(topic.id)}
+            onClick={() =>
+              displayMode
+                ? onSelectTopic(topic.id, topic.name)
+                : onSelectCustomTopic?.(topic.id)
+            }
           >
             <span
               className={`min-w-0 truncate ${selectedTopicId === topic.id ? 'font-bold underline' : ''}`}
             >
               {topic.name}
             </span>
-            <StatusToggleButton
-              status={topic.activated ? 'on' : 'off'}
-              onToggle={() => onToggleCustomTopicActivated?.(topic.id)}
-              ariaLabel={t('club_website_toggle_visibility')}
-            />
+            {displayMode ? (
+              <StatusSquare status={topic.activated ? 'on' : 'off'} />
+            ) : (
+              <StatusToggleButton
+                status={topic.activated ? 'on' : 'off'}
+                onToggle={() => onToggleCustomTopicActivated?.(topic.id)}
+                ariaLabel={t('club_website_toggle_visibility')}
+              />
+            )}
           </MenuRow>
         ))}
 
         <ClubWebsiteFriendListSection
           selectedTopicId={selectedTopicId}
           onSelectTopic={onSelectTopic}
+          items={friendListItems}
+          adminMode={displayMode ? false : friendListAdminMode}
+          onToggleActivated={(id) => onFriendToggleActivated?.(id)}
+          onDelete={(id) => onFriendDelete?.(id)}
+          onMove={(id, dir) => onFriendMove?.(id, dir)}
+          onUpdateItem={(id, patch) => onFriendUpdateItem?.(id, patch)}
+          onEditContent={(id, label) => onFriendEditContent?.(id, label)}
+          onAddSubtopic={(parentId, name) => onFriendAddSubtopic?.(parentId, name)}
         />
 
         <MenuRow
@@ -323,11 +373,15 @@ export default function ClubWebsiteSettingsSidebar({
               {row.label}
             </span>
             {row.showStatus ? (
-              <StatusToggleButton
-                status={topicStatuses[row.id] ?? 'on'}
-                onToggle={() => toggleTopicStatus(row.id)}
-                ariaLabel={t('club_website_toggle_visibility')}
-              />
+              displayMode ? (
+                <StatusSquare status={topicStatuses[row.id] ?? 'on'} />
+              ) : (
+                <StatusToggleButton
+                  status={topicStatuses[row.id] ?? 'on'}
+                  onToggle={() => toggleTopicStatus(row.id)}
+                  ariaLabel={t('club_website_toggle_visibility')}
+                />
+              )
             ) : (
               <span className="h-7 w-7 shrink-0" aria-hidden />
             )}

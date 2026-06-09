@@ -19,6 +19,7 @@ export default function ClubWebsiteTopicSettingsModal({
   const { t } = useLanguage();
   const [bannerColor, setBannerColor] = useState(topic.bannerColor);
   const [titleColor, setTitleColor] = useState(topic.titleColor);
+  const [name, setName] = useState(topic.name);
   const [sectionName, setSectionName] = useState(topic.sectionName);
   const [title, setTitle] = useState(topic.title);
   const [lastUpdate, setLastUpdate] = useState(topic.lastUpdate);
@@ -27,6 +28,7 @@ export default function ClubWebsiteTopicSettingsModal({
     if (!open) return;
     setBannerColor(topic.bannerColor);
     setTitleColor(topic.titleColor);
+    setName(topic.name);
     setSectionName(topic.sectionName);
     setTitle(topic.title);
     setLastUpdate(topic.lastUpdate);
@@ -75,6 +77,16 @@ export default function ClubWebsiteTopicSettingsModal({
           </label>
 
           <label className="block text-sm text-zinc-800">
+            <span className="mb-1 block">{t('club_topic_name_label')}</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full border border-zinc-400 bg-[#ffffd9] px-2 py-1.5 text-zinc-900"
+            />
+          </label>
+
+          <label className="block text-sm text-zinc-800">
             <span className="mb-1 block">{t('club_topic_section_name')}</span>
             <input
               type="text"
@@ -110,6 +122,7 @@ export default function ClubWebsiteTopicSettingsModal({
                 onSave({
                   bannerColor,
                   titleColor,
+                  name: name.trim() || topic.name,
                   sectionName: sectionName.trim() || topic.sectionName,
                   title: title.trim() || topic.title,
                   lastUpdate,

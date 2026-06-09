@@ -742,10 +742,33 @@ model Club {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   members            ClubMember[]
+  websiteTopics      ClubWebsiteTopic[]
   admin              User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId], map: "clubs_new_adminId_fkey")
   @@map("clubs_new")
+}
+
+/// Custom topics under “Topics available” in the club website editor (admin/staff).
+model ClubWebsiteTopic {
+  id             String   @id @default(cuid())
+  clubId         String
+  name           String
+  activated      Boolean  @default(true)
+  title          String   @default("")
+  sectionName    String   @default("")
+  bannerColor    String   @default("#5b9bd5")
+  titleColor     String   @default("#ffffff")
+  lastUpdate     String   @default("")
+  contentsByLang String   @default("{}") @db.Text
+  keywordsByLang String   @default("{}") @db.Text
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  club           Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@index([clubId])
+  @@map("club_website_topics")
 }
 
 model ClubMember {

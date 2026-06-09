@@ -1,20 +1,15 @@
 'use client';
 
 import { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import ClubWebsiteTopicsEditor from '@/components/club/websiteSettings/ClubWebsiteTopicsEditor';
+import ClubWebsiteMemberDisplay from '@/components/club/websiteSettings/ClubWebsiteMemberDisplay';
 import ClubWebsiteSettingsPageShell from '@/components/club/websiteSettings/ClubWebsiteSettingsPageShell';
 
-function ClubWebsiteTopicsContent() {
-  const searchParams = useSearchParams();
-  const topicId = searchParams?.get('id') ?? null;
-
+function ClubWebsiteDisplayContent() {
   return (
-    <ClubWebsiteSettingsPageShell>
-      {(ctx) =>
-        ctx.clubId ? (
-          <ClubWebsiteTopicsEditor
+      <ClubWebsiteSettingsPageShell>
+        {(ctx) => (
+          <ClubWebsiteMemberDisplay
             clubId={ctx.clubId}
             clubDisplayName={ctx.clubDisplayName}
             adminDisplayName={ctx.adminDisplayName}
@@ -22,19 +17,13 @@ function ClubWebsiteTopicsContent() {
             adminCountry={ctx.adminCountry}
             adminLocality={ctx.adminLocality}
             logoImageUrl={ctx.logoImageUrl}
-            initialTopicId={topicId}
           />
-        ) : (
-          <p className="py-12 text-center text-sm text-zinc-600">
-            No club selected. Create or select a club from the dashboard first.
-          </p>
-        )
-      }
-    </ClubWebsiteSettingsPageShell>
+        )}
+      </ClubWebsiteSettingsPageShell>
   );
 }
 
-export default function ClubWebsiteTopicsPage() {
+export default function ClubWebsiteDisplayPage() {
   return (
     <Suspense
       fallback={
@@ -43,7 +32,7 @@ export default function ClubWebsiteTopicsPage() {
         </div>
       }
     >
-      <ClubWebsiteTopicsContent />
+      <ClubWebsiteDisplayContent />
     </Suspense>
   );
 }
