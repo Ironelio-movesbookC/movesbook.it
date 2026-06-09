@@ -22,6 +22,21 @@ const EXPIRING_WINDOW_DAYS = 30;
 /** Fixed renewal duration until per-version durations are configured. */
 export const MEMBERSHIP_RENEWAL_DURATION_DAYS = 365;
 
+/** When end is missing, default to start + standard membership duration (365 days). */
+export function inferMembershipEndDateYmd(
+  dateStart: string | null | undefined,
+  dateEnd?: string | null,
+): string | null {
+  const normalizedEnd = dateEnd?.trim().slice(0, 10);
+  if (normalizedEnd) return normalizedEnd;
+  const start = dateStart?.trim().slice(0, 10);
+  if (!start) return null;
+  const base = new Date(`${start}T12:00:00.000Z`);
+  if (Number.isNaN(base.getTime())) return null;
+  base.setUTCDate(base.getUTCDate() + MEMBERSHIP_RENEWAL_DURATION_DAYS);
+  return base.toISOString().slice(0, 10);
+}
+
 export function parseClubSubscriptionStartDate(
   description: string | null | undefined,
   clubCreatedAt?: Date | string | null,
@@ -51,13 +66,10 @@ export function parseClubSubscriptionEndDate(
     const d = new Date(raw);
     if (!Number.isNaN(d.getTime())) return d;
   }
-  if (clubCreatedAt) {
-    const created = new Date(clubCreatedAt);
-    if (!Number.isNaN(created.getTime())) {
-      const inferred = new Date(created);
-      inferred.setFullYear(inferred.getFullYear() + 1);
-      return inferred;
-    }
+  const startYmd = parseClubSubscriptionStartDate(description, clubCreatedAt);
+  const inferredYmd = inferMembershipEndDateYmd(startYmd, null);
+  if (inferredYmd) {
+    return new Date(`${inferredYmd}T12:00:00.000Z`);
   }
   return null;
 }

@@ -335,24 +335,20 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   const personalWebsiteHref =
     segment === 'clubs' ? await getUserPersonalWebsiteHref(user.id) : null;
 
-  const pcuAccessDefaults = {
-    accessStartIso: subscriptionCurrent.dateStart,
-    accessEndIso: subscriptionCurrent.dateEnd ?? '',
-  };
-  const pcuAccess = readPcuAccessSettings(user.settings?.adminSettings, pcuAccessDefaults);
-  if (pcuAccess.accessStartIso.trim()) {
-    subscriptionCurrent = {
-      ...subscriptionCurrent,
-      dateStart: pcuAccess.accessStartIso.trim().slice(0, 10),
-      dateEnd: pcuAccess.accessEndIso.trim().slice(0, 10) || null,
-    };
-  }
-
   const subscriptionRows = buildProfileSubscriptionRows(
     user.settings?.adminSettings,
     subscriptionCurrent,
-    pcuAccess.accessStartIso.trim() ? pcuAccess : null,
   );
+
+  const pcuAccessStored = readPcuAccessSettings(user.settings?.adminSettings, {
+    accessStartIso: subscriptionCurrent.dateStart,
+    accessEndIso: subscriptionCurrent.dateEnd ?? '',
+  });
+  const pcuAccess = {
+    ...pcuAccessStored,
+    accessStartIso: subscriptionCurrent.dateStart,
+    accessEndIso: subscriptionCurrent.dateEnd ?? '',
+  };
 
   const pcuUser =
     segment === 'clubs' && primaryOwned

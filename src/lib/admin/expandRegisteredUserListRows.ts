@@ -5,11 +5,12 @@ import {
   sortClubsByCreatedAtAsc,
 } from '@/lib/club/clubSidebarLabel';
 import {
-  classifyClubSubscriptionEnd,
+  inferMembershipEndDateYmd,
   parseClubSubscriptionEndDate,
   parseClubSubscriptionStartDate,
   type ClubSubscriptionStatusTone,
 } from '@/lib/admin/clubSubscriptionStatus';
+import { periodStatusFromDates } from '@/lib/admin/networkSubscriptionHistory';
 
 export type RegisteredUserListRow = {
   rowKey: string;
@@ -97,16 +98,18 @@ function clubCountry(club: ClubEntity, userCountry: string | null): string | nul
   return meta.country?.trim() || userCountry;
 }
 
-function clubStatusForOne(endDate: Date | null): {
-  status: string;
-  statusTone: ClubSubscriptionStatusTone;
-} {
-  const tone = classifyClubSubscriptionEnd(endDate);
-  const label =
-    tone === 'expired' ? 'Expired' : tone === 'expiring' ? 'Expiring' : 'Active';
+function membershipStatusFromDates(
+  dateStart: string,
+  dateEnd: string | null,
+): { status: string; statusTone: ClubSubscriptionStatusTone } {
+  const status = periodStatusFromDates({ dateStart, dateEnd });
   const statusTone: ClubSubscriptionStatusTone =
-    tone === 'expired' ? 'all-expired' : tone === 'expiring' ? 'expiring' : 'active';
-  return { status: label, statusTone };
+    status === 'Expired'
+      ? 'all-expired'
+      : status === 'Expiring'
+        ? 'expiring'
+        : 'active';
+  return { status, statusTone };
 }
 
 export function isClubUserType(userType: string): boolean {
@@ -132,12 +135,16 @@ function expandClubRows(
 
   return sorted.map((club) => {
     const endDate = parseClubSubscriptionEndDate(club.description, club.createdAt);
-    const { status, statusTone } = clubStatusForOne(endDate);
     const meta = parseClubDescriptionMeta(club.description);
     const clubUsername = meta.username?.trim();
     const dateStart =
       parseClubSubscriptionStartDate(club.description, club.createdAt) ||
       club.createdAt.toISOString().slice(0, 10);
+    const dateEnd = inferMembershipEndDateYmd(
+      dateStart,
+      endDate?.toISOString().slice(0, 10) ?? null,
+    );
+    const { status, statusTone } = membershipStatusFromDates(dateStart, dateEnd);
 
     return {
       ...base,
@@ -150,7 +157,7 @@ function expandClubRows(
       location: clubDisplayLocation(club),
       country: clubCountry(club, base.country),
       dateStart,
-      dateEnd: endDate?.toISOString().slice(0, 10) ?? null,
+      dateEnd,
       version: clubVersionFromDescription(club.description),
       status,
       statusTone,
@@ -172,6 +179,15 @@ function expandTeamRows(
   return sorted.map((team) => {
     const meta = parseClubDescriptionMeta(team.description);
     const teamUsername = meta.username?.trim();
+    const dateStart =
+      parseClubSubscriptionStartDate(team.description, team.createdAt) ||
+      team.createdAt.toISOString().slice(0, 10);
+    const parsedEnd = parseClubSubscriptionEndDate(team.description, team.createdAt);
+    const dateEnd = inferMembershipEndDateYmd(
+      dateStart,
+      parsedEnd?.toISOString().slice(0, 10) ?? null,
+    );
+    const { status, statusTone } = membershipStatusFromDates(dateStart, dateEnd);
     return {
       ...base,
       accountUsername,
@@ -181,10 +197,11 @@ function expandTeamRows(
       companyName: team.name.trim(),
       location: team.sport?.trim() || cleanLocationPart(meta.region) || '',
       country: meta.country?.trim() || base.country,
-      dateStart: team.createdAt.toISOString().slice(0, 10),
+      dateStart,
+      dateEnd,
       version: team.sport?.trim() ? `Team ${team.sport.trim()}` : 'Team account',
-      status: 'Active',
-      statusTone: 'active',
+      status,
+      statusTone,
       username: teamUsername || base.username,
     };
   });
@@ -202,6 +219,15 @@ function expandGroupRows(
   return sorted.map((group) => {
     const meta = parseClubDescriptionMeta(group.description);
     const groupUsername = meta.username?.trim();
+    const dateStart =
+      parseClubSubscriptionStartDate(group.description, group.createdAt) ||
+      group.createdAt.toISOString().slice(0, 10);
+    const parsedEnd = parseClubSubscriptionEndDate(group.description, group.createdAt);
+    const dateEnd = inferMembershipEndDateYmd(
+      dateStart,
+      parsedEnd?.toISOString().slice(0, 10) ?? null,
+    );
+    const { status, statusTone } = membershipStatusFromDates(dateStart, dateEnd);
     return {
       ...base,
       accountUsername,
@@ -211,12 +237,13 @@ function expandGroupRows(
       companyName: group.name.trim(),
       location: group.groupType?.trim() || cleanLocationPart(meta.region) || '',
       country: meta.country?.trim() || base.country,
-      dateStart: group.createdAt.toISOString().slice(0, 10),
+      dateStart,
+      dateEnd,
       version: group.groupType?.trim()
         ? `Group ${group.groupType.trim()}`
         : 'Group account',
-      status: 'Active',
-      statusTone: 'active',
+      status,
+      statusTone,
       username: groupUsername || base.username,
     };
   });
@@ -234,6 +261,15 @@ function expandCoachingGroupRows(
   return sorted.map((group) => {
     const meta = parseClubDescriptionMeta(group.description);
     const groupUsername = meta.username?.trim();
+    const dateStart =
+      parseClubSubscriptionStartDate(group.description, group.createdAt) ||
+      group.createdAt.toISOString().slice(0, 10);
+    const parsedEnd = parseClubSubscriptionEndDate(group.description, group.createdAt);
+    const dateEnd = inferMembershipEndDateYmd(
+      dateStart,
+      parsedEnd?.toISOString().slice(0, 10) ?? null,
+    );
+    const { status, statusTone } = membershipStatusFromDates(dateStart, dateEnd);
     return {
       ...base,
       accountUsername,
@@ -243,10 +279,11 @@ function expandCoachingGroupRows(
       companyName: group.name.trim(),
       location: cleanLocationPart(meta.region) || '',
       country: meta.country?.trim() || base.country,
-      dateStart: group.createdAt.toISOString().slice(0, 10),
+      dateStart,
+      dateEnd,
       version: 'Coach account',
-      status: 'Active',
-      statusTone: 'active',
+      status,
+      statusTone,
       username: groupUsername || base.username,
     };
   });

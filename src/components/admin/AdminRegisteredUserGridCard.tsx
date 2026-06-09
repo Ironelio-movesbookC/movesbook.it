@@ -10,7 +10,19 @@ import {
   ownedEntitiesLabel,
   type AdminGridCardGroup,
 } from '@/lib/admin/groupRegisteredUserGridCards';
-import type { ClubSubscriptionStatusTone } from '@/lib/admin/clubSubscriptionStatus';
+import {
+  inferMembershipEndDateYmd,
+  type ClubSubscriptionStatusTone,
+} from '@/lib/admin/clubSubscriptionStatus';
+
+function formatMembershipDateRange(
+  dateStart: string | null | undefined,
+  dateEnd: string | null | undefined,
+): string {
+  const start = dateStart?.trim() || '—';
+  const end = inferMembershipEndDateYmd(dateStart, dateEnd) ?? '—';
+  return `${start} — ${end}`;
+}
 const isDataUrl = (src: string) =>
   src.startsWith('data:image/') || src.startsWith('blob:');
 
@@ -92,7 +104,7 @@ export default function AdminRegisteredUserGridCard({
             </button>
           </div>
           <div className="text-gray-600">
-            {admin.dateStart} — {admin.dateEnd ?? '—'}
+            {formatMembershipDateRange(admin.dateStart, admin.dateEnd)}
           </div>
           <div className="text-gray-700">{admin.version}</div>
         </div>
@@ -144,7 +156,7 @@ export default function AdminRegisteredUserGridCard({
                   </button>
                 </span>
                 <span className="text-red-600 whitespace-nowrap">
-                  {entity.dateEnd ?? '—'}
+                  {formatMembershipDateRange(entity.dateStart, entity.dateEnd)}
                 </span>
                 <span className={clubAdminStatusClassName(entity.statusTone)}>
                   {entity.status}

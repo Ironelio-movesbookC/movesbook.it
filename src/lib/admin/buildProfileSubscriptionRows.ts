@@ -1,12 +1,11 @@
+import { inferMembershipEndDateYmd } from '@/lib/admin/clubSubscriptionStatus';
 import {
+  dedupeSubscriptionPeriods,
   isSubscriptionPeriodDeleted,
-  periodDisplayStatus,
-  pickCurrentSubscriptionPeriod,
+  periodStatusFromDates,
   readDeletedSubscriptionPeriods,
   readNetworkSubscriptionHistory,
-  resolveMembershipPeriodStatus,
   type NetworkSubscriptionPeriod,
-  type PcuAccessWindow,
 } from '@/lib/admin/networkSubscriptionHistory';
 
 export type ProfileSubscriptionRow = {
@@ -27,12 +26,12 @@ function periodToProfileRow(
   return {
     id: period.id,
     dateStart: period.dateStart,
-    dateEnd: period.dateEnd,
+    dateEnd: inferMembershipEndDateYmd(period.dateStart, period.dateEnd),
     version: period.version?.trim() || '—',
     username: period.username?.trim() || defaults.username,
     companyName: period.companyName?.trim() || defaults.companyName,
     e: defaults.e,
-    status: period.status ?? periodDisplayStatus(period.dateEnd),
+    status: periodStatusFromDates(period),
   };
 }
 
@@ -49,7 +48,6 @@ export function buildProfileSubscriptionRows(
     e: string;
     entityId?: string | null;
   },
-  pcuAccess?: PcuAccessWindow | null,
 ): ProfileSubscriptionRow[] {
   const entityId = current.entityId ?? null;
   const deleted = readDeletedSubscriptionPeriods(adminSettingsRaw);
@@ -66,7 +64,6 @@ export function buildProfileSubscriptionRows(
     username: current.username,
     companyName: current.companyName,
     entityId,
-    status: periodDisplayStatus(current.dateEnd),
   };
 
   const sameAsCurrent = (p: NetworkSubscriptionPeriod) =>
@@ -74,24 +71,17 @@ export function buildProfileSubscriptionRows(
     (p.dateEnd ?? '') === (currentPeriod.dateEnd ?? '');
 
   const rowKey = entityId ? `${current.id}-entity-${entityId}` : current.id;
-  const merged = [...history.filter((p) => !sameAsCurrent(p)), currentPeriod]
-    .filter((p) => !isSubscriptionPeriodDeleted(p, deleted, rowKey))
-    .sort((a, b) => new Date(a.dateStart).getTime() - new Date(b.dateStart).getTime());
+  const merged = dedupeSubscriptionPeriods(
+    [...history.filter((p) => !sameAsCurrent(p)), currentPeriod].filter(
+      (p) => !isSubscriptionPeriodDeleted(p, deleted, rowKey),
+    ),
+  ).sort((a, b) => new Date(a.dateStart).getTime() - new Date(b.dateStart).getTime());
 
-  const currentPeriodResolved = pickCurrentSubscriptionPeriod(merged, pcuAccess);
   const defaults = {
     username: current.username,
     companyName: current.companyName,
     e: current.e,
   };
 
-  return merged.map((p) =>
-    periodToProfileRow(
-      {
-        ...p,
-        status: resolveMembershipPeriodStatus(p, currentPeriodResolved),
-      },
-      defaults,
-    ),
-  );
+  return merged.map((p) => periodToProfileRow(p, defaults));
 }

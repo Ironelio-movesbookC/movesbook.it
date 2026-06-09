@@ -4,7 +4,9 @@ import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
 import {
   aggregateClubAdminSubscriptionStatus,
+  inferMembershipEndDateYmd,
   parseClubSubscriptionEndDate,
+  parseClubSubscriptionStartDate,
   type ClubSubscriptionStatusTone,
 } from '@/lib/admin/clubSubscriptionStatus';
 import { sortClubsByCreatedAtAsc } from '@/lib/club/clubSidebarLabel';
@@ -19,6 +21,7 @@ import {
   getDefaultMembershipSortOrder,
   parseMembershipViewMode,
   parseSubscriptionDateField,
+  periodStatusFromDates,
   readDeletedSubscriptionPeriods,
   readNetworkSubscriptionHistory,
   type NetworkSubscriptionPeriod,
@@ -446,6 +449,37 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    let dateStart = u.createdAt.toISOString().slice(0, 10);
+    let dateEnd: string | null = inferMembershipEndDateYmd(dateStart, null);
+
+    if (isClubsSegment || (isAllSegment && userIsClubAdmin)) {
+      const adminClubs = clubsByAdmin.get(u.id) ?? [];
+      if (adminClubs.length > 0) {
+        const first = sortClubsByCreatedAtAsc(adminClubs)[0]!;
+        dateStart =
+          parseClubSubscriptionStartDate(first.description, first.createdAt) ||
+          first.createdAt.toISOString().slice(0, 10);
+        const parsedEnd = parseClubSubscriptionEndDate(first.description, first.createdAt);
+        dateEnd = inferMembershipEndDateYmd(
+          dateStart,
+          parsedEnd?.toISOString().slice(0, 10) ?? null,
+        );
+      }
+    }
+
+    const usesClubAggregate =
+      (isClubsSegment || (isAllSegment && userIsClubAdmin)) &&
+      (clubsByAdmin.get(u.id)?.length ?? 0) > 0;
+    if (!usesClubAggregate) {
+      status = periodStatusFromDates({ dateStart, dateEnd });
+      statusTone =
+        status === 'Expired'
+          ? 'all-expired'
+          : status === 'Expiring'
+            ? 'expiring'
+            : 'active';
+    }
+
     return {
       rowKey: u.id,
       id: u.id,
@@ -457,8 +491,8 @@ export async function GET(request: NextRequest) {
       country: u.country,
       imageUrl: resolvePublicImageUrl(u.image),
       location,
-      dateStart: u.createdAt.toISOString().slice(0, 10),
-      dateEnd: null as string | null,
+      dateStart,
+      dateEnd,
       version: versionLabel(u.userType),
       amount: '—',
       status,

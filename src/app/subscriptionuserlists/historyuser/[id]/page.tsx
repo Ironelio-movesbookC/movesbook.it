@@ -197,6 +197,7 @@ export default function HistoryUserPage() {
         defaultProfileSubTab={resolvePcuProfileSubTab(searchParams)}
         actionSegment={actionSegment || user.segment}
         overviewHref={buildPcuHistoryUserUrl(user.userId, { ...urlOpts, view: 'overview' })}
+        onAccessDatesSaved={loadProfile}
       />
     </div>
   );

@@ -173,10 +173,15 @@ function resolvePcuAccessDates(
   subscriptionRows: SubscriptionRow[],
   initialPcuAccess?: PcuAccessSettings,
 ): { accessStart: string; accessEnd: string } {
+  const latestRow = [...subscriptionRows].sort((a, b) => {
+    const da = new Date(a.dateStart).getTime();
+    const db = new Date(b.dateStart).getTime();
+    return db - da;
+  })[0];
   const activeRow =
-    subscriptionRows.find((row) => row.status?.toLowerCase() === 'active') ?? subscriptionRows[0];
-  const defaultStart = user.startDateIso || activeRow?.dateStart || '';
-  const defaultEnd = user.endDateIso || activeRow?.dateEnd || '';
+    subscriptionRows.find((row) => row.status?.toLowerCase() === 'active') ?? latestRow;
+  const defaultStart = activeRow?.dateStart || user.startDateIso || '';
+  const defaultEnd = activeRow?.dateEnd || user.endDateIso || '';
   return {
     accessStart: initialPcuAccess?.accessStartIso?.trim() || defaultStart,
     accessEnd: initialPcuAccess?.accessEndIso?.trim() || defaultEnd,
@@ -213,6 +218,8 @@ type UserPcuControlPanelProps = {
   initialPcuSettings?: PcuSettings | null;
   /** Link back to read-only PCU overview (user search eye icon). */
   overviewHref?: string;
+  /** Reload profile/subscription rows after access dates change. */
+  onAccessDatesSaved?: () => void | Promise<void>;
 };
 
 function SubscriptionFilterRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -235,6 +242,7 @@ export default function UserPcuControlPanel({
   actionSegment,
   initialPcuSettings = null,
   overviewHref,
+  onAccessDatesSaved,
 }: UserPcuControlPanelProps) {
   const router = useRouter();
   const segmentForActions = resolveRegisteredUserActionSegment(actionSegment, user.segment);
@@ -2034,6 +2042,15 @@ export default function UserPcuControlPanel({
         suspend: patch.suspend ?? prev.suspend,
       };
 
+      if (
+        merged.accessStartIso.trim() &&
+        merged.accessEndIso.trim() &&
+        merged.accessEndIso < merged.accessStartIso
+      ) {
+        window.alert('End date cannot be earlier than start date.');
+        return;
+      }
+
       setAccessStart(merged.accessStartIso);
       setAccessEnd(merged.accessEndIso);
       setSuspendAccessControl(merged.suspendAccessControl);
@@ -2066,7 +2083,10 @@ export default function UserPcuControlPanel({
               Authorization: `Bearer ${token}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify(merged),
+            body: JSON.stringify({
+              ...merged,
+              clubId: user.entityId ?? undefined,
+            }),
           },
         );
         const data = await res.json().catch(() => ({}));
@@ -2088,6 +2108,9 @@ export default function UserPcuControlPanel({
             suspend: Boolean(data.pcuAccess.suspend),
           };
         }
+        if (onAccessDatesSaved && ('accessStartIso' in patch || 'accessEndIso' in patch)) {
+          await onAccessDatesSaved();
+        }
       } catch (e: unknown) {
         setAccessStart(prev.accessStart);
         setAccessEnd(prev.accessEnd);
@@ -2099,7 +2122,7 @@ export default function UserPcuControlPanel({
         setPcuAccessSaving(false);
       }
     },
-    [user, subscriptionRows],
+    [user, subscriptionRows, onAccessDatesSaved],
   );
 
   const resolveActionUserIds = useCallback((): string[] => {
@@ -2417,6 +2440,7 @@ export default function UserPcuControlPanel({
                 <input
                   type="date"
                   value={accessEnd}
+                  min={accessStart || undefined}
                   disabled={pcuAccessSaving}
                   onChange={(e) => void savePcuAccessSettings({ accessEndIso: e.target.value })}
                   className="px-2 py-1 border border-gray-400 bg-white w-32 text-sm text-red-600 disabled:opacity-60"
@@ -3092,8 +3116,8 @@ export default function UserPcuControlPanel({
                               <td className="px-2 py-2">{r.username || user.username}</td>
                               <td className="px-2 py-2">{user.roleTitle}</td>
                               <td className="px-2 py-2">{r.version}</td>
-                              <td className="px-2 py-2">{accessStart || r.dateStart}</td>
-                              <td className="px-2 py-2">{accessEnd || r.dateEnd || '—'}</td>
+                              <td className="px-2 py-2">{r.dateStart}</td>
+                              <td className="px-2 py-2">{r.dateEnd || '—'}</td>
                               <td className="px-2 py-2">{String(user.logs ?? 0)}</td>
                               <td className="px-2 py-2">{r.e}</td>
                               <td className="px-2 py-2">{r.status}</td>

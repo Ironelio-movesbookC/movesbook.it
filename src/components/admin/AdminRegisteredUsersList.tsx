@@ -84,6 +84,7 @@ type SubscriptionDeleteTarget = {
 type MembershipRenewTarget = {
   userId: string;
   entityId: string;
+  entityKind: 'club' | 'team' | 'group' | 'coaching_group' | 'account';
   dateStart: string;
   dateEnd: string | null;
   version: string;
@@ -666,27 +667,44 @@ export default function AdminRegisteredUsersList({
     };
 
     for (const r of rows.filter((row) => selected.has(rowListKey(row)))) {
-      if (r.entityKind !== 'club' || !r.entityId?.trim()) continue;
-      push({
-        userId: r.id,
-        entityId: r.entityId,
-        dateStart: r.dateStart,
-        dateEnd: r.dateEnd,
-        version: r.version,
-        companyName: r.companyName,
-        username: r.username,
-        label: subscriptionRenewLabel(r),
-      });
+      if (r.entityId?.trim() && r.entityKind) {
+        push({
+          userId: r.id,
+          entityId: r.entityId,
+          entityKind: r.entityKind,
+          dateStart: r.dateStart,
+          dateEnd: r.dateEnd,
+          version: r.version,
+          companyName: r.companyName,
+          username: r.username,
+          label: subscriptionRenewLabel(r),
+        });
+        continue;
+      }
+
+      if (!r.entityId && (r.userType === 'ATHLETE' || segment === 'single-user')) {
+        push({
+          userId: r.id,
+          entityId: r.id,
+          entityKind: 'account',
+          dateStart: r.dateStart,
+          dateEnd: r.dateEnd,
+          version: r.version,
+          companyName: r.companyName,
+          username: r.username,
+          label: subscriptionRenewLabel(r),
+        });
+      }
     }
 
     return out;
-  }, [selected, rows]);
+  }, [selected, rows, segment]);
 
   const requireMembershipRenewTargets = useCallback((): MembershipRenewTarget[] | null => {
     const targets = resolveMembershipRenewTargets();
     if (targets.length === 0) {
       window.alert(
-        'Select at least one club membership to renew (use “Last of each user”, check one or more clubs, then renew).',
+        'Select at least one membership to renew (club, team, group, coach, or single user row), then click Renewal selected memberships.',
       );
       return null;
     }
@@ -1109,6 +1127,7 @@ export default function AdminRegisteredUsersList({
             memberships: targets.map((t) => ({
               userId: t.userId,
               entityId: t.entityId,
+              entityKind: t.entityKind,
               dateStart: t.dateStart,
               dateEnd: t.dateEnd,
               version: t.version,
@@ -1125,7 +1144,7 @@ export default function AdminRegisteredUsersList({
         setRenewSubModalOpen(false);
         setRenewSubTargets([]);
         await load();
-        window.alert(`Renewed ${renewed} club membership(s).`);
+        window.alert(`Renewed ${renewed} membership(s).`);
       } catch (e: unknown) {
         window.alert(e instanceof Error ? e.message : 'Failed to renew memberships');
       } finally {
@@ -2176,7 +2195,7 @@ export default function AdminRegisteredUsersList({
         description={
           <>
             <p className="mb-2">
-              You are about to renew <strong>{renewSubTargets.length}</strong> club membership
+              You are about to renew <strong>{renewSubTargets.length}</strong> membership
               {renewSubTargets.length === 1 ? '' : 's'}. Each renewal keeps the same Movesbook
               version, applies the standard start-date rules, and sets a{' '}
               <strong>365-day</strong> period.

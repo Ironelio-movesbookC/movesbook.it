@@ -4,21 +4,14 @@ import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
 import {
-  applyMembershipRenewalToAdminSettings,
   applySubscriptionPeriodDeletions,
-  computeRenewalEndDate,
-  computeRenewalStartDate,
-  shouldSyncPcuAccessOnRenewal,
-  type MembershipRenewalInput,
   type SubscriptionPeriodDeletion,
 } from '@/lib/admin/networkSubscriptionHistory';
-import { mergeClubSubscriptionDates } from '@/lib/club/clubProfilePayload';
-import { pickClubForAdminProfile } from '@/lib/admin/pickClubForAdminProfile';
-import { parseClubSubscriptionEndDate, parseClubSubscriptionStartDate } from '@/lib/admin/clubSubscriptionStatus';
 import {
-  mergePcuAccessIntoAdminSettings,
-  readPcuAccessSettings,
-} from '@/lib/admin/userPcuAccessSettings';
+  renewMembershipForTarget,
+  type MembershipEntityKind,
+  type MembershipRenewalTarget,
+} from '@/lib/admin/renewRegisteredUserMembership';
 import { verifyAdminActionPassword } from '@/lib/admin/verifyAdminActionPassword';
 
 export const dynamic = 'force-dynamic';
@@ -87,26 +80,38 @@ function parseSubscriptionDeletions(body: unknown): SubscriptionDeletionRequest[
   return out;
 }
 
-type MembershipRenewalRequest = MembershipRenewalInput & {
-  userId: string;
-  entityId: string;
-};
+const MEMBERSHIP_ENTITY_KINDS = new Set<MembershipEntityKind>([
+  'club',
+  'team',
+  'group',
+  'coaching_group',
+  'account',
+]);
 
-function parseMembershipRenewals(body: unknown): MembershipRenewalRequest[] {
+function parseEntityKind(raw: unknown): MembershipEntityKind | null {
+  const kind = String(raw ?? '').trim();
+  return MEMBERSHIP_ENTITY_KINDS.has(kind as MembershipEntityKind)
+    ? (kind as MembershipEntityKind)
+    : null;
+}
+
+function parseMembershipRenewals(body: unknown): MembershipRenewalTarget[] {
   if (!body || typeof body !== 'object') return [];
   const raw = (body as { memberships?: unknown }).memberships;
   if (!Array.isArray(raw)) return [];
-  const out: MembershipRenewalRequest[] = [];
+  const out: MembershipRenewalTarget[] = [];
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
     const rec = item as Record<string, unknown>;
     const userId = String(rec.userId ?? '').trim();
     const entityId = String(rec.entityId ?? '').trim();
+    const entityKind = parseEntityKind(rec.entityKind);
     const dateStart = String(rec.dateStart ?? '').trim().slice(0, 10);
-    if (!userId || !entityId || !dateStart) continue;
+    if (!userId || !entityId || !dateStart || !entityKind) continue;
     out.push({
       userId,
       entityId,
+      entityKind,
       dateStart,
       dateEnd:
         rec.dateEnd === null
@@ -399,7 +404,7 @@ export async function DELETE(request: NextRequest) {
   });
 }
 
-/** PUT — Renew selected club memberships (requires super admin password). */
+/** PUT — Renew selected memberships (requires super admin password). */
 export async function PUT(request: NextRequest) {
   const auth = await requireAdmin(request);
   if (!auth.ok) {
@@ -446,16 +451,47 @@ export async function PUT(request: NextRequest) {
     where: { id: { in: userIds }, userType: { in: types } },
     select: {
       id: true,
+      username: true,
+      createdAt: true,
       settings: { select: { adminSettings: true } },
       ownedClubs: {
         select: {
           id: true,
           name: true,
-          location: true,
           description: true,
           createdAt: true,
         },
         orderBy: { createdAt: 'desc' },
+        take: 50,
+      },
+      ownedTeams: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 50,
+      },
+      ownedGroups: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 50,
+      },
+      ownedCoachingGroups: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
         take: 50,
       },
     },
@@ -465,12 +501,41 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'No matching users found for this segment' }, { status: 404 });
   }
 
-  const renewed: { userId: string; entityId: string; dateStart: string; dateEnd: string }[] = [];
+  const renewed: {
+    userId: string;
+    entityId: string;
+    entityKind: MembershipEntityKind;
+    dateStart: string;
+    dateEnd: string;
+  }[] = [];
   const errors: string[] = [];
   const adminSettingsByUser = new Map<string, string>();
   for (const user of users) {
     adminSettingsByUser.set(user.id, user.settings?.adminSettings?.trim() || '{}');
   }
+
+  const updateEntityDescription = async (
+    kind: MembershipEntityKind,
+    entityId: string,
+    description: string,
+  ) => {
+    switch (kind) {
+      case 'club':
+        await prisma.club.update({ where: { id: entityId }, data: { description } });
+        break;
+      case 'team':
+        await prisma.team.update({ where: { id: entityId }, data: { description } });
+        break;
+      case 'group':
+        await prisma.group.update({ where: { id: entityId }, data: { description } });
+        break;
+      case 'coaching_group':
+        await prisma.coachingGroup.update({ where: { id: entityId }, data: { description } });
+        break;
+      default:
+        break;
+    }
+  };
 
   for (const target of memberships) {
     const user = users.find((u) => u.id === target.userId);
@@ -479,82 +544,24 @@ export async function PUT(request: NextRequest) {
       continue;
     }
 
-    const club = user.ownedClubs.find((c) => c.id === target.entityId);
-    if (!club) {
-      errors.push(`Club ${target.entityId} not owned by user ${target.userId}`);
-      continue;
-    }
-
-    const previousStart =
-      target.dateStart ||
-      parseClubSubscriptionStartDate(club.description, club.createdAt) ||
-      club.createdAt.toISOString().slice(0, 10);
-    const previousEnd =
-      target.dateEnd ??
-      parseClubSubscriptionEndDate(club.description, club.createdAt)?.toISOString().slice(0, 10) ??
-      null;
-
-    const previous: MembershipRenewalInput = {
-      dateStart: previousStart,
-      dateEnd: previousEnd,
-      version: target.version,
-      entityId: target.entityId,
-      companyName: target.companyName ?? club.name?.trim(),
-      username: target.username,
-    };
-
-    const nextStart = computeRenewalStartDate(previousEnd);
-    const nextEnd = computeRenewalEndDate(nextStart);
-    const primaryClub = pickClubForAdminProfile(user.ownedClubs);
-
-    let adminSettingsRaw = adminSettingsByUser.get(user.id) ?? '{}';
-    adminSettingsRaw = applyMembershipRenewalToAdminSettings(
-      adminSettingsRaw,
-      previous,
-      nextStart,
-      nextEnd,
-    );
-
-    const pcuDefaults = {
-      accessStartIso: previousStart,
-      accessEndIso: previousEnd ?? '',
-    };
-    const pcuAccess = readPcuAccessSettings(adminSettingsRaw, pcuDefaults);
-    if (
-      shouldSyncPcuAccessOnRenewal(
-        target.entityId,
-        primaryClub?.id ?? null,
-        previous,
-        pcuAccess,
-      )
-    ) {
-      adminSettingsRaw = mergePcuAccessIntoAdminSettings(adminSettingsRaw, {
-        accessStartIso: nextStart,
-        accessEndIso: nextEnd,
+    try {
+      const result = await renewMembershipForTarget(
+        user,
+        target,
+        adminSettingsByUser.get(user.id) ?? '{}',
+        updateEntityDescription,
+      );
+      adminSettingsByUser.set(user.id, result.adminSettings);
+      renewed.push({
+        userId: result.userId,
+        entityId: result.entityId,
+        entityKind: result.entityKind,
+        dateStart: result.dateStart,
+        dateEnd: result.dateEnd,
       });
+    } catch (e: unknown) {
+      errors.push(e instanceof Error ? e.message : 'Renewal failed');
     }
-
-    adminSettingsByUser.set(user.id, adminSettingsRaw);
-
-    const nextDescription = mergeClubSubscriptionDates(
-      club.description,
-      nextStart,
-      nextEnd,
-    );
-
-    await prisma.club.update({
-      where: { id: club.id },
-      data: { description: nextDescription },
-    });
-
-    club.description = nextDescription;
-
-    renewed.push({
-      userId: user.id,
-      entityId: club.id,
-      dateStart: nextStart,
-      dateEnd: nextEnd,
-    });
   }
 
   for (const [userId, adminSettings] of Array.from(adminSettingsByUser.entries())) {
