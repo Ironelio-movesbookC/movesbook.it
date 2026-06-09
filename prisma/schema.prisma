@@ -68,9 +68,6 @@ model User {
   workoutDayPlannedActions WorkoutDayPlannedAction[]
   sportMachines           SportMachine[]
   loginLogs               UserLoginLog[]
-<<<<<<< HEAD
-  globalWorkoutArchiveShares GlobalWorkoutArchiveEntry[] @relation("GlobalArchiveSharedBy")
-=======
   nutritionDays           NutritionDay[]
   nutritionPlans          NutritionPlan[]
   nutritionSections       NutritionSection[]
@@ -78,7 +75,6 @@ model User {
   favoriteNutritionWeeklyPlans FavoriteNutritionWeeklyPlan[]
   nutritionTemplates           NutritionTemplate[]
   nutritionDayPlannedActions   NutritionDayPlannedAction[]
->>>>>>> 9da377b271ba0b4a76f1926436eef92fc90fccd6
 
   @@map("users_new")
 }
