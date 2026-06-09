@@ -68,6 +68,7 @@ model User {
   workoutDayPlannedActions WorkoutDayPlannedAction[]
   sportMachines           SportMachine[]
   loginLogs               UserLoginLog[]
+  globalWorkoutArchiveShares GlobalWorkoutArchiveEntry[] @relation("GlobalArchiveSharedBy")
   nutritionDays           NutritionDay[]
   nutritionPlans          NutritionPlan[]
   nutritionSections       NutritionSection[]
