@@ -123,11 +123,11 @@ export default function ClubCourseTimetablePage() {
                                 -
                               </span>
                             ) : (
-                              <div className="flex flex-col items-center gap-1">
+                              <div className="flex flex-col items-center gap-1.5">
                                 {times.map((time) => (
                                   <span
                                     key={`${row.courseName}-${dayIndex}-${time}`}
-                                    className="inline-block min-w-[80px] rounded-lg px-2 py-1 text-xs font-semibold text-white shadow-[0_3px_6px_rgba(0,0,0,0.15)]"
+                                    className="inline-block whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold text-white shadow-[0_3px_6px_rgba(0,0,0,0.15)]"
                                     style={{ backgroundColor: row.color }}
                                   >
                                     {time}

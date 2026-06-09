@@ -23,6 +23,7 @@ npm run db:seed
 
 # Step 5: Build the application
 echo "🏗️  Building application..."
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=2048}"
 npm run build
 
 # Step 6: Restart the application (using PM2)
