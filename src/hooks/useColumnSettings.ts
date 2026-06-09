@@ -1,7 +1,15 @@
 import { useState, useEffect } from 'react';
-import { ColumnSettings, getDefaultColumnSettings } from '@/types/columnSettings';
+import { ColumnSettings, getDefaultColumnSettings, type ColumnTableType } from '@/types/columnSettings';
 
 const STORAGE_KEY = 'workout_column_settings';
+
+function normalizeColumnTableType(
+  tableType: ColumnTableType
+): 'day' | 'workout' | 'moveframe' | 'movelap' {
+  if (tableType === 'nutritionFood') return 'moveframe';
+  if (tableType === 'nutritionComponent') return 'movelap';
+  return tableType;
+}
 
 // Helper function to migrate settings when new columns are added
 function migrateTableSettings(
@@ -106,23 +114,25 @@ export function useColumnSettings() {
   }, [settings]);
 
   const updateTableSettings = (
-    tableType: 'day' | 'workout' | 'moveframe' | 'movelap',
+    tableType: ColumnTableType,
     visibleColumns: string[],
     columnOrder?: string[]
   ) => {
+    const key = normalizeColumnTableType(tableType);
     setSettings(prev => ({
       ...prev,
-      [tableType]: {
+      [key]: {
         visibleColumns,
-        columnOrder: columnOrder || prev[tableType]?.columnOrder || [],
+        columnOrder: columnOrder || prev[key]?.columnOrder || [],
       },
     }));
   };
 
-  const resetTableSettings = (tableType: 'day' | 'workout' | 'moveframe' | 'movelap') => {
+  const resetTableSettings = (tableType: ColumnTableType) => {
+    const key = normalizeColumnTableType(tableType);
     setSettings(prev => ({
       ...prev,
-      [tableType]: getDefaultColumnSettings(tableType),
+      [key]: getDefaultColumnSettings(tableType),
     }));
   };
 
@@ -135,8 +145,9 @@ export function useColumnSettings() {
     });
   };
 
-  const isColumnVisible = (tableType: 'day' | 'workout' | 'moveframe' | 'movelap', columnId: string): boolean => {
-    const visibleColumns = settings[tableType]?.visibleColumns;
+  const isColumnVisible = (tableType: ColumnTableType, columnId: string): boolean => {
+    const key = normalizeColumnTableType(tableType);
+    const visibleColumns = settings[key]?.visibleColumns;
     // If no settings exist, default to showing the column
     if (!visibleColumns || visibleColumns.length === 0) {
       return true;
@@ -144,12 +155,14 @@ export function useColumnSettings() {
     return visibleColumns.includes(columnId);
   };
 
-  const getVisibleColumns = (tableType: 'day' | 'workout' | 'moveframe' | 'movelap'): string[] => {
-    return settings[tableType]?.visibleColumns || [];
+  const getVisibleColumns = (tableType: ColumnTableType): string[] => {
+    const key = normalizeColumnTableType(tableType);
+    return settings[key]?.visibleColumns || [];
   };
 
-  const getColumnOrder = (tableType: 'day' | 'workout' | 'moveframe' | 'movelap'): string[] => {
-    return settings[tableType]?.columnOrder || [];
+  const getColumnOrder = (tableType: ColumnTableType): string[] => {
+    const key = normalizeColumnTableType(tableType);
+    return settings[key]?.columnOrder || [];
   };
 
   return {

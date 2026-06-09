@@ -12,6 +12,11 @@ export type ClubDescriptionMeta = {
   geo?: string;
   mail?: string;
   directRegistrationCode?: string;
+  /** Bcrypt hash — company login password for direct MY CLUB access. */
+  clubPasswordHash?: string;
+  /** Rich-text references for the club (not the club admin user). */
+  referencesHtml?: string;
+  referencesLevel?: string;
 };
 
 export function parseClubDescriptionMeta(
@@ -76,17 +81,44 @@ export function getClubMyPageDisplayName(club: {
   return formatMyClubsSidebarLabel(club);
 }
 
-/** Label shown under My clubs → Create a club (username + direct access). */
+/** Label shown under My clubs → Create a club (username + official club name). */
 export function formatMyClubsSidebarLabel(club: {
   name: string;
   description?: string | null;
 }): string {
   const meta = parseClubDescriptionMeta(club.description);
   const username = meta.username?.trim() ?? '';
-  const directAccess = meta.directAccess?.trim() ?? '';
+  const officialName = club.name?.trim() ?? '';
 
-  if (username && directAccess) return `${username} (${directAccess})`;
+  if (username && officialName) return `${username} (${officialName})`;
   if (username) return username;
-  if (directAccess) return directAccess;
-  return club.name?.trim() || 'Club';
+  if (officialName) return officialName;
+  return 'Club';
+}
+
+export type ClubProfileDisplayRow = { label: string; value: string };
+
+/** Human-readable profile rows for club / coach / team / group entity sidebars. */
+export function getClubProfileDisplayRows(club: {
+  name: string;
+  description?: string | null;
+  location?: string | null;
+}): ClubProfileDisplayRow[] {
+  const meta = parseClubDescriptionMeta(club.description);
+  const rows: ClubProfileDisplayRow[] = [
+    { label: 'Official name', value: getClubMyPageDisplayName(club) },
+    { label: 'Club username', value: meta.username?.trim() ?? '' },
+    { label: 'Direct access', value: meta.directAccess?.trim() ?? '' },
+    { label: 'Category', value: meta.category?.trim() ?? '' },
+    { label: 'Country', value: meta.country?.trim() ?? '' },
+    { label: 'Region', value: meta.region?.trim() ?? '' },
+    { label: 'Location', value: club.location?.trim() ?? '' },
+    { label: 'Zip Code', value: meta.zipCode?.trim() ?? '' },
+    { label: 'Address', value: meta.address?.trim() ?? '' },
+    { label: 'Geographic coordinate', value: meta.geo?.trim() ?? '' },
+    { label: 'Club mail', value: meta.mail?.trim() ?? '' },
+    { label: 'Subscription end', value: meta.subscriptionEnd?.trim() ?? '' },
+    { label: 'Direct registration code', value: meta.directRegistrationCode?.trim() ?? '' },
+  ];
+  return rows.filter((row) => row.value.length > 0);
 }

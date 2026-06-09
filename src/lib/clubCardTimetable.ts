@@ -13,12 +13,71 @@ export const TIMETABLE_DAY_LABELS: Record<TimetableDayKey, string> = {
   sun: 'Sun'
 };
 
-export type TimetableDaySchedule = {
-  enabled: boolean;
-  amTime: string;
-  pmTime: string;
+export const TIMETABLE_DAY_FULL_NAMES: Record<TimetableDayKey, string> = {
+  mon: 'Monday',
+  tues: 'Tuesday',
+  wed: 'Wednesday',
+  thurs: 'Thursday',
+  fri: 'Friday',
+  sat: 'Saturday',
+  sun: 'Sunday'
+};
+
+export const MAX_SLOTS_PER_DAY = 6;
+export const TIMETABLE_MINUTES_MAX = 1440;
+export const TIMETABLE_STEP = 30;
+
+export const PERMIT_MINUTE_OPTIONS = ['10', '20', '30', '40', '50', '60', '70', '80', '90'];
+
+export const FROM_START_OPTIONS = [
+  { value: '30', label: '30' },
+  { value: '1h', label: '1h' },
+  { value: '1h30', label: '1h30' },
+  { value: '2h', label: '2h' },
+  { value: '3h', label: '3h' },
+  { value: '4h', label: '4h' },
+  { value: '6h', label: '6h' },
+  { value: '8h', label: '8h' },
+  { value: '12h', label: '12h' },
+  { value: '18h', label: '18h' },
+  { value: '24h', label: '24h' },
+  { value: '36h', label: '36h' },
+  { value: '48h', label: '48h' },
+  { value: '96h', label: '4 days' },
+  { value: '120h', label: '5 days' },
+  { value: '144h', label: '6 days' },
+  { value: '168h', label: '7 days' }
+] as const;
+
+export type PayableValue = '0' | '1' | '2';
+
+export type TimetableSlot = {
   rangeStart: number;
   rangeEnd: number;
+  amTime: string;
+  pmTime: string;
+  fromStart: string;
+  bookabled: boolean;
+  maxNumber: string;
+  payable: PayableValue;
+  instructor: string;
+};
+
+export type TimetableDaySchedule = {
+  enabled: boolean;
+  slots: TimetableSlot[];
+};
+
+export type TimetableBookingSettings = {
+  enabledForBooking: boolean;
+  paymentPostecipedOrCreditCard: boolean;
+  payWithinDays: string;
+  cost: string;
+};
+
+export type TimetableOperator = {
+  id: string;
+  name: string;
 };
 
 export type CardTimetableForm = {
@@ -28,6 +87,8 @@ export type CardTimetableForm = {
   permitMinuteAccess: string;
   blockingMinuteAccess: string;
   editableSubscriptionTimetable: boolean;
+  setBook: string;
+  bookingSettings: TimetableBookingSettings;
   days: Record<TimetableDayKey, TimetableDaySchedule>;
 };
 
@@ -41,7 +102,11 @@ const DAY_INDEX: Record<TimetableDayKey, number> = {
   sun: 6
 };
 
-export const PERMIT_MINUTE_OPTIONS = ['10', '20', '30', '40', '50', '60', '70', '80', '90'];
+const SLOT_COLORS = ['#81B8F3', '#6AA8E8', '#5598DD', '#4088D2', '#2B78C7', '#1668BC'];
+
+export function slotColor(index: number): string {
+  return SLOT_COLORS[index % SLOT_COLORS.length];
+}
 
 export function text(value: unknown): string {
   return String(value ?? '').trim();
@@ -70,29 +135,9 @@ export function formatRangeMinutes(start: number, end: number): string {
   return `${Math.max(0, Math.round(start))}#${Math.max(0, Math.round(end))}`;
 }
 
-function defaultDaySchedule(): TimetableDaySchedule {
-  return {
-    enabled: false,
-    amTime: '9:00 AM',
-    pmTime: '10:00 PM',
-    rangeStart: 540,
-    rangeEnd: 1320
-  };
-}
-
-export function createEmptyTimetableForm(typologyId = ''): CardTimetableForm {
-  return {
-    id: null,
-    typologyId,
-    reserveMaxNumber: '5',
-    permitMinuteAccess: '',
-    blockingMinuteAccess: '',
-    editableSubscriptionTimetable: false,
-    days: TIMETABLE_DAY_KEYS.reduce((acc, key) => {
-      acc[key] = defaultDaySchedule();
-      return acc;
-    }, {} as Record<TimetableDayKey, TimetableDaySchedule>)
-  };
+function splitCsv(value: string): string[] {
+  if (!value) return [];
+  return value.split(',').map((part) => part.trim());
 }
 
 function unserializePhpArray(raw: unknown): string[] {
@@ -147,28 +192,198 @@ function parseEnabledDays(raw: unknown): Set<TimetableDayKey> {
   return enabled;
 }
 
+export function createDefaultSlot(start = 540, end = 1320): TimetableSlot {
+  const safeEnd = end > start ? end : start + TIMETABLE_STEP;
+  return {
+    rangeStart: start,
+    rangeEnd: safeEnd,
+    amTime: minutesToDisplayTime(start),
+    pmTime: minutesToDisplayTime(safeEnd),
+    fromStart: '30',
+    bookabled: true,
+    maxNumber: '1',
+    payable: '0',
+    instructor: ''
+  };
+}
+
+function createDisabledDay(): TimetableDaySchedule {
+  return {
+    enabled: false,
+    slots: [createDefaultSlot(0, 0)]
+  };
+}
+
+function createEnabledDay(): TimetableDaySchedule {
+  return {
+    enabled: true,
+    slots: [createDefaultSlot()]
+  };
+}
+
+export function syncSlotTimes(slot: TimetableSlot): TimetableSlot {
+  const safeEnd = slot.rangeEnd > slot.rangeStart ? slot.rangeEnd : slot.rangeStart + TIMETABLE_STEP;
+  return {
+    ...slot,
+    rangeEnd: safeEnd,
+    amTime: minutesToDisplayTime(slot.rangeStart),
+    pmTime: minutesToDisplayTime(safeEnd)
+  };
+}
+
+export function addSlotToDay(day: TimetableDaySchedule): TimetableDaySchedule {
+  if (day.slots.length >= MAX_SLOTS_PER_DAY) {
+    throw new Error('You cannot reserve more than 6 per day');
+  }
+
+  const last = day.slots[day.slots.length - 1] ?? createDefaultSlot();
+  if (last.rangeEnd >= 1350) {
+    throw new Error('Delete last slider and create new again');
+  }
+
+  let newStart = last.rangeEnd + 50;
+  let newEnd = newStart + 100;
+  if (newEnd >= TIMETABLE_MINUTES_MAX) {
+    newEnd = TIMETABLE_MINUTES_MAX;
+  }
+
+  return {
+    ...day,
+    slots: [
+      ...day.slots,
+      createDefaultSlot(newStart, newEnd)
+    ]
+  };
+}
+
+export function removeSlotFromDay(
+  day: TimetableDaySchedule,
+  slotIndex?: number
+): TimetableDaySchedule {
+  if (day.slots.length <= 1) {
+    return day;
+  }
+  const index =
+    slotIndex === undefined ? day.slots.length - 1 : slotIndex;
+  if (index < 0 || index >= day.slots.length) {
+    return day;
+  }
+  return {
+    ...day,
+    slots: day.slots.filter((_, i) => i !== index)
+  };
+}
+
+function parseDaySlots(
+  rangeStr: string,
+  amStr: string,
+  pmStr: string,
+  fromStartStr: string,
+  bookabledStr: string,
+  maxNumStr: string,
+  payableStr: string,
+  instructorStr: string,
+  enabled: boolean
+): TimetableSlot[] {
+  if (!enabled) {
+    return [createDefaultSlot(0, 0)];
+  }
+
+  const rangeParts = splitCsv(rangeStr).filter((part) => part && part !== '0#' && part !== '0#0');
+  if (rangeParts.length === 0) {
+    return [createDefaultSlot()];
+  }
+
+  const amParts = splitCsv(amStr);
+  const pmParts = splitCsv(pmStr);
+  const fromStartParts = splitCsv(fromStartStr);
+  const bookabledParts = splitCsv(bookabledStr);
+  const maxNumParts = splitCsv(maxNumStr);
+  const payableParts = splitCsv(payableStr);
+  const instructorParts = splitCsv(instructorStr);
+
+  return rangeParts.map((rangePart, index) => {
+    const range = parseRangeMinutes(rangePart);
+    const end = range.end > range.start ? range.end : range.start + TIMETABLE_STEP;
+    return syncSlotTimes({
+      rangeStart: range.start,
+      rangeEnd: end,
+      amTime: amParts[index] || minutesToDisplayTime(range.start),
+      pmTime: pmParts[index] || minutesToDisplayTime(end),
+      fromStart: fromStartParts[index] || '30',
+      bookabled: bookabledParts[index] !== '0',
+      maxNumber: maxNumParts[index] || '1',
+      payable: (payableParts[index] || '0') as PayableValue,
+      instructor: instructorParts[index] || ''
+    });
+  });
+}
+
+function serializeDayField(slots: TimetableSlot[], getter: (slot: TimetableSlot) => string): string {
+  if (slots.length === 0) return '';
+  if (slots.length === 1) return getter(slots[0]);
+  return slots.map(getter).join(',');
+}
+
+function serializeDayRanges(slots: TimetableSlot[], enabled: boolean): string {
+  if (!enabled || slots.length === 0) return '0#0';
+  return slots.map((slot) => formatRangeMinutes(slot.rangeStart, slot.rangeEnd)).join(',');
+}
+
+export function createEmptyTimetableForm(typologyId = ''): CardTimetableForm {
+  return {
+    id: null,
+    typologyId,
+    reserveMaxNumber: '5',
+    permitMinuteAccess: '',
+    blockingMinuteAccess: '',
+    editableSubscriptionTimetable: false,
+    setBook: '',
+    bookingSettings: {
+      enabledForBooking: true,
+      paymentPostecipedOrCreditCard: false,
+      payWithinDays: '',
+      cost: ''
+    },
+    days: TIMETABLE_DAY_KEYS.reduce((acc, key) => {
+      acc[key] = createDisabledDay();
+      return acc;
+    }, {} as Record<TimetableDayKey, TimetableDaySchedule>)
+  };
+}
+
 export function mapDbRowToTimetableForm(
   row: Record<string, unknown>,
   typologyId: string,
-  editableSubscriptionTimetable: boolean
+  editableSubscriptionTimetable: boolean,
+  bookingSettings?: Partial<TimetableBookingSettings>
 ): CardTimetableForm {
   const amTimes = unserializePhpArray(row.am_time);
   const pmTimes = unserializePhpArray(row.pm_time);
   const rangeValues = unserializePhpArray(row.rangValue);
+  const fromStarts = unserializePhpArray(row.from_start);
+  const bookabledValues = unserializePhpArray(row.bookabled);
+  const maxNumbers = unserializePhpArray(row.maxnumber);
+  const payableValues = unserializePhpArray(row.payable);
+  const instructorValues = unserializePhpArray(row.instructor);
   const enabledDays = parseEnabledDays(row.enabled);
 
   const days = TIMETABLE_DAY_KEYS.reduce((acc, key) => {
     const index = DAY_INDEX[key];
-    const range = parseRangeMinutes(rangeValues[index] || '0#0');
-    const amTime = amTimes[index] || minutesToDisplayTime(range.start);
-    const pmTime = pmTimes[index] || minutesToDisplayTime(range.end);
-
+    const enabled = enabledDays.has(key);
     acc[key] = {
-      enabled: enabledDays.has(key),
-      amTime,
-      pmTime,
-      rangeStart: range.start,
-      rangeEnd: range.end > range.start ? range.end : range.start + 60
+      enabled,
+      slots: parseDaySlots(
+        rangeValues[index] || '',
+        amTimes[index] || '',
+        pmTimes[index] || '',
+        fromStarts[index] || '',
+        bookabledValues[index] || '',
+        maxNumbers[index] || '',
+        payableValues[index] || '',
+        instructorValues[index] || '',
+        enabled
+      )
     };
     return acc;
   }, {} as Record<TimetableDayKey, TimetableDaySchedule>);
@@ -180,6 +395,13 @@ export function mapDbRowToTimetableForm(
     permitMinuteAccess: row.permit_minute_access != null ? String(row.permit_minute_access) : '',
     blockingMinuteAccess: row.blocking_minute_access != null ? String(row.blocking_minute_access) : '',
     editableSubscriptionTimetable,
+    setBook: text(row.setbook),
+    bookingSettings: {
+      enabledForBooking: bookingSettings?.enabledForBooking ?? true,
+      paymentPostecipedOrCreditCard: bookingSettings?.paymentPostecipedOrCreditCard ?? false,
+      payWithinDays: bookingSettings?.payWithinDays ?? '',
+      cost: bookingSettings?.cost ?? ''
+    },
     days
   };
 }
@@ -188,6 +410,11 @@ export function buildTimetableDbValues(form: CardTimetableForm): Record<string, 
   const amTime: string[] = [];
   const pmTime: string[] = [];
   const rangValue: string[] = [];
+  const fromStart: string[] = [];
+  const bookabled: string[] = [];
+  const maxnumber: string[] = [];
+  const payable: string[] = [];
+  const instructor: string[] = [];
   const enabled: Record<string, string> = {};
 
   TIMETABLE_DAY_KEYS.forEach((key) => {
@@ -195,9 +422,16 @@ export function buildTimetableDbValues(form: CardTimetableForm): Record<string, 
     if (day.enabled) {
       enabled[key] = '1';
     }
-    amTime.push(day.enabled ? day.amTime : '');
-    pmTime.push(day.enabled ? day.pmTime : '');
-    rangValue.push(day.enabled ? formatRangeMinutes(day.rangeStart, day.rangeEnd) : '0#');
+
+    const slots = day.enabled ? day.slots : [createDefaultSlot(0, 0)];
+    amTime.push(day.enabled ? serializeDayField(slots, (slot) => slot.amTime) : '');
+    pmTime.push(day.enabled ? serializeDayField(slots, (slot) => slot.pmTime) : '');
+    rangValue.push(serializeDayRanges(slots, day.enabled));
+    fromStart.push(day.enabled ? serializeDayField(slots, (slot) => slot.fromStart) : '');
+    bookabled.push(day.enabled ? serializeDayField(slots, (slot) => (slot.bookabled ? '1' : '0')) : '');
+    maxnumber.push(day.enabled ? serializeDayField(slots, (slot) => slot.maxNumber) : '');
+    payable.push(day.enabled ? serializeDayField(slots, (slot) => slot.payable) : '');
+    instructor.push(day.enabled ? serializeDayField(slots, (slot) => slot.instructor) : '');
   });
 
   return {
@@ -206,9 +440,50 @@ export function buildTimetableDbValues(form: CardTimetableForm): Record<string, 
     am_time: serialize(amTime),
     pm_time: serialize(pmTime),
     rangValue: serialize(rangValue),
+    from_start: serialize(fromStart),
+    bookabled: serialize(bookabled),
+    maxnumber: serialize(maxnumber),
+    payable: serialize(payable),
+    instructor: serialize(instructor),
+    setbook: form.setBook || '',
     enabled: JSON.stringify(enabled),
     permit_minute_access: form.permitMinuteAccess ? Number(form.permitMinuteAccess) : null,
     blocking_minute_access: form.blockingMinuteAccess ? Number(form.blockingMinuteAccess) : null,
     reserve_maxnumber: form.reserveMaxNumber || '5'
   };
+}
+
+export function resetAllDays(form: CardTimetableForm): CardTimetableForm {
+  const days = TIMETABLE_DAY_KEYS.reduce((acc, key) => {
+    acc[key] = {
+      enabled: form.days[key].enabled,
+      slots: [createDefaultSlot(0, 0)]
+    };
+    return acc;
+  }, {} as Record<TimetableDayKey, TimetableDaySchedule>);
+
+  return { ...form, days };
+}
+
+export function validateTimetableForm(form: CardTimetableForm): string | null {
+  for (const key of TIMETABLE_DAY_KEYS) {
+    const day = form.days[key];
+    if (day.enabled && day.slots.length > MAX_SLOTS_PER_DAY) {
+      return 'You cannot reserve more than 6 per day';
+    }
+  }
+  return null;
+}
+
+export function toggleDayEnabled(
+  day: TimetableDaySchedule,
+  enabled: boolean
+): TimetableDaySchedule {
+  if (!enabled) {
+    return { enabled: false, slots: [createDefaultSlot(0, 0)] };
+  }
+  if (day.slots.length === 1 && day.slots[0].rangeStart === 0 && day.slots[0].rangeEnd === 0) {
+    return createEnabledDay();
+  }
+  return { ...day, enabled: true };
 }

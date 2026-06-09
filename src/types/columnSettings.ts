@@ -82,13 +82,30 @@ export const MOVELAP_COLUMNS: ColumnDefinition[] = [
 ];
 
 // Get default settings for a table type
-export function getDefaultColumnSettings(tableType: 'day' | 'workout' | 'moveframe' | 'movelap'): {
+export type ColumnTableType =
+  | 'day'
+  | 'workout'
+  | 'moveframe'
+  | 'movelap'
+  | 'nutritionFood'
+  | 'nutritionComponent';
+
+function normalizeColumnTableType(
+  tableType: ColumnTableType
+): 'day' | 'workout' | 'moveframe' | 'movelap' {
+  if (tableType === 'nutritionFood') return 'moveframe';
+  if (tableType === 'nutritionComponent') return 'movelap';
+  return tableType;
+}
+
+export function getDefaultColumnSettings(tableType: ColumnTableType): {
   visibleColumns: string[];
   columnOrder: string[];
 } {
+  const normalized = normalizeColumnTableType(tableType);
   let columns: ColumnDefinition[] = [];
   
-  switch (tableType) {
+  switch (normalized) {
     case 'day':
       columns = DAY_ROW_COLUMNS;
       break;
@@ -113,8 +130,8 @@ export function getDefaultColumnSettings(tableType: 'day' | 'workout' | 'movefra
 }
 
 // Get all columns for a table type
-export function getColumnsForTable(tableType: 'day' | 'workout' | 'moveframe' | 'movelap'): ColumnDefinition[] {
-  switch (tableType) {
+export function getColumnsForTable(tableType: ColumnTableType): ColumnDefinition[] {
+  switch (normalizeColumnTableType(tableType)) {
     case 'day':
       return DAY_ROW_COLUMNS;
     case 'workout':

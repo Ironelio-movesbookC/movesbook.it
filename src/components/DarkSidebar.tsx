@@ -109,7 +109,11 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import {
+  isClubAccountUserType,
+  isGroupAccountUserType,
+  isTeamAccountUserType,
+} from '@/utils/dashboardRouting';
 import {
   formatMyClubsSidebarLabel,
   getFormCreatedClubsSortedByCreatedAt,
@@ -117,10 +121,15 @@ import {
   userHasClubProfile,
 } from '@/lib/club/clubSidebarLabel';
 import {
+  formatEntitySidebarLabel,
+  getFormCreatedEntitiesSortedByCreatedAt,
+} from '@/lib/entity/entityForm';
+import {
   normalizeYoutubeUrlForOpen,
   YOUTUBE_CHANNEL_URL_KEY
 } from '@/utils/youtubeChannelUrl';
 import SidebarClubMyEntityTop from '@/components/SidebarClubMyEntityTop';
+import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
@@ -306,6 +315,19 @@ interface DarkSidebarProps {
   onProfileImageSaved?: (patch: { image?: string }) => void;
   /** My clubs → Create a club (club dashboard). */
   onCreateClubClick?: () => void;
+  /** Athlete My clubs → Become member (assignment flow TBD). */
+  onBecomeMemberClick?: () => void;
+  /** Coach My Groups trained → Create a trained group. */
+  onCreateGroupTrainedClick?: () => void;
+  /** Team dashboard → Create a team. */
+  onCreateTeamClick?: () => void;
+  /** Group dashboard → Create a group. */
+  onCreateGroupClick?: () => void;
+  /**
+   * Club / team / group / coach dashboards: show the entity tab (My Club, My Team, …)
+   * only while that workspace is open from the sidebar — hidden on My Page.
+   */
+  clubMyClubTabVisible?: boolean;
 }
 
 export default function DarkSidebar({
@@ -326,7 +348,12 @@ export default function DarkSidebar({
   onTabChange,
   profileImageFromDb,
   onProfileImageSaved,
-  onCreateClubClick
+  onCreateClubClick,
+  onBecomeMemberClick,
+  onCreateGroupTrainedClick,
+  onCreateTeamClick,
+  onCreateGroupClick,
+  clubMyClubTabVisible = false,
 }: DarkSidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
@@ -344,20 +371,47 @@ export default function DarkSidebar({
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [myDashboardOpen, setMyDashboardOpen] = useState(false);
   const [myClubsOpen, setMyClubsOpen] = useState(false);
+  const [clubAdminInfoOpen, setClubAdminInfoOpen] = useState(false);
+  const [memberInfoOpen, setMemberInfoOpen] = useState(false);
 
   const formCreatedClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(entities),
     [entities]
   );
+  const formCreatedEntities = useMemo(
+    () => getFormCreatedEntitiesSortedByCreatedAt(entities),
+    [entities]
+  );
   const clubUserHasProfile =
     !isClubAccountUserType(userType) || userHasClubProfile(entities);
-  const showMyClubTab = clubUserHasProfile;
+  const isAthleteUser = userType === 'ATHLETE';
+  const isCoachUser = userType === 'COACH';
+  const isTeamManagerUser = isTeamAccountUserType(userType);
+  const isGroupAdminUser = isGroupAccountUserType(userType);
+  const athleteHasClubMembership = entities.length > 0;
+  const isManagedEntityWorkspaceUser =
+    isClubAccountUserType(userType) ||
+    isTeamManagerUser ||
+    isGroupAdminUser ||
+    isCoachUser;
+  const showMyClubTab = isManagedEntityWorkspaceUser
+    ? clubMyClubTabVisible === true
+    : isAthleteUser
+      ? athleteHasClubMembership
+      : clubUserHasProfile;
 
   useEffect(() => {
-    if (isClubAccountUserType(userType) && entities.length > 0) {
+    if (
+      (isClubAccountUserType(userType) ||
+        isAthleteUser ||
+        isCoachUser ||
+        isTeamManagerUser ||
+        isGroupAdminUser) &&
+      entities.length > 0
+    ) {
       setMyClubsOpen(true);
     }
-  }, [entities.length, userType]);
+  }, [entities.length, userType, isAthleteUser, isCoachUser, isTeamManagerUser, isGroupAdminUser]);
 
   const [socialSettings, setSocialSettings] = useState<Record<string, unknown>>({});
   /** Personal "My channel on YouTube" — persisted on `User.youtubeChannelUrl` (API merges legacy social JSON). */
@@ -716,7 +770,14 @@ export default function DarkSidebar({
   };
 
   const handleMyEntityTab = () => {
-    if (isClubAccountUserType(userType) && !showMyClubTab) {
+    if (
+      (isClubAccountUserType(userType) ||
+        isCoachUser ||
+        isAthleteUser ||
+        isTeamManagerUser ||
+        isGroupAdminUser) &&
+      !showMyClubTab
+    ) {
       return;
     }
 
@@ -727,9 +788,9 @@ export default function DarkSidebar({
       return;
     }
 
-    if (userType === 'TEAM_MANAGER' && onMyTeamClick) {
+    if (isTeamManagerUser && onMyTeamClick) {
       onMyTeamClick();
-    } else if (userType === 'GROUP_ADMIN' && onMyGroupClick) {
+    } else if (isGroupAdminUser && onMyGroupClick) {
       onMyGroupClick();
     } else if (userType === 'COACH' && onMyCoachingGroupClick) {
       onMyCoachingGroupClick();
@@ -743,9 +804,9 @@ export default function DarkSidebar({
 
   const getEntityLabel = () => {
     if (isClubAccountUserType(userType)) return t('sidebar_my_club');
-    if (userType === 'TEAM_MANAGER') return t('sidebar_my_team');
-    if (userType === 'GROUP_ADMIN') return t('sidebar_my_group');
-    if (userType === 'COACH') return t('sidebar_my_coaching_group');
+    if (isTeamManagerUser) return t('sidebar_my_team');
+    if (isGroupAdminUser) return t('sidebar_my_group');
+    if (userType === 'COACH') return t('sidebar_trained_group');
     // For athletes and other users, show "My Club" as default
     return t('sidebar_my_club');
   };
@@ -1045,7 +1106,7 @@ export default function DarkSidebar({
   return (
     <>
     <div className="w-full h-full bg-gray-900 text-white flex flex-col overflow-hidden" style={{ width: '320px' }}>
-      {/* Tab Navigation — club accounts: My Club tab only after create-club form save */}
+      {/* Tab Navigation — club accounts: My Club tab appears when a sidebar club is opened */}
       <div className="flex flex-shrink-0 border-b border-gray-700 bg-gray-900">
         <button
           onClick={handleMyPageTab}
@@ -1241,7 +1302,15 @@ export default function DarkSidebar({
                   className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left transition-colors hover:bg-teal-700"
                 >
                   <Mail className="h-5 w-5 shrink-0" />
-                  <span>My clubs</span>
+                  <span>
+                    {isCoachUser
+                      ? t('sidebar_my_groups_trained')
+                      : isTeamManagerUser
+                        ? t('sidebar_my_teams')
+                        : isGroupAdminUser
+                          ? t('sidebar_my_group')
+                          : t('sidebar_my_clubs')}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -1274,7 +1343,10 @@ export default function DarkSidebar({
                             <li key={club.id}>
                               <button
                                 type="button"
-                                onClick={() => onEntitySelect?.(club.id)}
+                                onClick={() => {
+                                  onEntitySelect?.(club.id);
+                                  setCurrentTab('my-entity');
+                                }}
                                 className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
                                   isSelected ? 'bg-zinc-700/60' : ''
                                 }`}
@@ -1293,6 +1365,178 @@ export default function DarkSidebar({
                   )}
                 </div>
               )}
+              {myClubsOpen && isAthleteUser && (
+                <div className="border-t border-teal-900/40 bg-[#2d2d2d] px-4 py-4">
+                  <button
+                    type="button"
+                    onClick={() => onBecomeMemberClick?.()}
+                    className="mx-auto block w-full max-w-[220px] rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-2.5 text-center text-sm font-semibold text-white shadow hover:from-red-600 hover:to-red-800"
+                  >
+                    {t('my_clubs_become_member')}
+                  </button>
+                  {entities.length > 0 && (
+                    <>
+                      <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15" />
+                      <ul className="mt-3 space-y-1">
+                        {entities.map((club: { id: string; name: string }) => {
+                          const isSelected = selectedEntityId === club.id;
+                          return (
+                            <li key={club.id}>
+                              <button
+                                type="button"
+                                onClick={() => onEntitySelect?.(club.id)}
+                                className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
+                                  isSelected ? 'bg-zinc-700/60' : ''
+                                }`}
+                              >
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full bg-lime-400 shadow-[0_0_6px_rgba(163,230,53,0.8)]"
+                                  aria-hidden
+                                />
+                                <span className="min-w-0 flex-1 truncate leading-snug">
+                                  {club.name?.trim() || 'Club'}
+                                </span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              )}
+              {myClubsOpen && isCoachUser && (
+                <div className="border-t border-teal-900/40 bg-[#2d2d2d] px-4 py-4">
+                  <button
+                    type="button"
+                    onClick={() => onCreateGroupTrainedClick?.()}
+                    className="mx-auto block w-full max-w-[220px] rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-2.5 text-center text-sm font-semibold text-white shadow hover:from-red-600 hover:to-red-800"
+                  >
+                    {t('create_group_trained')}
+                  </button>
+                  {formCreatedEntities.length > 0 && (
+                    <>
+                      <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15" />
+                      <ul className="mt-3 space-y-1">
+                        {formCreatedEntities.map(
+                          (group: { id: string; name: string; description?: string | null }) => {
+                          const isSelected = selectedEntityId === group.id;
+                          const label = formatEntitySidebarLabel(group);
+                          return (
+                            <li key={group.id}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onEntitySelect?.(group.id);
+                                  setCurrentTab('my-entity');
+                                }}
+                                className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
+                                  isSelected ? 'bg-zinc-700/60' : ''
+                                }`}
+                              >
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full bg-lime-400 shadow-[0_0_6px_rgba(163,230,53,0.8)]"
+                                  aria-hidden
+                                />
+                                <span className="min-w-0 flex-1 truncate leading-snug">{label}</span>
+                              </button>
+                            </li>
+                          );
+                        },
+                        )}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              )}
+              {myClubsOpen && isTeamManagerUser && (
+                <div className="border-t border-teal-900/40 bg-[#2d2d2d] px-4 py-4">
+                  <button
+                    type="button"
+                    onClick={() => onCreateTeamClick?.()}
+                    className="mx-auto block w-full max-w-[220px] rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-2.5 text-center text-sm font-semibold text-white shadow hover:from-red-600 hover:to-red-800"
+                  >
+                    Create a team
+                  </button>
+                  {formCreatedEntities.length > 0 ? (
+                    <>
+                      <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15" />
+                      <ul className="mt-3 space-y-1">
+                        {formCreatedEntities.map(
+                          (team: { id: string; name: string; description?: string | null }) => {
+                          const isSelected = selectedEntityId === team.id;
+                          const label = formatEntitySidebarLabel(team);
+                          return (
+                            <li key={team.id}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onEntitySelect?.(team.id);
+                                  setCurrentTab('my-entity');
+                                }}
+                                className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
+                                  isSelected ? 'bg-zinc-700/60' : ''
+                                }`}
+                              >
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full bg-lime-400 shadow-[0_0_6px_rgba(163,230,53,0.8)]"
+                                  aria-hidden
+                                />
+                                <span className="min-w-0 flex-1 truncate leading-snug">{label}</span>
+                              </button>
+                            </li>
+                          );
+                        },
+                        )}
+                      </ul>
+                    </>
+                  ) : null}
+                </div>
+              )}
+              {myClubsOpen && isGroupAdminUser && (
+                <div className="border-t border-teal-900/40 bg-[#2d2d2d] px-4 py-4">
+                  <button
+                    type="button"
+                    onClick={() => onCreateGroupClick?.()}
+                    className="mx-auto block w-full max-w-[220px] rounded-md border border-red-900 bg-gradient-to-b from-red-500 to-red-700 px-4 py-2.5 text-center text-sm font-semibold text-white shadow hover:from-red-600 hover:to-red-800"
+                  >
+                    Create a group
+                  </button>
+                  {formCreatedEntities.length > 0 && (
+                    <>
+                      <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15" />
+                      <ul className="mt-3 space-y-1">
+                        {formCreatedEntities.map(
+                          (group: { id: string; name: string; description?: string | null }) => {
+                          const isSelected = selectedEntityId === group.id;
+                          const label = formatEntitySidebarLabel(group);
+                          return (
+                            <li key={group.id}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onEntitySelect?.(group.id);
+                                  setCurrentTab('my-entity');
+                                }}
+                                className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
+                                  isSelected ? 'bg-zinc-700/60' : ''
+                                }`}
+                              >
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full bg-lime-400 shadow-[0_0_6px_rgba(163,230,53,0.8)]"
+                                  aria-hidden
+                                />
+                                <span className="min-w-0 flex-1 truncate leading-snug">{label}</span>
+                              </button>
+                            </li>
+                          );
+                        },
+                        )}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
@@ -1303,15 +1547,87 @@ export default function DarkSidebar({
               <ChevronDown className="w-4 h-4 opacity-80" />
             </button>
 
-            <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
-              <div className="flex items-center gap-3">
-                <UserCircle className="w-5 h-5" />
-                <span>
-                  {isClubAccountUserType(userType) ? 'Club admin info' : 'Member info'}
-                </span>
+            {isClubAccountUserType(userType) ? (
+              <div className="border-b border-teal-700">
+                <div className="flex w-full items-stretch bg-teal-800 text-white">
+                  <button
+                    type="button"
+                    onClick={() => setClubAdminInfoOpen((v) => !v)}
+                    aria-expanded={clubAdminInfoOpen}
+                    className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left transition-colors hover:bg-teal-700"
+                  >
+                    <UserCircle className="h-5 w-5 shrink-0" />
+                    <span>Club admin info</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClubAdminInfoOpen((v) => !v)}
+                    aria-label={clubAdminInfoOpen ? t('collapse') : t('expand')}
+                    className="flex shrink-0 items-center border-l border-teal-700/40 px-4 transition-colors hover:bg-teal-700"
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 opacity-80 transition-transform duration-200 ${clubAdminInfoOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                </div>
+                {clubAdminInfoOpen && (
+                  <div className="border-t border-teal-900/40 bg-[#2d2d2d] text-sm text-white">
+                    <button
+                      type="button"
+                      onClick={() => router.push('/profile#admin-info')}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90"
+                    >
+                      <UserCircle className="h-4 w-4 shrink-0 opacity-90" />
+                      <span>Club Admin profile</span>
+                    </button>
+                  </div>
+                )}
               </div>
-              <ChevronDown className="w-4 h-4 opacity-80" />
-            </button>
+            ) : (
+              <div className="border-b border-teal-700">
+                <div className="flex w-full items-stretch bg-teal-800 text-white">
+                  <button
+                    type="button"
+                    onClick={() => setMemberInfoOpen((v) => !v)}
+                    aria-expanded={memberInfoOpen}
+                    className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left transition-colors hover:bg-teal-700"
+                  >
+                    <UserCircle className="h-5 w-5 shrink-0" />
+                    <span>Member info</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMemberInfoOpen((v) => !v)}
+                    aria-label={memberInfoOpen ? t('collapse') : t('expand')}
+                    className="flex shrink-0 items-center border-l border-teal-700/40 px-4 transition-colors hover:bg-teal-700"
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 opacity-80 transition-transform duration-200 ${memberInfoOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                </div>
+                {memberInfoOpen && (
+                  <div className="border-t border-teal-900/40 bg-[#2d2d2d] text-sm text-white">
+                    <button
+                      type="button"
+                      onClick={() => router.push('/profile#member-info')}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90"
+                    >
+                      <UserCircle className="h-4 w-4 shrink-0 opacity-90" />
+                      <span>Member info</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push('/profile#member-profile')}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-700/90 border-t border-black/25"
+                    >
+                      <UserCircle className="h-4 w-4 shrink-0 opacity-90" />
+                      <span>User Profile</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
               <div className="flex items-center gap-3">
@@ -1770,17 +2086,22 @@ export default function DarkSidebar({
                       </div>
                     </div>
 
-                    {/* Club info / pages */}
-                    <button
-                      type="button"
-                      className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Building2 className="w-5 h-5 shrink-0" />
-                        <span className="font-semibold tracking-wide truncate">Club Info</span>
-                      </div>
-                      <ChevronDown className="w-4 h-4 opacity-90" />
-                    </button>
+                    {isClubAccountUserType(userType) ? (
+                      <ClubMyClubInfoSubmenu
+                        clubId={displaySelectedClub?.id as string | undefined}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Building2 className="w-5 h-5 shrink-0" />
+                          <span className="font-semibold tracking-wide truncate">Club Info</span>
+                        </div>
+                        <ChevronDown className="w-4 h-4 opacity-90" />
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -3446,7 +3767,7 @@ export default function DarkSidebar({
                   </div>
                 </button>
 
-                {userType === 'TEAM_MANAGER' && (
+                {isTeamManagerUser && (
                   <>
                     <button className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700">
                       <div className="flex items-center gap-3">

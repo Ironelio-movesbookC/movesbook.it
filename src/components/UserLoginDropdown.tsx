@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 import { 
   User, 
   LogOut, 
@@ -41,8 +42,11 @@ export default function UserLoginDropdown() {
 
   const handleProfile = () => {
     setIsOpen(false);
-    // All users should go to My Page first to select their entity
-    router.push('/my-page');
+    if (user?.userType) {
+      router.push(getDashboardPathForUserType(user.userType));
+    } else {
+      router.push('/my-page');
+    }
   };
 
   const handleSettings = () => {

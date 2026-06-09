@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { unserialize } from 'php-serialize';
+import { serialize, unserialize } from 'php-serialize';
 import { prisma } from '@/lib/prisma';
+import { normalizeTypologyDateInput } from '@/lib/typologySubscriptionAudio.shared';
 import { verifyToken } from '@/lib/auth';
+import { fetchLanesForDays, saveLanesForDays } from '@/lib/lanesForDays.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +11,7 @@ type TypologyRow = {
   id: string;
   area: string;
   blockAccess: boolean;
+  image: string;
   activityName: string;
   room: string;
   cost: string;
@@ -48,6 +51,7 @@ type LegacyTypologyRow = {
   area?: string | null;
   blockAccess?: string | null;
   activityName?: string | null;
+  image?: string | null;
   room?: string | number | null;
   cost?: string | number | null;
   limitValue?: string | number | null;
@@ -429,20 +433,15 @@ async function resolveAreaActivity(areaActivity: unknown, userIds: string[], clu
   return rows[0]?.id != null ? String(rows[0].id) : null;
 }
 
-function serializePhpString(value: unknown): string {
-  const next = text(value);
-  return `s:${next.length}:"${next}";`;
-}
-
 function serializeLaneAvailability(lanes: any[]): string {
-  const normalizedLanes = Array.from({ length: 10 }, (_, index) => lanes[index] ?? {});
-  const serializedItems = normalizedLanes.map((lane, index) => {
-    const enabled = yesNo(lane?.available);
+  const items = Array.from({ length: 10 }, (_, index) => {
+    const lane = lanes[index] ?? {};
+    const enabled = yesNo(lane?.available) === 'Y';
     const limit = text(lane?.limit);
-    return `i:${index};a:1:{s:1:"${enabled}";${serializePhpString(limit)}}`;
+    return enabled ? { Y: limit } : { N: limit };
   });
 
-  return `a:${normalizedLanes.length}:{${serializedItems.join('')}}`;
+  return serialize(items);
 }
 
 function boolFromYesNo(value: unknown): boolean {
@@ -456,31 +455,36 @@ function parseLaneAvailability(raw: unknown): { available: boolean; limit: strin
   }
 
   try {
-    const parsed = unserialize(raw) as Record<string | number, Record<string, string>> | null;
+    const parsed = unserialize(raw) as unknown;
     if (!parsed || typeof parsed !== 'object') {
       return defaults;
     }
 
+    const items = Array.isArray(parsed)
+      ? parsed
+      : Array.from({ length: 10 }, (_, index) => (parsed as Record<number, unknown>)[index]);
+
     return Array.from({ length: 10 }, (_, index) => {
-      const lane = parsed[index] ?? parsed[String(index)];
+      const lane = items[index];
       if (!lane || typeof lane !== 'object') {
         return { available: false, limit: '' };
       }
 
-      if ('Y' in lane) {
-        return { available: true, limit: text(lane.Y) };
+      const record = lane as Record<string, string>;
+      if ('Y' in record) {
+        return { available: true, limit: text(record.Y) };
       }
 
-      if ('N' in lane) {
-        return { available: false, limit: text(lane.N) };
+      if ('N' in record) {
+        return { available: false, limit: text(record.N) };
       }
 
-      const [flag, limitValue] = Object.entries(lane)[0] ?? [];
+      const [flag, limitValue] = Object.entries(record)[0] ?? [];
       if (flag === 'Y') {
         return { available: true, limit: text(limitValue) };
       }
 
-      return { available: false, limit: '' };
+      return { available: false, limit: text(limitValue) };
     });
   } catch {
     return defaults;
@@ -519,8 +523,12 @@ function buildTypologyValues(body: any, areaActivity: string): Record<string, un
     accesses_allow: yesNo(body.doNotStoreAllowedAccesses),
     accesses_not_allow: yesNo(body.doNotStoreDeniedAccesses),
     audio_message_status: yesNo(body.audioMessageEnabled),
-    audio_message_start: String(body.audioMessageStart ?? '').trim(),
-    audio_message_end: String(body.audioMessageEnd ?? '').trim(),
+    audio_message_start: yesNo(body.audioMessageEnabled) === 'Y'
+      ? String(body.audioMessageStart ?? '').trim()
+      : '',
+    audio_message_end: yesNo(body.audioMessageEnabled) === 'Y'
+      ? String(body.audioMessageEnd ?? '').trim()
+      : '',
     pop_up_status: yesNo(body.popupMessageEnabled),
     pop_up_start: String(body.popupMessageStart ?? '').trim(),
     pop_up_end: String(body.popupMessageEnd ?? '').trim(),
@@ -544,6 +552,13 @@ function buildTypologyValues(body: any, areaActivity: string): Record<string, un
   }
 
   return values;
+}
+
+function buildTypologyAudioUrl(row: Record<string, unknown>): string | null {
+  const song = text(row.song);
+  const userId = text(row.user_id);
+  if (!song || !userId) return null;
+  return `/subscription_file/playlist/User_${userId}/${song}`;
 }
 
 function mapDbRowToTypologyForm(row: Record<string, unknown>) {
@@ -586,8 +601,14 @@ function mapDbRowToTypologyForm(row: Record<string, unknown>) {
     doNotStoreAllowedAccesses: boolFromYesNo(row.accesses_allow),
     doNotStoreDeniedAccesses: boolFromYesNo(row.accesses_not_allow),
     audioMessageEnabled: boolFromYesNo(row.audio_message_status),
-    audioMessageStart: text(row.audio_message_start),
-    audioMessageEnd: text(row.audio_message_end),
+    audioMessageStart: boolFromYesNo(row.audio_message_status) === true
+      ? normalizeTypologyDateInput(text(row.audio_message_start))
+      : '',
+    audioMessageEnd: boolFromYesNo(row.audio_message_status) === true
+      ? normalizeTypologyDateInput(text(row.audio_message_end))
+      : '',
+    song: text(row.song) || null,
+    audioUrl: buildTypologyAudioUrl(row),
     popupMessageEnabled: boolFromYesNo(row.pop_up_status),
     popupMessageStart: text(row.pop_up_start),
     popupMessageEnd: text(row.pop_up_end),
@@ -634,14 +655,24 @@ function validateScalarFields(body: any, fieldErrors: Record<string, string>) {
     fieldErrors.afterExpireLaneDays = 'Days cannot be greater than 30.';
   }
 
-  if (!isDateText(body.audioMessageStart)) {
-    fieldErrors.audioMessageStart = 'Please enter a valid start date.';
-  }
-  if (!isDateText(body.audioMessageEnd)) {
-    fieldErrors.audioMessageEnd = 'Please enter a valid expiration date.';
-  }
-  if (text(body.audioMessageStart) && text(body.audioMessageEnd) && text(body.audioMessageEnd) < text(body.audioMessageStart)) {
-    fieldErrors.audioMessageEnd = 'Expiration date must be after the start date.';
+  if (yesNo(body.audioMessageEnabled) === 'Y') {
+    if (!text(body.audioMessageStart)) {
+      fieldErrors.audioMessageStart = 'Please enter a start date.';
+    } else if (!isDateText(body.audioMessageStart)) {
+      fieldErrors.audioMessageStart = 'Please enter a valid start date.';
+    }
+    if (!text(body.audioMessageEnd)) {
+      fieldErrors.audioMessageEnd = 'Please enter an expiration date.';
+    } else if (!isDateText(body.audioMessageEnd)) {
+      fieldErrors.audioMessageEnd = 'Please enter a valid expiration date.';
+    }
+    if (
+      text(body.audioMessageStart) &&
+      text(body.audioMessageEnd) &&
+      text(body.audioMessageEnd) < text(body.audioMessageStart)
+    ) {
+      fieldErrors.audioMessageEnd = 'Expiration date must be on or after the start date.';
+    }
   }
 
   if (!isDateText(body.popupMessageStart)) {
@@ -744,6 +775,33 @@ async function hasDuplicateTypology(
   );
 
   return rows.length > 0;
+}
+
+async function resolveCopyActivityName(
+  baseName: string,
+  areaActivity: string,
+  tableName: string,
+  userIds: string[],
+  clubId: string | null
+): Promise<string> {
+  const trimmed = baseName.trim() || 'Untitled course';
+  const root = trimmed.replace(/\s+copy(?:\s+\d+)?$/i, '').trim() || trimmed;
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const candidate = attempt === 0 ? `${root} copy` : `${root} copy ${attempt + 1}`;
+    const duplicate = await hasDuplicateTypology(
+      tableName,
+      candidate,
+      areaActivity,
+      userIds,
+      clubId
+    );
+    if (!duplicate) {
+      return candidate;
+    }
+  }
+
+  return `${root} copy ${Date.now()}`;
 }
 
 async function validateTypologyPayload(
@@ -919,6 +977,7 @@ function normalizeLegacyRow(row: LegacyTypologyRow): TypologyRow {
     id: String(row.id),
     area: row.area?.trim() || 'Unassigned',
     blockAccess: yesNo(row.blockAccess) === 'Y',
+    image: row.image?.trim() || 'Cat_1.png',
     activityName: row.activityName?.trim() || 'Untitled course',
     room: row.room != null ? String(row.room) : '',
     cost: row.cost != null ? String(row.cost) : '',
@@ -965,6 +1024,7 @@ async function fetchLegacyRows(userIds: string[], clubId: string | null) {
       t.user_id AS userId,
       ${areaSelect},
       COALESCE(t.block_access, 'N') AS blockAccess,
+      COALESCE(t.image, 'Cat_1.png') AS image,
       COALESCE(t.activity_name, '') AS activityName,
       COALESCE(t.room, '') AS room,
       COALESCE(t.cost_for_lesson, '') AS cost,
@@ -1038,10 +1098,13 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Typology not found' }, { status: 404 });
       }
 
+      const typology = mapDbRowToTypologyForm(row);
+      const lanesForDays = await fetchLanesForDays(typologyId);
+
       return NextResponse.json({
         club: context.club,
         areas,
-        typology: mapDbRowToTypologyForm(row),
+        typology: { ...typology, lanesForDays },
         source: 'database'
       });
     }
@@ -1156,7 +1219,85 @@ export async function POST(request: NextRequest) {
         validation.areaActivity
       );
 
+      if (Array.isArray(body.lanesForDays) && Array.isArray(body.lanes)) {
+        await saveLanesForDays(String(id), body.lanesForDays, body.lanes);
+      }
+
       return NextResponse.json({ success: true, persisted: true, id });
+    }
+
+    if (body.action === 'copy-typology') {
+      const sourceId = String(body.sourceId ?? body.id ?? '');
+      if (!sourceId || sourceId.startsWith('local-')) {
+        return NextResponse.json({ error: 'Invalid typology id' }, { status: 400 });
+      }
+
+      const sourceRow = await fetchTypologyRowById(
+        sourceId,
+        context.userIds,
+        context.club?.id ?? null
+      );
+      if (!sourceRow) {
+        return NextResponse.json({ error: 'Typology not found' }, { status: 404 });
+      }
+
+      const typologyTable = await getTypologyTableForWrite();
+      const formPayload = mapDbRowToTypologyForm(sourceRow);
+      const lanesForDays = await fetchLanesForDays(sourceId);
+
+      const areaActivity = await resolveAreaActivity(
+        formPayload.areaActivity,
+        context.userIds,
+        context.club?.id ?? null
+      );
+      if (!areaActivity) {
+        return NextResponse.json({ error: 'Invalid area activity for this typology.' }, { status: 400 });
+      }
+
+      const activityName = await resolveCopyActivityName(
+        formPayload.activityName,
+        areaActivity,
+        typologyTable,
+        context.userIds,
+        context.club?.id ?? null
+      );
+
+      const copyBody = {
+        ...formPayload,
+        activityName,
+        lanesForDays
+      };
+
+      const validation = await validateTypologyPayload(copyBody, typologyTable, context);
+      if (Object.keys(validation.fieldErrors).length > 0) {
+        return NextResponse.json({
+          error: 'Validation failed',
+          fieldErrors: validation.fieldErrors
+        }, { status: 400 });
+      }
+
+      const newId = await insertTypology(
+        typologyTable,
+        copyBody,
+        context.userIds,
+        context.club?.id ?? null,
+        areaActivity
+      );
+
+      if (!newId) {
+        return NextResponse.json({ error: 'Unable to create typology copy.' }, { status: 500 });
+      }
+
+      if (Array.isArray(copyBody.lanes)) {
+        await saveLanesForDays(newId, lanesForDays, copyBody.lanes);
+      }
+
+      return NextResponse.json({
+        success: true,
+        persisted: true,
+        id: newId,
+        activityName
+      });
     }
 
     if (body.action === 'update-typology') {
@@ -1187,7 +1328,48 @@ export async function POST(request: NextRequest) {
         validation.areaActivity
       );
 
+      if (Array.isArray(body.lanesForDays) && Array.isArray(body.lanes)) {
+        await saveLanesForDays(typologyId, body.lanesForDays, body.lanes);
+      }
+
       return NextResponse.json({ success: true, persisted, id: typologyId });
+    }
+
+    if (body.action === 'save-lanes-for-days') {
+      const typologyId = String(body.id ?? '');
+      if (!typologyId || typologyId.startsWith('local-')) {
+        return NextResponse.json({ error: 'Invalid typology id' }, { status: 400 });
+      }
+
+      const typologyTable = await getTypologyTableForWrite();
+      const existing = await fetchTypologyRowById(typologyId, context.userIds, context.club?.id ?? null);
+      if (!existing) {
+        return NextResponse.json({ error: 'Typology not found' }, { status: 404 });
+      }
+
+      if (!Array.isArray(body.lanesForDays) || !Array.isArray(body.lanes)) {
+        return NextResponse.json({ error: 'lanesForDays and lanes are required' }, { status: 400 });
+      }
+
+      const lanesPersisted = await saveLanesForDays(typologyId, body.lanesForDays, body.lanes);
+      const mergedForm = {
+        ...mapDbRowToTypologyForm(existing),
+        lanes: body.lanes,
+        enableLanesBooths:
+          typeof body.enableLanesBooths === 'boolean' ? body.enableLanesBooths : true
+      };
+      const laneGridPersisted = await updateTypology(
+        typologyTable,
+        typologyId,
+        mergedForm,
+        context.userIds,
+        text(existing.area_activity)
+      );
+
+      return NextResponse.json({
+        success: true,
+        persisted: lanesPersisted && laneGridPersisted
+      });
     }
 
     if (body.action !== 'booking-settings') {

@@ -39,6 +39,10 @@ export function readVolumeDeltaPctFromWorkoutSettings(
   return 0;
 }
 
+/** Nutrition planner uses the same goal-scalar helpers as workouts. */
+export const readGoalParamsFromNutritionSettings = readGoalParamsFromWorkoutSettings;
+export const readVolumeDeltaPctFromNutritionSettings = readVolumeDeltaPctFromWorkoutSettings;
+
 export type ComputePlanGymWeekScalarDefaultsInput = {
   goalSettings: GoalParamsFromSettings;
   trainingLevel: TrainingLevel | null | undefined;
