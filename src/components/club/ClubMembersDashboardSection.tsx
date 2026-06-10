@@ -13,6 +13,19 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { normalizeYoutubeUrlForOpen } from '@/utils/youtubeChannelUrl';
+import {
+  getClubDashboardFriendTopics,
+  loadClubWebsiteFriendItems,
+} from '@/lib/clubWebsiteFriendList';
+import {
+  filterClubWebsiteTopicsForDashboard,
+  loadClubWebsiteTopics,
+} from '@/lib/clubWebsiteTopics';
+import {
+  CLUB_WEBSITE_SETTINGS_INDEX_PATH,
+} from '@/lib/clubWebsiteSettingsPaths';
+import { CLUB_WEBSITE_SETTINGS_CHANGED_EVENT } from '@/lib/clubWebsiteSettingsEvents';
+import ClubDashboardTopicsList from '@/components/club/ClubDashboardTopicsList';
 
 type BootstrappedClub = {
   id: string;
@@ -39,6 +52,7 @@ export default function ClubMembersDashboardSection({
   const { t } = useLanguage();
   const router = useRouter();
   const [open, setOpen] = useState(true);
+  const [topicsOpen, setTopicsOpen] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [savedUrl, setSavedUrl] = useState('');
@@ -130,6 +144,63 @@ export default function ClubMembersDashboardSection({
   const deskHref = effectiveClubId
     ? `/my-club?clubId=${encodeURIComponent(effectiveClubId)}`
     : undefined;
+
+  const [friendDashboardTopics, setFriendDashboardTopics] = useState<
+    ReturnType<typeof getClubDashboardFriendTopics>
+  >([]);
+  const [customDashboardTopics, setCustomDashboardTopics] = useState<
+    ReturnType<typeof filterClubWebsiteTopicsForDashboard>
+  >([]);
+
+  const refreshDashboardTopics = useCallback(() => {
+    if (!effectiveClubId) {
+      setFriendDashboardTopics([]);
+      setCustomDashboardTopics([]);
+      return;
+    }
+    const friendItems = loadClubWebsiteFriendItems(effectiveClubId);
+    setFriendDashboardTopics(getClubDashboardFriendTopics(friendItems));
+    setCustomDashboardTopics(
+      filterClubWebsiteTopicsForDashboard(loadClubWebsiteTopics(effectiveClubId))
+    );
+  }, [effectiveClubId]);
+
+  useEffect(() => {
+    refreshDashboardTopics();
+  }, [refreshDashboardTopics]);
+
+  useEffect(() => {
+    const onFocus = () => refreshDashboardTopics();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refreshDashboardTopics]);
+
+  useEffect(() => {
+    if (!effectiveClubId) return;
+    const onStorage = (e: StorageEvent) => {
+      if (
+        e.key?.startsWith('club-website-friend-list:') ||
+        e.key?.startsWith('club-website-topics:')
+      ) {
+        refreshDashboardTopics();
+      }
+    };
+    const onSettingsChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ clubId?: string }>).detail;
+      if (!detail?.clubId || detail.clubId === effectiveClubId) {
+        refreshDashboardTopics();
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener(CLUB_WEBSITE_SETTINGS_CHANGED_EVENT, onSettingsChanged);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(CLUB_WEBSITE_SETTINGS_CHANGED_EVENT, onSettingsChanged);
+    };
+  }, [effectiveClubId, refreshDashboardTopics]);
+
+  const hasDashboardTopics =
+    friendDashboardTopics.length > 0 || customDashboardTopics.length > 0;
 
   const draftValid = !draft.trim() || !!normalizeYoutubeUrlForOpen(draft);
 
@@ -228,6 +299,54 @@ export default function ClubMembersDashboardSection({
                 </button>
               )}
             </div>
+
+            <div className="flex min-h-[44px] w-full items-stretch border-b border-black/25">
+              <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5">
+                <button
+                  type="button"
+                  onClick={() => setTopicsOpen((v) => !v)}
+                  aria-expanded={topicsOpen}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-white/90"
+                >
+                  <Mail className="h-4 w-4 shrink-0 opacity-90" />
+                  <span className="truncate">{t('sidebar_club_topics')}</span>
+                </button>
+                {canManageClub ? (
+                  <button
+                    type="button"
+                    title={t('sidebar_club_topics_settings_aria')}
+                    aria-label={t('sidebar_club_topics_settings_aria')}
+                    onClick={() => {
+                      window.open(CLUB_WEBSITE_SETTINGS_INDEX_PATH, '_blank', 'noopener,noreferrer');
+                    }}
+                    className="shrink-0 text-gray-300 transition-colors hover:text-white"
+                  >
+                    <Settings className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => setTopicsOpen((v) => !v)}
+                aria-label={topicsOpen ? t('collapse') : t('expand')}
+                className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90"
+              >
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform duration-200 ${topicsOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+            </div>
+            {topicsOpen && hasDashboardTopics ? (
+              <ClubDashboardTopicsList
+                clubId={effectiveClubId}
+                friendTopics={friendDashboardTopics}
+                customTopics={customDashboardTopics}
+              />
+            ) : topicsOpen && !hasDashboardTopics ? (
+              <p className="border-t border-black/25 bg-[#252525] px-3 py-2.5 text-[11px] leading-snug text-white/60">
+                {t('club_dashboard_topics_empty')}
+              </p>
+            ) : null}
 
             <div className="flex min-h-[44px] w-full items-stretch">
               {clubYoutubeOpenHref ? (
