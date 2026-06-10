@@ -1099,8 +1099,8 @@ model ClubWebsiteTopic {
   bannerColor    String   @default("#5b9bd5")
   titleColor     String   @default("#ffffff")
   lastUpdate     String   @default("")
-  contentsByLang String   @default("{}") @db.Text
-  keywordsByLang String   @default("{}") @db.Text
+  contentsByLang String   @db.Text
+  keywordsByLang String   @db.Text
   sortOrder      Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
