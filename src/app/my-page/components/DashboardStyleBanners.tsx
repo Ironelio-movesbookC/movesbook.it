@@ -18,7 +18,12 @@ type DashboardStyleBannersProps = {
   activeTab: 'my-page' | 'my-entity';
   showAdBanner: boolean;
   showPersonalBanner: boolean;
-  clubs: Array<{ id: string; name?: string | null; createdAt?: string | Date | null }>;
+  clubs: Array<{
+    id: string;
+    name: string;
+    description?: string | null;
+    createdAt?: string | Date | null;
+  }>;
   myClubs: Array<{ id: string; name?: string | null }>;
   selectedClubId?: string | null;
 };
