@@ -379,7 +379,7 @@ export interface LanguageStrings {
         'staff_post_new': 'Post new',
         'staff_send_to_movesbook': 'Send to the movebook staff',
         'staff_cat_feedback': 'Feedback',
-        'staff_cat_question': 'Query',
+        'staff_cat_question': 'Question',
         'staff_cat_suggestion': 'Suggestions',
         'staff_cat_problem': 'Problems',
         'staff_select_language': 'Select Your language',
