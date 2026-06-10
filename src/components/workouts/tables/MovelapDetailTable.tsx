@@ -197,6 +197,9 @@ interface MovelapDetailTableProps {
   onNavigateMoveframe?: (moveframeId: string) => void; // Navigate to another moveframe
   /** When the anaerobic fast-planner movelap modal opens/closes (parent can hide the moveframe summary row). */
   onAnaerobicFastPlannerModalOpenChange?: (open: boolean) => void;
+  hasMovelapClipboard?: boolean;
+  movelapClipboard?: any;
+  onCopyMovelapToClipboard?: (movelap: any) => void;
 }
 
 // Editable Notes Field Component - 2026-01-22 12:00 UTC
@@ -313,6 +316,7 @@ function SortableMovelapRow({
   onDeleteMovelap,
   onCopyMovelap,
   onPasteMovelap,
+  hasMovelapClipboard = false,
   onAddMovelapAfter,
   onAddStationAfter,
   pauseAmongCircuits,
@@ -348,6 +352,7 @@ function SortableMovelapRow({
   onDeleteMovelap?: (movelap: any) => void;
   onCopyMovelap: (movelap: any) => void;
   onPasteMovelap: (index: number) => void;
+  hasMovelapClipboard?: boolean;
   onAddMovelapAfter?: (movelap: any, index: number) => void;
   onAddStationAfter?: (movelap: any, index: number) => void;
   pauseAmongCircuits?: string;
@@ -1308,17 +1313,28 @@ function SortableMovelapRow({
             onCopyMovelap(movelap);
             setShowOptionsDropdown(false);
           }}
-          className="block w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100"
+          className="block w-full text-left px-4 py-2 text-xs text-purple-800 hover:bg-purple-50"
         >
-          Copy
+          Copy movelap in clipboard
         </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
+            if (!hasMovelapClipboard) return;
             onPasteMovelap(index);
             setShowOptionsDropdown(false);
           }}
-          className="block w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100"
+          disabled={!hasMovelapClipboard}
+          className={`block w-full text-left px-4 py-2 text-xs ${
+            hasMovelapClipboard
+              ? 'text-green-800 hover:bg-green-50 cursor-pointer'
+              : 'text-gray-400 cursor-not-allowed opacity-60'
+          }`}
+          title={
+            hasMovelapClipboard
+              ? 'Insert clipboard movelap after this row'
+              : 'Copy a movelap to clipboard first'
+          }
         >
           Paste
         </button>
@@ -1389,6 +1405,110 @@ function SortableMovelapRow({
   );
 }
 
+/** User-visible notes only — never copy circuit / planner tags (those define table structure). */
+function stripCircuitTagsFromNotes(notes: unknown): string {
+  if (typeof notes !== 'string') return '';
+  return notes
+    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
+    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
+    .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
+    .replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '')
+    .trim();
+}
+
+function buildCircuitMetaForPasteAfterAnchor(
+  anchorMovelap: any,
+  sourceRow: any
+): Record<string, unknown> | null {
+  const anchorMeta =
+    extractCircuitMetaFromNotes(anchorMovelap?.notes) ||
+    (anchorMovelap?.circuitLetter
+      ? {
+          circuitLetter: anchorMovelap.circuitLetter,
+          circuitIndex: anchorMovelap.circuitIndex,
+          seriesNumber: anchorMovelap.seriesNumber,
+          localSeriesNumber: anchorMovelap.localSeriesNumber,
+          stationNumber: anchorMovelap.stationNumber,
+        }
+      : null);
+
+  if (!anchorMeta?.circuitLetter) return null;
+
+  const localSeries =
+    anchorMeta.localSeriesNumber ?? anchorMeta.seriesNumber ?? 1;
+  const anchorStation =
+    typeof anchorMeta.stationNumber === 'number' ? anchorMeta.stationNumber : 1;
+
+  return {
+    ...anchorMeta,
+    localSeriesNumber: localSeries,
+    seriesNumber: anchorMeta.seriesNumber ?? localSeries,
+    stationNumber: anchorStation + 1,
+    sector:
+      sourceRow?.muscularSector ||
+      sourceRow?.style ||
+      anchorMeta.sector ||
+      undefined,
+  };
+}
+
+function buildMovelapPasteBody(
+  source: any,
+  moveframeId: string,
+  repetitionNumber: number,
+  options?: {
+    isCircuitRow?: boolean;
+    circuitMeta?: Record<string, unknown> | null;
+  }
+) {
+  const userNotes = stripCircuitTagsFromNotes(source?.notes);
+  let notes: string | null = userNotes || null;
+
+  if (options?.isCircuitRow && options.circuitMeta) {
+    notes = upsertCircuitMetaInNotes(userNotes, options.circuitMeta);
+  } else if (!options?.isCircuitRow) {
+    notes = userNotes || null;
+  }
+
+  return {
+    moveframeId,
+    repetitionNumber,
+    distance: source.distance ?? null,
+    speed: source.speed ?? null,
+    style: source.style ?? null,
+    pace: source.pace ?? null,
+    time: source.time ?? null,
+    rowPerMin: source.rowPerMin ?? null,
+    pause: source.pause ?? null,
+    alarm: source.alarm ?? null,
+    sound: source.sound ?? null,
+    notes,
+    reps: source.reps ?? null,
+    weight: source.weight ?? null,
+    tools: source.tools ?? null,
+    muscularSector: source.muscularSector ?? null,
+    exercise: source.exercise ?? null,
+    restType: source.restType ?? null,
+    r1: source.r1 ?? null,
+    r2: source.r2 ?? null,
+    macroFinal: source.macroFinal ?? null,
+    status: source.status ?? 'PENDING',
+  };
+}
+
+/** Row data for clipboard — strip circuit structure so paste targets the selected row's circuit only. */
+function movelapRowForClipboard(movelap: any) {
+  return {
+    ...movelap,
+    notes: stripCircuitTagsFromNotes(movelap?.notes),
+    circuitLetter: undefined,
+    circuitIndex: undefined,
+    seriesNumber: undefined,
+    localSeriesNumber: undefined,
+    stationNumber: undefined,
+  };
+}
+
 export default function MovelapDetailTable({ 
   moveframe, 
   onEditMovelap, 
@@ -1397,6 +1517,9 @@ export default function MovelapDetailTable({
   onAddMovelapAfter,
   onRefresh,
   allMoveframes = [],
+  hasMovelapClipboard: hasMovelapClipboardProp = false,
+  movelapClipboard: movelapClipboardProp = null,
+  onCopyMovelapToClipboard,
   onNavigateMoveframe,
   onAnaerobicFastPlannerModalOpenChange
 }: MovelapDetailTableProps) {
@@ -1410,6 +1533,9 @@ export default function MovelapDetailTable({
   const sectionColor = moveframe.section?.color || '#5b8def';
   const sectionName = moveframe.section?.name || 'Default';
   const [copiedMovelap, setCopiedMovelap] = useState<any>(null);
+  const activeMovelapClipboard = movelapClipboardProp ?? copiedMovelap;
+  const hasMovelapClipboard =
+    hasMovelapClipboardProp || Boolean(copiedMovelap);
   const [newlyAddedStationMovelapIds, setNewlyAddedStationMovelapIds] = useState<Set<string>>(() => new Set());
   const [newlyAddedFastPlannerExercises, setNewlyAddedFastPlannerExercises] = useState<Set<string>>(() => new Set());
   const [showAddStationModal, setShowAddStationModal] = useState(false);
@@ -2116,13 +2242,17 @@ export default function MovelapDetailTable({
 
   // Handle copy movelap
   const handleCopyMovelap = (movelap: any) => {
-    setCopiedMovelap(movelap);
-    alert(`Movelap #${movelaps.findIndex((ml: any) => ml.id === movelap.id) + 1} copied! Click "Paste" on any row to insert it after that position.`);
+    const rowOnly = movelapRowForClipboard(movelap);
+    if (onCopyMovelapToClipboard) {
+      onCopyMovelapToClipboard(rowOnly);
+    } else {
+      setCopiedMovelap(rowOnly);
+    }
   };
 
   // Handle paste movelap
   const handlePasteMovelap = async (afterIndex: number) => {
-    if (!copiedMovelap) {
+    if (!activeMovelapClipboard) {
       return;
     }
 
@@ -2133,29 +2263,44 @@ export default function MovelapDetailTable({
         return;
       }
 
-      // Create new movelap after the specified position
-      const newMovelap = {
-        ...copiedMovelap,
-        id: undefined, // Will be assigned by backend
-        moveframeId: moveframe.id,
-        repetitionNumber: afterIndex + 2 // Insert after current position
-      };
+      const anchorMovelap = movelaps[afterIndex];
+      const isCircuitRow = Boolean(
+        moveframe.isCircuitBased ||
+          anchorMovelap?.circuitLetter ||
+          extractCircuitMetaFromNotes(anchorMovelap?.notes)
+      );
+
+      const targetRep =
+        anchorMovelap?.repetitionNumber != null
+          ? Number(anchorMovelap.repetitionNumber) + 1
+          : afterIndex + 2;
+
+      const circuitMeta =
+        isCircuitRow && anchorMovelap
+          ? buildCircuitMetaForPasteAfterAnchor(anchorMovelap, activeMovelapClipboard)
+          : null;
 
       const response = await fetch('/api/workouts/movelaps', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(newMovelap)
+        body: JSON.stringify(
+          buildMovelapPasteBody(activeMovelapClipboard, moveframe.id, targetRep, {
+            isCircuitRow,
+            circuitMeta,
+          })
+        ),
       });
 
       if (response.ok) {
         if (onRefresh) {
-          onRefresh();
+          await onRefresh();
         }
       } else {
-        console.error('Failed to paste movelap');
+        const err = await response.json().catch(() => ({}));
+        console.error('Failed to paste movelap:', err.error || response.statusText);
       }
     } catch (error) {
       console.error('Error pasting movelap:', error);
@@ -4511,6 +4656,7 @@ export default function MovelapDetailTable({
                       onDeleteMovelap={onDeleteMovelap}
                       onCopyMovelap={handleCopyMovelap}
                       onPasteMovelap={handlePasteMovelap}
+                      hasMovelapClipboard={hasMovelapClipboard}
                       onAddMovelapAfter={onAddMovelapAfter}
                       onAddStationAfter={(targetMovelap) => handleOpenAddStationModal(targetMovelap)}
                       pauseAmongCircuits={pauseAmongCircuits}

@@ -71,8 +71,20 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Ensure sports is always an array (even if empty)
-    const sportsList = sports && Array.isArray(sports) ? sports.filter(s => s) : [];
+    // Ensure sports is always an array of sport codes (supports legacy string[] or { sport }[])
+    const sportsList =
+      sports && Array.isArray(sports)
+        ? sports
+            .map((s: unknown) => {
+              if (typeof s === 'string' && s.trim()) return s.trim();
+              if (s && typeof s === 'object' && 'sport' in s) {
+                const code = (s as { sport: string }).sport;
+                return typeof code === 'string' && code.trim() ? code.trim() : null;
+              }
+              return null;
+            })
+            .filter((s): s is string => Boolean(s))
+        : [];
 
     // Check existing workouts for this day
     const existingWorkouts = await prisma.workoutSession.findMany({
@@ -177,9 +189,9 @@ export async function POST(request: NextRequest) {
       data: {
         workoutDayId: actualDayId,
         sessionNumber: finalSessionNumber,
-        name: name || `Workout ${finalSessionNumber}`,
-        code: code || '',
-        time: time || '',
+        name: (typeof name === 'string' && name.trim()) || `Workout ${finalSessionNumber}`,
+        code: typeof code === 'string' ? code : '',
+        time: typeof time === 'string' ? time : '',
         location: location || '',
         notes: notes || (includeStretching ? `${symbol || ''} Includes stretching` : symbol || ''),
         status: status as any || 'PLANNED_FUTURE',
@@ -206,7 +218,7 @@ export async function POST(request: NextRequest) {
               rest: mf.rest,
               intensity: mf.intensity,
               speedType: mf.speedType as any,
-              description: mf.description || null,
+              description: mf.description ?? '',
               notes: mf.notes || null,
               appliedTechnique: mf.appliedTechnique || null,
               aerobicSeries: mf.aerobicSeries || 1,

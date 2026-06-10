@@ -6,6 +6,7 @@ import {
   computeNameEnglish,
   parseJsonRecord,
   stringifyRecord,
+  stringifyMachineRichSections,
 } from '@/lib/sportMachineHelpers';
 
 export const dynamic = 'force-dynamic';
@@ -51,6 +52,7 @@ export async function PATCH(
       otherPictures,
       videoUrl,
       descriptionByLanguage,
+      richSectionsJson,
     } = body;
 
     const nextOriginal =
@@ -129,6 +131,10 @@ export async function PATCH(
             descriptionByLanguage: stringifyRecord(
               descriptionByLanguage as Record<string, string>
             ),
+          }),
+        ...(richSectionsJson !== undefined &&
+          typeof richSectionsJson === 'object' && {
+            richSectionsJson: stringifyMachineRichSections(richSectionsJson),
           }),
       },
       include: { company: { select: { id: true, name: true, logoUrl: true } } },

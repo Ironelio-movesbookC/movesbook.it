@@ -10,6 +10,9 @@ interface CopyWorkoutModalProps {
   workoutPlan: any;
   onConfirm: (targetDayId: string, sessionNumber: number) => void;
   activeSection?: 'A' | 'B' | 'C' | 'D';
+  /** Modal title, e.g. "Clone Workout" in Archive */
+  title?: string;
+  actionLabel?: string;
 }
 
 export default function CopyWorkoutModal({
@@ -18,28 +21,42 @@ export default function CopyWorkoutModal({
   sourceWorkout,
   workoutPlan,
   onConfirm,
-  activeSection = 'A'
+  activeSection = 'A',
+  title = 'Copy Workout',
+  actionLabel = 'Copy Workout',
 }: CopyWorkoutModalProps) {
   const [selectedWeek, setSelectedWeek] = useState<string>('');
   const [selectedDay, setSelectedDay] = useState<string>('');
+  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
 
   const handleCopy = () => {
     if (selectedDay) {
-      // Get target day info to determine session number
       const targetDay = workoutPlan?.weeks
         ?.flatMap((w: any) => w.days || [])
         ?.find((d: any) => d.id === selectedDay);
-      
-      const nextSession = (targetDay?.workouts?.length || 0) + 1;
+
+      const existing = targetDay?.workouts?.length ?? 0;
+      if (existing >= 3) {
+        alert('Target day already has 3 workouts (maximum).');
+        return;
+      }
+      if (existing > 0 && !confirmOverwrite) {
+        return;
+      }
+
+      const nextSession = existing + 1;
       onConfirm(selectedDay, nextSession);
       onClose();
     }
   };
 
-  if (!isOpen) return null;
-
   const selectedWeekData = workoutPlan?.weeks?.find((w: any) => w.id === selectedWeek);
   const availableDays = selectedWeekData?.days || [];
+  const selectedTargetDay = availableDays.find((d: any) => d.id === selectedDay);
+  const targetHasContent = (selectedTargetDay?.workouts?.length ?? 0) > 0;
+  const targetFull = (selectedTargetDay?.workouts?.length ?? 0) >= 3;
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black bg-opacity-50 p-4">
@@ -48,7 +65,7 @@ export default function CopyWorkoutModal({
         <div className="bg-green-500 text-white px-6 py-4 flex items-center justify-between rounded-t-lg">
           <div className="flex items-center gap-2">
             <Copy size={20} />
-            <h2 className="text-lg font-bold">Copy Workout</h2>
+            <h2 className="text-lg font-bold">{title}</h2>
           </div>
           <button
             onClick={onClose}
@@ -107,7 +124,10 @@ export default function CopyWorkoutModal({
               </label>
               <select
                 value={selectedDay}
-                onChange={(e) => setSelectedDay(e.target.value)}
+                onChange={(e) => {
+                  setSelectedDay(e.target.value);
+                  setConfirmOverwrite(false);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
               >
                 <option value="">Choose a day...</option>
@@ -127,6 +147,20 @@ export default function CopyWorkoutModal({
               </select>
             </div>
           )}
+
+          {targetHasContent && !targetFull && (
+            <label className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={confirmOverwrite}
+                onChange={(e) => setConfirmOverwrite(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span className="text-sm text-amber-900">
+                Target day already has workouts. The copy will be added as an additional session.
+              </span>
+            </label>
+          )}
         </div>
 
         {/* Footer */}
@@ -139,10 +173,10 @@ export default function CopyWorkoutModal({
           </button>
           <button
             onClick={handleCopy}
-            disabled={!selectedDay}
+            disabled={!selectedDay || targetFull || (targetHasContent && !confirmOverwrite)}
             className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            Copy Workout
+            {actionLabel}
           </button>
         </div>
       </div>

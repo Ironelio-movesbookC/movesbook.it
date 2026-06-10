@@ -2,7 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Loader2, Paperclip, Trash2, X } from 'lucide-react';
-import type { Period } from '@/constants/tools.constants';
+import type { Period, PeriodizationTemplateBuild } from '@/constants/tools.constants';
+import { getMondayOfWeek } from '@/utils/periodizationVirtualWeeks';
 import {
   MAX_PERIOD_ATTACHMENTS,
   type PeriodizationAttachmentMeta
@@ -100,8 +101,41 @@ function notesHtmlForPeriod(notes: Record<string, string>, periodId: string): st
   return typeof raw === 'string' ? raw.trim() : '';
 }
 
-export default function PeriodizationOverviewPanel({ periods }: { periods: Period[] }) {
-  const [loading, setLoading] = useState(true);
+export type FavouritePeriodizationOverviewBind = {
+  weeks: any[];
+  notesByPeriodId: Record<string, string>;
+  attachmentsByPeriodId: Record<string, PeriodizationAttachmentMeta[]>;
+};
+
+export type FavouriteYearlyApplyBind = {
+  getBuild: () => PeriodizationTemplateBuild;
+  onApplied?: () => void;
+};
+
+function defaultTemplatePlanMonday(): Date {
+  const y = new Date().getFullYear();
+  let d = new Date(y, 0, 1);
+  d.setHours(0, 0, 0, 0);
+  while (d.getDay() !== 1) {
+    d = addDays(d, 1);
+  }
+  return d;
+}
+
+export default function PeriodizationOverviewPanel({
+  periods,
+  favouriteDraft,
+  yearlyApply,
+}: {
+  periods: Period[];
+  favouriteDraft?: FavouritePeriodizationOverviewBind;
+  /** User account: apply favourite template to live yearly plan from Overview */
+  yearlyApply?: FavouriteYearlyApplyBind;
+}) {
+  const isFavouriteDraft = Boolean(favouriteDraft);
+  const canApplyToYearly = Boolean(favouriteDraft && yearlyApply);
+  const [loading, setLoading] = useState(!isFavouriteDraft || canApplyToYearly);
+  const [applyDateIso, setApplyDateIso] = useState('');
   const [plan, setPlan] = useState<any>(null);
   const [notesByPeriodId, setNotesByPeriodId] = useState<Record<string, string>>({});
   const [attachmentsByPeriodId, setAttachmentsByPeriodId] = useState<
@@ -169,7 +203,44 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
     []
   );
 
+  useEffect(() => {
+    if (!favouriteDraft) return;
+    setNotesByPeriodId({ ...favouriteDraft.notesByPeriodId });
+    setAttachmentsByPeriodId({ ...favouriteDraft.attachmentsByPeriodId });
+    if (!canApplyToYearly) setLoading(false);
+  }, [favouriteDraft, canApplyToYearly]);
+
+  useEffect(() => {
+    if (!canApplyToYearly) return;
+    const loadPlanStart = async () => {
+      const token = getAuthToken();
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = await fetch('/api/workouts/plan?type=YEARLY_PLAN&section=B&minimal=true', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = res.ok ? await res.json() : {};
+        setPlan(data.plan || null);
+        if (data.plan?.startDate) {
+          setApplyDateIso(new Date(data.plan.startDate).toISOString().slice(0, 10));
+        } else {
+          setApplyDateIso(getMondayOfWeek(new Date()).toISOString().slice(0, 10));
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    void loadPlanStart();
+  }, [canApplyToYearly]);
+
   const loadAll = useCallback(async () => {
+    if (isFavouriteDraft) {
+      setLoading(false);
+      return;
+    }
     const token = getAuthToken();
     if (!token) {
       setLoading(false);
@@ -203,13 +274,17 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isFavouriteDraft]);
 
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
 
   const refreshPeriodizationNotes = useCallback(async () => {
+    if (isFavouriteDraft && favouriteDraft) {
+      setNotesByPeriodId({ ...favouriteDraft.notesByPeriodId });
+      return;
+    }
     try {
       const res = await fetch('/api/user/settings', { headers: getAuthHeaders() });
       if (!res.ok) return;
@@ -220,7 +295,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [isFavouriteDraft, favouriteDraft]);
 
   /** Fresh notes when opening a modal (after Save/Apply on another tab or persistence race). */
   useEffect(() => {
@@ -230,16 +305,20 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
   }, [detailSeg, periodNotesModalSeg, refreshPeriodizationNotes]);
 
   const weeks = useMemo(() => {
+    if (favouriteDraft?.weeks?.length) {
+      return [...favouriteDraft.weeks].sort((a: any, b: any) => a.weekNumber - b.weekNumber);
+    }
     const w = plan?.weeks || [];
     return [...w].sort((a: any, b: any) => a.weekNumber - b.weekNumber);
-  }, [plan]);
+  }, [plan, favouriteDraft?.weeks]);
 
   const weekCount = Math.max(weeks.length || 0, TOTAL_WEEKS);
 
   const planMonday = useMemo(() => {
+    if (isFavouriteDraft) return defaultTemplatePlanMonday();
     if (!plan?.startDate) return null;
     return new Date(plan.startDate);
-  }, [plan]);
+  }, [plan, isFavouriteDraft]);
 
   const summarySegments = useMemo(() => buildSegments(weeks), [weeks]);
   const ticks = useMemo(() => monthTicks(planMonday, weekCount), [planMonday, weekCount]);
@@ -265,6 +344,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
 
   const applyBoundaryMove = useCallback(
     async (boundaryIndex: number, rawB: number) => {
+      if (isFavouriteDraft) return;
       const segs = segsRef.current;
       const weeksList = weeksRef.current;
       if (boundaryIndex < 0 || boundaryIndex >= segs.length - 1) return;
@@ -309,11 +389,12 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
         setActionBusy(false);
       }
     },
-    [loadAll]
+    [loadAll, isFavouriteDraft]
   );
 
   const applySegmentShift = useCallback(
     async (segmentIndex: number, rawDelta: number) => {
+      if (isFavouriteDraft) return;
       const segs = segsRef.current;
       const weeksList = weeksRef.current;
       if (segmentIndex < 0 || segmentIndex >= segs.length) return;
@@ -396,7 +477,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
         setActionBusy(false);
       }
     },
-    [loadAll]
+    [loadAll, isFavouriteDraft]
   );
 
   const beginBoundaryDrag = useCallback(
@@ -582,6 +663,93 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
     }
   };
 
+  const handleApplyToYearlyPlan = async () => {
+    if (!yearlyApply || !applyDateIso) {
+      alert('Choose an apply start date (Monday).');
+      return;
+    }
+    const build = yearlyApply.getBuild();
+    const weekMap = build.weekPeriodByNumber ?? {};
+    const assigned = Object.values(weekMap).filter((v) => typeof v === 'string' && v.trim()).length;
+    if (assigned === 0) {
+      alert('No weeks assigned in this periodization. Build it on the Periodization tab first.');
+      return;
+    }
+
+    const token = getAuthToken();
+    if (!token) return;
+
+    let planStart: Date | null = null;
+    if (plan?.startDate) {
+      planStart = new Date(plan.startDate);
+    } else {
+      try {
+        const res = await fetch('/api/workouts/plan?type=YEARLY_PLAN&section=B&minimal=true', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = res.ok ? await res.json() : {};
+        if (data.plan?.startDate) planStart = new Date(data.plan.startDate);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const applyMon = getMondayOfWeek(new Date(applyDateIso));
+    if (planStart) {
+      const planMon = getMondayOfWeek(planStart);
+      if (planMon.getTime() !== applyMon.getTime()) {
+        const planLabel = planMon.toLocaleDateString(undefined, {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+        const applyLabel = applyMon.toLocaleDateString(undefined, {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+        const ok = window.confirm(
+          `Your yearly plan calendar starts on ${planLabel}, but you chose to apply from ${applyLabel}.\n\nApply this periodization from the selected date anyway?`
+        );
+        if (!ok) return;
+      }
+    }
+
+    const weekPeriodByNumber: Record<string, string> = {};
+    for (const [k, v] of Object.entries(weekMap)) {
+      if (v) weekPeriodByNumber[String(k)] = v;
+    }
+
+    setActionBusy(true);
+    try {
+      const res = await fetch('/api/workouts/plan/yearly-periodization', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          mode: 'apply_favourite_template',
+          applyStartDate: applyMon.toISOString(),
+          weekPeriodByNumber,
+          notesByPeriodId: build.notesByPeriodId ?? {},
+          attachmentsByPeriodId: build.attachmentsByPeriodId ?? {},
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || data.details || 'Could not apply periodization to yearly plan.');
+        return;
+      }
+      alert(data.message || 'Periodization applied to your yearly plan.');
+      yearlyApply.onApplied?.();
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   const handleClearPeriodRow = async (periodId: string) => {
     if (!confirm('Remove this period from all assigned weeks (weeks will use your default period)?')) return;
     const ok = await callYearlyApi({ mode: 'clear_period_assignments', periodId });
@@ -731,7 +899,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
     return () => window.removeEventListener('keydown', onKey);
   }, [periodNotesModalSeg]);
 
-  if (!getAuthToken()) {
+  if (!isFavouriteDraft && !getAuthToken()) {
     return <p className="text-sm text-gray-500">Sign in to view yearly periodization.</p>;
   }
 
@@ -744,7 +912,7 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
     );
   }
 
-  if (!plan || weeks.length === 0) {
+  if (!isFavouriteDraft && (!plan || weeks.length === 0)) {
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 p-6 text-amber-900 dark:text-amber-100">
         <p className="font-semibold mb-1">No yearly plan found</p>
@@ -764,34 +932,62 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
         </div>
 
         <div className="p-4 space-y-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                Yearly plan start (Monday)
-              </label>
-              <input
-                key={dateInputKey}
-                type="date"
-                defaultValue={
-                  planMonday ? planMonday.toISOString().slice(0, 10) : ''
-                }
-                id="yearly-start-input"
-                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
-              />
+          {canApplyToYearly ? (
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                  Yearly plan start (Monday)
+                </label>
+                <input
+                  type="date"
+                  value={applyDateIso}
+                  onChange={(e) => setApplyDateIso(e.target.value)}
+                  className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                />
+              </div>
+              <button
+                type="button"
+                disabled={actionBusy}
+                onClick={() => void handleApplyToYearlyPlan()}
+                className="px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Apply in the Yearly Plan
+              </button>
             </div>
-            <button
-              type="button"
-              disabled={actionBusy}
-              onClick={() => {
-                const el = document.getElementById('yearly-start-input') as HTMLInputElement | null;
-                if (!el?.value) return;
-                openStartDateFlow(el.value);
-              }}
-              className="px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              Change start date…
-            </button>
-          </div>
+          ) : isFavouriteDraft ? (
+            <p className="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              Preview of your <strong>52-week template</strong> (reference calendar starts{' '}
+              {planMonday?.toLocaleDateString() ?? '—'}). Edit assignments on the Periodization tab; drag
+              resize is only available on your live yearly plan.
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                  Yearly plan start (Monday)
+                </label>
+                <input
+                  key={dateInputKey}
+                  type="date"
+                  defaultValue={planMonday ? planMonday.toISOString().slice(0, 10) : ''}
+                  id="yearly-start-input"
+                  className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                />
+              </div>
+              <button
+                type="button"
+                disabled={actionBusy}
+                onClick={() => {
+                  const el = document.getElementById('yearly-start-input') as HTMLInputElement | null;
+                  if (!el?.value) return;
+                  openStartDateFlow(el.value);
+                }}
+                className="px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                Change start date…
+              </button>
+            </div>
+          )}
 
           {/* Timeline grid: columns match [lead trash][label w-24][track][trail trash] so Summary aligns with period rows */}
           {/* Month ruler — ticks only above the track column */}
@@ -849,8 +1045,10 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                   type="button"
                   title={s.name}
                   onClick={() => handleSegmentClick(s)}
-                  onPointerDown={(e) => startSegmentDrag(e, i, s)}
-                  className="absolute top-0 h-full border-0 hover:brightness-110 cursor-grab active:cursor-grabbing z-10 select-none touch-none"
+                  onPointerDown={(e) => !isFavouriteDraft && startSegmentDrag(e, i, s)}
+                  className={`absolute top-0 h-full border-0 hover:brightness-110 z-10 select-none touch-none ${
+                    isFavouriteDraft ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'
+                  }`}
                   style={{
                     ...segStyle(s.startWeek, s.endWeek, weekCount),
                     backgroundColor: s.color
@@ -869,12 +1067,14 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                     tabIndex={0}
                     className="absolute top-0 bottom-0 w-3 z-20 cursor-ew-resize touch-none flex items-center justify-center -translate-x-1/2"
                     style={{ left: `${(s.endWeek / weekCount) * 100}%` }}
-                    onPointerDown={(e) => startBoundaryDrag(e, i)}
+                    onPointerDown={(e) => !isFavouriteDraft && startBoundaryDrag(e, i)}
                   >
-                    <span className="w-1 h-5 rounded bg-blue-900 dark:bg-blue-200 shadow-sm opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none" />
+                    {!isFavouriteDraft && (
+                      <span className="w-1 h-5 rounded bg-blue-900 dark:bg-blue-200 shadow-sm opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none" />
+                    )}
                   </div>
                 ))}
-              {dragPreviewB !== null && (
+              {!isFavouriteDraft && dragPreviewB !== null && (
                 <div
                   className="absolute top-0 bottom-0 w-0.5 bg-blue-500 z-[15] pointer-events-none -translate-x-1/2 opacity-90"
                   style={{ left: `${(dragPreviewB / weekCount) * 100}%` }}
@@ -897,9 +1097,18 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
               <div key={period.id} className="grid grid-cols-[auto_6rem_minmax(0,1fr)_auto] gap-x-2 items-center">
                 <button
                   type="button"
-                  className="p-1 text-gray-400 hover:text-red-600 flex-shrink-0"
-                  title="Clear this period from all weeks"
-                  onClick={() => void handleClearPeriodRow(period.id)}
+                  className={`p-1 flex-shrink-0 ${
+                    isFavouriteDraft
+                      ? 'text-gray-300 cursor-not-allowed'
+                      : 'text-gray-400 hover:text-red-600'
+                  }`}
+                  title={
+                    isFavouriteDraft
+                      ? 'Clear from live plan only'
+                      : 'Clear this period from all weeks'
+                  }
+                  disabled={isFavouriteDraft}
+                  onClick={() => !isFavouriteDraft && void handleClearPeriodRow(period.id)}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -923,8 +1132,10 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                         <button
                           type="button"
                           onClick={() => handleSegmentClick(s)}
-                          onPointerDown={(e) => startSegmentDrag(e, gIdx, s)}
-                          className="absolute top-1 bottom-1 rounded-sm border-0 shadow-none hover:brightness-110 cursor-grab active:cursor-grabbing z-10 select-none touch-none"
+                          onPointerDown={(e) => !isFavouriteDraft && startSegmentDrag(e, gIdx, s)}
+                          className={`absolute top-1 bottom-1 rounded-sm border-0 shadow-none hover:brightness-110 z-10 select-none touch-none ${
+                            isFavouriteDraft ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'
+                          }`}
                           style={{
                             ...segStyle(s.startWeek, s.endWeek, weekCount),
                             backgroundColor: s.color
@@ -973,9 +1184,18 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
                 </div>
                 <button
                   type="button"
-                  className="p-1 text-gray-400 hover:text-red-600 flex-shrink-0"
-                  title="Clear this period from all weeks"
-                  onClick={() => void handleClearPeriodRow(period.id)}
+                  className={`p-1 flex-shrink-0 ${
+                    isFavouriteDraft
+                      ? 'text-gray-300 cursor-not-allowed'
+                      : 'text-gray-400 hover:text-red-600'
+                  }`}
+                  title={
+                    isFavouriteDraft
+                      ? 'Clear from live plan only'
+                      : 'Clear this period from all weeks'
+                  }
+                  disabled={isFavouriteDraft}
+                  onClick={() => !isFavouriteDraft && void handleClearPeriodRow(period.id)}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -986,13 +1206,15 @@ export default function PeriodizationOverviewPanel({ periods }: { periods: Perio
       </div>
 
       <div className="flex flex-wrap gap-2 justify-between items-center pt-2">
-        <button
-          type="button"
-          onClick={() => void handleSavePeriodization()}
-          className="px-5 py-2.5 rounded-lg font-semibold text-white bg-red-600 hover:bg-red-700"
-        >
-          Save periodization
-        </button>
+        {!canApplyToYearly && (
+          <button
+            type="button"
+            onClick={() => void handleSavePeriodization()}
+            className="px-5 py-2.5 rounded-lg font-semibold text-white bg-red-600 hover:bg-red-700"
+          >
+            Save periodization
+          </button>
+        )}
         <div className="flex flex-wrap gap-2">
           <button
             type="button"

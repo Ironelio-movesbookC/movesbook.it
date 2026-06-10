@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
-
+import {
+  mergeWorkoutIntoTarget,
+  substituteExchangeWorkouts,
+  substituteTransferWorkout,
+  type WorkoutMoveStrategy,
+} from '@/lib/workoutMoveOperations';
 
 // POST /api/workouts/sessions/move - Move a workout session to another day
 export async function POST(request: NextRequest) {
@@ -13,16 +18,25 @@ export async function POST(request: NextRequest) {
 
     const token = authHeader.replace('Bearer ', '');
     const decoded = verifyToken(token);
-    if (!decoded || !decoded.userId) {
+    if (!decoded?.userId) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
     const body = await request.json();
-    const { workoutId, targetDayId, sessionNumber } = body;
+    const {
+      workoutId,
+      targetDayId,
+      sessionNumber,
+      strategy = 'relocate',
+      targetWorkoutId,
+    } = body as {
+      workoutId: string;
+      targetDayId: string;
+      sessionNumber?: number;
+      strategy?: WorkoutMoveStrategy;
+      targetWorkoutId?: string;
+    };
 
-    console.log('🚚 Moving workout:', { workoutId, targetDayId, sessionNumber });
-
-    // Validate required fields
     if (!workoutId || !targetDayId) {
       return NextResponse.json(
         { error: 'workoutId and targetDayId are required' },
@@ -30,64 +44,162 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get the current workout to check if it's moving to a different day
     const currentWorkout = await prisma.workoutSession.findUnique({
       where: { id: workoutId },
-      select: { workoutDayId: true }
+      select: { workoutDayId: true },
     });
 
     if (!currentWorkout) {
       return NextResponse.json({ error: 'Workout not found' }, { status: 404 });
     }
 
-    // Check existing workouts for the target day
-    const existingWorkouts = await prisma.workoutSession.findMany({
-      where: { workoutDayId: targetDayId },
-      select: { id: true, sessionNumber: true }
+    const targetDay = await prisma.workoutDay.findFirst({
+      where: { id: targetDayId, userId: decoded.userId },
     });
 
-    // Validate: max 3 workouts per day (only if moving to a DIFFERENT day)
-    if (currentWorkout.workoutDayId !== targetDayId) {
-      // Moving to a different day
+    if (!targetDay) {
+      return NextResponse.json({ error: 'Target day not found' }, { status: 404 });
+    }
+
+    const existingWorkouts = await prisma.workoutSession.findMany({
+      where: { workoutDayId: targetDayId },
+      select: { id: true, sessionNumber: true },
+    });
+
+    const otherWorkouts = existingWorkouts.filter((w) => w.id !== workoutId);
+    const needsTargetWorkout = strategy !== 'relocate';
+
+    if (needsTargetWorkout && !targetWorkoutId) {
+      return NextResponse.json(
+        { error: 'targetWorkoutId is required for this move strategy' },
+        { status: 400 }
+      );
+    }
+
+    if (targetWorkoutId && !existingWorkouts.some((w) => w.id === targetWorkoutId)) {
+      return NextResponse.json(
+        { error: 'Target workout not found on the selected day' },
+        { status: 400 }
+      );
+    }
+
+    if (strategy === 'merge' && otherWorkouts.length >= 3) {
+      return NextResponse.json(
+        {
+          error:
+            'Cannot add to an existing workout when the day already has 3 workouts. Use Substitute instead.',
+        },
+        { status: 400 }
+      );
+    }
+
+    if (strategy === 'relocate' && currentWorkout.workoutDayId !== targetDayId) {
       if (existingWorkouts.length >= 3) {
         return NextResponse.json(
-          { error: 'Cannot move workout: Maximum 3 workouts per day allowed' },
+          {
+            error:
+              'Cannot move workout: target day already has 3 workouts. Select an existing workout and choose Add or Substitute.',
+          },
           { status: 400 }
         );
       }
     }
 
-    // Determine session number if not provided
-    let newSessionNumber = sessionNumber;
-    if (!newSessionNumber) {
-      newSessionNumber = Math.max(0, ...existingWorkouts.map(w => w.sessionNumber)) + 1;
+    if (strategy === 'merge') {
+      await prisma.$transaction(async (tx) => {
+        await mergeWorkoutIntoTarget(tx, workoutId, targetWorkoutId!);
+      });
+
+      const target = await prisma.workoutSession.findUnique({
+        where: { id: targetWorkoutId! },
+        include: {
+          sports: true,
+          moveframes: { include: { movelaps: true, section: true } },
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        strategy,
+        workout: target,
+        message: 'Moveframes added to the selected workout',
+      });
     }
 
-    // Update the workout with new day and session number
+    if (strategy === 'substitute_transfer') {
+      await prisma.$transaction(async (tx) => {
+        await substituteTransferWorkout(tx, workoutId, targetWorkoutId!);
+      });
+
+      const moved = await prisma.workoutSession.findUnique({
+        where: { id: workoutId },
+        include: {
+          sports: true,
+          moveframes: { include: { movelaps: true, section: true } },
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        strategy,
+        workout: moved,
+        message: 'Workout transferred to the selected slot',
+      });
+    }
+
+    if (strategy === 'substitute_exchange') {
+      await prisma.$transaction(async (tx) => {
+        await substituteExchangeWorkouts(tx, workoutId, targetWorkoutId!);
+      });
+
+      const moved = await prisma.workoutSession.findUnique({
+        where: { id: workoutId },
+        include: {
+          sports: true,
+          moveframes: { include: { movelaps: true, section: true } },
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        strategy,
+        workout: moved,
+        message: 'Workouts exchanged',
+      });
+    }
+
+    // Simple relocate
+    let newSessionNumber = sessionNumber;
+    if (!newSessionNumber) {
+      newSessionNumber =
+        Math.max(0, ...existingWorkouts.map((w) => w.sessionNumber)) + 1;
+    }
+
     const movedWorkout = await prisma.workoutSession.update({
       where: { id: workoutId },
       data: {
         workoutDayId: targetDayId,
-        sessionNumber: newSessionNumber
+        sessionNumber: newSessionNumber,
       },
       include: {
         sports: true,
         moveframes: {
           include: {
             movelaps: true,
-            section: true
-          }
-        }
-      }
+            section: true,
+          },
+        },
+      },
     });
 
-    console.log('✅ Workout moved successfully:', movedWorkout.id);
-
-    return NextResponse.json({ workout: movedWorkout });
-  } catch (error: any) {
-    console.error('❌ Error moving workout:', error);
+    return NextResponse.json({ success: true, strategy: 'relocate', workout: movedWorkout });
+  } catch (error: unknown) {
+    console.error('Error moving workout:', error);
     return NextResponse.json(
-      { error: 'Failed to move workout', details: error.message },
+      {
+        error: 'Failed to move workout',
+        details: error instanceof Error ? error.message : 'Unknown',
+      },
       { status: 500 }
     );
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { resolveWorkoutDatabaseUserId } from '@/lib/workoutUserId';
 
 // GET /api/workouts/moveframes/[id] - Get a single moveframe with movelaps
 export async function GET(
@@ -17,6 +18,11 @@ export async function GET(
     const decoded = verifyToken(token);
     if (!decoded || !decoded.userId) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
+
+    const dbUserId = await resolveWorkoutDatabaseUserId(decoded.userId);
+    if (!dbUserId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
     }
 
     // Fetch moveframe with movelaps
@@ -42,7 +48,7 @@ export async function GET(
     }
 
     // Verify ownership
-    if (moveframe.workoutSession.workoutDay.userId !== decoded.userId) {
+    if (moveframe.workoutSession.workoutDay.userId !== dbUserId) {
       return NextResponse.json({ error: 'Unauthorized - not your moveframe' }, { status: 403 });
     }
 
@@ -71,6 +77,11 @@ export async function PATCH(
     const decoded = verifyToken(token);
     if (!decoded || !decoded.userId) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
+
+    const dbUserId = await resolveWorkoutDatabaseUserId(decoded.userId);
+    if (!dbUserId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
     }
 
     const body = await request.json();
@@ -121,7 +132,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Moveframe not found' }, { status: 404 });
     }
 
-    if (existingMoveframe.workoutSession.workoutDay.userId !== decoded.userId) {
+    if (existingMoveframe.workoutSession.workoutDay.userId !== dbUserId) {
       return NextResponse.json({ error: 'Unauthorized - not your moveframe' }, { status: 403 });
     }
 
@@ -279,6 +290,11 @@ export async function DELETE(
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
+    const dbUserId = await resolveWorkoutDatabaseUserId(decoded.userId);
+    if (!dbUserId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
+
     console.log('🗑️ Deleting moveframe:', params.id);
 
     // First verify user ownership through workout session -> day
@@ -299,7 +315,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Moveframe not found' }, { status: 404 });
     }
 
-    if (existingMoveframe.workoutSession.workoutDay.userId !== decoded.userId) {
+    if (existingMoveframe.workoutSession.workoutDay.userId !== dbUserId) {
       return NextResponse.json({ error: 'Unauthorized - not your moveframe' }, { status: 403 });
     }
 

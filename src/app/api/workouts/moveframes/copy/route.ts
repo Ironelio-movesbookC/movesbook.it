@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import {
+  missingMoveframeCopyMoveFields,
+  parseMoveframeCopyMoveBody,
+  toMoveframeCopyMovePayload,
+} from '@/lib/moveframeCopyMove';
 
 
 // POST /api/workouts/moveframes/copy - Copy a moveframe to another workout
@@ -18,27 +23,37 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const {
-      sourceMoveframeId,
-      targetWorkoutId,
-      position = 'after',
-      targetMoveframeId
-    } = body;
+    const parsed = parseMoveframeCopyMoveBody(body ?? {});
 
-    console.log('📝 Copying moveframe:', { 
-      sourceMoveframeId, 
-      targetWorkoutId, 
-      position, 
-      targetMoveframeId 
-    });
-
-    // Validate required fields
-    if (!sourceMoveframeId || !targetWorkoutId) {
+    const missing = missingMoveframeCopyMoveFields(parsed);
+    if (missing.length > 0) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: `Missing required fields: ${missing.join(', ')}` },
         { status: 400 }
       );
     }
+
+    const payload = toMoveframeCopyMovePayload(parsed);
+    if (!payload) {
+      return NextResponse.json(
+        { error: 'Missing required fields: sourceMoveframeId, targetWorkoutId' },
+        { status: 400 }
+      );
+    }
+
+    const {
+      sourceMoveframeId,
+      targetWorkoutId,
+      position,
+      targetMoveframeId,
+    } = payload;
+
+    console.log('📝 Copying moveframe:', {
+      sourceMoveframeId,
+      targetWorkoutId,
+      position,
+      targetMoveframeId,
+    });
 
     // Get source moveframe with all movelaps
     const sourceMoveframe = await prisma.moveframe.findUnique({
@@ -62,17 +77,15 @@ export async function POST(request: NextRequest) {
     let newLetter = sourceMoveframe.letter;
     
     if (position === 'replace' && targetMoveframeId) {
-      // Delete the target moveframe first
-      await prisma.moveframe.delete({
-        where: { id: targetMoveframeId }
-      });
-      
-      // Get the letter from the deleted moveframe
       const targetMoveframe = await prisma.moveframe.findUnique({
         where: { id: targetMoveframeId },
-        select: { letter: true }
+        select: { letter: true },
       });
       newLetter = targetMoveframe?.letter || sourceMoveframe.letter;
+
+      await prisma.moveframe.delete({
+        where: { id: targetMoveframeId },
+      });
     } else if (position === 'before' && targetMoveframeId) {
       // Get existing moveframes to calculate new letter
       const targetMoveframe = await prisma.moveframe.findUnique({

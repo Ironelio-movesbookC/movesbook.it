@@ -5,6 +5,26 @@ import { List, Pencil, X } from 'lucide-react';
 import type { ExerciseFaqEntry } from '@/constants/tools.constants';
 import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
 
+const EXERCISE_LABEL_TARGET_LANG_CODES = SUPPORTED_LANGUAGES.filter((l) => l.code !== 'en').map((l) => l.code);
+
+async function fetchExerciseLabelTranslations(text: string): Promise<Record<string, string>> {
+  const response = await fetch('/api/translate', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      targetLanguages: EXERCISE_LABEL_TARGET_LANG_CODES,
+    }),
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Translation API returned ${response.status}: ${errorText.substring(0, 120)}`);
+  }
+  const data = await response.json();
+  return data.translations && typeof data.translations === 'object' ? (data.translations as Record<string, string>) : {};
+}
+
 function languageFlagEmoji(code: string): string {
   const c = code.toLowerCase().split('-')[0];
   const map: Record<string, string> = {
@@ -46,6 +66,8 @@ export default function ExerciseFaqEditorModal({ open, mode, initialFaq, onSave,
   const [questionLocalesOpen, setQuestionLocalesOpen] = useState(false);
   const [applyLang, setApplyLang] = useState('en');
   const [applyText, setApplyText] = useState('');
+  const [questionTranslating, setQuestionTranslating] = useState(false);
+  const [answerTranslating, setAnswerTranslating] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -53,6 +75,8 @@ export default function ExerciseFaqEditorModal({ open, mode, initialFaq, onSave,
       setQuestionLocalesOpen(false);
       setApplyLang('en');
       setApplyText('');
+      setQuestionTranslating(false);
+      setAnswerTranslating(false);
     }
   }, [open, initialFaq]);
 
@@ -76,6 +100,69 @@ export default function ExerciseFaqEditorModal({ open, mode, initialFaq, onSave,
     const v = applyText.trim();
     if (!applyLang) return;
     setQ(applyLang, v);
+  };
+
+  const handleQuestionTranslate = async (englishText: string) => {
+    const en = englishText.trim();
+    if (!en) {
+      window.alert('Enter English question first, then press Translate.');
+      return;
+    }
+    setQuestionTranslating(true);
+    try {
+      const translations = await fetchExerciseLabelTranslations(en);
+      const record: Record<string, string> = { en };
+      for (const code of EXERCISE_LABEL_TARGET_LANG_CODES) {
+        const raw = translations[code];
+        if (typeof raw === 'string' && raw.trim()) record[code] = raw.trim();
+      }
+      if (Object.keys(record).length <= 1) {
+        throw new Error('No translated values were returned by the translation service.');
+      }
+      setDraft((d) => ({
+        ...d,
+        questionByLanguage: { ...(d.questionByLanguage || {}), ...record },
+      }));
+      if (applyLang === 'en') setApplyText(en);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      window.alert(
+        `Translation failed.\n\n${msg}\n\nYou can edit other languages manually. Same API as Settings → Language → Long texts.`
+      );
+    } finally {
+      setQuestionTranslating(false);
+    }
+  };
+
+  const handleAnswerTranslate = async (englishText: string) => {
+    const en = englishText.trim();
+    if (!en) {
+      window.alert('Enter English answer first, then press Translation.');
+      return;
+    }
+    setAnswerTranslating(true);
+    try {
+      const translations = await fetchExerciseLabelTranslations(en);
+      const record: Record<string, string> = { en };
+      for (const code of EXERCISE_LABEL_TARGET_LANG_CODES) {
+        const raw = translations[code];
+        if (typeof raw === 'string' && raw.trim()) record[code] = raw.trim();
+      }
+      if (Object.keys(record).length <= 1) {
+        throw new Error('No translated values were returned by the translation service.');
+      }
+      setDraft((d) => ({
+        ...d,
+        answerByLanguage: { ...(d.answerByLanguage || {}), ...record },
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      window.alert(
+        `Translation failed.\n\n${msg}\n\nYou can edit other languages manually. Same API as Settings → Language → Long texts.`
+      );
+    } finally {
+      setAnswerTranslating(false);
+    }
   };
 
   if (!open) return null;
@@ -109,27 +196,37 @@ export default function ExerciseFaqEditorModal({ open, mode, initialFaq, onSave,
                   Short title per language — same role as PHP HTML document titles
                 </span>
               </div>
-              <div className="flex flex-col gap-2 bg-slate-50/80 p-3 sm:flex-row sm:items-center">
-                <input
-                  type="text"
-                  value={getQ('en')}
-                  onChange={(ev) => setQ('en', ev.target.value)}
-                  className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-inner focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  placeholder="English question (short title)"
-                />
-                <button
-                  type="button"
-                  title="Edit question in all languages"
-                  onClick={() => {
-                    setApplyLang('en');
-                    setApplyText(getQ('en'));
-                    setQuestionLocalesOpen(true);
-                  }}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100"
-                >
-                  <List className="h-4 w-4" aria-hidden />
-                  <span className="hidden sm:inline">All languages</span>
-                </button>
+              <div className="flex flex-col gap-2 bg-slate-50/80 p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    type="text"
+                    value={getQ('en')}
+                    onChange={(ev) => setQ('en', ev.target.value)}
+                    className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-inner focus:outline-none focus:ring-2 focus:ring-slate-500"
+                    placeholder="English question (short title)"
+                  />
+                  <button
+                    type="button"
+                    disabled={questionTranslating}
+                    onClick={() => void handleQuestionTranslate(getQ('en'))}
+                    className="inline-flex shrink-0 items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {questionTranslating ? 'Translating…' : 'Translate'}
+                  </button>
+                  <button
+                    type="button"
+                    title="Edit question in all languages"
+                    onClick={() => {
+                      setApplyLang('en');
+                      setApplyText(getQ('en'));
+                      setQuestionLocalesOpen(true);
+                    }}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100"
+                  >
+                    <List className="h-4 w-4" aria-hidden />
+                    <span className="hidden sm:inline">All languages</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -143,12 +240,24 @@ export default function ExerciseFaqEditorModal({ open, mode, initialFaq, onSave,
               <div className="space-y-4 bg-teal-50/40 p-3 sm:p-4">
                 {SUPPORTED_LANGUAGES.map((lang) => (
                   <div key={`faq-ans-${lang.code}`} className="rounded-lg border border-teal-100 bg-white p-3 shadow-sm">
-                    <label className="mb-1.5 flex flex-wrap items-center gap-2 text-xs font-bold text-gray-800">
-                      <span aria-hidden>{languageFlagEmoji(lang.code)}</span>
-                      <span>
-                        {lang.name} ({lang.code.toUpperCase()})
-                      </span>
-                    </label>
+                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                      <label className="flex flex-wrap items-center gap-2 text-xs font-bold text-gray-800">
+                        <span aria-hidden>{languageFlagEmoji(lang.code)}</span>
+                        <span>
+                          {lang.name} ({lang.code.toUpperCase()})
+                        </span>
+                      </label>
+                      {lang.code === 'en' ? (
+                        <button
+                          type="button"
+                          disabled={answerTranslating}
+                          onClick={() => void handleAnswerTranslate(getA('en'))}
+                          className="inline-flex shrink-0 items-center justify-center rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm sm:py-2"
+                        >
+                          {answerTranslating ? 'Translating…' : 'Translation'}
+                        </button>
+                      ) : null}
+                    </div>
                     <textarea
                       rows={8}
                       value={getA(lang.code)}
@@ -241,6 +350,16 @@ export default function ExerciseFaqEditorModal({ open, mode, initialFaq, onSave,
                   Apply
                 </button>
               </div>
+              {applyLang === 'en' ? (
+                <button
+                  type="button"
+                  disabled={questionTranslating}
+                  onClick={() => void handleQuestionTranslate(applyText)}
+                  className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {questionTranslating ? 'Translating…' : 'Translate'}
+                </button>
+              ) : null}
             </div>
 
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-gray-100 bg-white px-4 py-2">

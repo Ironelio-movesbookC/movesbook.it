@@ -3,10 +3,25 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
-import { GripVertical, Trash2, Info } from 'lucide-react';
+import { GripVertical, Trash2, Info, Copy, Upload, Star } from 'lucide-react';
 import { SPORTS_LIST } from '@/constants/moveframe.constants';
 import { getSportIcon } from '@/utils/sportIcons';
 import { useFavoriteSports } from '@/hooks/useFavoriteSports';
+import {
+  getStructureAssignmentCount,
+  plannedWorkoutToFavoriteSnapshot,
+  structurePlanToFavoriteWeekSnapshot,
+} from '@/lib/weeklyStructureMaterialize';
+import {
+  cloneWeeklyStructurePlanData,
+  saveWeeklyStructurePlan,
+} from '@/lib/weeklyStructureStorage';
+import CloneWeeklyStructureModal from '@/components/workouts/modals/CloneWeeklyStructureModal';
+import CopyStructureToTemplateModal from '@/components/workouts/modals/CopyStructureToTemplateModal';
+import ExportStructureToYearlyModal from '@/components/workouts/modals/ExportStructureToYearlyModal';
+import SaveStructureWorkoutModal from '@/components/workouts/modals/SaveStructureWorkoutModal';
+import QuickTrainingEntryModal from '@/components/workouts/modals/QuickTrainingEntryModal';
+import { quickEntryFormToPlannedWorkout, type QuickTrainingEntryForm } from '@/lib/quickTrainingEntry';
 
 const PLAN_KEYS = ['A', 'B', 'C', 'D', 'E'] as const;
 type PlanKey = (typeof PLAN_KEYS)[number];
@@ -218,6 +233,13 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
   const [savingRemote, setSavingRemote] = useState(false);
   const [planMetaModalOpen, setPlanMetaModalOpen] = useState(false);
   const [planMetaDraft, setPlanMetaDraft] = useState({ name: '', color: '#f97316', periodId: '' });
+  const [showCloneStructureModal, setShowCloneStructureModal] = useState(false);
+  const [showStructureQuickEntry, setShowStructureQuickEntry] = useState(false);
+  const [structureQuickSlot, setStructureQuickSlot] = useState({ day: 1, session: 1 });
+  const [showCopyToTemplateModal, setShowCopyToTemplateModal] = useState(false);
+  const [showExportToYearlyModal, setShowExportToYearlyModal] = useState(false);
+  const [showSaveWorkoutModal, setShowSaveWorkoutModal] = useState(false);
+  const [flowBusy, setFlowBusy] = useState(false);
 
   const { favoriteSports } = useFavoriteSports();
   const favoriteSportsSet = useMemo(() => new Set(favoriteSports), [favoriteSports]);
@@ -250,6 +272,151 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
 
   const plannedById = useMemo(() => new Map(planned.map((p) => [p.id, p])), [planned]);
   const assigned = useMemo(() => assignedIds(grid), [grid]);
+  const structureAssignmentCount = useMemo(
+    () => getStructureAssignmentCount({ meta, planned, grid }),
+    [meta, planned, grid]
+  );
+
+  const getAuthToken = () =>
+    typeof window !== 'undefined'
+      ? localStorage.getItem('token') || localStorage.getItem('adminToken')
+      : null;
+
+  const applyStructureToWeeks = async (targetWeekIds: string[], overwrite: boolean) => {
+    const token = getAuthToken();
+    if (!token) {
+      alert('Please log in to export structure to a plan.');
+      return;
+    }
+    setFlowBusy(true);
+    try {
+      const res = await fetch('/api/workouts/weekly-structure/apply-week', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          planData: { meta, planned, grid },
+          targetWeekIds,
+          overwrite,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Export failed (${res.status})`);
+      }
+      alert(data.message || `Structure exported to ${targetWeekIds.length} week(s).`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Export failed');
+      throw e;
+    } finally {
+      setFlowBusy(false);
+    }
+  };
+
+  const handleCloneStructurePlan = async ({
+    targetPlanKey,
+    overwrite,
+  }: {
+    targetPlanKey: PlanKey;
+    overwrite: boolean;
+  }) => {
+    const source = { meta, planned, grid };
+    const cloned = cloneWeeklyStructurePlanData(source);
+    if (!overwrite) {
+      const target = loadPlan(targetPlanKey);
+      if (getStructureAssignmentCount(target) > 0) {
+        alert('Target plan is not empty.');
+        return;
+      }
+    }
+    saveWeeklyStructurePlan(targetPlanKey, cloned);
+    if (targetPlanKey === planKey) {
+      setMeta(cloned.meta);
+      setPlanned(cloned.planned);
+      setGrid(cloned.grid);
+      setSnapshot(JSON.parse(JSON.stringify(cloned)));
+    }
+    const sync = await syncWeeklyStructureToAccount();
+    if (!sync.ok) {
+      alert(`Cloned locally but account sync failed: ${sync.message}`);
+      return;
+    }
+    alert(`Plan ${planKey} cloned to Plan ${targetPlanKey}.`);
+  };
+
+  const handleSaveStructureWeekToFavourites = async () => {
+    const token = getAuthToken();
+    if (!token) {
+      alert('Please log in to save favourites.');
+      return;
+    }
+    if (structureAssignmentCount === 0) {
+      alert('This plan has no grid assignments yet.');
+      return;
+    }
+    setFlowBusy(true);
+    try {
+      const snapshot = structurePlanToFavoriteWeekSnapshot(
+        { meta, planned, grid },
+        planKey,
+        meta.name || `Structure Plan ${planKey}`
+      );
+      const res = await fetch('/api/workouts/plans/favorites', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          weeklyStructurePlan: snapshot,
+          name: meta.name || `Structure Plan ${planKey}`,
+          description: `Saved from Weekly Workouts Structure (Plan ${planKey})`,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to save week');
+      alert(data.message || 'Week saved to favourites.');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to save week');
+    } finally {
+      setFlowBusy(false);
+    }
+  };
+
+  const handleSaveStructureWorkoutToFavourites = async (plannedId: string) => {
+    const token = getAuthToken();
+    if (!token) {
+      alert('Please log in to save favourites.');
+      return;
+    }
+    const row = planned.find((p) => p.id === plannedId);
+    if (!row) return;
+    setFlowBusy(true);
+    try {
+      const structureWorkout = plannedWorkoutToFavoriteSnapshot(row);
+      const res = await fetch('/api/workouts/favorites', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          structureWorkout,
+          name: structureWorkout.workout.name,
+          description: `Saved from Weekly Structure Plan ${planKey}`,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to save workout');
+      alert(data.message || 'Workout saved to favourites.');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to save workout');
+    } finally {
+      setFlowBusy(false);
+    }
+  };
 
   const plannedRowsForTable = useMemo(() => {
     if (!showOnlyWeekAssignedInList) return planned;
@@ -649,12 +816,13 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
         );
         return;
       }
-      const tail =
-        '\n\nExport to Yearly Plan / Done will be available from copy flows.';
+      const tail = r.remote
+        ? '\n\nUse Clone / Copy on Template / Export to push this structure into other plans.'
+        : '\n\nSign in to sync and use export flows.';
       alert(
         r.remote
           ? `Weekly structure saved to your account and this browser.${tail}`
-          : `Weekly structure saved in this browser only. Sign in to sync to your account.${tail}`
+          : `Weekly structure saved in this browser only.${tail}`
       );
     } finally {
       setSavingRemote(false);
@@ -670,6 +838,23 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
       }
     } finally {
       setSavingRemote(false);
+    }
+  };
+
+  const handleStructureQuickEntrySave = async (form: QuickTrainingEntryForm) => {
+    const row = quickEntryFormToPlannedWorkout(form);
+    const { day, session } = structureQuickSlot;
+    setPlanned((prev) => [...prev, row]);
+    setGrid((prev) => {
+      const next = { ...prev };
+      if (!next[day]) next[day] = {};
+      const ids = [...(next[day][session] || []), row.id];
+      next[day] = { ...next[day], [session]: ids };
+      return next;
+    });
+    const r = await syncWeeklyStructureToAccount();
+    if (!r.ok && r.remote) {
+      alert(`Added locally but account sync failed: ${r.message}`);
     }
   };
 
@@ -821,6 +1006,63 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-purple-200 bg-purple-50/60 p-3">
+        <span className="text-xs font-semibold text-purple-900 w-full sm:w-auto">Week actions:</span>
+        <button
+          type="button"
+          disabled={flowBusy}
+          onClick={() => setShowStructureQuickEntry(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-50"
+        >
+          Quick training entry
+        </button>
+        <button
+          type="button"
+          disabled={flowBusy || structureAssignmentCount === 0}
+          onClick={() => setShowCloneStructureModal(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-50"
+        >
+          <Copy className="w-4 h-4" />
+          Clone Week
+        </button>
+        <button
+          type="button"
+          disabled={flowBusy || structureAssignmentCount === 0}
+          onClick={() => setShowCopyToTemplateModal(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50"
+        >
+          <Copy className="w-4 h-4" />
+          Copy Week on Template
+        </button>
+        <button
+          type="button"
+          disabled={flowBusy || structureAssignmentCount === 0}
+          onClick={() => setShowExportToYearlyModal(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
+        >
+          <Upload className="w-4 h-4" />
+          Export Week
+        </button>
+        <button
+          type="button"
+          disabled={flowBusy || structureAssignmentCount === 0}
+          onClick={() => void handleSaveStructureWeekToFavourites()}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-50"
+        >
+          <Star className="w-4 h-4" />
+          Save Week in Favourites
+        </button>
+        <button
+          type="button"
+          disabled={flowBusy || planned.length === 0}
+          onClick={() => setShowSaveWorkoutModal(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 disabled:opacity-50"
+        >
+          <Star className="w-4 h-4" />
+          Save Workout in Favourites
+        </button>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-4">
@@ -1596,6 +1838,47 @@ export default function WeeklyWorkoutStructurePanel({ periods }: { periods: Week
           </div>
         </div>
         )}
+      <CloneWeeklyStructureModal
+        isOpen={showCloneStructureModal}
+        onClose={() => setShowCloneStructureModal(false)}
+        sourcePlanKey={planKey}
+        sourceAssignmentCount={structureAssignmentCount}
+        onConfirm={handleCloneStructurePlan}
+      />
+      <CopyStructureToTemplateModal
+        isOpen={showCopyToTemplateModal}
+        onClose={() => setShowCopyToTemplateModal(false)}
+        sourcePlanKey={planKey}
+        sourcePlanName={meta.name}
+        sourceAssignmentCount={structureAssignmentCount}
+        onConfirm={async ({ targetWeekId, overwrite }) => {
+          await applyStructureToWeeks([targetWeekId], overwrite);
+        }}
+      />
+      <ExportStructureToYearlyModal
+        isOpen={showExportToYearlyModal}
+        onClose={() => setShowExportToYearlyModal(false)}
+        sourcePlanKey={planKey}
+        sourcePlanName={meta.name}
+        sourceAssignmentCount={structureAssignmentCount}
+        onConfirm={async ({ targetWeekIds, overwrite }) => {
+          await applyStructureToWeeks(targetWeekIds, overwrite);
+        }}
+      />
+      <SaveStructureWorkoutModal
+        isOpen={showSaveWorkoutModal}
+        onClose={() => setShowSaveWorkoutModal(false)}
+        planned={planned}
+        onConfirm={handleSaveStructureWorkoutToFavourites}
+      />
+      <QuickTrainingEntryModal
+        isOpen={showStructureQuickEntry}
+        context="W"
+        structureSlot={structureQuickSlot}
+        onStructureSlotChange={setStructureQuickSlot}
+        onClose={() => setShowStructureQuickEntry(false)}
+        onSave={handleStructureQuickEntrySave}
+      />
     </div>
   );
 }

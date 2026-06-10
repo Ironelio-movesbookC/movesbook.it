@@ -256,6 +256,34 @@ export default function WorkoutSectionHeader({
                   ? 'Weekly workout structure'
                   : getSectionTitle(activeSection)}
             </h2>
+
+            {/* Done: week dropdown (Archive uses library grid — no week picker) */}
+            {activeSection === 'C' &&
+              workoutPlan?.weeks &&
+              workoutPlan.weeks.length > 0 && (
+                <div className="flex items-center gap-2 ml-4">
+                  <label htmlFor="archive-done-week-select" className="text-sm font-medium text-gray-600">
+                    Week:
+                  </label>
+                  <select
+                    id="archive-done-week-select"
+                    value={currentWeekIndex}
+                    onChange={(e) => onWeekIndexChange?.(parseInt(e.target.value, 10))}
+                    className="px-3 py-1.5 text-sm font-semibold rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[10rem]"
+                  >
+                    {[...workoutPlan.weeks]
+                      .sort(
+                        (a: { weekNumber: number }, b: { weekNumber: number }) =>
+                          a.weekNumber - b.weekNumber
+                      )
+                      .map((week: { id: string; weekNumber: number }, index: number) => (
+                        <option key={week.id} value={index}>
+                          {`Week ${week.weekNumber ?? index + 1}`}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
             
             {/* Colored Circle and Description for Weekly Plans (Section A subsections) */}
             {activeSection === 'A' && (
@@ -460,7 +488,8 @@ export default function WorkoutSectionHeader({
             )}
             
             {/* Action Buttons - Only for non-B sections */}
-            {activeSection !== 'B' && (
+            {/* Print — not used on Archive library */}
+            {activeSection !== 'B' && activeSection !== 'D' && (
               <>
                 {/* Print Button */}
                 {onPrintWeek && (
