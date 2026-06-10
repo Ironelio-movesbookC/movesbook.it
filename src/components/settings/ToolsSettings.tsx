@@ -24,6 +24,7 @@ import {
   LogIn,
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useSettingsLayoutExpand } from '@/contexts/SettingsLayoutExpandContext';
 import { useToolsData } from '@/hooks/useToolsData';
 import {
   Period,
@@ -114,7 +115,8 @@ export default function ToolsSettings({
   periodizationOnly = false
 }: ToolsSettingsProps = {}) {
   const { t, currentLanguage } = useLanguage();
-  
+  const layoutExpand = useSettingsLayoutExpand();
+
   // Use custom hook for data management
   const {
     periods,
@@ -155,6 +157,16 @@ export default function ToolsSettings({
     if (saved && allowed.includes(saved)) return saved;
     return mode === 'technical' ? 'equipmentFactories' : 'periods';
   });
+
+  useEffect(() => {
+    if (activeTab !== 'exercises') {
+      layoutExpand?.setContentExpanded(false);
+    }
+  }, [activeTab, layoutExpand]);
+
+  const exerciseBankWorkspaceExpanded =
+    Boolean(layoutExpand?.contentExpanded) && activeTab === 'exercises';
+
   const [editingItem, setEditingItem] = useState<Period | WorkoutSection | null>(null);
   const [editItemTranslations, setEditItemTranslations] = useState<Record<string, { title: string; description: string }>>({});
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -1456,7 +1468,7 @@ export default function ToolsSettings({
       )}
 
       {/* Header (Tools / Technical only — Periodization uses sidebar title + sub-tabs) */}
-      {!periodizationOnly && (
+      {!periodizationOnly && !exerciseBankWorkspaceExpanded && (
         <div>
           <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
             {mode === 'technical' ? 'Technical Settings' : 'Tools Settings'}
@@ -1475,7 +1487,7 @@ export default function ToolsSettings({
       )}
 
       {/* Tabs */}
-      {allowedTabs.length > 1 && (
+      {allowedTabs.length > 1 && !exerciseBankWorkspaceExpanded && (
       <div className="flex gap-2 border-b border-gray-200 dark:border-gray-600">
         {allowedTabs.includes('periods') && (
           <button
@@ -2361,14 +2373,6 @@ export default function ToolsSettings({
       {/* Exercises Tab — Exercise Bank + full Section Exercise editor */}
       {activeTab === 'exercises' && (
         <div className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-4 text-sm text-slate-700">
-            <p className="font-semibold text-slate-900">Exercise bank</p>
-            <p className="mt-1 text-xs text-slate-600">
-              Use the grid to filter and manage exercises. Add or Edit opens the full catalog form (typology, sports,
-              equipment, multilingual text, FAQs, machines, pathologies). Save there updates this list; use Save in Tools
-              when you are ready to persist to the server.
-            </p>
-          </div>
           <ExerciseBankTab
             exercises={exercises}
             setExercises={setExercises}
@@ -3467,6 +3471,7 @@ export default function ToolsSettings({
           exercise={editingExercise}
           onChange={(next) => setEditingExercise(next)}
           sports={sports}
+          allExercises={exercises}
           pathologyCatalog={exercisePathologyCatalog}
           onSave={() => {
             const nameOk = (editingExercise.name || '').trim();

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import {
+  buildWorkoutSessionCreate,
+  mapPrismaWorkoutForSessionCreate,
+} from '@/lib/workoutDayCopy';
 
-
-// POST /api/workouts/days/move - Move a day to a new date
+// POST /api/workouts/days/move - Move day workouts to another slot (template) or date
 export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization');
@@ -18,69 +21,125 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { sourceDayId, targetDate, targetWeekId } = body;
+    const { sourceDayId, targetDate, targetWeekId, targetDayId } = body;
 
-    console.log('🚚 Moving day:', { sourceDayId, targetDate, targetWeekId });
+    if (!sourceDayId) {
+      return NextResponse.json({ error: 'sourceDayId is required' }, { status: 400 });
+    }
 
-    // Validate required fields
-    if (!sourceDayId || !targetDate || !targetWeekId) {
+    if (sourceDayId === targetDayId) {
+      return NextResponse.json({ error: 'Cannot move a day onto itself' }, { status: 400 });
+    }
+
+    const sourceDay = await prisma.workoutDay.findUnique({
+      where: { id: sourceDayId },
+      include: {
+        workouts: {
+          include: {
+            sports: true,
+            moveframes: { include: { movelaps: true, section: true } },
+          },
+        },
+      },
+    });
+
+    if (!sourceDay) {
+      return NextResponse.json({ error: 'Source day not found' }, { status: 404 });
+    }
+
+    if (targetDayId) {
+      const targetDay = await prisma.workoutDay.findFirst({
+        where: { id: targetDayId, userId: decoded.userId },
+      });
+
+      if (!targetDay) {
+        return NextResponse.json({ error: 'Target day not found' }, { status: 404 });
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.workoutSession.deleteMany({ where: { workoutDayId: targetDayId } });
+        for (const workout of sourceDay.workouts) {
+          await tx.workoutSession.create({
+            data: {
+              workoutDayId: targetDayId,
+              ...buildWorkoutSessionCreate(mapPrismaWorkoutForSessionCreate(workout)),
+            },
+          });
+        }
+        await tx.workoutSession.deleteMany({ where: { workoutDayId: sourceDayId } });
+      });
+
+      const moved = await prisma.workoutDay.findUnique({
+        where: { id: targetDayId },
+        include: {
+          workouts: {
+            include: {
+              sports: true,
+              moveframes: { include: { movelaps: true, section: true } },
+            },
+          },
+          period: true,
+        },
+      });
+
+      return NextResponse.json({ success: true, day: moved });
+    }
+
+    if (!targetDate || !targetWeekId) {
       return NextResponse.json(
-        { error: 'sourceDayId, targetDate, and targetWeekId are required' },
+        { error: 'targetDate and targetWeekId are required when targetDayId is omitted' },
         { status: 400 }
       );
     }
 
-    // Check if target date already has a day
-    const existingDay = await prisma.workoutDay.findFirst({
-      where: {
-        userId: decoded.userId,
-        date: new Date(targetDate),
-        id: { not: sourceDayId } // Exclude the source day itself
-      }
+    const targetWeek = await prisma.workoutWeek.findUnique({
+      where: { id: targetWeekId },
+      include: { workoutPlan: { select: { type: true } } },
     });
 
-    if (existingDay) {
-      return NextResponse.json(
-        { error: 'A workout day already exists on this date' },
-        { status: 409 }
-      );
+    if (targetWeek?.workoutPlan?.type !== 'TEMPLATE_WEEKS') {
+      const existingDay = await prisma.workoutDay.findFirst({
+        where: {
+          userId: decoded.userId,
+          date: new Date(targetDate),
+          id: { not: sourceDayId },
+        },
+      });
+
+      if (existingDay) {
+        return NextResponse.json(
+          { error: 'A workout day already exists on this date' },
+          { status: 409 }
+        );
+      }
     }
 
-    // Update the day with new date and week
     const movedDay = await prisma.workoutDay.update({
       where: { id: sourceDayId },
       data: {
         date: new Date(targetDate),
         workoutWeekId: targetWeekId,
-        notes: {
-          set: undefined // Keep existing notes
-        }
       },
       include: {
         workouts: {
           include: {
             sports: true,
-            moveframes: {
-              include: {
-                movelaps: true,
-                section: true
-              }
-            }
-          }
+            moveframes: { include: { movelaps: true, section: true } },
+          },
         },
-        period: true
-      }
+        period: true,
+      },
     });
 
-    console.log('✅ Day moved successfully:', movedDay.id);
-
-    return NextResponse.json({ day: movedDay });
-  } catch (error: any) {
-    console.error('❌ Error moving day:', error);
+    return NextResponse.json({ success: true, day: movedDay });
+  } catch (error: unknown) {
+    console.error('Error moving day:', error);
     return NextResponse.json(
-      { error: 'Failed to move day', details: error.message },
+      {
+        error: 'Failed to move day',
+        details: error instanceof Error ? error.message : 'Unknown',
+      },
       { status: 500 }
     );
   }
 }
-

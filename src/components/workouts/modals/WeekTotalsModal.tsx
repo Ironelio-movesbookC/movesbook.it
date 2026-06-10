@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { getSportIcon, isImageIcon } from '@/utils/sportIcons';
 import { useSportIconType } from '@/hooks/useSportIconType';
@@ -946,13 +947,13 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
   // Early return check - must be after all hooks
   if (!isOpen || (!displayWeek && !week)) return null;
 
-  return (
+  const modal = (
     <div 
       className="fixed inset-0 flex items-center justify-center p-4 print:!p-0"
       style={{ 
         backgroundColor: shouldAutoPrint ? 'transparent' : 'rgba(0, 0, 0, 0.95)',
         display: shouldAutoPrint ? 'none' : 'flex',
-        zIndex: 999999
+        zIndex: 10000000,
       }}
       onClick={shouldAutoPrint ? undefined : onClose}
     >
@@ -1759,4 +1760,6 @@ export default function WeekTotalsModal({ isOpen, week, weeks, isMultiWeekView =
       `}</style>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modal, document.body) : null;
 }

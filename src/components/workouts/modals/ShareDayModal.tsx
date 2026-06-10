@@ -1,7 +1,18 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { X, Share2, Mail, MessageCircle, Send, Facebook } from 'lucide-react';
+import { templateDaySlotLabel } from '@/lib/workoutDayCopy';
+import { sharedDayPublicUrl } from '@/lib/siteUrl';
+import { isValidShareEmail } from '@/lib/shareEmail';
+import {
+  buildTelegramShareUrl,
+  buildWhatsAppShareUrl,
+  ensureShareLinkInMessage,
+  FACEBOOK_SHARE_NOTICE,
+  openExternalShareUrl,
+  shareViaFacebook,
+} from '@/utils/socialShareUrls';
 
 interface ShareDayModalProps {
   isOpen: boolean;
@@ -9,135 +20,215 @@ interface ShareDayModalProps {
   day: any;
 }
 
-export default function ShareDayModal({
-  isOpen,
-  onClose,
-  day
-}: ShareDayModalProps) {
-  const [selectedPlatform, setSelectedPlatform] = useState<'whatsapp' | 'telegram' | 'facebook' | 'email' | ''>('');
+function buildDefaultDayMessage(day: any, shareableLink: string): string {
+  const workoutCount = day.workouts?.length || 0;
+  const moveframeCount =
+    day.workouts?.reduce(
+      (count: number, workout: any) => count + (workout.moveframes?.length || 0),
+      0
+    ) || 0;
+
+  let dayLabel: string;
+  if (day?.dayOfWeek) {
+    const weekPart = day.weekNumber ? ` (Week ${day.weekNumber})` : '';
+    dayLabel = `${templateDaySlotLabel(day)}${weekPart}`;
+  } else if (day?.date) {
+    dayLabel = new Date(day.date).toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  } else {
+    dayLabel = 'this day';
+  }
+
+  const periodPart = day.period?.name ? `\nPeriod: ${day.period.name}` : '';
+  return `Check out my workout plan for ${dayLabel}!${periodPart}\n\n${workoutCount} workout(s), ${moveframeCount} exercise(s)\n\n${shareableLink}`;
+}
+
+export default function ShareDayModal({ isOpen, onClose, day }: ShareDayModalProps) {
+  const [selectedPlatform, setSelectedPlatform] = useState<
+    'whatsapp' | 'telegram' | 'facebook' | 'email' | ''
+  >('');
   const [recipient, setRecipient] = useState('');
   const [message, setMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
+
+  const shareableLink = useMemo(() => {
+    if (!day?.id) return '';
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/shared/day/${day.id}`;
+    }
+    return sharedDayPublicUrl(day.id);
+  }, [day?.id]);
+
+  const defaultMessage = useMemo(
+    () => (day && shareableLink ? buildDefaultDayMessage(day, shareableLink) : ''),
+    [day, shareableLink]
+  );
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedPlatform('');
+      setRecipient('');
+      setMessage('');
+      return;
+    }
+    if (defaultMessage) {
+      setMessage(defaultMessage);
+    }
+  }, [isOpen, defaultMessage]);
 
   if (!isOpen || !day) return null;
 
-  // Generate shareable link (this should be a public URL to the day overview)
-  const dayId = day.id;
-  const shareableLink = `${window.location.origin}/shared/day/${dayId}`;
-  
-  const dayDate = day?.date ? new Date(day.date).toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  }) : '';
-
-  // Create day summary
-  const workoutCount = day.workouts?.length || 0;
-  const moveframeCount = day.workouts?.reduce((count: number, workout: any) => 
-    count + (workout.moveframes?.length || 0), 0) || 0;
-
-  const dayTitle = `Workout Plan - ${dayDate}`;
-  const defaultMessage = `Check out my workout plan for ${dayDate}!\n\n${workoutCount} workout(s), ${moveframeCount} exercise(s)\n\n${shareableLink}`;
-
-  const handleShare = () => {
+  const handleShare = async () => {
     if (!selectedPlatform) {
       alert('Please select a platform');
       return;
     }
 
-    const messageText = message || defaultMessage;
-    const encodedMessage = encodeURIComponent(messageText);
-    const encodedLink = encodeURIComponent(shareableLink);
+    if (!shareableLink) {
+      alert('Share link is not ready. Please try again.');
+      return;
+    }
+
+    const messageText = ensureShareLinkInMessage(
+      message.trim() || defaultMessage,
+      shareableLink
+    );
 
     let shareUrl = '';
 
     switch (selectedPlatform) {
       case 'whatsapp':
-        if (recipient) {
-          // Share to specific phone number
-          shareUrl = `https://wa.me/${recipient.replace(/[^0-9]/g, '')}?text=${encodedMessage}`;
-        } else {
-          // Share via WhatsApp (will open contact selector)
-          shareUrl = `https://wa.me/?text=${encodedMessage}`;
+        shareUrl = buildWhatsAppShareUrl(recipient, messageText);
+        break;
+      case 'telegram': {
+        const telegram = buildTelegramShareUrl(recipient, shareableLink, messageText);
+        shareUrl = telegram.url;
+        if (telegram.notice) {
+          alert(telegram.notice);
         }
         break;
-
-      case 'telegram':
-        if (recipient) {
-          // Share to specific username
-          shareUrl = `https://t.me/${recipient}?text=${encodedMessage}`;
+      }
+      case 'facebook': {
+        const fb = await shareViaFacebook(shareableLink, messageText);
+        if (fb.copiedToClipboard) {
+          alert(FACEBOOK_SHARE_NOTICE);
         } else {
-          // Share via Telegram (will open contact selector)
-          shareUrl = `https://t.me/share/url?url=${encodedLink}&text=${encodeURIComponent(dayTitle)}`;
+          alert(
+            `${FACEBOOK_SHARE_NOTICE}\n\n(Could not copy automatically — select and copy the message box above.)`
+          );
         }
-        break;
+        onClose();
+        return;
+      }
+      case 'email': {
+        const to = recipient.trim();
+        if (!to) {
+          alert('Email address is required');
+          return;
+        }
+        if (!isValidShareEmail(to)) {
+          alert('Please enter a valid email address (e.g. name@example.com).');
+          return;
+        }
 
-      case 'facebook':
-        // Share to Facebook
-        shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodedLink}&quote=${encodeURIComponent(messageText)}`;
-        break;
-
-      case 'email':
-        // Share via email
-        const subject = encodeURIComponent(`Workout Plan: ${dayDate}`);
-        const body = encodeURIComponent(messageText);
-        shareUrl = `mailto:${recipient}?subject=${subject}&body=${body}`;
-        break;
-
+        setIsSending(true);
+        try {
+          const token = localStorage.getItem('token');
+          const response = await fetch('/api/workouts/share/email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              to,
+              subject: 'Workout day plan — Movesbook',
+              message: messageText,
+              shareLink: shareableLink,
+            }),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to send email');
+          }
+          alert(`Email sent to ${to}`);
+          onClose();
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Failed to send email';
+          alert(msg);
+        } finally {
+          setIsSending(false);
+        }
+        return;
+      }
       default:
         alert('Invalid platform selected');
         return;
     }
 
-    // Open the share URL
-    window.open(shareUrl, '_blank');
+    openExternalShareUrl(shareUrl);
     onClose();
   };
 
   const handleCopyLink = () => {
+    if (!shareableLink) return;
     navigator.clipboard.writeText(shareableLink).then(() => {
       alert('Link copied to clipboard!');
-    }).catch(err => {
-      console.error('Failed to copy link:', err);
-      alert('Failed to copy link');
     });
   };
 
+  const dayDate =
+    day?.date && !day?.dayOfWeek
+      ? new Date(day.date).toLocaleDateString('en-US', {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      : null;
+
   return (
-    <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black bg-opacity-50 p-4">
+    <div className="fixed inset-0 z-[10000000] flex items-center justify-center bg-black bg-opacity-50 p-4">
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg">
-        {/* Header */}
         <div className="bg-blue-500 text-white px-6 py-4 flex items-center justify-between rounded-t-lg">
           <div className="flex items-center gap-2">
             <Share2 size={20} />
             <h2 className="text-lg font-bold">Share Day Plan</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-white/20 rounded transition-colors"
-          >
+          <button onClick={onClose} className="p-1 hover:bg-white/20 rounded transition-colors">
             <X size={20} />
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-6 space-y-4">
-          {/* Day Info */}
           <div className="bg-blue-50 p-3 rounded border border-blue-200">
-            <p className="text-sm font-semibold text-gray-900">{dayDate}</p>
-            {day.period && (
+            {day.dayOfWeek ? (
+              <p className="text-sm font-semibold text-gray-900">
+                {templateDaySlotLabel(day)}
+                {day.weekNumber ? ` · Week ${day.weekNumber}` : ''}
+              </p>
+            ) : (
+              dayDate && <p className="text-sm font-semibold text-gray-900">{dayDate}</p>
+            )}
+            {day.period?.name && (
               <p className="text-xs text-gray-600 mt-1">Period: {day.period.name}</p>
             )}
             <p className="text-xs text-gray-500 mt-1">
-              {workoutCount} workout(s), {moveframeCount} exercise(s)
+              {day.workouts?.length || 0} workout(s),{' '}
+              {day.workouts?.reduce(
+                (c: number, w: any) => c + (w.moveframes?.length || 0),
+                0
+              ) || 0}{' '}
+              exercise(s)
             </p>
           </div>
 
-          {/* Shareable Link */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Shareable Link:
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Shareable Link:</label>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -146,8 +237,10 @@ export default function ShareDayModal({
                 className="flex-1 px-3 py-2 border border-gray-300 rounded bg-gray-50 text-sm"
               />
               <button
+                type="button"
                 onClick={handleCopyLink}
-                className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm font-medium"
+                disabled={!shareableLink}
+                className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm font-medium disabled:opacity-50"
               >
                 Copy
               </button>
@@ -157,81 +250,56 @@ export default function ShareDayModal({
             </p>
           </div>
 
-          {/* Select Platform */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Select Platform: <span className="text-red-500">*</span>
             </label>
             <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setSelectedPlatform('whatsapp')}
-                className={`flex items-center gap-2 px-4 py-3 border-2 rounded-lg transition-all ${
-                  selectedPlatform === 'whatsapp'
-                    ? 'border-green-500 bg-green-50'
-                    : 'border-gray-300 hover:border-green-300'
-                }`}
-              >
-                <MessageCircle size={20} className="text-green-600" />
-                <span className="font-medium text-sm">WhatsApp</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedPlatform('telegram')}
-                className={`flex items-center gap-2 px-4 py-3 border-2 rounded-lg transition-all ${
-                  selectedPlatform === 'telegram'
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-300 hover:border-blue-300'
-                }`}
-              >
-                <Send size={20} className="text-blue-600" />
-                <span className="font-medium text-sm">Telegram</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedPlatform('facebook')}
-                className={`flex items-center gap-2 px-4 py-3 border-2 rounded-lg transition-all ${
-                  selectedPlatform === 'facebook'
-                    ? 'border-blue-700 bg-blue-50'
-                    : 'border-gray-300 hover:border-blue-300'
-                }`}
-              >
-                <Facebook size={20} className="text-blue-700" />
-                <span className="font-medium text-sm">Facebook</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedPlatform('email')}
-                className={`flex items-center gap-2 px-4 py-3 border-2 rounded-lg transition-all ${
-                  selectedPlatform === 'email'
-                    ? 'border-red-500 bg-red-50'
-                    : 'border-gray-300 hover:border-red-300'
-                }`}
-              >
-                <Mail size={20} className="text-red-600" />
-                <span className="font-medium text-sm">Email</span>
-              </button>
+              {(
+                [
+                  ['whatsapp', MessageCircle, 'text-green-600', 'border-green-500', 'bg-green-50'],
+                  ['telegram', Send, 'text-blue-600', 'border-blue-500', 'bg-blue-50'],
+                  ['facebook', Facebook, 'text-blue-700', 'border-blue-700', 'bg-blue-50'],
+                  ['email', Mail, 'text-red-600', 'border-red-500', 'bg-red-50'],
+                ] as const
+              ).map(([platform, Icon, iconCls, activeBorder, activeBg]) => (
+                <button
+                  key={platform}
+                  type="button"
+                  onClick={() => setSelectedPlatform(platform)}
+                  className={`flex items-center gap-2 px-4 py-3 border-2 rounded-lg transition-all ${
+                    selectedPlatform === platform
+                      ? `${activeBorder} ${activeBg}`
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  <Icon size={20} className={iconCls} />
+                  <span className="font-medium text-sm capitalize">{platform}</span>
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Recipient (Optional for some platforms) */}
           {selectedPlatform && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Recipient {selectedPlatform === 'email' && <span className="text-red-500">*</span>}
-                {selectedPlatform !== 'email' && <span className="text-gray-500">(Optional)</span>}
+                {selectedPlatform !== 'email' && (
+                  <span className="text-gray-500"> (Optional)</span>
+                )}
               </label>
               <input
-                type="text"
+                type="email"
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value)}
                 placeholder={
                   selectedPlatform === 'whatsapp'
                     ? 'Phone number (e.g., +1234567890)'
                     : selectedPlatform === 'telegram'
-                    ? 'Username (e.g., @username)'
-                    : selectedPlatform === 'email'
-                    ? 'Email address (required)'
-                    : 'Not required for Facebook'
+                      ? 'Telegram @username (e.g., johndoe)'
+                      : selectedPlatform === 'email'
+                        ? 'name@example.com'
+                        : 'Not required for Facebook'
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                 disabled={selectedPlatform === 'facebook'}
@@ -241,52 +309,73 @@ export default function ShareDayModal({
                   Leave empty to open WhatsApp contact selector
                 </p>
               )}
-              {selectedPlatform === 'telegram' && !recipient && (
+              {selectedPlatform === 'telegram' && (
                 <p className="text-xs text-gray-500 mt-1">
-                  Leave empty to open Telegram share dialog
+                  {recipient.trim()
+                    ? 'Opens a chat with that @username and your message (including the link).'
+                    : 'Opens Telegram so you can choose who to send the link to.'}
+                </p>
+              )}
+              {selectedPlatform === 'facebook' && (
+                <p className="text-xs text-amber-700 mt-1 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                  Facebook cannot pre-fill the post text. Your message will be copied to the clipboard — paste it
+                  into the post. The link preview requires the shared day page to be live on Movesbook.
+                </p>
+              )}
+              {selectedPlatform === 'email' && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Movesbook sends the email directly to this address (not your local mail app).
                 </p>
               )}
             </div>
           )}
 
-          {/* Custom Message */}
           {selectedPlatform && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Message (Optional)
+                Message (includes share link)
               </label>
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder={defaultMessage}
-                rows={4}
+                rows={5}
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-sm"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Leave empty to use default message
+                The link is always sent with your message, even if you edit the text above.
               </p>
             </div>
           )}
         </div>
 
-        {/* Footer */}
         <div className="border-t bg-gray-50 px-6 py-4 flex items-center justify-end gap-3 rounded-b-lg">
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleShare}
-            disabled={!selectedPlatform || (selectedPlatform === 'email' && !recipient)}
+            disabled={
+              isSending ||
+              !selectedPlatform ||
+              (selectedPlatform === 'email' && !recipient.trim())
+            }
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            Share via {selectedPlatform ? selectedPlatform.charAt(0).toUpperCase() + selectedPlatform.slice(1) : 'Platform'}
+            {isSending
+              ? 'Sending…'
+              : `Share via ${
+                  selectedPlatform
+                    ? selectedPlatform.charAt(0).toUpperCase() + selectedPlatform.slice(1)
+                    : 'Platform'
+                }`}
           </button>
         </div>
       </div>
     </div>
   );
 }
-

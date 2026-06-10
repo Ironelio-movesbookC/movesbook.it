@@ -7,6 +7,12 @@ import { useColorSettings } from '@/hooks/useColorSettings';
 import { useSportIconType } from '@/hooks/useSportIconType';
 import { getSportIcon, isImageIcon } from '@/utils/sportIcons';
 import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
+import {
+  calculateWorkoutSportSummaries,
+  formatSportSummaryTotal,
+  type SportSummary,
+} from '@/utils/workoutHelpers';
+import TreeMovelapList from '@/components/workouts/TreeMovelapList';
 
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
@@ -168,6 +174,46 @@ export default function WorkoutTreeView({
     }, 0);
   };
 
+  const renderSportSummaryChips = (summaries: SportSummary[], keyPrefix: string) => {
+    if (summaries.length === 0) return null;
+    return (
+      <div className="flex items-center gap-2 flex-wrap">
+        {summaries.map((summary, idx) => (
+          <React.Fragment key={`${keyPrefix}-${summary.sport}-${idx}`}>
+            {idx > 0 && <span className="text-sm font-bold mx-1 opacity-80">+</span>}
+            <div
+              className="flex items-center gap-2 px-3 py-1 rounded text-sm font-semibold"
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.25)',
+                border: '1px solid rgba(0,0,0,0.1)',
+              }}
+            >
+              {useImageIcons ? (
+                <Image
+                  src={summary.icon}
+                  alt={summary.sport}
+                  width={40}
+                  height={40}
+                  className="object-cover rounded flex-shrink-0"
+                  unoptimized
+                />
+              ) : (
+                <span className="text-3xl leading-none flex-shrink-0">{summary.icon}</span>
+              )}
+              <span className="text-xs whitespace-nowrap">{summary.sport.replace(/_/g, ' ')}</span>
+              <span
+                className="text-sm font-bold whitespace-nowrap"
+                style={{ color: getValueTextColor() }}
+              >
+                {formatSportSummaryTotal(summary)}
+              </span>
+            </div>
+          </React.Fragment>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-2 p-4">
       {weeks.length === 0 ? (
@@ -301,72 +347,19 @@ export default function WorkoutTreeView({
                                   {workoutCount} workout{workoutCount !== 1 ? 's' : ''}
                                 </span>
                                 {workoutCount > 0 && (
-                                  <>
-                                    {day.workouts.map((workout: any, workoutIndex: number) => {
-                                      // Calculate sport summaries for this workout
-                                      const sportData = new Map<string, { value: number; isSeriesBased: boolean }>();
-                                      
-                                      if (workout.moveframes) {
-                                        workout.moveframes.forEach((mf: any) => {
-                                          if (mf.sport) {
-                                            const isSeriesBased = !['SWIM', 'BIKE', 'SPINNING', 'RUN', 'ROWING', 'SKATE', 'SKI', 'HIKING', 'WALKING'].includes(mf.sport);
-                                            
-                                            if (!sportData.has(mf.sport)) {
-                                              sportData.set(mf.sport, { value: 0, isSeriesBased });
-                                            }
-                                            
-                                            const data = sportData.get(mf.sport)!;
-                                            
-                                            if (isSeriesBased) {
-                                              data.value += mf.movelaps?.length || 0;
-                                            } else {
-                                              if (mf.movelaps) {
-                                                mf.movelaps.forEach((lap: any) => {
-                                                  data.value += lap.distance || 0;
-                                                });
-                                              }
-                                            }
-                                          }
-                                        });
-                                      }
-                                      
-                                      return (
-                                        <React.Fragment key={workout.id}>
-                                          {workoutIndex > 0 && (
-                                            <span className="text-sm font-bold mx-1">+</span>
-                                          )}
-                                          {Array.from(sportData.entries()).map(([sport, data]) => {
-                                            const sportIcon = getSportIcon(sport, iconType);
-                                            const displayValue = data.value > 0 
-                                              ? (data.isSeriesBased ? `${data.value} series` : `${data.value}m`)
-                                              : '—';
-                                            return (
-                                              <div
-                                                key={`${workout.id}-${sport}`}
-                                                className="flex items-center gap-2 px-3 py-1 rounded text-sm font-semibold"
-                                                style={{ 
-                                                  backgroundColor: 'rgba(255,255,255,0.25)',
-                                                  border: '1px solid rgba(0,0,0,0.1)'
-                                                }}
-                                              >
-                                                {useImageIcons ? (
-                                                  <Image src={sportIcon} alt={sport} width={48} height={48} className="object-cover rounded" unoptimized />
-                                                ) : (
-                                                  <span className="text-5xl">{sportIcon}</span>
-                                                )}
-                                                <span className="text-xs">{sport.replace(/_/g, ' ')}</span>
-                                                {data.value > 0 && (
-                                                  <span className="text-sm font-bold ml-1" style={{ color: getValueTextColor() }}>
-                                                    {displayValue}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            );
-                                          })}
-                                        </React.Fragment>
-                                      );
-                                    })}
-                                  </>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {day.workouts.map((workout: any, workoutIndex: number) => (
+                                      <React.Fragment key={workout.id}>
+                                        {workoutIndex > 0 && (
+                                          <span className="text-sm font-bold mx-1 opacity-80">+</span>
+                                        )}
+                                        {renderSportSummaryChips(
+                                          calculateWorkoutSportSummaries(workout, iconType),
+                                          `day-${day.id}-wo-${workout.id}`
+                                        )}
+                                      </React.Fragment>
+                                    ))}
+                                  </div>
                                 )}
                             </div>
                               </div>
@@ -397,43 +390,12 @@ export default function WorkoutTreeView({
                         {isDayExpanded && workoutCount > 0 && (
                           <div style={{ backgroundColor: colors.pageBackground || '#f9fafb' }}>
                             {day.workouts.map((workout: any, workoutIndex: number) => {
-                              // Get unique sports from moveframes and calculate total distance/series per sport
-                              const sportData = new Map<string, { value: number; isSeriesBased: boolean }>();
-                              let totalMoveframes = 0;
-                              
-                              if (workout.moveframes) {
-                                workout.moveframes.forEach((mf: any) => {
-                                  if (mf.sport) {
-                                    const isSeriesBased = !['SWIM', 'BIKE', 'SPINNING', 'RUN', 'ROWING', 'SKATE', 'SKI', 'HIKING', 'WALKING'].includes(mf.sport);
-                                    
-                                    if (!sportData.has(mf.sport)) {
-                                      sportData.set(mf.sport, { value: 0, isSeriesBased });
-                                    }
-                                    
-                                    const data = sportData.get(mf.sport)!;
-                                    
-                                    if (isSeriesBased) {
-                                      // For NON-AEROBIC sports: count total series
-                                      if (mf.manualMode) {
-                                        // For manual input: use movelaps count as series
-                                        data.value += mf.movelaps?.length || 0;
-                                      } else {
-                                        // For standard mode: use movelaps count
-                                        data.value += mf.movelaps?.length || 0;
-                                      }
-                                    } else {
-                                      // For AEROBIC sports: sum distances from all movelaps
-                                      if (mf.movelaps) {
-                                        mf.movelaps.forEach((lap: any) => {
-                                          data.value += lap.distance || 0;
-                                        });
-                                      }
-                                    }
-                                  }
-                                });
-                                totalMoveframes = workout.moveframes.length;
-                              }
-                              
+                              const totalMoveframes = workout.moveframes?.length || 0;
+                              const workoutSportSummaries = calculateWorkoutSportSummaries(
+                                workout,
+                                iconType
+                              );
+
                               // Find main and secondary work descriptions per sport
                               const workDescriptions = new Map<string, { main: string | null; secondary: string | null }>();
                               if (workout.moveframes) {
@@ -475,20 +437,23 @@ export default function WorkoutTreeView({
                                       }}
                                     >
                                       {/* First Row - Workout Title and Sports */}
-                                      <div className="flex items-center justify-between w-full">
+                                      <div className="flex items-center justify-between w-full gap-3 flex-wrap">
                                         <div className="flex items-center gap-3">
                                           {isWorkoutExpanded ? (
                                             <ChevronDown className="w-4 h-4 flex-shrink-0" />
                                           ) : (
                                             <ChevronRight className="w-4 h-4 flex-shrink-0" />
                                           )}
-                                          <Dumbbell className="w-4 h-4" />
+                                          <Dumbbell className="w-4 h-4 flex-shrink-0" />
                                           <span className="font-semibold text-sm">Workout #{workoutIndex + 1}</span>
                                           <span className="text-xs opacity-70">
                                             ({totalMoveframes} moveframe{totalMoveframes !== 1 ? 's' : ''})
                                           </span>
                                         </div>
-                                        {/* Sport summaries now shown on day row - removed from here to avoid duplication */}
+                                        {renderSportSummaryChips(
+                                          workoutSportSummaries,
+                                          `workout-${workout.id}`
+                                        )}
                                       </div>
                                       
                                       {/* Second Row - Main and Secondary Work Descriptions */}
@@ -594,67 +559,20 @@ export default function WorkoutTreeView({
                                               </div>
                                             </button>
 
-                                            {/* Expanded Movelaps */}
-                                            {isMoveframeExpanded && moveframe.movelaps && moveframe.movelaps.length > 0 && (
-                                              <div>
-                                                {moveframe.movelaps.map((movelap: any, lapIndex: number) => {
-                                                  const isEvenLap = lapIndex % 2 === 0;
-                                                  // Check if sport is aerobic or not
-                                                  const AEROBIC_SPORTS = ['SWIM', 'BIKE', 'MTB', 'SPINNING', 'RUN', 'ROWING', 'CANOEING', 'KAYAKING', 'SKATE', 'SKI', 'SNOWBOARD', 'WALKING', 'HIKING'];
-                                                  const isAerobic = AEROBIC_SPORTS.includes(moveframe.sport);
-                                                  
-                                                  return (
-                                                    <div
-                                                      key={movelap.id}
-                                                      className="flex items-center gap-3 px-4 py-1.5 border-t text-xs hover:bg-opacity-80 transition-all cursor-default"
-                                                      style={{
-                                                        paddingLeft: '7rem', // Triple indent
-                                                        backgroundColor: isEvenLap ? colors.movelapHeader : colors.alternateRowMovelap,
-                                                        color: isEvenLap ? colors.movelapHeaderText : colors.alternateRowTextMovelap,
-                                                        borderTop: getBorderStyle('movelap') || '0.5px solid rgba(0,0,0,0.05)'
-                                                      }}
-                                                    >
-                                                      <span className="w-6 text-center font-medium text-gray-500">
-                                                        #{lapIndex + 1}
-                                                      </span>
-                                                      <span className="text-gray-700 font-medium">
-                                                        {isAerobic ? (
-                                                          <>
-                                                            {movelap.distance ? `${movelap.distance}m` : ''}
-                                                            {movelap.repetitions ? `${movelap.repetitions} reps` : ''}
-                                                          </>
-                                                        ) : (
-                                                          // For non-aerobic sports (body building, gymnastics, etc.), show exercise name
-                                                          <>
-                                                            {movelap.muscularSector && (
-                                                              <span className="text-purple-700">{movelap.muscularSector} - </span>
-                                                            )}
-                                                            {movelap.exercise || 'Exercise'}
-                                                          </>
-                                                        )}
-                                                      </span>
-                                                      {movelap.time && (
-                                                        <span className="text-gray-600">⏱️ {movelap.time}</span>
-                                                      )}
-                                                      {movelap.pause && (
-                                                        <span className="text-gray-600">⏸️ {movelap.pause}</span>
-                                                      )}
-                                                      {movelap.speed && (
-                                                        <span className="text-gray-600">🏃 {movelap.speed}</span>
-                                                      )}
-                                                      {!isAerobic && movelap.reps && (
-                                                        <span className="text-gray-700">📊 {movelap.reps} reps</span>
-                                                      )}
-                                                      {movelap.weight && (
-                                                        <span className="font-semibold" style={{ color: getSecondaryWorkColor() }}>💪 {movelap.weight}kg</span>
-                                                      )}
-                                                      {movelap.tools && (
-                                                        <span className="font-semibold" style={{ color: getToolsColor() }}>🔧 {movelap.tools}</span>
-                                                      )}
-                                                    </div>
-                                                  );
-                                                })}
-                                              </div>
+                                            {/* Expanded Movelaps — table layout */}
+                                            {isMoveframeExpanded && moveframe.movelaps?.length > 0 && (
+                                              <TreeMovelapList
+                                                moveframe={moveframe}
+                                                colors={{
+                                                  headerBg: colors.movelapHeader,
+                                                  headerText: colors.movelapHeaderText,
+                                                  rowBg: colors.movelapHeader,
+                                                  rowAltBg: colors.alternateRowMovelap,
+                                                  rowText: colors.movelapHeaderText,
+                                                  rowAltText: colors.alternateRowTextMovelap,
+                                                  border: getBorderStyle('movelap'),
+                                                }}
+                                              />
                                             )}
                                           </div>
                                         );

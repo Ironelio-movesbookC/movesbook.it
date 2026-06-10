@@ -172,11 +172,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // If no settings exist, create default settings with admin defaults
     if (!settings) {
-      // Load admin defaults for user's language (default to 'en')
       const userLanguage = 'en';
-      console.log(`No settings found for user ${dbUserId}, loading admin defaults for language: ${userLanguage}`);
 
       const [colorDefaults, toolsDefaults, favouritesDefaults] = await Promise.all([
         prisma.colorDefaults.findUnique({ where: { language: userLanguage } }),

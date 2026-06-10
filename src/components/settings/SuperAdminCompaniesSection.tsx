@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Image from 'next/image';
 import {
   Building2,
   Globe,
@@ -14,70 +13,13 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
+import { SUPPORTED_LANGUAGES, supportedLanguagesPeriodAdminOrder } from '@/constants/tools.constants';
+import { resolvePublicMediaUrl } from '@/lib/publicMediaUrl';
 
-export type SportMachineCompanyRow = {
-  id: string;
-  name: string;
-  logoUrl: string | null;
-  iconUrl: string | null;
-  country: string | null;
-  description: string | null;
-  url: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type DisplayMode = 'grid' | 'label';
-
-type Props = {
-  onNotify: (msg: { type: 'success' | 'error'; text: string }) => void;
-};
-
-function authHeaders(): HeadersInit {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
-  if (!token) return {};
-  return { Authorization: `Bearer ${token}` };
-}
-
-/**
- * Normalize stored asset paths for browser <img>.
- * Handles missing leading slash, Windows backslashes, and absolute filesystem-style paths that still contain `/uploads/`.
- */
-function mediaSrc(path: string | null | undefined): string | null {
-  if (!path?.trim()) return null;
-  let s = path.trim().replace(/\\/g, '/');
-  const lower = s.toLowerCase();
-  const uploadsMarker = '/uploads/';
-  const uIdx = lower.indexOf(uploadsMarker);
-  if (uIdx !== -1 && !/^https?:\/\//i.test(s)) {
-    s = s.slice(uIdx);
-  }
-  if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('blob:') || s.startsWith('data:')) {
-    return s;
-  }
-  return s.startsWith('/') ? s : `/${s}`;
-}
-
-/** Absolute URL in the browser so Label/Grid images are not broken by next/image constraints. */
-function companyImageSrc(path: string | null | undefined): string {
-  const n = mediaSrc(path);
-  if (!n) return '';
-  if (/^(https?:|blob:|data:)/i.test(n)) return n;
-  if (typeof window !== 'undefined') {
-    try {
-      return new URL(n.startsWith('/') ? n : `/${n}`, window.location.origin).href;
-    } catch {
-      return n;
-    }
-  }
-  return n;
-}
-
-const DESC_LANG_KEYS = ['en', 'fr', 'it', 'de', 'es', 'ru'] as const;
+const COMPANY_DESC_LANG_CODES = SUPPORTED_LANGUAGES.map((l) => l.code);
 
 function emptyDescMap(): Record<string, string> {
-  return Object.fromEntries(DESC_LANG_KEYS.map((k) => [k, '']));
+  return Object.fromEntries(COMPANY_DESC_LANG_CODES.map((k) => [k, '']));
 }
 
 function parseCompanyDescription(raw: string | null): Record<string, string> {
@@ -89,8 +31,7 @@ function parseCompanyDescription(raw: string | null): Record<string, string> {
       const j = JSON.parse(t) as Record<string, unknown>;
       if (j && typeof j === 'object') {
         const out = { ...blank };
-        for (const k of DESC_LANG_KEYS) {
-          const v = j[k];
+        for (const [k, v] of Object.entries(j)) {
           if (typeof v === 'string') out[k] = v;
         }
         return out;
@@ -116,11 +57,53 @@ function descriptionPreview(raw: string | null): string {
   const m = parseCompanyDescription(raw);
   const en = (m.en || '').trim();
   if (en) return en;
-  for (const k of DESC_LANG_KEYS) {
-    const v = (m[k] || '').trim();
+  for (const lang of SUPPORTED_LANGUAGES) {
+    const v = (m[lang.code] || '').trim();
     if (v) return v;
   }
   return '';
+}
+
+function CompanyMediaImage({
+  src,
+  alt,
+  className,
+}: {
+  src: string | null | undefined;
+  alt: string;
+  className?: string;
+}) {
+  const resolved = resolvePublicMediaUrl(src);
+  if (!resolved) return null;
+  return (
+    // Native img — next/image breaks blob previews and some /uploads paths.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={resolved} alt={alt} className={className} />
+  );
+}
+
+export type SportMachineCompanyRow = {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  iconUrl: string | null;
+  country: string | null;
+  description: string | null;
+  url: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type DisplayMode = 'grid' | 'label';
+
+type Props = {
+  onNotify: (msg: { type: 'success' | 'error'; text: string }) => void;
+};
+
+function authHeaders(): HeadersInit {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
 }
 
 export default function SuperAdminCompaniesSection({ onNotify }: Props) {
@@ -143,13 +126,7 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
   const [descByLang, setDescByLang] = useState<Record<string, string>>(() => emptyDescMap());
   const [activeDescLang, setActiveDescLang] = useState('en');
 
-  const descLanguages = useMemo(
-    () =>
-      SUPPORTED_LANGUAGES.filter((l: { code: string }) =>
-        (DESC_LANG_KEYS as readonly string[]).includes(l.code)
-      ),
-    []
-  );
+  const descLanguages = useMemo(() => supportedLanguagesPeriodAdminOrder(), []);
 
   useEffect(() => {
     if (!logoFile) {
@@ -339,8 +316,8 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
     }
   };
 
-  const logoPreviewResolved = mediaSrc(logoBlobUrl || logoUrl || undefined);
-  const iconPreviewResolved = mediaSrc(iconBlobUrl || iconUrl || undefined);
+  const logoPreviewSrc = logoBlobUrl || logoUrl;
+  const iconPreviewSrc = iconBlobUrl || iconUrl;
 
   return (
     <div className="space-y-6">
@@ -431,15 +408,12 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
                   onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
                 />
               </label>
-              {logoPreviewResolved && (
-                <div className="relative h-16 w-16 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white shrink-0">
-                  <Image
-                    src={companyImageSrc(logoPreviewResolved) ?? ''}
+              {logoPreviewSrc && (
+                <div className="h-16 w-16 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white shrink-0">
+                  <CompanyMediaImage
+                    src={logoPreviewSrc}
                     alt="Logo preview"
-                    fill
-                    className="object-cover"
-                    sizes="64px"
-                    unoptimized
+                    className="h-full w-full object-cover"
                   />
                 </div>
               )}
@@ -461,15 +435,12 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
                   onChange={(e) => setIconFile(e.target.files?.[0] || null)}
                 />
               </label>
-              {iconPreviewResolved && (
-                <div className="relative h-12 w-12 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white shrink-0">
-                  <Image
-                    src={companyImageSrc(iconPreviewResolved) ?? ''}
+              {iconPreviewSrc && (
+                <div className="h-12 w-12 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white shrink-0">
+                  <CompanyMediaImage
+                    src={iconPreviewSrc}
                     alt="Icon preview"
-                    fill
-                    className="object-contain p-1"
-                    sizes="48px"
-                    unoptimized
+                    className="h-full w-full object-contain p-1"
                   />
                 </div>
               )}
@@ -597,14 +568,11 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
                     <td className="p-3 font-medium text-gray-900 dark:text-white">{c.name}</td>
                     <td className="p-3">
                       {c.logoUrl ? (
-                        <div className="relative h-12 w-12 rounded-md overflow-hidden border border-gray-200 dark:border-gray-600">
-                          <Image
-                            src={companyImageSrc(c.logoUrl) ?? ''}
-                            alt=""
-                            fill
-                            className="object-cover"
-                            sizes="48px"
-                            unoptimized
+                        <div className="h-12 w-12 rounded-md overflow-hidden border border-gray-200 dark:border-gray-600">
+                          <CompanyMediaImage
+                            src={c.logoUrl}
+                            alt={`${c.name} logo`}
+                            className="h-full w-full object-cover"
                           />
                         </div>
                       ) : (
@@ -661,25 +629,19 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
               >
                 <div className="flex items-start gap-3">
                   {c.iconUrl ? (
-                    <div className="relative h-10 w-10 shrink-0 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white">
-                      <Image
-                        src={companyImageSrc(c.iconUrl) ?? ''}
-                        alt=""
-                        fill
-                        className="object-contain p-0.5"
-                        sizes="40px"
-                        unoptimized
+                    <div className="h-10 w-10 shrink-0 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-white">
+                      <CompanyMediaImage
+                        src={c.iconUrl}
+                        alt={`${c.name} icon`}
+                        className="h-full w-full object-contain p-0.5"
                       />
                     </div>
                   ) : c.logoUrl ? (
-                    <div className="relative h-10 w-10 shrink-0 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
-                      <Image
-                        src={companyImageSrc(c.logoUrl) ?? ''}
-                        alt=""
-                        fill
-                        className="object-cover"
-                        sizes="40px"
-                        unoptimized
+                    <div className="h-10 w-10 shrink-0 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
+                      <CompanyMediaImage
+                        src={c.logoUrl}
+                        alt={`${c.name} logo`}
+                        className="h-full w-full object-cover"
                       />
                     </div>
                   ) : (
@@ -695,14 +657,11 @@ export default function SuperAdminCompaniesSection({ onNotify }: Props) {
                   </div>
                 </div>
                 {c.logoUrl && (
-                  <div className="relative mx-auto h-32 w-full max-w-[10rem] rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40">
-                    <Image
-                      src={companyImageSrc(c.logoUrl) ?? ''}
-                      alt=""
-                      fill
-                      className="object-cover"
-                      sizes="160px"
-                      unoptimized
+                  <div className="mx-auto h-32 w-full max-w-[10rem] rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40">
+                    <CompanyMediaImage
+                      src={c.logoUrl}
+                      alt={`${c.name} logo`}
+                      className="h-full w-full object-cover"
                     />
                   </div>
                 )}

@@ -1,11 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { clearWeekWorkouts, copyWeekContentToTarget } from '@/lib/workoutWeekTransfer';
 
+const weekInclude = {
+  days: {
+    orderBy: { dayOfWeek: 'asc' as const },
+    include: {
+      workouts: {
+        orderBy: { sessionNumber: 'asc' as const },
+        include: {
+          sports: true,
+          moveframes: {
+            include: {
+              movelaps: true,
+            },
+          },
+        },
+      },
+    },
+  },
+};
 
 /**
  * POST /api/workouts/weeks/move
- * Move all workouts from source week to target week
+ * Move week content: copy to target (by dayOfWeek) then clear source week.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -15,18 +34,12 @@ export async function POST(req: NextRequest) {
     }
 
     const decoded = verifyToken(token);
-    if (!decoded || !decoded.userId) {
+    if (!decoded?.userId) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
     const body = await req.json();
     const { sourceWeekId, targetWeekId } = body;
-
-    console.log('🚚 [API] Move week request:', {
-      sourceWeekId,
-      targetWeekId,
-      userId: decoded.userId
-    });
 
     if (!sourceWeekId || !targetWeekId) {
       return NextResponse.json(
@@ -35,86 +48,54 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get source week with all workouts
-    const sourceWeek = await prisma.workoutWeek.findUnique({
-      where: { id: sourceWeekId },
-      include: {
-        workoutPlan: true,
-        days: {
-          include: {
-            workouts: {
-              orderBy: { sessionNumber: 'asc' }
-            }
-          },
-          orderBy: { date: 'asc' }
-        }
-      }
-    });
+    if (sourceWeekId === targetWeekId) {
+      return NextResponse.json(
+        { error: 'Cannot move a week onto itself' },
+        { status: 400 }
+      );
+    }
 
-    console.log('🔍 [API] Source week query result:', {
-      found: !!sourceWeek,
-      weekNumber: sourceWeek?.weekNumber,
-      planType: sourceWeek?.workoutPlan?.type,
-      daysCount: sourceWeek?.days?.length
+    const sourceWeek = await prisma.workoutWeek.findFirst({
+      where: {
+        id: sourceWeekId,
+        workoutPlan: { userId: decoded.userId },
+      },
+      include: weekInclude,
     });
 
     if (!sourceWeek) {
-      console.error('❌ [API] Source week not found:', sourceWeekId);
       return NextResponse.json({ error: 'Source week not found' }, { status: 404 });
     }
 
-    // Get target week
-    const targetWeek = await prisma.workoutWeek.findUnique({
-      where: { id: targetWeekId },
-      include: {
-        workoutPlan: true,
-        days: {
-          orderBy: { date: 'asc' }
-        }
-      }
-    });
-
-    console.log('🔍 [API] Target week query result:', {
-      found: !!targetWeek,
-      weekNumber: targetWeek?.weekNumber,
-      planType: targetWeek?.workoutPlan?.type,
-      daysCount: targetWeek?.days?.length
+    const targetWeek = await prisma.workoutWeek.findFirst({
+      where: {
+        id: targetWeekId,
+        workoutPlan: { userId: decoded.userId },
+      },
+      include: weekInclude,
     });
 
     if (!targetWeek) {
-      console.error('❌ [API] Target week not found:', targetWeekId);
       return NextResponse.json({ error: 'Target week not found' }, { status: 404 });
     }
 
-    // Delete existing workouts in target week
-    for (const day of targetWeek.days) {
-      await prisma.workoutSession.deleteMany({
-        where: { workoutDayId: day.id } // Changed from dayId to workoutDayId
-      });
-    }
-
-    // Move workouts from source to target by updating workoutDayId
-    for (let i = 0; i < sourceWeek.days.length; i++) {
-      const sourceDay = sourceWeek.days[i];
-      const targetDay = targetWeek.days[i];
-      
-      if (!targetDay) continue; // Skip if target week has fewer days
-
-      // Update all workouts to point to the target day
-      await prisma.workoutSession.updateMany({
-        where: { workoutDayId: sourceDay.id }, // Changed from dayId
-        data: { workoutDayId: targetDay.id } // Changed from dayId
-      });
-    }
-
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Week moved successfully' 
+    await prisma.$transaction(async (tx) => {
+      await clearWeekWorkouts(tx, targetWeek);
+      await copyWeekContentToTarget(tx, sourceWeek, targetWeek, decoded.userId);
+      await clearWeekWorkouts(tx, sourceWeek);
     });
-  } catch (error) {
+
+    return NextResponse.json({
+      success: true,
+      message: `Week ${sourceWeek.weekNumber} moved to week ${targetWeek.weekNumber}`,
+    });
+  } catch (error: unknown) {
     console.error('Error moving week:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      {
+        error: 'Failed to move week',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
       { status: 500 }
     );
   }

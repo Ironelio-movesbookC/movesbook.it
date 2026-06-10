@@ -15,9 +15,10 @@ const stripCircuitTags = (content: string | null | undefined): string => {
 interface WorkoutOverviewModalProps {
   workout: any;
   onClose: () => void;
+  onQuickTrainingEntry?: () => void;
 }
 
-export default function WorkoutOverviewModal({ workout, onClose }: WorkoutOverviewModalProps) {
+export default function WorkoutOverviewModal({ workout, onClose, onQuickTrainingEntry }: WorkoutOverviewModalProps) {
   const iconType = useSportIconType();
   const useImageIcons = isImageIcon(iconType);
   const [showMovelaps, setShowMovelaps] = React.useState(true);
@@ -117,6 +118,15 @@ export default function WorkoutOverviewModal({ workout, onClose }: WorkoutOvervi
             {workoutInfo.code && <p className="text-sm text-gray-600">Code: {workoutInfo.code}</p>}
           </div>
           <div className="flex items-center gap-2">
+            {onQuickTrainingEntry && (
+              <button
+                type="button"
+                onClick={onQuickTrainingEntry}
+                className="px-3 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition text-sm font-semibold"
+              >
+                Quick entry
+              </button>
+            )}
             <button onClick={handlePrint} className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 text-sm font-semibold" title="Print this workout">
               <Printer className="w-4 h-4" />Print
             </button>

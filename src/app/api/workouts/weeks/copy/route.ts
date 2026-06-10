@@ -4,6 +4,126 @@ import { verifyToken } from '@/lib/auth';
 
 const prisma = new PrismaClient();
 
+function planTypeToStorageZone(type: string): 'A' | 'B' | 'C' | 'D' {
+  if (type === 'TEMPLATE_WEEKS') return 'A';
+  if (type === 'YEARLY_PLAN') return 'B';
+  if (type === 'WORKOUTS_DONE') return 'C';
+  if (type === 'ARCHIVE') return 'D';
+  return 'B';
+}
+
+const dayIncludeTree = {
+  workouts: {
+    include: {
+      moveframes: {
+        include: {
+          movelaps: true,
+        },
+      },
+    },
+  },
+} as const;
+
+/** Yearly / Done weeks may be split across multiple DB week rows — merge all days for copy. */
+async function expandWeekWithAllPlanDays(week: {
+  id: string;
+  weekNumber: number;
+  workoutPlanId: string;
+  workoutPlan?: { type: string; id?: string } | null;
+  days: any[];
+}) {
+  const planType = week.workoutPlan?.type;
+  if (planType !== 'YEARLY_PLAN' && planType !== 'WORKOUTS_DONE') {
+    return week;
+  }
+
+  const planId = week.workoutPlanId || week.workoutPlan?.id;
+  if (!planId) return week;
+
+  const storageZone = planTypeToStorageZone(planType);
+  const allDays = await prisma.workoutDay.findMany({
+    where: {
+      weekNumber: week.weekNumber,
+      storageZone: storageZone as any,
+      workoutWeek: { workoutPlanId: planId },
+    },
+    include: dayIncludeTree,
+    orderBy: { dayOfWeek: 'asc' },
+  });
+
+  const byId = new Map<string, any>();
+  for (const day of allDays) {
+    if (day?.id) byId.set(day.id, day);
+  }
+
+  return {
+    ...week,
+    days: Array.from(byId.values()).sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    ),
+  };
+}
+
+function computeDayDateForWeek(
+  weekNumber: number,
+  dayOfWeek: number,
+  reference: { date: Date; dayOfWeek: number }
+): Date {
+  const weekStart = new Date(reference.date);
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - (reference.dayOfWeek - 1));
+  const dayDate = new Date(weekStart);
+  dayDate.setDate(weekStart.getDate() + (dayOfWeek - 1));
+  return dayDate;
+}
+
+async function ensureTargetDaySlot(
+  tx: any,
+  sourceDay: {
+    dayOfWeek: number;
+    weekNumber: number;
+    periodId: string;
+    storageZone: string;
+    date: Date;
+  },
+  targetWeek: { id: string; weekNumber: number; days: any[] },
+  userId: string,
+  targetStorageZone: 'A' | 'B' | 'C' | 'D'
+) {
+  const existing = targetWeek.days.find((d: any) => d.dayOfWeek === sourceDay.dayOfWeek);
+  if (existing) return existing;
+
+  const referenceDay =
+    targetWeek.days.find((d: any) => d.dayOfWeek === 1) ??
+    targetWeek.days[0] ??
+    sourceDay;
+
+  const dayDate = computeDayDateForWeek(
+    targetWeek.weekNumber,
+    sourceDay.dayOfWeek,
+    { date: new Date(referenceDay.date), dayOfWeek: referenceDay.dayOfWeek }
+  );
+
+  const created = await tx.workoutDay.create({
+    data: {
+      workoutWeekId: targetWeek.id,
+      userId,
+      dayOfWeek: sourceDay.dayOfWeek,
+      weekNumber: targetWeek.weekNumber,
+      date: dayDate,
+      periodId: sourceDay.periodId,
+      storageZone: targetStorageZone as any,
+      weather: '',
+      feelingStatus: '5',
+      notes: '',
+    },
+  });
+
+  targetWeek.days.push(created);
+  console.log(`✅ Recreated missing target day slot: week ${targetWeek.weekNumber} day ${sourceDay.dayOfWeek}`);
+  return created;
+}
+
 /**
  * POST /api/workouts/weeks/copy
  * Copy a week from one plan (template) to another plan (yearly plan)
@@ -78,7 +198,8 @@ export async function POST(req: NextRequest) {
                 }
               }
             }
-          }
+          },
+          workoutPlan: { select: { type: true, id: true } }
         }
       });
 
@@ -88,6 +209,8 @@ export async function POST(req: NextRequest) {
           { status: 404 }
         );
       }
+
+      sourceWeek = await expandWeekWithAllPlanDays(sourceWeek);
 
       targetWeek = await prisma.workoutWeek.findFirst({
         where: {
@@ -107,7 +230,8 @@ export async function POST(req: NextRequest) {
                 }
               }
             }
-          }
+          },
+          workoutPlan: { select: { type: true, id: true } }
         }
       });
 
@@ -117,6 +241,8 @@ export async function POST(req: NextRequest) {
           { status: 404 }
         );
       }
+
+      targetWeek = await expandWeekWithAllPlanDays(targetWeek);
 
       console.log(`📋 Copying from week ${sourceWeek.weekNumber} (${sourceWeek.days.length} days) to week ${targetWeek.weekNumber}`);
     } else {
@@ -234,6 +360,21 @@ export async function POST(req: NextRequest) {
     }
 
     // Use transaction to copy all data
+    let targetStorageZone: 'A' | 'B' | 'C' | 'D' = 'B';
+    if (targetWeek.workoutPlan?.type) {
+      targetStorageZone = planTypeToStorageZone(targetWeek.workoutPlan.type);
+    } else if (!useIdBased && targetSection) {
+      const targetType =
+        targetSection === 'B'
+          ? 'YEARLY_PLAN'
+          : targetSection === 'C'
+            ? 'WORKOUTS_DONE'
+            : targetSection === 'D'
+              ? 'ARCHIVE'
+              : 'TEMPLATE_WEEKS';
+      targetStorageZone = planTypeToStorageZone(targetType);
+    }
+
     await prisma.$transaction(async (tx) => {
       // Delete existing workouts in target week
       for (const day of targetWeek.days) {
@@ -257,12 +398,13 @@ export async function POST(req: NextRequest) {
 
       // Copy workouts from source to target
       for (const sourceDay of sourceWeek.days) {
-        // Find corresponding target day (by day of week)
-        const targetDay = targetWeek.days.find((d: any) => d.dayOfWeek === sourceDay.dayOfWeek);
-        if (!targetDay) {
-          console.warn(`⚠️ Target day not found for ${sourceDay.dayOfWeek}`);
-          continue;
-        }
+        const targetDay = await ensureTargetDaySlot(
+          tx,
+          sourceDay,
+          targetWeek,
+          decoded.userId,
+          targetStorageZone
+        );
 
         // Copy each workout
         for (const sourceWorkout of sourceDay.workouts) {

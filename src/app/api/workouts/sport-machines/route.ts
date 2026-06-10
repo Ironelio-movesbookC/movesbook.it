@@ -3,7 +3,12 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { resolveWorkoutDatabaseUserId } from '@/lib/workoutUserId';
-import { computeNameEnglish, stringifyRecord } from '@/lib/sportMachineHelpers';
+import {
+  computeNameEnglish,
+  stringifyRecord,
+  parseMachineRichSections,
+  stringifyMachineRichSections,
+} from '@/lib/sportMachineHelpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -103,6 +108,7 @@ export async function POST(request: NextRequest) {
       otherPictures,
       videoUrl,
       descriptionByLanguage,
+      richSectionsJson,
     } = body;
 
     if (!originalName || typeof originalName !== 'string' || !originalName.trim()) {
@@ -139,6 +145,11 @@ export async function POST(request: NextRequest) {
       ? otherPictures.filter((x: unknown) => typeof x === 'string' && x.trim())
       : [];
 
+    const richSections =
+      richSectionsJson !== undefined && typeof richSectionsJson === 'object'
+        ? stringifyMachineRichSections(richSectionsJson)
+        : null;
+
     let companyId: string | null =
       typeof sportMachineCompanyId === 'string' && sportMachineCompanyId
         ? sportMachineCompanyId
@@ -168,6 +179,7 @@ export async function POST(request: NextRequest) {
         otherPicturesJson: otherPics.length ? JSON.stringify(otherPics) : null,
         videoUrl: videoUrl?.trim() || null,
         descriptionByLanguage: stringifyRecord(descMap as Record<string, string>),
+        richSectionsJson: richSections,
       },
       include: { company: { select: { id: true, name: true, logoUrl: true } } },
     });

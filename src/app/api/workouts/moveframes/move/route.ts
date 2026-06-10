@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import {
+  missingMoveframeCopyMoveFields,
+  parseMoveframeCopyMoveBody,
+} from '@/lib/moveframeCopyMove';
 
 
 // POST /api/workouts/moveframes/move - Move a moveframe to another workout
@@ -19,30 +23,31 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
+      sourceMoveframeId,
+      targetWorkoutId,
+      position,
+      targetMoveframeId,
+    } = parseMoveframeCopyMoveBody(body ?? {});
+    const moveframeId = sourceMoveframeId;
+
+    console.log('📝 Moving moveframe:', {
       moveframeId,
       targetWorkoutId,
-      position = 'after',
-      targetMoveframeId
-    } = body;
-
-    console.log('📝 Moving moveframe:', { 
-      moveframeId, 
-      targetWorkoutId, 
-      position, 
-      targetMoveframeId 
+      position,
+      targetMoveframeId,
     });
 
-    // Validate required fields
-    if (!moveframeId || !targetWorkoutId) {
+    const missing = missingMoveframeCopyMoveFields({ sourceMoveframeId, targetWorkoutId });
+    if (missing.length > 0) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: `Missing required fields: ${missing.join(', ')}` },
         { status: 400 }
       );
     }
 
     // Get source moveframe
     const moveframe = await prisma.moveframe.findUnique({
-      where: { id: moveframeId },
+      where: { id: moveframeId! },
       include: {
         movelaps: true,
         section: true

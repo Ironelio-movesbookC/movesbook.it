@@ -48,8 +48,14 @@ interface SortableMoveframeRowProps {
   onAddMovelap?: (moveframe: any) => void;
   onAddMovelapAfter?: (movelap: any, index: number, moveframe: any, workout: any, day: any) => void;
   onAddMoveframeAfter?: (moveframe: any, index: number, workout: any, day: any) => void;
+  onCopyMoveframeToClipboard?: (moveframe: any) => void;
+  hasMoveframeClipboard?: boolean;
+  onPasteMoveframe?: (workout: any) => void;
   onCopyMoveframe?: (moveframe: any, workout: any, day: any) => void;
   onMoveMoveframe?: (moveframe: any, workout: any, day: any) => void;
+  hasMovelapClipboard?: boolean;
+  movelapClipboard?: any;
+  onCopyMovelapToClipboard?: (movelap: any) => void;
   onSetWorkType?: (moveframe: any) => void;
   onRefresh?: () => void;
   workout: any;
@@ -75,8 +81,14 @@ export default function SortableMoveframeRow({
   onAddMovelap,
   onAddMovelapAfter,
   onAddMoveframeAfter,
+  onCopyMoveframeToClipboard,
+  hasMoveframeClipboard = false,
+  onPasteMoveframe,
   onCopyMoveframe,
   onMoveMoveframe,
+  hasMovelapClipboard,
+  movelapClipboard,
+  onCopyMovelapToClipboard,
   onSetWorkType,
   onRefresh,
   workout,
@@ -1129,6 +1141,9 @@ export default function SortableMoveframeRow({
                 allMoveframes={workout?.moveframes || []}
                 onNavigateMoveframe={onNavigateToMoveframe}
                 onAnaerobicFastPlannerModalOpenChange={setHideFpSummaryWhileMovelapEdit}
+                hasMovelapClipboard={hasMovelapClipboard}
+                movelapClipboard={movelapClipboard}
+                onCopyMovelapToClipboard={onCopyMovelapToClipboard}
               />
             </div>
           </td>
@@ -1330,10 +1345,70 @@ export default function SortableMoveframeRow({
             borderRadius: '4px',
             boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
             zIndex: 9999999,
-            minWidth: '120px',
-            width: '120px'
+            minWidth: '200px',
+            width: '200px'
           }}
         >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopyMoveframeToClipboard?.(moveframe);
+              setShowOptionsDropdown(false);
+              setButtonRect(null);
+            }}
+            style={{
+              width: '100%',
+              padding: '8px 10px',
+              textAlign: 'left',
+              fontSize: '12px',
+              fontWeight: '500',
+              border: 'none',
+              borderBottom: '1px solid #e5e7eb',
+              backgroundColor: 'white',
+              cursor: 'pointer',
+              color: '#7e22ce',
+              transition: 'background-color 0.15s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3e8ff'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+          >
+            Copy moveframe in clipboard
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!hasMoveframeClipboard) return;
+              onPasteMoveframe?.(workout);
+              setShowOptionsDropdown(false);
+              setButtonRect(null);
+            }}
+            disabled={!hasMoveframeClipboard}
+            style={{
+              width: '100%',
+              padding: '8px 10px',
+              textAlign: 'left',
+              fontSize: '12px',
+              fontWeight: '500',
+              border: 'none',
+              borderBottom: '1px solid #e5e7eb',
+              backgroundColor: 'white',
+              cursor: hasMoveframeClipboard ? 'pointer' : 'not-allowed',
+              color: hasMoveframeClipboard ? '#047857' : '#9ca3af',
+              opacity: hasMoveframeClipboard ? 1 : 0.6,
+              transition: 'background-color 0.15s'
+            }}
+            onMouseEnter={(e) => {
+              if (hasMoveframeClipboard) e.currentTarget.style.backgroundColor = '#dcfce7';
+            }}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+            title={
+              hasMoveframeClipboard
+                ? 'Paste moveframe from clipboard into this workout'
+                : 'Copy a moveframe to clipboard first'
+            }
+          >
+            Paste
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -1347,7 +1422,7 @@ export default function SortableMoveframeRow({
               width: '100%',
               padding: '8px 10px',
               textAlign: 'left',
-              fontSize: '13px',
+              fontSize: '12px',
               fontWeight: '500',
               border: 'none',
               borderBottom: '1px solid #e5e7eb',
@@ -1359,7 +1434,7 @@ export default function SortableMoveframeRow({
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#dcfce7'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
           >
-            Copy
+            Copy to another workout…
           </button>
           <button
             onClick={(e) => {
@@ -1429,28 +1504,45 @@ export default function SortableMoveframeRow({
                   return;
                 }
 
-                const response = await fetch(`/api/workouts/moveframes/${moveframe.id}`, {
-                  method: 'PATCH',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                  },
-                  body: JSON.stringify({
-                    favourite: !moveframe.favourite
-                  })
-                });
+                if (!moveframe?.id) {
+                  alert('This moveframe cannot be saved — refresh the page and try again.');
+                  return;
+                }
+
+                const isFavourite = Boolean(moveframe.favourite);
+                const response = isFavourite
+                  ? await fetch(
+                      `/api/workouts/moveframes/favorites?moveframeId=${encodeURIComponent(moveframe.id)}`,
+                      {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${token}` },
+                      }
+                    )
+                  : await fetch('/api/workouts/moveframes/favorites', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                      },
+                      body: JSON.stringify({ moveframeId: moveframe.id }),
+                    });
 
                 if (response.ok) {
-                  alert(moveframe.favourite ? 'Removed from favorites!' : 'Saved to favorites!');
+                  moveframe.favourite = !isFavourite;
+                  alert(
+                    isFavourite
+                      ? 'Removed from favourites!'
+                      : 'Saved to favourites! Open Settings → Favourites → Moveframes to view it.'
+                  );
                   if (onRefresh) {
-                    onRefresh();
+                    await onRefresh();
                   }
                 } else {
                   const data = await response.json().catch(() => ({ error: 'Unknown error' }));
-                  alert(`Error: ${data.error || data.details || 'Failed to update favorite status'}`);
+                  alert(`Error: ${data.error || data.details || 'Failed to update favourite'}`);
                 }
               } catch (error: any) {
-                alert(`Failed to save to favorites: ${error.message}`);
+                alert(`Failed to save to favourites: ${error.message}`);
               } finally {
                 setShowOptionsDropdown(false);
                 setButtonRect(null);
