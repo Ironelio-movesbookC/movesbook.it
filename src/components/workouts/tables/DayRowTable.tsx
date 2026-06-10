@@ -12,14 +12,12 @@ import { useSportIconType } from '@/hooks/useSportIconType';
 import { useDropdownPosition } from '@/hooks/useDropdownPosition';
 import { calculateSportSummaries, type SportSummary } from '@/utils/workoutHelpers';
 import { isDistanceBasedSport } from '@/constants/moveframe.constants';
+import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
+import { movelapPauseFieldLabel } from '@/utils/restTypeDb';
 
-// Helper function to strip circuit metadata tags from content
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
-  return content
-    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
-    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
-    .trim();
+  return stripInternalWorkoutTags(content).trim();
 };
 
 interface DayRowTableProps {
@@ -305,8 +303,15 @@ export default function DayRowTable({
       )}
 
       {/* Workout Sessions - Show numbers with symbols for each workout + Day Description */}
+      {/* Sticky index must match DayTableView headers: A→6, B/C→8 (after dayname + match done), D→7 */}
       <td 
-        className={`border border-gray-200 px-1 py-2 text-center ${activeSection === 'A' ? 'sticky-col-6' : 'sticky-col-7'}`}
+        className={`border border-gray-200 px-1 py-2 text-center w-[120px] min-w-[120px] ${
+          activeSection === 'A'
+            ? 'sticky-col-6'
+            : activeSection === 'B' || activeSection === 'C'
+              ? 'sticky-col-8'
+              : 'sticky-col-7'
+        }`}
         style={{ backgroundColor: bgStyle }}
         onClick={(e) => e.stopPropagation()} // Prevent row click when clicking on workout numbers
       >
@@ -891,7 +896,11 @@ export default function DayRowTable({
                         {lap.time && <div>Time: <span className="font-semibold">{lap.time}</span></div>}
                         {lap.pace && <div>Pace: <span className="font-semibold">{lap.pace}</span></div>}
                         {lap.speed && <div>Speed: <span className="font-semibold">{lap.speed}</span></div>}
-                        {lap.pause && <div>Pause: <span className="font-semibold">{lap.pause}</span></div>}
+                        {lap.pause && (
+                          <div>
+                            {movelapPauseFieldLabel(lap.restType)}: <span className="font-semibold">{lap.pause}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

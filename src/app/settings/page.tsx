@@ -10,26 +10,61 @@ import ToolsSettings from '@/components/settings/ToolsSettings';
 import FavouritesSettings from '@/components/settings/FavouritesSettings';
 import MyBestSettings from '@/components/settings/MyBestSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
+import WorkoutsParametersSettings from '@/components/settings/WorkoutsParametersSettings';
 import { useAuth } from '@/hooks/useAuth';
+import {
+  isFullAdminPanelSession,
+  isStaffPanelSession,
+  readPanelSession,
+  staffHomePath,
+} from '@/lib/panelSession';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { 
   Palette,
   Settings as SettingsIcon,
+  Wrench,
+  SlidersHorizontal,
   Star,
   Trophy,
   Grid,
-  Save
+  Save,
 } from 'lucide-react';
 
-type SettingsSection = 'backgrounds' | 'tools' | 'favourites' | 'mybest' | 'grid';
+type SettingsSection =
+  | 'backgrounds'
+  | 'tools'
+  | 'technical'
+  | 'workoutParameters'
+  | 'favourites'
+  | 'mybest'
+  | 'grid';
 
 export default function SettingsPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const { t } = useLanguage();
   const [isAdmin, setIsAdmin] = useState(false);
-  const [activeSection, setActiveSection] = useState<SettingsSection>('backgrounds');
+  const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
+    if (typeof window === 'undefined') return 'grid';
+    const raw = localStorage.getItem('settings_active_section');
+    if (raw === 'periodization') {
+      localStorage.setItem('settings_active_section', 'tools');
+      localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
+      return 'tools';
+    }
+    const valid: SettingsSection[] = [
+      'backgrounds',
+      'tools',
+      'technical',
+      'workoutParameters',
+      'favourites',
+      'mybest',
+      'grid',
+    ];
+    return raw && valid.includes(raw as SettingsSection) ? (raw as SettingsSection) : 'grid';
+  });
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [queryParams, setQueryParams] = useState<URLSearchParams | null>(null);
 
   // Check for admin authentication and auto-cleanup invalid tokens
   useEffect(() => {
@@ -37,8 +72,13 @@ export default function SettingsPage() {
     const adminData = localStorage.getItem('adminUser');
     const adminToken = localStorage.getItem('adminToken');
     
-    if (adminData) {
-      // Check if token might be invalid (this is just a safety check)
+    const session = readPanelSession();
+    if (isStaffPanelSession(session) && session?.id) {
+      router.replace(staffHomePath(session.id));
+      return;
+    }
+
+    if (adminData && adminToken && isFullAdminPanelSession(session)) {
       try {
         JSON.parse(adminData);
         setIsAdmin(true);
@@ -61,18 +101,80 @@ export default function SettingsPage() {
     }
   }, [user, loading, isAdmin, router]);
 
+  useEffect(() => {
+    const updateParams = () => {
+      setQueryParams(new URLSearchParams(window.location.search));
+    };
+    updateParams();
+    window.addEventListener('popstate', updateParams);
+    return () => window.removeEventListener('popstate', updateParams);
+  }, []);
+
+  // Persist active section across refreshes
+  useEffect(() => {
+    localStorage.setItem('settings_active_section', activeSection);
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (!queryParams) return;
+    const sectionParam = queryParams.get('section');
+    if (!sectionParam) return;
+    if (sectionParam === 'periodization') {
+      setActiveSection('tools');
+      localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
+      return;
+    }
+    const allowedAdminSections: SettingsSection[] = [
+      'backgrounds',
+      'tools',
+      'technical',
+      'workoutParameters',
+      'favourites',
+      'grid',
+    ];
+    const allowedUserSections: SettingsSection[] = [
+      'backgrounds',
+      'tools',
+      'favourites',
+      'mybest',
+      'grid',
+    ];
+    const allowed = isAdmin ? allowedAdminSections : allowedUserSections;
+    if (allowed.includes(sectionParam as SettingsSection)) {
+      setActiveSection(sectionParam as SettingsSection);
+    }
+  }, [queryParams, isAdmin]);
+
   // Don't render if not authenticated
   if (loading || (!user && !isAdmin)) {
     return null;
   }
 
-  const settingsSections = [
-    { id: 'backgrounds' as SettingsSection, label: t('settings_backgrounds'), icon: Palette },
-    { id: 'tools' as SettingsSection, label: t('settings_tools'), icon: SettingsIcon },
-    { id: 'favourites' as SettingsSection, label: t('settings_favourites'), icon: Star },
-    { id: 'mybest' as SettingsSection, label: t('settings_my_best'), icon: Trophy },
-    { id: 'grid' as SettingsSection, label: t('settings_display_mode'), icon: Grid },
-  ];
+  const settingsSections = isAdmin
+    ? [
+        { id: 'grid' as SettingsSection, label: t('settings_display_mode'), icon: Grid },
+        { id: 'backgrounds' as SettingsSection, label: t('settings_backgrounds'), icon: Palette },
+        { id: 'tools' as SettingsSection, label: 'Tools Settings', icon: SettingsIcon },
+        { id: 'technical' as SettingsSection, label: 'Technical Settings', icon: Wrench },
+        { id: 'workoutParameters' as SettingsSection, label: 'Workouts parameters settings', icon: SlidersHorizontal },
+        { id: 'favourites' as SettingsSection, label: t('settings_favourites'), icon: Star },
+      ]
+    : [
+        { id: 'grid' as SettingsSection, label: t('settings_display_mode'), icon: Grid },
+        { id: 'backgrounds' as SettingsSection, label: t('settings_backgrounds'), icon: Palette },
+        { id: 'tools' as SettingsSection, label: t('settings_tools'), icon: SettingsIcon },
+        { id: 'favourites' as SettingsSection, label: t('settings_favourites'), icon: Star },
+        { id: 'mybest' as SettingsSection, label: t('settings_my_best'), icon: Trophy }
+      ];
+
+  const requestedTab = queryParams?.get('tab') || undefined;
+  const requestedWorkoutTabRaw = queryParams?.get('workoutTab');
+  const requestedWorkoutTab =
+    requestedWorkoutTabRaw === 'changesVolumesSeries' ||
+    requestedWorkoutTabRaw === 'parametersByObjective' ||
+    requestedWorkoutTabRaw === 'formulaParameters'
+      ? requestedWorkoutTabRaw
+      : undefined;
 
   const handleSaveAll = () => {
     // Save all settings logic
@@ -174,7 +276,9 @@ export default function SettingsPage() {
           <div className="flex-1 min-w-0">
             <div className="bg-white dark:bg-gray-800 rounded-2xl sm:rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6 lg:p-8 transition-colors">
             {activeSection === 'backgrounds' && <BackgroundsColorsSettings isAdmin={isAdmin} />}
-            {activeSection === 'tools' && <ToolsSettings isAdmin={isAdmin} userType={user?.userType} />}
+            {activeSection === 'tools' && <ToolsSettings isAdmin={isAdmin} userType={user?.userType} mode="tools" initialTab={requestedTab as any} />}
+            {activeSection === 'technical' && <ToolsSettings isAdmin={isAdmin} userType={user?.userType} mode="technical" initialTab={requestedTab as any} />}
+            {activeSection === 'workoutParameters' && <WorkoutsParametersSettings initialTab={requestedWorkoutTab} />}
             {activeSection === 'favourites' && <FavouritesSettings />}
               {activeSection === 'mybest' && <MyBestSettings />}
               {activeSection === 'grid' && <GridDisplaySettings />}

@@ -10,15 +10,13 @@ import { useSportIconType } from '@/hooks/useSportIconType';
 import { useColorSettings } from '@/hooks/useColorSettings';
 import { isSeriesBasedSport, getDistTimeColumnHeader, isDistanceBasedSport } from '@/constants/moveframe.constants';
 import { useDropdownPosition } from '@/hooks/useDropdownPosition';
+import { movelapPauseFieldLabel } from '@/utils/restTypeDb';
 import MoveframesSection from './MoveframesSection';
+import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
 
-// Helper function to strip circuit metadata tags from content
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
-  return content
-    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
-    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
-    .trim();
+  return stripInternalWorkoutTags(content).trim();
 };
 
 interface WorkoutTableProps {
@@ -460,6 +458,7 @@ export default function WorkoutTable({
             <input
               type="checkbox"
               className="w-4 h-4 cursor-pointer flex-shrink-0"
+              style={{ accentColor: '#111111' }}
               title="Select workout"
               onClick={(e) => e.stopPropagation()}
             />
@@ -469,7 +468,7 @@ export default function WorkoutTable({
               ref={setDragNodeRef}
               {...attributes}
               {...listeners}
-              className="cursor-move text-white hover:text-cyan-200 transition-colors inline-block flex-shrink-0"
+              className="cursor-move text-black hover:text-gray-700 transition-colors inline-block flex-shrink-0"
               title="Drag to move workout"
             >
               <GripVertical size={18} />
@@ -1355,7 +1354,11 @@ export default function WorkoutTable({
                         {lap.time && <div>Time: <span className="font-semibold">{lap.time}</span></div>}
                         {lap.pace && <div>Pace: <span className="font-semibold">{lap.pace}</span></div>}
                         {lap.speed && <div>Speed: <span className="font-semibold">{lap.speed}</span></div>}
-                        {lap.pause && <div>Pause: <span className="font-semibold">{lap.pause}</span></div>}
+                        {lap.pause && (
+                          <div>
+                            {movelapPauseFieldLabel(lap.restType)}: <span className="font-semibold">{lap.pause}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

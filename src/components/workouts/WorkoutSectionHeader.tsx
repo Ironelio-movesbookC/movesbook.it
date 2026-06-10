@@ -37,6 +37,7 @@ interface WorkoutSectionHeaderProps {
   onWeekIndexChange?: (index: number) => void; // For Section A week navigation
   onPrintWeek?: () => void; // For Section A/C print button
   onPlanGymWeek?: () => void; // Plan gym week – opens questions for Fast Plan (Archive / Yearly Plan)
+  onInsertActions?: () => void; // Yearly (B) / Done (C): day-level planned actions
 }
 
 export default function WorkoutSectionHeader({
@@ -69,7 +70,8 @@ export default function WorkoutSectionHeader({
   onNextPage,
   onWeekIndexChange,
   onPrintWeek,
-  onPlanGymWeek
+  onPlanGymWeek,
+  onInsertActions
 }: WorkoutSectionHeaderProps) {
   
   // Local state for plan descriptions
@@ -119,6 +121,7 @@ export default function WorkoutSectionHeader({
   const getSectionLabel = (section: SectionId): string => {
     switch (section) {
       case 'A': return 'A';
+      case 'W': return 'W';
       case 'B': return 'B';
       case 'C': return 'C';
       case 'D': return 'D';
@@ -130,6 +133,7 @@ export default function WorkoutSectionHeader({
   const getSectionTitle = (section: SectionId): string => {
     switch (section) {
       case 'A': return 'Create Template Plans';
+      case 'W': return 'Weekly workouts structures';
       case 'B': return 'Yearly Plan';
       case 'C': return 'Done';
       case 'D': return 'Archive';
@@ -139,26 +143,10 @@ export default function WorkoutSectionHeader({
   
   return (
     <>
-      {/* Top bar: Workout Management + Plan gym week + Close */}
+      {/* Top bar: Workout Management + Close */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Workout Management</h1>
         <div className="flex items-center gap-3">
-          {onPlanGymWeek && (
-            <button
-              onClick={onPlanGymWeek}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-all shadow-md"
-              title="Plan a routine to save in Archive or Yearly Plan"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-                <polyline points="10 9 9 9 8 9" />
-              </svg>
-              Plan gym week
-            </button>
-          )}
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors"
@@ -173,7 +161,7 @@ export default function WorkoutSectionHeader({
       <div className="bg-white border-b border-gray-300 px-2 py-2">
         <div className="flex items-center gap-2">
           {/* Section Tabs */}
-          {(['A', 'B', 'C', 'D'] as SectionId[]).map((section) => (
+          {(['B', 'C', 'D'] as SectionId[]).map((section) => (
             <button
               key={section}
               onClick={() => onSectionChange(section)}
@@ -183,7 +171,7 @@ export default function WorkoutSectionHeader({
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              {getSectionTitle(section)}
+              {section === 'D' ? 'Archive workouts & weekly plans' : getSectionTitle(section)}
             </button>
           ))}
         </div>
@@ -262,7 +250,11 @@ export default function WorkoutSectionHeader({
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <h2 className="text-xl font-bold">
-              {activeSection === 'A' ? `Weekly Plan ${activeSubSection}` : getSectionTitle(activeSection)}
+              {activeSection === 'A'
+                ? `Weekly Plan ${activeSubSection}`
+                : activeSection === 'W'
+                  ? 'Weekly workout structure'
+                  : getSectionTitle(activeSection)}
             </h2>
             
             {/* Colored Circle and Description for Weekly Plans (Section A subsections) */}
@@ -359,6 +351,20 @@ export default function WorkoutSectionHeader({
             {/* Buttons for Section B (Yearly Plan) - Right of Title */}
             {activeSection === 'B' && (
               <>
+                <button
+                  onClick={() => onSectionChange('A')}
+                  className="px-3 py-1.5 bg-gray-100 text-gray-800 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
+                  title="Open template plans"
+                >
+                  Create Template Plans
+                </button>
+                <button
+                  onClick={() => onSectionChange('W')}
+                  className="px-3 py-1.5 bg-gray-100 text-gray-800 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
+                  title="Open weekly workouts structures"
+                >
+                  Weekly workouts structures
+                </button>
                 {onCreatePlan && (
                   <button
                     onClick={onCreatePlan}
@@ -392,6 +398,44 @@ export default function WorkoutSectionHeader({
           </div>
           
           <div className="flex gap-2 items-center">
+            {activeSection === 'B' && (
+              <>
+                {onPlanGymWeek && (
+                  <button
+                    onClick={onPlanGymWeek}
+                    className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                    title="Plan a routine (Q1–Q4, save to Archive or Yearly Plan)"
+                  >
+                    <ClipboardList className="w-4 h-4" />
+                    Plan gym week
+                  </button>
+                )}
+                <button
+                  onClick={() => onSectionChange('A')}
+                  className="px-3 py-1.5 bg-gray-100 text-gray-800 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
+                  title="Open template plans"
+                >
+                  Create Template Plans
+                </button>
+                <button
+                  onClick={() => onSectionChange('W')}
+                  className="px-3 py-1.5 bg-gray-100 text-gray-800 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
+                  title="Open weekly workouts structures"
+                >
+                  Weekly workouts structures
+                </button>
+              </>
+            )}
+            {(activeSection === 'B' || activeSection === 'C') && onInsertActions && (
+              <button
+                type="button"
+                onClick={onInsertActions}
+                className="px-3 py-1.5 bg-indigo-600 text-white hover:bg-indigo-700 rounded text-sm font-medium transition-colors"
+                title="Plan actions on days (not moveframes)"
+              >
+                Insert actions
+              </button>
+            )}
             {/* Athlete Selector for Section C (Coaches/Teams/Clubs only) */}
             {activeSection === 'C' && userType && ['COACH', 'TEAM', 'CLUB', 'TEAM_MANAGER', 'CLUB_TRAINER'].includes(userType) && (
               <button 
@@ -401,51 +445,6 @@ export default function WorkoutSectionHeader({
                 <Plus className="w-4 h-4" />
                 {selectedAthlete ? `Viewing: ${selectedAthlete.name}` : 'Select Athlete'}
               </button>
-            )}
-            
-            {/* Save/Reset Buttons for Section B - Far Right */}
-            {activeSection === 'B' && (
-              <>
-                  <button
-                  onClick={async () => {
-                    try {
-                      const gridSettings = {
-                        savedAt: new Date().toISOString(),
-                        message: 'Grid settings saved successfully!'
-                      };
-                      localStorage.setItem('workoutGridSettings', JSON.stringify(gridSettings));
-                      alert('✅ Grid settings saved successfully!');
-                    } catch (error) {
-                      console.error('Error saving grid settings:', error);
-                      alert('❌ Failed to save grid settings');
-                    }
-                  }}
-                  className="px-3 py-1.5 bg-green-600 text-white hover:bg-green-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
-                  title="Save current grid settings"
-                  >
-                  <Download className="w-4 h-4" />
-                  Save Grid Settings
-                  </button>
-                  <button
-                  onClick={() => {
-                    if (confirm('Are you sure you want to reset grid settings to default?')) {
-                      try {
-                        localStorage.removeItem('workoutGridSettings');
-                        alert('✅ Grid settings reset to default!');
-                        window.location.reload();
-                      } catch (error) {
-                        console.error('Error resetting grid settings:', error);
-                        alert('❌ Failed to reset grid settings');
-                      }
-                    }
-                  }}
-                  className="px-3 py-1.5 bg-gray-600 text-white hover:bg-gray-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
-                  title="Reset grid settings to default"
-                  >
-                  <Calendar className="w-4 h-4" />
-                  Reset to Default
-                  </button>
-              </>
             )}
             
             {/* Import Button - Only for Section C (Done) */}
@@ -483,11 +482,9 @@ export default function WorkoutSectionHeader({
       {/* Section B - Second Row: Controls and Navigation */}
       {activeSection === 'B' && (
         <div className="bg-white px-4 py-3 border-b border-gray-200" style={{ position: 'relative', zIndex: 0 }}>
-          <div className="flex items-center justify-between gap-4">
-              {/* Left - Exclude checkbox, Display dropdown and navigation */}
+            <div className="flex items-center justify-between gap-4">
+              {/* Left - Display dropdown and navigation */}
               <div className="flex items-center gap-4">
-                {excludeStretchingCheckbox}
-                
                 <div className="flex items-center gap-3">
                   {viewMode !== 'calendar' && onWeeksPerPageChange && (
                     <div className="flex items-center gap-2" style={{ position: 'relative', zIndex: 0 }}>
@@ -582,19 +579,53 @@ export default function WorkoutSectionHeader({
                 <Calendar className="w-4 h-4" />
                 Calendar
               </button>
-              {onPlanGymWeek && (
-                <button
-                  onClick={onPlanGymWeek}
-                  className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-amber-500 text-white hover:bg-amber-600"
-                  title="Plan a routine (Q1–Q4, save to Archive or Yearly Plan)"
-                >
-                  <ClipboardList className="w-4 h-4" />
-                  Plan gym week
-                </button>
+              {/* Save/Reset Buttons for Section B - second controls row */}
+              {activeSection === 'B' && (
+                <>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const gridSettings = {
+                          savedAt: new Date().toISOString(),
+                          message: 'Grid settings saved successfully!'
+                        };
+                        localStorage.setItem('workoutGridSettings', JSON.stringify(gridSettings));
+                        alert('✅ Grid settings saved successfully!');
+                      } catch (error) {
+                        console.error('Error saving grid settings:', error);
+                        alert('❌ Failed to save grid settings');
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-green-600 text-white hover:bg-green-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
+                    title="Save current grid settings"
+                  >
+                    <Download className="w-4 h-4" />
+                    Save Grid Settings
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm('Are you sure you want to reset grid settings to default?')) {
+                        try {
+                          localStorage.removeItem('workoutGridSettings');
+                          alert('✅ Grid settings reset to default!');
+                          window.location.reload();
+                        } catch (error) {
+                          console.error('Error resetting grid settings:', error);
+                          alert('❌ Failed to reset grid settings');
+                        }
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-gray-600 text-white hover:bg-gray-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
+                    title="Reset grid settings to default"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    Reset to Default
+                  </button>
+                </>
               )}
           </div>
         </div>
-      </div>
+        </div>
       )}
 
       {/* Week Context Header - Show when viewing filtered weeks */}

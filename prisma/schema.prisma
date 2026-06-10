@@ -52,6 +52,9 @@ model User {
   profileBanner            String?   // Cover/banner image path (legacy single-user banner background)
   profileBannerAlignment   String?   // "center" | "default" — object-position for cover (legacy)
   profileBannerSequence    String?   @db.Text // JSON string[] of public image paths for rotating banner
+  profileBannerVideo       String?   // Uploaded cover video path (public URL under /uploads/...)
+  /// Personal YouTube URL (channel, @handle, or video) for "My channel on YouTube" on My Page.
+  youtubeChannelUrl        String?   @db.Text
   superAdminId             String?   @unique // When set, this User mirrors a super_admin for news/OGP attribution
   conversationsStarted    ChatConversation[] @relation("ConversationStarter")
   conversationsReceived   ChatConversation[] @relation("ConversationReceiver")
@@ -61,8 +64,56 @@ model User {
   ogpArticlesDeleted       OgpArticle[]       @relation("OgpDeletedBy")
   ogpArticleLikes          OgpArticleLike[]
   newsTypedArticles       NewsTypedArticle[]
+  plannedActionTemplates  PlannedActionTemplate[]
+  workoutDayPlannedActions WorkoutDayPlannedAction[]
+  sportMachines           SportMachine[]
+  loginLogs               UserLoginLog[]
+  nutritionDays           NutritionDay[]
+  nutritionPlans          NutritionPlan[]
+  nutritionSections       NutritionSection[]
+  favoriteNutritionMeals  FavoriteNutritionMeal[]
+  favoriteNutritionWeeklyPlans FavoriteNutritionWeeklyPlan[]
+  nutritionTemplates           NutritionTemplate[]
+  nutritionDayPlannedActions   NutritionDayPlannedAction[]
 
   @@map("users_new")
+}
+
+/// Login / logout audit rows for Movesbook users (admin "Logins about users").
+model UserLoginLog {
+  id        String    @id @default(cuid())
+  userId    String
+  loginAt   DateTime
+  logoutAt  DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, loginAt])
+  @@index([userId, logoutAt])
+  @@map("user_login_logs")
+}
+
+model MyDeskItem {
+  id          String      @id @default(cuid())
+  userId      String
+  parentId    String?
+  title       String
+  path        String?
+  faIconClass String?
+  bgColor     String?
+  titleColor  String?
+  displayMode String? // "new_label" | "central_page"
+  visible     Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  parent   MyDeskItem? @relation("MyDeskParentChild", fields: [parentId], references: [id], onDelete: Cascade)
+  children MyDeskItem[] @relation("MyDeskParentChild")
+
+  @@index([userId, parentId, sortOrder])
+  @@index([parentId])
+  @@map("my_desk_items")
 }
 
 model UserNewsTopic {
@@ -264,6 +315,7 @@ model WorkoutDay {
   user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   workoutWeek        WorkoutWeek      @relation(fields: [workoutWeekId], references: [id], onDelete: Cascade)
   workouts           WorkoutSession[]
+  plannedActions     WorkoutDayPlannedAction[]
 
   @@unique([userId, date, storageZone])
   @@index([userId, date])
@@ -273,17 +325,70 @@ model WorkoutDay {
   @@map("workout_days")
 }
 
+/// User-defined action types for Action settings (color, icon, per-language descriptions).
+model PlannedActionTemplate {
+  id                    String   @id @default(cuid())
+  userId                String
+  name                  String
+  nameByLanguage        String?  @db.Text
+  descriptionByLanguage String?  @db.Text
+  color                 String   @default("#6366f1")
+  icon                  String   @default("📌")
+  displayOrder          Int      @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instances             WorkoutDayPlannedAction[]
+  nutritionInstances    NutritionDayPlannedAction[]
+
+  @@index([userId])
+  @@map("planned_action_templates")
+}
+
+/// A planned action on a calendar day (Yearly Plan / Done), not a moveframe.
+model WorkoutDayPlannedAction {
+  id              String   @id @default(cuid())
+  workoutDayId    String
+  userId          String
+  templateId      String?
+  nameSnapshot    String
+  iconSnapshot    String?
+  colorSnapshot   String   @default("#6366f1")
+  description     String?  @db.Text
+  textColor       String?
+  backgroundColor String?
+  url             String?
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workoutDay WorkoutDay             @relation(fields: [workoutDayId], references: [id], onDelete: Cascade)
+  template   PlannedActionTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workoutDayId])
+  @@index([userId])
+  @@index([templateId])
+  @@map("workout_day_planned_actions")
+}
+
 model Period {
   id          String        @id @default(cuid())
   userId      String
   name        String
   description String
+  /// JSON map of language code → description (e.g. {"en":"...","it":"..."}). English mirrors `description`.
+  descriptionTranslations String? @db.Text
+  /// JSON map of language code → period name/title (e.g. {"en":"Base","it":"Base"}). English mirrors `name`.
+  nameTranslations String? @db.Text
   color       String
   displayOrder Int          @default(0) // Order for display in lists
   createdAt   DateTime      @default(now())
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  days        WorkoutDay[]
-  weeks       WorkoutWeek[] @relation("WeekPeriod")
+  days            WorkoutDay[]
+  weeks           WorkoutWeek[] @relation("WeekPeriod")
+  nutritionDays   NutritionDay[] @relation("NutritionDayPeriod")
+  nutritionWeeks  NutritionWeek[] @relation("NutritionWeekPeriod")
 
   @@index([userId], map: "periods_userId_fkey")
   @@map("periods")
@@ -369,6 +474,10 @@ model WorkoutSection {
   name        String
   code        String? // Short code (max 5 characters) for compact display
   description String
+  /// JSON map of language code → description. English mirrors `description`.
+  descriptionTranslations String? @db.Text
+  /// JSON map of language code → section name/title. English mirrors `name`.
+  nameTranslations String? @db.Text
   color       String
   displayOrder Int        @default(0) // Order for display in lists
   createdAt   DateTime    @default(now())
@@ -384,6 +493,10 @@ model ExecutionTechnique {
   userId      String
   name        String
   description String
+  /// JSON map of language code → description. English mirrors `description`.
+  descriptionTranslations String? @db.Text
+  /// JSON map of language code → technique name/title. English mirrors `name`.
+  nameTranslations String? @db.Text
   color       String
   sports      String   @default("") // Comma-separated list of sports that can use this technique
   displayOrder Int     @default(0) // Order for display in lists
@@ -428,6 +541,279 @@ model Movelap {
   @@map("movelaps")
 }
 
+// ==================== NUTRITION PLANNING (parallel to workouts) ====================
+
+model NutritionPlan {
+  id          String            @id @default(cuid())
+  userId      String
+  name        String
+  type        NutritionPlanType
+  storageZone String?
+  startDate   DateTime
+  endDate     DateTime
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weeks       NutritionWeek[]
+
+  @@index([userId], map: "nutrition_plans_userId_fkey")
+  @@map("nutrition_plans")
+}
+
+model NutritionWeek {
+  id              String         @id @default(cuid())
+  nutritionPlanId String
+  weekNumber      Int
+  createdAt       DateTime       @default(now())
+  periodId        String?
+  notes           String?
+  days            NutritionDay[]
+  period          Period?        @relation("NutritionWeekPeriod", fields: [periodId], references: [id])
+  nutritionPlan   NutritionPlan  @relation(fields: [nutritionPlanId], references: [id], onDelete: Cascade)
+
+  @@index([periodId], map: "nutrition_weeks_periodId_fkey")
+  @@index([nutritionPlanId], map: "nutrition_weeks_nutritionPlanId_fkey")
+  @@map("nutrition_weeks")
+}
+
+model NutritionDay {
+  id                 String                    @id @default(cuid())
+  nutritionWeekId    String
+  date               DateTime
+  weekNumber         Int
+  dayOfWeek          Int
+  periodId           String
+  weather            String?
+  feelingStatus      String?
+  notes              String?
+  createdAt          DateTime                  @default(now())
+  userId             String
+  assignedToUserId   String?
+  creatorRole        UserType?
+  isFromSharedSource Boolean                   @default(false)
+  originalSenderId   String?
+  storageZone        StorageZone               @default(B)
+  period             Period                    @relation("NutritionDayPeriod", fields: [periodId], references: [id], onDelete: Cascade)
+  user               User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nutritionWeek      NutritionWeek             @relation(fields: [nutritionWeekId], references: [id], onDelete: Cascade)
+  meals              NutritionMeal[]
+  plannedActions     NutritionDayPlannedAction[]
+
+  @@unique([userId, date, storageZone])
+  @@index([userId, date])
+  @@index([userId, storageZone, date])
+  @@index([periodId], map: "nutrition_days_periodId_fkey")
+  @@index([nutritionWeekId], map: "nutrition_days_nutritionWeekId_fkey")
+  @@map("nutrition_days")
+}
+
+model NutritionDayPlannedAction {
+  id              String   @id @default(cuid())
+  nutritionDayId  String
+  userId          String
+  templateId      String?
+  nameSnapshot    String
+  iconSnapshot    String?
+  colorSnapshot   String   @default("#6366f1")
+  description     String?  @db.Text
+  textColor       String?
+  backgroundColor String?
+  url             String?
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  nutritionDay NutritionDay             @relation(fields: [nutritionDayId], references: [id], onDelete: Cascade)
+  template     PlannedActionTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([nutritionDayId])
+  @@index([userId])
+  @@index([templateId])
+  @@map("nutrition_day_planned_actions")
+}
+
+model NutritionMeal {
+  id                String                   @id @default(cuid())
+  nutritionDayId    String
+  sessionNumber     Int
+  name              String
+  code              String
+  time              String
+  weather           String?
+  location          String?
+  surface           String?
+  heartRateMax      Int?
+  heartRateAvg      Int?
+  calories          Int?
+  feelingStatus     String?
+  notes             String?
+  status            NutritionMealStatus
+  createdAt         DateTime                 @default(now())
+  includeStretching Boolean                  @default(true)
+  mainSport         SportType?
+  mainGoal          String?
+  intensity         String?                  @default("Medium")
+  tags              String?
+  nutritionFoods    NutritionFood[]
+  sports            NutritionMealSport[]
+  nutritionDay      NutritionDay             @relation(fields: [nutritionDayId], references: [id], onDelete: Cascade)
+
+  @@index([nutritionDayId], map: "nutrition_meals_nutritionDayId_fkey")
+  @@map("nutrition_meals")
+}
+
+model NutritionMealSport {
+  id              String        @id @default(cuid())
+  nutritionMealId String
+  sport           SportType
+  nutritionMeal   NutritionMeal @relation(fields: [nutritionMealId], references: [id], onDelete: Cascade)
+
+  @@index([nutritionMealId], map: "nutrition_meal_sports_nutritionMealId_fkey")
+  @@map("nutrition_meal_sports")
+}
+
+model NutritionFood {
+  id                  String              @id @default(cuid())
+  nutritionMealId     String
+  letter              String
+  sport               SportType
+  sectionId           String
+  type                NutritionFoodType
+  description         String              @db.Text
+  createdAt           DateTime            @default(now())
+  notes               String?             @db.Text
+  macroFinal          String?
+  alarm               Int?
+  annotationBgColor   String?
+  annotationText      String?
+  annotationTextColor String?
+  annotationBold      Boolean?            @default(false)
+  workType            WorkType?           @default(NONE)
+  manualMode          Boolean?            @default(false)
+  manualPriority      Boolean?            @default(false)
+  favourite           Boolean?            @default(false)
+  repetitions         Int?
+  distance            Int?
+  manualInputType     String?             @default("meters")
+  appliedTechnique    String?
+  aerobicSeries       Int?                @default(1)
+  section             NutritionSection    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  nutritionMeal       NutritionMeal       @relation(fields: [nutritionMealId], references: [id], onDelete: Cascade)
+  nutritionComponents NutritionComponent[]
+
+  @@index([sectionId], map: "nutrition_foods_sectionId_fkey")
+  @@index([nutritionMealId], map: "nutrition_foods_nutritionMealId_fkey")
+  @@map("nutrition_foods")
+}
+
+model NutritionSection {
+  id                      String          @id @default(cuid())
+  userId                  String
+  name                    String
+  code                    String?
+  description             String
+  descriptionTranslations String?         @db.Text
+  nameTranslations        String?         @db.Text
+  color                   String
+  displayOrder            Int             @default(0)
+  createdAt               DateTime        @default(now())
+  nutritionFoods          NutritionFood[]
+  user                    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "nutrition_sections_userId_fkey")
+  @@map("nutrition_sections")
+}
+
+model NutritionComponent {
+  id               String                  @id @default(cuid())
+  nutritionFoodId  String
+  repetitionNumber Int
+  distance         Int?
+  speed            String?
+  style            String?
+  pace             String?
+  time             String?
+  rowPerMin        Int?
+  reps             Int?
+  restType         RestType?
+  pause            String?
+  alarm            Int?
+  sound            String?
+  notes            String?                 @db.Text
+  status           NutritionComponentStatus
+  isSkipped        Boolean                 @default(false)
+  isDisabled       Boolean                 @default(false)
+  isNewlyAdded     Boolean                 @default(false)
+  createdAt        DateTime                @default(now())
+  macroFinal       String?
+  r1               String?
+  r2               String?
+  exercise         String?
+  muscularSector   String?
+  weight           String?
+  tools            String?
+  nutritionFood    NutritionFood           @relation(fields: [nutritionFoodId], references: [id], onDelete: Cascade)
+
+  @@index([nutritionFoodId], map: "nutrition_components_nutritionFoodId_fkey")
+  @@map("nutrition_components")
+}
+
+model NutritionTemplate {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  description   String?
+  category      String?
+  tags          String?
+  templateType  String   @default("nutrition")
+  templateData  String   @db.Text
+  sports        String?
+  totalDistance Int?
+  totalDuration Int?
+  difficulty    String?
+  isPublic      Boolean  @default(false)
+  isShared      Boolean  @default(false)
+  timesUsed     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("nutrition_templates")
+}
+
+model FavoriteNutritionMeal {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  description   String?
+  mealData      String   @db.Text
+  sports        String?
+  totalDistance Int?
+  totalDuration Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("favorite_nutrition_meals")
+}
+
+model FavoriteNutritionWeeklyPlan {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  description   String?
+  planData      String   @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("favorite_nutrition_weekly_plans")
+}
+
 model UserSettings {
   id                     String    @id @default(cuid())
   userId                 String    @unique
@@ -461,11 +847,15 @@ model UserSettings {
   notificationSettings   String    @db.Text
   socialSettings         String    @db.Text
   sportIconType          String    @default("emoji")
-  toolsSettings          String    @db.Text
+  /// JSON: sports, equipment, exercises, pathology catalog, etc. — can exceed 64KB; use LongText
+  toolsSettings          String    @db.LongText
   workoutPreferences     String    @db.Text
+  nutritionPreferences   String?   @db.Text
   yearlyPlanStartDate    DateTime? // Start date for Section B (Yearly Plan)
   templateWeeksStartDate DateTime? // Start date for Section A (3 Weeks Plan)
   newsTopicOrder         String?   @db.Text // JSON array of topic names for user's favorite order
+  /// JSON: { "A"?: PlanPersist, "B"?: … } for Weekly workout structure tab (Plans A–E)
+  weeklyStructureV1      String?   @db.LongText
   user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_settings")
@@ -571,7 +961,7 @@ model CoachingGroup {
   id          String                @id @default(cuid())
   coachId     String
   name        String
-  description String?
+  description String?               @db.Text
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
   members     CoachingGroupMember[]
@@ -599,7 +989,7 @@ model Team {
   id          String       @id @default(cuid())
   adminId     String
   name        String
-  description String?
+  description String?      @db.Text
   sport       String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -626,15 +1016,17 @@ model TeamMember {
 }
 
 model Club {
-  id          String       @id @default(cuid())
-  adminId     String
-  name        String
-  description String?
-  location    String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  members     ClubMember[]
-  admin       User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
+  id                 String       @id @default(cuid())
+  adminId            String
+  name               String
+  description        String?      @db.Text
+  location           String?
+  /// Public club YouTube URL (channel, @handle, or video), set by club admin; shown to members.
+  youtubeChannelUrl  String?      @db.Text
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  members            ClubMember[]
+  admin              User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId], map: "clubs_new_adminId_fkey")
   @@map("clubs_new")
@@ -659,7 +1051,7 @@ model Group {
   id          String        @id @default(cuid())
   adminId     String
   name        String
-  description String?
+  description String?       @db.Text
   groupType   String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
@@ -694,8 +1086,23 @@ model SuperAdmin {
   lastLogin DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  loginLogs SuperAdminLoginLog[]
 
   @@map("super_admins")
+}
+
+/// Login / logout audit rows for super admins (admin "Logins about operators").
+model SuperAdminLoginLog {
+  id           String     @id @default(cuid())
+  superAdminId String
+  loginAt      DateTime
+  logoutAt     DateTime?
+  createdAt    DateTime   @default(now())
+  superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
+
+  @@index([superAdminId, loginAt])
+  @@index([superAdminId, logoutAt])
+  @@map("super_admin_login_logs")
 }
 
 model SuperAdminSettings {
@@ -706,6 +1113,149 @@ model SuperAdminSettings {
   updatedAt DateTime @updatedAt
 
   @@map("super_admin_settings")
+}
+
+/// Operator and Co-Admin accounts managed from the admin console (separate from `User` / `users_new`).
+model StaffAccount {
+  id                   String           @id @default(cuid())
+  kind                 StaffAccountKind
+  username             String           @unique
+  email                String           @unique
+  password                         String
+  /// Hashed temporary password others can use to access this account.
+  alternatePassword                String?
+  /// When true, alternate password is cleared after the delegate logs out.
+  alternatePasswordOneAccessOnly   Boolean          @default(false)
+  name                 String
+  surname              String
+  country              String?
+  operatorLanguage     String?
+  idCardCode           String?
+  commissionPct        String?
+  commissionAutoAssign Boolean          @default(false)
+  regions              String?
+  roleLabel            String?
+  alternateEmail       String?
+  phonePrefix          String?
+  phoneNumber          String?
+  cellularPrefix       String?
+  cellularNumber       String?
+  facebook             String?
+  twitter              String?
+  website              String?
+  blogsite             String?
+  otherSite            String?
+  otherInfos           String?          @db.LongText
+  imageUrl             String?          @db.LongText
+  lastLogin            DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  assignedUsers        StaffAssignedUser[]
+  loginLogs            StaffAccountLoginLog[]
+  coAdminLink          StaffOperatorCoAdminLink?  @relation("OperatorCoAdminLinkOperator")
+  operatorsAsCoAdmin   StaffOperatorCoAdminLink[] @relation("OperatorCoAdminLinkCoAdmin")
+
+  @@map("staff_accounts")
+}
+
+/// Links one co-admin to one operator (operator has at most one co-admin; co-admin may have many operators).
+model StaffOperatorCoAdminLink {
+  id         String   @id @default(cuid())
+  operatorId String   @unique
+  coAdminId  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  operator   StaffAccount @relation("OperatorCoAdminLinkOperator", fields: [operatorId], references: [id], onDelete: Cascade)
+  coAdmin    StaffAccount @relation("OperatorCoAdminLinkCoAdmin", fields: [coAdminId], references: [id], onDelete: Cascade)
+
+  @@index([coAdminId])
+  @@map("staff_operator_coadmin_links")
+}
+
+/// Login / logout audit rows for an operator or co-admin (admin "Logins" tab).
+model StaffAccountLoginLog {
+  id             String       @id @default(cuid())
+  staffAccountId String
+  loginAt        DateTime
+  logoutAt       DateTime?
+  createdAt      DateTime     @default(now())
+  staffAccount   StaffAccount @relation(fields: [staffAccountId], references: [id], onDelete: Cascade)
+
+  @@index([staffAccountId, loginAt])
+  @@index([staffAccountId, logoutAt])
+  @@map("staff_account_login_logs")
+}
+
+/// Users assigned to an operator or co-admin from the admin "My Customers" screen.
+model StaffAssignedUser {
+  id              String       @id @default(cuid())
+  staffAccountId  String
+  /// When set, row mirrors a Movesbook `users_new` account selected in the assign picker.
+  movesbookUserId String?
+  username        String
+  name            String
+  country         String?
+  language        String?
+  lastLogin       DateTime?
+  imageUrl        String?      @db.LongText
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  staffAccount    StaffAccount @relation(fields: [staffAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([staffAccountId, movesbookUserId])
+  @@index([staffAccountId])
+  @@index([movesbookUserId])
+  @@map("staff_assigned_users")
+}
+
+enum StaffAccountKind {
+  OPERATOR
+  CO_ADMIN
+}
+
+/// Manufacturers / brands that build sport and fitness machines (Super Admin catalog).
+model SportMachineCompany {
+  id          String   @id @default(cuid())
+  name        String
+  logoUrl     String?
+  iconUrl     String?
+  country     String?
+  description String?  @db.Text
+  url         String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  machines    SportMachine[]
+
+  @@map("sport_machine_companies")
+}
+
+/// User catalog of sport machines / instruments (Technical settings — Machines).
+model SportMachine {
+  id                      String   @id @default(cuid())
+  userId                  String
+  sportMachineCompanyId   String?
+  companyName             String
+  originalName            String
+  nameEnglish             String   @default("")
+  nameByLanguage          String?  @db.Text
+  mainArea                String
+  secondaryAreasJson      String?  @db.Text
+  code                    String
+  pictureAUrl             String?
+  pictureBUrl             String?
+  otherPicturesJson       String?  @db.Text
+  videoUrl                String?
+  descriptionByLanguage   String?  @db.Text
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  user    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company SportMachineCompany? @relation(fields: [sportMachineCompanyId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([sportMachineCompanyId])
+  @@index([companyName])
+  @@map("sport_machines")
 }
 
 model ColorDefaults {
@@ -778,6 +1328,37 @@ enum WorkoutPlanType {
   ARCHIVE // Section D: Archived workouts
 }
 
+enum NutritionPlanType {
+  TEMPLATE_WEEKS
+  CURRENT_WEEKS
+  YEARLY_PLAN
+  MEALS_DONE
+  ARCHIVE
+}
+
+enum NutritionMealStatus {
+  NOT_PLANNED
+  PLANNED_FUTURE
+  PLANNED_NEXT_WEEK
+  PLANNED_CURRENT_WEEK
+  DONE_DIFFERENTLY
+  DONE_LESS_75
+  DONE_MORE_75
+}
+
+enum NutritionFoodType {
+  STANDARD
+  BATTERY
+  ANNOTATION
+}
+
+enum NutritionComponentStatus {
+  PENDING
+  COMPLETED
+  SKIPPED
+  DISABLED
+}
+
 enum StorageZone {
   A
   B
@@ -810,6 +1391,7 @@ enum WorkType {
 enum RestType {
   SET_TIME
   RESTART_TIME
+  SET_METERS
   RESTART_PULSE
 }
 
@@ -1078,4 +1660,96 @@ model NewsSharePost {
   @@index([friendsUserId])
   @@index([shareOption])
   @@map("news_share_post")
+}
+
+// ─── Global food & recipe database (admin-managed, used by Diet Builder) ───
+
+model FoodDatabaseSection {
+  id               String              @id @default(cuid())
+  legacyId         Int?                @unique
+  name             String
+  nameTranslations String?             @db.Text
+  displayOrder     Int                 @default(0)
+  isActive         Boolean             @default(true)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  foods            FoodDatabaseItem[]
+  recipes          FoodDatabaseRecipe[]
+
+  @@map("food_database_sections")
+}
+
+model FoodDatabaseItem {
+  id               String              @id @default(cuid())
+  legacyId         Int?                @unique
+  sectionId        String
+  name             String
+  nameTranslations String?             @db.Text
+  isLiquid         Boolean             @default(false)
+  calories         Float               @default(0)
+  proteins         Float               @default(0)
+  carbohydrates    Float               @default(0)
+  fats             Float               @default(0)
+  fiber            Float               @default(0)
+  vitA             Float               @default(0)
+  vitC             Float               @default(0)
+  vitB1            Float               @default(0)
+  vitB2            Float               @default(0)
+  vitB6            Float               @default(0)
+  vitB12           Float               @default(0)
+  potassium        Float               @default(0)
+  sodium           Float               @default(0)
+  iron             Float               @default(0)
+  magnesium        Float               @default(0)
+  calcium          Float               @default(0)
+  zinc             Float               @default(0)
+  omega3           Float               @default(0)
+  imageUrl         String?
+  isActive         Boolean             @default(true)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  section          FoodDatabaseSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId])
+  @@index([name])
+  @@map("food_database_items")
+}
+
+model FoodDatabaseRecipe {
+  id               String              @id @default(cuid())
+  legacyId         Int?                @unique
+  sectionId        String
+  name             String
+  nameTranslations String?             @db.Text
+  description      String?             @db.Text
+  /** JSON map of language code → preparation steps */
+  preparationTranslations String?     @db.Text
+  /** JSON array: { foodItemId?, name, grams, nutrients? } */
+  componentsJson   String              @db.Text
+  calories         Float               @default(0)
+  proteins         Float               @default(0)
+  carbohydrates    Float               @default(0)
+  fats             Float               @default(0)
+  fiber            Float               @default(0)
+  vitA             Float               @default(0)
+  vitC             Float               @default(0)
+  vitB1            Float               @default(0)
+  vitB2            Float               @default(0)
+  vitB6            Float               @default(0)
+  vitB12           Float               @default(0)
+  potassium        Float               @default(0)
+  sodium           Float               @default(0)
+  iron             Float               @default(0)
+  magnesium        Float               @default(0)
+  calcium          Float               @default(0)
+  zinc             Float               @default(0)
+  omega3           Float               @default(0)
+  isActive         Boolean             @default(true)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  section          FoodDatabaseSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId])
+  @@index([name])
+  @@map("food_database_recipes")
 }

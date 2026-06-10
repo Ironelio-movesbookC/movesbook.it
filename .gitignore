@@ -1,4 +1,5 @@
 # Dependencies
+
 /node_modules
 /.pnp
 .pnp.js
@@ -17,6 +18,15 @@
 .DS_Store
 *.pem
 *.key
+
+# Club-uploaded outcome message audio (not committed)
+/public/outcome_messages/
+
+# Club-uploaded typology icons (not committed)
+/public/img/typology_image/
+
+# Club-uploaded typology audio (not committed)
+/public/subscription_file/playlist/
 
 # Debug
 npm-debug.log*
@@ -65,7 +75,15 @@ temp/
 tmp/
 *.tmp
 test-*.js
-*.env
+
+# Environment / secrets (never commit)
+.env
+.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
 *.md
 # Keep deployment and migration scripts
 !migrate-*.js
@@ -75,3 +93,7 @@ test-*.js
 !*-GUIDE.md
 !*-IMPLEMENTATION.md
 !*-COMPLETE.md
+temp_auto_push.bat
+temp_interactive_push.bat
+
+package-lock.json

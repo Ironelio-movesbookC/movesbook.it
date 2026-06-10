@@ -16,9 +16,20 @@ import NewsTopicSortModal from './components/NewsTopicSortModal';
 import OGPForm from './components/OGPForm';
 import NewsArticlesList from './components/NewsArticlesList';
 import NewsRightSidebar from './components/NewsRightSidebar';
+import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 
 export default function NewsPage() {
   const { user } = useAuth();
+  const {
+    showAdBanner,
+    showPersonalBanner,
+    showLeftSidebar,
+    showRightSidebar,
+    setShowAdBanner,
+    setShowPersonalBanner,
+    setShowLeftSidebar,
+    setShowRightSidebar,
+  } = useDisplayLayoutOptions();
   const {
     topics,
     customTopics,
@@ -38,12 +49,6 @@ export default function NewsPage() {
     addTypedArticle,
     removeTypedArticle,
   } = useNewsData();
-
-  const [showAdBanner, setShowAdBanner] = useState(true);
-  const [showPersonalBanner, setShowPersonalBanner] = useState(true);
-  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
-  const [showRightSidebar, setShowRightSidebar] = useState(true);
-  const [showToolbar, setShowToolbar] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showOgpForm, setShowOgpForm] = useState(false);
   const [activeTopic, setActiveTopic] = useState<NewsTopic | null>(null);
@@ -191,12 +196,10 @@ export default function NewsPage() {
         showPersonalBanner={showPersonalBanner}
         showLeftSidebar={showLeftSidebar}
         showRightSidebar={showRightSidebar}
-        showToolbar={showToolbar}
         onToggleAdBanner={setShowAdBanner}
         onTogglePersonalBanner={setShowPersonalBanner}
         onToggleLeftSidebar={setShowLeftSidebar}
         onToggleRightSidebar={setShowRightSidebar}
-        onToggleToolbar={setShowToolbar}
       />
 
       {showAdBanner && (
@@ -207,7 +210,7 @@ export default function NewsPage() {
 
       {showPersonalBanner && user && (
         <div className="mb-4 flex-shrink-0">
-          <PersonalBanner user={user} />
+          <PersonalBanner currentTab='my-entity' user={user} />
         </div>
       )}
 

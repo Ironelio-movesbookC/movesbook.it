@@ -161,7 +161,7 @@ export default function MoveframesSection({
   };
 
   // Default column order - matching original layout from screenshot
-  // ☑, ⋮⋮, #, MF, Color section, Name section, Moveframe description, Duration, Rip, Macro, Alarm & Sound, Options
+  // ☑, ⋮⋮, #, MF, Color section, Name section, Moveframe description, Duration, Rip, AvePause, Alarm & Sound, Options
   const defaultColumnOrder = ['checkbox', 'drag', 'expand', 'index', 'mf', 'color', 'section', 'description', 'duration', 'rip', 'macro', 'alarm', 'options', 'code_section', 'action', 'dist', 'style', 'speed', 'time', 'pace', 'rec', 'rest_to', 'aim_snd', 'sport', 'annotation', 'annotations'];
 
   // Column visibility helper
@@ -214,7 +214,7 @@ export default function MoveframesSection({
       description: <th key="description" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold" style={{ width: '623px' }}>Description</th>,
       duration: <th key="duration" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold" style={{ width: '42px' }}>Dur</th>,
       rip: <th key="rip" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold" style={{ width: '45px' }}>Rip\sets</th>,
-      macro: <th key="macro" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold" style={{ width: '32px' }}>Macro</th>,
+      macro: <th key="macro" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold" style={{ width: '32px' }}>AvePause</th>,
       alarm: <th key="alarm" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold" style={{ width: '42px' }}>Alarm</th>,
       annotation: <th key="annotation" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold" style={{ width: '50px' }}>Note</th>,
       options: <th key="options" className="border border-gray-200 px-1 py-1 text-center text-sm font-bold sticky-options-header bg-purple-300" style={{ width: '250px', minWidth: '250px' }}>Options</th>,
@@ -408,9 +408,9 @@ export default function MoveframesSection({
             strategy={verticalListSortingStrategy}
           >
             <div className="p-2">
-              <div className="overflow-x-auto overflow-y-visible table-scrollbar">
+              <div className="max-h-[min(60vh,720px)] overflow-auto table-scrollbar overscroll-contain">
                 <table className="text-xs bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: '1400px', width: '100%' }}>
-                  <thead className="bg-purple-300 text-purple-900">
+                  <thead className="sticky top-0 z-20 bg-purple-300 text-purple-900 shadow-sm">
                     <tr>
                       {orderedVisibleColumns.map(columnId => renderColumnHeader(columnId))}
                     </tr>

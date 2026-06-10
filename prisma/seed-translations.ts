@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+import { INFO_REPS_DEFAULT_EN, INFO_REPS_TRANSLATION_KEY } from '../src/constants/infoRepsLongText';
+import { AUTO_PROCESS_INFO_DEFAULT_EN, AUTO_PROCESS_INFO_KEY } from '../src/constants/autoProcessInfoLongText';
 
 const prisma = new PrismaClient();
 
@@ -376,15 +378,29 @@ const longTexts = [
       es: '¡Lleva Movesbook contigo dondequiera que vayas! Nuestras aplicaciones móviles para iOS y Android proporcionan acceso completo a tus entrenamientos, seguimiento de progreso y funciones de comunicación. El modo sin conexión te permite registrar entrenamientos sin conexión a internet, sincronizando automáticamente cuando estés en línea nuevamente. Recibe notificaciones push para recordatorios de entrenamiento y mensajes del entrenador.',
     }
   },
-  {
-    key: 'wearable_integration_info',
-    category: 'system',
-    values: {
-      en: 'Seamlessly integrate with popular fitness wearables and smartwatches. Automatically import workout data from Garmin, Fitbit, Apple Watch, Polar, and many more devices. Sync heart rate, distance, pace, and other metrics directly to your Movesbook profile. Compatible devices are continuously being added to support your favorite fitness technology.',
-      it: 'Integra senza problemi con indossabili fitness e smartwatch popolari. Importa automaticamente dati di allenamento da Garmin, Fitbit, Apple Watch, Polar e molti altri dispositivi. Sincronizza frequenza cardiaca, distanza, ritmo e altre metriche direttamente sul tuo profilo Movesbook. I dispositivi compatibili vengono continuamente aggiunti per supportare la tua tecnologia fitness preferita.',
-      es: 'Integra sin problemas con wearables de fitness populares y relojes inteligentes. Importa automáticamente datos de entrenamiento desde Garmin, Fitbit, Apple Watch, Polar y muchos más dispositivos. Sincroniza frecuencia cardíaca, distancia, ritmo y otras métricas directamente a tu perfil de Movesbook. Los dispositivos compatibles se agregan continuamente para admitir tu tecnología de fitness favorita.',
-    }
-  },
+    {
+      key: 'wearable_integration_info',
+      category: 'system',
+      values: {
+        en: 'Seamlessly integrate with popular fitness wearables and smartwatches. Automatically import workout data from Garmin, Fitbit, Apple Watch, Polar, and many more devices. Sync heart rate, distance, pace, and other metrics directly to your Movesbook profile. Compatible devices are continuously being added to support your favorite fitness technology.',
+        it: 'Integra senza problemi con indossabili fitness e smartwatch popolari. Importa automaticamente dati di allenamento da Garmin, Fitbit, Apple Watch, Polar e molti altri dispositivi. Sincronizza frequenza cardiaca, distanza, ritmo e altre metriche direttamente sul tuo profilo Movesbook. I dispositivi compatibili vengono continuamente aggiunti per supportare la tua tecnologia fitness preferita.',
+        es: 'Integra sin problemas con wearables de fitness populares y relojes inteligentes. Importa automáticamente datos de entrenamiento desde Garmin, Fitbit, Apple Watch, Polar y muchos más dispositivos. Sincroniza frecuencia cardíaca, distancia, ritmo y otras métricas directamente a tu perfil de Movesbook. Los dispositivos compatibles se agregan continuamente para admitir tu tecnología de fitness favorita.',
+      }
+    },
+    {
+      key: INFO_REPS_TRANSLATION_KEY,
+      category: 'social',
+      values: {
+        en: INFO_REPS_DEFAULT_EN,
+      },
+    },
+    {
+      key: AUTO_PROCESS_INFO_KEY,
+      category: 'management',
+      values: {
+        en: AUTO_PROCESS_INFO_DEFAULT_EN,
+      },
+    },
 ];
 
 async function main() {

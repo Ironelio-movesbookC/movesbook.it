@@ -1,13 +1,121 @@
 /**
  * Mock Exercise Database for Circuit Planner
  * 2026-01-22 11:45 UTC - Created temporary exercise database
- * This will be replaced with a real database in future tasks
+ *
+ * Interim only: thumbnails (`getMockExerciseThumbnail`, optional `picture`) simulate visuals until
+ * the Exercises Database Bank section wires real exercise records (images + metadata).
  */
 
 export interface MockExercise {
   id: string;
   name: string;
   sector: string;
+  /** Optional image URL (e.g. under `/public`). When set, Circuit Planner uses this instead of the generated thumbnail. */
+  picture?: string;
+  /** Full-size start position; falls back to `picture` then catalog thumbnail. */
+  pictureA?: string;
+  /** Full-size end position; falls back to `pictureA` / `picture` / thumbnail. */
+  pictureB?: string;
+}
+
+/** Normalize names from DB / UI (NBSP, duplicate spaces) for catalog matching. */
+export function normalizeCatalogExerciseName(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/\u00A0/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+function hashId(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (Math.imul(31, h) + id.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function escapeSvgText(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Deterministic SVG thumbnail for mock-catalog exercises (no extra asset files). */
+function mockExerciseSvgDataUrl(id: string, name: string): string {
+  const numMatch = name.match(/#(\d+)/);
+  const label = escapeSvgText(numMatch ? `#${numMatch[1]}` : name.slice(0, 8));
+  const hue = hashId(id) % 360;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+    <rect width="64" height="64" rx="10" fill="hsl(${hue} 42% 88%)" stroke="#86efac" stroke-width="2"/>
+    <text x="32" y="37" text-anchor="middle" font-size="13" font-family="system-ui,sans-serif" fill="#166534" font-weight="700">${label}</text>
+  </svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * Thumbnail for a selected exercise name when it exists in the mock catalog.
+ * Returns a data-URL SVG unless `picture` is set on the exercise record.
+ * Replace with bank lookup when Exercises Database Bank is integrated.
+ */
+export function getMockExerciseThumbnail(
+  exerciseName: string
+): { src: string; isDataUrl: boolean } | null {
+  const n = normalizeCatalogExerciseName(exerciseName);
+  if (!n) return null;
+  const ex = MOCK_EXERCISES.find(
+    (e) => e.name === n || normalizeCatalogExerciseName(e.name) === n
+  );
+  if (!ex) return null;
+  const pic = typeof ex.picture === 'string' ? ex.picture.trim() : '';
+  if (pic) return { src: pic, isDataUrl: pic.startsWith('data:') };
+  return { src: mockExerciseSvgDataUrl(ex.id, ex.name), isDataUrl: true };
+}
+
+/** Thumbnail + gallery images A/B for an exercise name (mock bank). */
+export function getExerciseMedia(exerciseName: string): {
+  thumb: { src: string; isDataUrl: boolean } | null;
+  pictureA: string | null;
+  pictureB: string | null;
+} | null {
+  const n = normalizeCatalogExerciseName(exerciseName);
+  if (!n) return null;
+  const ex = MOCK_EXERCISES.find(
+    (e) => e.name === n || normalizeCatalogExerciseName(e.name) === n
+  );
+  const thumb = getMockExerciseThumbnail(n);
+  if (!ex && !thumb) return null;
+  const tSrc = thumb?.src ?? null;
+  const pictureAUrl =
+    (typeof ex?.pictureA === 'string' && ex.pictureA.trim()) ||
+    (typeof ex?.picture === 'string' && ex.picture.trim()) ||
+    tSrc ||
+    null;
+  const pictureBUrl =
+    (typeof ex?.pictureB === 'string' && ex.pictureB.trim()) ||
+    (typeof ex?.picture === 'string' && ex.picture.trim()) ||
+    (typeof ex?.pictureA === 'string' && ex.pictureA.trim()) ||
+    tSrc ||
+    null;
+  return { thumb, pictureA: pictureAUrl, pictureB: pictureBUrl };
+}
+
+/**
+ * Picker / list rows: starting image (Picture A) when set on the exercise, else the same URL chain as
+ * `getExerciseMedia` (catalog `picture`, then generated thumb). Returns null if the name is unknown to the bank.
+ */
+export function getExercisePictureAThumbnailForDisplay(exerciseName: string): {
+  src: string;
+  isDataUrl: boolean;
+} | null {
+  const n = normalizeCatalogExerciseName(exerciseName);
+  if (!n) return null;
+  const media = getExerciseMedia(n);
+  if (!media) return null;
+  const src =
+    (media.pictureA && String(media.pictureA).trim()) ||
+    (media.thumb?.src && String(media.thumb.src).trim()) ||
+    null;
+  if (!src) return null;
+  const isDataUrl = src.startsWith('data:');
+  return { src, isDataUrl };
 }
 
 export const MOCK_EXERCISES: MockExercise[] = [
@@ -157,8 +265,14 @@ export const MOCK_EXERCISES: MockExercise[] = [
   { id: 'tibials_04', name: 'Exercise #04 Tibials', sector: 'Tibials' },
   { id: 'tibials_05', name: 'Exercise #05 Tibials', sector: 'Tibials' },
   
-  // Lats - 5 exercises
-  { id: 'lats_01', name: 'Exercise #01 Lats', sector: 'Lats' },
+  // Lats - 5 exercises (sample A/B stills — replace when Exercise Bank provides assets)
+  {
+    id: 'lats_01',
+    name: 'Exercise #01 Lats',
+    sector: 'Lats',
+    pictureA: '/muscular/Lats.png',
+    pictureB: '/muscular/Lats.png',
+  },
   { id: 'lats_02', name: 'Exercise #02 Lats', sector: 'Lats' },
   { id: 'lats_03', name: 'Exercise #03 Lats', sector: 'Lats' },
   { id: 'lats_04', name: 'Exercise #04 Lats', sector: 'Lats' },
@@ -194,7 +308,11 @@ export const MUSCULAR_SECTORS = [
  * Get exercises for a specific muscular sector
  */
 export function getExercisesBySector(sector: string): MockExercise[] {
-  return MOCK_EXERCISES.filter(ex => ex.sector === sector);
+  const s = normalizeCatalogExerciseName(sector);
+  if (!s) return [];
+  return MOCK_EXERCISES.filter(
+    (ex) => ex.sector === s || normalizeCatalogExerciseName(ex.sector) === s
+  );
 }
 
 /**

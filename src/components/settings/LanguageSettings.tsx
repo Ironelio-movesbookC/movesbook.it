@@ -22,6 +22,7 @@ import {
   filterByCategory,
   filterBySearch
 } from '@/constants/language.constants';
+import { getJsonAuthHeaders } from '@/utils/auth.utils';
 
 export default function LanguageSettings() {
   // Use custom hooks for data and logic management
@@ -395,9 +396,9 @@ export default function LanguageSettings() {
     setIsTranslating(true);
     
     try {
-      // Get all active language codes except English
+      // Translate to ALL supported languages (except English), not only active ones.
       const targetLanguages = languages
-        .filter(l => l.isActive && l.code !== 'en')
+        .filter(l => l.code !== 'en')
         .map(l => l.code);
 
       console.log('🌍 Target languages:', targetLanguages.join(', '));
@@ -415,6 +416,7 @@ export default function LanguageSettings() {
       
       const response = await fetch('/api/translate', {
         method: 'POST',
+        cache: 'no-store',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -437,27 +439,63 @@ export default function LanguageSettings() {
       console.log('📦 Translation data received:', data);
 
       if (data.translations) {
-        const receivedLanguages = Object.keys(data.translations).filter(k => k !== 'en');
+        const trans = data.translations as Record<string, unknown>;
+        const receivedLanguages = Object.keys(trans).filter(
+          (k) => k !== 'en' && typeof trans[k] === 'string' && (trans[k] as string).trim() !== ''
+        );
         console.log(`✅ Received translations for ${receivedLanguages.length} languages:`, receivedLanguages.join(', '));
         
         // Check for incomplete translations
-        const missingLanguages = targetLanguages.filter(lang => !data.translations[lang]);
+        const missingLanguages = targetLanguages.filter((lang) => {
+          const v = trans[lang];
+          return typeof v !== 'string' || v.trim() === '';
+        });
         if (missingLanguages.length > 0) {
           console.warn('⚠️  Missing translations for:', missingLanguages.join(', '));
         }
         
-        // Update translations state with new translations
-        const updatedTranslations = {
-          ...translations,
-          en: englishText,  // Keep English
-          ...data.translations  // Add all translated languages
-        };
+        // Update translations safely and keep prior values for any language not returned.
+        const updatedTranslations: Record<string, string> = { ...translations, en: englishText };
+        targetLanguages.forEach((lang) => {
+          const incoming = trans[lang];
+          if (typeof incoming === 'string' && incoming.trim() !== '') {
+            updatedTranslations[lang] = incoming;
+          } else if (!updatedTranslations[lang]) {
+            updatedTranslations[lang] = '';
+          }
+        });
         
         console.log('💾 Updated translations:', updatedTranslations);
         console.log('======= TRANSLATION COMPLETE =======\n');
         
         setTranslations(updatedTranslations);
         setShowAllLanguages(true);
+
+        // Persist immediately so translated values are not lost before manual Save.
+        if (currentKey?.key) {
+          const persistRes = await fetch('/api/admin/translations/update', {
+            method: 'POST',
+            headers: getJsonAuthHeaders(),
+            body: JSON.stringify({
+              key: variableName || currentKey.key,
+              translations: updatedTranslations,
+              category: currentKey.category || 'general',
+            }),
+          });
+          if (!persistRes.ok) {
+            console.warn('Auto-save after translation failed; user can still press Save manually.');
+          } else {
+            loadStaticTranslations();
+          }
+        }
+
+        if (missingLanguages.length > 0) {
+          alert(
+            `⚠️ Translation completed with partial results.\n\n` +
+            `Missing languages: ${missingLanguages.join(', ')}\n` +
+            `You can fill them manually and then Save.`
+          );
+        }
         
         // Show brief success notification
         console.log(`🎉 SUCCESS: Translated to ${receivedLanguages.length}/${targetLanguages.length} languages in ${duration}s`);
@@ -1853,7 +1891,7 @@ export default function LanguageSettings() {
                       value={englishText}
                       onChange={(newValue) => {
                         setEnglishText(newValue);
-                        setTranslations({ ...translations, en: newValue });
+                        setTranslations((prev) => ({ ...prev, en: newValue }));
                       }}
                       placeholder="Type your English text here..."
                       minHeight="200px"
@@ -1898,7 +1936,7 @@ export default function LanguageSettings() {
                         </p>
                       </div>
                       
-                      {languages.filter(l => l.isActive && l.code !== 'en').map((lang) => (
+                      {languages.filter(l => l.code !== 'en').map((lang) => (
                         <div key={lang.code} className="border border-gray-200 rounded-lg overflow-hidden">
                           <div className="bg-gradient-to-r from-gray-100 to-gray-200 px-6 py-3 flex items-center gap-3 border-b">
                             <div className="w-6 h-6 rounded overflow-hidden relative">
@@ -1919,7 +1957,9 @@ export default function LanguageSettings() {
                           <div className="p-4 bg-white">
                             <RichTextEditor
                               value={translations[lang.code] || ''}
-                              onChange={(newValue) => setTranslations({ ...translations, [lang.code]: newValue })}
+                              onChange={(newValue) =>
+                                setTranslations((prev) => ({ ...prev, [lang.code]: newValue }))
+                              }
                               placeholder={`${lang.name} translation...`}
                               minHeight="150px"
                               language={lang.name}
@@ -1982,30 +2022,34 @@ export default function LanguageSettings() {
                 <h4 className="font-semibold text-gray-900">
                   {isLongTextModal ? 'Long Text Translations' : 'Translations'}
                 </h4>
-                {languages.filter(l => l.isActive).map((lang) => (
+                {languages.map((lang) => (
                   <div key={lang.code}>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       {lang.name} ({lang.nativeName})
                     </label>
                     {isLongTextModal ? (
-                      <textarea
+                      <RichTextEditor
                         value={newKeyTranslations[lang.code] || ''}
-                        onChange={(e) => setNewKeyTranslations({ 
-                          ...newKeyTranslations, 
-                          [lang.code]: e.target.value 
-                        })}
+                        onChange={(newValue) =>
+                          setNewKeyTranslations((prev) => ({
+                            ...prev,
+                            [lang.code]: newValue,
+                          }))
+                        }
                         placeholder={`Enter ${lang.name} long text translation...`}
-                        rows={4}
-                        className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 resize-y"
+                        minHeight={lang.code === 'en' ? '220px' : '160px'}
+                        language={lang.name}
                       />
                     ) : (
                       <input
                         type="text"
                         value={newKeyTranslations[lang.code] || ''}
-                        onChange={(e) => setNewKeyTranslations({ 
-                          ...newKeyTranslations, 
-                          [lang.code]: e.target.value 
-                        })}
+                        onChange={(e) =>
+                          setNewKeyTranslations((prev) => ({
+                            ...prev,
+                            [lang.code]: e.target.value,
+                          }))
+                        }
                         placeholder={`Enter ${lang.name} translation...`}
                         className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                       />

@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
+import { prisma, prismaConnect, resetPrismaClient } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { resolveWorkoutDatabaseUserId } from '@/lib/workoutUserId';
+import { YOUTUBE_CHANNEL_URL_KEY } from '@/utils/youtubeChannelUrl';
+
+function isPrismaEngineTransportError(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientUnknownRequestError)) return false;
+  const msg = error.message;
+  return msg.includes('Engine was empty') || msg.includes('Engine is not yet connected');
+}
+
+/** MySQL 1054 — column exists in Prisma schema but DB not migrated yet */
+function isUnknownColumnError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg.includes('1054') || msg.includes('Unknown column');
+}
 
 // Helper function to safely parse JSON with fallback
 function safeJsonParse(jsonString: string | null, defaultValue: any = {}) {
@@ -15,6 +30,24 @@ function safeJsonParse(jsonString: string | null, defaultValue: any = {}) {
     });
     return defaultValue;
   }
+}
+
+async function getUserYoutubeChannelUrl(userId: string): Promise<string | null> {
+  const rows = await prisma.$queryRaw<{ youtubeChannelUrl: string | null }[]>`
+    SELECT youtubeChannelUrl
+    FROM users_new
+    WHERE id = ${userId}
+    LIMIT 1
+  `;
+  return rows[0]?.youtubeChannelUrl ?? null;
+}
+
+async function setUserYoutubeChannelUrl(userId: string, value: string | null): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE users_new
+    SET youtubeChannelUrl = ${value}
+    WHERE id = ${userId}
+  `;
 }
 
 // GET - Fetch user settings (with safe JSON parsing and auto-recovery)
@@ -94,45 +127,56 @@ export async function GET(request: NextRequest) {
         imageQuality: 'high',
         lazyLoading: true,
         dashboardLayout: 'default',
-        language: 'en'
+        language: 'en',
+        weeklyStructureV1: null,
+        youtubeChannelUrl: null
       });
     }
 
-    // Verify user exists in database
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true }
-    });
+    await prismaConnect();
 
-    if (!user) {
-      console.error(`❌ User ${userId} not found in database`);
+    const dbUserId = await resolveWorkoutDatabaseUserId(userId);
+    if (!dbUserId) {
+      console.error(`❌ No User row for token userId ${userId}`);
       return NextResponse.json({ error: 'User not found' }, { status: 401 });
     }
 
     let settings;
     try {
       settings = await prisma.userSettings.findUnique({
-        where: { userId }
+        where: { userId: dbUserId }
       });
     } catch (dbError) {
-      console.error('❌ Database error reading settings (likely corrupted JSON), will recreate:', dbError);
-      // Delete corrupted settings
-      try {
-        await prisma.userSettings.deleteMany({
-          where: { userId }
-        });
-        console.log('🔧 Deleted corrupted settings');
-      } catch (deleteError) {
-        console.error('Error deleting corrupted settings:', deleteError);
+      if (isPrismaEngineTransportError(dbError)) {
+        console.warn('⚠️ Prisma engine failed while reading settings; resetting client and retrying once');
+        await resetPrismaClient();
+        await prismaConnect();
+        try {
+          settings = await prisma.userSettings.findUnique({
+            where: { userId: dbUserId }
+          });
+        } catch {
+          settings = null;
+        }
+      } else {
+        console.error('❌ Database error reading settings (will try to recreate):', dbError);
+        try {
+          await prisma.userSettings.deleteMany({
+            where: { userId: dbUserId }
+          });
+          console.log('🔧 Deleted settings row after read error');
+        } catch (deleteError) {
+          console.error('Error deleting settings:', deleteError);
+        }
+        settings = null;
       }
-      settings = null; // Will trigger recreation below
     }
 
     // If no settings exist, create default settings with admin defaults
     if (!settings) {
       // Load admin defaults for user's language (default to 'en')
       const userLanguage = 'en';
-      console.log(`No settings found for user ${userId}, loading admin defaults for language: ${userLanguage}`);
+      console.log(`No settings found for user ${dbUserId}, loading admin defaults for language: ${userLanguage}`);
 
       const [colorDefaults, toolsDefaults, favouritesDefaults] = await Promise.all([
         prisma.colorDefaults.findUnique({ where: { language: userLanguage } }),
@@ -142,7 +186,7 @@ export async function GET(request: NextRequest) {
 
       settings = await prisma.userSettings.create({
         data: {
-          userId,
+          userId: dbUserId,
           // JSON Settings loaded from admin defaults
           colorSettings: colorDefaults?.data ? JSON.stringify(colorDefaults.data) : '{}',
           toolsSettings: toolsDefaults?.data ? JSON.stringify(toolsDefaults.data) : '{}',
@@ -211,10 +255,25 @@ export async function GET(request: NextRequest) {
       adminSettings: safeJsonParse(settings.adminSettings, {}, 'adminSettings'),
       workoutPreferences: safeJsonParse(settings.workoutPreferences, {}, 'workoutPreferences'),
       socialSettings: safeJsonParse(settings.socialSettings, {}, 'socialSettings'),
-      notificationSettings: safeJsonParse(settings.notificationSettings, {}, 'notificationSettings')
+      notificationSettings: safeJsonParse(settings.notificationSettings, {}, 'notificationSettings'),
+      weeklyStructureV1:
+        settings.weeklyStructureV1?.trim?.()
+          ? safeJsonParse(settings.weeklyStructureV1, null, 'weeklyStructureV1')
+          : null
     };
 
-    return NextResponse.json(response);
+    const fromUser = (await getUserYoutubeChannelUrl(dbUserId))?.trim() || '';
+    const socialObj = response.socialSettings as Record<string, unknown> | null;
+    const legacy =
+      socialObj &&
+      typeof socialObj[YOUTUBE_CHANNEL_URL_KEY] === 'string' &&
+      String(socialObj[YOUTUBE_CHANNEL_URL_KEY]).trim()
+        ? String(socialObj[YOUTUBE_CHANNEL_URL_KEY]).trim()
+        : '';
+    return NextResponse.json({
+      ...response,
+      youtubeChannelUrl: fromUser || legacy || null
+    });
   } catch (error) {
     console.error('❌ Error fetching settings:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -255,7 +314,25 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    await prismaConnect();
+
+    const dbUserId = await resolveWorkoutDatabaseUserId(userId);
+    if (!dbUserId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
+
     const body = await request.json();
+
+    if (Object.prototype.hasOwnProperty.call(body, 'youtubeChannelUrl')) {
+      const v = body.youtubeChannelUrl;
+      await setUserYoutubeChannelUrl(
+        dbUserId,
+        v === null || v === undefined || String(v).trim() === ''
+          ? null
+          : String(v).trim()
+      );
+      delete body.youtubeChannelUrl;
+    }
     
     // Convert all JSON objects to strings for database storage
     const jsonFields = [
@@ -267,16 +344,22 @@ export async function POST(request: NextRequest) {
       'adminSettings',
       'workoutPreferences',
       'socialSettings',
-      'notificationSettings'
+      'notificationSettings',
+      'weeklyStructureV1'
     ];
     
     const settingsData: any = { ...body };
     
     jsonFields.forEach(field => {
       if (body[field] !== undefined) {
-        settingsData[field] = typeof body[field] === 'object' 
-          ? JSON.stringify(body[field])
-          : body[field];
+        const v = body[field];
+        if (v === null) {
+          settingsData[field] = null;
+        } else if (typeof v === 'object') {
+          settingsData[field] = JSON.stringify(v);
+        } else {
+          settingsData[field] = v;
+        }
       }
     });
 
@@ -301,10 +384,10 @@ export async function POST(request: NextRequest) {
 
     // Upsert (update or create)
     const settings = await prisma.userSettings.upsert({
-      where: { userId },
+      where: { userId: dbUserId },
       update: settingsData,
       create: {
-        userId,
+        userId: dbUserId,
         ...defaultSettings,
         ...settingsData // Override defaults with any provided settings
       }
@@ -334,10 +417,18 @@ export async function POST(request: NextRequest) {
       adminSettings: safeJsonParse(settings.adminSettings, {}, 'adminSettings'),
       workoutPreferences: safeJsonParse(settings.workoutPreferences, {}, 'workoutPreferences'),
       socialSettings: safeJsonParse(settings.socialSettings, {}, 'socialSettings'),
-      notificationSettings: safeJsonParse(settings.notificationSettings, {}, 'notificationSettings')
+      notificationSettings: safeJsonParse(settings.notificationSettings, {}, 'notificationSettings'),
+      weeklyStructureV1:
+        settings.weeklyStructureV1?.trim?.()
+          ? safeJsonParse(settings.weeklyStructureV1, null, 'weeklyStructureV1')
+          : null
     };
 
-    return NextResponse.json(response);
+    const ytPost = await getUserYoutubeChannelUrl(dbUserId);
+    return NextResponse.json({
+      ...response,
+      youtubeChannelUrl: ytPost ?? null
+    });
   } catch (error) {
     console.error('Error saving settings:', error);
     console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
@@ -377,18 +468,26 @@ export async function PATCH(request: NextRequest) {
       });
     }
 
-    // Verify user exists in database
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true }
-    });
+    await prismaConnect();
 
-    if (!user) {
-      console.error(`❌ User ${userId} not found in database`);
+    const dbUserId = await resolveWorkoutDatabaseUserId(userId);
+    if (!dbUserId) {
+      console.error(`❌ No User row for token userId ${userId}`);
       return NextResponse.json({ error: 'User not found' }, { status: 401 });
     }
 
     const body = await request.json();
+
+    if (Object.prototype.hasOwnProperty.call(body, 'youtubeChannelUrl')) {
+      const v = body.youtubeChannelUrl;
+      await setUserYoutubeChannelUrl(
+        dbUserId,
+        v === null || v === undefined || String(v).trim() === ''
+          ? null
+          : String(v).trim()
+      );
+      delete body.youtubeChannelUrl;
+    }
     
     // Convert objects to JSON strings for database
     const jsonFields = [
@@ -400,54 +499,74 @@ export async function PATCH(request: NextRequest) {
       'adminSettings',
       'workoutPreferences',
       'socialSettings',
-      'notificationSettings'
+      'notificationSettings',
+      'weeklyStructureV1'
     ];
     
     const updateData: any = {};
     
     Object.keys(body).forEach(key => {
       if (jsonFields.includes(key)) {
-        updateData[key] = typeof body[key] === 'object' 
-          ? JSON.stringify(body[key]) 
-          : body[key];
-      } else if (!['id', 'userId', 'createdAt', 'updatedAt'].includes(key)) {
+        const v = body[key];
+        if (v === null || v === undefined) {
+          updateData[key] = null;
+        } else if (typeof v === 'object') {
+          updateData[key] = JSON.stringify(v);
+        } else {
+          updateData[key] = v;
+        }
+      } else if (
+        !['id', 'userId', 'createdAt', 'updatedAt', 'youtubeChannelUrl'].includes(key)
+      ) {
         updateData[key] = body[key];
       }
     });
 
     let settings;
     try {
-      settings = await prisma.userSettings.upsert({
-        where: { userId },
-        update: updateData,
-        create: {
-          userId,
-          colorSettings: '{}',
-          widgetArrangement: '[]',
-          toolsSettings: '{}',
-          favouritesSettings: '{}',
-          myBestSettings: '{}',
-          adminSettings: '{}',
-          workoutPreferences: '{}',
-          socialSettings: '{}',
-          notificationSettings: '{}',
-          ...updateData
+      if (Object.keys(updateData).length > 0) {
+        settings = await prisma.userSettings.upsert({
+          where: { userId: dbUserId },
+          update: updateData,
+          create: {
+            userId: dbUserId,
+            colorSettings: '{}',
+            widgetArrangement: '[]',
+            toolsSettings: '{}',
+            favouritesSettings: '{}',
+            myBestSettings: '{}',
+            adminSettings: '{}',
+            workoutPreferences: '{}',
+            socialSettings: '{}',
+            notificationSettings: '{}',
+            ...updateData
+          }
+        });
+      } else {
+        settings = await prisma.userSettings.findUnique({
+          where: { userId: dbUserId }
+        });
+        if (!settings) {
+          return NextResponse.json(
+            { error: 'User settings not initialized' },
+            { status: 404 }
+          );
         }
-      });
+      }
     } catch (dbError) {
       console.error('❌ Database error during upsert, attempting to fix corrupted data:', dbError);
       
       // If upsert fails (likely due to corrupted JSON), delete and recreate
       try {
         await prisma.userSettings.deleteMany({
-          where: { userId }
+          where: { userId: dbUserId }
         });
         
         console.log('🔧 Deleted corrupted settings, creating fresh ones...');
         
         settings = await prisma.userSettings.create({
           data: {
-            userId,
+            userId: dbUserId,
             colorSettings: '{}',
             widgetArrangement: '[]',
             toolsSettings: '{}',
@@ -479,13 +598,25 @@ export async function PATCH(request: NextRequest) {
       adminSettings: safeJsonParse(settings.adminSettings, {}),
       workoutPreferences: safeJsonParse(settings.workoutPreferences, {}),
       socialSettings: safeJsonParse(settings.socialSettings, {}),
-      notificationSettings: safeJsonParse(settings.notificationSettings, {})
+      notificationSettings: safeJsonParse(settings.notificationSettings, {}),
+      weeklyStructureV1:
+        settings.weeklyStructureV1?.trim?.()
+          ? safeJsonParse(settings.weeklyStructureV1, null)
+          : null
     };
 
-    return NextResponse.json(response);
+    const ytRow = await getUserYoutubeChannelUrl(dbUserId);
+    return NextResponse.json({
+      ...response,
+      youtubeChannelUrl: ytRow ?? null
+    });
   } catch (error) {
     console.error('Error updating settings:', error);
-    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json(
+      { error: 'Failed to update settings', details: message },
+      { status: 500 }
+    );
   }
 }
 

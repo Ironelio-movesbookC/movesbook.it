@@ -9,15 +9,28 @@ import MovelapDetailTable from './MovelapDetailTable';
 import { getSportIcon, isImageIcon } from '@/utils/sportIcons';
 import { useSportIconType } from '@/hooks/useSportIconType';
 import { getSportDisplayName, DISTANCE_BASED_SPORTS } from '@/constants/moveframe.constants';
+import { stripInternalWorkoutTags, stripCircuitCompactExerciseTrail } from '@/utils/sanitizeWorkoutHtml';
+import { movelapPauseFieldLabel } from '@/utils/restTypeDb';
+import {
+  computeAnaerobicFastPlannerRowStats,
+  computeMoveframeAvePauseSeconds,
+  formatAvePauseFromSeconds
+} from '@/utils/moveframeAvePause';
 
-// 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
-  return content
-    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
-    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
-    .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
-    .trim();
+  return stripInternalWorkoutTags(content).trim();
+};
+
+const extractFastPlannerDataFromNotes = (notes: unknown): any | null => {
+  if (typeof notes !== 'string') return null;
+  const match = notes.match(/\[FAST_PLANNER_DATA\]([\s\S]*?)\[\/FAST_PLANNER_DATA\]/);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
 };
 
 interface SortableMoveframeRowProps {
@@ -127,14 +140,33 @@ export default function SortableMoveframeRow({
     (sum: number, lap: any) => sum + (parseInt(lap.distance) || 0),
     0
   );
+
+  const fastPlannerPayloadMemo =
+    extractFastPlannerDataFromNotes(moveframe.notes) ?? moveframe.fastPlannerData ?? null;
+  const isFastPlanMoveframeMemo =
+    moveframe.type === 'BATTERY' &&
+    !moveframe.isCircuitBased &&
+    ((typeof moveframe.description === 'string' &&
+      moveframe.description.toLowerCase().startsWith('fast planner')) ||
+      (typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]')));
+
+  const anaerobicFastPlannerStats = React.useMemo(() => {
+    if (!isFastPlanMoveframeMemo || !fastPlannerPayloadMemo) return null;
+    if (fastPlannerPayloadMemo.plannerType === 'aerobic') return null;
+    return computeAnaerobicFastPlannerRowStats(fastPlannerPayloadMemo, moveframe.movelaps);
+  }, [isFastPlanMoveframeMemo, fastPlannerPayloadMemo, moveframe.movelaps]);
+
+  const moveframeAvePauseSeconds = React.useMemo(
+    () =>
+      computeMoveframeAvePauseSeconds(
+        moveframe,
+        anaerobicFastPlannerStats,
+        fastPlannerPayloadMemo,
+        isFastPlanMoveframeMemo
+      ),
+    [moveframe, anaerobicFastPlannerStats, fastPlannerPayloadMemo, isFastPlanMoveframeMemo]
+  );
   
-  // Debug: Log movelaps count and appliedTechnique to verify updates
-  React.useEffect(() => {
-    console.log(`🔢 Moveframe ${moveframe.letter} - Rip count: ${movelapsCount}, Movelaps:`, moveframe.movelaps);
-    if (moveframe.appliedTechnique) {
-      console.log(`🎯 Moveframe ${moveframe.letter} has technique: "${moveframe.appliedTechnique}"`);
-    }
-  }, [moveframe.movelaps, movelapsCount, moveframe.letter, moveframe.appliedTechnique]);
   const sectionColor = moveframe.section?.color || '#5b8def';
   const sectionName = moveframe.section?.name || 'Default';
   const sportIcon = getSportIcon(moveframe.sport || 'SWIM', iconType);
@@ -148,6 +180,12 @@ export default function SortableMoveframeRow({
   const [popupPosition, setPopupPosition] = React.useState<{ x: number; y: number } | null>(null);
   const [isHoveringPopup, setIsHoveringPopup] = React.useState(false);
   const hoverTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  /** Hide moveframe summary row while anaerobic fast-planner movelap editor modal is open (see MovelapDetailTable). */
+  const [hideFpSummaryWhileMovelapEdit, setHideFpSummaryWhileMovelapEdit] = React.useState(false);
+  const hideMoveframeSummaryForFpMovelapModal =
+    hideFpSummaryWhileMovelapEdit &&
+    isFastPlanMoveframeMemo &&
+    fastPlannerPayloadMemo?.plannerType !== 'aerobic';
   
   // Cleanup timeout on unmount
   React.useEffect(() => {
@@ -198,72 +236,6 @@ export default function SortableMoveframeRow({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showOptionsDropdown]);
-  
-  const isSeriesBasedSport = ['BODY_BUILDING', 'GYMNASTIC', 'CALISTHENICS', 'CROSSFIT', 'FUNCTIONAL'].includes(moveframe.sport || '');
-
-  const parseTimeToSeconds = (value: unknown): number | null => {
-    if (value == null) return null;
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value !== 'string') return null;
-
-    const raw = value.trim();
-    if (!raw) return null;
-
-    if (raw.includes('h') || raw.includes("'") || raw.includes('"')) {
-      const hMatch = raw.match(/(\d+)\s*h/);
-      const mMatch = raw.match(/(\d+)\s*'/);
-      const sMatch = raw.match(/(\d+)\s*"/);
-      const hours = hMatch ? parseInt(hMatch[1] || '0', 10) : 0;
-      const minutes = mMatch ? parseInt(mMatch[1] || '0', 10) : 0;
-      const seconds = sMatch ? parseInt(sMatch[1] || '0', 10) : 0;
-      const total = hours * 3600 + minutes * 60 + seconds;
-      return Number.isFinite(total) ? total : null;
-    }
-
-    if (raw.includes(':')) {
-      const parts = raw.split(':').map(p => parseInt(p, 10));
-      if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
-        return parts[0] * 60 + parts[1];
-      }
-      if (parts.length === 3 && Number.isFinite(parts[0]) && Number.isFinite(parts[1]) && Number.isFinite(parts[2])) {
-        return parts[0] * 3600 + parts[1] * 60 + parts[2];
-      }
-    }
-
-    const asNumber = Number(raw);
-    return Number.isFinite(asNumber) ? asNumber : null;
-  };
-
-  /** Parse macroFinal (e.g. "1'30"", "2'15"") to seconds */
-  const parseMacroToSeconds = (s: string | null | undefined): number | null => {
-    if (!s || typeof s !== 'string') return null;
-    return parseTimeToSeconds(s);
-  };
-
-  /** Macro column: display average of all typed macroFinal values */
-  const macroSecondsFromLaps = (moveframe.movelaps || [])
-    .map((lap: any) => parseMacroToSeconds(lap.macroFinal))
-    .filter((v: number | null | undefined): v is number => v != null && v > 0);
-  const avgMacroSeconds = macroSecondsFromLaps.length > 0
-    ? macroSecondsFromLaps.reduce((a: number, b: number) => a + b, 0) / macroSecondsFromLaps.length
-    : null;
-
-  const macroTime = (moveframe.movelaps || []).reduce((sum: number, lap: any) => {
-    const direct = parseTimeToSeconds(lap.estimatedTime ?? lap.time);
-    if (direct != null) return sum + direct;
-    if (isSeriesBasedSport) {
-      const pauseSeconds = parseTimeToSeconds(lap.pause);
-      if (pauseSeconds != null) return sum + pauseSeconds;
-    }
-    return sum;
-  }, 0);
-  
-  const formatMacroTime = (seconds: number) => {
-    if (!seconds || seconds === 0) return '-';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}'${secs.toString().padStart(2, '0')}"`;
-  };
 
   // Default column order if not provided - should match MoveframesSection
   const visibleColumns = orderedVisibleColumns || ['checkbox', 'drag', 'expand', 'index', 'mf', 'color', 'section', 'description', 'duration', 'rip', 'macro', 'alarm', 'options', 'code_section', 'action', 'dist', 'style', 'speed', 'time', 'pace', 'rec', 'rest_to', 'aim_snd', 'sport', 'annotation', 'annotations'];
@@ -272,17 +244,6 @@ export default function SortableMoveframeRow({
   const annotationBgColor = isAnnotation ? (moveframe.annotationBgColor || '#5168c2') : null;
   const annotationTextColor = isAnnotation ? (moveframe.annotationTextColor || '#ffffff') : null;
   
-  // Debug logging for annotations (only when needed)
-  if (isAnnotation) {
-    console.log('🎨 Annotation Moveframe:', {
-      moveframeId: moveframe.id,
-      letter: moveframe.letter,
-      annotationBgColor,
-      annotationTextColor
-    });
-  }
-
-  // Render individual cells based on column ID
   const renderCell = (columnId: string) => {
     switch (columnId) {
       case 'checkbox':
@@ -545,72 +506,56 @@ export default function SortableMoveframeRow({
         // Check if this is a manual mode moveframe
         const isManualMode = moveframe.manualMode === true;
         const hasManualPriority = moveframe.manualPriority === true;
-        console.log('📋 [DISPLAY] Moveframe', moveframe.letter, ':', {
-          manualMode: isManualMode,
-          manualPriority: hasManualPriority,
-          willShowManualContent: isManualMode && hasManualPriority
-        });
-        // For manual mode with priority, use notes field first (it contains the full rich text content)
-        // Description field might be truncated for database constraints
-        // If manual mode WITHOUT priority, show blank (user wants to hide content)
-        // 2026-01-22 14:45 UTC - Strip circuit tags from all content
-        // 2026-01-27 - For circuit-based moveframes, always show description
         const isCircuitBased = moveframe.isCircuitBased === true;
         const rawContent = (isManualMode && hasManualPriority)
           ? (moveframe.notes || moveframe.description || '') 
           : isManualMode && !hasManualPriority
-          ? '' // Blank for manual mode without priority
+          ? ''
           : moveframe.description;
         const manualContent = stripCircuitTags(rawContent);
-        
-        // Debug logging for circuit-based moveframes
-        if (isCircuitBased) {
-          console.log(`🔄 [SortableMoveframeRow] Circuit-based moveframe ${moveframe.letter}:`, {
-            isCircuitBased,
-            hasDescription: !!moveframe.description,
-            description: moveframe.description,
-            descriptionLength: moveframe.description?.length || 0,
-            manualContent,
-            manualContentLength: manualContent?.length || 0
-          });
-        }
-        
-        // Debug logging for manual mode
-        if (isManualMode) {
-          console.log(`📝 [SortableMoveframeRow] Manual mode moveframe ${moveframe.letter}:`, {
-            manualMode: moveframe.manualMode,
-            manualPriority: hasManualPriority,
-            hasDescription: !!moveframe.description,
-            hasNotes: !!moveframe.notes,
-            descriptionLength: moveframe.description?.length || 0,
-            notesLength: moveframe.notes?.length || 0,
-            manualContentLength: manualContent?.length || 0
-          });
-        }
-        
         const hasHtmlContent = manualContent && (manualContent.includes('<') || manualContent.includes('\n'));
 
+        const fastPlannerPayload = extractFastPlannerDataFromNotes(moveframe.notes) ?? moveframe.fastPlannerData ?? null;
+        const isAerobicFastPlan = fastPlannerPayload?.plannerType === 'aerobic';
         const isFastPlanMoveframe = moveframe.type === 'BATTERY' && !moveframe.isCircuitBased &&
           (typeof moveframe.description === 'string' && moveframe.description.toLowerCase().startsWith('fast planner') ||
             (typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]')));
-        const fastPlanDistancesLine = isFastPlanMoveframe && Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0
-          ? moveframe.movelaps
-              .map((lap: any) => {
-                const val = lap.reps ?? lap.distance ?? lap.weight ?? '';
-                const sp = lap.speed ?? lap.pace ?? '';
-                const v = val !== '' && val != null ? String(val) : '?';
-                const s = sp !== '' && sp != null ? String(sp) : '?';
-                return `${v}\\${s}`;
-              })
-              .join('+')
+        /** Aerobic only: distance\\style or fallback movelap line. Anaerobic shows Tot. reps / Tot. series / Reps\\serie instead of raw reps\\pace. */
+        const fastPlanDistancesLine = isFastPlanMoveframe
+          ? isAerobicFastPlan && Array.isArray(fastPlannerPayload?.rows)
+            ? fastPlannerPayload.rows
+                .map((r: any) => {
+                  const d = typeof r?.distance === 'string' ? r.distance.trim() : '';
+                  if (!d) return '';
+                  const style = typeof r?.style === 'string' ? r.style.trim() : '';
+                  return style ? `${d}\\${style}` : d;
+                })
+                .filter(Boolean)
+                .join('+')
+            : Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0
+            ? moveframe.movelaps
+                .map((lap: any) => {
+                  const val = lap.reps ?? lap.distance ?? lap.weight ?? '';
+                  const sp = lap.speed ?? lap.pace ?? '';
+                  const v = val !== '' && val != null ? String(val) : '?';
+                  const s = sp !== '' && sp != null ? String(sp) : '?';
+                  return `${v}\\${s}`;
+                })
+                .join('+')
+            : ''
           : '';
-        const fastPlanUserNoteLine = isFastPlanMoveframe && typeof moveframe.notes === 'string'
-          ? stripCircuitTags(
-              moveframe.notes
-                .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
-                .replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '')
-                .trim()
-            )
+        const fastPlanUserNoteLine = isFastPlanMoveframe
+          ? (typeof fastPlannerPayload?.descriptionInstructions === 'string'
+              ? fastPlannerPayload.descriptionInstructions.trim()
+              : '') ||
+            (typeof moveframe.notes === 'string'
+              ? stripCircuitTags(
+                  moveframe.notes
+                    .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
+                    .replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '')
+                    .trim()
+                )
+              : '')
           : '';
         
         return (
@@ -648,14 +593,44 @@ export default function SortableMoveframeRow({
            title={isManualMode && hasManualPriority && manualContent ? "Click to view full content" : ""}
           >
            {isFastPlanMoveframe ? (
-              <div className="text-left text-sm overflow-hidden break-words">
-                {fastPlanDistancesLine ? <div className="font-medium text-gray-900">{fastPlanDistancesLine}</div> : null}
-                {fastPlanUserNoteLine ? <div className="text-gray-600 mt-0.5">{fastPlanUserNoteLine}</div> : null}
-                {!fastPlanDistancesLine && !fastPlanUserNoteLine ? 'No description' : null}
+              <div className="text-left text-sm break-words">
+                {!isAerobicFastPlan && anaerobicFastPlannerStats?.sectorPairs?.length ? (
+                  <div
+                    className="mb-1 flex max-h-10 flex-wrap gap-x-2 gap-y-0.5 text-xs font-medium leading-snug text-gray-900"
+                    title={anaerobicFastPlannerStats.sectorSummaryLine}
+                  >
+                    {anaerobicFastPlannerStats.sectorPairs.map(({ name, series }) => (
+                      <span key={name} className="whitespace-nowrap">
+                        {name}
+                        <span className="font-semibold text-teal-800"> {series}</span>
+                        <span className="font-normal text-gray-600"> ser.</span>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {!isAerobicFastPlan && anaerobicFastPlannerStats ? (
+                  <div className="font-medium leading-snug text-gray-900">
+                    Tot. reps {anaerobicFastPlannerStats.totalRepVolume} Tot. series{' '}
+                    {anaerobicFastPlannerStats.totalSeries} Reps{'\\'}serie{' '}
+                    {anaerobicFastPlannerStats.ripPerSetDisplay}
+                  </div>
+                ) : isAerobicFastPlan && fastPlanDistancesLine ? (
+                  <div className="font-medium text-gray-900">{fastPlanDistancesLine}</div>
+                ) : null}
+                {fastPlanUserNoteLine ? (
+                  <div className="mt-0.5 text-xs text-gray-600">{fastPlanUserNoteLine}</div>
+                ) : null}
+                {(() => {
+                  const hasAnaerobicSectors =
+                    !isAerobicFastPlan && !!anaerobicFastPlannerStats?.sectorPairs?.length;
+                  const hasAny =
+                    hasAnaerobicSectors || !!fastPlanDistancesLine || !!fastPlanUserNoteLine;
+                  return hasAny ? null : <span className="text-gray-400">No description</span>;
+                })()}
               </div>
             ) : isManualMode && hasManualPriority && manualContent ? (
               <div 
-                className="text-left text-sm overflow-hidden manual-content-preview break-words"
+                className="text-left text-sm manual-content-preview break-words"
                 dangerouslySetInnerHTML={{ __html: manualContent }}
                 style={{
                   display: '-webkit-box',
@@ -665,9 +640,9 @@ export default function SortableMoveframeRow({
                 }}
               />
             ) : hasHtmlContent ? (
-              <div className="text-sm overflow-hidden break-words" dangerouslySetInnerHTML={{ __html: manualContent }} />
+              <div className="text-sm text-left break-words" dangerouslySetInnerHTML={{ __html: manualContent }} />
             ) : (
-              <div className="overflow-hidden break-words">
+              <div className="text-left break-words">
                 {(() => {
                   // For manual mode without priority, show blank (empty string)
                   if (isManualMode && !hasManualPriority) {
@@ -676,7 +651,8 @@ export default function SortableMoveframeRow({
                   }
                   // For circuit-based moveframes, show description or "No circuit description"
                   if (moveframe.isCircuitBased) {
-                    const displayText = manualContent || 'No circuit description';
+                    const displayText =
+                      stripCircuitCompactExerciseTrail(manualContent).trim() || 'No circuit description';
                     console.log(`🔄 [SortableMoveframeRow] Circuit display for ${moveframe.letter}:`, displayText);
                     return displayText;
                   }
@@ -709,7 +685,7 @@ export default function SortableMoveframeRow({
         const isSeriesBased = ['BODY_BUILDING', 'GYMNASTIC', 'CALISTHENICS', 'CROSSFIT', 'FUNCTIONAL'].includes(moveframe.sport || '');
         const isTimeBased = ['TREADMILL', 'ROLLER', 'CYCLETTE', 'ELLIPTICAL'].includes(moveframe.sport || '');
         
-        let durationDisplay = '—';
+        let durationDisplay: React.ReactNode = '—';
         
         if (moveframe.type === 'ANNOTATION') {
           durationDisplay = '—';
@@ -747,7 +723,10 @@ export default function SortableMoveframeRow({
               durationDisplay = timeFormatted;
               console.log('  ✅ Time display SET TO:', durationDisplay);
               console.log('  🔍 Variable durationDisplay type:', typeof durationDisplay);
-              console.log('  🔍 Variable durationDisplay length:', durationDisplay.length);
+              console.log(
+                '  🔍 Variable durationDisplay length:',
+                typeof durationDisplay === 'string' ? durationDisplay.length : 'n/a'
+              );
             } else {
               durationDisplay = '0h00\'00"0';
               console.log('  ⚠️ Zero deciseconds, showing:', durationDisplay);
@@ -769,6 +748,25 @@ export default function SortableMoveframeRow({
           // For manual mode with non-aerobic sports, Duration column should be empty
           // Series value only shows in Rip\Sets column
           durationDisplay = '—';
+        } else if (moveframe.isCircuitBased && !isManualModeDuration) {
+          let circuitSeries = Math.max(0, parseInt(String(moveframe.repetitions ?? '0'), 10) || 0);
+          if (circuitSeries <= 0 && Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0) {
+            const keys = new Set<string>();
+            for (const lap of moveframe.movelaps) {
+              const letter = String(lap?.circuitLetter || '').trim().toUpperCase();
+              if (!letter) continue;
+              const sn = lap?.localSeriesNumber ?? lap?.seriesNumber ?? 1;
+              keys.add(`${letter}:${sn}`);
+            }
+            circuitSeries = keys.size;
+          }
+          durationDisplay = circuitSeries > 0 ? `${circuitSeries} series` : '—';
+        } else if (anaerobicFastPlannerStats != null) {
+          // Fast planner request: DUR must show total series only.
+          durationDisplay =
+            anaerobicFastPlannerStats.totalSeries > 0
+              ? `${anaerobicFastPlannerStats.totalSeries} series`
+              : '—';
         } else if (isSeriesBased) {
           // Show total series
           const totalSeries = moveframe.movelaps?.length || 0;
@@ -824,10 +822,37 @@ export default function SortableMoveframeRow({
         // For manual mode: show total series for non-aerobic sports, "—" for aerobic sports
         const isManualModeRip = moveframe.manualMode === true;
         const isAerobicSport = DISTANCE_BASED_SPORTS.includes(moveframe.sport);
-        let ripDisplay = movelapsCount;
+        let ripDisplay: React.ReactNode = movelapsCount;
         
         if (moveframe.type === 'ANNOTATION') {
           ripDisplay = '—';
+        } else if (moveframe.isCircuitBased) {
+          const totalFromField = Number(moveframe.totalReps);
+          const totalR =
+            Number.isFinite(totalFromField) && totalFromField > 0
+              ? Math.round(totalFromField)
+              : (moveframe.movelaps || []).reduce((s: number, lap: any) => {
+                  const n = parseInt(String(lap?.reps ?? '').replace(/[^\d]/g, ''), 10);
+                  return s + (Number.isFinite(n) ? n : 0);
+                }, 0);
+          let seriesN = Math.max(0, parseInt(String(moveframe.repetitions ?? '0'), 10) || 0);
+          if (seriesN <= 0 && Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0) {
+            const keys = new Set<string>();
+            for (const lap of moveframe.movelaps) {
+              const letter = String(lap?.circuitLetter || '').trim().toUpperCase();
+              if (!letter) continue;
+              const sn = lap?.localSeriesNumber ?? lap?.seriesNumber ?? 1;
+              keys.add(`${letter}:${sn}`);
+            }
+            seriesN = keys.size;
+          }
+          if (seriesN > 0 && totalR > 0) {
+            ripDisplay = String(Math.round(totalR / seriesN));
+          } else {
+            ripDisplay = '—';
+          }
+        } else if (anaerobicFastPlannerStats) {
+          ripDisplay = String(anaerobicFastPlannerStats.totalRepVolume);
         } else if (isManualModeRip && !isAerobicSport) {
           // For non-aerobic sports in manual mode, show repetitions from moveframe.repetitions field with "series" unit
           // (not movelaps count, because manual mode has no movelaps)
@@ -862,6 +887,10 @@ export default function SortableMoveframeRow({
       
       case 'macro':
         const isManualModeMacro = moveframe.manualMode === true;
+        const avePauseDisplay =
+          moveframeAvePauseSeconds != null && moveframeAvePauseSeconds > 0
+            ? formatAvePauseFromSeconds(moveframeAvePauseSeconds)
+            : '—';
         return (
           <td 
             key="macro" 
@@ -882,7 +911,11 @@ export default function SortableMoveframeRow({
                  : { width: '32px' }
             }
           >
-            {moveframe.type === 'ANNOTATION' ? '—' : (isManualModeMacro ? '—' : (avgMacroSeconds != null ? formatMacroTime(Math.round(avgMacroSeconds)) : (moveframe.macroFinal || formatMacroTime(macroTime))))}
+            {moveframe.type === 'ANNOTATION'
+              ? '—'
+              : isManualModeMacro
+                ? '—'
+                : avePauseDisplay}
           </td>
         );
       
@@ -1063,6 +1096,7 @@ export default function SortableMoveframeRow({
           position: 'relative'
         }}
         className={`
+          ${hideMoveframeSummaryForFpMovelapModal ? 'hidden' : ''}
           ${hasAnnotation ? '' : 'hover:bg-purple-50'}
           ${isDropOver ? 'ring-4 ring-green-400 ring-opacity-75' : ''}
           transition-colors duration-150
@@ -1094,6 +1128,7 @@ export default function SortableMoveframeRow({
                 onRefresh={onRefresh}
                 allMoveframes={workout?.moveframes || []}
                 onNavigateMoveframe={onNavigateToMoveframe}
+                onAnaerobicFastPlannerModalOpenChange={setHideFpSummaryWhileMovelapEdit}
               />
             </div>
           </td>
@@ -1266,7 +1301,11 @@ export default function SortableMoveframeRow({
                         {lap.time && <div>Time: <span className="font-semibold">{lap.time}</span></div>}
                         {lap.pace && <div>Pace: <span className="font-semibold">{lap.pace}</span></div>}
                         {lap.speed && <div>Speed: <span className="font-semibold">{lap.speed}</span></div>}
-                        {lap.pause && <div>Pause: <span className="font-semibold">{lap.pause}</span></div>}
+                        {lap.pause && (
+                          <div>
+                            {movelapPauseFieldLabel(lap.restType)}: <span className="font-semibold">{lap.pause}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

@@ -12,8 +12,6 @@ export async function GET() {
   } catch (error) {
     console.error('Error loading Super Admin email:', error);
     return NextResponse.json({ email: null });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

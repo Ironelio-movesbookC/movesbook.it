@@ -7,16 +7,12 @@ import { X, Edit, Copy, Move, Trash2, Plus, CheckCircle, Circle, Clock, MapPin, 
 import { getSportIcon, isImageIcon } from '@/utils/sportIcons';
 import { useSportIconType } from '@/hooks/useSportIconType';
 import { formatMoveframeType, getRepsLabelCap, getRepsLabel, isDistanceBasedSport } from '@/constants/moveframe.constants';
+import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
+import { movelapPauseFieldLabel } from '@/utils/restTypeDb';
 
-// 2026-01-22 14:45 UTC - Helper to strip circuit metadata tags from content
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
-  return content
-    .replace(/\[CIRCUIT_DATA\][\s\S]*?\[\/CIRCUIT_DATA\]/g, '')
-    .replace(/\[CIRCUIT_META\][\s\S]*?\[\/CIRCUIT_META\]/g, '')
-    .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
-    .replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '')
-    .trim();
+  return stripInternalWorkoutTags(content).trim();
 };
 
 /** Build "distances only" line (e.g. 100\\A2+50\\A1+200\\B1) from movelaps; second return is typed description from notes. */
@@ -257,6 +253,10 @@ export default function MoveframeInfoPanel({
       circuitInfoByLetter.set(letter, { seriesCount, stationsPerSeries });
     });
   }
+  const lastCircuitLetter =
+    circuitRows.length > 0
+      ? String(circuitRows[circuitRows.length - 1]?.letter ?? '').trim().toUpperCase()
+      : '';
   const totalCircuitSeries = isCircuitBased ? totalMovelaps : 0;
   const completedCircuitSeries = isCircuitBased ? completedMovelaps : 0;
   const totalCircuitRepetitions = isCircuitBased
@@ -300,6 +300,7 @@ export default function MoveframeInfoPanel({
       (typeof meta?.circuitLetter === 'string' && meta.circuitLetter.trim() !== ''
         ? meta.circuitLetter.trim()
         : (typeof ml?.circuitLetter === 'string' ? ml.circuitLetter.trim() : '')) || '';
+    const normalizedCircuitLetter = circuitLetter.trim().toUpperCase();
     const localSeriesNumber =
       meta?.localSeriesNumber ?? meta?.seriesNumber ?? ml?.localSeriesNumber ?? ml?.seriesNumber ?? null;
     const stationNumber = meta?.stationNumber ?? ml?.stationNumber ?? null;
@@ -309,19 +310,28 @@ export default function MoveframeInfoPanel({
     const stationsPerSeries = circuitInfo?.stationsPerSeries ?? defaultStationsPerCircuit ?? 0;
     const isEndOfSeries = !!(stationsPerSeries && stationNumber && stationNumber === stationsPerSeries);
     const isEndOfCircuit = !!(isEndOfSeries && seriesCount && localSeriesNumber && localSeriesNumber === seriesCount);
+    const isWorkoutFinalRestRow =
+      isEndOfCircuit &&
+      !!lastCircuitLetter &&
+      !!normalizedCircuitLetter &&
+      normalizedCircuitLetter === lastCircuitLetter;
 
     const hasExplicitMacro = ml?.macroFinal != null && String(ml.macroFinal).trim() !== '';
     const shouldShowDerivedMacro =
-      (!hasExplicitMacro && ((isEndOfCircuit && pauseCircuitsSeconds != null) || (isEndOfSeries && pauseSeriesSeconds != null)));
+      !hasExplicitMacro &&
+      !isWorkoutFinalRestRow &&
+      ((isEndOfCircuit && pauseCircuitsSeconds != null) || (isEndOfSeries && pauseSeriesSeconds != null));
     const hasMacroDisplay = hasExplicitMacro || shouldShowDerivedMacro;
 
     const macroSeconds = hasExplicitMacro
       ? parsePauseToSeconds(ml.macroFinal)
-      : isEndOfCircuit && pauseCircuitsSeconds != null
-        ? pauseCircuitsSeconds
-        : isEndOfSeries && pauseSeriesSeconds != null
-          ? pauseSeriesSeconds
-          : 0;
+      : isWorkoutFinalRestRow
+        ? 0
+        : isEndOfCircuit && pauseCircuitsSeconds != null
+          ? pauseCircuitsSeconds
+          : isEndOfSeries && pauseSeriesSeconds != null
+            ? pauseSeriesSeconds
+            : 0;
     const pauseSeconds = hasMacroDisplay ? 0 : parsePauseToSeconds(ml.pause);
 
     return sum + ((timeSeconds + pauseSeconds + macroSeconds) / 60);
@@ -618,11 +628,7 @@ export default function MoveframeInfoPanel({
                         // Typed description from notes (user part outside metadata tags) if not already set
                         let parsedTypedDesc = typedDescriptionLine;
                         if (!parsedTypedDesc && typeof moveframe.notes === 'string') {
-                          const userPart = stripCircuitTags(
-                            moveframe.notes
-                              .replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '')
-                              .trim()
-                          );
+                          const userPart = stripCircuitTags(moveframe.notes);
                           if (userPart) parsedTypedDesc = userPart;
                         }
                         return (
@@ -785,7 +791,7 @@ export default function MoveframeInfoPanel({
                               )}
                               {movelap.pause && (
                                 <span className="text-xs text-gray-500">
-                                  Pause: {movelap.pause}
+                                  {movelapPauseFieldLabel(movelap.restType)}: {movelap.pause}
                                 </span>
                               )}
                             </div>

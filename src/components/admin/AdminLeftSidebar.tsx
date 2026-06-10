@@ -53,11 +53,12 @@ import {
   Calendar,
   Search,
   UserPlus,
-  BookUser
+  BookUser,
+  Users2
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   DndContext, 
   closestCenter,
@@ -134,7 +135,12 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
 
   const [openSubSections, setOpenSubSections] = useState<Record<string, boolean>>({});
   const [internalIsOpen, setInternalIsOpen] = useState(true);
+  const [isDndMounted, setIsDndMounted] = useState(false);
   const isSidebarOpen = isOpen !== undefined ? isOpen : internalIsOpen;
+
+  useEffect(() => {
+    setIsDndMounted(true);
+  }, []);
 
   const handleToggle = () => {
     if (onToggle) onToggle();
@@ -646,19 +652,35 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
               className="w-full bg-[#058592] px-4 py-2 font-bold text-sm text-white flex items-center justify-between hover:bg-[#046c76] transition cursor-move"
             >
               <span>Music</span>
-              <Triangle className="w-4 h-4 text-white fill-[#ff8d00] rotate-180" />
+              <Triangle
+                className={`w-4 h-4 text-white fill-[#ff8d00] transition-transform duration-200 ${
+                  openSections.music ? 'rotate-180' : ''
+                }`}
+              />
             </button>
             
             {openSections.music && (
-              <div className="bg-[#2b2b2b] mt-1 space-y-1">
-                <Link href="/admin/medias/index" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
-                   <Music className="w-4 h-4 text-white" />
-                   <span>Music Tracked From Users</span>
+              <div className="bg-[#2b2b2b] mt-1 overflow-hidden border border-[#aeaeae]/80">
+                <Link
+                  href="/admin/dashboard?panel=music-tracked"
+                  className="flex items-center gap-3 px-3 py-2.5 bg-[#4f4f4f] border-b border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white"
+                >
+                  <Music className="w-4 h-4 shrink-0 text-white" />
+                  <span>Music Tracked</span>
                 </Link>
-                
-                <Link href="/admin/medias/settings" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
-                   <Settings className="w-4 h-4 text-white" />
-                   <span>Settings</span>
+                <Link
+                  href="/admin/news/links"
+                  className="flex items-center gap-3 px-3 py-2.5 bg-[#4f4f4f] border-b border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white"
+                >
+                  <Music className="w-4 h-4 shrink-0 text-white" />
+                  <span>OG Music panel</span>
+                </Link>
+                <Link
+                  href="/admin/medias/settings"
+                  className="flex items-center gap-3 px-3 py-2.5 bg-[#4f4f4f] hover:bg-[#3d3d3d] transition text-sm text-white"
+                >
+                  <Settings className="w-4 h-4 shrink-0 text-white" />
+                  <span>Settings</span>
                 </Link>
               </div>
             )}
@@ -1037,6 +1059,16 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
               <div className="font-bold text-white">Movesbook Admin</div>
             </Link>
             
+            <Link href="/admin/all-staff" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
+              <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
+                  <Users2 className="w-8 h-8 text-white" strokeWidth={1.5} />
+              </div>
+              <div className="bg-black border border-white p-0.5 rounded-full flex-shrink-0">
+                  <User className="w-3 h-3 text-white" />
+              </div>
+              <div className="font-bold text-white">All Staff</div>
+            </Link>
+
             <Link href="/operators/usersAssignedStaff" className="flex items-center gap-3 px-3 py-2 bg-[#005c99] hover:bg-[#004d80] transition border border-white text-sm mb-1">
               <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
                   <ShieldCheck className="w-8 h-8 text-white" strokeWidth={1.5} />
@@ -1062,23 +1094,31 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
           </div>
         </div>
 
-        {/* Draggable Sections */}
-        <DndContext 
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext 
-            items={items}
-            strategy={verticalListSortingStrategy}
+        {/* Draggable Sections — client-only to avoid dnd-kit aria-describedby hydration mismatch */}
+        {isDndMounted ? (
+          <DndContext
+            id="admin-left-sidebar"
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
           >
-            {items.map(id => (
-              <SortableItem key={id} id={id}>
+            <SortableContext items={items} strategy={verticalListSortingStrategy}>
+              {items.map((id) => (
+                <SortableItem key={id} id={id}>
+                  {renderSection(id)}
+                </SortableItem>
+              ))}
+            </SortableContext>
+          </DndContext>
+        ) : (
+          <div>
+            {items.map((id) => (
+              <div key={id} className="mb-0 mt-1">
                 {renderSection(id)}
-              </SortableItem>
+              </div>
             ))}
-          </SortableContext>
-        </DndContext>
+          </div>
+        )}
       </div>
     </div>
   );

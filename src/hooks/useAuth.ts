@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 
 export interface AuthUser {
   id: string;
@@ -7,6 +8,8 @@ export interface AuthUser {
   username: string;
   email: string;
   userType: string;
+  country?: string | null;
+  image?: string | null;
 }
 
 export function useAuth() {
@@ -18,6 +21,13 @@ export function useAuth() {
 
   const logout = useCallback(() => {
     if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      if (token) {
+        void fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => undefined);
+      }
       localStorage.removeItem('token');
       localStorage.removeItem('user');
     }
@@ -47,41 +57,24 @@ export function useAuth() {
     checkAuth();
   }, [checkAuth]);
 
-  const login = (token: string, userData: AuthUser) => {
+  const login = (token: string, userData: AuthUser, redirectPath?: string | null) => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userData));
     }
     setUser(userData);
     setShowLoginModal(false);
-    
-    // Redirect based on user type to category-specific dashboards
-    if (userData.userType === 'ADMIN') {
-      if (redirectAfterLogin) {
-        router.push(redirectAfterLogin);
-        setRedirectAfterLogin(null);
-      } else {
-        router.push('/athlete/dashboard');
-      }
-    } else if (userData.userType === 'ATHLETE') {
-      // Athletes redirect to athlete dashboard
-      router.push('/athlete/dashboard');
-    } else if (userData.userType === 'COACH') {
-      // Coaches redirect to coach dashboard
-      router.push('/coach/dashboard');
-    } else if (userData.userType === 'TEAM_MANAGER') {
-      // Team admins redirect to team dashboard
-      router.push('/team/dashboard');
-    } else if (userData.userType === 'CLUB_TRAINER') {
-      // Club admins redirect to club dashboard
-      router.push('/club/dashboard');
-    } else if (userData.userType === 'GROUP_ADMIN') {
-      // Group admins redirect to group dashboard
-      router.push('/group/dashboard');
-    } else {
-      // Fallback to my-page for any other types
-      router.push('/my-page');
+
+    let destination = redirectPath?.trim() || null;
+    if (!destination && userData.userType === 'ADMIN' && redirectAfterLogin) {
+      destination = redirectAfterLogin;
+      setRedirectAfterLogin(null);
     }
+    if (!destination) {
+      destination = getDashboardPathForUserType(userData.userType);
+    }
+
+    router.push(destination);
   };
 
   const requireAuth = (redirectPath: string) => {

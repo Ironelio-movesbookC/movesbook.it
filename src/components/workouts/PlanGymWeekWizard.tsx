@@ -9,6 +9,14 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { X, ChevronUp, ChevronDown, Trash2, Calendar } from 'lucide-react';
+import {
+  FAST_PLANNER_REST_PAUSE_OPTIONS,
+  PLAN_GYM_WEEK_MACRO_MINUTE_LABELS,
+} from '@/constants/moveframe.constants';
+
+function isMacroMinuteLabel(s: string): boolean {
+  return PLAN_GYM_WEEK_MACRO_MINUTE_LABELS.includes(String(s ?? '').trim());
+}
 
 const PLAN_DAYS_MIN = 1;
 const PLAN_DAYS_MAX = 6;
@@ -272,7 +280,28 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
     setManualDays(prev => {
       const next = [...prev];
       const sectors = [...next[dayIdx].sectors];
-      sectors[sectorIdx] = { ...sectors[sectorIdx], [field]: value };
+      const cur = sectors[sectorIdx];
+      if (!cur) return prev;
+
+      if (field === 'exercises') {
+        const v = typeof value === 'number' ? value : parseInt(String(value), 10);
+        if (!Number.isFinite(v)) return prev;
+        let ex = Math.max(1, Math.min(20, Math.floor(v)));
+        let series = Math.max(cur.series, ex);
+        series = Math.min(20, series);
+        ex = Math.min(ex, series);
+        sectors[sectorIdx] = { ...cur, exercises: ex, series };
+      } else if (field === 'series') {
+        const v = typeof value === 'number' ? value : parseInt(String(value), 10);
+        if (!Number.isFinite(v)) return prev;
+        let series = Math.max(1, Math.min(20, Math.floor(v)));
+        series = Math.max(series, cur.exercises);
+        const exercises = Math.min(cur.exercises, series);
+        sectors[sectorIdx] = { ...cur, series, exercises };
+      } else {
+        sectors[sectorIdx] = { ...cur, [field]: value };
+      }
+
       next[dayIdx] = { ...next[dayIdx], sectors };
       return next;
     });
@@ -453,31 +482,45 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                 <label className="block text-sm font-medium text-gray-700 mb-2">Select your goal (one per day — only the number of days selected above)</label>
                 <div className="space-y-2">
                   {Array.from({ length: numDays }, (_, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="w-6 text-sm font-medium text-gray-600">{i + 1}</span>
-                      <select
-                        value={putGoalForAll ? goals[0] : goals[i]}
-                        onChange={(e) => setGoalForDay(putGoalForAll ? 0 : i, e.target.value)}
-                        className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
-                      >
-                        {GOAL_OPTIONS.map((opt) => (
-                          <option key={opt.value || 'empty'} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </div>
+                    <React.Fragment key={i}>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex min-w-[1.75rem] items-center justify-center rounded border border-amber-200 bg-amber-50 px-1.5 py-1 text-sm font-semibold text-amber-900">
+                          {i + 1}
+                        </span>
+                        <select
+                          value={putGoalForAll ? goals[0] : goals[i]}
+                          onChange={(e) => setGoalForDay(putGoalForAll ? 0 : i, e.target.value)}
+                          className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                        >
+                          {GOAL_OPTIONS.map((opt) => (
+                            <option key={opt.value || 'empty'} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {i === 0 ? (
+                        <label
+                          className="ml-[2.35rem] inline-flex cursor-pointer items-center gap-2 rounded-md border border-transparent px-0.5 py-0.5 hover:bg-gray-50"
+                          title="Put this goal for all the workouts"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={putGoalForAll}
+                            onChange={(e) => {
+                              setPutGoalForAll(e.target.checked);
+                              if (e.target.checked) setGoals((prev) => Array(6).fill(prev[0] ?? ''));
+                            }}
+                            className="h-4 w-4 shrink-0 rounded border-gray-300"
+                            aria-label="Put this goal for all the workouts"
+                          />
+                          <span className="text-xs leading-tight text-gray-700 sm:text-sm">
+                            Put this goal for all the workouts
+                          </span>
+                        </label>
+                      ) : null}
+                    </React.Fragment>
                   ))}
-                  <label className="flex items-center gap-2 cursor-pointer mt-2">
-                    <input
-                      type="checkbox"
-                      checked={putGoalForAll}
-                      onChange={(e) => {
-                        setPutGoalForAll(e.target.checked);
-                        if (e.target.checked) setGoals(prev => Array(6).fill(prev[0] ?? ''));
-                      }}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-sm text-gray-700">Put this goal for all the workouts</span>
-                  </label>
                 </div>
               </div>
 
@@ -584,8 +627,8 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                       ))}
                     </div>
                   </div>
-                  <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0">
-                    <Image src="/plan-gym-week/q2.jpg" alt="Question 2" fill className="object-cover" />
+                  <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-lg overflow-hidden border-y border-gray-200 border-x-0 flex-shrink-0">
+                    <Image src="/plan-gym-week/q2.jpg" alt="Question 2" fill className="border-0 object-cover outline-none ring-0" />
                   </div>
                 </div>
 
@@ -607,8 +650,8 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                       ))}
                     </div>
                   </div>
-                  <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0">
-                    <Image src="/plan-gym-week/q3.jpg" alt="Question 3" fill className="object-cover" />
+                  <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-lg overflow-hidden border-y border-gray-200 border-x-0 flex-shrink-0">
+                    <Image src="/plan-gym-week/q3.jpg" alt="Question 3" fill className="border-0 object-cover outline-none ring-0" />
                   </div>
                 </div>
 
@@ -629,7 +672,10 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                               setConstantSectors(prev => {
                                 const has = prev.includes(g.sector);
                                 if (has) return prev.filter(s => s !== g.sector);
-                                if (prev.length >= constantSectorsRequired) return prev;
+                                if (prev.length >= constantSectorsRequired) {
+                                  // Keep the newest picks when max count reached (lets user switch away from current selection).
+                                  return [...prev.slice(1), g.sector];
+                                }
                                 return [...prev, g.sector];
                               });
                             }}
@@ -645,8 +691,8 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                         <p className="text-xs text-gray-600 mt-2">Selected: {constantSectors.join(', ')}</p>
                       )}
                     </div>
-                    <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0">
-                      <Image src="/plan-gym-week/q4.jpg" alt="Question 4" fill className="object-cover" />
+                    <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-lg overflow-hidden border-y border-gray-200 border-x-0 flex-shrink-0">
+                      <Image src="/plan-gym-week/q4.jpg" alt="Question 4" fill className="border-0 object-cover outline-none ring-0" />
                     </div>
                   </div>
                 )}
@@ -729,22 +775,134 @@ export default function PlanGymWeekWizard({ isOpen, onClose, onComplete, lastWor
                           </div>
                         )}
                         <div className="flex flex-wrap gap-2 items-center">
-                          <select value={sec.exercises} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'exercises', parseInt(e.target.value, 10))} className="text-xs border border-gray-300 rounded px-2 py-1">
-                            {[1,2,3,4,5,6].map(n => <option key={n} value={n}>Exercises {n}</option>)}
+                          <select
+                            value={sec.exercises}
+                            onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'exercises', parseInt(e.target.value, 10))}
+                            className="text-xs border border-gray-300 rounded px-2 py-1"
+                            title="Cannot exceed Series"
+                          >
+                            {Array.from({ length: Math.max(1, sec.series) }, (_, i) => i + 1).map((n) => (
+                              <option key={n} value={n}>
+                                Exercises {n}
+                              </option>
+                            ))}
                           </select>
-                          <select value={sec.series} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'series', parseInt(e.target.value, 10))} className="text-xs border border-gray-300 rounded px-2 py-1">
-                            {[2,3,4,5].map(n => <option key={n} value={n}>Series {n}</option>)}
+                          <select
+                            value={sec.series}
+                            onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'series', parseInt(e.target.value, 10))}
+                            className="text-xs border border-gray-300 rounded px-2 py-1"
+                            title="Cannot go below Exercises"
+                          >
+                            {Array.from({ length: 20 - Math.max(0, sec.exercises) + 1 }, (_, i) => sec.exercises + i).map((n) => (
+                              <option key={n} value={n}>
+                                Series {n}
+                              </option>
+                            ))}
                           </select>
-                          <select value={sec.reps} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'reps', parseInt(e.target.value, 10))} className="text-xs border border-gray-300 rounded px-2 py-1">
-                            {[8,10,12,15,20,30].map(n => <option key={n} value={n}>Reps {n}</option>)}
+                          <select
+                            value={Math.min(50, Math.max(1, Number(sec.reps) || 12))}
+                            onChange={(e) =>
+                              updateSectorField(activeDayIndex, secIdx, 'reps', parseInt(e.target.value, 10))
+                            }
+                            className="text-xs border border-gray-300 rounded px-2 py-1 min-w-[5.5rem]"
+                            title="Reps 1–50"
+                          >
+                            {Array.from({ length: 50 }, (_, i) => i + 1).map((n) => (
+                              <option key={n} value={n}>
+                                Reps {n}
+                              </option>
+                            ))}
                           </select>
-                          <input type="text" value={sec.pause} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'pause', e.target.value)} placeholder="Pause" className="w-20 text-xs border border-gray-300 rounded px-2 py-1" />
-                          <span className="text-xs text-gray-500">Macro ex.</span>
-                          <input type="text" value={sec.macroExercise} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'macroExercise', e.target.value)} placeholder="e.g. 1'" className="w-14 text-xs border border-gray-300 rounded px-2 py-1" />
-                          <span className="text-xs text-gray-500">Macro sector</span>
-                          <input type="text" value={sec.macroEndOfSector} onChange={(e) => updateSectorField(activeDayIndex, secIdx, 'macroEndOfSector', e.target.value)} placeholder="e.g. 2'" className="w-14 text-xs border border-gray-300 rounded px-2 py-1" />
+                          <label className="flex items-center gap-1 text-xs text-gray-600">
+                            Pause
+                            <select
+                              value={
+                                FAST_PLANNER_REST_PAUSE_OPTIONS.includes(sec.pause)
+                                  ? sec.pause
+                                  : "1'30\""
+                              }
+                              onChange={(e) =>
+                                updateSectorField(activeDayIndex, secIdx, 'pause', e.target.value)
+                              }
+                              className="border border-gray-300 rounded px-2 py-1 text-xs min-w-[4.75rem]"
+                              title="Rest between sets — same options as Fast Not Aerobic Plan"
+                            >
+                              <option value="">—</option>
+                              {FAST_PLANNER_REST_PAUSE_OPTIONS.map((p) => (
+                                <option key={p} value={p}>
+                                  {p}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label
+                            className="flex items-center gap-1 text-xs text-gray-600"
+                            title="Pause after the last serie of an exercise"
+                          >
+                            Macro exercises
+                            <select
+                              value={
+                                sec.macroExercise.trim() === ''
+                                  ? ''
+                                  : isMacroMinuteLabel(sec.macroExercise)
+                                    ? sec.macroExercise.trim()
+                                    : "1'"
+                              }
+                              onChange={(e) =>
+                                updateSectorField(activeDayIndex, secIdx, 'macroExercise', e.target.value)
+                              }
+                              className="border border-gray-300 rounded px-2 py-1 text-xs min-w-[3.25rem]"
+                            >
+                              <option value="">—</option>
+                              {PLAN_GYM_WEEK_MACRO_MINUTE_LABELS.map((m) => (
+                                <option key={m} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label
+                            className="flex items-center gap-1 text-xs text-gray-600"
+                            title="Pause after the last serie of the last exercise of this sector"
+                          >
+                            Macro sector
+                            <select
+                              value={
+                                sec.macroEndOfSector.trim() === ''
+                                  ? ''
+                                  : isMacroMinuteLabel(sec.macroEndOfSector)
+                                    ? sec.macroEndOfSector.trim()
+                                    : "2'"
+                              }
+                              onChange={(e) =>
+                                updateSectorField(activeDayIndex, secIdx, 'macroEndOfSector', e.target.value)
+                              }
+                              className="border border-gray-300 rounded px-2 py-1 text-xs min-w-[3.25rem]"
+                            >
+                              <option value="">—</option>
+                              {PLAN_GYM_WEEK_MACRO_MINUTE_LABELS.map((m) => (
+                                <option key={m} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                         </div>
-                        <button type="button" onClick={() => removeSectorFromDay(activeDayIndex, secIdx)} className="ml-auto p-1 text-red-600 hover:bg-red-50 rounded" title="Remove">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const label = (sec.sectorLabel || 'this sector').trim() || 'this sector';
+                            if (
+                              typeof window !== 'undefined' &&
+                              !window.confirm(`Remove "${label}" from this day? This cannot be undone.`)
+                            ) {
+                              return;
+                            }
+                            removeSectorFromDay(activeDayIndex, secIdx);
+                          }}
+                          className="ml-auto p-1 text-red-600 hover:bg-red-50 rounded"
+                          title="Remove sector"
+                        >
                           <Trash2 size={18} />
                         </button>
                       </div>

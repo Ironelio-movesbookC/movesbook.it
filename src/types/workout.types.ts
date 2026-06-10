@@ -12,7 +12,7 @@ export type { WorkoutStatus, StatusColor, RestType, Sport } from '@/config/worko
 export type ViewMode = 'table' | 'calendar' | 'tree';
 
 // Section ID type
-export type SectionId = 'A' | 'B' | 'C' | 'D';
+export type SectionId = 'A' | 'W' | 'B' | 'C' | 'D';
 
 // ==================== BASE TYPES ====================
 export interface BaseEntity {

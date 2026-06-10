@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { closestCenter, DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { getPauseOptions, getSportConfig, REST_TYPES } from '@/constants/moveframe.constants';
+import { FAST_PLANNER_REST_PAUSE_OPTIONS, getPauseOptions, getSportConfig, REST_TYPES } from '@/constants/moveframe.constants';
 
 type RestChoice = 'rest_time' | 'restart_to' | 'reset_pulse';
 type BreakChoice = 'stopped' | 'speed' | 'watts';
@@ -12,6 +12,8 @@ type ActiveField = 'distance' | 'style' | 'speed' | 'strokes' | 'watts' | 'time'
 
 type AerobicPlannerRow = {
   id: number;
+  /** Per-row workout section (Tools → Sections); moveframe primary section uses first filled row on save. */
+  workoutSectionId: string;
   distance: string;
   style: string;
   speed: string;
@@ -45,6 +47,7 @@ class SafePointerSensor extends PointerSensor {
 interface AerobicFastPlannerProps {
   sport: string;
   sectionId: string;
+  workoutSections?: { id: string; name: string; color?: string | null; code?: string | null }[];
   workout: any;
   day: any;
   mode: 'add' | 'edit';
@@ -80,6 +83,7 @@ const upsertFastPlannerDataInNotes = (notes: unknown, data: any): string => {
 
 const defaultRow = (id: number): AerobicPlannerRow => ({
   id,
+  workoutSectionId: '',
   distance: '',
   style: '',
   speed: '',
@@ -98,7 +102,8 @@ const normalizeRows = (rows: any[]): AerobicPlannerRow[] => {
   const mapped = rows
     .map((r, idx) => ({
       ...defaultRow(typeof r?.id === 'number' ? r.id : idx + 1),
-      ...r
+      ...r,
+      workoutSectionId: typeof r?.workoutSectionId === 'string' ? r.workoutSectionId : '',
     }))
     .filter((r) => typeof r.id === 'number');
   return mapped.length ? mapped : [defaultRow(1)];
@@ -193,6 +198,66 @@ const formatTimeFromSeconds = (totalSeconds: number): string => {
   return `${m}'${String(s).padStart(2, '0')}"`;
 };
 
+/** Format: 12345 → 12'34"5 (mm'ss"d); 123456 → 1h23'45"6 — used by aerobic fast planner cells */
+const formatAerobicCellTime = (value: string): string => {
+  if (!value) return '';
+  if (/^\d+h\d{2}'\d{2}"\d$/.test(value)) return value;
+  if (/^\d{1,2}'\d{2}"\d$/.test(value)) return value;
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return '';
+  const len = digits.length;
+  if (len === 1) return `0'00"${digits}`;
+  if (len === 2) return `0'0${digits[0]}"${digits[1]}`;
+  if (len === 3) return `0'${digits.slice(0, 2)}"${digits[2]}`;
+  if (len === 4) return `${digits[0]}'${digits.slice(1, 3)}"${digits[3]}`;
+  if (len === 5) return `${digits.slice(0, 2)}'${digits.slice(2, 4)}"${digits[4]}`;
+  if (len === 6) return `${digits[0]}h${digits.slice(1, 3)}'${digits.slice(3, 5)}"${digits[5]}`;
+  return `${digits.slice(0, -5)}h${digits.slice(-5, -3)}'${digits.slice(-3, -1)}"${digits.slice(-1)}`;
+};
+
+const parseAerobicCellTimeToDeciseconds = (value: string): number | null => {
+  if (!value) return null;
+  const formatted = formatAerobicCellTime(value);
+  const fullMatch = formatted.match(/^(\d+)h(\d{2})'(\d{2})"(\d)$/);
+  if (fullMatch) {
+    const hours = parseInt(fullMatch[1]);
+    const minutes = parseInt(fullMatch[2]);
+    const seconds = parseInt(fullMatch[3]);
+    const deci = parseInt(fullMatch[4]);
+    return ((hours * 3600 + minutes * 60 + seconds) * 10) + deci;
+  }
+  const shortMatch = formatted.match(/^(\d{1,2})'(\d{2})"(\d)$/);
+  if (shortMatch) {
+    const minutes = parseInt(shortMatch[1]);
+    const seconds = parseInt(shortMatch[2]);
+    const deci = parseInt(shortMatch[3]);
+    return ((minutes * 60 + seconds) * 10) + deci;
+  }
+  return null;
+};
+
+/** Parse rest_time string (e.g. "1'30\"", "0'45\"") to seconds for summary */
+const parseAerobicRestPauseToSeconds = (s: string): number => {
+  if (!s || typeof s !== 'string') return 0;
+  const t = s.trim();
+  const m = t.match(/^(\d+)\s*'?\s*(\d*)\s*"?\s*$/);
+  if (m) {
+    const mins = parseInt(m[1], 10) || 0;
+    const secs = m[2] ? parseInt(m[2], 10) : 0;
+    return mins * 60 + secs;
+  }
+  const secOnly = t.match(/^(\d+)\s*"?\s*$/);
+  if (secOnly) return parseInt(secOnly[1], 10) || 0;
+  return 0;
+};
+
+const formatAerobicRestFromSeconds = (sec: number): string => {
+  if (sec < 60) return `${sec}"`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s > 0 ? `${m}'${s}"` : `${m}'`;
+};
+
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, '&amp;')
@@ -202,7 +267,10 @@ const escapeHtml = (value: string) =>
     .replace(/'/g, '&#39;');
 
 const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, AerobicFastPlannerProps>(
-  function AerobicFastPlannerOfMoveframes({ sport, sectionId, workout: _workout, day: _day, mode, existingMoveframe, onSave, onCancel, fullView }, ref) {
+  function AerobicFastPlannerOfMoveframes(
+    { sport, sectionId, workoutSections = [], workout: _workout, day: _day, mode, existingMoveframe, onSave, onCancel, fullView },
+    ref,
+  ) {
     const sportConfig = useMemo(() => getSportConfig(sport as any), [sport]);
     const [rows, setRows] = useState<AerobicPlannerRow[]>([defaultRow(1), defaultRow(2), defaultRow(3), defaultRow(4)]);
     const [selectedCell, setSelectedCell] = useState<{ rowId: number; field: keyof AerobicPlannerRow } | null>(null);
@@ -219,6 +287,34 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
     const [showPreferences, setShowPreferences] = useState(false);
     const [isNoteEditing, setIsNoteEditing] = useState(false);
     const [restartTimeValidationError, setRestartTimeValidationError] = useState(false);
+    const [replicateCount, setReplicateCount] = useState('1');
+
+    useEffect(() => {
+      if (!sectionId) return;
+      setRows((prev) => {
+        let changed = false;
+        const next = prev.map((r, i) => {
+          if ((r.workoutSectionId || '').trim() !== '') return r;
+          const inferred = i === 0 ? sectionId : prev[i - 1]?.workoutSectionId || sectionId;
+          if (!inferred) return r;
+          changed = true;
+          return { ...r, workoutSectionId: inferred };
+        });
+        return changed ? next : prev;
+      });
+    }, [sectionId]);
+
+    const applyWorkoutSectionToAllRows = useCallback((nextSectionId: string) => {
+      setRows((prev) => prev.map((r) => ({ ...r, workoutSectionId: nextSectionId })));
+    }, []);
+
+    const onWorkoutSectionChange = useCallback((rowId: number, nextId: string) => {
+      setRows((prev) => {
+        const idx = prev.findIndex((r) => r.id === rowId);
+        if (idx < 0) return prev;
+        return prev.map((r, i) => (i >= idx ? { ...r, workoutSectionId: nextId } : r));
+      });
+    }, []);
 
     const loadedMoveframeIdRef = useRef<string | null>(null);
 
@@ -236,7 +332,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       if (parsed.restChoice) setRestChoice(parsed.restChoice);
       if (parsed.breakChoice) setBreakChoice(parsed.breakChoice);
       if (typeof parsed.descriptionInstructions === 'string') setDescriptionInstructions(parsed.descriptionInstructions);
-    }, [mode, existingMoveframe]);
+    }, [mode, existingMoveframe, setActiveFieldAndRef]);
 
     const setRowField = (rowId: number, field: keyof AerobicPlannerRow, value: string) => {
       if (field === 'rest' || field === 'time') setRestartTimeValidationError(false);
@@ -248,13 +344,13 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
             return { ...r, breakChoice, break: value };
           }
           if (field === 'rest') {
-            return { ...r, restChoice, rest: value };
+            return { ...r, rest: value };
           }
           if (field === 'time') {
-            const timeDeci = parseTimeToDeciseconds(value);
+            const timeDeci = parseAerobicCellTimeToDeciseconds(value);
             const newRow = { ...r, time: value } as AerobicPlannerRow;
             if (timeDeci != null && r.restChoice === 'restart_to' && (r.rest || '').trim()) {
-              const restDeci = parseTimeToDeciseconds(r.rest);
+              const restDeci = parseAerobicCellTimeToDeciseconds(r.rest);
               if (restDeci != null && restDeci < timeDeci + 30) {
                 newRow.rest = formatDeciseconds(timeDeci + 30);
               }
@@ -354,6 +450,13 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
           advanced: 'Values outside the range are automatically clamped.'
         };
       }
+      if (activeField === 'rest' && restChoice === 'rest_time') {
+        return {
+          title: 'Rest Time',
+          basic: 'Pick a preset chip or type digits in the field and blur to format the pause.',
+          advanced: 'Uses the same pause options as the standard editor for this sport, with safe fallbacks if a sport has no list.'
+        };
+      }
       return null;
     }, [activeField, restChoice, selectedCell?.field]);
 
@@ -367,8 +470,20 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
         if (restChoice !== 'rest_time') return [];
         const type = restTypeFromChoice(restChoice);
         const options = getPauseOptions(sport as any, type);
-        if (Array.isArray(options)) return options.map(String);
-        return [];
+        let list: string[] = [];
+        if (options === 'input') {
+          list = [...FAST_PLANNER_REST_PAUSE_OPTIONS];
+        } else if (Array.isArray(options)) {
+          list = options.map((o) =>
+            typeof o === 'string'
+              ? o
+              : o != null && typeof (o as { value?: string }).value === 'string'
+                ? (o as { value: string }).value
+                : String(o),
+          );
+        }
+        if (!list.length) list = [...FAST_PLANNER_REST_PAUSE_OPTIONS];
+        return list;
       }
       if (activeField === 'break') {
         if (breakChoice === 'stopped') return ['Stopped'];
@@ -382,29 +497,18 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
     // Apply value to the CELL OF THE TOOLBAR PARAMETER (e.g. Watts column), NOT the currently focused cell
     const applyChipToSelection = (value: string) => {
       const fallbackRowId = selectedCell?.rowId ?? rows[0]?.id;
-      if (!fallbackRowId) return;
       const param = activeFieldRef.current; // Always use toolbar parameter, never selectedCell.field
       const targetField = param === 'rest' ? 'rest' : param === 'break' ? 'break' : param;
+      if (!fallbackRowId) {
+        const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
+        setRows([{ ...defaultRow(1), style: defaultStyle, [targetField]: value } as AerobicPlannerRow]);
+        setSelectedCell({ rowId: 1, field: targetField as keyof AerobicPlannerRow });
+        return;
+      }
       setRowField(fallbackRowId, targetField as keyof AerobicPlannerRow, value);
       setSelectedCell({ rowId: fallbackRowId, field: targetField as keyof AerobicPlannerRow });
     };
 
-    // Format: 12345 → 12'34"5 (mm'ss"d); 123456 → 1h23'45"6
-    const formatTime = (value: string): string => {
-      if (!value) return '';
-      if (/^\d+h\d{2}'\d{2}"\d$/.test(value)) return value;
-      if (/^\d{1,2}'\d{2}"\d$/.test(value)) return value;
-      const digits = value.replace(/\D/g, '');
-      if (!digits) return '';
-      const len = digits.length;
-      if (len === 1) return `0'00"${digits}`;
-      if (len === 2) return `0'0${digits[0]}"${digits[1]}`;
-      if (len === 3) return `0'${digits.slice(0, 2)}"${digits[2]}`;
-      if (len === 4) return `${digits[0]}'${digits.slice(1, 3)}"${digits[3]}`;
-      if (len === 5) return `${digits.slice(0, 2)}'${digits.slice(2, 4)}"${digits[4]}`;
-      if (len === 6) return `${digits[0]}h${digits.slice(1, 3)}'${digits.slice(3, 5)}"${digits[5]}`;
-      return `${digits.slice(0, -5)}h${digits.slice(-5, -3)}'${digits.slice(-3, -1)}"${digits.slice(-1)}`;
-    };
     const formatPauseInput = (value: string): string => {
       const digits = value.replace(/\D/g, '');
       if (!digits) return '';
@@ -415,27 +519,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       const secs = digits.slice(-2);
       return `${mins}'${secs}"`;
     };
-
-    const parseTimeToDeciseconds = (value: string): number | null => {
-      if (!value) return null;
-      const formatted = formatTime(value);
-      const fullMatch = formatted.match(/^(\d+)h(\d{2})'(\d{2})"(\d)$/);
-      if (fullMatch) {
-        const hours = parseInt(fullMatch[1]);
-        const minutes = parseInt(fullMatch[2]);
-        const seconds = parseInt(fullMatch[3]);
-        const deci = parseInt(fullMatch[4]);
-        return ((hours * 3600 + minutes * 60 + seconds) * 10) + deci;
-      }
-      const shortMatch = formatted.match(/^(\d{1,2})'(\d{2})"(\d)$/);
-      if (shortMatch) {
-        const minutes = parseInt(shortMatch[1]);
-        const seconds = parseInt(shortMatch[2]);
-        const deci = parseInt(shortMatch[3]);
-        return ((minutes * 60 + seconds) * 10) + deci;
-      }
-      return null;
-    };
+    const formatAerobicPauseInput = formatPauseInput;
 
     const formatDeciseconds = (value: number): string => {
       const totalSeconds = Math.max(0, Math.floor(value / 10));
@@ -452,9 +536,14 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
     // Apply value to the CELL OF THE TOOLBAR PARAMETER, NOT the currently focused cell
     const applyInputToSelection = (value: string) => {
       const fallbackRowId = selectedCell?.rowId ?? rows[0]?.id;
-      if (!fallbackRowId) return;
       const param = activeFieldRef.current; // Always use toolbar parameter, never selectedCell.field
       const targetField = param === 'rest' ? 'rest' : param === 'break' ? 'break' : param;
+      if (!fallbackRowId) {
+        const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
+        setRows([{ ...defaultRow(1), style: defaultStyle, [targetField]: value } as AerobicPlannerRow]);
+        setSelectedCell({ rowId: 1, field: targetField as keyof AerobicPlannerRow });
+        return;
+      }
       setRowField(fallbackRowId, targetField as keyof AerobicPlannerRow, value);
       setSelectedCell({ rowId: fallbackRowId, field: targetField as keyof AerobicPlannerRow });
     };
@@ -472,28 +561,43 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       max,
       onApply
     }: { value: string; min: number; max: number; onApply: (v: string) => void }) => {
-      const num = value === '' ? null : parseInt(value, 10);
+      const [draft, setDraft] = useState(value);
+      useEffect(() => {
+        setDraft(value);
+      }, [value]);
+      const parsedDraft = draft === '' ? null : parseInt(draft, 10);
+
+      const commitDraft = () => {
+        onApply(normalizeNumberInput(draft, min, max));
+      };
+
       return (
-        <div className="flex items-center gap-0.5 border border-gray-300 rounded bg-white overflow-hidden">
+        <div className="flex items-center gap-0.5 border border-gray-300 rounded bg-white ">
           <button
             type="button"
-            onClick={() => onApply(String(Math.max(min, (num ?? min) - 1)))}
+            onClick={() => onApply(String(Math.max(min, (parsedDraft ?? min) - 1)))}
             className="px-2 py-1 text-gray-600 hover:bg-gray-100 border-r border-gray-300"
             aria-label="Decrease"
           >
             ▼
           </button>
           <input
-            type="number"
-            min={min}
-            max={max}
-            value={value}
-            onChange={(e) => onApply(normalizeNumberInput(e.target.value, min, max))}
+            type="text"
+            inputMode="numeric"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value.replace(/\D/g, '').slice(0, 3))}
+            onBlur={commitDraft}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitDraft();
+              }
+            }}
             className="w-20 text-center border-0 px-1 py-1 text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
           <button
             type="button"
-            onClick={() => onApply(String(Math.min(max, (num ?? min) + 1)))}
+            onClick={() => onApply(String(Math.min(max, (parsedDraft ?? min) + 1)))}
             className="px-2 py-1 text-gray-600 hover:bg-gray-100 border-l border-gray-300"
             aria-label="Increase"
           >
@@ -504,10 +608,10 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
     };
 
     const handleRestartToBlur = (rowId: number, value: string) => {
-      const formatted = formatTime(value);
+      const formatted = formatAerobicCellTime(value);
       const row = rows.find((r) => r.id === rowId);
-      const timeDeci = row?.time ? parseTimeToDeciseconds(row.time) : null;
-      const restDeci = parseTimeToDeciseconds(formatted);
+      const timeDeci = row?.time ? parseAerobicCellTimeToDeciseconds(row.time) : null;
+      const restDeci = parseAerobicCellTimeToDeciseconds(formatted);
       let finalValue = formatted;
       if (timeDeci != null && restDeci != null) {
         const minDeci = timeDeci + 30; // Rest must be > Time by at least 3"
@@ -521,50 +625,59 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
 
     const isRowFilled = (r: AerobicPlannerRow) =>
       (r.distance || '').trim() !== '' ||
-      (r.style || '').trim() !== '' ||
       (r.speed || '').trim() !== '' ||
       (r.strokes || '').trim() !== '' ||
       (r.watts || '').trim() !== '' ||
       (r.time || '').trim() !== '' ||
       (r.rest || '').trim() !== '' ||
-      (r.break || '').trim() !== '' ||
+      ((r.break || '').trim() !== '' && (r.break || '').trim().toLowerCase() !== 'stopped') ||
       (r.note || '').trim() !== '';
 
-    const buildAerobicSummaryFromRows = (allRows: AerobicPlannerRow[]): string => {
-      const filled = allRows.filter(isRowFilled);
+    const aerobicSummaryLine = useMemo(() => {
+      const filled = rows.filter(isRowFilled);
+      const filledCount = filled.length;
       const withDistance = filled.filter((r) => (r.distance || '').trim() !== '');
-      const withTime = filled.filter((r) => (r.time || '').trim() !== '');
-      const withRest = filled.filter((r) => (r.rest || '').trim() !== '' && r.restChoice === 'rest_time');
 
       const totalDistance = withDistance.reduce((sum, r) => sum + parseDistanceToNumber(r.distance || ''), 0);
-      const avgDistance = withDistance.length > 0 ? (totalDistance / withDistance.length).toFixed(1) : '-';
-      const totalTimeSeconds = withTime.reduce((sum, r) => sum + parseTimeToSeconds(r.time || ''), 0);
-      const avgTimeSeconds = withTime.length > 0 ? totalTimeSeconds / withTime.length : 0;
-      const totalTimeBestStr = withTime.length > 0 ? formatTimeFromSeconds(totalTimeSeconds) : null;
-      const avgBestStr = withTime.length > 0 ? formatTimeFromSeconds(Math.round(avgTimeSeconds)) : null;
-      const totalRestSeconds = withRest.reduce((sum, r) => sum + parseTimeToSeconds(r.rest || ''), 0);
-      const avgRestSeconds = withRest.length > 0 ? totalRestSeconds / withRest.length : 0;
-      const totalRestStr = withRest.length > 0 ? formatTimeFromSeconds(totalRestSeconds) : null;
-      const avgRestStr = withRest.length > 0 ? formatTimeFromSeconds(Math.round(avgRestSeconds)) : null;
+      const avgDistance = withDistance.length > 0 ? totalDistance / withDistance.length : 0;
 
-      const lines = [
-        'Summary (Here in automatic) :',
-        filled.length === 0
-          ? 'Total Distance - No rows filled | Average Distance -'
-          : `Total Distance (X) ${totalDistance} | Average Distance ${avgDistance}`,
-        withTime.length === 0
-          ? 'Average Best ( Total Time Best - No rows with Real Time )'
-          : `Total Time Best ${totalTimeBestStr} | Average Best ${avgBestStr}`,
-        withRest.length === 0
-          ? 'Average Rest ( Total Time Rest : No rows with Rest Time )'
-          : `Total Time Rest ${totalRestStr} | Average Rest ${avgRestStr}`,
-        '',
-        'User can edit here (but not the Summary).'
-      ];
-      return lines.join('\n');
-    };
+      /** Sum of Time column (all rows; empty parses as 0). */
+      let totalTimeSec = 0;
+      for (const r of rows) {
+        const d = parseAerobicCellTimeToDeciseconds(r.time || '');
+        if (d != null) totalTimeSec += d / 10;
+      }
 
-    const aerobicSummaryText = useMemo(() => buildAerobicSummaryFromRows(rows), [rows]);
+      /**
+       * Rest: sum of Rest Time pauses + sum of (Restart to − Time) per row in Restart to modality.
+       * Rest pulse rows do not contribute.
+       */
+      let totalRestSec = 0;
+      for (const r of rows) {
+        if (r.restChoice === 'rest_time') {
+          totalRestSec += parseAerobicRestPauseToSeconds(r.rest || '');
+        } else if (r.restChoice === 'restart_to') {
+          const timeDeci = parseAerobicCellTimeToDeciseconds(r.time || '');
+          const restDeci = parseAerobicCellTimeToDeciseconds(r.rest || '');
+          if (timeDeci != null && restDeci != null) {
+            totalRestSec += Math.max(0, (restDeci - timeDeci) / 10);
+          }
+        }
+      }
+
+      const avgTimeSec = filledCount > 0 ? totalTimeSec / filledCount : null;
+      const avgRestSec = filledCount > 0 ? totalRestSec / filledCount : null;
+
+      return [
+        'Summary',
+        `Total Distance ${totalDistance}`,
+        `Average Distance ${withDistance.length > 0 ? avgDistance.toFixed(1) : '-'}`,
+        `Total Time ${totalTimeSec > 0 ? formatTimeFromSeconds(Math.round(totalTimeSec)) : '-'}`,
+        `Average speed ${avgTimeSec != null ? formatTimeFromSeconds(Math.round(avgTimeSec)) : '-'}`,
+        `Total Time Rest ${formatAerobicRestFromSeconds(Math.round(totalRestSec))}`,
+        `Average Rest ${avgRestSec != null ? formatAerobicRestFromSeconds(Math.round(avgRestSec)) : '-'}`
+      ].join(' | ');
+    }, [rows]);
 
     /** Row 1: distances only (e.g. 100\\A2+50\\A1+200\\B1); Row 2: typed description if exists */
     const buildDescription = (filled: AerobicPlannerRow[]) => {
@@ -595,7 +708,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
         const restType = restTypeFromChoice(r.restChoice);
         const restValue =
           r.restChoice === 'restart_to'
-            ? formatTime(r.rest || '')
+            ? formatAerobicCellTime(r.rest || '')
             : r.restChoice === 'rest_time'
             ? formatPauseInput(r.rest || '')
             : r.rest || '';
@@ -616,60 +729,6 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       });
     };
 
-    // Parse rest_time string (e.g. "1'30\"", "0'45\"") to seconds for summary
-    const parseRestToSeconds = (s: string): number => {
-      if (!s || typeof s !== 'string') return 0;
-      const t = s.trim();
-      const m = t.match(/^(\d+)\s*'?\s*(\d*)\s*"?\s*$/);
-      if (m) {
-        const mins = parseInt(m[1], 10) || 0;
-        const secs = m[2] ? parseInt(m[2], 10) : 0;
-        return mins * 60 + secs;
-      }
-      const secOnly = t.match(/^(\d+)\s*"?\s*$/);
-      if (secOnly) return parseInt(secOnly[1], 10) || 0;
-      return 0;
-    };
-    const formatRestFromSeconds = (sec: number): string => {
-      if (sec < 60) return `${sec}"`;
-      const m = Math.floor(sec / 60);
-      const s = sec % 60;
-      return s > 0 ? `${m}'${s}"` : `${m}'`;
-    };
-
-    // Summary (automatic): Total Distance, Average Distance, Average Rest
-    const aerobicSummary = useMemo(() => {
-      const withDistance = rows.filter((r) => (r.distance || '').trim() !== '');
-      const totalDistance = withDistance.reduce((sum, r) => {
-        const raw = (r.distance || '').trim().replace(/[^\d.]/g, '');
-        return sum + (parseFloat(raw) || 0);
-      }, 0);
-      const filledCount = withDistance.length;
-      const withRest = rows.filter((r) => (r.rest || '').trim() !== '');
-      const totalRestSeconds = withRest.reduce((sum, r) => sum + parseRestToSeconds(r.rest || ''), 0);
-      const restCount = withRest.length;
-      return {
-        totalDistance: Math.round(totalDistance * 10) / 10,
-        filledCount,
-        averageDistance: filledCount > 0 ? Math.round((totalDistance / filledCount) * 10) / 10 : null,
-        totalRestSeconds,
-        restCount,
-        averageRestSeconds: restCount > 0 ? Math.round(totalRestSeconds / restCount) : null
-      };
-    }, [rows]);
-
-    const aerobicSummaryLine = useMemo(() => {
-      const s = aerobicSummary;
-      const totalDist = `Total Distance (${s.totalDistance})`;
-      const avgDist = s.filledCount > 0
-        ? `Average Distance (${s.averageDistance})`
-        : 'Average Distance (Total Distance : No rows filled)';
-      const avgRest = s.restCount > 0
-        ? `Average Rest (${formatRestFromSeconds(s.totalRestSeconds)} total, avg ${formatRestFromSeconds(s.averageRestSeconds!)})`
-        : 'Average Rest (Total Time Rest : No rows with Rest Time)';
-      return `${totalDist} ${avgDist} ${avgRest}`;
-    }, [aerobicSummary]);
-
     const handleSaveMoveframe = (uploadToWorkout: boolean) => {
       setRestartTimeValidationError(false);
       const filledRows = rows
@@ -687,27 +746,26 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
         }))
         .filter((r) =>
           r.distance !== '' ||
-          r.style !== '' ||
           r.speed !== '' ||
           r.strokes !== '' ||
           r.watts !== '' ||
           r.time !== '' ||
           r.rest !== '' ||
-          r.break !== '' ||
+          (r.break !== '' && r.break.toLowerCase() !== 'stopped') ||
           r.note !== ''
         )
         .map((r) => {
           if (r.restChoice !== 'restart_to' || !r.time || !r.rest) return r;
-          const timeDeci = parseTimeToDeciseconds(r.time);
-          const restDeci = parseTimeToDeciseconds(r.rest);
+          const timeDeci = parseAerobicCellTimeToDeciseconds(r.time);
+          const restDeci = parseAerobicCellTimeToDeciseconds(r.rest);
           if (timeDeci == null || restDeci == null || restDeci >= timeDeci + 30) return r;
           return { ...r, rest: formatDeciseconds(timeDeci + 30) };
         });
 
       for (const r of filledRows) {
         if (r.restChoice === 'restart_to' && (r.time || '').trim() && (r.rest || '').trim()) {
-          const timeDeci = parseTimeToDeciseconds(r.time);
-          const restDeci = parseTimeToDeciseconds(r.rest);
+          const timeDeci = parseAerobicCellTimeToDeciseconds(r.time);
+          const restDeci = parseAerobicCellTimeToDeciseconds(r.rest);
           if (timeDeci != null && restDeci != null) {
             const minRestDeci = timeDeci + 30; // At least 3" longer than Time
             if (restDeci < minRestDeci) {
@@ -717,6 +775,9 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
           }
         }
       }
+
+      const primarySectionId =
+        filledRows.find((r) => (r.workoutSectionId || '').trim() !== '')?.workoutSectionId || sectionId || '';
 
       const payload = {
         plannerType: 'aerobic',
@@ -733,7 +794,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
 
       onSave({
         sport,
-        sectionId,
+        sectionId: primarySectionId,
         description,
         type: 'BATTERY',
         uploadToWorkout,
@@ -751,9 +812,25 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
     }));
 
     const ensureRow = () => {
-      const nextId = Math.max(0, ...rows.map((r) => r.id)) + 1;
+      let addedRowId = 1;
       const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
-      setRows((prev) => [...prev, { ...defaultRow(nextId), style: defaultStyle }]);
+      const insertAfterId = selectedRow?.id ?? selectedCell?.rowId ?? null;
+      setRows((prev) => {
+        const numericIds = prev
+          .map((r) => r.id)
+          .filter((id): id is number => Number.isFinite(id));
+        addedRowId = (numericIds.length > 0 ? Math.max(...numericIds) : 0) + 1;
+        const anchor =
+          insertAfterId != null ? prev.find((r) => r.id === insertAfterId) : prev.length ? prev[prev.length - 1] : null;
+        const inherit = (anchor?.workoutSectionId && anchor.workoutSectionId.trim()) || sectionId || '';
+        const newRow = { ...defaultRow(addedRowId), style: defaultStyle, workoutSectionId: inherit };
+        if (insertAfterId == null) return [...prev, newRow];
+        const idx = prev.findIndex((r) => r.id === insertAfterId);
+        if (idx < 0) return [...prev, newRow];
+        return [...prev.slice(0, idx + 1), newRow, ...prev.slice(idx + 1)];
+      });
+      setSelectedCell({ rowId: addedRowId, field: 'distance' });
+      setActiveFieldAndRef('distance');
     };
 
     const deleteRow = (rowId: number) => {
@@ -764,13 +841,12 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
 
     const rowHasData = (r: AerobicPlannerRow) =>
       (r.distance || '').trim() !== '' ||
-      (r.style || '').trim() !== '' ||
       (r.speed || '').trim() !== '' ||
       (r.strokes || '').trim() !== '' ||
       (r.watts || '').trim() !== '' ||
       (r.time || '').trim() !== '' ||
       (r.rest || '').trim() !== '' ||
-      (r.break || '').trim() !== '' ||
+      ((r.break || '').trim() !== '' && (r.break || '').trim().toLowerCase() !== 'stopped') ||
       (r.note || '').trim() !== '';
 
     const duplicateCurrentRow = (count: number) => {
@@ -795,19 +871,52 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
 
     const resetAll = () => {
       if (!confirm('Reset all rows? This cannot be undone.')) return;
-      setRows([defaultRow(1)]);
+      setRows([{ ...defaultRow(1), workoutSectionId: sectionId || '' }]);
       setSelectedCell(null);
       lastSelectedRowIdRef.current = null;
     };
 
     const duplicateSelectedRow = (copies: number) => {
       if (!selectedRow || copies < 1) return;
-      const nextId = Math.max(0, ...rows.map((r) => r.id)) + 1;
-      const newRows = Array.from({ length: copies }, (_, i) => ({
-        ...selectedRow,
-        id: nextId + i
-      }));
-      setRows((prev) => [...prev, ...newRows]);
+      setRows((prev) => {
+        const sourceIdx = prev.findIndex((r) => r.id === selectedRow.id);
+        if (sourceIdx < 0) return prev;
+        const nextId = Math.max(0, ...prev.map((r) => r.id)) + 1;
+        const newRows = Array.from({ length: copies }, (_, i) => ({
+          ...selectedRow,
+          id: nextId + i
+        }));
+        return [...prev.slice(0, sourceIdx + 1), ...newRows, ...prev.slice(sourceIdx + 1)];
+      });
+    };
+
+    const copyRowOnce = (rowId: number) => {
+      setRows((prev) => {
+        const sourceIdx = prev.findIndex((r) => r.id === rowId);
+        if (sourceIdx < 0) return prev;
+        const source = prev[sourceIdx];
+        const nextId = Math.max(0, ...prev.map((r) => r.id)) + 1;
+        const newRow = { ...source, id: nextId };
+        return [...prev.slice(0, sourceIdx + 1), newRow, ...prev.slice(sourceIdx + 1)];
+      });
+    };
+
+    const copyRowToAllSubsequent = (rowId: number) => {
+      setRows((prev) => {
+        const sourceIdx = prev.findIndex((r) => r.id === rowId);
+        if (sourceIdx < 0 || sourceIdx === prev.length - 1) return prev;
+        const source = prev[sourceIdx];
+        return prev.map((row, idx) => {
+          if (idx <= sourceIdx) return row;
+          return { ...source, id: row.id };
+        });
+      });
+    };
+
+    const replicateSelectedRow = () => {
+      const copies = Math.max(1, Math.min(999, parseInt(replicateCount.replace(/\D/g, '') || '1', 10)));
+      if (!selectedRow) return;
+      duplicateSelectedRow(copies);
     };
 
     const removeLastFilledRow = () => {
@@ -826,14 +935,32 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       if (!window.confirm('Reset all rows? This will clear all data in the table.')) return;
       const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
       setRows([
-        { ...defaultRow(1), style: defaultStyle },
-        { ...defaultRow(2), style: defaultStyle },
-        { ...defaultRow(3), style: defaultStyle },
-        { ...defaultRow(4), style: defaultStyle }
+        { ...defaultRow(1), style: defaultStyle, workoutSectionId: sectionId || '' },
+        { ...defaultRow(2), style: defaultStyle, workoutSectionId: sectionId || '' },
+        { ...defaultRow(3), style: defaultStyle, workoutSectionId: sectionId || '' },
+        { ...defaultRow(4), style: defaultStyle, workoutSectionId: sectionId || '' }
       ]);
       setSelectedCell(null);
       setRestartTimeValidationError(false);
     };
+
+    // Safety net: if rows become empty for any reason, restore a default row so the table remains usable.
+    useEffect(() => {
+      if (rows.length > 0) return;
+      console.log('[AerobicFastPlanner] rows empty -> restoring default row');
+      const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
+      setRows([{ ...defaultRow(1), style: defaultStyle }]);
+      setSelectedCell({ rowId: 1, field: 'distance' });
+      setActiveFieldAndRef('distance');
+    }, [rows, styleChoices, setActiveFieldAndRef]);
+
+    useEffect(() => {
+      console.log('[AerobicFastPlanner] rows changed', {
+        rowsCount: rows.length,
+        rowIds: rows.map((r) => r.id),
+        selectedCell
+      });
+    }, [rows, selectedCell]);
 
     const onCellClick = (rowId: number, field: keyof AerobicPlannerRow) => {
       lastSelectedRowIdRef.current = rowId;
@@ -870,21 +997,35 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
     const setToolbarRestChoice = (choice: RestChoice) => {
       setRestChoice(choice);
       setActiveFieldAndRef('rest');
-      if (!selectedCell) return;
-      setRows((prev) => prev.map((r) => (r.id === selectedCell.rowId ? { ...r, restChoice: choice } : r)));
+      const targetRowId = selectedCell?.rowId ?? rows[0]?.id;
+      if (!targetRowId) {
+        const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
+        setRows([{ ...defaultRow(1), style: defaultStyle, restChoice: choice }]);
+        setSelectedCell({ rowId: 1, field: 'rest' });
+        return;
+      }
+      setRows((prev) => prev.map((r) => (r.id === targetRowId ? { ...r, restChoice: choice } : r)));
+      setSelectedCell({ rowId: targetRowId, field: 'rest' });
     };
 
     const setToolbarBreakChoice = (choice: BreakChoice) => {
       setBreakChoice(choice);
       setActiveFieldAndRef('break');
-      if (!selectedCell) return;
+      const targetRowId = selectedCell?.rowId ?? rows[0]?.id;
+      if (!targetRowId) {
+        const defaultStyle = styleChoices.length > 0 ? styleChoices[0] : '';
+        setRows([{ ...defaultRow(1), style: defaultStyle, breakChoice: choice, break: choice === 'stopped' ? 'Stopped' : '' }]);
+        setSelectedCell({ rowId: 1, field: 'break' });
+        return;
+      }
       setRows((prev) =>
         prev.map((r) => {
-          if (r.id !== selectedCell.rowId) return r;
+          if (r.id !== targetRowId) return r;
           if (choice === 'stopped') return { ...r, breakChoice: 'stopped', break: 'Stopped' };
           return { ...r, breakChoice: choice };
         })
       );
+      setSelectedCell({ rowId: targetRowId, field: 'break' });
     };
 
     const restChoiceLabel = (choice: RestChoice) => {
@@ -927,7 +1068,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       inactive: 'bg-white text-lime-900 border-lime-300 hover:bg-lime-50'
     };
 
-    const chipButtonClass = 'px-2 py-1 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50 whitespace-nowrap';
+    const chipButtonClass = 'px-2 py-1 text-xs text-gray-800 border border-gray-300 rounded bg-white hover:bg-gray-50 whitespace-nowrap';
 
     const sensors = useSensors(useSensor(SafePointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -944,8 +1085,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
 
     const SortableRow = ({ row, rowIndex }: { row: AerobicPlannerRow; rowIndex: number }) => {
       const { attributes, listeners, setNodeRef, transform, transition, isDragging, setActivatorNodeRef } = useSortable({
-        id: row.id,
-        disabled: isNoteEditing
+        id: row.id
       });
 
       const style: React.CSSProperties = {
@@ -962,11 +1102,12 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
               <button
                 ref={setActivatorNodeRef}
                 type="button"
+                onClick={() => onCellClick(row.id, 'distance')}
                 {...attributes}
                 {...listeners}
                 data-dnd-handle="true"
                 className="w-5 h-5 border border-gray-300 rounded bg-white hover:bg-gray-50 cursor-grab active:cursor-grabbing flex items-center justify-center select-none"
-                aria-label="Drag to reorder"
+                aria-label="Select row and drag to reorder"
               >
                 ⠿
               </button>
@@ -1042,7 +1183,7 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
               className="w-full border border-gray-300 rounded px-1.5 py-0.5 bg-white text-left font-mono truncate"
             >
               {row.restChoice === 'restart_to'
-                ? formatTime(row.rest || '')
+                ? formatAerobicCellTime(row.rest || '')
                 : row.restChoice === 'rest_time'
                 ? formatPauseInput(row.rest || '')
                 : row.rest || ''}
@@ -1098,19 +1239,50 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
               placeholder="Note"
             />
           </td>
+          <td className="border-t border-gray-200 px-1 py-1.5 text-center align-center bg-gray-50">
+            <div className="flex items-center justify-center gap-1">
+              <button
+                type="button"
+                onClick={() => copyRowOnce(row.id)}
+                onDoubleClick={() => copyRowToAllSubsequent(row.id)}
+                className="w-7 h-7 border border-gray-300 rounded bg-slate-600 text-white hover:bg-slate-700 text-xs"
+                title="Copy row once. Double click to copy to all subsequent rows."
+              >
+                ⧉
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteRow(row.id)}
+                className="w-7 h-7 border border-red-300 rounded bg-red-600 text-white hover:bg-red-700 text-xs"
+                title="Delete this row"
+              >
+                🗑
+              </button>
+            </div>
+          </td>
         </tr>
       );
     };
 
     const rowActionButtons = (
       <div className="flex items-center justify-end gap-2 flex-wrap">
-        <button type="button" onClick={() => selectedRow && duplicateSelectedRow(1)} disabled={!selectedRow} className="px-3 py-1.5 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" title="Duplicate selected row to the end">Duplicate +1</button>
-        <button type="button" onClick={() => selectedRow && duplicateSelectedRow(2)} disabled={!selectedRow} className="px-3 py-1.5 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" title="Add 2 copies of selected row to the end">Triplicate +2</button>
-        <button type="button" onClick={() => selectedRow && duplicateSelectedRow(3)} disabled={!selectedRow} className="px-3 py-1.5 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" title="Add 3 copies of selected row to the end">Quadruplicate +3</button>
-        <button type="button" onClick={removeLastFilledRow} disabled={!rows.some(isRowFilled)} className="px-3 py-1.5 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" title="Remove the last row that has data">Remove last</button>
+        <button type="button" onClick={() => selectedRow && duplicateSelectedRow(1)} disabled={!selectedRow} className="px-3 py-1.5 text-xs text-gray-800 border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" title="Duplicate selected row just below">Duplicate +1</button>
+        <button type="button" onClick={() => selectedRow && duplicateSelectedRow(2)} disabled={!selectedRow} className="px-3 py-1.5 text-xs text-gray-800 border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" title="Add 2 copies of selected row just below">Triplicate +2</button>
+        <button type="button" onClick={() => selectedRow && duplicateSelectedRow(3)} disabled={!selectedRow} className="px-3 py-1.5 text-xs text-gray-800 border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" title="Add 3 copies of selected row just below">Quadruplicate +3</button>
+        <span className="text-xs text-gray-700">Replicate for</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={replicateCount}
+          onChange={(e) => setReplicateCount(e.target.value.replace(/\D/g, '').slice(0, 3) || '1')}
+          className="w-12 px-1 py-1 text-xs text-gray-800 text-center border border-gray-300 rounded bg-white"
+          title="How many copies to create"
+        />
+        <button type="button" onClick={replicateSelectedRow} disabled={!selectedRow} className="px-3 py-1.5 text-xs text-gray-800 border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">Apply</button>
+        <button type="button" onClick={removeLastFilledRow} disabled={!rows.some(isRowFilled)} className="px-3 py-1.5 text-xs text-gray-800 border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" title="Remove the last row that has data">Remove last</button>
         <button type="button" onClick={resetAllRows} className="px-3 py-1.5 text-xs border border-red-300 rounded bg-red-50 text-red-800 hover:bg-red-100" title="Clear all rows (with confirmation)">Reset all</button>
-        <button type="button" onClick={ensureRow} className="px-3 py-1.5 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50">Add row</button>
-        <button type="button" onClick={() => (selectedRow ? deleteRow(selectedRow.id) : null)} disabled={!selectedRow} className="px-3 py-1.5 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">Delete selected</button>
+        <button type="button" onClick={ensureRow} className="px-3 py-1.5 text-xs text-gray-800 border border-gray-300 rounded bg-white hover:bg-gray-50">Add row</button>
+        <button type="button" onClick={() => (selectedRow ? deleteRow(selectedRow.id) : null)} disabled={!selectedRow} className="px-3 py-1.5 text-xs text-gray-800 border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">Delete selected</button>
       </div>
     );
 
@@ -1118,295 +1290,411 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       <>
       <div className={`p-4 bg-gray-50 border border-gray-200 rounded-lg flex flex-col flex-1 min-h-0`}>
         {fullView && <div className="sticky top-0 z-10 flex-shrink-0 mb-2 px-2 py-2 bg-gray-50 border border-gray-200 rounded shadow-sm">{rowActionButtons}</div>}
-        {!fullView && <p className="text-[10px] text-amber-700 mb-1 font-medium">Section below stays on screen during scroll – only the table rows move.</p>}
-        <div className={`flex-1 min-h-0 overflow-x-auto border border-gray-200 rounded bg-white ${fullView ? 'overflow-y-visible' : 'overflow-y-auto'}`}>
-          {!fullView && (
-          <div className="sticky top-0 z-10 bg-gray-50 pt-1 pb-2 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
-        <div className="mb-3">
-          <div className="grid grid-cols-1 lg:grid-cols-7 gap-2">
-            <div className={`border rounded ${durationTheme.box} lg:col-span-1`}>
-              <div className={`text-[11px] font-semibold px-2 py-1 border-b ${durationTheme.header}`}>Duration &amp; Mode</div>
-              <div className="grid grid-cols-2 gap-1 p-1.5">
-                <button type="button" onClick={() => setActiveFieldAndRef('distance')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'distance' ? durationTheme.active : durationTheme.inactive}`}>Distance</button>
-                <button type="button" onClick={() => setActiveFieldAndRef('style')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'style' ? durationTheme.active : durationTheme.inactive}`}>Style</button>
-              </div>
-            </div>
-
-            <div className={`border rounded ${intensityTheme.box} lg:col-span-2`}>
-              <div className={`text-[11px] font-semibold px-2 py-1 border-b ${intensityTheme.header}`}>Intensity of work</div>
-              <div className="grid grid-cols-4 gap-1 p-1.5">
-                <button type="button" onClick={() => setActiveFieldAndRef('speed')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'speed' ? intensityTheme.active : intensityTheme.inactive}`}>Speed</button>
-                <button type="button" onClick={() => setActiveFieldAndRef('strokes')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'strokes' ? intensityTheme.active : intensityTheme.inactive}`}>Strokes</button>
-                <button type="button" onClick={() => setActiveFieldAndRef('watts')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'watts' ? intensityTheme.active : intensityTheme.inactive}`}>Watts</button>
-                <button type="button" onClick={() => setActiveFieldAndRef('time')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'time' ? intensityTheme.active : intensityTheme.inactive}`}>Time</button>
-              </div>
-            </div>
-
-            <div className={`border rounded ${breakTheme.box} lg:col-span-2`}>
-              <div className={`text-[11px] font-semibold px-2 py-1 border-b ${breakTheme.header}`}>Break between rehearsals</div>
-              <div className={`grid gap-1 p-1.5 ${restChoices.length === 1 ? 'grid-cols-1' : restChoices.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
-                {restChoices.map((choice) => (
-                  <button
-                    key={choice.choice}
-                    type="button"
-                    onClick={() => setToolbarRestChoice(choice.choice)}
-                    className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'rest' && restChoice === choice.choice ? breakTheme.active : breakTheme.inactive}`}
-                  >
-                    {choice.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className={`border rounded ${breakTypeTheme.box} lg:col-span-2`}>
-              <div className={`text-[11px] font-semibold px-2 py-1 border-b ${breakTypeTheme.header}`}>Break type between rehearsals</div>
-              <div className="grid grid-cols-3 gap-1 p-1.5">
-                <button type="button" onClick={() => setToolbarBreakChoice('stopped')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'break' && breakChoice === 'stopped' ? breakTypeTheme.active : breakTypeTheme.inactive}`}>Stopped</button>
-                <button type="button" onClick={() => setToolbarBreakChoice('speed')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'break' && breakChoice === 'speed' ? breakTypeTheme.active : breakTypeTheme.inactive}`}>Speed</button>
-                <button type="button" onClick={() => setToolbarBreakChoice('watts')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'break' && breakChoice === 'watts' ? breakTypeTheme.active : breakTypeTheme.inactive}`}>Watts</button>
-              </div>
+        {!fullView && (
+          <p className="text-[10px] text-amber-700 mb-1 font-medium">
+            Table header stays fixed while you scroll the rows (use the grid inside the frame above).
+          </p>
+        )}
+        <div className={`border border-gray-200 rounded bg-white`}>
+        {fullView ? (
+          <div className="min-h-[200px] overflow-x-hidden border border-gray-200 rounded bg-white overflow-y-visible">
+            <div className="border border-gray-300 bg-white rounded">
+              <div className="overflow-x-hidden">
+                <table className="w-full text-[11px] table-fixed min-w-0">
+                  <colgroup>
+                    <col className="w-[132px]" />
+                    <col className="w-[60px]" />
+                    <col className="w-[90px]" />
+                    <col className="w-[80px]" />
+                    <col className="w-[70px]" />
+                    <col className="w-[70px]" />
+                    <col className="w-[90px]" />
+                    <col className="w-[90px]" />
+                    <col className="w-[90px]" />
+                    <col className="w-[90px]" />
+                    <col className="w-[90px]" />
+                    <col className="w-[180px]" />
+                    <col className="w-[72px]" />
+                  </colgroup>
+                  <thead className="sticky top-0 z-20 bg-gray-100 shadow-[0_2px_6px_rgba(0,0,0,0.08)]">
+                    <tr>
+                      <th rowSpan={2} className="border-b border-r border-gray-300 px-1 py-1.5 text-center bg-gray-100 text-[10px] font-semibold leading-tight align-top">
+                        Workout section
+                      </th>
+                      <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${durationTheme.header}`}>Duration &amp; Mode</th>
+                      <th colSpan={4} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${intensityTheme.header}`}>Intensity of work</th>
+                      <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${breakTheme.header}`}>Break between rehearsals</th>
+                      <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${breakTypeTheme.header}`}>Break type between rehearsals</th>
+                      <th rowSpan={2} className="border-b border-r border-gray-300 px-2 py-2 text-center bg-amber-200 border-2 border-amber-400 text-amber-900 font-bold text-[13px] align-top" aria-label="Notes" />
+                      <th rowSpan={2} className="border-b border-gray-300 px-2 py-2 text-center bg-gray-100 text-gray-700 font-bold text-[12px] align-top">Options</th>
+                    </tr>
+                    <tr>
+                      <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${durationTheme.header}`}>Distance</th>
+                      <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${durationTheme.header}`}>Style</th>
+                      <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Speed</th>
+                      <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Strokes</th>
+                      <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Watts</th>
+                      <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Time</th>
+                      <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTheme.header}`}>Rest Type</th>
+                      <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTheme.header}`}>Rest</th>
+                      <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTypeTheme.header}`}>Break type</th>
+                      <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTypeTheme.header}`}>Break</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={13} className="border-t border-gray-200 px-3 py-4 text-center text-sm text-gray-600">
+                          No rows available.
+                          <button
+                            type="button"
+                            onClick={ensureRow}
+                            className="ml-3 px-3 py-1.5 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50"
+                          >
+                            Create first row
+                          </button>
+                        </td>
+                      </tr>
+                    ) : (
+                      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                        <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+                          {rows.map((r, rowIndex) => (
+                            <SortableRow key={r.id} row={r} rowIndex={rowIndex} />
+                          ))}
+                        </SortableContext>
+                      </DndContext>
+                    )}
+                  </tbody>
+                </table>
             </div>
           </div>
-        </div>
+          </div>
+        ) : (
+          <>
+            <div className="border border-gray-200 rounded bg-white shadow-sm">
+              <div className="relative z-10 flex-shrink-0 bg-gray-50 pt-1 pb-2 border-b border-gray-200">
+                <div className="mb-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-7 gap-2">
+                    <div className={`border rounded ${durationTheme.box} lg:col-span-1`}>
+                      <div className={`text-[11px] font-semibold px-2 py-1 border-b ${durationTheme.header}`}>Duration &amp; Mode</div>
+                      <div className="grid grid-cols-2 gap-1 p-1.5">
+                        <button type="button" onClick={() => setActiveFieldAndRef('distance')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'distance' ? durationTheme.active : durationTheme.inactive}`}>Distance</button>
+                        <button type="button" onClick={() => setActiveFieldAndRef('style')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'style' ? durationTheme.active : durationTheme.inactive}`}>Style</button>
+                      </div>
+                    </div>
 
-        <div className="mb-3 border border-gray-300 bg-white rounded p-2 overflow-x-auto">
-          <div className="flex items-start gap-3">
-            <div className="min-w-[140px]">
-              {activeField === 'strokes' && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <NumberInputWithArrows
-                    value={selectedRow?.strokes || ''}
-                    min={0}
-                    max={999}
-                    onApply={(v) => applyInputToSelection(v)}
-                  />
-                  <div className="flex gap-1 flex-wrap">
-                    {valueChips.map((chip: string) => (
-                      <button key={chip} type="button" onClick={() => applyChipToSelection(chip)} className={chipButtonClass}>
-                        {chip}
-                      </button>
-                    ))}
+                    <div className={`border rounded ${intensityTheme.box} lg:col-span-2`}>
+                      <div className={`text-[11px] font-semibold px-2 py-1 border-b ${intensityTheme.header}`}>Intensity of work</div>
+                      <div className="grid grid-cols-4 gap-1 p-1.5">
+                        <button type="button" onClick={() => setActiveFieldAndRef('speed')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'speed' ? intensityTheme.active : intensityTheme.inactive}`}>Speed</button>
+                        <button type="button" onClick={() => setActiveFieldAndRef('strokes')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'strokes' ? intensityTheme.active : intensityTheme.inactive}`}>Strokes</button>
+                        <button type="button" onClick={() => setActiveFieldAndRef('watts')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'watts' ? intensityTheme.active : intensityTheme.inactive}`}>Watts</button>
+                        <button type="button" onClick={() => setActiveFieldAndRef('time')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'time' ? intensityTheme.active : intensityTheme.inactive}`}>Time</button>
+                      </div>
+                    </div>
+
+                    <div className={`border rounded ${breakTheme.box} lg:col-span-2`}>
+                      <div className={`text-[11px] font-semibold px-2 py-1 border-b ${breakTheme.header}`}>Break between rehearsals</div>
+                      <div className={`grid gap-1 p-1.5 ${restChoices.length === 1 ? 'grid-cols-1' : restChoices.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                        {restChoices.map((choice) => (
+                          <button
+                            key={choice.choice}
+                            type="button"
+                            onClick={() => setToolbarRestChoice(choice.choice)}
+                            className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'rest' && restChoice === choice.choice ? breakTheme.active : breakTheme.inactive}`}
+                          >
+                            {choice.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className={`border rounded ${breakTypeTheme.box} lg:col-span-2`}>
+                      <div className={`text-[11px] font-semibold px-2 py-1 border-b ${breakTypeTheme.header}`}>Break type between rehearsals</div>
+                      <div className="grid grid-cols-3 gap-1 p-1.5">
+                        <button type="button" onClick={() => setToolbarBreakChoice('stopped')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'break' && breakChoice === 'stopped' ? breakTypeTheme.active : breakTypeTheme.inactive}`}>Stopped</button>
+                        <button type="button" onClick={() => setToolbarBreakChoice('speed')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'break' && breakChoice === 'speed' ? breakTypeTheme.active : breakTypeTheme.inactive}`}>Speed</button>
+                        <button type="button" onClick={() => setToolbarBreakChoice('watts')} className={`w-full px-2 py-1 text-xs border rounded ${activeField === 'break' && breakChoice === 'watts' ? breakTypeTheme.active : breakTypeTheme.inactive}`}>Watts</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              )}
-              {activeField === 'watts' && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <NumberInputWithArrows
-                    value={selectedRow?.watts || ''}
-                    min={0}
-                    max={999}
-                    onApply={(v) => applyInputToSelection(v)}
-                  />
-                  <div className="flex gap-1 flex-wrap">
-                    {valueChips.map((chip: string) => (
-                      <button key={chip} type="button" onClick={() => applyChipToSelection(chip)} className={chipButtonClass}>
-                        {chip}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {activeField === 'time' ? (
-                <input
-                  type="text"
-                  value={selectedRow?.time || ''}
-                  onChange={(e) => applyInputToSelection(e.target.value)}
-                  onBlur={(e) => applyInputToSelection(formatTime(e.target.value))}
-                  className="w-40 border border-gray-300 rounded px-2 py-1 text-xs font-mono"
-                  placeholder="e.g. 12345 → 12'34&quot;5"
-                />
-              ) : null}
-              {activeField === 'rest' && restChoice === 'restart_to' && (
-                <input
-                  type="text"
-                  value={selectedRow?.rest || ''}
-                  onChange={(e) => applyInputToSelection(e.target.value)}
-                  onBlur={(e) => {
-                    const targetRowId = selectedRow?.id ?? rows[0]?.id;
-                    return targetRowId ? handleRestartToBlur(targetRowId, e.target.value) : null;
-                  }}
-                  className="w-40 border border-gray-300 rounded px-2 py-1 text-xs font-mono"
-                  placeholder={"e.g. 12345 → 12'34\"5 (must be > Time by 3\")"}
-                  title={"Restart to: same format as Time; must be at least 3\" longer than Time"}
-                />
-              )}
-              {activeField === 'rest' && restChoice === 'reset_pulse' && (
-                <NumberInputWithArrows
-                  value={selectedRow?.rest || ''}
-                  min={60}
-                  max={220}
-                  onApply={(v) => applyInputToSelection(v)}
-                />
-              )}
-              {activeField === 'break' && breakChoice === 'watts' && (
-                <NumberInputWithArrows
-                  value={selectedRow?.break || ''}
-                  min={0}
-                  max={999}
-                  onApply={(v) => applyInputToSelection(v)}
-                />
-              )}
-              {activeField !== 'strokes' &&
-                activeField !== 'watts' &&
-                activeField !== 'time' &&
-                !(activeField === 'rest' && restChoice === 'restart_to') &&
-                !(activeField === 'rest' && restChoice === 'reset_pulse') &&
-                !(activeField === 'break' && breakChoice === 'watts') && (
-                  <div className="flex gap-2 items-center min-w-max">
-                    {valueChips.map((chip: string) => (
-                      <button
-                        key={chip}
-                        type="button"
-                        onClick={() => applyChipToSelection(chip)}
-                        className={chipButtonClass}
-                      >
-                        {chip}
-                      </button>
-                    ))}
+
+                {workoutSections.length > 0 && (
+                  <div className="mb-2 rounded border border-gray-200 bg-white px-2 py-2">
+                    <div className="text-[10px] font-semibold text-gray-600 mb-1.5">
+                      Sections (from Tools → Sections)
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {workoutSections.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => applyWorkoutSectionToAllRows(s.id)}
+                          className="inline-flex max-w-full items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-800 hover:bg-gray-100"
+                          title="Apply this section to every row in the table"
+                        >
+                          {s.color ? (
+                            <span
+                              className="h-2.5 w-2.5 shrink-0 rounded-full border border-gray-300"
+                              style={{ backgroundColor: s.color }}
+                              aria-hidden
+                            />
+                          ) : null}
+                          <span className="truncate">
+                            {s.name}
+                            {s.code ? ` (${s.code})` : ''}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
-            </div>
-            {fieldHelp && (
-              <div className="flex-1 border border-gray-200 bg-gray-50 rounded px-2 py-1">
-                <div className="text-[11px] font-semibold text-gray-700">{fieldHelp.title}</div>
-                <div className="text-[11px] text-gray-700">Description: {fieldHelp.basic}</div>
-                <div className="text-[11px] text-gray-500">Advanced: {fieldHelp.advanced}</div>
+
+                <div className="mb-3 border border-gray-300 bg-white rounded p-2 overflow-x-hidden">
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-[140px]">
+                      {activeField === 'strokes' && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <NumberInputWithArrows
+                            value={selectedRow?.strokes || ''}
+                            min={0}
+                            max={999}
+                            onApply={(v) => applyInputToSelection(v)}
+                          />
+                          <div className="flex gap-1 flex-wrap">
+                            {valueChips.map((chip: string, chipIdx: number) => (
+                              <button
+                                key={`${activeField}-chip-${chipIdx}-${String(chip)}`}
+                                type="button"
+                                onClick={() => applyChipToSelection(chip)}
+                                className={chipButtonClass}
+                              >
+                                {chip}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {activeField === 'watts' && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <NumberInputWithArrows
+                            value={selectedRow?.watts || ''}
+                            min={0}
+                            max={999}
+                            onApply={(v) => applyInputToSelection(v)}
+                          />
+                          <div className="flex gap-1 flex-wrap">
+                            {valueChips.map((chip: string, chipIdx: number) => (
+                              <button
+                                key={`${activeField}-chip-${chipIdx}-${String(chip)}`}
+                                type="button"
+                                onClick={() => applyChipToSelection(chip)}
+                                className={chipButtonClass}
+                              >
+                                {chip}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {activeField === 'time' ? (
+                        <input
+                          type="text"
+                          value={selectedRow?.time || ''}
+                          onChange={(e) => applyInputToSelection(e.target.value)}
+                          onBlur={(e) => applyInputToSelection(formatAerobicCellTime(e.target.value))}
+                          className="w-40 border border-gray-300 rounded px-2 py-1 text-xs font-mono"
+                          placeholder="e.g. 12345 → 12'34&quot;5"
+                        />
+                      ) : null}
+                      {activeField === 'rest' && restChoice === 'restart_to' && (
+                        <input
+                          type="text"
+                          value={selectedRow?.rest || ''}
+                          onChange={(e) => applyInputToSelection(e.target.value)}
+                          onBlur={(e) => {
+                            const targetRowId = selectedRow?.id ?? rows[0]?.id;
+                            return targetRowId ? handleRestartToBlur(targetRowId, e.target.value) : null;
+                          }}
+                          className="w-40 border border-gray-300 rounded px-2 py-1 text-xs font-mono"
+                          placeholder={"e.g. 12345 → 12'34\"5 (must be > Time by 3\")"}
+                          title={"Restart to: same format as Time; must be at least 3\" longer than Time"}
+                        />
+                      )}
+                      {activeField === 'rest' && restChoice === 'rest_time' && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={selectedRow?.rest || ''}
+                            onChange={(e) => applyInputToSelection(e.target.value)}
+                            onBlur={(e) => applyInputToSelection(formatAerobicPauseInput(e.target.value))}
+                            className="w-36 border border-gray-300 rounded px-2 py-1 text-xs font-mono"
+                            placeholder="Pause (digits)"
+                            title="Type digits and blur to format (pause between rehearsals)"
+                          />
+                          <div className="flex max-w-[min(100%,28rem)] flex-wrap gap-1">
+                            {valueChips.map((chip: string, chipIdx: number) => (
+                              <button
+                                key={`${activeField}-chip-${chipIdx}-${String(chip)}`}
+                                type="button"
+                                onClick={() => applyChipToSelection(chip)}
+                                className={chipButtonClass}
+                              >
+                                {chip}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {activeField === 'break' && breakChoice === 'watts' && (
+                        <NumberInputWithArrows
+                          value={selectedRow?.break || ''}
+                          min={0}
+                          max={999}
+                          onApply={(v) => applyInputToSelection(v)}
+                        />
+                      )}
+                      {activeField !== 'strokes' &&
+                        activeField !== 'watts' &&
+                        activeField !== 'time' &&
+                        !(activeField === 'rest' && restChoice === 'restart_to') &&
+                        !(activeField === 'rest' && restChoice === 'reset_pulse') &&
+                        !(activeField === 'rest' && restChoice === 'rest_time') &&
+                        !(activeField === 'break' && breakChoice === 'watts') && (
+                          <div className="flex gap-2 items-center flex-wrap">
+                            {valueChips.map((chip: string, chipIdx: number) => (
+                              <button
+                                key={`${activeField}-chip-${chipIdx}-${String(chip)}`}
+                                type="button"
+                                onClick={() => applyChipToSelection(chip)}
+                                className={chipButtonClass}
+                              >
+                                {chip}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                    </div>
+                    {fieldHelp && (
+                      <div className="flex-1 border border-gray-200 bg-gray-50 rounded px-2 py-1">
+                        <div className="text-[11px] font-semibold text-gray-700">{fieldHelp.title}</div>
+                        <div className="text-[11px] text-gray-700">Description: {fieldHelp.basic}</div>
+                        <div className="text-[11px] text-gray-500">Advanced: {fieldHelp.advanced}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mb-2 px-1">{rowActionButtons}</div>
               </div>
-            )}
-          </div>
-        </div>
 
-        <div className="mb-2">{rowActionButtons}</div>
-          </div>
+              <div className="border-t border-gray-200 bg-white">
+                <div className="max-h-[46vh] min-h-[260px] overflow-y-auto">
+                  <div className="overflow-x-hidden min-w-0">
+                  <table className="w-full text-[11px] table-fixed min-w-0">
+                    <colgroup>
+                      <col className="w-[132px]" />
+                      <col className="w-[60px]" />
+                      <col className="w-[90px]" />
+                      <col className="w-[80px]" />
+                      <col className="w-[70px]" />
+                      <col className="w-[70px]" />
+                      <col className="w-[90px]" />
+                      <col className="w-[90px]" />
+                      <col className="w-[90px]" />
+                      <col className="w-[90px]" />
+                      <col className="w-[90px]" />
+                      <col className="w-[180px]" />
+                      <col className="w-[72px]" />
+                    </colgroup>
+                    <thead className="sticky top-0 z-20 bg-gray-100 shadow-[0_2px_6px_rgba(0,0,0,0.08)]">
+                      <tr>
+                        <th rowSpan={2} className="border-b border-r border-gray-300 px-1 py-1.5 text-center bg-gray-100 text-[10px] font-semibold leading-tight align-top">
+                          Workout section
+                        </th>
+                        <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${durationTheme.header}`}>Duration &amp; Mode</th>
+                        <th colSpan={4} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${intensityTheme.header}`}>Intensity of work</th>
+                        <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${breakTheme.header}`}>Break between rehearsals</th>
+                        <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${breakTypeTheme.header}`}>Break type between rehearsals</th>
+                        <th rowSpan={2} className="border-b border-r border-gray-300 px-2 py-2 text-center bg-amber-200 border-2 border-amber-400 text-amber-900 font-bold text-[13px] align-top" aria-label="Notes" />
+                        <th rowSpan={2} className="border-b border-gray-300 px-2 py-2 text-center bg-gray-100 text-gray-700 font-bold text-[12px] align-top">Options</th>
+                      </tr>
+                      <tr>
+                        <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${durationTheme.header}`}>Distance</th>
+                        <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${durationTheme.header}`}>Style</th>
+                        <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Speed</th>
+                        <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Strokes</th>
+                        <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Watts</th>
+                        <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Time</th>
+                        <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTheme.header}`}>Rest Type</th>
+                        <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTheme.header}`}>Rest</th>
+                        <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTypeTheme.header}`}>Break type</th>
+                        <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTypeTheme.header}`}>Break</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={13} className="border-t border-gray-200 px-3 py-4 text-center text-sm text-gray-600">
+                            No rows available.
+                            <button
+                              type="button"
+                              onClick={ensureRow}
+                              className="ml-3 px-3 py-1.5 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50"
+                            >
+                              Create first row
+                            </button>
+                          </td>
+                        </tr>
+                      ) : (
+                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                          <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+                            {rows.map((r, rowIndex) => (
+                              <SortableRow key={r.id} row={r} rowIndex={rowIndex} />
+                            ))}
+                          </SortableContext>
+                        </DndContext>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                </div>
+
+                  {restartTimeValidationError && (
+                    <div className="m-3 px-3 py-2 rounded bg-gray-900 text-white text-sm">
+                      This cannot be possible - Restart to MUST BE ALWAYS &gt; OF Time ( at least 3&quot; )
+                    </div>
+                  )}
+
+                  <p className="mx-3 mt-2 text-[10px] text-blue-600">
+                    Scroll inside the grid to view all repetitions. Each can have unique speed, time, and pause values.
+                  </p>
+
+                  <div className="m-3 mt-3 p-4 rounded-lg border-2 border-amber-400 bg-amber-50/90 shadow-sm space-y-2">
+                    <label className="block text-base font-bold text-amber-900 mb-2">Description &amp; Analysis/Notes</label>
+                    <div
+                      className="w-full px-3 py-2 text-xs bg-amber-100/80 border border-amber-200 rounded text-amber-900 whitespace-nowrap overflow-hidden text-ellipsis"
+                      title={aerobicSummaryLine}
+                      aria-readonly
+                    >
+                      {aerobicSummaryLine}
+                    </div>
+                    <textarea
+                      value={descriptionInstructions}
+                      onChange={(e) => setDescriptionInstructions(e.target.value)}
+                      className="w-full min-h-[90px] px-3 py-2 text-sm border-2 border-amber-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-400"
+                      placeholder="Write descriptions and instructions..."
+                    />
+                  </div>
+                </div>
+            </div>
+          </>
         )}
-
-        <div className="border border-gray-300 bg-white rounded overflow-hidden border-t-0 rounded-t-none">
-          <div className="overflow-x-auto">
-            <table className="w-full text-[11px] table-fixed min-w-[1200px]">
-              <colgroup>
-                <col className="w-[56px]" />
-                <col className="w-[70px]" />
-                <col className="w-[110px]" />
-                <col className="w-[100px]" />
-                <col className="w-[80px]" />
-                <col className="w-[80px]" />
-                <col className="w-[110px]" />
-                <col className="w-[110px]" />
-                <col className="w-[110px]" />
-                <col className="w-[110px]" />
-                <col className="w-[110px]" />
-                <col className="w-[280px]" />
-              </colgroup>
-              <thead className="sticky z-[9] bg-gray-100 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]" style={{ top: '14rem' }}>
-                <tr>
-                  <th rowSpan={2} className="border-b border-r border-gray-300 px-1.5 py-1.5 text-center bg-gray-100">#</th>
-                  <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${durationTheme.header}`}>Duration &amp; Mode</th>
-                  <th colSpan={4} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${intensityTheme.header}`}>Intensity of work</th>
-                  <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${breakTheme.header}`}>Break between rehearsals</th>
-                  <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${breakTypeTheme.header}`}>Break type between rehearsals</th>
-                  <th rowSpan={2} className="border-b border-gray-300 px-2 py-2 text-center bg-amber-200 border-2 border-amber-400 text-amber-900 font-bold text-[13px]">Note</th>
-                </tr>
-                <tr>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${durationTheme.header}`}>Distance</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${durationTheme.header}`}>Style</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Speed</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Strokes</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Watts</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Time</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTheme.header}`}>Rest Type</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTheme.header}`}>Rest</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTypeTheme.header}`}>Break type</th>
-                  <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTypeTheme.header}`}>Break</th>
-                </tr>
-              </thead>
-            </table>
-          </div>
-        </div>
         </div>
 
-        <div className="border border-gray-300 bg-white rounded overflow-hidden border-t-0 rounded-t-none -mt-px">
-          <div className="overflow-x-auto">
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <table className="w-full text-[11px] table-fixed min-w-[1200px]">
-                <colgroup>
-                  <col className="w-[56px]" />
-                  <col className="w-[70px]" />
-                  <col className="w-[110px]" />
-                  <col className="w-[100px]" />
-                  <col className="w-[80px]" />
-                  <col className="w-[80px]" />
-                  <col className="w-[110px]" />
-                  <col className="w-[110px]" />
-                  <col className="w-[110px]" />
-                  <col className="w-[110px]" />
-                  <col className="w-[110px]" />
-                  <col className="w-[280px]" />
-                </colgroup>
-                <thead className="sticky z-[9] bg-gray-100 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]" style={{ top: '14rem' }}>
-                  <tr>
-                    <th rowSpan={2} className="border-b border-r border-gray-300 px-1.5 py-1.5 text-center bg-gray-100">#</th>
-                    <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${durationTheme.header}`}>Duration &amp; Mode</th>
-                    <th colSpan={4} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${intensityTheme.header}`}>Intensity of work</th>
-                    <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${breakTheme.header}`}>Break between rehearsals</th>
-                    <th colSpan={2} className={`border-b border-r border-gray-300 px-1.5 py-1.5 text-center ${breakTypeTheme.header}`}>Break type between rehearsals</th>
-                    <th rowSpan={2} className="border-b border-gray-300 px-2 py-2 text-center bg-amber-200 border-2 border-amber-400 text-amber-900 font-bold text-[13px]">Note</th>
-                  </tr>
-                  <tr>
-                    <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${durationTheme.header}`}>Distance</th>
-                    <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${durationTheme.header}`}>Style</th>
-                    <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Speed</th>
-                    <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Strokes</th>
-                    <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Watts</th>
-                    <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${intensityTheme.header}`}>Time</th>
-                    <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTheme.header}`}>Rest Type</th>
-                    <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTheme.header}`}>Rest</th>
-                    <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTypeTheme.header}`}>Break type</th>
-                    <th className={`border-b border-r border-gray-300 px-1 py-1 text-center ${breakTypeTheme.header}`}>Break</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
-                    {rows.map((r, rowIndex) => (
-                      <SortableRow key={r.id} row={r} rowIndex={rowIndex} />
-                    ))}
-                  </SortableContext>
-                </tbody>
-              </table>
-            </DndContext>
-          </div>
-        </div>
-
-        {!fullView && restartTimeValidationError && (
-          <div className="mt-2 px-3 py-2 rounded bg-gray-900 text-white text-sm">
-            This cannot be possible - Restart to MUST BE ALWAYS &gt; OF Time ( at least 3&quot; )
-          </div>
-        )}
-
-        {!fullView && (
-        <p className="mt-2 text-[10px] text-blue-600">
-          Scroll to view all repetitions. Each can have unique speed, time, and pause values.
-        </p>
-        )}
-
-        {!fullView && (
-        <div className="mt-4 p-4 rounded-lg border-2 border-amber-400 bg-amber-50/90 shadow-sm space-y-2">
-          <label className="block text-base font-bold text-amber-900 mb-2">Description &amp; Analysis/Notes</label>
-          <pre
-            className="w-full px-3 py-2 text-sm bg-amber-100/80 border border-amber-200 rounded text-amber-900 whitespace-pre-wrap font-sans resize-none"
-            aria-readonly
-          >
-            {aerobicSummaryText}
-          </pre>
-          <textarea
-            value={descriptionInstructions}
-            onChange={(e) => setDescriptionInstructions(e.target.value)}
-            className="w-full min-h-[90px] px-3 py-2 text-sm border-2 border-amber-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-400"
-            placeholder="Write descriptions and instructions..."
-          />
-        </div>
-        )}
-
-        </div>
+      </div>
 
         {showPreferences && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

@@ -18,6 +18,11 @@ export interface CustomTopic {
   name: string;
 }
 
+export interface UserInsertedTopic {
+  name: string;
+  creatorUsername: string | null;
+}
+
 export interface UseNewsDataResult {
   topics: string[];
   customTopics: CustomTopic[];
@@ -25,8 +30,12 @@ export interface UseNewsDataResult {
   topicNamesCreatedBySuperAdmin: string[];
   /** Topic names created by normal users (super admin sees these in dropdown only); empty when not super-admin. */
   topicNamesCreatedByNormalUsers: string[];
+  /** Super admin: user-inserted topics with creator username (for labels). */
+  userInsertedTopics: UserInsertedTopic[];
   pastedArticles: ArticlePasted[];
   typedArticles: ArticleTyped[];
+  /** Set when loading OGP with viewAsUsername (super admin “see as user”). */
+  viewAsUserId: string | null;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -45,16 +54,21 @@ export interface UseNewsDataResult {
 export interface UseNewsDataOptions {
   /** When true, use adminToken and adminUser from localStorage (super admin in admin panel). */
   adminContext?: boolean;
+  /** Super admin: load OGPs visible to this username (all topics). */
+  viewAsUsername?: string | null;
 }
 
 export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   const { user } = useAuth();
   const adminContext = options?.adminContext === true;
+  const viewAsUsername = options?.viewAsUsername ?? null;
   const [adminUserId, setAdminUserId] = useState<string | null>(null);
+  const [viewAsUserId, setViewAsUserId] = useState<string | null>(null);
   const [topics, setTopics] = useState<string[]>(() => [...NEWS_TOPICS]);
   const [customTopics, setCustomTopics] = useState<CustomTopic[]>([]);
   const [topicNamesCreatedBySuperAdmin, setTopicNamesCreatedBySuperAdmin] = useState<string[]>([]);
   const [topicNamesCreatedByNormalUsers, setTopicNamesCreatedByNormalUsers] = useState<string[]>([]);
+  const [userInsertedTopics, setUserInsertedTopics] = useState<UserInsertedTopic[]>([]);
   const [pastedArticles, setPastedArticles] = useState<ArticlePasted[]>([]);
   const [typedArticles, setTypedArticles] = useState<ArticleTyped[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,8 +96,10 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       setCustomTopics([]);
       setTopicNamesCreatedBySuperAdmin([]);
       setTopicNamesCreatedByNormalUsers([]);
+      setUserInsertedTopics([]);
       setPastedArticles([]);
       setTypedArticles([]);
+      setViewAsUserId(null);
       setLoading(false);
       return;
     }
@@ -91,9 +107,13 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     setError(null);
     const headers = getHeaders();
     try {
+      const ogpUrl =
+        viewAsUsername != null && viewAsUsername.trim() !== ''
+          ? `/api/news/ogp?${new URLSearchParams({ viewAsUsername: viewAsUsername.trim() })}`
+          : '/api/news/ogp';
       const [topicsRes, ogpRes, typedRes, orderRes] = await Promise.all([
         fetch('/api/news/topics', { headers }),
-        fetch('/api/news/ogp', { headers }),
+        fetch(ogpUrl, { headers }),
         fetch('/api/news/typed', { headers }),
         fetch('/api/news/topic-order', { headers }),
       ]);
@@ -102,17 +122,32 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         throw new Error('Failed to load news data');
       }
 
-      const [topicsData, ogpData, typedData, orderData] = await Promise.all([
+      const [topicsData, ogpJson, typedData, orderData] = await Promise.all([
         topicsRes.json(),
         ogpRes.json(),
         typedRes.json(),
         orderRes.ok ? orderRes.json() : Promise.resolve({ order: [] }),
       ]);
 
+      const ogpData = Array.isArray(ogpJson)
+        ? ogpJson
+        : Array.isArray(ogpJson?.articles)
+          ? ogpJson.articles
+          : [];
+      if (viewAsUsername != null && viewAsUsername.trim() !== '' && ogpJson && typeof ogpJson === 'object' && !Array.isArray(ogpJson)) {
+        setViewAsUserId(typeof ogpJson.viewAsUserId === 'string' ? ogpJson.viewAsUserId : null);
+      } else {
+        setViewAsUserId(null);
+      }
+
       const custom = topicsData.customTopics ?? [];
       setCustomTopics(custom);
       setTopicNamesCreatedBySuperAdmin(topicsData.topicNamesCreatedBySuperAdmin ?? []);
-      setTopicNamesCreatedByNormalUsers(topicsData.topicNamesCreatedByNormalUsers ?? []);
+      const inserted = (topicsData.userInsertedTopics ?? []) as UserInsertedTopic[];
+      setUserInsertedTopics(inserted);
+      setTopicNamesCreatedByNormalUsers(
+        inserted.length > 0 ? inserted.map((x) => x.name) : (topicsData.topicNamesCreatedByNormalUsers ?? [])
+      );
       const rawTopics = [...(topicsData.defaultTopicNames ?? NEWS_TOPICS), ...custom.map((t: CustomTopic) => t.name)];
       const order: string[] = orderData?.order ?? [];
       const sorted =
@@ -125,10 +160,11 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       setTopics(sorted);
 
       setPastedArticles(
-        (ogpData ?? []).map((a: any) => ({
+        (ogpData as any[] ?? []).map((a: any) => ({
           id: a.id,
           userId: a.userId,
           creatorUsername: a.creatorUsername ?? null,
+          creatorCountry: a.creatorCountry ?? null,
           createdByCurrentUser: a.createdByCurrentUser === true,
           createdBySuperAdmin: a.createdBySuperAdmin === true,
           title: a.title,
@@ -167,12 +203,14 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
       setCustomTopics([]);
       setTopicNamesCreatedBySuperAdmin([]);
       setTopicNamesCreatedByNormalUsers([]);
+      setUserInsertedTopics([]);
       setPastedArticles([]);
       setTypedArticles([]);
+      setViewAsUserId(null);
     } finally {
       setLoading(false);
     }
-  }, [effectiveUserId, getHeaders]);
+  }, [effectiveUserId, getHeaders, viewAsUsername]);
 
   useEffect(() => {
     fetchAll();
@@ -285,6 +323,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         {
           id: created.id,
           userId: effectiveUserId ?? undefined,
+          creatorCountry: user?.country ?? null,
           createdByCurrentUser: true,
           title: created.title,
           image: created.image,
@@ -306,7 +345,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         },
       ]);
     },
-    [effectiveUserId, getHeaders]
+    [effectiveUserId, getHeaders, user?.country]
   );
 
   const removePastedArticle = useCallback(
@@ -419,8 +458,10 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     customTopics,
     topicNamesCreatedBySuperAdmin,
     topicNamesCreatedByNormalUsers,
+    userInsertedTopics,
     pastedArticles,
     typedArticles,
+    viewAsUserId,
     loading,
     error,
     refresh: fetchAll,

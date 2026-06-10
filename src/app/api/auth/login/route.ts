@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { UserType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword, generateToken, hashPassword } from '@/lib/auth';
+import { MOVESBOOK_LOGIN_USER_TYPES } from '@/lib/adminLoginLogLabels';
+import { tryEntityCompanyLogin } from '@/lib/entity/entityDirectLogin';
 import mysql from 'mysql2/promise';
 
 type LegacyDbConfig = {
@@ -226,6 +228,23 @@ const hasLegacyUsersTable = async (): Promise<boolean> => {
   return false;
 };
 
+async function loadAdminUserForEntityLogin(adminId: string) {
+  return prisma.user.findUnique({
+    where: { id: adminId },
+    select: {
+      id: true,
+      name: true,
+      username: true,
+      email: true,
+      country: true,
+      image: true,
+      password: true,
+      userType: true,
+      createdAt: true,
+    },
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { email, username, identifier, password, userType } = await request.json();
@@ -259,6 +278,8 @@ export async function POST(request: NextRequest) {
         name: true,
         username: true,
         email: true,
+        country: true,
+        image: true,
         password: true,
         userType: true,
         createdAt: true,
@@ -266,6 +287,7 @@ export async function POST(request: NextRequest) {
     });
     let user = null;
     let passwordAlreadyVerified = false;
+    let entityDirectLoginRedirect: string | null = null;
     
     if (newUsers.length > 0) {
       for (const candidate of newUsers) {
@@ -283,7 +305,7 @@ export async function POST(request: NextRequest) {
     }
     if (!user) {
       const rawUser = await prisma.$queryRaw<any[]>`
-        SELECT id, name, username, email, password, userType, createdAt
+        SELECT id, name, username, email, country, image, password, userType, createdAt
         FROM users_new
         WHERE lower(email) = lower(${loginIdentifier}) OR lower(username) = lower(${loginIdentifier})
       `;
@@ -542,10 +564,21 @@ export async function POST(request: NextRequest) {
     }
 
     if (!user) {
-      return NextResponse.json(
-        { error: 'Invalid email/username or password' },
-        { status: 401 }
-      );
+      const entityLogin = await tryEntityCompanyLogin(loginIdentifier, password);
+      if (entityLogin) {
+        const adminUser = await loadAdminUserForEntityLogin(entityLogin.adminId);
+        if (adminUser) {
+          user = adminUser;
+          passwordAlreadyVerified = true;
+          entityDirectLoginRedirect = entityLogin.redirectTo;
+        }
+      }
+      if (!user) {
+        return NextResponse.json(
+          { error: 'Invalid email/username or password' },
+          { status: 401 }
+        );
+      }
     }
 
     if (!passwordAlreadyVerified) {
@@ -558,14 +591,26 @@ export async function POST(request: NextRequest) {
       console.log(`🔐 Password verification result: ${isPasswordValid ? '✅ VALID' : '❌ INVALID'}`);
       
       if (!isPasswordValid) {
-        const username = user?.username || loginIdentifier;
-        console.log(`❌ Password verification failed for user: ${username}`);
-        return NextResponse.json(
-          { error: 'Invalid email/username or password' },
-          { status: 401 }
-        );
+        const entityLogin = await tryEntityCompanyLogin(loginIdentifier, password);
+        if (entityLogin) {
+          const adminUser = await loadAdminUserForEntityLogin(entityLogin.adminId);
+          if (adminUser) {
+            user = adminUser;
+            passwordAlreadyVerified = true;
+            entityDirectLoginRedirect = entityLogin.redirectTo;
+          }
+        }
+        if (!passwordAlreadyVerified) {
+          const username = user?.username || loginIdentifier;
+          console.log(`❌ Password verification failed for user: ${username}`);
+          return NextResponse.json(
+            { error: 'Invalid email/username or password' },
+            { status: 401 }
+          );
+        }
+      } else {
+        console.log(`✅ Password verified successfully for user: ${user.username}`);
       }
-      console.log(`✅ Password verified successfully for user: ${user.username}`);
     }
 
     // Auto-upgrade disabled - keeping SHA1 passwords as-is
@@ -581,8 +626,30 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const userSettings = await prisma.userSettings.findUnique({
+      where: { userId: user.id },
+      select: { language: true }
+    });
+
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
+    const userPayload = {
+      ...userWithoutPassword,
+      language: userSettings?.language || 'en'
+    };
+
+    if (MOVESBOOK_LOGIN_USER_TYPES.includes(user.userType)) {
+      try {
+        const { recordUserLoginLog } = await import('@/lib/loginLogSession');
+        await recordUserLoginLog(user.id);
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastSeenAt: new Date() },
+        });
+      } catch {
+        /* login log optional */
+      }
+    }
 
     // Generate JWT token with RSA signing
     const token = generateToken(
@@ -595,7 +662,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       token,
-      user: userWithoutPassword
+      user: userPayload,
+      ...(entityDirectLoginRedirect ? { redirectTo: entityDirectLoginRedirect } : {}),
     });
 
   } catch (error) {

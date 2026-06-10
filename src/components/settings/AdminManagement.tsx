@@ -83,10 +83,33 @@ export default function AdminManagement() {
       const data = await response.json();
       setSuperAdminExists(data.exists);
       setSuperAdminMode(data.exists ? 'login' : 'register');
-      
-      // Check if logged in
-      const storedAdmin = localStorage.getItem('superAdminUser');
-      setSuperAdminLoggedIn(!!storedAdmin);
+
+      const token = localStorage.getItem('adminToken');
+      let tableSuperAdmin = false;
+
+      if (token) {
+        try {
+          const sessionRes = await fetch('/api/admin/super-admin/session', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const session = await sessionRes.json();
+          if (session.tableSuperAdmin && session.superAdmin) {
+            tableSuperAdmin = true;
+            if (!localStorage.getItem('superAdminUser')) {
+              localStorage.setItem(
+                'superAdminUser',
+                JSON.stringify(session.superAdmin)
+              );
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      } else if (localStorage.getItem('superAdminUser')) {
+        tableSuperAdmin = true;
+      }
+
+      setSuperAdminLoggedIn(tableSuperAdmin);
     } catch (error) {
       console.error('Error checking super admin:', error);
       setSuperAdminMode('register');
@@ -554,6 +577,16 @@ export default function AdminManagement() {
                     Logout
                   </button>
                 </div>
+                <p className="text-sm text-green-800 mt-4 pt-4 border-t border-green-200">
+                  Machine manufacturers (companies catalog): open{' '}
+                  <a
+                    href="/settings?section=technical&tab=equipmentFactories"
+                    className="font-semibold text-green-900 underline hover:no-underline"
+                  >
+                    Settings → Technical → Equipment factories
+                  </a>
+                  .
+                </p>
               </div>
 
               {/* Edit Profile Section */}

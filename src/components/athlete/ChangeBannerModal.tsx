@@ -10,6 +10,7 @@ export type ChangeBannerSaved = {
   profileBanner?: string;
   profileBannerAlignment?: BannerAlignment;
   profileBannerSequence?: string | null;
+  profileBannerVideo?: string | null;
 };
 
 type TabId = 'image' | 'sequence' | 'videos' | 'embedded';
@@ -22,6 +23,7 @@ type ChangeBannerModalProps = {
   currentAlignment: BannerAlignment | null | undefined;
   /** Raw JSON from DB (`["/uploads/..."]`) */
   currentBannerSequenceJson: string | null | undefined;
+  currentBannerVideoPath: string | null | undefined;
   t: (key: string) => string;
 };
 
@@ -34,6 +36,7 @@ export default function ChangeBannerModal({
   currentBannerPath,
   currentAlignment,
   currentBannerSequenceJson,
+  currentBannerVideoPath,
   t,
 }: ChangeBannerModalProps) {
   const [tab, setTab] = useState<TabId>('image');
@@ -42,12 +45,16 @@ export default function ChangeBannerModal({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [selectedVideoFile, setSelectedVideoFile] = useState<File | null>(null);
+  const [videoUploading, setVideoUploading] = useState(false);
+
   const [sequencePaths, setSequencePaths] = useState<string[]>([]);
   const [sequenceUploading, setSequenceUploading] = useState(false);
   const [sequenceSaving, setSequenceSaving] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const sequenceInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
   const resetLocal = useCallback(() => {
     setTab('image');
@@ -58,8 +65,11 @@ export default function ChangeBannerModal({
     setSequencePaths(parseBannerSequenceJson(currentBannerSequenceJson));
     setSequenceUploading(false);
     setSequenceSaving(false);
+    setSelectedVideoFile(null);
+    setVideoUploading(false);
     if (inputRef.current) inputRef.current.value = '';
     if (sequenceInputRef.current) sequenceInputRef.current.value = '';
+    if (videoInputRef.current) videoInputRef.current.value = '';
   }, [currentAlignment, currentBannerSequenceJson]);
 
   useEffect(() => {
@@ -71,6 +81,8 @@ export default function ChangeBannerModal({
       setSequencePaths(parseBannerSequenceJson(currentBannerSequenceJson));
       if (inputRef.current) inputRef.current.value = '';
       if (sequenceInputRef.current) sequenceInputRef.current.value = '';
+      setSelectedVideoFile(null);
+      if (videoInputRef.current) videoInputRef.current.value = '';
     }
   }, [isOpen, currentAlignment, currentBannerSequenceJson]);
 
@@ -82,6 +94,7 @@ export default function ChangeBannerModal({
   if (!isOpen) return null;
 
   const hasSavedBanner = Boolean(currentBannerPath?.trim());
+  const hasSavedVideo = Boolean(currentBannerVideoPath?.trim());
 
   const handleBrowse = () => {
     setError(null);
@@ -137,6 +150,8 @@ export default function ChangeBannerModal({
         body: JSON.stringify({
           profileBanner: path,
           profileBannerAlignment: alignment,
+          profileBannerVideo: null,
+          profileBannerSequence: null,
         }),
       });
 
@@ -146,10 +161,19 @@ export default function ChangeBannerModal({
         return;
       }
 
-      const user = (patchData as { user?: { profileBanner?: string; profileBannerAlignment?: string | null } }).user;
+      const user = (patchData as {
+        user?: {
+          profileBanner?: string;
+          profileBannerAlignment?: string | null;
+          profileBannerVideo?: string | null;
+          profileBannerSequence?: string | null;
+        };
+      }).user;
       onSaved({
         profileBanner: user?.profileBanner ?? path,
         profileBannerAlignment: (user?.profileBannerAlignment as BannerAlignment) ?? alignment,
+        profileBannerVideo: user?.profileBannerVideo ?? null,
+        profileBannerSequence: user?.profileBannerSequence ?? null,
       });
       setSelectedFile(null);
       if (inputRef.current) inputRef.current.value = '';
@@ -208,8 +232,8 @@ export default function ChangeBannerModal({
     try {
       const body =
         sequencePaths.length > 0
-          ? { profileBannerSequence: JSON.stringify(sequencePaths) }
-          : { profileBannerSequence: null };
+          ? { profileBannerSequence: JSON.stringify(sequencePaths), profileBannerVideo: null }
+          : { profileBannerSequence: null, profileBannerVideo: null };
 
       const patchRes = await fetch('/api/user/profile', {
         method: 'PATCH',
@@ -230,18 +254,114 @@ export default function ChangeBannerModal({
         user?: {
           profileBanner?: string | null;
           profileBannerSequence?: string | null;
+          profileBannerVideo?: string | null;
+          profileBannerAlignment?: string | null;
         };
       }).user;
 
       onSaved({
         profileBanner: user?.profileBanner ?? undefined,
         profileBannerSequence: user?.profileBannerSequence ?? null,
+        profileBannerVideo: user?.profileBannerVideo ?? null,
+        profileBannerAlignment: user?.profileBannerAlignment
+          ? (user.profileBannerAlignment as BannerAlignment)
+          : undefined,
       });
       handleClose();
     } catch {
       setError(t('change_banner_error_save'));
     } finally {
       setSequenceSaving(false);
+    }
+  };
+
+  const uploadBannerVideoFile = async (token: string, file: File): Promise<string | null> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const uploadRes = await fetch('/api/user/profile/banner-video-upload', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const uploadData = await uploadRes.json().catch(() => ({}));
+    if (!uploadRes.ok) {
+      setError((uploadData as { error?: string }).error || t('change_banner_error_video_upload'));
+      return null;
+    }
+    return (uploadData as { path?: string }).path ?? null;
+  };
+
+  const handleVideoBrowse = () => {
+    setError(null);
+    videoInputRef.current?.click();
+  };
+
+  const handleVideoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    setSelectedVideoFile(f ?? null);
+    setError(null);
+  };
+
+  const handleUploadVideo = async () => {
+    setError(null);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) {
+      setError(t('change_banner_error_auth'));
+      return;
+    }
+    if (!selectedVideoFile) {
+      setError(t('change_banner_error_no_video'));
+      return;
+    }
+
+    setVideoUploading(true);
+    try {
+      const path = await uploadBannerVideoFile(token, selectedVideoFile);
+      if (!path) return;
+
+      const patchRes = await fetch('/api/user/profile', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          profileBannerVideo: path,
+          profileBannerSequence: null,
+          profileBanner: null,
+        }),
+      });
+
+      const patchData = await patchRes.json().catch(() => ({}));
+      if (!patchRes.ok) {
+        setError((patchData as { error?: string }).error || t('change_banner_error_save'));
+        return;
+      }
+
+      const user = (patchData as {
+        user?: {
+          profileBannerVideo?: string | null;
+          profileBanner?: string | null;
+          profileBannerSequence?: string | null;
+          profileBannerAlignment?: string | null;
+        };
+      }).user;
+
+      onSaved({
+        profileBannerVideo: user?.profileBannerVideo ?? path,
+        profileBanner: user?.profileBanner ?? undefined,
+        profileBannerSequence: user?.profileBannerSequence ?? null,
+        profileBannerAlignment: user?.profileBannerAlignment
+          ? (user.profileBannerAlignment as BannerAlignment)
+          : undefined,
+      });
+      setSelectedVideoFile(null);
+      if (videoInputRef.current) videoInputRef.current.value = '';
+      handleClose();
+    } catch {
+      setError(t('change_banner_error_video_upload'));
+    } finally {
+      setVideoUploading(false);
     }
   };
 
@@ -417,7 +537,24 @@ export default function ChangeBannerModal({
           )}
 
           {tab === 'videos' && (
-            <p className="text-sm text-gray-500">{t('change_banner_tab_placeholder')}</p>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                {!hasSavedVideo && !selectedVideoFile ? t('change_banner_no_record') : null}
+                {selectedVideoFile ? (
+                  <span className="block mt-1 text-gray-800">{selectedVideoFile.name}</span>
+                ) : null}
+              </p>
+
+              <input
+                ref={videoInputRef}
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
+                className="hidden"
+                onChange={handleVideoFileChange}
+              />
+
+              {error && tab === 'videos' ? <p className="text-sm text-red-600">{error}</p> : null}
+            </div>
           )}
           {tab === 'embedded' && (
             <p className="text-sm text-gray-500">{t('change_banner_tab_placeholder')}</p>
@@ -454,6 +591,27 @@ export default function ChangeBannerModal({
               className="w-full py-3 rounded-lg bg-[#4a4a4a] text-white text-sm font-medium hover:bg-[#3a3a3a] disabled:opacity-50"
             >
               {sequenceSaving ? t('change_banner_sequence_saving') : t('change_banner_sequence_save')}
+            </button>
+          </div>
+        )}
+
+        {tab === 'videos' && (
+          <div className="flex gap-3 p-4 border-t border-gray-200 bg-[#f5f5f5]">
+            <button
+              type="button"
+              onClick={handleVideoBrowse}
+              disabled={videoUploading}
+              className="flex-1 py-3 rounded-lg bg-[#4a4a4a] text-white text-sm font-medium hover:bg-[#3a3a3a] disabled:opacity-50"
+            >
+              {t('change_banner_browse')}
+            </button>
+            <button
+              type="button"
+              onClick={handleUploadVideo}
+              disabled={videoUploading || !selectedVideoFile}
+              className="flex-1 py-3 rounded-lg bg-[#4a4a4a] text-white text-sm font-medium hover:bg-[#3a3a3a] disabled:opacity-50"
+            >
+              {videoUploading ? t('change_banner_uploading') : t('change_banner_upload_video')}
             </button>
           </div>
         )}

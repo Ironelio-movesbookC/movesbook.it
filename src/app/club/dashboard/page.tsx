@@ -1,25 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Image from 'next/image';
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { 
   Users, 
   Dumbbell,
   BarChart3,
   Calendar,
   Settings,
-  Eye,
-  EyeOff,
   UserCircle,
   Plus,
   Target,
   TrendingUp,
-  ChevronRight,
   ChevronDown,
   Building2,
-  Home,
   Menu,
-  HelpCircle,
   CalendarDays,
   CalendarCheck,
   CheckSquare,
@@ -28,29 +22,54 @@ import {
   FolderOpen,
   CalendarRange,
   Mail,
-  Filter
+  Filter,
+  Loader2
 } from 'lucide-react';
 import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
+import NewsOGPPanel from '@/components/news/NewsOGPPanel';
 import SimpleFooter from '@/components/SimpleFooter';
 import AddMemberModal from '@/components/AddMemberModal';
+import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
+import CreateClubModal, { type CreateClubFormPayload } from '@/components/club/CreateClubModal';
+import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolbar';
+import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
+import {
+  getClubMyPageDisplayName,
+  getFormCreatedClubsSortedByCreatedAt,
+  parseClubDescriptionMeta,
+  formatMyClubsSidebarLabel,
+} from '@/lib/club/clubSidebarLabel';
 import RightSidebar from '@/components/dashboard/RightSidebar';
 import { useAuth } from '@/hooks/useAuth';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import ClubDashboardMyPageBanner from './components/ClubDashboardMyPageBanner';
+import ClubIdentificationDevicesPanel from './components/ClubIdentificationDevicesPanel';
+import ClubAccessOutcomeSettingsPanel from './components/ClubAccessOutcomeSettingsPanel';
+import type { AthleteLegacyBannerProfile } from '@/components/athlete/AthleteLegacyBanner';
+import ChangeBannerModal, { type BannerAlignment } from '@/components/athlete/ChangeBannerModal';
+import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 
-export default function ClubDashboard() {
+function ClubDashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading } = useAuth();
   const { t } = useLanguage();
 
   // All useState hooks must be declared before any early returns
-  const [showAdBanner, setShowAdBanner] = useState(true);
-  const [showPersonalBanner, setShowPersonalBanner] = useState(true);
-  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
-  const [showRightSidebar, setShowRightSidebar] = useState(true);
-  const [showToolbar, setShowToolbar] = useState(true);
+  const {
+    showAdBanner,
+    showPersonalBanner,
+    showLeftSidebar,
+    showRightSidebar,
+    setShowAdBanner,
+    setShowPersonalBanner,
+    setShowLeftSidebar,
+    setShowRightSidebar,
+  } = useDisplayLayoutOptions();
   const [clubs, setClubs] = useState<any[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-page');
@@ -58,8 +77,79 @@ export default function ClubDashboard() {
   const [activeRightTab, setActiveRightTab] = useState<'actions-planner' | 'chat-panel'>('actions-planner');
   const [expandedActionsPlanner, setExpandedActionsPlanner] = useState(true);
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
+  const [clubAddSongsOgpOpen, setClubAddSongsOgpOpen] = useState(false);
+  const [clubAddSongsOgpExpanded, setClubAddSongsOgpExpanded] = useState(false);
+  const [bannerProfile, setBannerProfile] = useState<AthleteLegacyBannerProfile | null>(null);
+  const [showChangeBannerModal, setShowChangeBannerModal] = useState(false);
+  const [showAdminPasswordConfirm, setShowAdminPasswordConfirm] = useState(false);
+  const [showCreateClubModal, setShowCreateClubModal] = useState(false);
+  const [createClubModalKey, setCreateClubModalKey] = useState(0);
+  const [createClubSaving, setCreateClubSaving] = useState(false);
+  /** My Club tab is visible only after opening a club from the sidebar list. */
+  const [myClubTabVisible, setMyClubTabVisible] = useState(false);
+
+  const showMyClubTab = useCallback(() => {
+    setMyClubTabVisible(true);
+  }, []);
+
+  const hideMyClubTab = useCallback(() => {
+    setMyClubTabVisible(false);
+  }, []);
+
+  const [clubMainPanel, setClubMainPanel] = useState<
+    'default' | 'identification-devices' | 'outcome-settings'
+  >('default');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const savedClubId = localStorage.getItem('selectedClub');
+    if (savedClubId) setSelectedClubId(savedClubId);
+    setActiveTab('my-page');
+    setMyClubTabVisible(false);
+  }, []);
+
+  const formClubs = useMemo(
+    () => getFormCreatedClubsSortedByCreatedAt(clubs),
+    [clubs]
+  );
+
+  const openCreateClubFlow = () => setShowAdminPasswordConfirm(true);
+
+  const handleAdminPasswordVerified = () => {
+    setShowAdminPasswordConfirm(false);
+    setCreateClubModalKey((k) => k + 1);
+    setShowCreateClubModal(true);
+  };
+  const hasFormClub = formClubs.length > 0;
+  const activeClub = selectedClubId
+    ? formClubs.find((c) => c.id === selectedClubId) ?? null
+    : null;
 
   // All function definitions and useEffect hooks must also be before any early returns
+  const loadBannerProfile = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/user/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBannerProfile({
+          image: data.image,
+          profileBanner: data.profileBanner,
+          profileBannerAlignment: data.profileBannerAlignment,
+          profileBannerSequence: data.profileBannerSequence,
+          profileBannerVideo: data.profileBannerVideo,
+          name: data.name,
+          firstName: data.firstName,
+          surname: data.surname,
+        });
+      }
+    } catch (e) {
+      console.error('Error loading profile for banner:', e);
+    }
+  }, []);
+
   const loadClubs = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -77,43 +167,132 @@ export default function ClubDashboard() {
 
   const handleClubSelect = (clubId: string) => {
     localStorage.setItem('selectedClub', clubId);
-    window.location.href = `/my-club?clubId=${clubId}`;
+    setSelectedClubId(clubId);
+    showMyClubTab();
+    setActiveTab('my-entity');
+  };
+
+  const handleMyPageTabClick = useCallback(() => {
+    hideMyClubTab();
+    setActiveTab('my-page');
+  }, [hideMyClubTab]);
+
+  const handleTabChange = useCallback(
+    (tab: 'my-page' | 'my-entity') => {
+      if (tab === 'my-page') {
+        hideMyClubTab();
+      }
+      setActiveTab(tab);
+    },
+    [hideMyClubTab],
+  );
+
+  const handleCreateClubSave = async (payload: CreateClubFormPayload) => {
+    const token = localStorage.getItem('token');
+    if (!token) throw new Error('Not signed in');
+
+    setCreateClubSaving(true);
+    try {
+      const response = await fetch('/api/clubs', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ create: true, ...payload }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create club');
+      }
+      await loadClubs();
+      if (data.club?.id) {
+        setSelectedClubId(data.club.id);
+        localStorage.setItem('selectedClub', data.club.id);
+      }
+      setShowCreateClubModal(false);
+    } finally {
+      setCreateClubSaving(false);
+    }
   };
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('selectedClub');
-      if (saved) setSelectedClubId(saved);
+    if (activeTab !== 'my-entity') {
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('default');
     }
-  }, []);
+  }, [activeTab]);
+
+  // After tab cleanup effect: open normal-user OGP/News (same `NewsOGPPanel` / `useNewsData` as athletes; not super-admin).
+  useEffect(() => {
+    if (searchParams != null && searchParams.get('open') === 'news' && formClubs.length > 0) {
+      const clubId = selectedClubId ?? formClubs[0]?.id;
+      if (clubId && !selectedClubId) {
+        setSelectedClubId(clubId);
+        localStorage.setItem('selectedClub', clubId);
+      }
+      showMyClubTab();
+      setActiveTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(true);
+      router.replace('/club/dashboard', { scroll: false });
+    }
+  }, [searchParams, router, formClubs, selectedClubId]);
 
   useEffect(() => {
-    if (user && user.userType !== 'CLUB_TRAINER') {
+    if (!selectedClubId && activeTab === 'my-entity') {
+      setActiveTab('my-page');
+    }
+  }, [selectedClubId, activeTab]);
+
+  // Deep-link support (used by legacy settings tabs).
+  useEffect(() => {
+    const panel = searchParams?.get('panel');
+    if (panel === 'identification-devices') {
+      setActiveTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('identification-devices');
+      router.replace('/club/dashboard', { scroll: false });
+    }
+    if (panel === 'outcome-settings') {
+      setActiveTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('outcome-settings');
+      router.replace('/club/dashboard', { scroll: false });
+    }
+  }, [searchParams, router]);
+
+  useEffect(() => {
+    if (user && !isClubAccountUserType(user.userType)) {
       router.push('/my-page');
     }
   }, [user, router]);
 
   useEffect(() => {
-    if (user && user.userType === 'CLUB_TRAINER') {
+    if (user && isClubAccountUserType(user.userType)) {
       loadClubs();
+      loadBannerProfile();
     }
-  }, [user]);
+  }, [user, loadBannerProfile]);
 
-  // Reset workout section when switching to my-page
+  // Reset workout section when switching to my-page; hide My Club tab on My Page
   useEffect(() => {
     if (activeTab === 'my-page') {
       setShowWorkoutSection(false);
+      setMyClubTabVisible(false);
     }
   }, [activeTab]);
 
-  // Auto-hide left sidebar when workout section opens
   useEffect(() => {
-    if (showWorkoutSection) {
-      setShowLeftSidebar(false);
-    } else {
-      setShowLeftSidebar(true);
+    if (!hasFormClub && activeTab === 'my-entity') {
+      setActiveTab('my-page');
     }
-  }, [showWorkoutSection]);
+  }, [hasFormClub, activeTab]);
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -127,193 +306,47 @@ export default function ClubDashboard() {
     return null;
   }
 
+  const dashboardShellActiveTab: 'my-page' | 'my-entity' =
+    selectedClubId && hasFormClub ? activeTab : 'my-page';
+  const bannerClub = activeClub ?? formClubs[0] ?? null;
+
   return (
     <div className="bg-gray-50 flex flex-col" style={{ minHeight: '100vh' }}>
       <ModernNavbar />
 
-      {/* Display Options Toolbar */}
-      <div className={`bg-white border-b px-4 py-1 transition-all duration-300 ${showToolbar ? '' : 'overflow-hidden'}`}>
-        <div className={`flex items-center justify-between flex-wrap gap-2 transition-all duration-300 ${showToolbar ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
-          <div className="flex items-center gap-4 flex-wrap">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={showAdBanner} onChange={(e) => setShowAdBanner(e.target.checked)} className="w-4 h-4" />
-              <span className="flex items-center gap-1">
-                {showAdBanner ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                Advertising Banner
-              </span>
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={showPersonalBanner} onChange={(e) => setShowPersonalBanner(e.target.checked)} className="w-4 h-4" />
-              <span className="flex items-center gap-1">
-                {showPersonalBanner ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                Personal Banner & Picture
-              </span>
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={showLeftSidebar} onChange={(e) => setShowLeftSidebar(e.target.checked)} className="w-4 h-4" />
-              <span className="flex items-center gap-1">
-                {showLeftSidebar ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                Left Sidebar
-              </span>
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={showRightSidebar} onChange={(e) => setShowRightSidebar(e.target.checked)} className="w-4 h-4" />
-              <span className="flex items-center gap-1">
-                {showRightSidebar ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                Right Sidebar
-              </span>
-            </label>
-          </div>
-            <label className="flex items-center gap-2 text-sm cursor-pointer ml-auto">
-              <input type="checkbox" checked={showToolbar} onChange={(e) => setShowToolbar(e.target.checked)} className="w-4 h-4" />
-              <span className="flex items-center gap-1 text-gray-600">
-                {showToolbar ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                <span className="font-medium">Display Options</span>
-              </span>
-            </label>
-          </div>
-      </div>
+      <DisplayOptionsToolbar
+        showAdBanner={showAdBanner}
+        showPersonalBanner={showPersonalBanner}
+        showLeftSidebar={showLeftSidebar}
+        showRightSidebar={showRightSidebar}
+        onToggleAdBanner={setShowAdBanner}
+        onTogglePersonalBanner={setShowPersonalBanner}
+        onToggleLeftSidebar={setShowLeftSidebar}
+        onToggleRightSidebar={setShowRightSidebar}
+      />
 
       <div className="flex-1 flex flex-col w-full py-2">
         {showAdBanner && (
-          <div className="flex-shrink-0">
+          <div className="flex-shrink-0 px-4">
             <AdvertisementCarousel />
           </div>
         )}
 
-        {/* Video/Image Banner with Info Cards */}
-        {showPersonalBanner && (
-          <div className="flex-shrink-0">
-            <div className="relative overflow-hidden shadow-lg" style={{ height: '300px' }}>
-              <div
-                className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800 relative"
-                style={{
-                  backgroundImage: 'linear-gradient(135deg, #111827, #1f2937), url(/images/banner.jpg)',
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'no-repeat'
-                }}
-              >
-                <Image 
-                  src="/images/banner.jpg" 
-                  alt="Club Background"
-                  fill
-                  sizes="100vw"
-                  className="object-cover opacity-60"
-                />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-20 h-14 bg-red-600 rounded-lg flex items-center justify-center cursor-pointer hover:bg-red-700 transition">
-                    <div className="w-0 h-0 border-t-8 border-t-transparent border-l-12 border-l-white border-b-8 border-b-transparent ml-1"></div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="absolute top-4 right-4 flex gap-3">
-                <div className="bg-gray-800/90 backdrop-blur-sm rounded-lg p-3 text-white min-w-[120px]">
-                  <p className="text-xs text-gray-400 uppercase mb-1">Active Season</p>
-                  <p className="font-semibold">2025 Indoor</p>
-                  <p className="text-sm">Championship</p>
-                </div>
-                <div className="bg-teal-600/90 backdrop-blur-sm rounded-lg p-3 text-white min-w-[120px]">
-                  <p className="text-xs text-gray-200 uppercase mb-1">Period</p>
-                  <p className="font-semibold">Base</p>
-                  <p className="text-sm">Conditioning</p>
-                </div>
-                <div className="bg-blue-600/90 backdrop-blur-sm rounded-lg p-3 text-white min-w-[100px]">
-                  <p className="text-xs text-gray-200 uppercase mb-1">Week</p>
-                  <p className="text-2xl font-bold">14</p>
-                </div>
-                <div className="bg-green-700/90 backdrop-blur-sm rounded-lg p-3 text-white min-w-[140px]">
-                  <p className="text-xs text-gray-200 uppercase mb-1">Next Event</p>
-                  <p className="font-semibold">Continental Cup 21 Jul</p>
-                </div>
-              </div>
-
-              <div className="absolute bottom-4 left-4 flex gap-2">
-                <span className="bg-blue-600/90 backdrop-blur-sm text-white px-3 py-1 rounded text-sm">CURRENT 2 WEEKS</span>
-                <span className="bg-gray-700/90 backdrop-blur-sm text-white px-3 py-1 rounded text-sm">REST OF THE YEAR</span>
-                <span className="bg-gray-700/90 backdrop-blur-sm text-white px-3 py-1 rounded text-sm">COMPLETED SESSIONS</span>
-              </div>
-
-              <div className="absolute bottom-4 left-4 mt-12">
-                <div className="bg-blue-800/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg font-medium">
-                  {clubs[0]?.name || 'Club Magliw Awellino Club'}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Personal Banner - Horizontal Navigation Bar */}
-        {showPersonalBanner && (
-          <div className="flex-shrink-0">
-            <div className="bg-gray-800 overflow-hidden shadow-lg relative" style={{ height: '52px' }}>
-              {/* Background image with subtle overlay */}
-              <div 
-                className="absolute inset-0 bg-cover bg-center opacity-20"
-                style={{
-                  backgroundImage: 'url(/images/banner.jpg)',
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center'
-                }}
-              ></div>
-              
-              <div className="flex items-center justify-between px-4 text-sm h-full relative z-10">
-                {/* Left side - Navigation items */}
-                <div className="flex items-center gap-4 overflow-x-auto">
-                  <button className="text-gray-300 hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap">
-                    <Home className="w-4 h-4" />
-                    <span>Home</span>
-                  </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>FAQ</span>
-                  </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>My Clubs</span>
-                  </button>
-                  <button className="text-lime-400 hover:text-lime-300 transition-colors whitespace-nowrap font-semibold">
-                    <span>Club Magiw Avellino</span>
-                  </button>
-                  {activeTab === 'my-entity' && (
-                    <button 
-                      onClick={() => setShowWorkoutSection(!showWorkoutSection)}
-                      className={`transition-colors whitespace-nowrap ${
-                        showWorkoutSection 
-                          ? 'text-lime-400 hover:text-lime-300 font-semibold' 
-                          : 'text-gray-300 hover:text-white'
-                      }`}
-                    >
-                      <span>Workouts section</span>
-                    </button>
-                  )}
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>FunClub</span>
-                  </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>My Shared Clubs</span>
-                  </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>Other Clubs</span>
-                  </button>
-                  <button className="text-gray-300 hover:text-white transition-colors whitespace-nowrap">
-                    <span>Populars</span>
-                  </button>
-                </div>
-
-                {/* Right side - Action buttons (only for My Page) */}
-                {activeTab === 'my-page' && (
-                  <div className="flex items-center gap-3 ml-4">
-                    <button className="bg-white hover:bg-gray-100 text-gray-800 px-4 py-2 rounded transition-colors whitespace-nowrap text-sm font-medium">
-                      Upgrade informations
-                    </button>
-                    <button className="bg-white hover:bg-gray-100 text-gray-800 px-4 py-2 rounded transition-colors whitespace-nowrap text-sm font-medium">
-                      Logger of activities
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+        {/* My Page: cover + SPONSORED + strip; My Club: same cover + strip without SPONSORED */}
+        {showPersonalBanner && hasFormClub && bannerClub && (
+          <ClubDashboardMyPageBanner
+            clubName={getClubMyPageDisplayName(bannerClub)}
+            clubId={bannerClub.id}
+            onClubProfileClick={() => {
+              router.push(`/my-club?clubId=${encodeURIComponent(bannerClub.id)}`);
+            }}
+            coverImageUrl={getHeroBannerDisplayUrl(bannerProfile)}
+            coverBannerAlignment={
+              bannerProfile?.profileBannerAlignment === 'center' ? 'center' : 'default'
+            }
+            onCoverCameraClick={() => setShowChangeBannerModal(true)}
+            showSponsored={dashboardShellActiveTab === 'my-page'}
+          />
         )}
 
         <div className="flex-1 flex gap-0">
@@ -321,83 +354,162 @@ export default function ClubDashboard() {
             <div className="w-80 flex-shrink-0 sticky top-0 self-start">
               <DarkSidebar
                 userType={user?.userType || ''}
-                entities={clubs}
+                entities={formClubs}
                 selectedEntityId={selectedClubId}
+                clubMyClubTabVisible={myClubTabVisible}
                 onEntitySelect={handleClubSelect}
                 activeTab={activeTab}
-                onTabChange={setActiveTab}
-                onMyPageClick={() => setActiveTab('my-page')}
+                onTabChange={handleTabChange}
+                onMyPageClick={handleMyPageTabClick}
                 onMyClubClick={() => {
+                  if (!myClubTabVisible || !selectedClubId) return;
                   setActiveTab('my-entity');
-                  if (selectedClubId) {
-                    window.location.href = `/my-club?clubId=${selectedClubId}`;
-                  } else if (clubs.length > 0) {
-                    window.location.href = `/my-club?clubId=${clubs[0].id}`;
-                  }
                 }}
+                onClubAddSongsPlaylistsClick={() => {
+                  if (!hasFormClub || !myClubTabVisible) return;
+                  if (!selectedClubId && formClubs[0]?.id) {
+                    setSelectedClubId(formClubs[0].id);
+                    localStorage.setItem('selectedClub', formClubs[0].id);
+                  }
+                  setActiveTab('my-entity');
+                  setShowWorkoutSection(false);
+                  setClubMainPanel('default');
+                  setClubAddSongsOgpOpen(true);
+                }}
+                onIdentificationDevicesClick={() => {
+                  if (!hasFormClub) return;
+                  setActiveTab('my-entity');
+                  setShowWorkoutSection(false);
+                  setClubAddSongsOgpOpen(false);
+                  setClubMainPanel('identification-devices');
+                }}
+                onAccessOutcomeSettingsClick={() => {
+                  if (!hasFormClub) return;
+                  setActiveTab('my-entity');
+                  setShowWorkoutSection(false);
+                  setClubAddSongsOgpOpen(false);
+                  setClubMainPanel('outcome-settings');
+                }}
+                onCreateClubClick={openCreateClubFlow}
               />
             </div>
           )}
 
           <div className="flex-1 min-w-0 flex flex-col px-4">
-            {activeTab === 'my-page' ? (
+            {!clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'identification-devices' ? (
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900">Club Management Dashboard</h2>
-                  <button className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-all duration-200">
-                    Create New Club
-                  </button>
-                </div>
-
-                {clubs.length === 0 ? (
+                <ClubIdentificationDevicesPanel clubId={selectedClubId} />
+              </div>
+            ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'outcome-settings' ? (
+              <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
+                <ClubAccessOutcomeSettingsPanel
+                  clubId={selectedClubId}
+                  onBack={() => setClubMainPanel('default')}
+                />
+              </div>
+            ) : !clubAddSongsOgpOpen && !showWorkoutSection ? (
+              <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
+                {!hasFormClub ? (
                   <div className="flex-1 flex items-center justify-center">
                     <div className="text-center text-gray-500">
                       <Building2 className="w-20 h-20 mx-auto mb-6 opacity-60" />
-                      <p className="text-2xl font-bold mb-2">No Clubs Yet</p>
-                      <p className="text-lg mb-4">Create your first club to start managing members</p>
-                      <button className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">
-                        Create Club
+                      <p className="text-2xl font-bold mb-2">Set up your club</p>
+                      <p className="text-lg mb-4 max-w-md">
+                        Expand <strong>My clubs</strong> in the sidebar, click <strong>Create a club</strong>,
+                        and save your club username, direct access, and other details.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={openCreateClubFlow}
+                        className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700"
+                      >
+                        Create a club
                       </button>
                     </div>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {clubs.map((club) => (
-                      <div
-                        key={club.id}
-                        onClick={() => handleClubSelect(club.id)}
-                        className="p-6 border-2 border-gray-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all duration-300 cursor-pointer"
-                      >
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-purple-500 rounded-xl flex items-center justify-center">
-                            <Building2 className="w-6 h-6 text-white" />
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-gray-400" />
-                        </div>
-                        <h3 className="font-bold text-gray-900 text-lg mb-2">{club.name}</h3>
-                        <p className="text-sm text-gray-600 mb-2">{club.description || 'Club'}</p>
-                        {club.location && <p className="text-xs text-gray-500 mb-4">{club.location}</p>}
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-500">{club.memberCount || 0} members</span>
-                          <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full">Active</span>
-                        </div>
-                      </div>
-                    ))}
+                ) : dashboardShellActiveTab === 'my-page' ? (
+                  <div>
+                    <h2 className="mb-6 text-2xl font-bold text-gray-900">My Page</h2>
+                    <div className="max-w-2xl space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-6">
+                      <p className="text-gray-700">
+                        Your personal club owner page. Use the left sidebar to manage your profile,
+                        visitors, and club settings.
+                      </p>
+                      {hasFormClub && (
+                        <p className="text-sm text-gray-600">
+                          To open a club workspace, expand <strong>My clubs</strong> and click your club
+                          (e.g. <strong>{formatMyClubsSidebarLabel(formClubs[0]!)}</strong>). That opens{' '}
+                          <strong>My Club</strong>, where you can switch back here with{' '}
+                          <strong>My Page</strong>.
+                        </p>
+                      )}
+                    </div>
                   </div>
-                )}
+                ) : dashboardShellActiveTab === 'my-entity' && activeClub ? (
+                  <div>
+                    <h2 className="mb-6 text-2xl font-bold text-gray-900">My Club</h2>
+                    <div className="max-w-2xl space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-6">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Official club name
+                        </p>
+                        <p className="text-lg font-semibold text-gray-900">
+                          {getClubMyPageDisplayName(activeClub)}
+                        </p>
+                      </div>
+                      {(() => {
+                        const meta = parseClubDescriptionMeta(activeClub.description);
+                        const rows = [
+                          ['Club username', meta.username],
+                          ['Direct access', meta.directAccess],
+                          ['Category', meta.category],
+                          ['Country', meta.country],
+                          ['Region', meta.region],
+                          ['Location', activeClub.location],
+                          ['Club mail', meta.mail],
+                        ].filter(([, v]) => v && String(v).trim());
+                        return rows.length > 0 ? (
+                          <dl className="grid gap-3 sm:grid-cols-2">
+                            {rows.map(([label, value]) => (
+                              <div key={String(label)}>
+                                <dt className="text-xs font-medium text-gray-500">{label}</dt>
+                                <dd className="text-sm text-gray-900">{value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        ) : null;
+                      })()}
+                      <p className="text-sm text-gray-600">
+                        Sidebar:{' '}
+                        <span className="font-medium text-gray-800">
+                          {formatMyClubsSidebarLabel(activeClub)}
+                        </span>
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        Use the left sidebar for club tools, members, music, and management.
+                      </p>
+                    </div>
+                  </div>
+                ) : dashboardShellActiveTab === 'my-entity' ? (
+                  <div>
+                    <h2 className="mb-2 text-2xl font-bold text-gray-900">My Club</h2>
+                    <p className="text-gray-600">
+                      Click a club under <strong>My clubs</strong> in the sidebar to open it here.
+                    </p>
+                  </div>
+                ) : null}
               </div>
-            ) : !showWorkoutSection ? (
-              <div className="bg-white rounded-lg shadow-sm border p-8 flex-1 flex items-center justify-center">
-                <div className="text-center">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to Your Club</h2>
-                  <p className="text-gray-600 mb-6">Click on "Workouts section" in the navigation bar above to view and manage workouts.</p>
-                  <button 
-                    onClick={() => setShowWorkoutSection(true)}
-                    className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition"
-                  >
-                    Go to Workouts Section
-                  </button>
-                </div>
+            ) : clubAddSongsOgpOpen ? (
+              <div className="flex-1 flex flex-col min-h-0 py-4">
+                <NewsOGPPanel
+                  onClose={() => {
+                    setClubAddSongsOgpOpen(false);
+                    setClubAddSongsOgpExpanded(false);
+                  }}
+                  embedded
+                  isExpanded={clubAddSongsOgpExpanded}
+                  onExpandReduce={() => setClubAddSongsOgpExpanded((prev) => !prev)}
+                />
               </div>
             ) : (
               <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
@@ -410,8 +522,14 @@ export default function ClubDashboard() {
           {showRightSidebar && (
             <RightSidebar 
               context="my-club" 
-              activeTab={activeTab}
+              activeTab={dashboardShellActiveTab}
               onAddMember={() => setShowAddMemberModal(true)}
+              athleteMyPageRightSidebar={
+                isClubAccountUserType(user?.userType ?? '') && dashboardShellActiveTab === 'my-page'
+              }
+              athleteMyClubRightSidebar={
+                isClubAccountUserType(user?.userType ?? '') && dashboardShellActiveTab === 'my-entity'
+              }
             />
           )}
           
@@ -431,10 +549,67 @@ export default function ClubDashboard() {
             }}
             entityType="club"
           />
+
+          <AdminPasswordConfirmModal
+            isOpen={showAdminPasswordConfirm}
+            onClose={() => setShowAdminPasswordConfirm(false)}
+            onVerified={handleAdminPasswordVerified}
+            adminUsername={user?.username ?? user?.name ?? 'username'}
+          />
+
+          <CreateClubModal
+            key={createClubModalKey}
+            isOpen={showCreateClubModal}
+            onClose={() => setShowCreateClubModal(false)}
+            adminUsername={user?.username ?? user?.name ?? 'username'}
+            saving={createClubSaving}
+            onSave={handleCreateClubSave}
+          />
         </div>
       </div>
+      <ChangeBannerModal
+        isOpen={showChangeBannerModal}
+        onClose={() => setShowChangeBannerModal(false)}
+        onSaved={(patch) => {
+          setBannerProfile((prev) => {
+            const next = { ...(prev ?? {}) };
+            if (patch.profileBanner !== undefined) next.profileBanner = patch.profileBanner;
+            if (patch.profileBannerAlignment !== undefined) {
+              next.profileBannerAlignment = patch.profileBannerAlignment;
+            }
+            if (patch.profileBannerSequence !== undefined) {
+              next.profileBannerSequence = patch.profileBannerSequence;
+            }
+            if (patch.profileBannerVideo !== undefined) {
+              next.profileBannerVideo = patch.profileBannerVideo;
+            }
+            return next;
+          });
+        }}
+        currentBannerPath={bannerProfile?.profileBanner}
+        currentAlignment={
+          (bannerProfile?.profileBannerAlignment as BannerAlignment | null | undefined) ?? 'default'
+        }
+        currentBannerSequenceJson={bannerProfile?.profileBannerSequence}
+        currentBannerVideoPath={bannerProfile?.profileBannerVideo}
+        t={t}
+      />
+
       <SimpleFooter />
     </div>
   );
 }
 
+export default function ClubDashboard() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      }
+    >
+      <ClubDashboardContent />
+    </Suspense>
+  );
+}

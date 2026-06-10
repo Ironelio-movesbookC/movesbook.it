@@ -1,0 +1,68 @@
+'use client';
+
+import Link from 'next/link';
+import {
+  getOperatorNavHref,
+  getOperatorNavTabLabel,
+  getVisibleOperatorNavTabs,
+  type OperatorNavTabId,
+  type OperatorNavVariant,
+} from '@/lib/operatorNavTabs';
+
+type OperatorNavBarProps = {
+  operatorId: string;
+  activeTabId: OperatorNavTabId;
+  variant: OperatorNavVariant;
+  isStaff?: boolean;
+  staffKind?: 'OPERATOR' | 'CO_ADMIN';
+  isSuperAdmin?: boolean;
+  canManageStaff?: boolean;
+  sessionId?: string;
+};
+
+export function OperatorNavBar({
+  operatorId,
+  activeTabId,
+  variant,
+  isStaff,
+  staffKind,
+  isSuperAdmin,
+  canManageStaff,
+  sessionId,
+}: OperatorNavBarProps) {
+  const tabs = getVisibleOperatorNavTabs({
+    isStaff,
+    staffKind,
+    isSuperAdmin,
+    canManageStaff,
+    operatorId,
+    sessionId,
+  });
+
+  return (
+    <div className="flex flex-nowrap gap-0 overflow-x-auto bg-[#4f4f4f] border-b border-gray-600">
+      {tabs.map((tab) => {
+        const href = getOperatorNavHref(tab.id, operatorId, variant);
+        const isActive = activeTabId === tab.id;
+        return (
+          <Link
+            key={tab.id}
+            href={href}
+            onClick={() => {
+              try {
+                sessionStorage.setItem('operatorNavVariant', JSON.stringify(variant));
+              } catch {
+                /* ignore */
+              }
+            }}
+            className={`flex-shrink-0 whitespace-nowrap px-4 py-2.5 text-sm font-medium transition ${
+              isActive ? 'bg-black text-white' : 'text-gray-300 hover:text-white hover:bg-gray-600'
+            }`}
+          >
+            {getOperatorNavTabLabel(tab.id, variant)}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}

@@ -8,6 +8,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { COUNTRIES } from '@/lib/news/countries';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
+import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
 
 export default function RegisterPage() {
   const { t } = useLanguage();
@@ -21,7 +22,8 @@ export default function RegisterPage() {
     userType: 'athlete' as 'athlete' | 'coach' | 'team' | 'club' | 'group',
     gender: '' as '' | 'male' | 'female' | 'other',
     birthdate: '',
-    country: ''
+    country: '',
+    language: 'en'
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -63,7 +65,8 @@ export default function RegisterPage() {
           userType: formData.userType,
           gender: formData.gender || undefined,
           birthdate: formData.birthdate || undefined,
-          country: formData.country
+          country: formData.country,
+          language: formData.language
         }),
       });
 
@@ -268,8 +271,29 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            {/* Gender + Birthdate - 2 Columns (Optional for Statistics) */}
+            {/* Preferred language + Gender - 2 Columns */}
             <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="language" className="block text-sm font-medium text-white mb-2">
+                  Preferred Language <span className="text-red-400">*</span>
+                </label>
+                <select
+                  id="language"
+                  name="language"
+                  required
+                  className="w-full px-4 py-2.5 bg-white bg-opacity-10 backdrop-blur-sm border border-cyan-500 border-opacity-30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all duration-200"
+                  style={{ color: formData.language ? 'white' : '#a0d2eb' }}
+                  value={formData.language}
+                  onChange={(e) => setFormData({ ...formData, language: e.target.value })}
+                >
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code} className="text-gray-800">
+                      {lang.name} ({lang.code.toUpperCase()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label htmlFor="gender" className="block text-sm font-medium text-white mb-2">
                   Gender <span className="text-gray-400 text-xs">(Optional)</span>
@@ -288,22 +312,23 @@ export default function RegisterPage() {
                   <option value="other" className="text-gray-800">Other</option>
                 </select>
               </div>
+            </div>
 
-              <div>
-                <label htmlFor="birthdate" className="block text-sm font-medium text-white mb-2">
-                  Birthdate <span className="text-gray-400 text-xs">(Optional)</span>
-                </label>
-                <input
-                  id="birthdate"
-                  name="birthdate"
-                  type="date"
-                  className="w-full px-4 py-2.5 bg-white bg-opacity-10 backdrop-blur-sm border border-cyan-500 border-opacity-30 rounded-xl text-white placeholder-cyan-200 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all duration-200"
-                  style={{ colorScheme: 'dark' }}
-                  value={formData.birthdate}
-                  onChange={(e) => setFormData({...formData, birthdate: e.target.value})}
-                  max={new Date().toISOString().split('T')[0]}
-                />
-              </div>
+            {/* Birthdate (Optional for Statistics) */}
+            <div>
+              <label htmlFor="birthdate" className="block text-sm font-medium text-white mb-2">
+                Birthdate <span className="text-gray-400 text-xs">(Optional)</span>
+              </label>
+              <input
+                id="birthdate"
+                name="birthdate"
+                type="date"
+                className="w-full px-4 py-2.5 bg-white bg-opacity-10 backdrop-blur-sm border border-cyan-500 border-opacity-30 rounded-xl text-white placeholder-cyan-200 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all duration-200"
+                style={{ colorScheme: 'dark' }}
+                value={formData.birthdate}
+                onChange={(e) => setFormData({...formData, birthdate: e.target.value})}
+                max={new Date().toISOString().split('T')[0]}
+              />
             </div>
 
             {/* Password + Confirm Password - 2 Columns */}

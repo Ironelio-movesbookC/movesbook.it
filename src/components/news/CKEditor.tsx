@@ -9,6 +9,14 @@ interface CKEditorComponentProps {
   onChange: (data: string) => void;
   placeholder?: string;
   id?: string;
+  /** Stable per field — do not change when switching language tabs. */
+  instanceId?: string;
+  /** Current language tab; editor content is swapped when this changes. */
+  localeKey?: string;
+  /** Called when the editor is ready so the parent can read HTML before a tab switch. */
+  registerGetData?: (getData: () => string) => void;
+  readOnly?: boolean;
+  minHeightPx?: number;
 }
 
 class NewsImageUploadAdapter {
@@ -56,13 +64,36 @@ function NewsImageUploadAdapterPlugin(editor: any) {
   };
 }
 
-export default function CKEditorComponent({ 
-  value, 
-  onChange, 
+export default function CKEditorComponent({
+  value,
+  onChange,
   placeholder = 'Enter content...',
-  id 
+  id,
+  instanceId,
+  localeKey,
+  registerGetData,
+  readOnly = false,
+  minHeightPx = 400,
 }: CKEditorComponentProps) {
   const editorRef = useRef<any>(null);
+  const onChangeRef = useRef(onChange);
+  const suppressOnChangeRef = useRef(false);
+  onChangeRef.current = onChange;
+
+  const mountKey = `${instanceId ?? id ?? 'ckeditor'}-${localeKey ?? 'default'}`;
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const next = value || '';
+    if (editor.getData() !== next) {
+      suppressOnChangeRef.current = true;
+      editor.setData(next);
+      queueMicrotask(() => {
+        suppressOnChangeRef.current = false;
+      });
+    }
+  }, [value]);
 
   useEffect(() => {
     const style = document.createElement('style');
@@ -70,7 +101,7 @@ export default function CKEditorComponent({
       .ckeditor-wrapper .ck-editor__editable {
         color: #333 !important;
         background-color: #fff !important;
-        min-height: 400px;
+        min-height: ${minHeightPx}px;
       }
       .ckeditor-wrapper .ck-editor__editable * {
         color: #333 !important;
@@ -128,19 +159,48 @@ export default function CKEditorComponent({
   return (
     <div className="ckeditor-wrapper">
       <CKEditor
+        key={mountKey}
         editor={ClassicEditor as any}
         data={value || ''}
         config={{
           placeholder,
-              extraPlugins: [NewsImageUploadAdapterPlugin],
-          toolbar: [
-            'heading', '|',
-            'bold', 'italic', 'link', '|',
-            'bulletedList', 'numberedList', '|',
-            'blockQuote', 'insertTable', '|',
-            'imageUpload', 'mediaEmbed', '|',
-            'undo', 'redo'
-          ],
+          extraPlugins: readOnly ? [] : [NewsImageUploadAdapterPlugin],
+          toolbar: readOnly
+            ? ([
+                'heading',
+                '|',
+                'bold',
+                'italic',
+                'link',
+                '|',
+                'bulletedList',
+                'numberedList',
+                '|',
+                'blockQuote',
+                'insertTable',
+                '|',
+                'undo',
+                'redo',
+              ] as any)
+            : ([
+                'heading',
+                '|',
+                'bold',
+                'italic',
+                'link',
+                '|',
+                'bulletedList',
+                'numberedList',
+                '|',
+                'blockQuote',
+                'insertTable',
+                '|',
+                'imageUpload',
+                'mediaEmbed',
+                '|',
+                'undo',
+                'redo',
+              ] as any),
           heading: {
             options: [
               { model: 'paragraph', title: 'Paragraph', class: 'ck-heading_paragraph' },
@@ -155,10 +215,19 @@ export default function CKEditorComponent({
         }}
         onReady={(editor) => {
           editorRef.current = editor;
+          registerGetData?.(() => editor.getData());
+          if (readOnly) {
+            try {
+              editor.enableReadOnlyMode('pcu-readonly');
+            } catch {
+              // fallback below
+              editor.isReadOnly = true;
+            }
+          }
         }}
         onChange={(event, editor) => {
-          const data = editor.getData();
-          onChange(data);
+          if (readOnly || suppressOnChangeRef.current) return;
+          onChangeRef.current(editor.getData());
         }}
       />
     </div>

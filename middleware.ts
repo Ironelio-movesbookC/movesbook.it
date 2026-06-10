@@ -1,6 +1,17 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+/**
+ * POSTs to these paths (bots, extensions, misconfigured clients) are not part of this app.
+ * Answering in middleware avoids Next treating them as Server Actions and logging
+ * "Failed to find Server Action" / `workers` errors on 404.
+ */
+const NOOP_POST_PATHS = new Set([
+  '/submit',
+  '/api/rsc',
+  '/api/formaction',
+]);
+
 // Public routes that don't require authentication
 const publicRoutes = [
   '/',
@@ -34,6 +45,10 @@ const publicApiRoutes = [
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (request.method === 'POST' && NOOP_POST_PATHS.has(pathname)) {
+    return new NextResponse(null, { status: 204 });
+  }
 
   // Allow public routes
   if (publicRoutes.includes(pathname) || pathname.startsWith('/api/auth/')) {
@@ -70,4 +85,3 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
-

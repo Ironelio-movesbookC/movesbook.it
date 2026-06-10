@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { getFormCreatedClubs, userHasClubProfile } from '@/lib/club/clubSidebarLabel';
+import { isGroupAccountUserType, isTeamAccountUserType } from '@/utils/dashboardRouting';
 
 interface User {
   userType: string;
@@ -152,11 +154,11 @@ export function useMyPageData(user: User | null) {
 
   useEffect(() => {
     if (user) {
-      if (user.userType === 'CLUB_TRAINER') {
+      if (user.userType === 'CLUB_TRAINER' || user.userType === 'CLUB') {
         loadClubs();
-      } else if (user.userType === 'GROUP_ADMIN') {
+      } else if (isGroupAccountUserType(user.userType)) {
         loadGroups();
-      } else if (user.userType === 'TEAM_MANAGER') {
+      } else if (isTeamAccountUserType(user.userType)) {
         loadTeams();
       } else if (user.userType === 'COACH') {
         loadCoachingGroups();
@@ -170,8 +172,13 @@ export function useMyPageData(user: User | null) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  const clubProfiles = useMemo(() => getFormCreatedClubs(clubs), [clubs]);
+  const hasClubProfile = useMemo(() => userHasClubProfile(clubs), [clubs]);
+
   return {
     clubs,
+    clubProfiles,
+    hasClubProfile,
     groups,
     teams,
     coachingGroups,

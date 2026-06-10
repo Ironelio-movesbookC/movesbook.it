@@ -228,7 +228,7 @@ export const DEFAULT_MOVEFRAME_COLUMNS: ColumnConfig[] = [
   },
   {
     id: 'macro',
-    label: 'Macro',
+    label: 'Ave pause',
     align: 'center',
     visible: false,
     dataKey: 'macro'
@@ -279,6 +279,20 @@ export const DEFAULT_MOVELAP_COLUMNS: ColumnConfig[] = [
     align: 'left',
     visible: true,
     dataKey: 'sport'
+  },
+  {
+    id: 'muscular_sector',
+    label: 'Musc. Sector',
+    align: 'center',
+    visible: true,
+    dataKey: 'muscularSector'
+  },
+  {
+    id: 'indoor_exercise',
+    label: 'Exercise',
+    align: 'left',
+    visible: true,
+    dataKey: 'exercise'
   },
   {
     id: 'distance',

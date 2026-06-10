@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import Image from 'next/image';
 import { Search, ArrowDownAZ, Clock, Plus, Pencil, Eye, EyeOff, Link, User, Settings, Trash2, X, Tag, ThumbsUp, Share2 } from 'lucide-react';
 import type { OGPData } from './OGPForm';
 import type { NewsTopic } from './NewsTopicBar';
@@ -31,6 +32,58 @@ export type ArticlePasted = OGPData & {
   createdBySuperAdmin?: boolean;
 };
 export type ArticleTyped = { id: string; description: string };
+
+const FALLBACK_NEWS_TOPICS_LIST = [
+  'News',
+  'Sport',
+  'Events',
+  'Nutrition',
+  'Training',
+  'Medicine',
+  'Equipments',
+  'Lounge music',
+] as const;
+
+function hasAnyVisibilitySettings(a: ArticlePasted): boolean {
+  const v = a.visibility;
+  if (!v) return false;
+  const hasSelections =
+    (v.userTypes?.length ?? 0) > 0 ||
+    (v.countries?.length ?? 0) > 0 ||
+    (v.languages?.length ?? 0) > 0 ||
+    (v.sports?.length ?? 0) > 0;
+  const hasDuration = v.expiresAt != null && String(v.expiresAt).trim() !== '';
+  return hasSelections || hasDuration;
+}
+
+function isNotExpired(a: ArticlePasted): boolean {
+  const exp = a.visibility?.expiresAt;
+  if (exp == null || String(exp).trim() === '') return true;
+  try {
+    return new Date(exp).getTime() >= Date.now();
+  } catch {
+    return true;
+  }
+}
+
+function isExpiredOrNoExpiry(a: ArticlePasted): boolean {
+  const exp = a.visibility?.expiresAt;
+  if (exp == null || String(exp).trim() === '') return true;
+  try {
+    return new Date(exp).getTime() < Date.now();
+  } catch {
+    return true;
+  }
+}
+
+function hasExpirationDateSet(a: ArticlePasted): boolean {
+  const exp = a.visibility?.expiresAt;
+  return exp != null && String(exp).trim() !== '';
+}
+
+function isActiveForNormalUser(a: ArticlePasted): boolean {
+  return hasExpirationDateSet(a) && isNotExpired(a) && !a.deletedAt && hasAnyVisibilitySettings(a);
+}
 
 /** Number of OGP cards per row (each row = 6 OGPs). */
 const OGPS_PER_ROW = 6;
@@ -94,8 +147,20 @@ interface NewsArticlesListProps {
   isSuperAdmin?: boolean;
   /** When activeTopic is ALL_USER_SECTORS, filter to articles whose topic is in this list (super admin). */
   topicNamesCreatedByNormalUsers?: string[];
+  /** Super admin: user-inserted topics with creator username (shown next to topic title in headers). */
+  userInsertedTopics?: { name: string; creatorUsername: string | null }[];
   /** When set (e.g. super admin), overrides the "All" topic display name (e.g. "All defaults") */
   allTopicLabel?: string;
+  /** Super admin: clicking the pink creator username in the topic heading opens “see as user” mode. */
+  onSuperAdminViewAsUser?: (username: string) => void;
+  /** When true, topic heading omits “( username )” (e.g. “see as user” mode already shows name in page title). */
+  hideCreatorUsernameInHeading?: boolean;
+  /** When true, OGP card actions (edit, share, link, …) and the add (+) button are disabled. */
+  superAdminReadOnlyOgpActions?: boolean;
+  /** When set, checkbox reads “Show only OG News posted by {name}” instead of “posted by me”. */
+  showOnlyMyOgNewsLabelUsername?: string | null;
+  /** When true, `pasted` is already limited to what a viewer may see (e.g. super admin view-as-user API); do not apply extra client visibility filtering. */
+  viewerScopedOgpList?: boolean;
 }
 
 export default function NewsArticlesList({
@@ -112,62 +177,93 @@ export default function NewsArticlesList({
   adminContext = false,
   isSuperAdmin = false,
   topicNamesCreatedByNormalUsers = [],
+  userInsertedTopics,
   allTopicLabel,
+  onSuperAdminViewAsUser,
+  hideCreatorUsernameInHeading = false,
+  superAdminReadOnlyOgpActions = false,
+  showOnlyMyOgNewsLabelUsername = null,
+  viewerScopedOgpList = false,
 }: NewsArticlesListProps) {
   const { t } = useLanguage();
-  const topicsList = topicsProp.length > 0 ? topicsProp : ['News', 'Sport', 'Events', 'Nutrition', 'Training', 'Medicine', 'Equipments', 'Lounge music'];
-  const canEditAsCreator = (a: ArticlePasted) => a.userId === currentUserId || a.createdByCurrentUser === true;
-
-  const hasAnyVisibilitySettings = (a: ArticlePasted): boolean => {
-    const v = a.visibility;
-    if (!v) return false;
-    const hasSelections =
-      (v.userTypes?.length ?? 0) > 0 ||
-      (v.countries?.length ?? 0) > 0 ||
-      (v.languages?.length ?? 0) > 0 ||
-      (v.sports?.length ?? 0) > 0;
-    const hasDuration =
-      v.expiresAt != null &&
-      String(v.expiresAt).trim() !== '';
-    return hasSelections || hasDuration;
-  };
-
-  /** True if the OGP has no expiry or expiry is in the future (respects News Setting duration in All/default topics). */
-  const isNotExpired = (a: ArticlePasted): boolean => {
-    const exp = a.visibility?.expiresAt;
-    if (exp == null || String(exp).trim() === '') return true;
-    try {
-      return new Date(exp).getTime() >= Date.now();
-    } catch {
-      return true;
-    }
-  };
-
-  /** True if the OGP is expired OR expiry is not set (blank). Used for super-admin visual highlighting. */
-  const isExpiredOrNoExpiry = (a: ArticlePasted): boolean => {
-    const exp = a.visibility?.expiresAt;
-    if (exp == null || String(exp).trim() === '') return true;
-    try {
-      return new Date(exp).getTime() < Date.now();
-    } catch {
-      return true;
-    }
-  };
-
-  /** True if the OGP has an expiration date set in News Setting (non-blank). When false, treat as "expired" for default filtering. */
-  const hasExpirationDateSet = (a: ArticlePasted): boolean => {
-    const exp = a.visibility?.expiresAt;
-    return exp != null && String(exp).trim() !== '';
-  };
-
-  /** Base "active" condition for normal users (non-expired, non-deleted, has settings, and has an explicit expiry). */
-  const isActiveForNormalUser = (a: ArticlePasted): boolean =>
-    hasExpirationDateSet(a) && isNotExpired(a) && !a.deletedAt && hasAnyVisibilitySettings(a);
+  const topicsList = useMemo(
+    () => (topicsProp.length > 0 ? topicsProp : [...FALLBACK_NEWS_TOPICS_LIST]),
+    [topicsProp]
+  );
+  const canEditAsCreator = useCallback(
+    (a: ArticlePasted) => a.userId === currentUserId || a.createdByCurrentUser === true,
+    [currentUserId]
+  );
 
   const translateTopic = useCallback((topic: string) => {
     const key = NEWS_TOPIC_KEYS[topic];
     return key ? t(key) : topic;
   }, [t]);
+
+  const renderActiveTopicHeading = useCallback(
+    (variant: 'light' | 'dark') => {
+      const topicCls = variant === 'light' ? 'text-blue-700' : 'text-blue-300';
+      const userCls = variant === 'light' ? 'text-pink-600' : 'text-pink-300';
+
+      if (activeTopic === ALL_TOPICS) {
+        return <span className={topicCls}>{allTopicLabel ?? t('news_all_ogp')}</span>;
+      }
+      if (activeTopic === ALL_USER_SECTORS) {
+        return <span className={topicCls}>All users&apos; topics</span>;
+      }
+      if (activeTopic === ALL_SUPER_ADMIN) {
+        return <span className={topicCls}>All</span>;
+      }
+      if (!activeTopic) return null;
+      const translated = translateTopic(activeTopic);
+      const row =
+        userInsertedTopics?.find((x) => x.name === activeTopic) ??
+        userInsertedTopics?.find(
+          (x) => activeTopic != null && x.name.toLowerCase() === activeTopic.toLowerCase()
+        );
+      let un = row?.creatorUsername ?? null;
+      if ((un == null || un === '') && activeTopic != null && topicNamesCreatedByNormalUsers.includes(activeTopic)) {
+        const fromArticle = pasted.find((a) => (a.topic ?? 'News') === activeTopic);
+        un = fromArticle?.creatorUsername ?? null;
+      }
+      if (un != null && un !== '' && !hideCreatorUsernameInHeading) {
+        return (
+          <>
+            <span className={topicCls}>{translated}</span>
+            {onSuperAdminViewAsUser ? (
+              <a
+                href="#view-as-user"
+                className={`${userCls} underline cursor-pointer hover:opacity-80 mx-0.5 text-xl font-normal inline align-baseline relative z-[60] select-none`}
+                title={`View all OGPs visible to ${un}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSuperAdminViewAsUser(un);
+                }}
+              >
+                ( {un} )
+              </a>
+            ) : (
+              <span className={userCls}> ( {un} )</span>
+            )}
+          </>
+        );
+      }
+      return <span className={topicCls}>{translated}</span>;
+    },
+    [
+      activeTopic,
+      allTopicLabel,
+      t,
+      translateTopic,
+      userInsertedTopics,
+      topicNamesCreatedByNormalUsers,
+      pasted,
+      hideCreatorUsernameInHeading,
+      onSuperAdminViewAsUser,
+    ]
+  );
+
   const sortedTopics = useMemo(() => [...topicsList].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })), [topicsList]);
   const sortedLanguages = useMemo(() => [...ALL_LANGUAGES].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })), []);
   const [search, setSearch] = useState('');
@@ -336,6 +432,10 @@ export default function NewsArticlesList({
       activeTopic === ALL_TOPICS ||
       (NEWS_TOPICS as readonly string[]).includes(activeTopic);
 
+    if (viewerScopedOgpList) {
+      return base;
+    }
+
     // In "All" and 7 default topics:
     // - For the current creator (canEditAsCreator): always show all their own OGPs (including expired / no settings / deleted).
     // - For other users' OGPs: hide those with no News Setting and hide expired ones.
@@ -353,7 +453,16 @@ export default function NewsArticlesList({
     }
 
     return base;
-  }, [pasted, activeTopic, topicNamesCreatedByNormalUsers, adminContext, canDeleteOgp, isSuperAdmin]);
+  }, [
+    pasted,
+    activeTopic,
+    topicNamesCreatedByNormalUsers,
+    adminContext,
+    canDeleteOgp,
+    isSuperAdmin,
+    viewerScopedOgpList,
+    canEditAsCreator,
+  ]);
 
   /**
    * True when the current UI should allow filtering to "my" OGPs.
@@ -422,6 +531,7 @@ export default function NewsArticlesList({
     showOnlyLiked,
     likesMap,
     isSuperAdmin,
+    canEditAsCreator,
   ]);
 
   const sorted = useMemo(() => {
@@ -516,7 +626,7 @@ export default function NewsArticlesList({
       .then((r) => r.json())
       .then((data) => setLikesMap(data ?? {}))
       .catch(() => setLikesMap({}));
-  }, [allArticleIds.join(','), adminContext]);
+  }, [allArticleIds, adminContext]);
 
   const handleLikeClick = useCallback(async (articleId: string) => {
     const token = typeof window !== 'undefined'
@@ -683,22 +793,14 @@ export default function NewsArticlesList({
           >
             {t('news_next_ogp')}
           </button>
-          {/* OGP topic name - centered in this row */}
-          <div className="flex-1 flex justify-center items-center min-w-0 px-2">
-            <span className="text-blue-700 font-normal text-xl text-center truncate">
-              {activeTopic === ALL_TOPICS
-                ? (allTopicLabel ?? t('news_all_ogp'))
-                : activeTopic === ALL_USER_SECTORS
-                  ? "All users' topics"
-                  : activeTopic === ALL_SUPER_ADMIN
-                    ? 'All'
-                    : activeTopic
-                      ? translateTopic(activeTopic)
-                      : ''}
-            </span>
+          {/* OGP topic name - centered; z-index + overflow so the username link stays above siblings and receives clicks */}
+          <div className="flex-1 flex justify-center items-center min-w-0 px-2 relative z-[1] overflow-visible">
+            <div className="font-normal text-xl text-center inline-flex flex-wrap items-baseline justify-center gap-x-0.5 min-w-0 max-w-full relative overflow-visible">
+              {renderActiveTopicHeading('light')}
+            </div>
           </div>
           {/* Add article "+" at right end of pagination row */}
-          {onAddClick != null && (
+          {onAddClick != null && !superAdminReadOnlyOgpActions && (
             <button
               type="button"
               onClick={onAddClick}
@@ -720,17 +822,9 @@ export default function NewsArticlesList({
       {/* Pasted - OGP cards in a grid (multiple per row); max 3 rows visible, scroll when more */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="bg-gray-800 text-white px-4 py-2 flex items-center justify-between gap-2">
-          <span className="font-semibold">
-            {activeTopic === ALL_TOPICS
-              ? (allTopicLabel ?? t('news_all_ogp'))
-              : activeTopic === ALL_USER_SECTORS
-                ? "All users' topics"
-                : activeTopic === ALL_SUPER_ADMIN
-                  ? 'All'
-                  : activeTopic
-                    ? translateTopic(activeTopic)
-                    : ''}
-          </span>
+          <div className="font-semibold inline-flex flex-wrap items-baseline gap-x-0.5 min-w-0">
+            {renderActiveTopicHeading('dark')}
+          </div>
           <div className="flex items-center gap-4">
             {canFilterByMyOgNews && (
               <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -742,10 +836,16 @@ export default function NewsArticlesList({
                     setCurrentPage(1);
                   }}
                   className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                  aria-label={t('news_show_only_my_ogp')}
+                  aria-label={
+                    showOnlyMyOgNewsLabelUsername
+                      ? `Show only OG News posted by ${showOnlyMyOgNewsLabelUsername}`
+                      : t('news_show_only_my_ogp')
+                  }
                 />
                 <span className="text-yellow-300 text-sm whitespace-nowrap">
-                  {t('news_show_only_my_ogp')}
+                  {showOnlyMyOgNewsLabelUsername
+                    ? `Show only OG News posted by ${showOnlyMyOgNewsLabelUsername}`
+                    : t('news_show_only_my_ogp')}
                 </span>
               </label>
             )}
@@ -871,11 +971,16 @@ export default function NewsArticlesList({
                         onClick={(e) => e.stopPropagation()}
                         aria-label={`Open article: ${a.title || a.url}`}
                       >
-                        <img
-                          src={a.image}
-                          alt=""
-                          className={`w-full h-28 object-cover rounded ${a.deletedAt ? 'opacity-75' : ''}`}
-                        />
+                        <span className={`relative block w-full h-28 rounded overflow-hidden ${a.deletedAt ? 'opacity-75' : ''}`}>
+                          <Image
+                            src={a.image}
+                            alt=""
+                            fill
+                            className="object-cover"
+                            sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 16vw"
+                            unoptimized
+                          />
+                        </span>
                       </a>
                     )}
                     {/* OGP topic name + creator username - identifies which topic this article belongs to and who posted it */}
@@ -944,7 +1049,11 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           handleLikeClick(a.id);
                         }}
-                        disabled={!!likeLoadingId || (typeof window !== 'undefined' && !(adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token')))}
+                        disabled={
+                          superAdminReadOnlyOgpActions ||
+                          !!likeLoadingId ||
+                          (typeof window !== 'undefined' && !(adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token')))
+                        }
                         className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
                           likesMap[a.id]?.likedByMe
                             ? 'border-cyan-500 bg-cyan-50 text-cyan-700 hover:bg-cyan-100'
@@ -965,7 +1074,8 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           setShareModalArticle(a);
                         }}
-                        className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        disabled={superAdminReadOnlyOgpActions}
+                        className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Share"
                         aria-label="Share"
                       >
@@ -988,7 +1098,7 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           if (canEditAsCreator(a)) setEditTopicArticleId(a.id);
                         }}
-                        disabled={!onUpdatePastedTopic || !canEditAsCreator(a)}
+                        disabled={superAdminReadOnlyOgpActions || !onUpdatePastedTopic || !canEditAsCreator(a)}
                         className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
                         title={canEditAsCreator(a) ? 'Change topic (creator only)' : 'Only the creator can change this article\'s topic'}
                         aria-label="Change topic"
@@ -1002,7 +1112,8 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           toggleArticleExpanded(a.id);
                         }}
-                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        disabled={superAdminReadOnlyOgpActions}
+                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                         title={expandedArticleIds.has(a.id) ? 'Show less (2 rows)' : 'Show full text'}
                         aria-label={expandedArticleIds.has(a.id) ? 'Collapse text' : 'Expand to full text'}
                       >
@@ -1021,7 +1132,8 @@ export default function NewsArticlesList({
                             navigator.clipboard?.writeText(a.url).then(() => setCopiedArticleId(a.id));
                           }
                         }}
-                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0"
+                        disabled={superAdminReadOnlyOgpActions}
+                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                         title={copiedArticleId === a.id ? 'Copied!' : 'Copy OGP URL to clipboard'}
                         aria-label={copiedArticleId === a.id ? 'Copied!' : 'Copy link'}
                       >
@@ -1034,7 +1146,8 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           setCreatorModalArticleId(a.id);
                         }}
-                        className={`flex items-center justify-center w-6 h-6 min-w-[24px] rounded border transition-colors shrink-0 ${
+                        disabled={superAdminReadOnlyOgpActions}
+                        className={`flex items-center justify-center w-6 h-6 min-w-[24px] rounded border transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
                           currentUserId != null && !canEditAsCreator(a)
                             ? 'border-amber-200 bg-amber-200 text-gray-600 hover:bg-amber-400 hover:border-amber-300'
                             : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
@@ -1051,29 +1164,46 @@ export default function NewsArticlesList({
                           e.stopPropagation();
                           if (canDeleteOgp || canEditAsCreator(a)) setSettingsArticleId(a.id);
                         }}
-                        disabled={!onUpdatePastedSettings || (!canDeleteOgp && !canEditAsCreator(a))}
+                        disabled={
+                          superAdminReadOnlyOgpActions ||
+                          !onUpdatePastedSettings ||
+                          (!canDeleteOgp && !canEditAsCreator(a))
+                        }
                         className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
                         title={canDeleteOgp || canEditAsCreator(a) ? 'News settings (visibility)' : 'Only creator, admin, or super admin can edit settings'}
                         aria-label="News settings"
                       >
                         <Settings className="w-3.5 h-3.5" />
                       </button>
-                      {
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (canDeleteOgp || canEditAsCreator(a)) setRemoveConfirmArticleId(a.id);
-                        }}
-                        disabled={!onRemovePasted || (!canDeleteOgp && !canEditAsCreator(a))}
-                        className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 hover:text-red-600 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:text-gray-600"
-                        title={canDeleteOgp || canEditAsCreator(a) ? 'Delete' : 'Only super admin, admin, or creator can delete'}
-                        aria-label="Delete article"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                      }
+                      {a.createdBySuperAdmin && !canDeleteOgp && !canEditAsCreator(a) ? (
+                        <span
+                          className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded bg-red-600 text-white border border-yellow-300 shrink-0 select-none"
+                          style={{ fontFamily: "'Comic Sans MS', 'Comic Sans', cursive", fontSize: 11, fontWeight: 700, lineHeight: 1 }}
+                          title="Posted by Movesbook (Super Admin)"
+                          aria-label="Posted by Movesbook (Super Admin)"
+                        >
+                          MB
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (canDeleteOgp || canEditAsCreator(a)) setRemoveConfirmArticleId(a.id);
+                          }}
+                          disabled={
+                            superAdminReadOnlyOgpActions ||
+                            !onRemovePasted ||
+                            (!canDeleteOgp && !canEditAsCreator(a))
+                          }
+                          className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 hover:text-red-600 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:text-gray-600"
+                          title={canDeleteOgp || canEditAsCreator(a) ? 'Delete' : 'Only super admin, admin, or creator can delete'}
+                          aria-label="Delete article"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                   </div>
                 </article>
               ))}
@@ -1190,8 +1320,8 @@ export default function NewsArticlesList({
                       <p className="text-gray-500">No creator details available.</p>
                     )}
                   </dl>
-                  <div className="flex-shrink-0">
-                    <img
+                  <div className="flex-shrink-0 relative w-24 h-24 bg-gray-200 border border-gray-300 overflow-hidden">
+                    <Image
                       src={
                         creatorInfo.image && creatorInfo.image.trim() !== ''
                           ? creatorInfo.image
@@ -1200,7 +1330,10 @@ export default function NewsArticlesList({
                             : '/male_default.jpg'
                       }
                       alt=""
-                      className="w-24 h-24 object-cover bg-gray-200 border border-gray-300"
+                      fill
+                      className="object-cover"
+                      sizes="96px"
+                      unoptimized
                     />
                   </div>
                 </div>
@@ -1248,18 +1381,28 @@ export default function NewsArticlesList({
                       className="block w-full focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-inset cursor-pointer"
                       aria-label={`Open article: ${article.title || article.url}`}
                     >
-                      <img
-                        src={article.image}
-                        alt=""
-                        className="w-full max-h-64 object-cover"
-                      />
+                      <span className="relative block w-full h-64 max-h-64">
+                        <Image
+                          src={article.image}
+                          alt=""
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 512px) 100vw, 512px"
+                          unoptimized
+                        />
+                      </span>
                     </a>
                   ) : (
-                    <img
-                      src={article.image}
-                      alt=""
-                      className="w-full max-h-64 object-cover"
-                    />
+                    <span className="relative block w-full h-64 max-h-64">
+                      <Image
+                        src={article.image}
+                        alt=""
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 512px) 100vw, 512px"
+                        unoptimized
+                      />
+                    </span>
                   )
                 )}
                 <div className="p-4">

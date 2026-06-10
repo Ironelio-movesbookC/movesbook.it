@@ -8,6 +8,94 @@ export const MACRO_FINAL_OPTIONS = [
   "0'", "1'", "2'", "3'", "4'", "5'", "6'", "7'", "8'", "9'"
 ];
 
+/** Circuit planner "Macro" / Continuous Time digit (0–9) → moveframe `macroFinal` label */
+export function circuitLoadOfWorkToMacroFinal(load: unknown): string | null {
+  const s = String(load ?? '').trim();
+  if (!/^[0-9]$/.test(s)) return null;
+  return MACRO_FINAL_OPTIONS[parseInt(s, 10)] ?? null;
+}
+
+/** Inter-station pause in circuit planner grid and Add/Edit station modal (seconds). */
+export const CIRCUIT_STATION_PAUSE_OPTIONS: { label: string; value: number }[] = [
+  { label: '0"', value: 0 },
+  { label: '5"', value: 5 },
+  { label: '10"', value: 10 },
+  { label: '15"', value: 15 },
+  { label: '20"', value: 20 },
+  { label: '25"', value: 25 },
+  { label: '30"', value: 30 },
+  { label: '40"', value: 40 },
+  { label: '50"', value: 50 },
+  { label: "1'", value: 60 },
+  { label: '1\'30"', value: 90 },
+  { label: '2\'00"', value: 120 },
+  { label: '2\'30"', value: 150 },
+  { label: '3\'00"', value: 180 },
+  { label: '3\'30"', value: 210 },
+  { label: '4\'00"', value: 240 },
+  { label: '5\'00"', value: 300 },
+  { label: '6\'00"', value: 360 },
+];
+
+/**
+ * Pause at the end / Pause between series (count mode) — CircuitPlanner_OLD series pauses
+ * and BatteryCircuitPlanner_REDESIGNED when Execution horizontally (both dropdowns).
+ */
+export const CIRCUIT_SERIES_PAUSE_OPTIONS: { label: string; value: number }[] = [
+  { label: '0"', value: 0 },
+  { label: '20"', value: 20 },
+  { label: '30"', value: 30 },
+  { label: '40"', value: 40 },
+  { label: '50"', value: 50 },
+  { label: "1'", value: 60 },
+  { label: '1\'30"', value: 90 },
+  { label: "2'", value: 120 },
+  { label: '2\'30"', value: 150 },
+  { label: "3'", value: 180 },
+  { label: '3\'30"', value: 210 },
+  { label: "4'", value: 240 },
+  { label: "5'", value: 300 },
+  { label: "6'", value: 360 },
+  { label: "7'", value: 420 },
+  { label: "8'", value: 480 },
+  { label: "9'", value: 540 },
+  { label: "10'", value: 600 }
+];
+
+/** Sports that use the official indoor / structured tools layout (extend when wiring sport configs). */
+export function isOfficialIndoorToolsLayoutSport(_sport: string): boolean {
+  return false;
+}
+
+/** Optional map of pause UI mode → whether pace fields apply (placeholder for sport-specific tools). */
+export const PAUSE_PACE_BY_MODE: Record<string, boolean> = {};
+
+/** Rest / pause between sets — fast planner toolbars, bulk Pause apply, Plan gym week manual tables */
+export const FAST_PLANNER_REST_PAUSE_OPTIONS: string[] = [
+  '0"',
+  '15"',
+  '30"',
+  '45"',
+  "1'",
+  "1'30\"",
+  "2'",
+  "2'30\"",
+  "3'",
+  "4'",
+  "5'",
+  "6'",
+  "7'",
+  "8'",
+  "9'",
+  "10'"
+];
+
+/** Plan gym week — Macro exercise & Macro sector dropdowns: whole minutes 1′…10′ only (circuit-scale macros). */
+export const PLAN_GYM_WEEK_MACRO_MINUTE_LABELS: string[] = Array.from(
+  { length: 10 },
+  (_, i) => `${i + 1}'`
+);
+
 // Muscular sectors for BODY_BUILDING (WEIGHTS)
 export const MUSCULAR_SECTORS = [
   'Shoulders',
@@ -45,7 +133,7 @@ export const SPORT_CONFIGS = {
   SWIM: {
     meters: ['25', '33', '50', '66', '75', '100', '125', '150', '200', '250', '300', '400', '500', '800', '1000', '1200', '1500', 'input'],
     speeds: ['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'C1', 'C2'],
-    styles: ['Freestyle', 'Dolphin', 'Backstroke', 'Breaststroke', 'Sliding', 'Apnea'],
+    styles: ['Freestyle', 'Dolphin', 'Backstroke', 'Breaststroke', 'Mixed', 'Sliding', 'Apnea'],
     // Pace\100 applies for all meter values in swim
     pace100Meters: ['25', '33', '50', '66', '75', '100', '125', '150', '200', '250', '300', '400', '500', '800', '1000', '1200', '1500'],
     restTypes: [REST_TYPES.SET_TIME, REST_TYPES.RESTART_TIME, REST_TYPES.RESTART_PULSE],
@@ -883,6 +971,74 @@ export const AEROBIC_SPORTS = [
   'HIKING'
 ] as const;
 
+/**
+ * Aerobic sport dropdown: logical subgroups (horizontal rule between groups in the native sport select).
+ * Order within a group follows this list, intersected with sports available in the build.
+ */
+export const AEROBIC_SELECT_GROUPS: string[][] = [
+  ['SWIM', 'BIKE', 'CYCLING_TOURISM', 'CYCLOCROSS', 'MTB', 'SPINNING'],
+  ['RUN', 'WALKING'],
+  ['ROWING', 'CANOEING'],
+  ['SKATE'],
+  ['SKI', 'SNOWBOARD'],
+];
+
+const AEROBIC_OPT_SEP_PREFIX = '__aerobicSep__';
+
+export type AerobicSportSelectRow =
+  | { type: 'sport'; code: string }
+  | { type: 'sep'; id: string };
+
+/** Build rows for the “Aerobic sports” optgroup: real sports plus disabled separator lines between groups. */
+export function buildAerobicSportSelectRows(aerobicCodesOrdered: string[]): AerobicSportSelectRow[] {
+  const available = new Set(aerobicCodesOrdered);
+  const rows: AerobicSportSelectRow[] = [];
+  let first = true;
+  for (const group of AEROBIC_SELECT_GROUPS) {
+    const present = group.filter((c) => available.has(c));
+    if (present.length === 0) continue;
+    if (!first) rows.push({ type: 'sep', id: `${AEROBIC_OPT_SEP_PREFIX}${rows.length}` });
+    first = false;
+    for (const code of present) rows.push({ type: 'sport', code });
+  }
+  return rows;
+}
+
+/** Ignore separator pseudo-values if a select onChange ever receives them. */
+export function isAerobicSportSelectSeparatorValue(value: string): boolean {
+  return value.startsWith(AEROBIC_OPT_SEP_PREFIX);
+}
+
+/**
+ * Category B: gym / strength-style sports that get the BATTERY “fast” row planners
+ * (anaerobic-style grids) **and** the separate **circuit** planner under the same type tab
+ * (see Add Moveframe: “Fast & circuits” + Circuits). Not the same as category A aerobic grids.
+ */
+export const NOT_AEROBIC_FAST_PLAN_SPORTS = [
+  'BODY_BUILDING',
+  'CALISTENIC',
+  'CROSSFIT',
+  'SPARTAN',
+  'STRETCHING',
+  'GYMNASTIC',
+  'PILATES',
+  'YOGA',
+] as const;
+
+/** Fast planning / BATTERY submenu: A = aerobic endurance, B = not aerobic gym, C = hide "Fast plannings" for new moves. */
+export type SportFastPlanningCategory = 'A' | 'B' | 'C';
+
+export const getSportFastPlanningCategory = (sport: string): SportFastPlanningCategory => {
+  if (AEROBIC_SPORTS.includes(sport as any)) return 'A';
+  if ((NOT_AEROBIC_FAST_PLAN_SPORTS as readonly string[]).includes(sport)) return 'B';
+  return 'C';
+};
+
+export const showFastPlanningsForSport = (sport: string): boolean => {
+  const c = getSportFastPlanningCategory(sport);
+  return c === 'A' || c === 'B';
+};
+
 // Helper function to check if a sport is aerobic
 export const isAerobicSport = (sport: string): boolean => {
   return AEROBIC_SPORTS.includes(sport as any);
@@ -978,9 +1134,9 @@ export const shouldShowPaceField = (sport: string): boolean => {
 export const getSportDisplayName = (sport: string): string => {
   const displayNames: Record<string, string> = {
     'MTB': 'MTB',
-    'BODY_BUILDING': 'BODY BUILDING',
-    'TECHNICAL_MOVES': 'TECHNICAL MOVES',
-    'FREE_MOVES': 'FREE MOVES',
+    'BODY_BUILDING': 'Body Building\\Training with loads',
+    'TECHNICAL_MOVES': '* Technical moves',
+    'FREE_MOVES': '* Free moves',
     'AMERICAN_FOOTBALL': 'American Football',
     'ARCHERY': 'Archery',
     'ARTISTIC_GYMNASTICS': 'Artistic Gymnastics',
@@ -1135,9 +1291,13 @@ export function getPauseOptions(sport: string, restType: string): readonly strin
   const config = getSportConfig(sport);
   if ('pauses' in config) {
     if (typeof config.pauses === 'object' && !Array.isArray(config.pauses)) {
-      return config.pauses[restType as keyof typeof config.pauses] || [];
+      const keyed = config.pauses[restType as keyof typeof config.pauses];
+      if (keyed === 'input') return 'input';
+      if (Array.isArray(keyed)) return keyed;
+      return [];
     }
-    return config.pauses;
+    const top = config.pauses;
+    return Array.isArray(top) ? top : [];
   }
   return [];
 }

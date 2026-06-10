@@ -58,7 +58,7 @@ export const MOVEFRAME_COLUMNS: ColumnDefinition[] = [
   { id: 'description', label: 'Moveframe description', defaultVisible: true, required: true, description: 'Moveframe description' },
   { id: 'duration', label: 'Duration', defaultVisible: true, description: 'Distance/Time/Series duration' },
   { id: 'rip', label: 'Rip\\Sets', defaultVisible: true, description: 'Repetitions/Sets' },
-  { id: 'macro', label: 'Macro', defaultVisible: true, description: 'Macro cycle' },
+  { id: 'macro', label: 'Ave pause', defaultVisible: true, description: 'Average pause / macro rest across laps' },
   { id: 'alarm', label: 'Alarm & Sound', defaultVisible: true, description: 'Alarm settings' },
   { id: 'options', label: 'Options', defaultVisible: true, required: true, description: 'Action buttons' },
 ];
@@ -82,13 +82,30 @@ export const MOVELAP_COLUMNS: ColumnDefinition[] = [
 ];
 
 // Get default settings for a table type
-export function getDefaultColumnSettings(tableType: 'day' | 'workout' | 'moveframe' | 'movelap'): {
+export type ColumnTableType =
+  | 'day'
+  | 'workout'
+  | 'moveframe'
+  | 'movelap'
+  | 'nutritionFood'
+  | 'nutritionComponent';
+
+function normalizeColumnTableType(
+  tableType: ColumnTableType
+): 'day' | 'workout' | 'moveframe' | 'movelap' {
+  if (tableType === 'nutritionFood') return 'moveframe';
+  if (tableType === 'nutritionComponent') return 'movelap';
+  return tableType;
+}
+
+export function getDefaultColumnSettings(tableType: ColumnTableType): {
   visibleColumns: string[];
   columnOrder: string[];
 } {
+  const normalized = normalizeColumnTableType(tableType);
   let columns: ColumnDefinition[] = [];
   
-  switch (tableType) {
+  switch (normalized) {
     case 'day':
       columns = DAY_ROW_COLUMNS;
       break;
@@ -113,8 +130,8 @@ export function getDefaultColumnSettings(tableType: 'day' | 'workout' | 'movefra
 }
 
 // Get all columns for a table type
-export function getColumnsForTable(tableType: 'day' | 'workout' | 'moveframe' | 'movelap'): ColumnDefinition[] {
-  switch (tableType) {
+export function getColumnsForTable(tableType: ColumnTableType): ColumnDefinition[] {
+  switch (normalizeColumnTableType(tableType)) {
     case 'day':
       return DAY_ROW_COLUMNS;
     case 'workout':

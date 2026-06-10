@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { 
   DndContext, 
   closestCenter,
@@ -62,7 +63,8 @@ import {
   QrCode,
   CreditCard,
   Triangle,
-  Gift
+  Gift,
+  Users2
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -109,7 +111,11 @@ interface SystemDashboardSidebarProps {
   onToggle?: () => void;
 }
 
-const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProps) => {
+const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSidebarProps) => {
+  const searchParams = useSearchParams();
+  const foodsPanelActive =
+    searchParams?.get('panel') === 'foods-and-dishes' || searchParams?.get('panel') === 'foods';
+
   const [internalIsOpen, setInternalIsOpen] = useState(true);
   const isSidebarOpen = isOpen !== undefined ? isOpen : internalIsOpen;
   // State for open sections (main categories)
@@ -138,6 +144,12 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
   // State for open sub-sections (nested menus)
   const [openSubSections, setOpenSubSections] = useState<Record<string, boolean>>({});
 
+  useEffect(() => {
+    if (foodsPanelActive) {
+      setOpenSections((prev) => ({ ...prev, general: true }));
+    }
+  }, [foodsPanelActive]);
+
   const toggleSection = (section: string) => {
     setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
@@ -153,6 +165,7 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
       label: 'Staff enabled',
       items: [
         { label: 'Super Admin', icon: User, href: '/settings/admin-management' },
+        { label: 'All staff', icon: Users2, href: '/admin/all-staff' },
         { label: 'Co-administrators', icon: Users, href: '/operators/usersAssignedStaff' },
         { label: 'Operators', icon: Headphones, href: '/operators' }
       ]
@@ -400,10 +413,28 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
       id: 'technical',
       label: 'Technical settings',
       items: [
-        { label: 'Gym machines' },
-        { label: 'Sport devices enabled' },
-        { label: 'Clothes', icon: Shirt },
-        { label: 'Other settings' }
+        { label: 'Periods', href: '/settings?section=tools&tab=periods' },
+        { label: 'Workout Sections', href: '/settings?section=tools&tab=sections' },
+        { label: 'Execution techniques', href: '/settings?section=tools&tab=bodyBuildingTechniques' },
+        { label: 'Equipment factories', href: '/settings?section=technical&tab=equipmentFactories' },
+        { label: 'Muscle Settings', href: '/settings?section=technical&tab=muscles' },
+        { label: 'Gym machines', href: '/settings?section=technical&tab=sportMachines' },
+        { label: 'Exercise bank', href: '/settings?section=technical&tab=exercises' },
+        { label: 'My library of exercises', href: '/settings?section=technical&tab=myLibrary' },
+        { label: 'Sport devices enabled', href: '/settings?section=technical&tab=devices' },
+        {
+          label: 'Types of common daily settings',
+          href: '/settings?section=tools&tab=commonDailyActions'
+        },
+        {
+          label: 'Parameters for calc workouts',
+          hasSubmenu: true,
+          id: 'workout_calc_params',
+          subItems: [
+            { label: 'Changes in the volume series', href: '/settings?section=workoutParameters&workoutTab=changesVolumesSeries' },
+            { label: 'Parameters for each objective', href: '/settings?section=workoutParameters&workoutTab=parametersByObjective' }
+          ]
+        }
       ]
     },
     {
@@ -430,7 +461,7 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
             { label: 'Activities for the clubs' }
           ]
         },
-        { label: 'Foods And Dishes', icon: Utensils },
+        { label: 'Foods And Dishes', icon: Utensils, href: '/admin/global-settings?panel=foods-and-dishes' },
         { label: 'Path for social buttons', icon: Share2 }
       ]
     },
@@ -447,7 +478,7 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
             { label: 'Club password requests' },
             { label: 'Enablings management' },
             { label: 'Set functions enabled' },
-            { label: 'Access control audio setting' },
+            { label: 'Access control audio setting', href: '/admin/access-audio-settings' },
             { label: 'Defaultsettings' }
           ]
         },
@@ -470,7 +501,7 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
       id: 'countries',
       label: 'Countries & Languages',
       items: [
-        { label: 'Countries settings', icon: Flag },
+        { label: 'Countries settings', icon: Flag, href: '/countries' },
         {
           label: 'Languages',
           icon: Languages,
@@ -572,7 +603,10 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
           className={`relative block py-[10px] pr-0 border border-[#7f7f7f] text-white transition-colors ${bgClass}`}
           style={{ paddingLeft }}
         >
-          <div className="absolute top-[6px] w-[24px]" style={{ left: isLevel0 ? '8px' : '15px' }}>
+          <div
+            className="absolute top-1/2 -translate-y-1/2 w-[24px] flex items-center justify-center"
+            style={{ left: iconLeft }}
+          >
             <Icon className="w-5 h-5 text-white" />
           </div>
           <span className="text-[13px] font-bold text-white flex items-center gap-1">
@@ -580,7 +614,7 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
             {item.hasLock && <Lock className="w-3 h-3 text-white ml-1" />}
           </span>
           {hasSubmenu && (
-            <div className="absolute right-[13px] top-[8px]">
+            <div className="absolute right-[13px] top-1/2 -translate-y-1/2 flex items-center">
               <Triangle className={`w-3 h-3 text-white fill-white transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </div>
           )}
@@ -646,5 +680,11 @@ const SystemDashboardSidebar = ({ isOpen, onToggle }: SystemDashboardSidebarProp
   );
 };
 
-export default SystemDashboardSidebar;
+export default function SystemDashboardSidebar(props: SystemDashboardSidebarProps) {
+  return (
+    <React.Suspense fallback={<div className="w-64 shrink-0 bg-gray-100" />}>
+      <SystemDashboardSidebarContent {...props} />
+    </React.Suspense>
+  );
+}
 

@@ -5,8 +5,11 @@ import { GripVertical, Volume2, VolumeX, Bell, BellOff, MoreVertical } from 'luc
 import { DndContext, closestCenter, DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { MACRO_FINAL_OPTIONS, getSportConfig, REST_TYPES } from '@/constants/moveframe.constants';
-import { getExercisesBySector } from '@/data/mockExercises';
+import { MACRO_FINAL_OPTIONS, getSportConfig, REST_TYPES, circuitLoadOfWorkToMacroFinal } from '@/constants/moveframe.constants';
+import { getExercisesBySector, getExerciseMedia, getMockExerciseThumbnail } from '@/data/mockExercises';
+import ExerciseGalleryModal from '@/components/workouts/ExerciseGalleryModal';
+import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
+import { computeAnaerobicFastPlannerRowStats, formatAvePauseFromSeconds } from '@/utils/moveframeAvePause';
 import '../../../styles/sticky-table.css';
 
 type AerobicRestChoice = 'rest_time' | 'restart_to' | 'reset_pulse';
@@ -74,6 +77,42 @@ const preserveMetadataTagsInNotes = (existingNotes: string, newUserNote: string)
   return tagsPart ? (userPart ? `${userPart}\n\n${tagsPart}` : tagsPart) : userPart;
 };
 
+/** Parse movelap.pause (seconds number or M'SS" / legacy forms) for circuit display logic */
+function parseMovelapPauseToSeconds(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value));
+  if (typeof value !== 'string') return 0;
+  const s = value.trim();
+  if (!s) return 0;
+  if (/^\d+$/.test(s)) return Math.max(0, parseInt(s, 10));
+  if (s.includes("'")) {
+    const parts = s.split("'");
+    const mStr = (parts[0] ?? '').replace(/\D/g, '');
+    const secStr = parts.slice(1).join("'").replace(/\D/g, '');
+    const m = mStr ? parseInt(mStr, 10) : 0;
+    const sec = secStr ? parseInt(secStr.slice(0, 2), 10) : 0;
+    return Math.max(0, m * 60 + sec);
+  }
+  const secOnly = s.match(/^(\d+)\s*"?$/);
+  if (secOnly) return Math.max(0, parseInt(secOnly[1], 10));
+  return 0;
+}
+
+type CircuitTableLayoutHint = { letter: string; localSeries: number; station: number };
+
+function readCircuitLayoutFromMovelap(ml: any | null | undefined): CircuitTableLayoutHint | null {
+  if (!ml || typeof ml !== 'object') return null;
+  const letter =
+    typeof ml.circuitLetter === 'string' ? ml.circuitLetter.trim().toUpperCase() : '';
+  const localSeries =
+    typeof ml.localSeriesNumber === 'number' && Number.isFinite(ml.localSeriesNumber)
+      ? ml.localSeriesNumber
+      : 0;
+  const station =
+    typeof ml.stationNumber === 'number' && Number.isFinite(ml.stationNumber) ? ml.stationNumber : 0;
+  if (!letter && typeof ml.circuitIndex !== 'number') return null;
+  return { letter, localSeries, station };
+}
+
 const extractFastPlannerModeFromNotes = (notes: unknown): { mode: string | null; notes: string } => {
   if (typeof notes !== 'string') return { mode: null, notes: '' };
   const withoutCircuit = notes
@@ -136,11 +175,14 @@ const MUSCULAR_SECTOR_IMAGES: Record<string, string> = {
   'Forearms': '/muscular/Forearms.png',
   'Chest': '/muscular/chest.png',
   'Abdominals': '/muscular/abs.png',
+  'Intercostals': '/muscular/abs.png',
   'Trapezius': '/muscular/trapezius.png',
   'Lats': '/muscular/Lats.png',
+  'Lumbosacral': '/muscular/Lats.png',
   'Front thighs': '/muscular/quadriceps.png',
   'Hind thighs': '/muscular/hams.png',
   'Calves': '/muscular/calves.png',
+  'Tibials': '/muscular/calves.png',
   'Glutes': '/muscular/glutes.png',
 };
 
@@ -153,6 +195,8 @@ interface MovelapDetailTableProps {
   onRefresh?: () => void;
   allMoveframes?: any[]; // All moveframes in the workout for navigation
   onNavigateMoveframe?: (moveframeId: string) => void; // Navigate to another moveframe
+  /** When the anaerobic fast-planner movelap modal opens/closes (parent can hide the moveframe summary row). */
+  onAnaerobicFastPlannerModalOpenChange?: (open: boolean) => void;
 }
 
 // Editable Notes Field Component - 2026-01-22 12:00 UTC
@@ -167,11 +211,7 @@ function EditableNotesField({ movelap, stripHtmlTags, onRefresh, isNewlyAdded }:
   React.useEffect(() => {
     let cleanNotes = movelap.notes || '';
     if (typeof cleanNotes === 'string') {
-      // Remove circuit metadata tags
-      cleanNotes = cleanNotes.replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '');
-      cleanNotes = cleanNotes.replace(/\[CIRCUIT_DATA\].*?\[\/CIRCUIT_DATA\]/g, '');
-      cleanNotes = cleanNotes.replace(/\[FP_MODE\][\s\S]*?\[\/FP_MODE\]/g, '');
-      cleanNotes = cleanNotes.trim();
+      cleanNotes = stripInternalWorkoutTags(cleanNotes).trim();
     }
     setNotesValue(stripHtmlTags(cleanNotes));
   }, [movelap.notes, movelap.id, stripHtmlTags]);
@@ -276,6 +316,7 @@ function SortableMovelapRow({
   onAddMovelapAfter,
   onAddStationAfter,
   pauseAmongCircuits,
+  lastCircuitLetter = '',
   circuitInfoByLetter,
   defaultSeriesPerCircuit,
   defaultStationsPerCircuit,
@@ -283,7 +324,11 @@ function SortableMovelapRow({
   pauseSeriesSeconds,
   pauseByCircuit,
   pauseByCircuitIndex,
-  onRefresh
+  onRefresh,
+  isCircuitBased: isCircuitBasedProp,
+  circuitExecutionMode,
+  nextMovelapInTable = null,
+  circuitMacroFromConfig = null
 }: {
   movelap: any;
   isNewlyAdded?: boolean;
@@ -306,6 +351,8 @@ function SortableMovelapRow({
   onAddMovelapAfter?: (movelap: any, index: number) => void;
   onAddStationAfter?: (movelap: any, index: number) => void;
   pauseAmongCircuits?: string;
+  /** Letter of the last circuit in this moveframe (final workout rest is not "between circuits"). */
+  lastCircuitLetter?: string;
   circuitInfoByLetter?: Map<string, { seriesCount: number; stationsPerSeries: number }>;
   defaultSeriesPerCircuit?: number | null;
   defaultStationsPerCircuit?: number | null;
@@ -315,8 +362,20 @@ function SortableMovelapRow({
   pauseByCircuitIndex?: Map<number, { pauseAfterCircuit?: number; pauseBetweenSeries?: number; seriesPauses?: number[] }>;
   onRefresh?: () => void;
   isCircuitBased?: boolean;
+  /** From saved circuit config — drives thick row separator between series blocks in the movelap list. */
+  circuitExecutionMode?: 'vertical' | 'horizontal';
+  /** Next movelap in table order (same moveframe list); used for circuit serie boundaries in sparse grids. */
+  nextMovelapInTable?: any | null;
+  /** Macro rest derived from saved circuit `loadOfWork` / config for final-row fallback. */
+  circuitMacroFromConfig?: string | null;
 }) {
-  // Options dropdown state
+  const isCircuitBasedRow = isCircuitBasedProp ?? moveframe?.isCircuitBased;
+  const [exerciseGallery, setExerciseGallery] = useState<{
+    title: string;
+    pictureA: string | null;
+    pictureB: string | null;
+  } | null>(null);
+
   const [showOptionsDropdown, setShowOptionsDropdown] = useState(false);
   const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
   const optionsButtonRef = useRef<HTMLButtonElement>(null);
@@ -331,29 +390,20 @@ function SortableMovelapRow({
     isDragging
   } = useSortable({ id: movelap.id });
 
-  // Calculate button position when dropdown opens
   const handleOpenDropdown = () => {
-    console.log('🔵 handleOpenDropdown called');
     if (optionsButtonRef.current) {
       const rect = optionsButtonRef.current.getBoundingClientRect();
-      console.log('🔵 Button rect:', rect);
-      console.log('🔵 Viewport width:', window.innerWidth);
       
       setButtonRect(rect);
       setShowOptionsDropdown(true);
-      console.log('🔵 Dropdown state set to true');
-    } else {
-      console.log('❌ optionsButtonRef.current is null');
-    }
+    } 
   };
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (showOptionsDropdown && dropdownRef.current && optionsButtonRef.current) {
         const target = event.target as Node;
         if (!dropdownRef.current.contains(target) && !optionsButtonRef.current.contains(target)) {
-          console.log('🔴 Closing dropdown (clicked outside)');
           setShowOptionsDropdown(false);
           setButtonRect(null);
         }
@@ -361,35 +411,14 @@ function SortableMovelapRow({
     };
 
     if (showOptionsDropdown) {
-      console.log('👂 Adding mousedown listener');
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
-      if (showOptionsDropdown) {
-        console.log('🧹 Removing mousedown listener');
-      }
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showOptionsDropdown]);
 
-  // Debug: Track dropdown state changes
-  useEffect(() => {
-    console.log('🔷 showOptionsDropdown changed to:', showOptionsDropdown);
-    console.log('🔷 buttonRect:', buttonRect);
-    if (showOptionsDropdown && buttonRect) {
-      console.log('✅ DROPDOWN SHOULD BE VISIBLE NOW!');
-    }
-  }, [showOptionsDropdown, buttonRect]);
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 9999 : 1,
-    position: 'relative' as const,
-    cursor: isDragging ? 'grabbing' : 'auto',
-  };
 
   const normalizedCircuitLetter =
     typeof movelap.circuitLetter === 'string' ? movelap.circuitLetter.trim().toUpperCase() : '';
@@ -399,6 +428,109 @@ function SortableMovelapRow({
   const stationsPerSeries = circuitInfo?.stationsPerSeries ?? defaultStationsPerCircuit ?? 0;
   const isEndOfSeries = !!(hasCircuitIdentity && stationsPerSeries && movelap.stationNumber === stationsPerSeries);
   const isEndOfCircuit = !!(hasCircuitIdentity && isEndOfSeries && seriesCount && movelap.localSeriesNumber === seriesCount);
+  const localSeriesNum =
+    typeof movelap.localSeriesNumber === 'number' ? movelap.localSeriesNumber : 0;
+  const stationNum = typeof movelap.stationNumber === 'number' ? movelap.stationNumber : 0;
+  const execMode = circuitExecutionMode ?? 'vertical';
+  const macroFromLap =
+    movelap?.macroFinal != null && String(movelap.macroFinal).trim() !== '' && String(movelap.macroFinal).trim() !== '—'
+      ? String(movelap.macroFinal).trim()
+      : null;
+  const circuitMacroFallback =
+    circuitMacroFromConfig != null && String(circuitMacroFromConfig).trim() !== ''
+      ? String(circuitMacroFromConfig).trim()
+      : null;
+  const moveframeMacroFallback =
+    moveframe?.macroFinal != null && String(moveframe.macroFinal).trim() !== ''
+      ? String(moveframe.macroFinal).trim()
+      : null;
+  /** Vertical list order: thick line after the last row of serie N when the next row is same circuit and serie N+1 — not only when serie N fills `stationsPerSeries` (e.g. serie 1 with one station). */
+  const nextLayout = nextMovelapInTable ? readCircuitLayoutFromMovelap(nextMovelapInTable) : null;
+  const sameCircuitNext =
+    !!normalizedCircuitLetter && !!nextLayout && nextLayout.letter === normalizedCircuitLetter;
+  /** Sparse grids (e.g. 1 station per serie): end-of-serie is when the next lap is not the same local serie — not when stationNumber hits configured width. */
+  const nextSameSerieVertical =
+    execMode === 'vertical' &&
+    sameCircuitNext &&
+    !!nextLayout &&
+    nextLayout.localSeries === localSeriesNum;
+  const nextSameSerieHorizontal =
+    execMode === 'horizontal' &&
+    sameCircuitNext &&
+    !!nextLayout &&
+    nextLayout.localSeries === localSeriesNum &&
+    nextLayout.station === stationNum;
+  const isLogicalEndOfSerie =
+    hasCircuitIdentity &&
+    (isEndOfSeries ||
+      (execMode === 'vertical' && !!normalizedCircuitLetter && !nextSameSerieVertical) ||
+      (execMode === 'horizontal' && !!normalizedCircuitLetter && !nextSameSerieHorizontal));
+  const isLogicalEndOfCircuit =
+    hasCircuitIdentity &&
+    isLogicalEndOfSerie &&
+    (seriesCount > 0 ? localSeriesNum === seriesCount : !sameCircuitNext);
+  /** Next lap same circuit and strictly later local serie — works for sparse grids where serie 1 only fills station 1. */
+  const listDetectsVerticalSeriesEnd =
+    execMode === 'vertical' &&
+    sameCircuitNext &&
+    !!nextLayout &&
+    nextLayout.localSeries > localSeriesNum &&
+    localSeriesNum > 0 &&
+    (seriesCount <= 0 || localSeriesNum < seriesCount);
+  const listDetectsHorizontalSeriesEnd =
+    execMode === 'horizontal' &&
+    sameCircuitNext &&
+    !!nextLayout &&
+    nextLayout.station === stationNum &&
+    nextLayout.localSeries > localSeriesNum &&
+    localSeriesNum > 0 &&
+    (seriesCount <= 0 || localSeriesNum < seriesCount);
+  /** Vertical: after last station of a serie, except the last serie of the circuit. Horizontal: after last serie at a station, except the last station of the circuit. */
+  const classicVerticalSerieEnd =
+    execMode === 'vertical' &&
+    seriesCount > 0 &&
+    stationsPerSeries > 0 &&
+    stationNum === stationsPerSeries &&
+    localSeriesNum < seriesCount;
+  const classicHorizontalSerieEnd =
+    execMode === 'horizontal' &&
+    seriesCount > 0 &&
+    stationsPerSeries > 0 &&
+    localSeriesNum === seriesCount &&
+    stationNum < stationsPerSeries;
+  /**
+   * List-order truth: next lap is same circuit and starts local serie N+1 — works for vertical listing (C-1-4 → C-2-1)
+   * even when saved executionMode is "horizontal". Does NOT fire after last serie (guarded by localSeriesNum < seriesCount)
+   * nor after C-2-4 when the next row is another moveframe / circuit.
+   */
+  const listShowsNextSerieSameCircuit =
+    !!normalizedCircuitLetter &&
+    !!nextLayout &&
+    sameCircuitNext &&
+    localSeriesNum >= 1 &&
+    Number.isFinite(nextLayout.localSeries) &&
+    nextLayout.localSeries === localSeriesNum + 1 &&
+    (seriesCount <= 0 || localSeriesNum < seriesCount);
+  const showThickSerieEndSeparator =
+    !!hasCircuitIdentity &&
+    localSeriesNum > 0 &&
+    stationNum > 0 &&
+    (listShowsNextSerieSameCircuit ||
+      classicVerticalSerieEnd ||
+      classicHorizontalSerieEnd ||
+      listDetectsVerticalSeriesEnd ||
+      listDetectsHorizontalSeriesEnd);
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 9999 : 1,
+    position: 'relative' as const,
+    cursor: isDragging ? 'grabbing' : 'auto',
+    ...(showThickSerieEndSeparator ? { borderBottom: '4px solid #171717' } : {}),
+  };
+
   const formatPause = (pauseSeconds: number) => {
     const minutes = Math.floor(pauseSeconds / 60);
     const seconds = pauseSeconds % 60;
@@ -419,17 +551,55 @@ function SortableMovelapRow({
   })();
   const circuitPauseFromCircuit =
     typeof circuitPauseConfig?.pauseAfterCircuit === 'number' ? circuitPauseConfig.pauseAfterCircuit : null;
-  // Macro (Between series / Between circuits): Circuit Grid overrides take precedence over initial Pause Settings
-  const macroValue = movelap.macroFinal
-    ? movelap.macroFinal
-    : hasCircuitIdentity
-      ? isEndOfCircuit && (circuitPauseFromCircuit ?? pauseCircuitsSeconds) != null
-        ? formatPause((circuitPauseFromCircuit ?? pauseCircuitsSeconds) as number)
-        : isEndOfSeries && (seriesPauseFromCircuit ?? pauseSeriesSeconds) != null
-          ? formatPause((seriesPauseFromCircuit ?? pauseSeriesSeconds) as number)
-          : null
+  const isLastCircuitInWorkout =
+    !!lastCircuitLetter &&
+    !!normalizedCircuitLetter &&
+    normalizedCircuitLetter === lastCircuitLetter;
+  const isWorkoutFinalRestRow = isLogicalEndOfCircuit && isLastCircuitInWorkout;
+  const isIntermediateSeriesEndRow =
+    hasCircuitIdentity && isLogicalEndOfSerie && !isLogicalEndOfCircuit;
+  const finalRestSeconds =
+    isWorkoutFinalRestRow && (circuitPauseFromCircuit ?? pauseCircuitsSeconds) != null
+      ? (circuitPauseFromCircuit ?? pauseCircuitsSeconds)!
       : null;
-  const pauseValue = macroValue ? null : movelap.pause;
+  const storedPauseSeconds = parseMovelapPauseToSeconds(movelap.pause);
+  const useLegacyFinalRestInPause =
+    isWorkoutFinalRestRow &&
+    finalRestSeconds != null &&
+    !movelap.macroFinal &&
+    storedPauseSeconds + 2 < finalRestSeconds;
+
+  // Same pause→macro mapping as non-final rows: after last serie of a circuit use pause-after-circuit; else end-of-serie uses pause-between-series.
+  const macroFromCircuitPauses = !hasCircuitIdentity
+    ? null
+    : isLogicalEndOfCircuit && (circuitPauseFromCircuit ?? pauseCircuitsSeconds) != null
+      ? formatPause((circuitPauseFromCircuit ?? pauseCircuitsSeconds) as number)
+      : isLogicalEndOfSerie && (seriesPauseFromCircuit ?? pauseSeriesSeconds) != null
+        ? formatPause((seriesPauseFromCircuit ?? pauseSeriesSeconds) as number)
+        : null;
+
+  const lapMacroSeconds = macroFromLap ? parseMovelapPauseToSeconds(macroFromLap) : 0;
+  const fallbackMacroSecondsFromConfig = Math.max(
+    circuitMacroFallback ? parseMovelapPauseToSeconds(circuitMacroFallback) : 0,
+    moveframeMacroFallback ? parseMovelapPauseToSeconds(moveframeMacroFallback) : 0,
+    macroFromCircuitPauses ? parseMovelapPauseToSeconds(macroFromCircuitPauses) : 0,
+    finalRestSeconds ?? 0,
+  );
+  /** Lap sometimes stores legacy `0'` while planner macro lives in [CIRCUIT_DATA]. Prefer non-zero config when final lap macro parses to 0. */
+  const suppressZeroLapMacroForFinal =
+    isWorkoutFinalRestRow && !!macroFromLap && lapMacroSeconds === 0 && fallbackMacroSecondsFromConfig > 0;
+
+  // Macro column: lap macro only on rows that store macroFinal; final-row fallback from config/moveframe. Between-series rest lives on movelap.pause (Pause column), not here — avoids every lap inheriting macro and hiding Pause.
+  const macroValue = macroFromLap && !suppressZeroLapMacroForFinal
+    ? macroFromLap
+    : hasCircuitIdentity && isWorkoutFinalRestRow
+      ? circuitMacroFallback ?? moveframeMacroFallback ?? macroFromCircuitPauses
+      : null;
+  const pauseValue = macroValue
+    ? null
+    : useLegacyFinalRestInPause && finalRestSeconds != null
+      ? formatPause(finalRestSeconds)
+      : movelap.pause;
   const recValue = movelap?.restType === REST_TYPES.SET_TIME ? movelap.pause : null;
   const restToValue =
     movelap?.restType === REST_TYPES.RESTART_TIME || movelap?.restType === REST_TYPES.RESTART_PULSE
@@ -474,22 +644,44 @@ function SortableMovelapRow({
     !moveframe?.isCircuitBased;
   const isAerobicFastPlanner = isFastPlanner && fastPlannerPayload?.plannerType === 'aerobic';
   const isAnaerobicFastPlanner = isFastPlanner && !isAerobicFastPlanner;
+
+  /** Circuit laps store pause as seconds on `movelap.pause` — format Pause column (between-series / macro rest live here when only one station produces movelaps per serie). */
+  const pauseSecondsCircuitDisplay =
+    hasCircuitIdentity && !isAnaerobicFastPlanner && !isAerobicFastPlanner
+      ? isWorkoutFinalRestRow
+        ? Math.max(
+            storedPauseSeconds,
+            finalRestSeconds ?? 0,
+            lapMacroSeconds,
+            fallbackMacroSecondsFromConfig,
+          )
+        : storedPauseSeconds
+      : storedPauseSeconds;
+  const pauseColumnDisplay =
+    hasCircuitIdentity && !isAnaerobicFastPlanner && !isAerobicFastPlanner
+      ? useLegacyFinalRestInPause && finalRestSeconds != null
+        ? formatPause(finalRestSeconds)
+        : formatPause(pauseSecondsCircuitDisplay)
+      : pauseValue === 0
+        ? '0'
+        : pauseValue || '—';
   
   // Distance-based sports (no tools)
   const distanceBasedSports = ['SWIM', 'BIKE', 'MTB', 'RUN', 'ROWING', 'CANOEING', 'SKATE', 'SKI', 'SNOWBOARD', 'HIKING', 'WALKING'];
   const isDistanceBased = distanceBasedSports.includes(sport);
   
-  // Debug logging
-  console.log('🏃 MovelapDetailTable sport:', sport, 'isDistanceBased:', isDistanceBased, 'hasTools:', !isBodyBuilding && !isDistanceBased);
-  
-  // Other sports have tools (Gymnastic, Stretching, Pilates, Yoga, Technical moves, Free moves, etc.)
   const hasTools = !isBodyBuilding && !isDistanceBased;
   
   return (
     <>
     <tr 
       ref={setNodeRef} 
-      style={style} 
+      style={{
+        ...style,
+        ...(isIntermediateSeriesEndRow
+          ? { boxShadow: 'inset 0 -3px 0 0 rgba(31,41,55,0.95)' }
+          : {}),
+      }} 
       className="hover:bg-gray-100 transition-colors duration-150 isolate relative z-0"
     >
       {/* Move (Drag Handle) Column */}
@@ -543,7 +735,71 @@ function SortableMovelapRow({
       
        {isAnaerobicFastPlanner && (
          <>
-           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td className={`border border-gray-300 px-1 py-1 align-middle ${isNewlyAdded ? 'text-red-600' : ''}`}>
+             {(() => {
+               const exName = (movelap.exercise || '').trim();
+               const sectorLabel = (movelap.muscularSector || movelap.style || '').trim();
+               const sectorImg =
+                 sectorLabel && MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                   ? MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                   : null;
+               const media = exName ? getExerciseMedia(exName) : null;
+               const thumbSrc =
+                 media?.thumb?.src ?? (exName && sectorImg ? sectorImg : null);
+               const thumbData =
+                 media?.thumb?.isDataUrl === true || (!!thumbSrc && thumbSrc.startsWith('data:'));
+               const openGallery = () => {
+                 const title =
+                   exName || (sectorLabel ? `${sectorLabel} — exercise` : 'Exercise');
+                 setExerciseGallery({
+                   title,
+                   pictureA: media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                   pictureB:
+                     media?.pictureB ?? media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                 });
+               };
+               if (!exName && !sectorLabel) {
+                 return <span className="text-sm text-gray-400">—</span>;
+               }
+               return (
+                 <div className="flex max-w-[220px] items-center gap-1.5">
+                   <button
+                     type="button"
+                     title="Click to enlarge pictures"
+                     className="h-10 w-10 flex-shrink-0 overflow-hidden rounded border border-gray-200 bg-gray-50 hover:ring-2 hover:ring-teal-500"
+                     onClick={(e) => {
+                       e.stopPropagation();
+                       openGallery();
+                     }}
+                   >
+                     {thumbSrc ? (
+                       thumbData ? (
+                         // eslint-disable-next-line @next/next/no-img-element -- thumb may be data URL from catalog
+                         <img src={thumbSrc} alt="" className="h-full w-full object-cover" />
+                       ) : (
+                         <Image
+                           src={thumbSrc}
+                           alt=""
+                           width={40}
+                           height={40}
+                           className="h-full w-full object-cover"
+                           unoptimized
+                         />
+                       )
+                     ) : (
+                       <div className="h-full w-full bg-gray-100" aria-hidden />
+                     )}
+                   </button>
+                   <div className="min-w-0 flex-1 text-left text-sm leading-tight text-gray-900">
+                     {exName || (
+                       <span className="italic text-amber-800">{sectorLabel}</span>
+                     )}
+                   </div>
+                 </div>
+               );
+             })()}
+           </td>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {(() => {
                const s = typeof movelap.speed === 'string' ? movelap.speed.trim() : (movelap.speed != null ? String(movelap.speed).trim() : '');
                if (!s) return '—';
@@ -568,7 +824,7 @@ function SortableMovelapRow({
              {movelap._fastPlannerMode || '—'}
            </td>
            <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
-             {macroValue === 0 ? '0' : macroValue || '—'}
+             {macroValue != null && parseMovelapPauseToSeconds(macroValue) === 0 ? '0' : macroValue || '—'}
            </td>
          </>
        )}
@@ -633,12 +889,117 @@ function SortableMovelapRow({
         </>
       )}
 
-       {/* BODY BUILDING - Musc.Sector and Exercise columns removed per user request */}
+       {/* BODY BUILDING — circuit rows: muscular icon + exercise thumb/name */}
        {isBodyBuilding && !isAnaerobicFastPlanner && !isAerobicFastPlanner && (
          <>
+           {isCircuitBasedRow && (
+             <>
+               <td
+                 className={`border border-gray-300 px-1 py-1 text-center align-middle ${isNewlyAdded ? 'text-red-600' : ''}`}
+               >
+                 {(() => {
+                   const sectorLabel = (movelap.muscularSector || movelap.style || '').trim();
+                   const src =
+                     sectorLabel && MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                       ? MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                       : null;
+                   if (!src) {
+                     return <span className="text-[10px] text-gray-400">—</span>;
+                   }
+                   return (
+                     <div className="flex flex-col items-center gap-0.5">
+                       <Image
+                         src={src}
+                         alt={sectorLabel}
+                         width={40}
+                         height={40}
+                         className="h-10 w-10 object-contain"
+                         unoptimized
+                       />
+                       <span
+                         className="max-w-[56px] truncate text-[8px] leading-tight text-gray-700"
+                         title={sectorLabel}
+                       >
+                         {sectorLabel}
+                       </span>
+                     </div>
+                   );
+                 })()}
+               </td>
+               <td
+                 className={`border border-gray-300 px-1 py-1 align-middle ${isNewlyAdded ? 'text-red-600' : ''}`}
+               >
+                 {(() => {
+                   const exName = (movelap.exercise || '').trim();
+                   const sectorLabel = (movelap.muscularSector || movelap.style || '').trim();
+                   const sectorImg =
+                     sectorLabel && MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                       ? MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                       : null;
+                   const media = exName ? getExerciseMedia(exName) : null;
+                  const thumbSrc =
+                    media?.thumb?.src ?? (exName && sectorImg ? sectorImg : null);
+                   const thumbData =
+                     media?.thumb?.isDataUrl === true || (!!thumbSrc && thumbSrc.startsWith('data:'));
+                   const openGallery = () => {
+                     const title =
+                       exName || (sectorLabel ? `${sectorLabel} — select exercise` : 'Exercise');
+                    setExerciseGallery({
+                      title,
+                      pictureA: media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                      pictureB:
+                        media?.pictureB ?? media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                    });
+                   };
+                   return (
+                     <div className="flex items-center gap-1.5">
+                       <button
+                         type="button"
+                         title="Click to enlarge positions A and B"
+                         className="h-10 w-10 flex-shrink-0 overflow-hidden rounded border border-gray-200 bg-gray-50 hover:ring-2 hover:ring-teal-500"
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           openGallery();
+                         }}
+                       >
+                         {thumbSrc ? (
+                           thumbData ? (
+                             // eslint-disable-next-line @next/next/no-img-element
+                             <img src={thumbSrc} alt="" className="h-full w-full object-cover" />
+                           ) : (
+                             <Image
+                               src={thumbSrc}
+                               alt=""
+                               width={40}
+                               height={40}
+                               className="h-full w-full object-cover"
+                               unoptimized
+                             />
+                           )
+                         ) : (
+                           <div className="h-full w-full bg-gray-100" aria-hidden />
+                         )}
+                       </button>
+                       <div className="min-w-0 flex-1 text-left text-[10px] leading-tight text-gray-900">
+                         {exName ? (
+                           exName
+                         ) : (
+                           <span className="italic text-amber-800">Select exercise — Edit</span>
+                         )}
+                       </div>
+                     </div>
+                   );
+                 })()}
+               </td>
+             </>
+           )}
            {/* Reps */}
            <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
-             {movelap.reps || '—'}
+             {isCircuitBasedRow
+               ? (movelap.reps != null && movelap.reps !== ''
+                   ? String(movelap.reps)
+                   : movelap.speed) || '—'
+               : movelap.reps || '—'}
            </td>
            {!moveframe.isCircuitBased && (
              <>
@@ -664,8 +1025,111 @@ function SortableMovelapRow({
        {/* OTHER SPORTS WITH TOOLS (Gymnastic, Stretching, Pilates, Yoga, etc.) */}
        {hasTools && !isAerobicFastPlanner && (
          <>
-           {/* Reps */}
-           <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
+           <td
+             className={`border border-gray-300 px-1 py-1 text-center align-middle ${isNewlyAdded ? 'text-red-600' : ''}`}
+           >
+             {(() => {
+               const sectorLabel = (movelap.muscularSector || movelap.style || '').trim();
+               const src =
+                 sectorLabel && MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                   ? MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                   : null;
+               if (!sectorLabel && !src) {
+                 return <span className="text-sm text-gray-400">—</span>;
+               }
+               if (!src) {
+                 return (
+                   <span className="text-sm leading-tight text-gray-800" title={sectorLabel}>
+                     {sectorLabel || '—'}
+                   </span>
+                 );
+               }
+               return (
+                 <div className="flex flex-col items-center gap-0.5">
+                   <Image
+                     src={src}
+                     alt={sectorLabel}
+                     width={40}
+                     height={40}
+                     className="h-10 w-10 object-contain"
+                     unoptimized
+                   />
+                   <span
+                     className="max-w-[56px] truncate text-sm leading-tight text-gray-700"
+                     title={sectorLabel}
+                   >
+                     {sectorLabel}
+                   </span>
+                 </div>
+               );
+             })()}
+           </td>
+           <td
+             className={`border border-gray-300 px-1 py-1 align-middle ${isNewlyAdded ? 'text-red-600' : ''}`}
+           >
+             {(() => {
+               const exName = (movelap.exercise || '').trim();
+               const sectorLabel = (movelap.muscularSector || movelap.style || '').trim();
+               const sectorImg =
+                 sectorLabel && MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                   ? MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                   : null;
+               const media = exName ? getExerciseMedia(exName) : null;
+              const thumbSrc =
+                media?.thumb?.src ?? (exName && sectorImg ? sectorImg : null);
+               const thumbData =
+                 media?.thumb?.isDataUrl === true || (!!thumbSrc && thumbSrc.startsWith('data:'));
+               const openGallery = () => {
+                 const title =
+                   exName || (sectorLabel ? `${sectorLabel} — select exercise` : 'Exercise');
+                setExerciseGallery({
+                  title,
+                  pictureA: media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                  pictureB:
+                    media?.pictureB ?? media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                });
+               };
+               return (
+                 <div className="flex items-center gap-1.5">
+                   <button
+                     type="button"
+                     title="Click to enlarge positions A and B"
+                     className="h-10 w-10 flex-shrink-0 overflow-hidden rounded border border-gray-200 bg-gray-50 hover:ring-2 hover:ring-teal-500"
+                     onClick={(e) => {
+                       e.stopPropagation();
+                       openGallery();
+                     }}
+                   >
+                     {thumbSrc ? (
+                       thumbData ? (
+                         // eslint-disable-next-line @next/next/no-img-element
+                         <img src={thumbSrc} alt="" className="h-full w-full object-cover" />
+                       ) : (
+                         <Image
+                           src={thumbSrc}
+                           alt=""
+                           width={40}
+                           height={40}
+                           className="h-full w-full object-cover"
+                           unoptimized
+                         />
+                       )
+                     ) : (
+                       <div className="h-full w-full bg-gray-100" aria-hidden />
+                     )}
+                   </button>
+                   <div className="min-w-0 flex-1 text-left text-sm leading-tight text-gray-900">
+                     {exName ? (
+                       exName
+                     ) : (
+                       <span className="italic text-amber-800">Select exercise — Edit</span>
+                     )}
+                   </div>
+                 </div>
+               );
+             })()}
+           </td>
+           <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
              {movelap.reps || '—'}
            </td>
            {/* Tools */}
@@ -736,16 +1200,16 @@ function SortableMovelapRow({
        
        {/* Pause/Recovery */}
      {!isAnaerobicFastPlanner && !isAerobicFastPlanner && (
-      <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
-        {pauseValue === 0 ? '0' : pauseValue || '—'}
+      <td className={`border border-gray-300 px-1 py-1 text-center text-sm ${isNewlyAdded ? 'text-red-600' : ''}`}>
+        {pauseColumnDisplay}
        </td>
       )}
        
-       {/* Macro Final - 2026-01-22 11:30 UTC - Show pause among circuits for circuit movelaps */}
+       {/* Macro: between series / between circuits (final workout rest is in Pause on last row) */}
        {/* 2026-01-22 15:35 UTC - Calculate pause for each movelap individually */}
      {!isAnaerobicFastPlanner && !isAerobicFastPlanner && (
       <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
-        {macroValue === 0 ? '0' : macroValue || '—'}
+        {macroValue != null && parseMovelapPauseToSeconds(macroValue) === 0 ? '0' : macroValue || '—'}
        </td>
       )}
        
@@ -802,14 +1266,11 @@ function SortableMovelapRow({
           <button
             ref={optionsButtonRef}
             onClick={(e) => {
-              console.log('🟢 Options button clicked');
               e.stopPropagation();
               if (showOptionsDropdown) {
-                console.log('🟢 Closing dropdown');
                 setShowOptionsDropdown(false);
                 setButtonRect(null);
               } else {
-                console.log('🟢 Opening dropdown');
                 handleOpenDropdown();
               }
             }}
@@ -827,14 +1288,6 @@ function SortableMovelapRow({
       const left = (buttonRect.right - dropdownWidth > 0) 
         ? Math.min(buttonRect.left, window.innerWidth - dropdownWidth - 10)
         : 10;
-      
-      console.log('🟣 Rendering dropdown portal at:', { 
-        top: buttonRect.bottom + 5, 
-        left: left,
-        buttonLeft: buttonRect.left,
-        buttonRight: buttonRect.right,
-        viewportWidth: window.innerWidth
-      });
       
       return ReactDOM.createPortal(
         <div
@@ -925,6 +1378,13 @@ function SortableMovelapRow({
       document.body
     );
     })()}
+    <ExerciseGalleryModal
+      open={!!exerciseGallery}
+      onClose={() => setExerciseGallery(null)}
+      title={exerciseGallery?.title ?? ''}
+      pictureA={exerciseGallery?.pictureA ?? null}
+      pictureB={exerciseGallery?.pictureB ?? null}
+    />
     </>
   );
 }
@@ -937,9 +1397,15 @@ export default function MovelapDetailTable({
   onAddMovelapAfter,
   onRefresh,
   allMoveframes = [],
-  onNavigateMoveframe
+  onNavigateMoveframe,
+  onAnaerobicFastPlannerModalOpenChange
 }: MovelapDetailTableProps) {
   const [movelaps, setMovelaps] = useState(moveframe.movelaps || []);
+  const [pendingStationMove, setPendingStationMove] = useState<{
+    sourceId: string;
+    targetId: string;
+  } | null>(null);
+  const [isApplyingStationMove, setIsApplyingStationMove] = useState(false);
   const moveframeLetter = moveframe.letter || 'A'; // Parent moveframe letter
   const sectionColor = moveframe.section?.color || '#5b8def';
   const sectionName = moveframe.section?.name || 'Default';
@@ -948,6 +1414,8 @@ export default function MovelapDetailTable({
   const [newlyAddedFastPlannerExercises, setNewlyAddedFastPlannerExercises] = useState<Set<string>>(() => new Set());
   const [showAddStationModal, setShowAddStationModal] = useState(false);
   const [stationModalMode, setStationModalMode] = useState<'add' | 'edit'>('add');
+  /** When false, sector dropdown lists only the station's current sector (edit + sector set, no exercise). Reset shows all. */
+  const [stationSectorShowAll, setStationSectorShowAll] = useState(true);
   const [editingStationMovelap, setEditingStationMovelap] = useState<any>(null);
   const [addStationDraft, setAddStationDraft] = useState(() => ({
     muscularSector: '',
@@ -968,6 +1436,11 @@ export default function MovelapDetailTable({
     stationNumber: number;
   } | null>(null);
   const [showFastPlannerMovelapModal, setShowFastPlannerMovelapModal] = useState(false);
+  const [fpMovelapExerciseGallery, setFpMovelapExerciseGallery] = useState<{
+    title: string;
+    pictureA: string | null;
+    pictureB: string | null;
+  } | null>(null);
   const [fastPlannerMovelapModalMode, setFastPlannerMovelapModalMode] = useState<'add' | 'edit'>('add');
   const [fastPlannerOriginalExercise, setFastPlannerOriginalExercise] = useState<string | null>(null);
   const [isSavingFastPlannerMovelap, setIsSavingFastPlannerMovelap] = useState(false);
@@ -1007,13 +1480,8 @@ export default function MovelapDetailTable({
   }));
   // 2026-01-22 14:15 UTC - Strip circuit tags from initial notes value
   const [noteValue, setNoteValue] = useState(() => {
-    let cleanNotes = moveframe.notes || '';
-    if (typeof cleanNotes === 'string') {
-      cleanNotes = cleanNotes.replace(/\[CIRCUIT_DATA\].*?\[\/CIRCUIT_DATA\]/g, '');
-      cleanNotes = cleanNotes.replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '');
-      cleanNotes = cleanNotes.replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '');
-      cleanNotes = cleanNotes.trim();
-    }
+    const raw = moveframe.notes || '';
+    const cleanNotes = typeof raw === 'string' ? stripInternalWorkoutTags(raw).trim() : '';
     return stripHtmlTags(cleanNotes);
   });
   const [isSavingNote, setIsSavingNote] = useState(false);
@@ -1052,6 +1520,13 @@ export default function MovelapDetailTable({
       setNewlyAddedFastPlannerExercises(new Set());
     }
   }, [moveframe.id]);
+
+  React.useEffect(() => {
+    onAnaerobicFastPlannerModalOpenChange?.(showFastPlannerMovelapModal);
+    return () => {
+      onAnaerobicFastPlannerModalOpenChange?.(false);
+    };
+  }, [showFastPlannerMovelapModal, onAnaerobicFastPlannerModalOpenChange]);
 
   React.useEffect(() => {
     setNewlyAddedStationMovelapIds((prev) => {
@@ -1271,6 +1746,17 @@ export default function MovelapDetailTable({
     });
   }
 
+  const lastCircuitLetter =
+    Array.isArray(circuitRows) && circuitRows.length > 0
+      ? String(circuitRows[circuitRows.length - 1]?.letter ?? '').trim().toUpperCase()
+      : (() => {
+          const letters = (moveframe.movelaps || [])
+            .map((ml: any) => String(ml?.circuitLetter || '').trim().toUpperCase())
+            .filter(Boolean);
+          if (!letters.length) return '';
+          return letters.reduce((max: string, L: string) => (L > max ? L : max), letters[0]);
+        })();
+
   const toPositiveInt = (value: unknown): number | null => {
     if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.floor(value);
     if (typeof value === 'string' && value.trim() !== '') {
@@ -1346,29 +1832,10 @@ export default function MovelapDetailTable({
     return `${minutes}'${seconds.toString().padStart(2, '0')}"`;
   };
 
-  const parseMacroToSeconds = (value: unknown): number => {
-    if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value));
-    if (typeof value !== 'string') return 0;
-    const s = String(value).trim();
-    if (!s) return 0;
-    if (/^\d+$/.test(s)) return Math.max(0, parseInt(s, 10));
-    if (s.includes("'")) {
-      const parts = s.split("'");
-      const mStr = (parts[0] ?? '').replace(/\D/g, '');
-      const secStr = parts.slice(1).join("'").replace(/\D/g, '');
-      const m = mStr ? parseInt(mStr, 10) : 0;
-      const sec = secStr ? parseInt(secStr.slice(0, 2), 10) : 0;
-      return Math.max(0, m * 60 + sec);
-    }
-    const secOnly = s.match(/^(\d+)\s*"?$/);
-    if (secOnly) return Math.max(0, parseInt(secOnly[1], 10));
-    return 0;
-  };
-  const formatMacroFromSeconds = (seconds: number) => {
-    const totalSeconds = Math.max(0, Math.round(seconds));
-    const minutes = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${minutes}'${secs.toString().padStart(2, '0')}"`;
+  const isPlaceholderEmptyExercise = (value: unknown): boolean => {
+    if (typeof value !== 'string') return true;
+    const normalized = value.trim().toLowerCase();
+    return !normalized || normalized === '—' || normalized === '-' || normalized === '--' || normalized === 'n/a';
   };
   
   // Navigation for movelaps within the same moveframe
@@ -1388,30 +1855,12 @@ export default function MovelapDetailTable({
   // Check if this moveframe is manual mode
   const isManualMode = moveframe.manualMode === true;
   
-  // Update noteValue when moveframe.notes changes (strip HTML and circuit tags)
-  // 2026-01-22 14:15 UTC - Strip CIRCUIT_DATA and CIRCUIT_META tags
+  // Update noteValue when moveframe.notes changes (strip HTML and internal metadata tags)
   React.useEffect(() => {
-    let cleanNotes = moveframe.notes || '';
-    if (typeof cleanNotes === 'string') {
-      // Remove circuit data and metadata tags
-      cleanNotes = cleanNotes.replace(/\[CIRCUIT_DATA\].*?\[\/CIRCUIT_DATA\]/g, '');
-      cleanNotes = cleanNotes.replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '');
-      cleanNotes = cleanNotes.replace(/\[FAST_PLANNER_DATA\][\s\S]*?\[\/FAST_PLANNER_DATA\]/g, '');
-      cleanNotes = cleanNotes.trim();
-    }
+    const raw = moveframe.notes || '';
+    const cleanNotes = typeof raw === 'string' ? stripInternalWorkoutTags(raw).trim() : '';
     setNoteValue(stripHtmlTags(cleanNotes));
   }, [moveframe.notes]);
-  
-  // Debug logging
-  console.log('🔍 MovelapDetailTable - Moveframe data:', {
-    id: moveframe.id,
-    letter: moveframe.letter,
-    manualMode: moveframe.manualMode,
-    isManualMode,
-    hasNotes: !!moveframe.notes,
-    notesLength: moveframe.notes?.length || 0,
-    movelapCount: moveframe.movelaps?.length || 0
-  });
   
   // Store original sequence numbers for each movelap (persists through drag operations)
   const [movelapSequences, setMovelapSequences] = useState<Map<string, number>>(new Map());
@@ -1419,19 +1868,10 @@ export default function MovelapDetailTable({
   // Initialize or update sequence numbers when movelaps change
   React.useEffect(() => {
     // Sort movelaps by repetitionNumber to maintain order after reload
-    const unsortedMovelaps = moveframe.movelaps || [];
-    console.log('🔄 MovelapDetailTable: Loading movelaps', {
-      count: unsortedMovelaps.length,
-      unsorted: unsortedMovelaps.map((ml: any) => ({ id: ml.id.slice(-4), repNum: ml.repetitionNumber }))
-    });
-    
+    const unsortedMovelaps = moveframe.movelaps || [];    
     const newMovelaps = [...unsortedMovelaps].sort((a: any, b: any) => 
       (a.repetitionNumber || 0) - (b.repetitionNumber || 0)
     );
-    
-    console.log('✅ MovelapDetailTable: Sorted movelaps', {
-      sorted: newMovelaps.map((ml: any) => ({ id: ml.id.slice(-4), repNum: ml.repetitionNumber }))
-    });
     
     setMovelaps(newMovelaps);
     // Reset navigation to first movelap when moveframe changes
@@ -1471,13 +1911,10 @@ export default function MovelapDetailTable({
   );
   // Handle drag end - reorder movelaps
   const handleDragEnd = async (event: DragEndEvent) => {
-    console.log('🎯 Movelap drag ended:', event);
     const { active, over } = event;
     
-    console.log('🎯 Active ID:', active?.id, 'Over ID:', over?.id);
     
     if (!over || active.id === over.id) {
-      console.log('🎯 Movelap drag cancelled or same position');
       return;
     }
     
@@ -1556,8 +1993,6 @@ export default function MovelapDetailTable({
         repetitionNumber: idx + 1 // repetitionNumber starts from 1
       }));
       
-      console.log('📤 Calling movelap reorder API with:', reorderPayload.map((ml: any) => ({ id: ml.id.slice(-4), repNum: ml.repetitionNumber })));
-
       const response = await fetch('/api/workouts/movelaps/reorder', {
         method: 'PATCH',
         headers: {
@@ -1576,20 +2011,106 @@ export default function MovelapDetailTable({
         setMovelaps(moveframe.movelaps || []);
       } else {
         const result = await response.json();
-        console.log('✅ Movelap order persisted successfully:', result);
-        // Notify parent to refresh data (expansion state is preserved in MoveframesSection)
         if (onRefresh) {
-          console.log('🔄 Calling onRefresh to update Rip count...');
           await onRefresh();
-          console.log('✅ onRefresh completed - Rip count updated, expansion preserved');
-        } else {
-          console.warn('⚠️ No onRefresh callback provided');
         }
       }
     } catch (error) {
-      console.error('Error calling reorder API:', error);
-      // Revert on error
       setMovelaps(moveframe.movelaps || []);
+    }
+  };
+
+  const extractUserNotesOnly = (rawNotes: unknown): string => {
+    if (typeof rawNotes !== 'string') return '';
+    return stripInternalWorkoutTags(rawNotes).trim();
+  };
+
+  const handleApplyStationMove = async (mode: 'substitute' | 'exchange') => {
+    if (!pendingStationMove || isApplyingStationMove) return;
+
+    const source = movelaps.find((ml: any) => String(ml?.id) === pendingStationMove.sourceId);
+    const target = movelaps.find((ml: any) => String(ml?.id) === pendingStationMove.targetId);
+    if (!source || !target) {
+      setPendingStationMove(null);
+      return;
+    }
+
+    const sourceIntoTarget = {
+      muscularSector: source.muscularSector ?? source.sector ?? '',
+      sector: source.sector ?? source.muscularSector ?? '',
+      exercise: source.exercise ?? '',
+      reps: source.reps ?? '',
+      pause: source.pause ?? '',
+      macroFinal: source.macroFinal ?? '',
+      notes: preserveMetadataTagsInNotes(String(target.notes ?? ''), extractUserNotesOnly(source.notes)),
+    };
+
+    const targetIntoSource = {
+      muscularSector: target.muscularSector ?? target.sector ?? '',
+      sector: target.sector ?? target.muscularSector ?? '',
+      exercise: target.exercise ?? '',
+      reps: target.reps ?? '',
+      pause: target.pause ?? '',
+      macroFinal: target.macroFinal ?? '',
+      notes: preserveMetadataTagsInNotes(String(source.notes ?? ''), extractUserNotesOnly(target.notes)),
+    };
+
+    const sourceUpdate =
+      mode === 'substitute'
+        ? {
+            muscularSector: '',
+            sector: '',
+            exercise: '',
+            reps: '',
+          }
+        : targetIntoSource;
+    const targetUpdate = sourceIntoTarget;
+
+    setIsApplyingStationMove(true);
+    const previousMovelaps = movelaps;
+    const nextMovelaps = movelaps.map((ml: any) => {
+      const id = String(ml?.id);
+      if (id === pendingStationMove.sourceId) return { ...ml, ...sourceUpdate };
+      if (id === pendingStationMove.targetId) return { ...ml, ...targetUpdate };
+      return ml;
+    });
+    setMovelaps(nextMovelaps);
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('Missing auth token');
+
+      const reqInit = {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      };
+
+      const [sourceResp, targetResp] = await Promise.all([
+        fetch(`/api/workouts/movelaps/${source.id}`, {
+          ...reqInit,
+          body: JSON.stringify(sourceUpdate),
+        }),
+        fetch(`/api/workouts/movelaps/${target.id}`, {
+          ...reqInit,
+          body: JSON.stringify(targetUpdate),
+        }),
+      ]);
+
+      if (!sourceResp.ok || !targetResp.ok) {
+        throw new Error('Failed to update station move');
+      }
+
+      if (onRefresh) await onRefresh();
+      setPendingStationMove(null);
+    } catch (error) {
+      console.error('Error applying station move:', error);
+      setMovelaps(previousMovelaps);
+      alert('Could not apply station move. Please try again.');
+    } finally {
+      setIsApplyingStationMove(false);
     }
   };
 
@@ -1602,7 +2123,6 @@ export default function MovelapDetailTable({
   // Handle paste movelap
   const handlePasteMovelap = async (afterIndex: number) => {
     if (!copiedMovelap) {
-      console.log('No movelap copied. Click "Copy" on a movelap first.');
       return;
     }
 
@@ -1631,8 +2151,6 @@ export default function MovelapDetailTable({
       });
 
       if (response.ok) {
-        console.log('Movelap pasted successfully');
-        // Refresh data without page reload
         if (onRefresh) {
           onRefresh();
         }
@@ -1646,6 +2164,7 @@ export default function MovelapDetailTable({
 
   const handleOpenAddStationModal = (movelap: any) => {
     setStationModalMode('add');
+    setStationSectorShowAll(true);
     setEditingStationMovelap(null);
     const meta = extractCircuitMetaFromNotes(movelap?.notes);
     const circuitLetterRaw = meta?.circuitLetter ?? movelap?.circuitLetter;
@@ -1669,7 +2188,7 @@ export default function MovelapDetailTable({
     const defaultPause = formatSecondsToPauseInput(typeof pauseStationsSeconds === 'number' ? pauseStationsSeconds : 20);
 
     setAddStationDraft({
-      muscularSector: movelap?.muscularSector || '',
+      muscularSector: movelap?.muscularSector || movelap?.style || '',
       exercise: movelap?.exercise || '',
       reps: typeof movelap?.reps === 'number' ? String(movelap.reps) : (movelap?.reps ? String(movelap.reps) : ''),
       pause: defaultPause,
@@ -1707,11 +2226,17 @@ export default function MovelapDetailTable({
       .replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '')
       .replace(/\[CIRCUIT_DATA\].*?\[\/CIRCUIT_DATA\]/g, '')
       .trim();
+    const sectorInit = (movelap?.muscularSector || movelap?.style || '').trim();
+    const exerciseInitRaw = (movelap?.exercise || '').trim();
+    const exerciseInit = isPlaceholderEmptyExercise(exerciseInitRaw) ? '' : exerciseInitRaw;
     setAddStationDraft({
-      muscularSector: movelap?.muscularSector || '',
+      muscularSector: movelap?.muscularSector || movelap?.style || '',
       exercise: movelap?.exercise || '',
       reps: typeof movelap?.reps === 'number' ? String(movelap.reps) : (movelap?.reps ? String(movelap.reps) : ''),
-      pause: movelap?.pause ? formatPauseInput(movelap.pause) : '',
+      pause:
+        movelap?.pause != null && String(movelap.pause).trim() !== ''
+          ? formatSecondsToPauseInput(parsePauseToSeconds(movelap.pause))
+          : '',
       macroFinal: movelap?.macroFinal || '',
       notes: cleanedNotes,
       seriesNumber: localSeriesNumber
@@ -1724,6 +2249,7 @@ export default function MovelapDetailTable({
       localSeriesNumber,
       stationNumber
     });
+    setStationSectorShowAll(!(sectorInit.length > 0 && exerciseInit.length === 0));
     setShowAddStationModal(true);
   };
 
@@ -1839,12 +2365,23 @@ export default function MovelapDetailTable({
 
   const formatPauseInput = (raw: unknown) => {
     const s = typeof raw === 'string' ? raw : String(raw ?? '');
-    const digits = s.replace(/\D/g, '').slice(0, 4);
+    const trimmed = s.trim();
+    if (!trimmed) return '';
+    // Values like 2'00" become digits 2000 if we strip first — normalize through seconds instead.
+    if (/'/.test(trimmed) || /"/.test(trimmed)) {
+      return formatSecondsToPauseInput(parsePauseToSeconds(trimmed));
+    }
+    const digits = trimmed.replace(/\D/g, '').slice(0, 4);
     if (!digits) return '';
     if (digits.length <= 2) return `${digits}'`;
-    const mm = digits.slice(0, 2);
-    const ss = digits.slice(2);
-    return `${mm}'${ss}''`;
+    if (digits.length === 3) {
+      const mNum = parseInt(digits.slice(0, 1), 10);
+      const sNum = parseInt(digits.slice(1), 10);
+      return formatSecondsToPauseInput(mNum * 60 + Math.min(59, sNum));
+    }
+    const mNum = parseInt(digits.slice(0, 2), 10);
+    const sNum = parseInt(digits.slice(2, 4), 10);
+    return formatSecondsToPauseInput(mNum * 60 + Math.min(59, sNum));
   };
 
   const formatSecondsToPauseInput = (seconds: number) => {
@@ -1972,6 +2509,7 @@ export default function MovelapDetailTable({
 
       setShowAddStationModal(false);
       setAddStationTarget(null);
+      setStationSectorShowAll(true);
       if (onRefresh) {
         await onRefresh();
       }
@@ -2030,7 +2568,9 @@ export default function MovelapDetailTable({
         const circuitData = extractCircuitDataFromNotes(freshMoveframe.notes);
         const fallbackConfig = circuitData?.config || {};
         const builtFromMovelaps = buildCircuitDataFromMovelaps(allMovelaps, fallbackConfig);
-        const baseCircuitData = builtFromMovelaps || circuitData;
+        // Preserve the existing circuit schema from notes when available.
+        // Rebuilding from movelaps can expand/reorder rows unexpectedly after editing a single station.
+        const baseCircuitData = circuitData || builtFromMovelaps;
         if (baseCircuitData?.circuits && Array.isArray(baseCircuitData.circuits)) {
           const nextCircuitData = JSON.parse(JSON.stringify(baseCircuitData));
           const circuit = nextCircuitData.circuits.find((c: any) => c?.letter === addStationTarget.circuitLetter);
@@ -2094,6 +2634,7 @@ export default function MovelapDetailTable({
       setAddStationTarget(null);
       setEditingStationMovelap(null);
       setStationModalMode('add');
+      setStationSectorShowAll(true);
       if (onRefresh) {
         await onRefresh();
       }
@@ -2124,10 +2665,9 @@ export default function MovelapDetailTable({
       });
 
       if (response.ok) {
-        console.log('Note saved successfully');
-        // Intentionally do not call onRefresh() here: a full refetch would replace
-        // local movelaps with server data and can make the grid jump (e.g. from
-        // 2–3 exercises to 8). The note is already saved; the grid stays unchanged.
+        try {
+          (moveframe as any).notes = finalNotes;
+        } catch {}
       } else {
         console.error('Failed to save note');
       }
@@ -2270,6 +2810,12 @@ export default function MovelapDetailTable({
 
     setIsSavingFastPlannerMovelap(true);
     try {
+      const assertOk = async (response: Response, context: string) => {
+        if (response.ok) return;
+        const body = await response.text().catch(() => '');
+        throw new Error(`${context} failed (${response.status}): ${body || response.statusText || 'Unknown error'}`);
+      };
+
       const baseFastPlannerData = (fastPlannerData ?? extractFastPlannerDataFromNotes(moveframe.notes)) ?? {};
       const baseRows: any[] = Array.isArray(baseFastPlannerData.rows) ? [...baseFastPlannerData.rows] : [];
       const ripTimeMode = fastPlannerDraft.ripTimeMode === 'time' ? 'time' : 'reps';
@@ -2321,7 +2867,7 @@ export default function MovelapDetailTable({
       };
 
       const updatedMoveframeNotes = upsertFastPlannerDataInNotes(moveframe.notes, nextFastPlannerData);
-      await fetch(`/api/workouts/moveframes/${moveframe.id}`, {
+      const moveframePatchResponse = await fetch(`/api/workouts/moveframes/${moveframe.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -2329,6 +2875,7 @@ export default function MovelapDetailTable({
         },
         body: JSON.stringify({ notes: updatedMoveframeNotes })
       });
+      await assertOk(moveframePatchResponse, 'Update moveframe fast planner notes');
 
       if (isNewExerciseRow) {
         setNewlyAddedFastPlannerExercises((prev) => {
@@ -2379,7 +2926,7 @@ export default function MovelapDetailTable({
       await Promise.all(
         lapsToUpdate.map(async (lap: any) => {
           const nextNotes = upsertFastPlannerModeInNotes(lap?.notes, fastPlannerDraft.mode || null);
-          await fetch(`/api/workouts/movelaps/${lap.id}`, {
+          const updateResponse = await fetch(`/api/workouts/movelaps/${lap.id}`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
@@ -2396,16 +2943,18 @@ export default function MovelapDetailTable({
               notes: nextNotes || null
             })
           });
+          await assertOk(updateResponse, `Update fast planner movelap ${lap.id}`);
         })
       );
 
       await Promise.all(
-        idsToDelete.map(async (id) =>
-          fetch(`/api/workouts/movelaps/${id}`, {
+        idsToDelete.map(async (id) => {
+          const deleteResponse = await fetch(`/api/workouts/movelaps/${id}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` }
-          })
-        )
+          });
+          await assertOk(deleteResponse, `Delete extra fast planner movelap ${id}`);
+        })
       );
 
       for (let i = 0; i < lapsToCreateCount; i++) {
@@ -2441,13 +2990,12 @@ export default function MovelapDetailTable({
             isDisabled: false
           })
         });
-        if (response.ok) {
-          const created = await response.json().catch(() => null);
-          if (created) {
-            createdLaps.push(created);
-            if (typeof created?.id === 'string') {
-              createdIds.push(created.id);
-            }
+        await assertOk(response, 'Create additional fast planner movelap');
+        const created = await response.json().catch(() => null);
+        if (created) {
+          createdLaps.push(created);
+          if (typeof created?.id === 'string') {
+            createdIds.push(created.id);
           }
         }
       }
@@ -2508,7 +3056,7 @@ export default function MovelapDetailTable({
 
       if (orderedIds.length > 0) {
         const reorderPayload = orderedIds.map((id: string, idx: number) => ({ id, repetitionNumber: idx + 1 }));
-        await fetch('/api/workouts/movelaps/reorder', {
+        const reorderResponse = await fetch('/api/workouts/movelaps/reorder', {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
@@ -2516,6 +3064,7 @@ export default function MovelapDetailTable({
           },
           body: JSON.stringify({ movelaps: reorderPayload })
         });
+        await assertOk(reorderResponse, 'Reorder fast planner movelaps');
       }
 
       if (createdIds.length > 0) {
@@ -2536,6 +3085,9 @@ export default function MovelapDetailTable({
       setShowFastPlannerMovelapModal(false);
       setFastPlannerOriginalExercise(null);
       if (onRefresh) await onRefresh();
+    } catch (error) {
+      console.error('Failed to save fast planner movelap edit', error);
+      alert('Failed to save fast planner changes. Please try again.');
     } finally {
       setIsSavingFastPlannerMovelap(false);
     }
@@ -2923,6 +3475,8 @@ export default function MovelapDetailTable({
       const breakChoice = row?.breakChoice ?? mapToolsToBreakChoice(lap?.tools);
       const rowBreak = typeof row?.break === 'string' ? row.break.trim() : '';
       const toolsValue = rowBreak ? rowBreak : breakChoice === 'stopped' ? 'Stopped' : '';
+      const rowNote = typeof row?.note === 'string' ? row.note.trim() : '';
+      const lapNote = typeof lap?.notes === 'string' ? lap.notes : '';
       return {
         ...lap,
         distance: row?.distance ?? lap?.distance,
@@ -2934,7 +3488,7 @@ export default function MovelapDetailTable({
         restType: mapChoiceToRestType(restChoice),
         pause: row?.rest ?? lap?.pause,
         tools: toolsValue || lap?.tools,
-        notes: row?.note ?? lap?.notes
+        notes: rowNote !== '' ? row?.note : lapNote
       };
     });
     return { displayMovelaps: next };
@@ -2977,11 +3531,9 @@ export default function MovelapDetailTable({
       manualContent = moveframe.notes || 'No content';
     }
     
-    // Strip circuit tags if present
+    // Strip internal planner / circuit tags if present
     if (typeof manualContent === 'string') {
-      manualContent = manualContent.replace(/\[CIRCUIT_DATA\].*?\[\/CIRCUIT_DATA\]/g, '');
-      manualContent = manualContent.replace(/\[CIRCUIT_META\].*?\[\/CIRCUIT_META\]/g, '');
-      manualContent = manualContent.trim();
+      manualContent = stripInternalWorkoutTags(manualContent).trim();
     }
 
     return (
@@ -3384,20 +3936,26 @@ export default function MovelapDetailTable({
                         value={aerobicFastPlannerDraft.rest}
                         onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, rest: e.target.value }))}
                         onBlur={(e) => {
-                          if (aerobicFastPlannerDraft.restChoice === 'restart_to') {
-                            const raw = e.target.value.replace(/\D/g, '').slice(0, 7);
-                            const formatted = formatAerobicTimeFromDigits(raw);
-                            setAerobicFastPlannerDraft((prev) => ({ ...prev, rest: formatted }));
-                            return;
-                          }
-                          if (aerobicFastPlannerDraft.restChoice === 'rest_time') {
-                            const raw = e.target.value.replace(/\D/g, '').slice(0, 6);
-                            const formatted = formatAerobicPauseFromDigits(raw);
-                            setAerobicFastPlannerDraft((prev) => ({ ...prev, rest: formatted }));
-                          }
+                          const rawField = e.target.value;
+                          setAerobicFastPlannerDraft((prev) => {
+                            if (prev.restChoice === 'restart_to') {
+                              const raw = rawField.replace(/\D/g, '').slice(0, 7);
+                              const formatted = formatAerobicTimeFromDigits(raw);
+                              return { ...prev, rest: formatted };
+                            }
+                            if (prev.restChoice === 'rest_time') {
+                              const raw = rawField.replace(/\D/g, '').slice(0, 6);
+                              const formatted = formatAerobicPauseFromDigits(raw);
+                              return { ...prev, rest: formatted };
+                            }
+                            return prev;
+                          });
                         }}
                         className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
                         disabled={isSavingAerobicFastPlannerMovelap}
+                        placeholder=""
+                        autoComplete="off"
+                        aria-label="Rest value"
                       />
                     </div>
                   </div>
@@ -3445,13 +4003,16 @@ export default function MovelapDetailTable({
                     </div>
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-xs font-semibold text-gray-800 mb-1">Note</label>
+                    <span className="sr-only">Notes for this repetition</span>
                     <input
                       type="text"
                       value={aerobicFastPlannerDraft.note}
                       onChange={(e) => setAerobicFastPlannerDraft((prev) => ({ ...prev, note: e.target.value }))}
                       className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                       disabled={isSavingAerobicFastPlannerMovelap}
+                      placeholder=""
+                      autoComplete="off"
+                      aria-label="Notes for this repetition"
                     />
                   </div>
                 </div>
@@ -3483,7 +4044,6 @@ export default function MovelapDetailTable({
     );
   }
 
-  // Standard Mode Layout - Full movelaps table
   return (
     <DndContext
       sensors={sensors}
@@ -3595,7 +4155,7 @@ export default function MovelapDetailTable({
 
           {/* 2026-01-24 - Scrollable wrapper for sticky Options column */}
           <div className="overflow-x-auto overflow-y-visible table-scrollbar">
-            <table className="text-xs bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: isAnaerobicFastPlanner ? '1500px' : (moveframe.isCircuitBased ? '1340px' : '1600px'), width: '100%' }}>
+            <table className="text-sm bg-white" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: isAnaerobicFastPlanner ? '1700px' : (moveframe.isCircuitBased ? '1560px' : '1600px'), width: '100%' }}>
             {/* Render sport-specific column headers */}
             {(() => {
               const sport = moveframe.sport || 'SWIM';
@@ -3623,6 +4183,7 @@ export default function MovelapDetailTable({
                       <col style={{ width: '30px' }} />
                       <col style={{ width: '120px' }} />
                       <col style={{ width: '80px' }} />
+                      <col style={{ width: '200px', minWidth: '180px' }} />
                       <col style={{ width: '90px' }} />
                       <col style={{ width: '60px' }} />
                       <col style={{ width: '80px' }} />
@@ -3636,20 +4197,21 @@ export default function MovelapDetailTable({
                     </colgroup>
                     <thead className="bg-gray-200">
                       <tr>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" title="Drag to reorder">Move</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">MF</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">#</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Workout section</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Sport</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Speed</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Series</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Rip\time</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Weight</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Break</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Mode</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Macro</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px]" style={{ width: '300px' }}>Notes</th>
-                        <th className="border border-gray-300 px-1 py-1 text-center text-[10px] sticky-options-header bg-gray-200" style={{ width: '110px', minWidth: '110px' }}>Options</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm" title="Drag to reorder">Move</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">MF</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">#</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Workout section</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Sport</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Description</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Speed</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Series</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Rip\time</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Weight</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Break</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Mode</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm">Macro</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm" style={{ width: '300px' }}>Notes</th>
+                        <th className="border border-gray-300 px-1 py-1 text-center text-sm sticky-options-header bg-gray-200" style={{ width: '110px', minWidth: '110px' }}>Options</th>
                       </tr>
                     </thead>
                   </>
@@ -3714,7 +4276,12 @@ export default function MovelapDetailTable({
                     <col style={{ width: '80px' }} />
                     {isBodyBuilding && (
                       <>
-                        {/* Musc.Sector and Exercise columns removed per user request */}
+                        {circuitBasedMoveframe && (
+                          <>
+                            <col style={{ width: '56px' }} />
+                            <col style={{ width: '168px' }} />
+                          </>
+                        )}
                         <col style={{ width: circuitBasedMoveframe ? '40px' : '50px' }} />
                         {!circuitBasedMoveframe && (
                           <>
@@ -3763,6 +4330,12 @@ export default function MovelapDetailTable({
                       
                       {isBodyBuilding && (
                         <>
+                          {circuitBasedMoveframe && (
+                            <>
+                              <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Muscular</th>
+                              <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Exercise</th>
+                            </>
+                          )}
                           <th className="border border-gray-300 px-1 py-1 text-center text-[10px]">Reps</th>
                           {!circuitBasedMoveframe && (
                             <>
@@ -3863,12 +4436,12 @@ export default function MovelapDetailTable({
                 if (isAerobicFastPlanner) {
                   totalColumns = 17;
                 } else if (isAnaerobicFastPlanner) {
-                  totalColumns = 13;
+                  totalColumns = 15;
                 } else if (isBodyBuilding) {
-                  totalColumns += 3; // Reps + Weight + Tempo (Musc.Sector + Exercise removed)
-                  // For circuit-based bodybuilding, remove Weight and Tempo columns
+                  totalColumns += 3; // Reps + Weight + Tempo
                   if (circuitBasedMoveframe) {
                     totalColumns -= 2; // Remove Weight + Tempo
+                    totalColumns += 2; // Muscular + Exercise (thumb + name)
                   }
                 } else if (hasTools) {
                   totalColumns += 2; // Reps + Tools
@@ -3941,6 +4514,7 @@ export default function MovelapDetailTable({
                       onAddMovelapAfter={onAddMovelapAfter}
                       onAddStationAfter={(targetMovelap) => handleOpenAddStationModal(targetMovelap)}
                       pauseAmongCircuits={pauseAmongCircuits}
+                      lastCircuitLetter={lastCircuitLetter}
                       circuitInfoByLetter={circuitInfoByLetter}
                       defaultSeriesPerCircuit={defaultSeriesPerCircuit}
                       defaultStationsPerCircuit={defaultStationsPerCircuit}
@@ -3950,25 +4524,37 @@ export default function MovelapDetailTable({
                       pauseByCircuitIndex={pauseByCircuitIndex}
                       onRefresh={onRefresh}
                       isCircuitBased={circuitBasedMoveframe}
+                      circuitExecutionMode={
+                        circuitConfig?.executionMode === 'horizontal' ? 'horizontal' : 'vertical'
+                      }
+                      circuitMacroFromConfig={(() => {
+                        const lw = circuitConfig?.loadOfWork;
+                        const fromDigit = circuitLoadOfWorkToMacroFinal(lw);
+                        if (fromDigit) return fromDigit;
+                        const sec = parseInt(String(lw ?? '').trim(), 10);
+                        if (Number.isFinite(sec) && sec >= 60 && sec <= 600 && sec % 60 === 0) {
+                          const m = sec / 60;
+                          if (m >= 1 && m <= 10) return `${m}'`;
+                        }
+                        return null;
+                      })()}
+                      nextMovelapInTable={displayMovelaps[index + 1] ?? null}
                     />
                   </React.Fragment>
                 );
               })}
             </tbody>
             {isAnaerobicFastPlanner && displayMovelaps.length > 0 && (() => {
-              const macroSeconds = displayMovelaps
-                .map((ml: any) => parseMacroToSeconds(ml.macroFinal ?? ml.pause))
-                .filter((s: number) => s > 0);
-              const avgSeconds = macroSeconds.length > 0
-                ? macroSeconds.reduce((a: number, b: number) => a + b, 0) / macroSeconds.length
-                : 0;
-              const avgMacro = avgSeconds > 0 ? formatMacroFromSeconds(avgSeconds) : '—';
+              const stats = computeAnaerobicFastPlannerRowStats(fastPlannerData, moveframe.movelaps);
+              const avgSec =
+                stats.totalRepVolume > 0 ? stats.totalPauseSec / stats.totalRepVolume : 0;
+              const avgPause = avgSec > 0 ? formatAvePauseFromSeconds(avgSec) : '—';
               return (
                 <tfoot className="bg-gray-100">
                   <tr>
-                    <td colSpan={10} className="border border-gray-300 px-2 py-1 text-right text-[10px] font-semibold text-gray-700">Macro (avg)</td>
-                    <td className="border border-gray-300 px-1 py-1 text-center text-xs font-semibold">{avgMacro}</td>
-                    <td colSpan={3} className="border border-gray-300" />
+                    <td colSpan={12} className="border border-gray-300 px-2 py-1 text-right text-sm font-semibold text-gray-700">AvePause (avg)</td>
+                    <td className="border border-gray-300 px-1 py-1 text-center text-sm font-semibold">{avgPause}</td>
+                    <td colSpan={2} className="border border-gray-300" />
                   </tr>
                 </tfoot>
               );
@@ -3985,6 +4571,7 @@ export default function MovelapDetailTable({
                 setAddStationTarget(null);
                 setEditingStationMovelap(null);
                 setStationModalMode('add');
+                setStationSectorShowAll(true);
               }}
               style={{ margin: 0 }}
             >
@@ -4001,6 +4588,7 @@ export default function MovelapDetailTable({
                       setAddStationTarget(null);
                       setEditingStationMovelap(null);
                       setStationModalMode('add');
+                      setStationSectorShowAll(true);
                     }}
                     className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
                   >
@@ -4068,7 +4656,24 @@ export default function MovelapDetailTable({
                     })()}
 
                     <div className="col-span-2">
-                      <label className="block text-xs font-semibold text-gray-800 mb-1">Sector</label>
+                      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                        <label className="block text-xs font-semibold text-gray-800">Sector</label>
+                        {!stationSectorShowAll && stationModalMode === 'edit' && (
+                          <button
+                            type="button"
+                            onClick={() => setStationSectorShowAll(true)}
+                            disabled={isAddingStation}
+                            className="rounded border border-gray-300 bg-gray-50 px-2 py-0.5 text-[10px] font-semibold text-gray-800 hover:bg-gray-100 disabled:opacity-50"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                      {!stationSectorShowAll && stationModalMode === 'edit' && (
+                        <p className="mb-1 text-[10px] text-gray-600">
+                          Only this station&apos;s sector is listed. Use Reset to choose any sector.
+                        </p>
+                      )}
                       <select
                         value={addStationDraft.muscularSector}
                         onChange={(e) =>
@@ -4082,7 +4687,14 @@ export default function MovelapDetailTable({
                         disabled={isAddingStation}
                       >
                         <option value="">—</option>
-                        {Object.keys(MUSCULAR_SECTOR_IMAGES).map((sector) => (
+                        {(stationSectorShowAll
+                          ? Object.keys(MUSCULAR_SECTOR_IMAGES)
+                          : (() => {
+                              const cur = (addStationDraft.muscularSector || '').trim();
+                              if (!cur) return Object.keys(MUSCULAR_SECTOR_IMAGES);
+                              return Object.keys(MUSCULAR_SECTOR_IMAGES).includes(cur) ? [cur] : [cur];
+                            })()
+                        ).map((sector) => (
                           <option key={sector} value={sector}>{sector}</option>
                         ))}
                       </select>
@@ -4158,6 +4770,7 @@ export default function MovelapDetailTable({
                         setAddStationTarget(null);
                         setEditingStationMovelap(null);
                         setStationModalMode('add');
+                        setStationSectorShowAll(true);
                       }}
                       className="px-3 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50"
                       disabled={isAddingStation}
@@ -4180,7 +4793,7 @@ export default function MovelapDetailTable({
 
           {showFastPlannerMovelapModal && typeof document !== 'undefined' && ReactDOM.createPortal(
             <div
-              className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999999] p-4"
+              className="fixed inset-0 z-[9999999] overflow-y-auto bg-black/60"
               onClick={() => {
                 if (isSavingFastPlannerMovelap) return;
                 setShowFastPlannerMovelapModal(false);
@@ -4188,51 +4801,235 @@ export default function MovelapDetailTable({
               }}
               style={{ margin: 0 }}
             >
-              <div
-                className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-4 flex items-center justify-between">
-                  <div className="font-bold text-base">
-                    {fastPlannerMovelapModalMode === 'edit'
-                      ? 'Edit Fast planner for Anaerobic Movelaps'
-                      : 'Add Fast planner for Anaerobic Movelaps'}
-                  </div>
-                  {fastPlannerMovelapModalMode === 'add' && (
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs font-semibold">Insert position</label>
-                      <select
-                        value={fastPlannerInsertPosition}
-                        onChange={(e) => {
-                          const raw = parseInt(e.target.value || '1', 10);
-                          const next = Number.isFinite(raw) ? Math.min(Math.max(1, raw), fastPlannerInsertMax) : 1;
-                          setFastPlannerInsertPosition(next);
+              <div className="flex min-h-full items-center justify-center p-4">
+                <div
+                  className="my-auto flex w-full max-w-2xl max-h-[min(92dvh,920px)] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="fp-movelap-modal-title"
+                >
+                  <div className="flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-indigo-600 to-purple-600 p-4 text-white">
+                    <div className="font-bold text-base pr-2" id="fp-movelap-modal-title">
+                      {fastPlannerMovelapModalMode === 'edit'
+                        ? 'Edit Fast planner for Anaerobic Movelaps'
+                        : 'Add Fast planner for Anaerobic Movelaps'}
+                    </div>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      {fastPlannerMovelapModalMode === 'add' && (
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs font-semibold">Insert position</label>
+                          <select
+                            value={fastPlannerInsertPosition}
+                            onChange={(e) => {
+                              const raw = parseInt(e.target.value || '1', 10);
+                              const next = Number.isFinite(raw) ? Math.min(Math.max(1, raw), fastPlannerInsertMax) : 1;
+                              setFastPlannerInsertPosition(next);
+                            }}
+                            className="rounded bg-white px-2 py-1 text-xs text-black"
+                          >
+                            {Array.from({ length: fastPlannerInsertMax }, (_, i) => i + 1).map((n) => (
+                              <option key={n} value={n}>{n}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isSavingFastPlannerMovelap) return;
+                          setShowFastPlannerMovelapModal(false);
+                          setFastPlannerOriginalExercise(null);
                         }}
-                        className="px-2 py-1 text-xs bg-white text-black rounded"
+                        className="rounded-lg p-2 text-white transition-colors hover:bg-white/20"
                       >
-                        {Array.from({ length: fastPlannerInsertMax }, (_, i) => i + 1).map((n) => (
-                          <option key={n} value={n}>{n}</option>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-4">
+                  <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
+                      <label className="mb-1 block text-xs font-semibold text-gray-800">Muscular sector</label>
+                      <select
+                        value={fastPlannerDraft.muscularSector}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setFastPlannerDraft((prev) => ({
+                            ...prev,
+                            muscularSector: v,
+                            exercise: v !== prev.muscularSector ? '' : prev.exercise
+                          }));
+                        }}
+                        className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                        disabled={isSavingFastPlannerMovelap}
+                      >
+                        <option value="">—</option>
+                        {Object.keys(MUSCULAR_SECTOR_IMAGES).map((sector) => (
+                          <option key={sector} value={sector}>{sector}</option>
                         ))}
                       </select>
                     </div>
-                  )}
-                  <button
-                    onClick={() => {
-                      if (isSavingFastPlannerMovelap) return;
-                      setShowFastPlannerMovelapModal(false);
-                      setFastPlannerOriginalExercise(null);
-                    }}
-                    className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="18" y1="6" x2="6" y2="18"></line>
-                      <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                  </button>
-                </div>
-
-                <div className="p-4 space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
+                      <label className="mb-1 block text-xs font-semibold text-gray-800">Exercise</label>
+                      <select
+                        value={fastPlannerDraft.exercise}
+                        onChange={(e) =>
+                          setFastPlannerDraft((prev) => ({ ...prev, exercise: e.target.value }))
+                        }
+                        className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                        disabled={isSavingFastPlannerMovelap || !fastPlannerDraft.muscularSector}
+                      >
+                        <option value="">—</option>
+                        {(() => {
+                          if (!fastPlannerDraft.muscularSector) return null;
+                          const options = getExercisesBySector(fastPlannerDraft.muscularSector);
+                          const hasCurrent =
+                            !!fastPlannerDraft.exercise &&
+                            options.some((o) => o.name === fastPlannerDraft.exercise);
+                          return (
+                            <>
+                              {!hasCurrent && !!fastPlannerDraft.exercise && (
+                                <option value={fastPlannerDraft.exercise}>{fastPlannerDraft.exercise}</option>
+                              )}
+                              {options.map((o) => (
+                                <option key={o.id} value={o.name}>{o.name}</option>
+                              ))}
+                            </>
+                          );
+                        })()}
+                      </select>
+                      <label className="mb-1 mt-2 block text-xs font-semibold text-gray-800">Name (type to customize)</label>
+                      <input
+                        type="text"
+                        value={fastPlannerDraft.exercise}
+                        onChange={(e) =>
+                          setFastPlannerDraft((prev) => ({ ...prev, exercise: e.target.value }))
+                        }
+                        className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                        disabled={isSavingFastPlannerMovelap}
+                        placeholder="Exercise name"
+                      />
+                      <p className="mt-1 text-[10px] text-gray-500">
+                        Dropdown and thumbnails use the mock exercise bank; typing keeps names outside the bank.
+                      </p>
+                    </div>
+                    {fastPlannerDraft.muscularSector ? (
+                      <div className="col-span-2">
+                        <label className="mb-1 block text-xs font-semibold text-gray-800">
+                          Exercises in sector (tap thumbnail)
+                        </label>
+                        <div className="flex max-h-[200px] flex-wrap gap-2 overflow-y-auto rounded border border-gray-200 bg-white p-2">
+                          {getExercisesBySector(fastPlannerDraft.muscularSector).map((o) => {
+                            const thumb = getMockExerciseThumbnail(o.name);
+                            const src = thumb?.src;
+                            const isData = thumb?.isDataUrl === true || (!!src && src.startsWith('data:'));
+                            const selected = fastPlannerDraft.exercise === o.name;
+                            return (
+                              <button
+                                key={o.id}
+                                type="button"
+                                title={o.name}
+                                onClick={() =>
+                                  setFastPlannerDraft((prev) => ({ ...prev, exercise: o.name }))
+                                }
+                                disabled={isSavingFastPlannerMovelap}
+                                className={`flex w-[72px] flex-shrink-0 flex-col items-center gap-0.5 rounded border p-1 transition-colors ${
+                                  selected ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-300' : 'border-gray-200 hover:border-indigo-300'
+                                }`}
+                              >
+                                <div className="relative h-14 w-14 overflow-hidden rounded bg-gray-100">
+                                  {src ? (
+                                    isData ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={src} alt="" className="h-full w-full object-cover" />
+                                    ) : (
+                                      <Image
+                                        src={src}
+                                        alt=""
+                                        width={56}
+                                        height={56}
+                                        className="h-full w-full object-cover"
+                                        unoptimized
+                                      />
+                                    )
+                                  ) : (
+                                    <div className="h-full w-full bg-gray-200" aria-hidden />
+                                  )}
+                                </div>
+                                <span className="line-clamp-2 w-full text-center text-[8px] leading-tight text-gray-800">
+                                  {o.name.replace(/^Exercise #\d+\s+/i, '').slice(0, 24)}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                    {(() => {
+                      const exName = (fastPlannerDraft.exercise || '').trim();
+                      const sectorLabel = (fastPlannerDraft.muscularSector || '').trim();
+                      const sectorImg =
+                        sectorLabel && MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                          ? MUSCULAR_SECTOR_IMAGES[sectorLabel]
+                          : null;
+                      const media = exName ? getExerciseMedia(exName) : null;
+                      const thumbSrc = media?.thumb?.src ?? (exName ? sectorImg : null);
+                      const thumbData =
+                        media?.thumb?.isDataUrl === true || (!!thumbSrc && thumbSrc.startsWith('data:'));
+                      return (
+                        <div className="col-span-2 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 bg-slate-50 p-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="mb-1 text-sm font-semibold text-gray-800">Preview</div>
+                            <p className="text-sm text-gray-600">
+                              Uses exercise image when available. Click to open A/B gallery.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            title="Enlarge exercise positions"
+                            onClick={() =>
+                              setFpMovelapExerciseGallery({
+                                title: exName || sectorLabel || 'Exercise',
+                                pictureA: media?.pictureA ?? (exName ? sectorImg : null) ?? null,
+                                pictureB:
+                                  media?.pictureB ??
+                                  media?.pictureA ??
+                                  (exName ? sectorImg : null) ??
+                                  null,
+                              })
+                            }
+                            disabled={!thumbSrc || isSavingFastPlannerMovelap}
+                            className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg border-2 border-gray-300 bg-white shadow-sm hover:ring-2 hover:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {thumbSrc ? (
+                              thumbData ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={thumbSrc} alt="" className="h-full w-full object-cover" />
+                              ) : (
+                                <Image
+                                  src={thumbSrc}
+                                  alt=""
+                                  width={96}
+                                  height={96}
+                                  className="h-full w-full object-cover"
+                                  unoptimized
+                                />
+                              )
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
+                                Select sector / exercise
+                              </div>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })()}
                     <div>
                       <label className="block text-xs font-semibold text-gray-800 mb-1">Speed</label>
                       <select
@@ -4483,8 +5280,10 @@ export default function MovelapDetailTable({
                       {isSavingFastPlannerMovelap ? 'Saving…' : 'Save'}
                     </button>
                   </div>
+                  </div>
                 </div>
               </div>
+            </div>
             </div>,
             document.body
           )}
@@ -4751,6 +5550,13 @@ export default function MovelapDetailTable({
           )}
         </div>
       </SortableContext>
+      <ExerciseGalleryModal
+        open={!!fpMovelapExerciseGallery}
+        onClose={() => setFpMovelapExerciseGallery(null)}
+        title={fpMovelapExerciseGallery?.title ?? ''}
+        pictureA={fpMovelapExerciseGallery?.pictureA ?? null}
+        pictureB={fpMovelapExerciseGallery?.pictureB ?? null}
+      />
     </DndContext>
   );
 }

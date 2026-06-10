@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { restTypeDisplayToDb } from '@/utils/restTypeDb';
 
 const extractCircuitMetaFromNotes = (notes: unknown) => {
   if (typeof notes !== 'string') return null;
@@ -20,21 +21,8 @@ const upsertCircuitMetaInNotes = (notes: unknown, circuitMeta: any) => {
   return cleaned ? `${cleaned}\n${metaString}` : metaString;
 };
 
-// Helper function to convert display rest type to enum value
 function convertRestTypeToEnum(restType: string | null | undefined) {
-  if (!restType || restType.trim() === '') return null;
-  
-  const mapping: Record<string, string> = {
-    'Set time': 'SET_TIME',
-    'Restart time': 'RESTART_TIME',
-    'Restart pulse': 'RESTART_PULSE',
-    'SET_TIME': 'SET_TIME', // Already correct
-    'RESTART_TIME': 'RESTART_TIME', // Already correct
-    'RESTART_PULSE': 'RESTART_PULSE' // Already correct
-  };
-  
-  const result = mapping[restType] || null;
-  return result as any; // Cast to enum type for Prisma
+  return restTypeDisplayToDb(restType ?? undefined) as any;
 }
 
 // POST /api/workouts/movelaps - Create a new movelap
@@ -84,7 +72,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'moveframeId is required' }, { status: 400 });
     }
 
-    if (!repetitionNumber) {
+    if (repetitionNumber === undefined || repetitionNumber === null) {
       return NextResponse.json({ error: 'repetitionNumber is required' }, { status: 400 });
     }
 
@@ -236,33 +224,54 @@ export async function PATCH(request: NextRequest) {
     console.log('📝 Updating movelap:', movelapId, body);
     console.log('📋 Notes field being updated:', body.notes);
 
-    // Update movelap
+    const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
+
+    const parseIntOrNull = (v: unknown): number | null => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = parseInt(String(v), 10);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    // Only apply keys present on the body. The circuit station editor (and other callers)
+    // send partial PATCH bodies; the old "set every column" behavior nulled all omitted fields
+    // and wiped the whole grid after a single-station save.
+    const data: Record<string, unknown> = {};
+
+    if (has('repetitionNumber')) data.repetitionNumber = body.repetitionNumber;
+    if (has('distance')) data.distance = parseIntOrNull(body.distance);
+    if (has('speed')) data.speed = body.speed || null;
+    if (has('style')) data.style = body.style || null;
+    if (has('pace')) data.pace = body.pace || null;
+    if (has('time')) data.time = body.time || null;
+    if (has('rowPerMin')) data.rowPerMin = parseIntOrNull(body.rowPerMin);
+    if (has('pause')) data.pause = body.pause || null;
+    if (has('alarm')) data.alarm = parseIntOrNull(body.alarm);
+    if (has('sound')) data.sound = body.sound || null;
+    if (has('notes')) data.notes = body.notes ?? null;
+    if (has('reps')) data.reps = parseIntOrNull(body.reps);
+    if (has('weight')) data.weight = body.weight || null;
+    if (has('tools')) data.tools = body.tools || null;
+    if (has('muscularSector')) data.muscularSector = body.muscularSector || null;
+    if (has('exercise')) data.exercise = body.exercise || null;
+    if (has('restType')) data.restType = convertRestTypeToEnum(body.restType);
+    if (has('r1')) data.r1 = body.r1 || null;
+    if (has('r2')) data.r2 = body.r2 || null;
+    if (has('macroFinal')) data.macroFinal = body.macroFinal || null;
+    if (has('status')) data.status = body.status as any;
+    if (has('isSkipped')) data.isSkipped = !!body.isSkipped;
+    if (has('isDisabled')) data.isDisabled = !!body.isDisabled;
+    if (has('isNewlyAdded')) data.isNewlyAdded = !!body.isNewlyAdded;
+
+    if (Object.keys(data).length === 0) {
+      return NextResponse.json(
+        { error: 'No fields to update' },
+        { status: 400 }
+      );
+    }
+
     const movelap = await prisma.movelap.update({
       where: { id: movelapId },
-      data: {
-        repetitionNumber: body.repetitionNumber,
-        distance: body.distance ? parseInt(body.distance) : null,
-        speed: body.speed || null,
-        style: body.style || null,
-        pace: body.pace || null,
-        time: body.time || null,
-        rowPerMin: body.rowPerMin ? parseInt(body.rowPerMin) : null,
-        pause: body.pause || null,
-        alarm: body.alarm ? parseInt(body.alarm) : null,
-        sound: body.sound || null,
-        notes: body.notes !== undefined ? body.notes : null,
-        reps: body.reps ? parseInt(body.reps) : null,
-        weight: body.weight || null,
-        tools: body.tools || null,
-        muscularSector: body.muscularSector || null,
-        exercise: body.exercise || null,
-        // Convert display value to enum value
-        restType: convertRestTypeToEnum(body.restType),
-        r1: body.r1 || null,
-        r2: body.r2 || null,
-        macroFinal: body.macroFinal || null,
-        status: body.status as any
-      }
+      data: data as any
     });
 
     console.log('✅ Movelap updated:', movelap.id);

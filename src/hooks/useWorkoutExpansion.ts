@@ -187,11 +187,11 @@ export function useWorkoutExpansion({
    * Used when clicking on the day row itself
    * This shows workout headers but keeps moveframe details hidden
    */
-  const expandDayWithAllWorkouts = (dayId: string, workouts: any[]) => {
-    console.log(`📅 expandDayWithAllWorkouts called for day: ${dayId} with ${workouts?.length || 0} workouts`);
+  const expandDayWithAllWorkouts = (dayId: string, meals: any[]) => {
+    console.log(`📅 expandDayWithAllWorkouts called for day: ${dayId} with ${meals?.length || 0} workouts`);
     
     // Get workout IDs to collapse
-    const workoutIds = workouts?.map(w => w?.id).filter(Boolean) || [];
+    const workoutIds = meals?.map((w: { id?: string }) => w?.id).filter((id): id is string => Boolean(id)) || [];
     console.log(`🔒 Will collapse workout IDs:`, workoutIds);
     
     // Expand the day

@@ -57,15 +57,14 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Update each workout's session number in a transaction
-    await prisma.$transaction(
-      workouts.map((w: any) => 
-        prisma.workoutSession.update({
+    await prisma.$transaction(async (tx) => {
+      for (const w of workouts as { id: string; sessionNumber: number }[]) {
+        await tx.workoutSession.update({
           where: { id: w.id },
-          data: { sessionNumber: w.sessionNumber }
-        })
-      )
-    );
+          data: { sessionNumber: w.sessionNumber },
+        });
+      }
+    });
 
     return NextResponse.json(
       { 

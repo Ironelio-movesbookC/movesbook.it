@@ -1,22 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { restTypeDisplayToDb } from '@/utils/restTypeDb';
 
-
-// Helper function to convert display rest type to enum value
 function convertRestTypeToEnum(restType: string | null | undefined): string | null {
-  if (!restType || restType.trim() === '') return null;
-  
-  const mapping: Record<string, string> = {
-    'Set time': 'SET_TIME',
-    'Restart time': 'RESTART_TIME',
-    'Restart pulse': 'RESTART_PULSE',
-    'SET_TIME': 'SET_TIME', // Already correct
-    'RESTART_TIME': 'RESTART_TIME', // Already correct
-    'RESTART_PULSE': 'RESTART_PULSE' // Already correct
-  };
-  
-  return mapping[restType] || null;
+  return restTypeDisplayToDb(restType ?? undefined);
 }
 
 export async function POST(request: NextRequest) {
@@ -54,6 +42,7 @@ export async function POST(request: NextRequest) {
       manualMode,
       manualPriority,    // Priority flag for manual mode display
       manualRepetitions, // For storing on Moveframe model (manual mode only)
+      repetitions,       // Series count from planner (e.g. circuit total station slots)
       manualDistance,    // For storing on Moveframe model (manual mode only)
       manualInputType,   // For aerobic sports: "meters" or "time"
       appliedTechnique,  // Execution technique for Body Building
@@ -136,6 +125,16 @@ export async function POST(request: NextRequest) {
     
     console.log('Creating moveframe - letter will be:', indexToLetter(existingCount));
     
+    const resolvedRepetitions = manualMode
+      ? manualRepetitions !== undefined && manualRepetitions !== null && manualRepetitions !== ''
+        ? parseInt(String(manualRepetitions), 10)
+        : null
+      : repetitions !== undefined && repetitions !== null && repetitions !== ''
+        ? parseInt(String(repetitions), 10)
+        : movelaps?.length
+          ? movelaps.length
+          : null;
+
     const moveframeData = {
       workoutSessionId,
       letter: indexToLetter(existingCount),
@@ -148,7 +147,7 @@ export async function POST(request: NextRequest) {
       alarm: alarm ? parseInt(alarm) : null,
       manualMode: manualMode || false,
       manualPriority: manualPriority || false,
-      repetitions: manualRepetitions !== undefined && manualRepetitions !== null && manualRepetitions !== '' ? parseInt(manualRepetitions) : null,
+      repetitions: resolvedRepetitions,
       distance: manualDistance !== undefined && manualDistance !== null && manualDistance !== '' ? parseInt(manualDistance) : null,
       manualInputType: manualInputType || 'meters', // For aerobic sports: "meters" or "time"
       appliedTechnique: appliedTechnique || null, // Execution technique for Body Building
