@@ -59,6 +59,8 @@ model User {
   conversationsStarted    ChatConversation[] @relation("ConversationStarter")
   conversationsReceived   ChatConversation[] @relation("ConversationReceiver")
   chatMessagesSent         ChatMessage[]     @relation("MessageSender")
+  userMessageThreads      UserMessageThread[]
+  userThreadMessagesSent  UserThreadMessage[] @relation("UserThreadMessageSender")
   newsTopics               UserNewsTopic[]
   ogpArticles              OgpArticle[]
   ogpArticlesDeleted       OgpArticle[]       @relation("OgpDeletedBy")
@@ -215,6 +217,50 @@ model ChatMessage {
   @@index([conversationId])
   @@index([senderId])
   @@map("chat_messages")
+}
+
+/// User-owned threads: REVIEW (private) and SUPPORT (community feed)
+model UserMessageThread {
+  id              String                @id @default(cuid())
+  userId          String
+  kind            UserMessageThreadKind
+  subject         String                @default("")
+  languageCode    String?               @db.VarChar(32)
+  pathStaff       String?               @db.VarChar(2048)
+  realPath        String?               @db.VarChar(2048)
+  errorMessage    String?               @db.VarChar(1000)
+  supportCategory String?               @db.VarChar(32)
+  isPublic        Boolean               @default(false)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages        UserThreadMessage[]
+
+  @@index([userId])
+  @@index([userId, kind])
+  @@index([supportCategory])
+  @@index([languageCode])
+  @@index([isPublic, kind])
+  @@map("user_message_threads")
+}
+
+model UserThreadMessage {
+  id        String            @id @default(cuid())
+  threadId  String
+  senderId  String?
+  isStaff   Boolean           @default(false)
+  body      String            @db.Text
+  createdAt DateTime          @default(now())
+  thread    UserMessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender    User?             @relation("UserThreadMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([threadId])
+  @@map("user_thread_messages")
+}
+
+enum UserMessageThreadKind {
+  REVIEW
+  SUPPORT
 }
 
 model Language {
