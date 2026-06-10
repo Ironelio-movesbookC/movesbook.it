@@ -9,9 +9,9 @@ import {
 } from '@/lib/admin/networkSubscriptionHistory';
 import {
   renewMembershipForTarget,
-  type MembershipEntityKind,
   type MembershipRenewalTarget,
 } from '@/lib/admin/renewRegisteredUserMembership';
+import { parseMembershipEntityKind, type MembershipEntityKind } from '@/lib/admin/membershipEntity';
 import { verifyAdminActionPassword } from '@/lib/admin/verifyAdminActionPassword';
 
 export const dynamic = 'force-dynamic';
@@ -80,19 +80,8 @@ function parseSubscriptionDeletions(body: unknown): SubscriptionDeletionRequest[
   return out;
 }
 
-const MEMBERSHIP_ENTITY_KINDS = new Set<MembershipEntityKind>([
-  'club',
-  'team',
-  'group',
-  'coaching_group',
-  'account',
-]);
-
 function parseEntityKind(raw: unknown): MembershipEntityKind | null {
-  const kind = String(raw ?? '').trim();
-  return MEMBERSHIP_ENTITY_KINDS.has(kind as MembershipEntityKind)
-    ? (kind as MembershipEntityKind)
-    : null;
+  return parseMembershipEntityKind(raw);
 }
 
 function parseMembershipRenewals(body: unknown): MembershipRenewalTarget[] {

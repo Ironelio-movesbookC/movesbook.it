@@ -12,6 +12,7 @@ import {
 } from '@/lib/admin/groupRegisteredUserGridCards';
 import {
   inferMembershipEndDateYmd,
+  membershipDateClassName,
   type ClubSubscriptionStatusTone,
 } from '@/lib/admin/clubSubscriptionStatus';
 
@@ -136,11 +137,8 @@ export default function AdminRegisteredUserGridCard({
           </p>
           <ul className="mt-2 space-y-2 border-t border-gray-200 pt-2">
             {entities.map((entity) => (
-              <li
-                key={entity.rowKey}
-                className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm"
-              >
-                <span className="text-gray-800">
+              <li key={entity.rowKey} className="text-sm">
+                <div className="text-gray-800">
                   {entityCompanyLabel(entity.entityKind)}:{' '}
                   <button
                     type="button"
@@ -154,26 +152,27 @@ export default function AdminRegisteredUserGridCard({
                   >
                     {entity.companyName?.trim() || '—'}
                   </button>
-                </span>
-                <span className="text-red-600 whitespace-nowrap">
-                  {formatMembershipDateRange(entity.dateStart, entity.dateEnd)}
-                </span>
-                <span className={clubAdminStatusClassName(entity.statusTone)}>
-                  {entity.status}
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onOpenEntityProfile(
-                      admin.id,
-                      admin.userType,
-                      entity.entityId ?? entity.primaryClubId ?? null,
-                    )
-                  }
-                  className="ml-auto text-blue-800 underline hover:text-blue-950 shrink-0"
-                >
-                  View profile
-                </button>
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span
+                    className={`whitespace-nowrap ${membershipDateClassName(entity.statusTone)}`}
+                  >
+                    {formatMembershipDateRange(entity.dateStart, entity.dateEnd)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenEntityProfile(
+                        admin.id,
+                        admin.userType,
+                        entity.entityId ?? entity.primaryClubId ?? null,
+                      )
+                    }
+                    className="text-blue-800 underline hover:text-blue-950"
+                  >
+                    View profile
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

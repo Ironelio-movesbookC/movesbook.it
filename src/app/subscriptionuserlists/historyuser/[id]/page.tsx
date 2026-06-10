@@ -186,7 +186,7 @@ export default function HistoryUserPage() {
   return (
     <div className="w-full min-w-0 py-2">
       <UserPcuControlPanel
-        key={`${user.userId}-${resolvePcuDefaultTab(searchParams)}-${resolvePcuProfileSubTab(searchParams)}`}
+        key={`${user.userId}-${resolvePcuDefaultTab(searchParams)}-${resolvePcuProfileSubTab(searchParams)}-${clubId}`}
         user={user}
         backHref={backHref}
         subscriptionRows={subscriptionRows}

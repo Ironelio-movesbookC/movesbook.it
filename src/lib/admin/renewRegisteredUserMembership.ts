@@ -11,13 +11,16 @@ import {
   type MembershipRenewalInput,
 } from '@/lib/admin/networkSubscriptionHistory';
 import { mergeClubSubscriptionDates } from '@/lib/club/clubProfilePayload';
-import { pickClubForAdminProfile } from '@/lib/admin/pickClubForAdminProfile';
 import {
   mergePcuAccessIntoAdminSettings,
   readPcuAccessSettings,
 } from '@/lib/admin/userPcuAccessSettings';
+import {
+  pickPrimaryMembershipEntityId,
+  type MembershipEntityKind,
+} from '@/lib/admin/membershipEntity';
 
-export type MembershipEntityKind = 'club' | 'team' | 'group' | 'coaching_group' | 'account';
+export type { MembershipEntityKind };
 
 export type MembershipRenewalTarget = {
   userId: string;
@@ -77,18 +80,6 @@ function subscriptionWindowFromAccount(
   const dateEnd =
     inferMembershipEndDateYmd(dateStart, pcu.accessEndIso.trim().slice(0, 10) || null) ?? null;
   return { dateStart, dateEnd };
-}
-
-export function pickPrimaryMembershipEntityId(user: RenewalUserRecord): string {
-  const club = pickClubForAdminProfile(user.ownedClubs);
-  if (club) return club.id;
-  const team = user.ownedTeams[0];
-  if (team) return team.id;
-  const group = user.ownedGroups[0];
-  if (group) return group.id;
-  const coaching = user.ownedCoachingGroups[0];
-  if (coaching) return coaching.id;
-  return user.id;
 }
 
 export type RenewMembershipResult = {

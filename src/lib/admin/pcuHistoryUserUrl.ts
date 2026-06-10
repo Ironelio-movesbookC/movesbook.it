@@ -37,7 +37,10 @@ export function resolvePcuProfileSubTab(
   searchParams: { get: (key: string) => string | null } | null | undefined,
 ): 'admin' | 'entity' {
   const raw = searchParams?.get('profileSubTab')?.trim().toLowerCase();
-  return raw === 'entity' ? 'entity' : 'admin';
+  if (raw === 'entity') return 'entity';
+  if (raw === 'admin') return 'admin';
+  const clubId = searchParams?.get('clubId')?.trim();
+  return clubId ? 'entity' : 'admin';
 }
 
 export function resolvePcuDefaultTab(

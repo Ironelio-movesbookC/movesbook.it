@@ -291,13 +291,6 @@ export default function ClubOverviewPanel({
             <div className="rounded-lg border border-gray-200 overflow-hidden">
               <UserProfile embedded embeddedVariant="admin-profile" />
             </div>
-            {club ? (
-              <ClubReferencesDisplay
-                referencesHtml={meta.referencesHtml}
-                referencesLevel={meta.referencesLevel}
-                editHref={clubProfileEditHref}
-              />
-            ) : null}
           </div>
         )}
 
@@ -342,6 +335,14 @@ export default function ClubOverviewPanel({
             ) : (
               <p className="text-sm text-gray-500">No club profile details yet.</p>
             )}
+            {club ? (
+              <ClubReferencesDisplay
+                variant="club"
+                referencesHtml={meta.referencesHtml}
+                referencesLevel={meta.referencesLevel}
+                editHref={clubProfileEditHref}
+              />
+            ) : null}
           </div>
         )}
 

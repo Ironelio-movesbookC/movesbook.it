@@ -10,7 +10,10 @@ import {
   Search as SearchIcon,
   X,
 } from 'lucide-react';
-import type { ClubSubscriptionStatusTone } from '@/lib/admin/clubSubscriptionStatus';
+import {
+  membershipDateClassName,
+  type ClubSubscriptionStatusTone,
+} from '@/lib/admin/clubSubscriptionStatus';
 import { flagEmojiFromCountryName } from '@/lib/admin/countryFlag';
 import { typeBadgeLabel } from '@/lib/admin/userPcuPanel';
 import type { UserType } from '@prisma/client';
@@ -22,6 +25,10 @@ import AdminClubUserPanelModal, {
 } from '@/components/admin/AdminClubUserPanelModal';
 import AdminRegisteredUserGridCard from '@/components/admin/AdminRegisteredUserGridCard';
 import { groupRowsForAdminGrid } from '@/lib/admin/groupRegisteredUserGridCards';
+import {
+  inferListRowEntityId,
+  inferListRowEntityKind,
+} from '@/lib/admin/membershipEntity';
 import { getDefaultMembershipSortOrder } from '@/lib/admin/networkSubscriptionHistory';
 import { buildPcuHistoryUserUrl } from '@/lib/admin/pcuHistoryUserUrl';
 import SuperAdminPasswordConfirmModal from '@/components/admin/SuperAdminPasswordConfirmModal';
@@ -660,41 +667,33 @@ export default function AdminRegisteredUsersList({
     const seen = new Set<string>();
 
     const push = (target: MembershipRenewTarget) => {
-      const key = `${target.userId}:${target.entityId}`;
+      const key = `${target.userId}:${target.entityKind}:${target.entityId}`;
       if (seen.has(key)) return;
       seen.add(key);
       out.push(target);
     };
 
     for (const r of rows.filter((row) => selected.has(rowListKey(row)))) {
-      if (r.entityId?.trim() && r.entityKind) {
-        push({
-          userId: r.id,
-          entityId: r.entityId,
-          entityKind: r.entityKind,
-          dateStart: r.dateStart,
-          dateEnd: r.dateEnd,
-          version: r.version,
-          companyName: r.companyName,
-          username: r.username,
-          label: subscriptionRenewLabel(r),
-        });
-        continue;
+      let entityKind = inferListRowEntityKind(r, segment);
+      let entityId = inferListRowEntityId(r, entityKind);
+      const hasEntityRef =
+        Boolean(r.entityId?.trim()) ||
+        /-(?:club|team|group|coach-group)-/.test(r.rowKey || '');
+      if (entityKind !== 'account' && !hasEntityRef) {
+        entityKind = 'account';
+        entityId = r.id;
       }
-
-      if (!r.entityId && (r.userType === 'ATHLETE' || segment === 'single-user')) {
-        push({
-          userId: r.id,
-          entityId: r.id,
-          entityKind: 'account',
-          dateStart: r.dateStart,
-          dateEnd: r.dateEnd,
-          version: r.version,
-          companyName: r.companyName,
-          username: r.username,
-          label: subscriptionRenewLabel(r),
-        });
-      }
+      push({
+        userId: r.id,
+        entityId,
+        entityKind,
+        dateStart: r.dateStart,
+        dateEnd: r.dateEnd,
+        version: r.version,
+        companyName: r.companyName,
+        username: r.username,
+        label: subscriptionRenewLabel(r),
+      });
     }
 
     return out;
@@ -1213,6 +1212,10 @@ export default function AdminRegisteredUsersList({
           version: String(panel.version ?? ''),
           paid: typeof panel.paid === 'number' ? panel.paid : parseInt(String(panel.paid ?? '0'), 10) || 0,
           adminImageUrl: panel.adminImageUrl != null ? String(panel.adminImageUrl) : null,
+          companyLogoUrl:
+            panel.companyLogoUrl != null && String(panel.companyLogoUrl).trim() !== ''
+              ? String(panel.companyLogoUrl)
+              : null,
           clubId: panel.clubId != null ? String(panel.clubId) : null,
           typeBadge: String(panel.typeBadge ?? 'User'),
           visitPagePath:
@@ -2124,8 +2127,14 @@ export default function AdminRegisteredUsersList({
                     <td className="px-3 py-2 border-t border-gray-300">{r.country?.trim() || '—'}</td>
                     <CountryFlagCell country={r.country} />
                     <td className="px-3 py-2 border-t border-gray-300">{r.location?.trim() || '—'}</td>
-                    <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{r.dateStart}</td>
-                    <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">
+                    <td
+                      className={`px-3 py-2 border-t border-gray-300 whitespace-nowrap ${membershipDateClassName(r.statusTone)}`}
+                    >
+                      {r.dateStart}
+                    </td>
+                    <td
+                      className={`px-3 py-2 border-t border-gray-300 whitespace-nowrap ${membershipDateClassName(r.statusTone)}`}
+                    >
                       {r.dateEnd ?? '—'}
                     </td>
                     <td className="px-3 py-2 border-t border-gray-300">{r.version}</td>

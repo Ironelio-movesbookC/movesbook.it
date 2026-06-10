@@ -31,6 +31,7 @@ import {
 import { readPcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import {
   buildMovesbookUserTextSearchOr,
+  filterListRowsByTextSearch,
   segmentShouldMatchOwnedClubs,
 } from '@/lib/admin/movesbookUserTextSearch';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
@@ -127,6 +128,15 @@ export async function GET(request: NextRequest) {
   const subRangeFrom = (url.searchParams.get('subRangeFrom') || '').trim();
   const subRangeTo = (url.searchParams.get('subRangeTo') || '').trim();
   const hasSubDateRange = Boolean(subRangeFrom || subRangeTo);
+  const needsRowLevelSearchFilter = Boolean(
+    search &&
+      (segment === 'all' ||
+        segment === 'clubs' ||
+        segment === 'teams' ||
+        segment === 'groups' ||
+        segment === 'coaches'),
+  );
+  const fetchAllMatchingUsers = hasSubDateRange || needsRowLevelSearchFilter;
   const userTypeCategory = (url.searchParams.get('userTypeCategory') || '').trim();
   const membershipMode = parseMembershipViewMode(url.searchParams.get('membership'));
   const membershipSort =
@@ -204,7 +214,7 @@ export async function GET(request: NextRequest) {
       where,
       select: userSelect,
       orderBy,
-      ...(hasSubDateRange
+      ...(fetchAllMatchingUsers
         ? {}
         : { skip: (page - 1) * pageSize, take: pageSize }),
     }),
@@ -575,6 +585,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  if (needsRowLevelSearchFilter) {
+    users = filterListRowsByTextSearch(users, search);
+  }
+
   if (hasSubDateRange) {
     users = filterListRowsBySubscriptionDateRange(
       users,
@@ -582,6 +596,9 @@ export async function GET(request: NextRequest) {
       subRangeFrom,
       subRangeTo,
     );
+  }
+
+  if (fetchAllMatchingUsers) {
     const totalFiltered = users.length;
     users = users.slice((page - 1) * pageSize, page * pageSize);
     return NextResponse.json({

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { User, Mail, Calendar, Users, Award, Trophy, Settings as SettingsIcon } from 'lucide-react';
 import { SUPPORTED_LANGUAGES } from '@/constants/tools.constants';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
@@ -16,6 +17,15 @@ import { formatSportLabel } from '@/lib/profileSports';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
 import ClubAdminInfoForm from '@/components/profile/ClubAdminInfoForm';
+
+const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), {
+  ssr: false,
+  loading: () => (
+    <div className="min-h-[200px] rounded border border-gray-300 bg-white p-4 text-sm text-gray-500">
+      Loading editor…
+    </div>
+  ),
+});
 
 interface UserProfileData {
   id: string;
@@ -54,6 +64,8 @@ interface UserProfileData {
     workoutTemplates: number;
     clubMemberships: number;
   };
+  referencesHtml?: string;
+  referencesLevel?: string;
 }
 
 type ProfileFormState = {
@@ -145,6 +157,8 @@ export default function UserProfile({
   const [showChangeBannerModal, setShowChangeBannerModal] = useState(false);
   const [avatarOverride, setAvatarOverride] = useState<string | null | undefined>(undefined);
   const [bannerOverride, setBannerOverride] = useState<AthleteLegacyBannerProfile | null>(null);
+  const [referencesHtml, setReferencesHtml] = useState('');
+  const [referencesLevel, setReferencesLevel] = useState('1');
 
   const applyProfileToForm = useCallback((data: UserProfileData) => {
     setForm({
@@ -159,6 +173,8 @@ export default function UserProfile({
       youtubeChannelUrl: data.youtubeChannelUrl ?? '',
       mainSports: data.mainSports?.map((s) => s.sport) ?? [],
     });
+    setReferencesHtml(data.referencesHtml ?? '');
+    setReferencesLevel(data.referencesLevel?.trim() || '1');
   }, []);
 
   const loadProfile = useCallback(async () => {
@@ -242,6 +258,12 @@ export default function UserProfile({
           telegramAccount: form.telegramAccount.trim() || null,
           youtubeChannelUrl: form.youtubeChannelUrl.trim() || null,
           mainSports: form.mainSports,
+          ...(embedded && embeddedVariant === 'admin-profile'
+            ? {
+                referencesHtml,
+                referencesLevel,
+              }
+            : {}),
         }),
       });
 
@@ -735,6 +757,38 @@ export default function UserProfile({
               />
               <p className="mt-1 text-xs text-gray-500">Select one or more sports from the list.</p>
             </div>
+            {isEmbeddedAdminProfile ? (
+              <div className="md:col-span-2">
+                <div className="mb-2 border border-[#c9bd7a] bg-[#efe7b3] px-4 py-2 text-sm font-semibold text-gray-900">
+                  References of the admin
+                </div>
+                <p className="mb-2 text-xs text-gray-600">
+                  These references belong to the club administrator account, not to the club itself.
+                </p>
+                <div className="border border-gray-300 bg-white p-3">
+                  <CKEditorComponent
+                    value={referencesHtml}
+                    onChange={(html) => setReferencesHtml(html)}
+                    minHeightPx={260}
+                    placeholder=""
+                  />
+                  <div className="mt-3 grid max-w-md grid-cols-[160px_1fr] items-center gap-2 text-sm">
+                    <label className="text-gray-800">References level</label>
+                    <select
+                      value={referencesLevel}
+                      onChange={(e) => setReferencesLevel(e.target.value)}
+                      className="w-24 rounded border border-gray-400 bg-gray-100 px-2 py-1.5"
+                    >
+                      {['1', '2', '3', '4', '5', '6'].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <div className="md:col-span-2 mt-2 flex flex-wrap items-center gap-3">
               <button
                 type="submit"

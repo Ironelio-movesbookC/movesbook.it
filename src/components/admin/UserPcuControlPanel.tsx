@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { CalendarDays, CreditCard, Mail, User, X } from 'lucide-react';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
@@ -68,6 +68,7 @@ import {
   resolveRegisteredUserActionSegment,
   type PcuPanelPayload,
 } from '@/lib/admin/userPcuPanel';
+import { buildPcuHistoryUserUrl } from '@/lib/admin/pcuHistoryUserUrl';
 import type { PcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import {
   normalizeFavouritePriority,
@@ -168,6 +169,13 @@ type SubscriptionRow = {
   status: string;
 };
 
+function normalizeIsoDate(value: string | null | undefined): string {
+  const raw = value?.trim() || '';
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  return mmDdYyyyToIso(raw) || raw;
+}
+
 function resolvePcuAccessDates(
   user: PcuPanelPayload,
   subscriptionRows: SubscriptionRow[],
@@ -183,8 +191,8 @@ function resolvePcuAccessDates(
   const defaultStart = activeRow?.dateStart || user.startDateIso || '';
   const defaultEnd = activeRow?.dateEnd || user.endDateIso || '';
   return {
-    accessStart: initialPcuAccess?.accessStartIso?.trim() || defaultStart,
-    accessEnd: initialPcuAccess?.accessEndIso?.trim() || defaultEnd,
+    accessStart: normalizeIsoDate(initialPcuAccess?.accessStartIso?.trim() || defaultStart),
+    accessEnd: normalizeIsoDate(initialPcuAccess?.accessEndIso?.trim() || defaultEnd),
   };
 }
 
@@ -245,6 +253,7 @@ export default function UserPcuControlPanel({
   onAccessDatesSaved,
 }: UserPcuControlPanelProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const segmentForActions = resolveRegisteredUserActionSegment(actionSegment, user.segment);
   const loadedPcuSettingsRef = useRef<PcuSettings | null>(null);
   const reloadPcuFromServerRef = useRef<(pcu: PcuSettings | undefined) => void>(() => {});
@@ -1411,8 +1420,24 @@ export default function UserPcuControlPanel({
   }, [activeTab, topTabs, defaultActiveTab]);
 
   const countryCode = countryCodeFromName(user.country);
-  const entityProfileLabel = `${user.roleTitle}_profile`;
   const isSingleUserProfile = user.segment === 'single-user';
+  const ownedEntities = user.ownedEntities ?? [];
+  const selectedEntityId = user.entityId;
+
+  const navigateProfileView = useCallback(
+    (view: 'admin' | { entityId: string }) => {
+      const href = buildPcuHistoryUserUrl(user.userId, {
+        scope: searchParams?.get('scope'),
+        segment: segmentForActions || user.segment,
+        q: searchParams?.get('q'),
+        tab: 'profile',
+        profileSubTab: view === 'admin' ? 'admin' : 'entity',
+        clubId: view === 'admin' ? null : view.entityId,
+      });
+      router.push(href);
+    },
+    [router, searchParams, segmentForActions, user.segment, user.userId],
+  );
   const profileAvatarRaw =
     !isSingleUserProfile && profileSubTab === 'entity'
       ? user.entityImageUrl
@@ -2086,6 +2111,8 @@ export default function UserPcuControlPanel({
             body: JSON.stringify({
               ...merged,
               clubId: user.entityId ?? undefined,
+              entityId: user.entityId ?? undefined,
+              entityKind: user.entityKind ?? undefined,
             }),
           },
         );
@@ -2425,25 +2452,23 @@ export default function UserPcuControlPanel({
               </button>
               <div className="flex items-center gap-2 text-sm">
                 <span>Start</span>
-                <input
-                  type="date"
+                <AdminPcuDatePicker
                   value={accessStart}
                   disabled={pcuAccessSaving}
-                  onChange={(e) => void savePcuAccessSettings({ accessStartIso: e.target.value })}
-                  className="px-2 py-1 border border-gray-400 bg-white w-32 text-sm disabled:opacity-60"
+                  onChange={(iso) => void savePcuAccessSettings({ accessStartIso: iso })}
+                  className="w-32"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
                 <CreditCard className="w-5 h-5 text-gray-600" />
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <span>End</span>
-                <input
-                  type="date"
+                <AdminPcuDatePicker
                   value={accessEnd}
-                  min={accessStart || undefined}
+                  minDateIso={accessStart || undefined}
                   disabled={pcuAccessSaving}
-                  onChange={(e) => void savePcuAccessSettings({ accessEndIso: e.target.value })}
-                  className="px-2 py-1 border border-gray-400 bg-white w-32 text-sm text-red-600 disabled:opacity-60"
+                  onChange={(iso) => void savePcuAccessSettings({ accessEndIso: iso })}
+                  className="w-32 text-red-600"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
               </div>
@@ -2530,27 +2555,41 @@ export default function UserPcuControlPanel({
             </div>
 
             <div className="px-4">
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setProfileSubTab('admin')}
-                  className={`px-4 py-2 text-sm font-semibold rounded-t ${
+                  onClick={() => navigateProfileView('admin')}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t ${
                     profileSubTab === 'admin' ? 'bg-black text-white' : 'bg-gray-400 text-gray-900'
                   }`}
                 >
                   {isSingleUserProfile ? 'User Profile' : 'Admin Profile'}
                 </button>
-                {isSingleUserProfile ? null : (
-                  <button
-                    type="button"
-                    onClick={() => setProfileSubTab('entity')}
-                    className={`px-4 py-2 text-sm font-semibold rounded-t ${
-                      profileSubTab === 'entity' ? 'bg-black text-white' : 'bg-gray-400 text-gray-900'
-                    }`}
-                  >
-                    {entityProfileLabel}
-                  </button>
-                )}
+                {isSingleUserProfile
+                  ? null
+                  : ownedEntities.map((entity) => {
+                      const isActive =
+                        profileSubTab === 'entity' && selectedEntityId === entity.id;
+                      return (
+                        <button
+                          key={entity.id}
+                          type="button"
+                          onClick={() => navigateProfileView({ entityId: entity.id })}
+                          className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t ${
+                            isActive ? 'bg-black text-white' : 'bg-gray-400 text-gray-900'
+                          }`}
+                          title={entity.tabLabel}
+                        >
+                          <span
+                            className={`inline-block h-3 w-3 shrink-0 rounded-full ${
+                              isActive ? 'bg-green-500' : 'bg-red-500'
+                            }`}
+                            aria-hidden
+                          />
+                          <span>{entity.tabLabel}</span>
+                        </button>
+                      );
+                    })}
               </div>
               <div className="border-b border-gray-300" />
             </div>
@@ -2710,7 +2749,7 @@ export default function UserPcuControlPanel({
                             </div>
                           </div>
                         </>
-                      ) : user.segment === 'clubs' && user.entityProfile ? (
+                      ) : profileSubTab === 'entity' && user.entityProfile ? (
                         <>
                           <ProfileField label="Username*" value={user.entityProfile.username} />
                           <ProfileField label="Official name" value={user.entityProfile.officialName} />
@@ -2738,7 +2777,9 @@ export default function UserPcuControlPanel({
 
                           <div className="mt-6">
                             <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
-                              References of the club
+                              {user.segment === 'clubs'
+                                ? 'References of the club'
+                                : `References of the ${user.roleTitle.toLowerCase()}`}
                             </div>
                             <div className="border border-gray-300 p-3 bg-white">
                               <CKEditorComponent
@@ -2784,6 +2825,17 @@ export default function UserPcuControlPanel({
                             </div>
                           </div>
                         </>
+                      ) : profileSubTab === 'entity' ? (
+                        <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
+                          <p className="text-sm font-semibold text-gray-800">
+                            Select a {user.roleTitle.toLowerCase()} tab above to view its profile.
+                          </p>
+                          {ownedEntities.length === 0 ? (
+                            <p className="mt-2 text-sm text-gray-600">
+                              This admin has no registered {user.roleTitle.toLowerCase()} profiles yet.
+                            </p>
+                          ) : null}
+                        </div>
                       ) : (
                         <>
                           <ProfileField label="Username*" value={user.username} />
@@ -2865,7 +2917,10 @@ export default function UserPcuControlPanel({
                       <strong>Location:</strong> {user.locality || user.cityClubTeam || '—'}
                     </div>
                     <div>
-                      <strong>Official {user.roleTitle}name:</strong> {user.entityName || '—'}
+                      <strong>Official {user.roleTitle}name:</strong>{' '}
+                      <span className="text-base font-bold text-red-600">
+                        {user.entityName || '—'}
+                      </span>
                     </div>
                     <div>
                       <strong>Sport</strong> {user.sport || '—'}

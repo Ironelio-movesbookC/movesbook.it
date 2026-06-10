@@ -1,11 +1,30 @@
 import type { UserType } from '@prisma/client';
-import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
+import {
+  formatMyClubsSidebarLabel,
+  getClubMyPageDisplayName,
+  isClubCreatedFromForm,
+  parseClubDescriptionMeta,
+} from '@/lib/club/clubSidebarLabel';
+import { readAdminReferences } from '@/lib/admin/userProfilePanelSettings';
 import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
 import { parseClubSubscriptionEndDate } from '@/lib/admin/clubSubscriptionStatus';
+import {
+  entityKindFromAdminSegment,
+  type MembershipEntityKind,
+} from '@/lib/admin/membershipEntity';
 import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
 
 /** Club (or future entity) fields for the entity profile sub-tab — not the admin user account. */
+/** One company row (club / team / group / trained group) owned by the admin — for PCU profile tabs. */
+export type PcuOwnedEntity = {
+  id: string;
+  username: string;
+  officialName: string;
+  /** Sidebar-style label, e.g. "Titan (Titan Fitness Club)". */
+  tabLabel: string;
+};
+
 export type PcuEntityProfile = {
   username: string;
   officialName: string;
@@ -50,6 +69,7 @@ export type PcuPanelPayload = {
   dashboardPath: string;
   adminSegmentPath: string;
   entityId: string | null;
+  entityKind: MembershipEntityKind | null;
   entityName: string;
   visitPagePath: string | null;
   segment: string;
@@ -70,8 +90,10 @@ export type PcuPanelPayload = {
   adminZipCode: string;
   adminPhoneCell: string;
   adminPhoneCell2: string;
-  /** Current club profile (Club_profile tab) when segment is clubs. */
+  /** Current company profile when a specific entity is selected in the URL. */
   entityProfile: PcuEntityProfile | null;
+  /** All form-created companies for this admin (one tab each in Profile). */
+  ownedEntities: PcuOwnedEntity[];
 };
 
 export function segmentRoleTitle(segment: string): string {
@@ -277,14 +299,102 @@ type UserPcuSource = {
     _count: { members: number };
   }[];
   clubMemberships: { club: { name: string; location: string | null } }[];
+  settings?: { adminSettings?: string | null } | null;
 };
+
+type DescribedEntity = {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: Date;
+};
+
+function sortEntitiesByCreatedAtAsc<T extends { createdAt: Date }>(items: T[]): T[] {
+  return [...items].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+function toOwnedEntity(entity: { id: string; name: string; description?: string | null }): PcuOwnedEntity {
+  const meta = parseClubDescriptionMeta(entity.description);
+  const username = meta.username?.trim() || entity.name.trim();
+  const officialName = getClubMyPageDisplayName(entity) || entity.name.trim();
+  return {
+    id: entity.id,
+    username,
+    officialName,
+    tabLabel: formatMyClubsSidebarLabel(entity),
+  };
+}
+
+function buildOwnedEntities(user: UserPcuSource, segment: string): PcuOwnedEntity[] {
+  if (segment === 'clubs') {
+    return sortEntitiesByCreatedAtAsc(user.ownedClubs.filter(isClubCreatedFromForm)).map(toOwnedEntity);
+  }
+  if (segment === 'teams') {
+    return sortEntitiesByCreatedAtAsc(user.ownedTeams.filter(isClubCreatedFromForm)).map(toOwnedEntity);
+  }
+  if (segment === 'groups') {
+    return sortEntitiesByCreatedAtAsc(user.ownedGroups.filter(isClubCreatedFromForm)).map(toOwnedEntity);
+  }
+  if (segment === 'coaches') {
+    return sortEntitiesByCreatedAtAsc(user.ownedCoachingGroups.filter(isClubCreatedFromForm)).map(
+      toOwnedEntity,
+    );
+  }
+  return [];
+}
+
+function findSelectedEntity(
+  user: UserPcuSource,
+  segment: string,
+  selectedEntityId: string | null,
+): DescribedEntity | null {
+  if (!selectedEntityId) return null;
+  if (segment === 'clubs') {
+    return user.ownedClubs.find((c) => c.id === selectedEntityId) ?? null;
+  }
+  if (segment === 'teams') {
+    return user.ownedTeams.find((t) => t.id === selectedEntityId) ?? null;
+  }
+  if (segment === 'groups') {
+    return user.ownedGroups.find((g) => g.id === selectedEntityId) ?? null;
+  }
+  if (segment === 'coaches') {
+    return user.ownedCoachingGroups.find((g) => g.id === selectedEntityId) ?? null;
+  }
+  return null;
+}
+
+function buildEntityProfileFromRecord(
+  entity: DescribedEntity,
+  locationFallback?: string | null,
+): PcuEntityProfile {
+  const meta = parseClubDescriptionMeta(entity.description);
+  return {
+    username: meta.username?.trim() || '',
+    officialName: getClubMyPageDisplayName(entity) || entity.name.trim(),
+    email: meta.mail?.trim() || '',
+    country: meta.country?.trim() || '',
+    location: locationFallback?.trim() || meta.region?.trim() || '',
+    zipCode: meta.zipCode?.trim() || '',
+    geo: meta.geo?.trim() || '',
+    phone: '',
+    telegram: '',
+    referencesHtml: meta.referencesHtml?.trim() || '',
+    referencesLevel: meta.referencesLevel?.trim() || '1',
+  };
+}
 
 export function buildPcuPanel(
   user: UserPcuSource,
   segment: string,
   loginLogCount: number,
   planCount: number,
+  opts?: { selectedEntityId?: string | null },
 ): PcuPanelPayload {
+  const selectedEntityId = opts?.selectedEntityId?.trim() || null;
+  const ownedEntities = buildOwnedEntities(user, segment);
+  const selectedEntity = findSelectedEntity(user, segment, selectedEntityId);
+
   const fullname =
     [user.firstName, user.surname].filter(Boolean).join(' ').trim() || user.name || user.username;
 
@@ -366,27 +476,33 @@ export function buildPcuPanel(
 
   const adminCountry = user.country?.trim() || '';
   const adminPhoneCell = user.telegramAccount?.trim() || '';
+  const adminReferences = readAdminReferences(user.settings?.adminSettings);
 
-  const entityProfile: PcuEntityProfile | null =
-    segment === 'clubs' && (primaryClub || memberClub)
-      ? {
-          username: clubMeta.username?.trim() || '',
-          officialName: entityName,
-          email: clubMeta.mail?.trim() || '',
-          country: clubMeta.country?.trim() || '',
-          location:
-            primaryClub?.location?.trim() ||
-            memberClub?.location?.trim() ||
-            clubMeta.region?.trim() ||
-            '',
-          zipCode: clubMeta.zipCode?.trim() || '',
-          geo: clubMeta.geo?.trim() || '',
-          phone: '',
-          telegram: '',
-          referencesHtml: clubMeta.referencesHtml?.trim() || '',
-          referencesLevel: clubMeta.referencesLevel?.trim() || '1',
-        }
-      : null;
+  const entityProfile: PcuEntityProfile | null = selectedEntity
+    ? buildEntityProfileFromRecord(
+        selectedEntity,
+        segment === 'clubs'
+          ? user.ownedClubs.find((c) => c.id === selectedEntity.id)?.location ??
+              memberClub?.location
+          : null,
+      )
+    : null;
+
+  const profileEntityId = selectedEntity?.id ?? null;
+  const profileEntityName = selectedEntity
+    ? getClubMyPageDisplayName(selectedEntity) || selectedEntity.name.trim()
+    : entityName;
+  const profileEntityKind: MembershipEntityKind | null = selectedEntity
+    ? segment === 'clubs'
+      ? 'club'
+      : segment === 'teams'
+        ? 'team'
+        : segment === 'groups'
+          ? 'group'
+          : segment === 'coaches'
+            ? 'coaching_group'
+            : null
+    : entityKindFromAdminSegment(segment);
 
   return {
     userId: user.id,
@@ -412,22 +528,14 @@ export function buildPcuPanel(
     endDateIso: toIsoDate(endDate),
     logs: loginLogCount,
     imageUrl: user.image?.trim() || null,
-    entityImageUrl:
-      segment === 'clubs' && (primaryClub || memberClub)
-        ? getLogoUrlFromEntityDescription(
-            primaryClub?.description ?? memberClub?.description ?? null,
-          )
-        : segment === 'teams' && primaryTeam
-          ? getLogoUrlFromEntityDescription(primaryTeam.description)
-          : segment === 'groups' && primaryGroup
-            ? getLogoUrlFromEntityDescription(primaryGroup.description)
-            : segment === 'coaches' && primaryCoaching
-              ? getLogoUrlFromEntityDescription(primaryCoaching.description)
-              : null,
+    entityImageUrl: selectedEntity
+      ? getLogoUrlFromEntityDescription(selectedEntity.description)
+      : null,
     dashboardPath: getDashboardPathForUserType(user.userType),
     adminSegmentPath: adminSegmentPath(segment),
-    entityId,
-    entityName,
+    entityId: profileEntityId,
+    entityKind: profileEntityKind,
+    entityName: profileEntityName,
     visitPagePath,
     segment,
     roleTitle: segmentRoleTitle(segment),
@@ -439,13 +547,14 @@ export function buildPcuPanel(
     phoneCell: adminPhoneCell,
     phoneCell2: '',
     geographical: segment === 'clubs' ? null : mapCoordinates,
-    referencesHtml: '',
-    referencesLevel: '1',
+    referencesHtml: adminReferences.referencesHtml,
+    referencesLevel: adminReferences.referencesLevel,
     adminCountry,
     adminCity: '',
     adminZipCode: '',
     adminPhoneCell,
     adminPhoneCell2: '',
     entityProfile,
+    ownedEntities,
   };
 }

@@ -3,6 +3,8 @@ import {
   classifyClubSubscriptionEnd,
   inferMembershipEndDateYmd,
   MEMBERSHIP_RENEWAL_DURATION_DAYS,
+  parseClubSubscriptionEndDate,
+  parseClubSubscriptionStartDate,
 } from '@/lib/admin/clubSubscriptionStatus';
 import {
   mergePcuAccessIntoAdminSettings,
@@ -293,7 +295,7 @@ export function mergeNetworkSubscriptionHistory(
   });
 }
 
-/** Archive the previous access window when admin changes subscription dates. */
+/** Archive the previous access window when admin changes subscription start date. */
 export function appendArchivedPeriodIfChanged(
   adminSettingsRaw: string | null | undefined,
   previous: { accessStartIso: string; accessEndIso: string },
@@ -304,7 +306,7 @@ export function appendArchivedPeriodIfChanged(
   const prevEnd = previous.accessEndIso.trim().slice(0, 10) || null;
   const nextStart = next.accessStartIso.trim().slice(0, 10);
   const nextEnd = next.accessEndIso.trim().slice(0, 10) || null;
-  if (!prevStart || (prevStart === nextStart && prevEnd === nextEnd)) {
+  if (!prevStart || prevStart === nextStart) {
     return adminSettingsRaw?.trim() || '{}';
   }
 
@@ -445,7 +447,8 @@ export function isSubscriptionPeriodDeleted(
   });
 }
 
-function periodsForRow(
+/** Historical + live membership periods for one owned entity (admin list / profile). */
+export function periodsForRow(
   row: RegisteredUserListRow,
   userHistory: NetworkSubscriptionPeriod[],
   deleted: SubscriptionPeriodDeletion[] = [],
@@ -468,6 +471,73 @@ function periodsForRow(
   return withResolvedMembershipStatuses(sorted, pcuAccess);
 }
 
+/** Same membership window as the admin grid / list (history + PCU access + entity description). */
+export function resolveMembershipDatesForEntity(args: {
+  userId: string;
+  entityId: string | null;
+  adminSettingsRaw?: string | null;
+  entityDescription: string | null;
+  entityCreatedAt: Date;
+  companyName?: string;
+  username?: string;
+  version?: string;
+}): { dateStart: string; dateEnd: string | null } {
+  const descriptionStart =
+    parseClubSubscriptionStartDate(args.entityDescription, args.entityCreatedAt) ||
+    args.entityCreatedAt.toISOString().slice(0, 10);
+  const parsedEnd = parseClubSubscriptionEndDate(args.entityDescription, args.entityCreatedAt);
+  const descriptionEnd = inferMembershipEndDateYmd(
+    descriptionStart,
+    parsedEnd?.toISOString().slice(0, 10) ?? null,
+  );
+
+  const entityPart = args.entityId?.trim() || 'account';
+  const row: RegisteredUserListRow = {
+    rowKey: `${args.userId}-${entityPart}`,
+    id: args.userId,
+    username: args.username ?? '',
+    email: '',
+    displayName: '',
+    userType: '',
+    country: null,
+    location: null,
+    dateStart: descriptionStart,
+    dateEnd: descriptionEnd,
+    version: args.version ?? '',
+    amount: '—',
+    status: 'Active',
+    entityId: args.entityId,
+    primaryClubId: args.entityId,
+    companyName: args.companyName,
+  };
+
+  const pcu = readPcuAccessSettings(args.adminSettingsRaw, {
+    accessStartIso: '',
+    accessEndIso: '',
+  });
+  const pcuAccess =
+    pcu.accessStartIso.trim() && pcu.accessEndIso.trim()
+      ? { accessStartIso: pcu.accessStartIso, accessEndIso: pcu.accessEndIso }
+      : undefined;
+
+  const periods = periodsForRow(
+    row,
+    readNetworkSubscriptionHistory(args.adminSettingsRaw),
+    readDeletedSubscriptionPeriods(args.adminSettingsRaw),
+    pcuAccess,
+  );
+
+  if (periods.length === 0) {
+    return { dateStart: descriptionStart, dateEnd: descriptionEnd };
+  }
+
+  const latest = [...periods].sort((a, b) => parseYmdMs(b.dateStart) - parseYmdMs(a.dateStart))[0]!;
+  return {
+    dateStart: latest.dateStart,
+    dateEnd: inferMembershipEndDateYmd(latest.dateStart, latest.dateEnd),
+  };
+}
+
 function periodToListRow(
   row: RegisteredUserListRow,
   period: NetworkSubscriptionPeriod,
@@ -476,6 +546,8 @@ function periodToListRow(
   return {
     ...row,
     rowKey: `${row.rowKey}-period-${period.id}`,
+    entityId: row.entityId ?? period.entityId ?? null,
+    entityKind: row.entityKind,
     dateStart: period.dateStart,
     dateEnd: inferMembershipEndDateYmd(period.dateStart, period.dateEnd),
     version: period.version?.trim() || row.version,

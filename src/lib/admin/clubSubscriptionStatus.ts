@@ -117,3 +117,17 @@ export function defaultClubSubscriptionEndDate(from: Date = new Date()): string 
   end.setFullYear(end.getFullYear() + 1);
   return end.toISOString().slice(0, 10);
 }
+
+/** Text color for membership date cells: expired red, expiring orange, current dark green. */
+export function membershipDateClassName(tone?: ClubSubscriptionStatusTone): string {
+  switch (tone) {
+    case 'all-expired':
+      return 'text-red-600';
+    case 'expiring':
+    case 'partial-expired':
+      return 'text-orange-600';
+    case 'active':
+    default:
+      return 'text-green-800';
+  }
+}

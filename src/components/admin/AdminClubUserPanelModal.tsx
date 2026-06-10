@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { Camera, User, X } from 'lucide-react';
+import { User, X } from 'lucide-react';
 import { COUNTRIES_WITH_CODES } from '@/lib/news/countries';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
 
@@ -22,6 +22,7 @@ export interface ClubUserPanelData {
   version: string;
   paid: number;
   adminImageUrl: string | null;
+  companyLogoUrl: string | null;
   clubId: string | null;
   typeBadge: string;
   /** `/searchresults/search/[club name]` — public visitor wall */
@@ -149,8 +150,29 @@ export default function AdminClubUserPanelModal({
               </div>
 
               <div className="flex-1 flex flex-col items-center justify-center min-h-[4.5rem] px-2">
-                <Camera className="w-8 h-8 text-green-600 mb-1" />
-                <span className="text-xs text-gray-500 text-center">No Photo Available</span>
+                {data.companyLogoUrl ? (
+                  <div className="w-20 h-20 border border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden">
+                    {isDataUrl(data.companyLogoUrl) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={data.companyLogoUrl}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Image
+                        src={data.companyLogoUrl}
+                        alt=""
+                        width={80}
+                        height={80}
+                        className="object-cover w-full h-full"
+                        unoptimized
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-xs text-gray-500 text-center">No Photo Available</span>
+                )}
               </div>
 
               <div className="flex flex-col items-center shrink-0 w-16">

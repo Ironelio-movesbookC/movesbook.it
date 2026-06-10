@@ -337,7 +337,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
   const subscriptionRows = buildProfileSubscriptionRows(
     user.settings?.adminSettings,
-    subscriptionCurrent,
+    { ...subscriptionCurrent, userId: user.id },
+    {
+      accessStartIso: subscriptionCurrent.dateStart,
+      accessEndIso: subscriptionCurrent.dateEnd ?? '',
+    },
   );
 
   const pcuAccessStored = readPcuAccessSettings(user.settings?.adminSettings, {
@@ -361,7 +365,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         }
       : user;
 
-  const pcuPanel = buildPcuPanel(pcuUser, segment, loginLogCount, planCount);
+  const pcuPanel = buildPcuPanel(pcuUser, segment, loginLogCount, planCount, {
+    selectedEntityId: entityIdParam || null,
+  });
 
   if (segment === 'clubs' && pcuPanel.entityProfile) {
     const { clubAdminInfo } = await loadClubAdminInfoForUser(user.id);
@@ -404,6 +410,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       planCount,
       websiteUrl: personalWebsiteHref,
       cityLocality: location,
+      adminSettingsRaw: user.settings?.adminSettings,
       club: primaryOwned ?? undefined,
       team: primaryTeam ?? undefined,
       group: primaryGroup ?? undefined,

@@ -1,12 +1,10 @@
 import { UserType } from '@prisma/client';
 import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
-import {
-  parseClubSubscriptionEndDate,
-  parseClubSubscriptionStartDate,
-} from '@/lib/admin/clubSubscriptionStatus';
 import type { ClubProfilePickSource } from '@/lib/admin/pickClubForAdminProfile';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
 import { typeBadgeLabel } from '@/lib/admin/userPcuPanel';
+import { resolveMembershipDatesForEntity } from '@/lib/admin/networkSubscriptionHistory';
+import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
 
 const PLACEHOLDER_LOCATIONS = new Set([
   'location',
@@ -52,6 +50,8 @@ export type ClubUserPanelPayload = {
   version: string;
   paid: number;
   adminImageUrl: string | null;
+  /** Company / entity logo from profile metadata. */
+  companyLogoUrl: string | null;
   /** Selected entity id (club, team, group, or coaching group). */
   clubId: string | null;
   typeBadge: string;
@@ -105,6 +105,7 @@ function officialNameLabelForSegment(segment: string): string {
 /** Build online_new_Club / online_old_Club modal fields from the selected club profile. */
 export function buildClubUserPanelFields(
   user: {
+    id: string;
     firstName: string | null;
     surname: string | null;
     name: string;
@@ -115,7 +116,7 @@ export function buildClubUserPanelFields(
     createdAt: Date;
   },
   club: ClubProfilePickSource & { _count?: { members: number } },
-  opts: { planCount: number; websiteUrl?: string | null },
+  opts: { planCount: number; websiteUrl?: string | null; adminSettingsRaw?: string | null },
 ): ClubUserPanelPayload {
   const meta = parseClubDescriptionMeta(club.description);
   const fullName = [user.firstName, user.surname].filter(Boolean).join(' ').trim() || user.name;
@@ -127,13 +128,18 @@ export function buildClubUserPanelFields(
   const category = meta.category?.trim() ?? '';
   const sport = category && category !== 'Other' ? category : '';
   const clubCreatedAt = club.createdAt;
-  const dateStart =
-    parseClubSubscriptionStartDate(club.description, clubCreatedAt) ||
-    clubCreatedAt.toISOString().slice(0, 10);
-  const subscriptionEnd = parseClubSubscriptionEndDate(club.description, club.createdAt);
-  const dateEnd = subscriptionEnd?.toISOString().slice(0, 10) ?? null;
   const panelVersion =
     category && category !== 'Other' ? `Club ${category}` : versionLabel(user.userType);
+  const { dateStart, dateEnd } = resolveMembershipDatesForEntity({
+    userId: user.id,
+    entityId: club.id,
+    adminSettingsRaw: opts.adminSettingsRaw,
+    entityDescription: club.description,
+    entityCreatedAt: clubCreatedAt,
+    companyName: officialName,
+    username: clubUsername,
+    version: panelVersion,
+  });
   const memberCount = club._count?.members ?? 0;
   const clubAgeYears =
     (Date.now() - new Date(clubCreatedAt).getTime()) / (365.25 * 24 * 60 * 60 * 1000);
@@ -154,6 +160,7 @@ export function buildClubUserPanelFields(
     version: panelVersion,
     paid: memberCount > 0 ? memberCount : opts.planCount,
     adminImageUrl: user.image?.trim() || null,
+    companyLogoUrl: getLogoUrlFromEntityDescription(club.description),
     clubId: club.id,
     typeBadge: typeBadgeLabel(user.userType),
     visitPagePath: officialName ? clubSearchResultsPath(officialName) : null,
@@ -164,6 +171,7 @@ export function buildClubUserPanelFields(
 /** Build online_new_* / online_old_* user panel fields for any registered-user segment. */
 export function buildAdminUserPanelFields(
   user: {
+    id: string;
     firstName: string | null;
     surname: string | null;
     name: string;
@@ -178,6 +186,7 @@ export function buildAdminUserPanelFields(
     planCount: number;
     websiteUrl?: string | null;
     cityLocality?: string | null;
+    adminSettingsRaw?: string | null;
     club?: ClubProfilePickSource & { _count?: { members: number }; location?: string | null };
     team?: AdminUserPanelEntity;
     group?: AdminUserPanelEntity;
@@ -202,19 +211,6 @@ export function buildAdminUserPanelFields(
     (meta.category?.trim() && meta.category !== 'Other' ? meta.category : '') ||
     '';
   const createdAt = entity?.createdAt ?? user.createdAt;
-  const dateStart =
-    (entity ? parseClubSubscriptionStartDate(entity.description, createdAt) : null) ||
-    createdAt.toISOString().slice(0, 10);
-  const subscriptionEnd = entity
-    ? parseClubSubscriptionEndDate(entity.description, createdAt)
-    : null;
-  const dateEnd = subscriptionEnd?.toISOString().slice(0, 10) ?? null;
-  const memberCount = entity?._count?.members ?? 0;
-  const cityLocality =
-    cleanLocationPart(opts.cityLocality) ||
-    cleanLocationPart(entity?.location) ||
-    cleanLocationPart(meta.region);
-
   let panelVersion = versionLabel(user.userType);
   if (segment === 'teams' && opts.team?.sport?.trim()) {
     panelVersion = `Team ${opts.team.sport.trim()}`;
@@ -225,6 +221,33 @@ export function buildAdminUserPanelFields(
   } else if (segment === 'single-user') {
     panelVersion = 'User — base version';
   }
+
+  const { dateStart, dateEnd } = entity
+    ? resolveMembershipDatesForEntity({
+        userId: user.id,
+        entityId: entity.id,
+        adminSettingsRaw: opts.adminSettingsRaw,
+        entityDescription: entity.description,
+        entityCreatedAt: createdAt,
+        companyName: officialName,
+        username: entityUsername,
+        version: panelVersion,
+      })
+    : resolveMembershipDatesForEntity({
+        userId: user.id,
+        entityId: null,
+        adminSettingsRaw: opts.adminSettingsRaw,
+        entityDescription: null,
+        entityCreatedAt: user.createdAt,
+        companyName: officialName,
+        username: user.username,
+        version: panelVersion,
+      });
+  const memberCount = entity?._count?.members ?? 0;
+  const cityLocality =
+    cleanLocationPart(opts.cityLocality) ||
+    cleanLocationPart(entity?.location) ||
+    cleanLocationPart(meta.region);
 
   return {
     modalTitle: entityModalTitle(segment, createdAt),
@@ -242,6 +265,9 @@ export function buildAdminUserPanelFields(
     version: panelVersion,
     paid: memberCount > 0 ? memberCount : opts.planCount,
     adminImageUrl: user.image?.trim() || null,
+    companyLogoUrl: getLogoUrlFromEntityDescription(
+      entity?.description ?? opts.club?.description,
+    ),
     clubId: entity?.id ?? opts.club?.id ?? null,
     typeBadge: typeBadgeLabel(user.userType),
     visitPagePath: segment === 'clubs' && officialName ? clubSearchResultsPath(officialName) : null,
