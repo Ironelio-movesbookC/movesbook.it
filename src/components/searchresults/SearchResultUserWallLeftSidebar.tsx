@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Ban,
   Calendar,
@@ -19,6 +20,8 @@ import {
   Users,
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/hooks/useAuth';
+import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 
 type Props = {
   displayName: string;
@@ -83,7 +86,14 @@ export function SearchResultUserWallLeftSidebar({
   ageLabel,
 }: Props) {
   const { t } = useLanguage();
+  const router = useRouter();
+  const { user } = useAuth();
   const primarySport = sportsLine.split(',')[0]?.trim() || sportsLine || '—';
+
+  const handleBackToMyData = () => {
+    const destination = user ? getDashboardPathForUserType(user.userType) : '/my-page';
+    router.push(destination);
+  };
 
   return (
     <aside className="space-y-2">
@@ -96,6 +106,7 @@ export function SearchResultUserWallLeftSidebar({
         </button>
         <button
           type="button"
+          onClick={handleBackToMyData}
           className="rounded border border-zinc-500 bg-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-100 shadow-sm hover:bg-zinc-600"
         >
           {t('searchresult_back_my_data')}
