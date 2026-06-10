@@ -14,6 +14,7 @@ import { calculateSportSummaries, type SportSummary } from '@/utils/workoutHelpe
 import { isDistanceBasedSport } from '@/constants/moveframe.constants';
 import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
 import { movelapPauseFieldLabel } from '@/utils/restTypeDb';
+import { sortWorkoutsForDisplay } from '@/lib/workoutDisplayOrder';
 
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
@@ -38,10 +39,13 @@ interface DayRowTableProps {
   onAddWorkout?: (day: any) => void;
   onShowDayInfo?: (day: any) => void;
   onShowDayOverview?: (day: any) => void;
+  onCopyDayToClipboard?: (day: any) => void;
+  hasDayClipboard?: boolean;
   onCopyDay?: (day: any) => void;
   onMoveDay?: (day: any) => void;
   onPasteDay?: (day: any) => void;
   onShareDay?: (day: any) => void;
+  onExportDayToTemplate?: (day: any) => void;
   onExportPdfDay?: (day: any) => void;
   onPrintDay?: (day: any) => void;
   onDeleteDay?: (day: any) => void;
@@ -64,10 +68,13 @@ export default function DayRowTable({
   onAddWorkout,
   onShowDayInfo,
   onShowDayOverview,
+  onCopyDayToClipboard,
+  hasDayClipboard = false,
   onCopyDay,
   onMoveDay,
   onPasteDay,
   onShareDay,
+  onExportDayToTemplate,
   onExportPdfDay,
   onPrintDay,
   onDeleteDay,
@@ -81,15 +88,7 @@ export default function DayRowTable({
   const sportSummaries = calculateSportSummaries(day, iconType);
   const useImageIcons = isImageIcon(iconType);
   
-  // Sort workouts by creation time (earliest = #1)
-  const sortedWorkouts = day.workouts 
-    ? [...day.workouts].sort((a, b) => {
-        // Sort by id (earlier id = earlier created) or by createdAt timestamp
-        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : parseInt(a.id) || 0;
-        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : parseInt(b.id) || 0;
-        return timeA - timeB;
-      })
-    : [];
+  const sortedWorkouts = sortWorkoutsForDisplay(day.workouts);
   
   // Dropdown state management (using custom hook)
   const {
@@ -655,12 +654,23 @@ export default function DayRowTable({
                   onClick={(e) => {
                     e.stopPropagation();
                     closeDropdown();
+                    onCopyDayToClipboard?.(dayWithWeek);
+                  }}
+                  className="w-full text-left px-3 py-2 text-[11px] hover:bg-indigo-50 transition-colors flex items-center gap-2 border-t border-gray-200"
+                >
+                  <span className="text-indigo-600">📎</span>
+                  <span>Copy day in clipboard</span>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeDropdown();
                     onCopyDay?.(dayWithWeek);
                   }}
                   className="w-full text-left px-3 py-2 text-[11px] hover:bg-purple-50 transition-colors flex items-center gap-2 border-t border-gray-200"
                 >
                   <span className="text-purple-600">📋</span>
-                  <span>Copy</span>
+                  <span>Copy to another day…</span>
                 </button>
                 <button
                   onClick={(e) => {
@@ -676,12 +686,23 @@ export default function DayRowTable({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (!hasDayClipboard) return;
                     closeDropdown();
                     onPasteDay?.(dayWithWeek);
                   }}
-                  className="w-full text-left px-3 py-2 text-[11px] hover:bg-green-50 transition-colors flex items-center gap-2 border-t border-gray-200"
+                  disabled={!hasDayClipboard}
+                  className={`w-full text-left px-3 py-2 text-[11px] flex items-center gap-2 border-t border-gray-200 ${
+                    hasDayClipboard
+                      ? 'hover:bg-green-50 transition-colors cursor-pointer'
+                      : 'opacity-50 cursor-not-allowed text-gray-400'
+                  }`}
+                  title={
+                    hasDayClipboard
+                      ? 'Paste day from clipboard'
+                      : 'Copy a day to clipboard first'
+                  }
                 >
-                  <span className="text-green-600">📄</span>
+                  <span className={hasDayClipboard ? 'text-green-600' : 'text-gray-400'}>📄</span>
                   <span>Paste</span>
                 </button>
                 <button
@@ -695,6 +716,19 @@ export default function DayRowTable({
                   <span className="text-blue-600">🔗</span>
                   <span>Share</span>
                 </button>
+                {onExportDayToTemplate && activeSection === 'B' && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeDropdown();
+                      onExportDayToTemplate(dayWithWeek);
+                    }}
+                    className="w-full text-left px-3 py-2 text-[11px] hover:bg-teal-50 transition-colors flex items-center gap-2 border-t border-gray-200"
+                  >
+                    <span className="text-teal-600">📝</span>
+                    <span>Export to Template Plans</span>
+                  </button>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

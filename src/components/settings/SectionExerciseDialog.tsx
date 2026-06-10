@@ -1,14 +1,17 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { List, X } from 'lucide-react';
+import { CheckCircle2, List, X } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
   resolveSectionExerciseUi,
   type SectionExerciseTranslationRow,
 } from '@/constants/sectionExerciseUiTranslations';
+import RichTextEditor from '@/components/settings/RichTextEditor';
 import ExerciseMachinesUsuallyUsedModal from '@/components/settings/ExerciseMachinesUsuallyUsedModal';
 import ExerciseFaqEditorModal from '@/components/settings/ExerciseFaqEditorModal';
+import ExercisePathologiesTabPanel from '@/components/settings/ExercisePathologiesTabPanel';
+import ExerciseRelatedExercisesPanel from '@/components/settings/ExerciseRelatedExercisesPanel';
 import ExerciseDetailLabelsPanel, {
   LOWER_FORM_RICH_TABS,
   type LowerFormTabId,
@@ -22,13 +25,23 @@ import type {
   Sport,
 } from '@/constants/tools.constants';
 import {
-  DEFAULT_SPORTS,
+  EXERCISE_LIBRARY_SPORT_KEYS,
+  getExerciseLibrarySportLabel,
+  normalizeSportsIndicatedToLibraryKeys,
+} from '@/constants/exerciseLibrarySports';
+import {
   SUPPORTED_LANGUAGES,
+  EXERCISE_DIFFICULTY_LEVELS,
   normalizeMuscleAreaPercentTags,
   muscleInvolvementPercentTotal,
   normalizeExerciseFaqs,
   newExerciseFaqEntry,
+  resolveOfficialVideoFromUrlAndData,
 } from '@/constants/tools.constants';
+import {
+  ExercisePictureField,
+  ExerciseReferenceVideoPreview,
+} from '@/components/exercises/ExerciseMediaFields';
 import {
   SECTION_EXERCISE_EQUIPMENT_TYPES,
   SECTION_EXERCISE_MUSCLE_GROUPS,
@@ -38,10 +51,18 @@ import {
 
 // UX wireframes (layout reference): `src/constants/exerciseEditorLayoutReference.ts` — PNGs in `public/design/exercise-editor/`.
 
+const EXERCISE_DIFFICULTY_UI_KEYS: Record<(typeof EXERCISE_DIFFICULTY_LEVELS)[number], string> = {
+  1: 'SectionExercise_DifficultyBeginner',
+  2: 'SectionExercise_DifficultyIntermediate',
+  3: 'SectionExercise_DifficultyAdvanced',
+  4: 'SectionExercise_DifficultyElite',
+  5: 'SectionExercise_DifficultyProfessional',
+};
+
 const VIDEO_INLINE_MAX_BYTES = 8 * 1024 * 1024;
 
 /** Matches sticky top pills + lower tabs so the bar reflects the section you jumped to. */
-type SectionExerciseTopNavHighlight = 'basics' | LowerFormTabId | 'label6' | 'more';
+type SectionExerciseTopNavHighlight = 'basics' | LowerFormTabId | 'label6' | 'more' | 'related';
 
 /** Same targets as Tools Settings / Language → Long texts (`/api/translate`). */
 const EXERCISE_LABEL_TARGET_LANG_CODES = SUPPORTED_LANGUAGES.filter((l) => l.code !== 'en').map((l) => l.code);
@@ -109,6 +130,8 @@ type Props = {
   exercise: Exercise;
   onChange: (next: Exercise) => void;
   sports: Sport[];
+  /** Full exercise catalog for Related exercises picker (excludes current on save). */
+  allExercises?: Exercise[];
   /** Technical Settings → Pathologies catalog (contraindication tags). */
   pathologyCatalog?: ExercisePathologyCatalogItem[];
   onSave: () => void;
@@ -125,6 +148,7 @@ export default function SectionExerciseDialog({
   exercise: e,
   onChange,
   sports,
+  allExercises = [],
   pathologyCatalog = [],
   onSave,
   onCancel,
@@ -136,10 +160,14 @@ export default function SectionExerciseDialog({
   const [topNavHighlight, setTopNavHighlight] = useState<SectionExerciseTopNavHighlight>('multimedia');
   const [detailLabelTranslating, setDetailLabelTranslating] = useState(false);
   const [detailTranslationsReady, setDetailTranslationsReady] = useState(false);
+  const [moreDescTranslating, setMoreDescTranslating] = useState(false);
+  const [moreDescTranslationsReady, setMoreDescTranslationsReady] = useState(false);
   const manualEditLocalesRef = useRef<HTMLDivElement | null>(null);
+  const moreDescManualLocalesRef = useRef<HTMLDivElement | null>(null);
   const scrollBodyRef = useRef<HTMLDivElement | null>(null);
   const [nameLanguagesModalOpen, setNameLanguagesModalOpen] = useState(false);
   const { currentLanguage } = useLanguage();
+  const pathologyUiLang = (currentLanguage || 'en').toLowerCase().split('-')[0];
   const [sectionExerciseTranslations, setSectionExerciseTranslations] = useState<
     SectionExerciseTranslationRow[] | null
   >(null);
@@ -253,10 +281,18 @@ export default function SectionExerciseDialog({
   const jumpToTopNavTarget = useCallback(
     (highlight: SectionExerciseTopNavHighlight, scrollId: string) => {
       setTopNavHighlight(highlight);
-      requestAnimationFrame(() => scrollToSection(scrollId));
+      requestAnimationFrame(() => {
+        if (highlight === 'related') {
+          scrollBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
+        scrollToSection(scrollId);
+      });
     },
     [scrollToSection]
   );
+
+  const showRelatedExercisesOnly = topNavHighlight === 'related';
 
   const commitFaqs = (next: ExerciseFaqEntry[]) => {
     onChange({ ...e, exerciseFaqs: normalizeExerciseFaqs(next) });
@@ -338,14 +374,16 @@ export default function SectionExerciseDialog({
     }
   };
 
-  const availableSports = useMemo(
-    () => (sports.length > 0 ? sports : DEFAULT_SPORTS),
-    [sports]
+  const librarySportKeys = useMemo(() => [...EXERCISE_LIBRARY_SPORT_KEYS], []);
+
+  const sportsIndicatedKeys = useMemo(
+    () => normalizeSportsIndicatedToLibraryKeys(e.sportsIndicated),
+    [e.sportsIndicated]
   );
 
   const sportsSelectSize = useMemo(
-    () => Math.min(12, Math.max(4, availableSports.length || 4)),
-    [availableSports.length]
+    () => Math.min(12, Math.max(4, librarySportKeys.length || 4)),
+    [librarySportKeys.length]
   );
 
   const pathologyOptions = useMemo(
@@ -376,7 +414,7 @@ export default function SectionExerciseDialog({
   };
 
   const selectAllSports = () => {
-    onChange({ ...e, sportsIndicated: availableSports.map((s) => s.name) });
+    onChange({ ...e, sportsIndicated: [...librarySportKeys] });
   };
 
   const clearSports = () => onChange({ ...e, sportsIndicated: [] });
@@ -432,6 +470,62 @@ export default function SectionExerciseDialog({
   };
 
   const getMistakesForLang = (code: string) => (e.mistakesByLanguage || {})[code] ?? '';
+
+  const getDescriptionForLang = (code: string) => {
+    const byLang = e.descriptionByLanguage || {};
+    if (code === 'en') return byLang.en ?? e.description ?? '';
+    return byLang[code] ?? '';
+  };
+
+  const setDescriptionForLang = (code: string, value: string) => {
+    const nextByLang = { ...(e.descriptionByLanguage || {}), [code]: value };
+    onChange({
+      ...e,
+      descriptionByLanguage: nextByLang,
+      ...(code === 'en' ? { description: value } : {}),
+    });
+  };
+
+  const handleMoreDescTranslate = async () => {
+    const enHtml = getDescriptionForLang('en');
+    const plain = stripHtmlToPlain(enHtml);
+    if (!plain) {
+      window.alert('Enter English short description first, then press Translation.');
+      return;
+    }
+    setMoreDescTranslationsReady(false);
+    setMoreDescTranslating(true);
+    try {
+      const translations = await fetchExerciseLabelTranslations(plain);
+      const record: Record<string, string> = { en: enHtml };
+      for (const code of EXERCISE_LABEL_TARGET_LANG_CODES) {
+        const raw = translations[code];
+        if (typeof raw === 'string' && raw.trim()) {
+          record[code] = plainTranslationToEditorHtml(raw.trim());
+        }
+      }
+      if (Object.keys(record).length <= 1) {
+        throw new Error('No translated values were returned by the translation service.');
+      }
+      onChange({
+        ...e,
+        description: enHtml,
+        descriptionByLanguage: { ...(e.descriptionByLanguage || {}), ...record },
+      });
+      setMoreDescTranslationsReady(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      window.alert(
+        `Translation failed.\n\n${msg}\n\nYou can edit other languages manually. Same API as Settings → Language → Long texts.`
+      );
+    } finally {
+      setMoreDescTranslating(false);
+    }
+  };
+
+  const scrollToMoreDescLocales = () => {
+    moreDescManualLocalesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const getDetailRichValue = (code: string) => {
     switch (lowerFormTab) {
@@ -535,12 +629,33 @@ export default function SectionExerciseDialog({
           >
             {ui('SectionExercise_NavMore')}
           </button>
+          <button
+            type="button"
+            onClick={() => jumpToTopNavTarget('related', 'ex-sec-related')}
+            className={topNavHighlight === 'related' ? navPillActive : navPillInactive}
+          >
+            {ui('SectionExercise_NavRelated')}
+          </button>
         </div>
 
         <div
           ref={scrollBodyRef}
           className="min-h-0 flex-1 space-y-8 overflow-y-auto overflow-x-hidden pr-1 text-gray-800"
         >
+          {showRelatedExercisesOnly ? (
+            <section id="ex-sec-related" className="scroll-mt-3">
+              <ExerciseRelatedExercisesPanel
+                exercise={e}
+                allExercises={allExercises}
+                displayLang={pathologyUiLang}
+                onChange={onChange}
+                ui={ui}
+              />
+            </section>
+          ) : null}
+
+          {!showRelatedExercisesOnly ? (
+          <>
           <section id="ex-sec-basics" className="scroll-mt-3 space-y-4">
             <div>
               <h4 className="text-sm font-bold uppercase tracking-wide text-blue-700">
@@ -574,16 +689,17 @@ export default function SectionExerciseDialog({
                 <div>
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <label className="text-xs font-bold uppercase tracking-wide text-gray-600">
-                      Sports indicated
+                      Libraries
                     </label>
                     <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
-                      Selected ({(e.sportsIndicated || []).length})
+                      Selected ({sportsIndicatedKeys.length})
                     </span>
                   </div>
                   <p className="mb-2 text-xs text-gray-600">
-                    Hold <kbd className="rounded border border-gray-300 bg-gray-50 px-1">Ctrl</kbd> /{' '}
-                    <kbd className="rounded border border-gray-300 bg-gray-50 px-1">⌘</kbd> and click to select several
-                    sports.
+                    Choose one or more official libraries (24 sports). Exercises for sports not in this list must use{' '}
+                    <strong>Free moves</strong> or <strong>Technical moves</strong>. Hold{' '}
+                    <kbd className="rounded border border-gray-300 bg-gray-50 px-1">Ctrl</kbd> /{' '}
+                    <kbd className="rounded border border-gray-300 bg-gray-50 px-1">⌘</kbd> to multi-select.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -591,7 +707,7 @@ export default function SectionExerciseDialog({
                       onClick={selectAllSports}
                       className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-semibold hover:bg-gray-50"
                     >
-                      Check all sports
+                      Check all libraries
                     </button>
                     <button
                       type="button"
@@ -601,25 +717,20 @@ export default function SectionExerciseDialog({
                       Clear
                     </button>
                   </div>
-                  {sports.length === 0 && (
-                    <p className="mt-2 text-sm text-amber-700">
-                      Sports catalog is empty in Tools Settings. Showing default sports list.
-                    </p>
-                  )}
                   <select
                     multiple
                     size={sportsSelectSize}
-                    value={e.sportsIndicated || []}
+                    value={sportsIndicatedKeys}
                     onChange={(ev) => {
                       const next = Array.from(ev.target.selectedOptions, (o) => o.value);
                       onChange({ ...e, sportsIndicated: next });
                     }}
                     className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm shadow-inner"
-                    aria-label="Sports indicated for this exercise"
+                    aria-label="Libraries for this exercise"
                   >
-                    {availableSports.map((s) => (
-                      <option key={s.id} value={s.name}>
-                        {s.name}
+                    {librarySportKeys.map((key) => (
+                      <option key={key} value={key}>
+                        {getExerciseLibrarySportLabel(key)}
                       </option>
                     ))}
                   </select>
@@ -712,26 +823,18 @@ export default function SectionExerciseDialog({
                       );
                     })}
                   </div>
-                  <p className="mt-2 text-xs text-gray-700">
-                    Set each area&apos;s <span className="font-semibold">%</span> under{' '}
-                    <button
-                      type="button"
-                      onClick={() => scrollToSection('ex-sec-label6')}
-                      className="font-semibold text-blue-700 underline"
-                    >
-                      {ui('SectionExercise_BasicsJumpLabel6')}
-                    </button>{' '}
-                    (all areas together = 100%).
-                  </p>
                 </div>
                 </div>
 
                 <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                   <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-600">
-                    Level <span className="font-normal normal-case text-gray-500">(one or more, 1–5)</span>
+                    {ui('SectionExercise_DifficultyLabel')}{' '}
+                    <span className="font-normal normal-case text-gray-500">
+                      {ui('SectionExercise_DifficultyHint')}
+                    </span>
                   </label>
                   <div className="flex flex-wrap gap-3">
-                    {[1, 2, 3, 4, 5].map((n) => (
+                    {EXERCISE_DIFFICULTY_LEVELS.map((n) => (
                       <label key={n} className="flex cursor-pointer items-center gap-2 text-sm font-medium">
                         <input
                           type="checkbox"
@@ -739,7 +842,7 @@ export default function SectionExerciseDialog({
                           onChange={() => toggleLevel(n)}
                           className="h-4 w-4 rounded border-gray-300"
                         />
-                        Level {n}
+                        {ui(EXERCISE_DIFFICULTY_UI_KEYS[n])}
                       </label>
                     ))}
                   </div>
@@ -857,30 +960,22 @@ export default function SectionExerciseDialog({
                 <div className="rounded-lg border border-gray-200 p-3">
                   <h6 className="mb-2 text-sm font-bold text-gray-800">{ui('SectionExercise_GenderMale')}</h6>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-gray-600">
-                        {ui('SectionExercise_PictureAMale')}
-                      </label>
-                      <input
-                        type="url"
-                        value={e.pictureAMale || ''}
-                        onChange={(ev) => onChange({ ...e, pictureAMale: ev.target.value })}
-                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                        placeholder={ui('SectionExercise_ImageUrlPlaceholder')}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-gray-600">
-                        {ui('SectionExercise_PictureBMale')}
-                      </label>
-                      <input
-                        type="url"
-                        value={e.pictureBMale || ''}
-                        onChange={(ev) => onChange({ ...e, pictureBMale: ev.target.value })}
-                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                        placeholder={ui('SectionExercise_ImageUrlPlaceholder')}
-                      />
-                    </div>
+                    <ExercisePictureField
+                      label={ui('SectionExercise_PictureAMale')}
+                      value={e.pictureAMale || ''}
+                      onChange={(v) => onChange({ ...e, pictureAMale: v })}
+                      urlLabel={ui('SectionExercise_PictureUrlLabel')}
+                      urlPlaceholder={ui('SectionExercise_ImageUrlPlaceholder')}
+                      localLabel={ui('SectionExercise_PictureLocalLabel')}
+                    />
+                    <ExercisePictureField
+                      label={ui('SectionExercise_PictureBMale')}
+                      value={e.pictureBMale || ''}
+                      onChange={(v) => onChange({ ...e, pictureBMale: v })}
+                      urlLabel={ui('SectionExercise_PictureUrlLabel')}
+                      urlPlaceholder={ui('SectionExercise_ImageUrlPlaceholder')}
+                      localLabel={ui('SectionExercise_PictureLocalLabel')}
+                    />
                   </div>
                   <label className="mb-1 mt-3 block text-xs font-semibold text-gray-600">
                     {ui('SectionExercise_OfficialVideoUrlLabel')}
@@ -888,7 +983,13 @@ export default function SectionExerciseDialog({
                   <input
                     type="url"
                     value={e.officialVideoUrl || ''}
-                    onChange={(ev) => onChange({ ...e, officialVideoUrl: ev.target.value })}
+                    onChange={(ev) =>
+                      onChange({
+                        ...e,
+                        officialVideoUrl: ev.target.value,
+                        officialVideoDataUrl: '',
+                      })
+                    }
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     placeholder={ui('SectionExercise_OfficialVideoUrlPlaceholder')}
                   />
@@ -915,38 +1016,41 @@ export default function SectionExerciseDialog({
                         onChange({
                           ...e,
                           officialVideoDataUrl: typeof reader.result === 'string' ? reader.result : '',
+                          officialVideoUrl: '',
                         });
                       reader.readAsDataURL(file);
                     }}
+                  />
+                  <ExerciseReferenceVideoPreview
+                    url={resolveOfficialVideoFromUrlAndData(
+                      e.officialVideoUrl,
+                      e.officialVideoDataUrl
+                    )}
+                    previewLabel={ui('SectionExercise_ReferenceVideoPreview')}
+                    unavailableLabel={ui('SectionExercise_ReferenceVideoPreviewUnavailable')}
+                    openLinkLabel={ui('SectionExercise_ReferenceVideoOpenLink')}
+                    title={ui('SectionExercise_OfficialVideoUrlLabel')}
                   />
                 </div>
                 <div className="rounded-lg border border-gray-200 p-3">
                   <h6 className="mb-2 text-sm font-bold text-gray-800">{ui('SectionExercise_GenderFemale')}</h6>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-gray-600">
-                        {ui('SectionExercise_PictureAFemale')}
-                      </label>
-                      <input
-                        type="url"
-                        value={e.pictureAFemale || ''}
-                        onChange={(ev) => onChange({ ...e, pictureAFemale: ev.target.value })}
-                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                        placeholder={ui('SectionExercise_ImageUrlPlaceholder')}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-gray-600">
-                        {ui('SectionExercise_PictureBFemale')}
-                      </label>
-                      <input
-                        type="url"
-                        value={e.pictureBFemale || ''}
-                        onChange={(ev) => onChange({ ...e, pictureBFemale: ev.target.value })}
-                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                        placeholder={ui('SectionExercise_ImageUrlPlaceholder')}
-                      />
-                    </div>
+                    <ExercisePictureField
+                      label={ui('SectionExercise_PictureAFemale')}
+                      value={e.pictureAFemale || ''}
+                      onChange={(v) => onChange({ ...e, pictureAFemale: v })}
+                      urlLabel={ui('SectionExercise_PictureUrlLabel')}
+                      urlPlaceholder={ui('SectionExercise_ImageUrlPlaceholder')}
+                      localLabel={ui('SectionExercise_PictureLocalLabel')}
+                    />
+                    <ExercisePictureField
+                      label={ui('SectionExercise_PictureBFemale')}
+                      value={e.pictureBFemale || ''}
+                      onChange={(v) => onChange({ ...e, pictureBFemale: v })}
+                      urlLabel={ui('SectionExercise_PictureUrlLabel')}
+                      urlPlaceholder={ui('SectionExercise_ImageUrlPlaceholder')}
+                      localLabel={ui('SectionExercise_PictureLocalLabel')}
+                    />
                   </div>
                   <label className="mb-1 mt-3 block text-xs font-semibold text-gray-600">
                     {ui('SectionExercise_OfficialVideoUrlLabel')}
@@ -954,7 +1058,13 @@ export default function SectionExerciseDialog({
                   <input
                     type="url"
                     value={e.officialVideoUrlFemale || ''}
-                    onChange={(ev) => onChange({ ...e, officialVideoUrlFemale: ev.target.value })}
+                    onChange={(ev) =>
+                      onChange({
+                        ...e,
+                        officialVideoUrlFemale: ev.target.value,
+                        officialVideoDataUrlFemale: '',
+                      })
+                    }
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     placeholder={ui('SectionExercise_OfficialVideoUrlPlaceholder')}
                   />
@@ -982,33 +1092,62 @@ export default function SectionExerciseDialog({
                           ...e,
                           officialVideoDataUrlFemale:
                             typeof reader.result === 'string' ? reader.result : '',
+                          officialVideoUrlFemale: '',
                         });
                       reader.readAsDataURL(file);
                     }}
                   />
+                  <ExerciseReferenceVideoPreview
+                    url={resolveOfficialVideoFromUrlAndData(
+                      e.officialVideoUrlFemale,
+                      e.officialVideoDataUrlFemale
+                    )}
+                    previewLabel={ui('SectionExercise_ReferenceVideoPreview')}
+                    unavailableLabel={ui('SectionExercise_ReferenceVideoPreviewUnavailable')}
+                    openLinkLabel={ui('SectionExercise_ReferenceVideoOpenLink')}
+                    title={ui('SectionExercise_OfficialVideoUrlLabel')}
+                  />
                 </div>
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-600">
-                  {ui('SectionExercise_ReferenceUrl1')}
-                </label>
-                <input
-                  type="url"
-                  value={e.referenceUrl1 || ''}
-                  onChange={(ev) => onChange({ ...e, referenceUrl1: ev.target.value })}
-                  className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  placeholder={ui('SectionExercise_ReferencePlaceholder1')}
-                />
-                <label className="mb-1 block text-xs font-semibold text-gray-600">
-                  {ui('SectionExercise_ReferenceUrl2')}
-                </label>
-                <input
-                  type="url"
-                  value={e.referenceUrl2 || ''}
-                  onChange={(ev) => onChange({ ...e, referenceUrl2: ev.target.value })}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  placeholder={ui('SectionExercise_ReferencePlaceholder2')}
-                />
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-3">
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">
+                    {ui('SectionExercise_ReferenceUrl1')}
+                  </label>
+                  <input
+                    type="url"
+                    value={e.referenceUrl1 || ''}
+                    onChange={(ev) => onChange({ ...e, referenceUrl1: ev.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    placeholder={ui('SectionExercise_ReferencePlaceholder1')}
+                  />
+                  <ExerciseReferenceVideoPreview
+                    url={e.referenceUrl1 || ''}
+                    previewLabel={ui('SectionExercise_ReferenceVideoPreview')}
+                    unavailableLabel={ui('SectionExercise_ReferenceVideoPreviewUnavailable')}
+                    openLinkLabel={ui('SectionExercise_ReferenceVideoOpenLink')}
+                    title={ui('SectionExercise_ReferenceUrl1')}
+                  />
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-3">
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">
+                    {ui('SectionExercise_ReferenceUrl2')}
+                  </label>
+                  <input
+                    type="url"
+                    value={e.referenceUrl2 || ''}
+                    onChange={(ev) => onChange({ ...e, referenceUrl2: ev.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    placeholder={ui('SectionExercise_ReferencePlaceholder2')}
+                  />
+                  <ExerciseReferenceVideoPreview
+                    url={e.referenceUrl2 || ''}
+                    previewLabel={ui('SectionExercise_ReferenceVideoPreview')}
+                    unavailableLabel={ui('SectionExercise_ReferenceVideoPreviewUnavailable')}
+                    openLinkLabel={ui('SectionExercise_ReferenceVideoOpenLink')}
+                    title={ui('SectionExercise_ReferenceUrl2')}
+                  />
+                </div>
               </div>
             </div>
           </section>
@@ -1057,80 +1196,16 @@ export default function SectionExerciseDialog({
               </div>
             }
             pathologiesSlot={
-              <div className="space-y-4">
-                <div className="rounded-lg border border-rose-200 bg-rose-50/60 p-3 text-sm text-gray-800">
-                  <p className="font-semibold text-rose-950">{ui('SectionExercise_PathologiesBannerTitle')}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-gray-700">
-                    {ui('SectionExercise_PathologiesBannerBody')}
-                  </p>
-                </div>
-                <div>
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <label className="text-xs font-bold uppercase tracking-wide text-gray-600">
-                      {ui('SectionExercise_PathologyTagsLabel')}{' '}
-                      <span className="font-normal normal-case text-gray-500">
-                        {ui('SectionExercise_PathologyTagsHint')}
-                      </span>
-                    </label>
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
-                      {ui('SectionExercise_EquipmentSelectedCount')} ({(e.contraindicatedPathologyIds || []).length})
-                    </span>
-                  </div>
-                  {pathologyOptions.length === 0 ? (
-                    <p className="text-sm text-amber-800">{ui('SectionExercise_PathologiesEmptyHint')}</p>
-                  ) : (
-                    <>
-                      <p className="mb-2 text-xs text-gray-600">{ui('SectionExercise_PathologiesMultiHint')}</p>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={selectAllPathologyTags}
-                          className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-semibold hover:bg-gray-50"
-                        >
-                          {ui('SectionExercise_CheckAll')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={clearPathologyTags}
-                          className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-semibold hover:bg-gray-50"
-                        >
-                          {ui('SectionExercise_Clear')}
-                        </button>
-                      </div>
-                      <select
-                        multiple
-                        size={pathologySelectSize}
-                        value={e.contraindicatedPathologyIds || []}
-                        onChange={(ev) => {
-                          const next = Array.from(ev.target.selectedOptions, (o) => o.value);
-                          onChange({ ...e, contraindicatedPathologyIds: next });
-                        }}
-                        className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm shadow-inner"
-                        aria-label="Pathologies for which this exercise is not suggested"
-                      >
-                        {pathologyOptions.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {(p.name || '').trim() || p.id}
-                          </option>
-                        ))}
-                      </select>
-                    </>
-                  )}
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-semibold text-gray-800">
-                    {ui('SectionExercise_PathologiesNotesLabel')}
-                  </label>
-                  <p className="mb-2 text-xs text-gray-600">{ui('SectionExercise_PathologiesNotesHelp')}</p>
-                  <textarea
-                    value={e.contraindicatedPathologiesNote || ''}
-                    onChange={(ev) => onChange({ ...e, contraindicatedPathologiesNote: ev.target.value })}
-                    rows={6}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                    placeholder={ui('SectionExercise_PathologiesNotesPlaceholder')}
-                  />
-                </div>
-              </div>
+              <ExercisePathologiesTabPanel
+                exercise={e}
+                onChange={onChange}
+                pathologyOptions={pathologyOptions}
+                pathologySelectSize={pathologySelectSize}
+                displayLang={pathologyUiLang}
+                ui={ui}
+                onSelectAll={selectAllPathologyTags}
+                onClear={clearPathologyTags}
+              />
             }
             exerciseFaqs={exerciseFaqs}
             onOpenFaqCreate={openFaqCreate}
@@ -1283,14 +1358,86 @@ export default function SectionExerciseDialog({
 
           <section id="ex-sec-more">
             <h4 className="text-sm font-bold uppercase tracking-wide text-blue-700 mb-2">{ui('SectionExercise_MoreTitle')}</h4>
-            <p className="mb-2 text-xs text-gray-600">{ui('SectionExercise_MoreHelp')}</p>
-            <textarea
-              value={e.description}
-              onChange={(ev) => onChange({ ...e, description: ev.target.value })}
-              rows={3}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2"
-              placeholder={ui('SectionExercise_MorePlaceholder')}
-            />
+            <p className="mb-3 text-xs text-gray-600">{ui('SectionExercise_MoreHelp')}</p>
+            <div className="space-y-4">
+              <div className="rounded-xl border-2 border-blue-100 bg-gradient-to-b from-white to-slate-50 p-4 shadow-sm">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="text-xl leading-none" aria-hidden>
+                    {languageFlagEmoji('en')}
+                  </span>
+                  <h5 className="text-base font-bold text-gray-900">{ui('SectionExercise_RichEnglishTitle')}</h5>
+                </div>
+                <p className="mb-3 text-xs text-gray-600">{ui('SectionExercise_MoreEnglishHint')}</p>
+                <RichTextEditor
+                  language="English"
+                  value={getDescriptionForLang('en')}
+                  onChange={(html) => setDescriptionForLang('en', html)}
+                  minHeight="8rem"
+                  placeholder={ui('SectionExercise_MorePlaceholder')}
+                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={moreDescTranslating}
+                    onClick={() => void handleMoreDescTranslate()}
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {moreDescTranslating
+                      ? ui('SectionExercise_BtnTranslating')
+                      : ui('SectionExercise_BtnTranslation')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMoreDescTranslationsReady(true)}
+                    className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-slate-300"
+                  >
+                    {ui('SectionExercise_BtnSave')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={scrollToMoreDescLocales}
+                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+                  >
+                    {ui('SectionExercise_BtnManualEdit')}
+                  </button>
+                </div>
+              </div>
+
+              {moreDescTranslationsReady ? (
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-900">
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
+                  {ui('SectionExercise_TranslationsReadyBanner')}
+                </div>
+              ) : null}
+
+              <div ref={moreDescManualLocalesRef} className="space-y-4">
+                {SUPPORTED_LANGUAGES.filter((l) => l.code !== 'en').map((lang) => (
+                  <div
+                    key={`more-desc-${lang.code}`}
+                    className="rounded-lg border-2 border-gray-200 bg-gray-50 p-4"
+                  >
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <span className="text-lg leading-none" aria-hidden>
+                        {languageFlagEmoji(lang.code)}
+                      </span>
+                      <span className="text-sm font-bold text-gray-800">
+                        {lang.name} ({lang.code.toUpperCase()})
+                      </span>
+                    </div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-600">
+                      {ui('SectionExercise_MoreTranslationLabel')}
+                    </label>
+                    <RichTextEditor
+                      language={lang.name}
+                      value={getDescriptionForLang(lang.code)}
+                      onChange={(html) => setDescriptionForLang(lang.code, html)}
+                      minHeight="8rem"
+                      placeholder={ui('SectionExercise_MorePlaceholderLang').replace('{languageName}', lang.name)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
           </section>
 
           <section className="rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-3">
@@ -1307,6 +1454,8 @@ export default function SectionExerciseDialog({
               placeholder={ui('SectionExercise_DeleteGuardPlaceholder')}
             />
           </section>
+          </>
+          ) : null}
         </div>
 
         <div className="mt-6 flex flex-shrink-0 flex-wrap gap-3 border-t border-gray-200 pt-4">

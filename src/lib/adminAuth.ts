@@ -52,3 +52,15 @@ export async function requireAdmin(request: NextRequest): Promise<AdminAuthConte
 
   return { ok: false, status: 403, error: 'Forbidden' };
 }
+
+/** Boolean helper for routes that only need pass/fail admin check. */
+export async function requireAdminAuth(request: NextRequest): Promise<boolean> {
+  const auth = await requireAdmin(request);
+  return auth.ok;
+}
+
+export function getBearerToken(request: NextRequest): string | null {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) return null;
+  return authHeader.slice(7);
+}

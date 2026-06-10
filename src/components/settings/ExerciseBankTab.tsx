@@ -21,6 +21,8 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Copy,
   Edit2,
   GripVertical,
@@ -30,19 +32,31 @@ import {
   Play,
   Plus,
   AlignJustify,
+  FileText,
   Trash2,
   X,
+  Maximize2,
+  Minimize2,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useSettingsLayoutExpand } from '@/contexts/SettingsLayoutExpandContext';
 import type { Exercise, ExercisePathologyCatalogItem, Sport } from '@/constants/tools.constants';
 import {
   SUPPORTED_LANGUAGES,
   mergeExerciseWithDefaults,
+  getPathologyNameForLang,
+  getPathologyInfoForLang,
+  getExerciseDescriptionForLang,
+  getPathologyDescriptionForLang,
   finalizeExerciseForStorage,
   normalizeMuscleAreaPercentTags,
   normalizeExerciseFaqs,
   exerciseFaqEntryHasContent,
   resolveExerciseOfficialVideoSrc,
+  resolveOfficialVideoFromUrlAndData,
+  resolveExerciseVideoEmbed,
   exerciseHasAnyOfficialVideo,
 } from '@/constants/tools.constants';
 import {
@@ -51,6 +65,32 @@ import {
   SECTION_EXERCISE_SHARED_BY,
   SECTION_EXERCISE_TYPOLOGY_OPTIONS,
 } from '@/constants/sectionExercise.constants';
+import { resolvePublicMediaUrl } from '@/lib/publicMediaUrl';
+import ExerciseRichTextPreview from '@/components/settings/ExerciseRichTextPreview';
+import ExerciseCatalogDetailView from '@/components/exercises/ExerciseCatalogDetailView';
+import { ExerciseReferenceVideoPreview } from '@/components/exercises/ExerciseMediaFields';
+import ExerciseBankSportIconFilter from '@/components/settings/ExerciseBankSportIconFilter';
+import {
+  EXERCISE_LIBRARY_SPORT_KEYS,
+  exerciseMatchesLibraryFilter,
+  getExerciseLibrarySportLabel,
+  normalizeSportsIndicatedToLibraryKeys,
+} from '@/constants/exerciseLibrarySports';
+
+/** Primary tabs on the official Exercise Data Bank page (mockup). */
+const OFFICIAL_GRID_TABS = [
+  ['catalog', 'Catalog exercises'],
+  ['execution', 'Execution exercise'],
+  ['suggestions', 'Suggestions'],
+  ['breathing', 'Breathing'],
+  ['mistakes', 'Common mistakes'],
+  ['faqs', 'FAQs'],
+] as const;
+
+const EXTENDED_GRID_TABS = [
+  ['shortDescription', 'Short description'],
+  ['infoContraindications', 'Info & Contraindications'],
+] as const;
 
 const LS_COLUMNS = 'movesbook-exercise-bank-column-order';
 const LS_FAV_IDS = 'movesbook-exercise-favourite-ids';
@@ -88,7 +128,7 @@ const COL_TEMPLATE: Record<ExerciseBankColumnId, string> = {
 const COLUMN_LABEL: Record<ExerciseBankColumnId, string> = {
   select: '',
   typology: 'Typology',
-  sports: 'Sports',
+  sports: 'Libraries',
   pathologies: 'Pathologies',
   equipment: 'Equipments',
   name: 'Original name',
@@ -181,9 +221,13 @@ function getSecondaryMuscles(ex: Exercise): string[] {
   return mg;
 }
 
-function pathologyLabelsForExercise(ex: Exercise, catalog: ExercisePathologyCatalogItem[]): string[] {
+function pathologyLabelsForExercise(
+  ex: Exercise,
+  catalog: ExercisePathologyCatalogItem[],
+  lang: string
+): string[] {
   const m = mergeExerciseWithDefaults(ex);
-  const byId = new Map(catalog.map((p) => [p.id, (p.name || '').trim() || p.id]));
+  const byId = new Map(catalog.map((p) => [p.id, getPathologyNameForLang(p, lang) || p.id]));
   return (m.contraindicatedPathologyIds || []).map((id) => byId.get(id) || id);
 }
 
@@ -192,12 +236,6 @@ function getLangText(rec: Record<string, string> | undefined, lang: string, fall
   if (v) return v;
   if (lang !== 'en' && fallbackEn) return fallbackEn;
   return (rec?.en || '').trim();
-}
-
-/** Preview rich-text fields in the bank without rendering HTML. */
-function stripHtmlForPreview(html: string): string {
-  if (!html) return '';
-  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 type CatalogScope = 'official_and_shared' | 'movesbook_official' | 'authorized_shared';
@@ -212,7 +250,17 @@ function matchesCatalogScope(ex: Exercise, scope: CatalogScope): boolean {
   return true;
 }
 
-type GridCatalogTab = 'catalog' | 'execution' | 'suggestions' | 'breathing' | 'mistakes' | 'faqs';
+type GridCatalogTab =
+  | 'catalog'
+  | 'execution'
+  | 'suggestions'
+  | 'breathing'
+  | 'mistakes'
+  | 'faqs'
+  | 'shortDescription'
+  | 'infoContraindications';
+
+const DETAIL_FAQS_VISIBLE = 2;
 
 function collectExercisePictureUrls(ex: Exercise): string[] {
   const m = mergeExerciseWithDefaults(ex);
@@ -221,10 +269,57 @@ function collectExercisePictureUrls(ex: Exercise): string[] {
   );
 }
 
-function ExecThumb({ url, label, mini }: { url?: string; label: string; mini: boolean }) {
+function exercisePicturePair(
+  ex: Exercise,
+  sex: 'male' | 'female'
+): [string | undefined, string | undefined] {
+  const m = mergeExerciseWithDefaults(ex);
+  if (sex === 'male') return [m.pictureAMale, m.pictureBMale];
+  return [m.pictureAFemale, m.pictureBFemale];
+}
+
+function hasAnimatablePicturePair(ex: Exercise, sex: 'male' | 'female'): boolean {
+  const [a, b] = exercisePicturePair(ex, sex);
+  return Boolean(a?.trim() && b?.trim());
+}
+
+const PICTURE_ANIM_INTERVAL_MS = 2000;
+
+function ExecThumb({
+  url,
+  label,
+  mini,
+  large,
+}: {
+  url?: string;
+  label: string;
+  mini: boolean;
+  large?: boolean;
+}) {
   const [err, setErr] = useState(false);
+  const resolved = resolvePublicMediaUrl(url);
+
+  if (large) {
+    if (!resolved || err) {
+      return (
+        <div className="flex h-52 w-full items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-100 text-sm font-medium text-gray-500 sm:h-64">
+          {label}
+        </div>
+      );
+    }
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={resolved}
+        alt=""
+        className="h-52 w-full rounded-lg border border-gray-200 bg-white object-contain sm:h-64"
+        onError={() => setErr(true)}
+      />
+    );
+  }
+
   const h = mini ? 'h-8 w-11' : 'h-12 w-16';
-  if (!url?.trim() || err) {
+  if (!resolved || err) {
     return (
       <div
         className={`${h} flex shrink-0 items-center justify-center rounded border border-dashed border-gray-300 bg-gray-100 text-[8px] font-medium text-gray-500`}
@@ -236,7 +331,7 @@ function ExecThumb({ url, label, mini }: { url?: string; label: string; mini: bo
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={url}
+      src={resolved}
       alt=""
       className={`${h} shrink-0 rounded border border-gray-200 object-cover`}
       onError={() => setErr(true)}
@@ -338,12 +433,167 @@ function PopoverList({
   );
 }
 
+function ExercisePathologiesDetailModal({
+  exercise,
+  catalog,
+  lang,
+  onClose,
+}: {
+  exercise: Exercise;
+  catalog: ExercisePathologyCatalogItem[];
+  lang: string;
+  onClose: () => void;
+}) {
+  const ex = mergeExerciseWithDefaults(exercise);
+  const byId = new Map(catalog.map((p) => [p.id, p]));
+  const tagged = (ex.contraindicatedPathologyIds || [])
+    .map((id) => byId.get(id))
+    .filter((p): p is ExercisePathologyCatalogItem => Boolean(p));
+  const freeNote = getPathologyInfoForLang(ex, lang);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-labelledby="exercise-pathologies-detail-title"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[min(88vh,720px)] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl ring-1 ring-black/5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
+          <div>
+            <h4 id="exercise-pathologies-detail-title" className="text-base font-bold text-gray-900">
+              Pathologies (not suggested)
+            </h4>
+            <p className="text-xs text-gray-500">Display language · {lang.toUpperCase()}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded p-1 hover:bg-gray-100" aria-label="Close">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {tagged.length === 0 ? (
+            <p className="text-sm text-gray-500">No pathology tags on this exercise.</p>
+          ) : (
+            <ul className="m-0 list-none space-y-4 p-0">
+              {tagged.map((item, idx) => {
+                const name = getPathologyNameForLang(item, lang) || '—';
+                const description = getPathologyDescriptionForLang(item, lang);
+                const pictureSrc = item.picture ? resolvePublicMediaUrl(item.picture) || item.picture : '';
+                return (
+                  <li
+                    key={item.id}
+                    className="overflow-hidden rounded-lg border border-rose-100 bg-rose-50/30 shadow-sm"
+                  >
+                    <div className="flex gap-3 p-4">
+                      {pictureSrc ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={pictureSrc}
+                          alt=""
+                          className="h-16 w-16 shrink-0 rounded-lg border border-gray-200 object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-300 bg-white text-xs font-bold text-gray-400">
+                          {idx + 1}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <h5 className="text-sm font-bold text-gray-900 break-words">{name}</h5>
+                        {description ? (
+                          <p className="mt-2 text-sm leading-relaxed text-gray-700 whitespace-pre-wrap break-words">
+                            {description}
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-sm italic text-gray-400">No description for this language.</p>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {freeNote ? (
+            <section className="mt-4 rounded-lg border border-amber-200 bg-amber-50/80 p-3">
+              <h5 className="text-xs font-bold uppercase tracking-wide text-amber-950">
+                Info & Contraindications
+              </h5>
+              <div className="mt-1">
+                <ExerciseRichTextPreview html={freeNote} />
+              </div>
+            </section>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExerciseNamesByLanguageModal({ exercise, onClose }: { exercise: Exercise; onClose: () => void }) {
+  const ex = mergeExerciseWithDefaults(exercise);
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-labelledby="exercise-names-by-lang-title"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-3xl rounded-xl bg-white shadow-xl ring-1 ring-black/5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b px-5 py-3">
+          <h4 id="exercise-names-by-lang-title" className="text-base font-bold text-gray-900">
+            Name by language
+          </h4>
+          <button type="button" onClick={onClose} className="rounded p-1 hover:bg-gray-100" aria-label="Close">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <ul className="divide-y divide-gray-100 px-5 py-2">
+          {SUPPORTED_LANGUAGES.map((lang) => {
+            const name = getExerciseNameForLang(ex, lang.code) || '—';
+            return (
+              <li
+                key={lang.code}
+                className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-x-4 gap-y-0.5 py-2.5 sm:grid-cols-[7rem_minmax(0,1fr)]"
+              >
+                <span className="pt-0.5 text-xs font-bold uppercase tracking-wide text-gray-500">
+                  {lang.code}
+                  <span className="mt-0.5 block text-[10px] font-normal normal-case text-gray-400">{lang.name}</span>
+                </span>
+                <span className="text-sm leading-relaxed text-gray-900 break-words">{name}</span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function ExerciseRichTextDetailBlock({ html, compact }: { html: string; compact?: boolean }) {
+  return (
+    <div
+      className={`mt-1 overflow-auto rounded border border-gray-100 bg-gray-50/80 p-2 text-sm ${
+        compact ? 'max-h-48' : 'max-h-64'
+      }`}
+    >
+      <ExerciseRichTextPreview html={html} />
+    </div>
+  );
+}
+
 function ExerciseQuickViewModal({
   exercise,
   lang,
   onClose,
   onEdit,
-  onPlayOfficialVideo,
 }: {
   exercise: Exercise;
   lang: string;
@@ -351,153 +601,49 @@ function ExerciseQuickViewModal({
   onEdit: () => void;
   onPlayOfficialVideo?: (exercise: Exercise, sex: 'male' | 'female') => void;
 }) {
-  const ex = mergeExerciseWithDefaults(exercise);
   const [sex, setSex] = useState<'male' | 'female'>('male');
-  const picA = sex === 'male' ? ex.pictureAMale : ex.pictureAFemale;
-  const picB = sex === 'male' ? ex.pictureBMale : ex.pictureBFemale;
-
-  const maleVideoSrc =
-    (ex.officialVideoDataUrl || '').trim() || (ex.officialVideoUrl || '').trim();
-  const femaleVideoSrc =
-    (ex.officialVideoDataUrlFemale || '').trim() || (ex.officialVideoUrlFemale || '').trim();
-
-  const exec = getLangText(ex.executionByLanguage, lang, ex.description);
-  const expert = getLangText(ex.expertSuggestionsByLanguage, lang, '');
-  const breath = getLangText(ex.breathingByLanguage, lang, '');
-  const mistakes = getLangText(ex.mistakesByLanguage, lang, '');
-  const faqs = normalizeExerciseFaqs(ex.exerciseFaqs).filter(exerciseFaqEntryHasContent);
 
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
       role="dialog"
+      aria-labelledby="exercise-catalog-preview-title"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[min(92vh,880px)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="flex max-h-[min(92vh,900px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex flex-shrink-0 items-center justify-between border-b px-4 py-3">
-          <div>
-            <h3 className="text-lg font-bold text-gray-900">{getExerciseNameForLang(ex, lang)}</h3>
-            <p className="text-xs text-gray-500">Label details · {lang.toUpperCase()}</p>
-          </div>
+        <div className="flex shrink-0 items-center justify-between border-b bg-slate-50 px-3 py-2">
+          <p id="exercise-catalog-preview-title" className="text-xs font-medium text-gray-600">
+            Catalog preview · {lang.toUpperCase()} · user layout reference
+          </p>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={onEdit}
-              className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+              className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700"
             >
               Edit exercise
             </button>
-            <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-semibold hover:bg-gray-50">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-gray-300 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
+            >
               Close
             </button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4">
-          <div className="flex flex-wrap gap-2 border-b pb-3">
-            <span className="text-xs font-semibold text-gray-600">Pictures</span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setSex('male')}
-                className={`rounded-md px-3 py-1 text-xs font-semibold ${sex === 'male' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
-              >
-                Male
-              </button>
-              <button
-                type="button"
-                onClick={() => setSex('female')}
-                className={`rounded-md px-3 py-1 text-xs font-semibold ${sex === 'female' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
-              >
-                Female
-              </button>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <p className="mb-1 text-xs font-bold text-blue-700">Picture A</p>
-              <div className="flex justify-center rounded-lg border bg-gray-50 p-2">
-                <ExecThumb url={picA} label="A" mini={false} />
-              </div>
-            </div>
-            <div>
-              <p className="mb-1 text-xs font-bold text-blue-700">Picture B</p>
-              <div className="flex justify-center rounded-lg border bg-gray-50 p-2">
-                <ExecThumb url={picB} label="B" mini={false} />
-              </div>
-            </div>
-          </div>
-
-          {onPlayOfficialVideo && exerciseHasAnyOfficialVideo(ex) ? (
-            <div className="flex flex-wrap items-center gap-2 border-b pb-3">
-              <span className="text-xs font-semibold text-gray-600">Official video</span>
-              <button
-                type="button"
-                disabled={!maleVideoSrc}
-                title={!maleVideoSrc ? 'No male video URL or file set' : undefined}
-                onClick={() => onPlayOfficialVideo(ex, 'male')}
-                className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Play (male)
-              </button>
-              <button
-                type="button"
-                disabled={!femaleVideoSrc}
-                title={
-                  !femaleVideoSrc
-                    ? 'No female video — set URL or file under Official pictures & video (female column)'
-                    : undefined
-                }
-                onClick={() => onPlayOfficialVideo(ex, 'female')}
-                className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Play (female)
-              </button>
-              {!femaleVideoSrc && maleVideoSrc ? (
-                <span className="text-[11px] text-gray-500">
-                  Female demo optional — uses male only when female is unset.
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-
-          <section>
-            <h4 className="text-sm font-bold uppercase text-blue-700">2 — How to execute</h4>
-            <pre className="mt-1 whitespace-pre-wrap rounded-lg border bg-gray-50 p-3 text-sm text-gray-800">{exec || '—'}</pre>
-          </section>
-          <section>
-            <h4 className="text-sm font-bold uppercase text-blue-700">3 — Expert suggestions</h4>
-            <pre className="mt-1 whitespace-pre-wrap rounded-lg border bg-gray-50 p-3 text-sm text-gray-800">{expert || '—'}</pre>
-          </section>
-          <section>
-            <h4 className="text-sm font-bold uppercase text-blue-700">4 — Breathing</h4>
-            <pre className="mt-1 whitespace-pre-wrap rounded-lg border bg-gray-50 p-3 text-sm text-gray-800">{breath || '—'}</pre>
-          </section>
-          <section>
-            <h4 className="text-sm font-bold uppercase text-blue-700">5 — Common mistakes</h4>
-            <pre className="mt-1 whitespace-pre-wrap rounded-lg border bg-gray-50 p-3 text-sm text-gray-800">{mistakes || '—'}</pre>
-          </section>
-          <section>
-            <h4 className="text-sm font-bold uppercase text-violet-800">6 — FAQs</h4>
-            {faqs.length === 0 ? (
-              <p className="mt-1 text-sm text-gray-500">No FAQs for this exercise.</p>
-            ) : (
-              <ol className="mt-2 list-decimal space-y-4 pl-5 text-sm">
-                {faqs.map((f) => (
-                  <li key={f.id} className="pl-1">
-                    <p className="font-semibold text-gray-900">
-                      {(f.questionByLanguage?.[lang] || f.questionByLanguage?.en || '').trim() || '—'}
-                    </p>
-                    <pre className="mt-1 whitespace-pre-wrap text-gray-700">
-                      {(f.answerByLanguage?.[lang] || f.answerByLanguage?.en || '').trim() || '—'}
-                    </pre>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </section>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <ExerciseCatalogDetailView
+            exercise={exercise}
+            lang={lang}
+            sex={sex}
+            onSexChange={setSex}
+            onBack={onClose}
+            showHeader
+          />
         </div>
       </div>
     </div>
@@ -515,26 +661,47 @@ function ExerciseVideoModal({
 }) {
   const ex = mergeExerciseWithDefaults(exercise);
   const src = resolveExerciseOfficialVideoSrc(ex, sex);
+  const embed = resolveExerciseVideoEmbed(src);
+  const modalKey = `${ex.id}-${sex}-${src.slice(0, 80)}`;
   return (
     <div
       className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
       role="dialog"
       onClick={onClose}
     >
-      <div className="w-full max-w-3xl rounded-xl bg-black p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div
+        key={modalKey}
+        className="w-full max-w-3xl rounded-xl bg-black p-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="mb-2 flex justify-end">
           <button type="button" onClick={onClose} className="rounded bg-white/10 p-2 text-white hover:bg-white/20">
             <X className="h-5 w-5" />
           </button>
         </div>
-        {src ? (
-          src.startsWith('data:') || src.startsWith('http') ? (
-            <video src={src} controls className="max-h-[70vh] w-full rounded-lg bg-black" playsInline>
+        {embed ? (
+          embed.kind === 'iframe' ? (
+            <iframe
+              key={embed.src}
+              src={embed.src}
+              title={`Official video (${sex})`}
+              className="aspect-video w-full rounded-lg bg-black"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          ) : (
+            <video
+              key={embed.src}
+              src={embed.src}
+              controls
+              className="max-h-[70vh] w-full rounded-lg bg-black"
+              playsInline
+            >
               <track kind="captions" />
             </video>
-          ) : (
-            <p className="text-white">Invalid video URL.</p>
           )
+        ) : src ? (
+          <p className="text-white">Invalid or unsupported video URL.</p>
         ) : (
           <p className="text-center text-white">No official video for this exercise.</p>
         )}
@@ -546,7 +713,7 @@ function ExerciseVideoModal({
 type PopoverState =
   | null
   | { kind: 'sports'; exercise: Exercise }
-  | { kind: 'pathologies'; exercise: Exercise; labels: string[] }
+  | { kind: 'pathologies'; exercise: Exercise; lang: string }
   | { kind: 'names'; exercise: Exercise }
   | { kind: 'secondaries'; exercise: Exercise };
 
@@ -568,6 +735,9 @@ export default function ExerciseBankTab({
   onEditExercise,
 }: ExerciseBankTabProps) {
   const { currentLanguage } = useLanguage();
+  const layoutExpand = useSettingsLayoutExpand();
+  const [detailPanelHidden, setDetailPanelHidden] = useState(false);
+  const [detailPanelWide, setDetailPanelWide] = useState(false);
   const [columnOrder, setColumnOrder] = useState<ExerciseBankColumnId[]>(DEFAULT_COLUMN_ORDER);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set());
   const [filterTypology, setFilterTypology] = useState<string>('all');
@@ -591,6 +761,9 @@ export default function ExerciseBankTab({
   const [viewMode, setViewMode] = useState<'grid' | 'label'>('grid');
   const [gridCatalogTab, setGridCatalogTab] = useState<GridCatalogTab>('catalog');
   const [pictureCarouselIdx, setPictureCarouselIdx] = useState(0);
+  const [pictureAnimSex, setPictureAnimSex] = useState<'male' | 'female' | null>(null);
+  const [pictureAnimFrame, setPictureAnimFrame] = useState(0);
+  const [faqStartIdx, setFaqStartIdx] = useState(0);
   const bulkMenuRef = useRef<HTMLDivElement | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
@@ -613,7 +786,14 @@ export default function ExerciseBankTab({
 
   useEffect(() => {
     setPictureCarouselIdx(0);
+    setFaqStartIdx(0);
+    setPictureAnimSex(null);
+    setPictureAnimFrame(0);
   }, [selectedExerciseId]);
+
+  useEffect(() => {
+    setFaqStartIdx(0);
+  }, [detailLang, gridCatalogTab]);
 
   useEffect(() => {
     if (!bulkOptionsOpen) return;
@@ -674,7 +854,7 @@ export default function ExerciseBankTab({
       if (favouritesOnly && !favouriteIds.has(ex.id)) return false;
       if (filterTypology !== 'all' && getTypology(ex) !== filterTypology) return false;
       if (filterEquipment !== 'all' && (ex.equipmentType || '') !== filterEquipment) return false;
-      if (filterSport !== 'all' && !(ex.sportsIndicated || []).includes(filterSport)) return false;
+      if (!exerciseMatchesLibraryFilter(ex.sportsIndicated, filterSport)) return false;
       if (filterMainArea !== 'all' && getMainMuscle(ex) !== filterMainArea) return false;
       if (filterSharedBy !== 'all' && (ex.sharedBy || '') !== filterSharedBy) return false;
       if (filterUsername !== 'all' && (ex.sharedByUsername || '').trim() !== filterUsername) return false;
@@ -732,6 +912,20 @@ export default function ExerciseBankTab({
     return exercises.find((e) => e.id === selectedExerciseId) ?? null;
   }, [exercises, selectedExerciseId]);
 
+  useEffect(() => {
+    if (!pictureAnimSex || !selectedExercise) return;
+    const merged = mergeExerciseWithDefaults(selectedExercise);
+    if (!hasAnimatablePicturePair(merged, pictureAnimSex)) {
+      setPictureAnimSex(null);
+      return;
+    }
+    setPictureAnimFrame(0);
+    const timer = window.setInterval(() => {
+      setPictureAnimFrame((f) => (f + 1) % 2);
+    }, PICTURE_ANIM_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [pictureAnimSex, selectedExercise]);
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -786,11 +980,13 @@ export default function ExerciseBankTab({
 
   const openVideo = (ex: Exercise, sex?: 'male' | 'female') => {
     const m = mergeExerciseWithDefaults(ex);
-    const maleSrc = (m.officialVideoDataUrl || '').trim() || (m.officialVideoUrl || '').trim();
-    const femaleSrc =
-      (m.officialVideoDataUrlFemale || '').trim() || (m.officialVideoUrlFemale || '').trim();
+    const maleSrc = resolveExerciseOfficialVideoSrc(m, 'male');
+    const femaleOnly = resolveOfficialVideoFromUrlAndData(
+      m.officialVideoUrlFemale,
+      m.officialVideoDataUrlFemale
+    );
     const resolvedSex =
-      sex ?? (maleSrc ? 'male' : femaleSrc ? 'female' : 'male');
+      sex ?? (maleSrc ? 'male' : femaleOnly ? 'female' : 'male');
     setVideoExercise({ exercise: m, sex: resolvedSex });
   };
 
@@ -799,7 +995,6 @@ export default function ExerciseBankTab({
     clickTimer.current = setTimeout(() => {
       clickTimer.current = null;
       setSelectedExerciseId(ex.id);
-      setQuickView(ex);
     }, 280);
   };
 
@@ -840,8 +1035,9 @@ export default function ExerciseBankTab({
           <div className={`truncate py-2 text-sm ${disabled ? 'text-red-700' : 'text-gray-800'}`}>{getTypology(m)}</div>
         );
       case 'sports': {
-        const n = (m.sportsIndicated || []).length;
-        const label = n === 0 ? '—' : `${n} sport${n === 1 ? '' : 's'}`;
+        const libs = normalizeSportsIndicatedToLibraryKeys(m.sportsIndicated);
+        const n = libs.length;
+        const label = n === 0 ? '—' : `${n} library${n === 1 ? '' : 'ies'}`;
         return (
           <button
             type="button"
@@ -856,7 +1052,7 @@ export default function ExerciseBankTab({
         );
       }
       case 'pathologies': {
-        const labels = pathologyLabelsForExercise(m, pathologyCatalog);
+        const labels = pathologyLabelsForExercise(m, pathologyCatalog, gridLang);
         const n = labels.length;
         const label = n === 0 ? '—' : `${n} patholog${n === 1 ? 'y' : 'ies'}`;
         return (
@@ -865,7 +1061,7 @@ export default function ExerciseBankTab({
             className="w-full py-2 text-center text-sm font-semibold text-rose-800 underline-offset-2 hover:underline"
             onClick={(e) => {
               e.stopPropagation();
-              setPopover({ kind: 'pathologies', exercise: m, labels });
+              setPopover({ kind: 'pathologies', exercise: m, lang: gridLang });
             }}
           >
             {label}
@@ -966,6 +1162,18 @@ export default function ExerciseBankTab({
             </button>
             <button
               type="button"
+              title="Label details"
+              className="rounded p-1.5 text-violet-700 hover:bg-violet-50"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedExerciseId(m.id);
+                setQuickView(m);
+              }}
+            >
+              <FileText className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
               title="Player"
               className="rounded p-1.5 text-emerald-700 hover:bg-emerald-50"
               onClick={() => openVideo(m)}
@@ -1020,35 +1228,73 @@ export default function ExerciseBankTab({
       {/* General catalog of exercises — archive + grid (mockup: catalog header + scope + display language). */}
       <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-sky-50 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0 flex-1">
             <h3 className="flex items-center gap-2 text-xl font-bold text-gray-900">
               <Library className="h-7 w-7 shrink-0 text-sky-600" aria-hidden />
               Catalog exercises
             </h3>
             <p className="mt-1 max-w-3xl text-sm text-gray-600">
-              Multilingual names, typology, sports, equipment, muscle areas, pictures, video, long-text labels, and FAQs.
-              Favourites tint <span className="font-medium text-sky-800">blue</span>; disabled rows can show in{' '}
+              Official Exercise Data Bank — filter by sport icons, typology, equipment, and muscle areas. Favourites
+              tint <span className="font-medium text-sky-800">blue</span>; disabled rows can show in{' '}
               <span className="font-medium text-red-700">red</span> when enabled below.
             </p>
           </div>
-          <label className="flex shrink-0 flex-col gap-1 text-sm text-gray-700 sm:items-end">
-            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Display language</span>
-            <select
-              value={gridLang}
-              onChange={(e) => {
-                const v = e.target.value;
-                setGridLang(v);
-                setDetailLang(v);
-              }}
-              className="min-w-[12rem] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm"
+          <div className="flex shrink-0 flex-wrap items-end justify-end gap-2 sm:gap-3">
+            <label className="flex flex-col gap-1 text-sm text-gray-700">
+              <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Display language</span>
+              <select
+                value={gridLang}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setGridLang(v);
+                  setDetailLang(v);
+                }}
+                className="min-w-[12rem] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm"
+              >
+                {SUPPORTED_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.name} ({l.code.toUpperCase()})
+                  </option>
+                ))}
+              </select>
+            </label>
+            {layoutExpand ? (
+              <button
+                type="button"
+                onClick={layoutExpand.toggleContentExpanded}
+                className={`flex h-[42px] w-[42px] items-center justify-center rounded-lg border-2 shadow-sm transition ${
+                  layoutExpand.contentExpanded
+                    ? 'border-sky-600 bg-sky-600 text-white hover:bg-sky-700'
+                    : 'border-gray-400 bg-white text-gray-800 hover:border-sky-500 hover:bg-sky-50'
+                }`}
+                title={
+                  layoutExpand.contentExpanded
+                    ? 'Show settings menu (exit expanded view)'
+                    : 'Expand page — hide left settings menu for more workspace'
+                }
+                aria-label={
+                  layoutExpand.contentExpanded
+                    ? 'Exit expanded workspace'
+                    : 'Expand workspace'
+                }
+                aria-pressed={layoutExpand.contentExpanded}
+              >
+                {layoutExpand.contentExpanded ? (
+                  <Minimize2 className="h-5 w-5" aria-hidden />
+                ) : (
+                  <Maximize2 className="h-5 w-5" aria-hidden />
+                )}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onAddExercise}
+              className="flex h-[42px] items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-blue-700"
             >
-              {SUPPORTED_LANGUAGES.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.name} ({l.code.toUpperCase()})
-                </option>
-              ))}
-            </select>
-          </label>
+              <Plus className="h-4 w-4" aria-hidden />
+              Add Exercise
+            </button>
+          </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {(
@@ -1061,30 +1307,47 @@ export default function ExerciseBankTab({
             <button
               key={key}
               type="button"
-              onClick={() => setCatalogScope(key)}
+              onClick={() => {
+                setCatalogScope(key);
+                setFilterSport('all');
+                setPage(1);
+              }}
               className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
                 catalogScope === key
                   ? 'bg-gray-900 text-white shadow'
                   : 'bg-white text-gray-800 ring-1 ring-gray-300 hover:bg-gray-50'
               }`}
+              title="Show all exercises in this catalog (clear library filter)"
             >
               {label}
             </button>
           ))}
         </div>
+        <div className="mt-4">
+          <ExerciseBankSportIconFilter
+            activeLibraryFilter={filterSport}
+            onLibraryFilterChange={(sportKey) => {
+              setFilterSport(sportKey);
+              setPage(1);
+              setSelectedIds(new Set());
+            }}
+          />
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={onAddExercise}
-          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" />
-          Add Exercise
-        </button>
-        <span className="text-sm text-gray-600">{sorted.length} exercises (filtered)</span>
-      </div>
+      <p className="text-sm text-gray-600">
+        {sorted.length} exercise{sorted.length === 1 ? '' : 's'}
+        {filterSport !== 'all' ? (
+          <>
+            {' '}
+            in <span className="font-semibold text-sky-800">{getExerciseLibrarySportLabel(filterSport)}</span>
+          </>
+        ) : (
+          <> — all libraries</>
+        )}
+        {' · '}
+        sorted A–Z
+      </p>
 
       {/* Row 1 — filters */}
       <div className="flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-3">
@@ -1117,10 +1380,10 @@ export default function ExerciseBankTab({
           onChange={(e) => setFilterSport(e.target.value)}
           className="rounded border border-gray-300 px-2 py-1.5 text-sm"
         >
-          <option value="all">Sport indicated — all</option>
-          {sports.map((s) => (
-            <option key={s.id} value={s.name}>
-              {s.name}
+          <option value="all">Libraries — all</option>
+          {EXERCISE_LIBRARY_SPORT_KEYS.map((key) => (
+            <option key={key} value={key}>
+              {getExerciseLibrarySportLabel(key)}
             </option>
           ))}
         </select>
@@ -1322,19 +1585,14 @@ export default function ExerciseBankTab({
         </div>
       </div>
 
-      <div className="flex flex-col gap-4 lg:flex-row">
-        <div className="min-w-0 flex-1 overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-stretch">
+        <div
+          className={`min-w-0 flex-1 overflow-x-auto rounded-xl border border-gray-200 bg-white ${
+            detailPanelWide && !detailPanelHidden ? 'lg:max-w-[48%]' : ''
+          }`}
+        >
           <div className="flex flex-wrap gap-1 border-b border-gray-200 bg-slate-50 px-2 py-2">
-            {(
-              [
-                ['catalog', 'Catalog exercises'],
-                ['execution', 'Execution exercise'],
-                ['suggestions', 'Suggestions'],
-                ['breathing', 'Breathing'],
-                ['mistakes', 'Common mistakes'],
-                ['faqs', 'FAQs'],
-              ] as const
-            ).map(([id, label]) => (
+            {OFFICIAL_GRID_TABS.map(([id, label]) => (
               <button
                 key={id}
                 type="button"
@@ -1343,6 +1601,20 @@ export default function ExerciseBankTab({
                   gridCatalogTab === id
                     ? 'bg-gray-900 text-white shadow'
                     : 'bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-100'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            {EXTENDED_GRID_TABS.map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setGridCatalogTab(id)}
+                className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
+                  gridCatalogTab === id
+                    ? 'bg-violet-700 text-white shadow'
+                    : 'bg-violet-50 text-violet-900 ring-1 ring-violet-200 hover:bg-violet-100'
                 }`}
               >
                 {label}
@@ -1409,8 +1681,14 @@ export default function ExerciseBankTab({
           {pageRows.length === 0 && <div className="p-8 text-center text-gray-500">No exercises match the filters.</div>}
         </div>
 
-        {/* Details exercise selected — tab-driven primary + Pictures / Video / Equipment (mockup). */}
-        <div className="w-full shrink-0 rounded-xl border border-gray-200 bg-gray-50 lg:w-[380px] xl:w-[420px]">
+        {!detailPanelHidden ? (
+        <div
+          className={`w-full shrink-0 rounded-xl border border-gray-200 bg-gray-50 ${
+            detailPanelWide
+              ? 'lg:w-[min(52%,640px)] xl:w-[min(55%,720px)]'
+              : 'lg:w-[380px] xl:w-[420px]'
+          }`}
+        >
           <div className="border-b bg-white px-3 py-2">
             <h3 className="text-sm font-bold text-gray-900">Details exercise selected</h3>
             <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-700">
@@ -1442,14 +1720,28 @@ export default function ExerciseBankTab({
                       <span className="font-semibold text-gray-800">Typology:</span> {getTypology(detailEx)}
                     </p>
                     <p className="mt-1">
-                      <span className="font-semibold text-gray-800">Sports:</span>{' '}
-                      {(detailEx.sportsIndicated || []).length ? (detailEx.sportsIndicated || []).join(', ') : '—'}
+                      <span className="font-semibold text-gray-800">Libraries:</span>{' '}
+                      {normalizeSportsIndicatedToLibraryKeys(detailEx.sportsIndicated).length
+                        ? normalizeSportsIndicatedToLibraryKeys(detailEx.sportsIndicated)
+                            .map(getExerciseLibrarySportLabel)
+                            .join(', ')
+                        : '—'}
                     </p>
                     <p className="mt-1">
                       <span className="font-semibold text-gray-800">Pathologies (not suggested):</span>{' '}
-                      {(mergeExerciseWithDefaults(detailEx).contraindicatedPathologyIds || []).length
-                        ? pathologyLabelsForExercise(detailEx, pathologyCatalog).join(', ')
-                        : '—'}
+                      {(mergeExerciseWithDefaults(detailEx).contraindicatedPathologyIds || []).length ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPopover({ kind: 'pathologies', exercise: detailEx, lang: detailLang })
+                          }
+                          className="text-left font-semibold text-rose-800 underline-offset-2 hover:underline"
+                        >
+                          {pathologyLabelsForExercise(detailEx, pathologyCatalog, detailLang).join(', ')}
+                        </button>
+                      ) : (
+                        '—'
+                      )}
                     </p>
                     <p className="mt-1">
                       <span className="font-semibold text-gray-800">Equipment:</span>{' '}
@@ -1457,63 +1749,150 @@ export default function ExerciseBankTab({
                     </p>
                   </section>
                 ) : null}
+                {gridCatalogTab === 'shortDescription' ? (
+                  <section>
+                    <h4 className="text-xs font-bold uppercase text-blue-700">Short description</h4>
+                    <ExerciseRichTextDetailBlock
+                      compact
+                      html={getExerciseDescriptionForLang(mergeExerciseWithDefaults(detailEx), detailLang) || ''}
+                    />
+                  </section>
+                ) : null}
                 {gridCatalogTab === 'execution' ? (
                   <section>
                     <h4 className="text-xs font-bold uppercase text-blue-700">Execution</h4>
-                    <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded border bg-white p-2 text-xs text-gray-800">
-                      {stripHtmlForPreview(
-                        getLangText(detailEx.executionByLanguage, detailLang, detailEx.description) || ''
-                      ) || '—'}
-                    </pre>
+                    <ExerciseRichTextDetailBlock
+                      compact
+                      html={getLangText(detailEx.executionByLanguage, detailLang, detailEx.description) || ''}
+                    />
                   </section>
                 ) : null}
                 {gridCatalogTab === 'suggestions' ? (
                   <section>
                     <h4 className="text-xs font-bold uppercase text-blue-700">Suggestions</h4>
-                    <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded border bg-white p-2 text-xs text-gray-800">
-                      {stripHtmlForPreview(getLangText(detailEx.expertSuggestionsByLanguage, detailLang, '') || '') || '—'}
-                    </pre>
+                    <ExerciseRichTextDetailBlock
+                      compact
+                      html={getLangText(detailEx.expertSuggestionsByLanguage, detailLang, '') || ''}
+                    />
                   </section>
                 ) : null}
                 {gridCatalogTab === 'breathing' ? (
                   <section>
                     <h4 className="text-xs font-bold uppercase text-blue-700">Breathing</h4>
-                    <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded border bg-white p-2 text-xs text-gray-800">
-                      {stripHtmlForPreview(getLangText(detailEx.breathingByLanguage, detailLang, '') || '') || '—'}
-                    </pre>
+                    <ExerciseRichTextDetailBlock
+                      compact
+                      html={getLangText(detailEx.breathingByLanguage, detailLang, '') || ''}
+                    />
                   </section>
                 ) : null}
                 {gridCatalogTab === 'mistakes' ? (
                   <section>
                     <h4 className="text-xs font-bold uppercase text-blue-700">Common mistakes</h4>
-                    <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded border bg-white p-2 text-xs text-gray-800">
-                      {stripHtmlForPreview(getLangText(detailEx.mistakesByLanguage, detailLang, '') || '') || '—'}
-                    </pre>
+                    <ExerciseRichTextDetailBlock
+                      compact
+                      html={getLangText(detailEx.mistakesByLanguage, detailLang, '') || ''}
+                    />
                   </section>
                 ) : null}
                 {gridCatalogTab === 'faqs' ? (
                   <section>
                     <h4 className="text-xs font-bold uppercase text-violet-800">FAQs</h4>
-                    <div className="mt-1 space-y-2">
-                      {normalizeExerciseFaqs(detailEx.exerciseFaqs)
-                        .filter(exerciseFaqEntryHasContent)
-                        .map((f, i) => (
-                          <div key={f.id} className="rounded border bg-white p-2 text-xs">
-                            <p className="font-semibold text-gray-900">
-                              {i + 1}.{' '}
-                              {(f.questionByLanguage?.[detailLang] || f.questionByLanguage?.en || '').trim() || '—'}
-                            </p>
-                            <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap text-gray-700">
-                              {stripHtmlForPreview(
-                                (f.answerByLanguage?.[detailLang] || f.answerByLanguage?.en || '').trim() || ''
-                              ) || '—'}
-                            </pre>
+                    {(() => {
+                      const faqList = normalizeExerciseFaqs(detailEx.exerciseFaqs).filter(
+                        exerciseFaqEntryHasContent
+                      );
+                      if (faqList.length === 0) {
+                        return <p className="mt-1 text-gray-500">No FAQs.</p>;
+                      }
+                      const maxStart = Math.max(0, faqList.length - DETAIL_FAQS_VISIBLE);
+                      const start = Math.min(Math.max(0, faqStartIdx), maxStart);
+                      const visible = faqList.slice(start, start + DETAIL_FAQS_VISIBLE);
+                      const canUp = start > 0;
+                      const canDown = start < maxStart;
+
+                      return (
+                        <div className="mt-1 flex gap-2">
+                          <div className="min-h-[11rem] flex-1 space-y-2">
+                            {visible.map((f, vi) => {
+                              const globalIdx = start + vi;
+                              return (
+                                <div
+                                  key={f.id}
+                                  className="rounded border border-gray-200 bg-white p-2 text-xs shadow-sm"
+                                >
+                                  <p className="font-semibold text-gray-900">
+                                    {globalIdx + 1}.{' '}
+                                    {(
+                                      f.questionByLanguage?.[detailLang] ||
+                                      f.questionByLanguage?.en ||
+                                      ''
+                                    ).trim() || '—'}
+                                  </p>
+                                  <div className="mt-1 max-h-24 overflow-hidden rounded border border-gray-100 bg-gray-50/50 p-1.5">
+                                    <ExerciseRichTextPreview
+                                      html={
+                                        (
+                                          f.answerByLanguage?.[detailLang] ||
+                                          f.answerByLanguage?.en ||
+                                          ''
+                                        ).trim()
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {visible.length === 1 && faqList.length > 1 ? (
+                              <div
+                                className="rounded border border-dashed border-gray-200 bg-gray-50/80 p-2 text-xs text-gray-400"
+                                aria-hidden
+                              >
+                                &nbsp;
+                              </div>
+                            ) : null}
                           </div>
-                        ))}
-                      {normalizeExerciseFaqs(detailEx.exerciseFaqs).filter(exerciseFaqEntryHasContent).length === 0 ? (
-                        <p className="text-gray-500">No FAQs.</p>
-                      ) : null}
-                    </div>
+                          {faqList.length > DETAIL_FAQS_VISIBLE ? (
+                            <div className="flex shrink-0 flex-col items-center justify-center gap-1 self-stretch">
+                              <button
+                                type="button"
+                                aria-label="Previous FAQs"
+                                disabled={!canUp}
+                                onClick={() =>
+                                  setFaqStartIdx((i) => Math.max(0, i - 1))
+                                }
+                                className="rounded border border-gray-300 bg-white p-1.5 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                <ChevronUp className="h-4 w-4" />
+                              </button>
+                              <span className="text-[10px] font-medium text-gray-500 text-center leading-tight">
+                                {start + 1}–{Math.min(start + DETAIL_FAQS_VISIBLE, faqList.length)}
+                                <br />/{faqList.length}
+                              </span>
+                              <button
+                                type="button"
+                                aria-label="Next FAQs"
+                                disabled={!canDown}
+                                onClick={() =>
+                                  setFaqStartIdx((i) => Math.min(maxStart, i + 1))
+                                }
+                                className="rounded border border-gray-300 bg-white p-1.5 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                <ChevronDown className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })()}
+                  </section>
+                ) : null}
+                {gridCatalogTab === 'infoContraindications' ? (
+                  <section>
+                    <h4 className="text-xs font-bold uppercase text-rose-800">Info & Contraindications</h4>
+                    <ExerciseRichTextDetailBlock
+                      compact
+                      html={getPathologyInfoForLang(mergeExerciseWithDefaults(detailEx), detailLang) || ''}
+                    />
                   </section>
                 ) : null}
 
@@ -1522,49 +1901,102 @@ export default function ExerciseBankTab({
                   {(() => {
                     const urls = collectExercisePictureUrls(detailEx);
                     const n = urls.length;
+                    const canAnimMale = hasAnimatablePicturePair(detailEx, 'male');
+                    const canAnimFemale = hasAnimatablePicturePair(detailEx, 'female');
+                    const animActive = pictureAnimSex !== null;
+                    const [animA, animB] = pictureAnimSex
+                      ? exercisePicturePair(detailEx, pictureAnimSex)
+                      : [undefined, undefined];
+                    const animUrl =
+                      animActive && animA?.trim() && animB?.trim()
+                        ? pictureAnimFrame === 0
+                          ? animA
+                          : animB
+                        : undefined;
                     const idx = n ? Math.min(Math.max(0, pictureCarouselIdx), n - 1) : 0;
-                    const cur = urls[idx];
+                    const cur = animUrl ?? urls[idx];
+                    const displaySrc = cur ? resolvePublicMediaUrl(cur) : '';
+                    const toggleAnim = (sex: 'male' | 'female') => {
+                      setPictureAnimSex((prev) => (prev === sex ? null : sex));
+                    };
                     return (
                       <div className="mt-2">
-                        {n === 0 ? (
+                        <div className="mb-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={!canAnimMale}
+                            onClick={() => toggleAnim('male')}
+                            className={`inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${
+                              pictureAnimSex === 'male'
+                                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                            }`}
+                          >
+                            Animation male
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!canAnimFemale}
+                            onClick={() => toggleAnim('female')}
+                            className={`inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${
+                              pictureAnimSex === 'female'
+                                ? 'bg-pink-600 text-white hover:bg-pink-700'
+                                : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                            }`}
+                          >
+                            Animation female
+                          </button>
+                        </div>
+                        {n === 0 && !animUrl ? (
                           <div className="flex h-32 items-center justify-center rounded border border-dashed border-gray-200 bg-gray-50 text-xs text-gray-500">
                             No pictures
                           </div>
                         ) : (
                           <div className="relative flex flex-col items-center gap-2">
                             <div className="flex h-40 w-full max-w-[280px] items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={cur} alt="" className="max-h-full max-w-full object-contain" />
+                              {displaySrc ? (
+                                /* eslint-disable-next-line @next/next/no-img-element */
+                                <img src={displaySrc} alt="" className="max-h-full max-w-full object-contain" />
+                              ) : (
+                                <span className="text-xs text-gray-500">No picture</span>
+                              )}
                             </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                aria-label="Previous picture"
-                                disabled={n <= 1}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setPictureCarouselIdx((i) => (i - 1 + n) % n);
-                                }}
-                                className="rounded border border-gray-300 p-1 hover:bg-gray-50 disabled:opacity-40"
-                              >
-                                <ChevronLeft className="h-4 w-4" />
-                              </button>
-                              <span className="text-[10px] text-gray-500">
-                                {idx + 1} / {n}
+                            {animActive ? (
+                              <span className="text-[10px] font-medium text-gray-600">
+                                {pictureAnimSex === 'male' ? 'Male' : 'Female'} · Picture{' '}
+                                {pictureAnimFrame === 0 ? 'A' : 'B'} · 2s
                               </span>
-                              <button
-                                type="button"
-                                aria-label="Next picture"
-                                disabled={n <= 1}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setPictureCarouselIdx((i) => (i + 1) % n);
-                                }}
-                                className="rounded border border-gray-300 p-1 hover:bg-gray-50 disabled:opacity-40"
-                              >
-                                <ChevronRight className="h-4 w-4" />
-                              </button>
-                            </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  aria-label="Previous picture"
+                                  disabled={n <= 1}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPictureCarouselIdx((i) => (i - 1 + n) % n);
+                                  }}
+                                  className="rounded border border-gray-300 p-1 hover:bg-gray-50 disabled:opacity-40"
+                                >
+                                  <ChevronLeft className="h-4 w-4" />
+                                </button>
+                                <span className="text-[10px] text-gray-500">
+                                  {idx + 1} / {n}
+                                </span>
+                                <button
+                                  type="button"
+                                  aria-label="Next picture"
+                                  disabled={n <= 1}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPictureCarouselIdx((i) => (i + 1) % n);
+                                  }}
+                                  className="rounded border border-gray-300 p-1 hover:bg-gray-50 disabled:opacity-40"
+                                >
+                                  <ChevronRight className="h-4 w-4" />
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1578,15 +2010,16 @@ export default function ExerciseBankTab({
                     {exerciseHasAnyOfficialVideo(detailEx) ? (
                       <>
                         {(() => {
-                          const maleSrc =
-                            (detailEx.officialVideoDataUrl || '').trim() ||
-                            (detailEx.officialVideoUrl || '').trim();
-                          const femaleSrc =
-                            (detailEx.officialVideoDataUrlFemale || '').trim() ||
-                            (detailEx.officialVideoUrlFemale || '').trim();
+                          const malePlayed = resolveExerciseOfficialVideoSrc(detailEx, 'male');
+                          const femalePlayed = resolveExerciseOfficialVideoSrc(detailEx, 'female');
+                          const maleInline = !!(detailEx.officialVideoDataUrl || '').trim();
+                          const femaleInline = !!(detailEx.officialVideoDataUrlFemale || '').trim();
+                          const femaleOwnUrl = !!(detailEx.officialVideoUrlFemale || '').trim();
+                          const femaleOwnInline = femaleInline;
+                          const showFemale = !!(femaleOwnUrl || femaleOwnInline);
                           return (
                             <>
-                              {maleSrc ? (
+                              {malePlayed ? (
                                 <button
                                   type="button"
                                   onClick={() => openVideo(detailEx, 'male')}
@@ -1596,7 +2029,7 @@ export default function ExerciseBankTab({
                                   Male
                                 </button>
                               ) : null}
-                              {femaleSrc ? (
+                              {showFemale ? (
                                 <button
                                   type="button"
                                   onClick={() => openVideo(detailEx, 'female')}
@@ -1607,17 +2040,21 @@ export default function ExerciseBankTab({
                                 </button>
                               ) : null}
                               <span className="break-all text-[10px] text-gray-500">
-                                {maleSrc && (detailEx.officialVideoDataUrl || '').trim()
-                                  ? 'Male: inline'
-                                  : maleSrc
-                                    ? `Male: ${(detailEx.officialVideoUrl || '').trim()}`
-                                    : null}
-                                {maleSrc && femaleSrc ? ' · ' : ''}
-                                {femaleSrc && (detailEx.officialVideoDataUrlFemale || '').trim()
-                                  ? 'Female: inline'
-                                  : femaleSrc
-                                    ? `Female: ${(detailEx.officialVideoUrlFemale || '').trim()}`
-                                    : null}
+                                {malePlayed
+                                  ? maleInline
+                                    ? 'Male: inline file'
+                                    : `Male: ${(detailEx.officialVideoUrl || '').trim()}`
+                                  : null}
+                                {malePlayed && showFemale ? ' · ' : ''}
+                                {showFemale
+                                  ? femaleOwnInline
+                                    ? 'Female: inline file'
+                                    : femaleOwnUrl
+                                      ? `Female: ${(detailEx.officialVideoUrlFemale || '').trim()}`
+                                      : femalePlayed !== malePlayed
+                                        ? 'Female: uses male video'
+                                        : null
+                                  : null}
                               </span>
                             </>
                           );
@@ -1627,6 +2064,37 @@ export default function ExerciseBankTab({
                       <p className="text-xs text-gray-500">No video URL on this exercise.</p>
                     )}
                   </div>
+                  {(detailEx.referenceUrl1 || '').trim() || (detailEx.referenceUrl2 || '').trim() ? (
+                    <div className="mt-3 space-y-3 border-t border-gray-100 pt-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                        Reference videos
+                      </p>
+                      {(detailEx.referenceUrl1 || '').trim() ? (
+                        <div>
+                          <p className="mb-1 text-[10px] font-semibold text-gray-600">Reference URL 1</p>
+                          <ExerciseReferenceVideoPreview
+                            url={(detailEx.referenceUrl1 || '').trim()}
+                            previewLabel="Preview"
+                            unavailableLabel="Cannot embed inline."
+                            openLinkLabel="Open link"
+                            title="Reference URL 1"
+                          />
+                        </div>
+                      ) : null}
+                      {(detailEx.referenceUrl2 || '').trim() ? (
+                        <div>
+                          <p className="mb-1 text-[10px] font-semibold text-gray-600">Reference URL 2</p>
+                          <ExerciseReferenceVideoPreview
+                            url={(detailEx.referenceUrl2 || '').trim()}
+                            previewLabel="Preview"
+                            unavailableLabel="Cannot embed inline."
+                            openLinkLabel="Open link"
+                            title="Reference URL 2"
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </section>
 
                 <section className="rounded-lg border border-gray-200 bg-white p-2 shadow-sm">
@@ -1648,30 +2116,88 @@ export default function ExerciseBankTab({
             )}
           </div>
         </div>
+        ) : (
+          <div className="hidden shrink-0 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-3 py-6 text-center text-xs text-gray-500 lg:flex lg:w-[120px] lg:flex-col lg:items-center lg:justify-center">
+            Detail panel hidden — use the expand control to show it again.
+          </div>
+        )}
+
+        <div
+          className="hidden shrink-0 flex-col gap-2 lg:flex"
+          aria-label="Workspace expand controls"
+        >
+          {layoutExpand ? (
+            <button
+              type="button"
+              onClick={layoutExpand.toggleContentExpanded}
+              className={`flex h-10 w-10 items-center justify-center rounded-lg border shadow-sm transition ${
+                layoutExpand.contentExpanded
+                  ? 'border-sky-600 bg-sky-100 text-sky-900'
+                  : 'border-gray-300 bg-white text-gray-700 hover:border-sky-400 hover:bg-sky-50'
+              }`}
+              title={
+                layoutExpand.contentExpanded
+                  ? 'Show settings menu (collapse workspace)'
+                  : 'Expand workspace (hide left settings menu)'
+              }
+            >
+              {layoutExpand.contentExpanded ? (
+                <Minimize2 className="h-5 w-5" aria-hidden />
+              ) : (
+                <Maximize2 className="h-5 w-5" aria-hidden />
+              )}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setDetailPanelHidden((h) => !h);
+              if (!detailPanelHidden) setDetailPanelWide(false);
+            }}
+            className={`flex h-10 w-10 items-center justify-center rounded-lg border shadow-sm transition ${
+              detailPanelHidden
+                ? 'border-amber-600 bg-amber-100 text-amber-900'
+                : 'border-gray-300 bg-white text-gray-700 hover:border-amber-400 hover:bg-amber-50'
+            }`}
+            title={detailPanelHidden ? 'Show detail panel' : 'Expand grid (hide detail panel)'}
+          >
+            <PanelRightClose className="h-5 w-5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            disabled={detailPanelHidden}
+            onClick={() => setDetailPanelWide((w) => !w)}
+            className={`flex h-10 w-10 items-center justify-center rounded-lg border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-40 ${
+              detailPanelWide
+                ? 'border-violet-600 bg-violet-100 text-violet-900'
+                : 'border-gray-300 bg-white text-gray-700 hover:border-violet-400 hover:bg-violet-50'
+            }`}
+            title={detailPanelWide ? 'Default detail width' : 'Widen detail panel'}
+          >
+            <PanelRightOpen className="h-5 w-5" aria-hidden />
+          </button>
+        </div>
       </div>
 
       {popover?.kind === 'sports' && (
         <PopoverList
-          title="Sports indicated"
-          items={popover.exercise.sportsIndicated || []}
+          title="Libraries"
+          items={normalizeSportsIndicatedToLibraryKeys(popover.exercise.sportsIndicated).map(
+            getExerciseLibrarySportLabel
+          )}
           onClose={() => setPopover(null)}
         />
       )}
       {popover?.kind === 'pathologies' && (
-        <PopoverList
-          title="Pathologies (not suggested)"
-          items={popover.labels.length ? popover.labels : ['— none tagged —']}
+        <ExercisePathologiesDetailModal
+          exercise={popover.exercise}
+          catalog={pathologyCatalog}
+          lang={popover.lang}
           onClose={() => setPopover(null)}
         />
       )}
       {popover?.kind === 'names' && (
-        <PopoverList
-          title="Name by language"
-          items={SUPPORTED_LANGUAGES.map(
-            (l) => `${l.code.toUpperCase()}: ${getExerciseNameForLang(popover.exercise, l.code) || '—'}`
-          )}
-          onClose={() => setPopover(null)}
-        />
+        <ExerciseNamesByLanguageModal exercise={popover.exercise} onClose={() => setPopover(null)} />
       )}
       {popover?.kind === 'secondaries' && (
         <PopoverList title="Secondary muscular groups" items={getSecondaryMuscles(popover.exercise)} onClose={() => setPopover(null)} />

@@ -49,12 +49,39 @@ export const SECTION_EXERCISE_UI_DEFAULTS_EN: Record<string, string> = {
   SectionExercise_NavPathologies: 'Pathologies',
   SectionExercise_NavMuscles: 'Muscles',
   SectionExercise_NavMore: 'More',
+  SectionExercise_NavRelated: 'Related exercises',
+
+  SectionExercise_RelatedTitle: 'Related exercises (twinned)',
+  SectionExercise_RelatedIntro:
+    'Select one or more exercises linked to this one. Use search and the area filter to find entries in the catalog, then check those that are related (twinned) to the current exercise.',
+  SectionExercise_RelatedSearchLabel: 'Search',
+  SectionExercise_RelatedSearchPlaceholder: 'Name or reference code…',
+  SectionExercise_RelatedSearchButton: 'Search',
+  SectionExercise_RelatedAreaFilter: 'Filter by area',
+  SectionExercise_RelatedAreaAll: 'All areas',
+  SectionExercise_RelatedSelectedCount: 'Related selected',
+  SectionExercise_RelatedClear: 'Clear',
+  SectionExercise_RelatedEmpty: 'No exercises match your search and filter.',
+  SectionExercise_RelatedPreviewTitle: 'Male pictures preview',
+  SectionExercise_RelatedPreviewHint: 'Click an exercise in the list to preview Picture A and Picture B (male).',
+  SectionExercise_RelatedPreviewEmpty: 'Select an exercise from the list to preview pictures.',
+  SectionExercise_RelatedSelectAllVisible: 'Select all shown',
+  SectionExercise_RelatedDeselectVisible: 'Deselect shown',
+  SectionExercise_RelatedListHint:
+    'Check exercises to link as twinned / related. Click a row to preview male Picture A and B on the right.',
 
   SectionExercise_Label1CoreTitle: 'Input form — label 1 (core catalog fields)',
   SectionExercise_CodeLabel: 'Code',
   SectionExercise_ReferenceCodePlaceholder: 'Reference code',
   SectionExercise_EditMultilingualNamesTitle: 'Edit multilingual names',
   SectionExercise_SharingLabel: 'Shared by',
+  SectionExercise_DifficultyLabel: 'Difficulty',
+  SectionExercise_DifficultyHint: '(select one or more)',
+  SectionExercise_DifficultyBeginner: 'Beginner',
+  SectionExercise_DifficultyIntermediate: 'Intermediate',
+  SectionExercise_DifficultyAdvanced: 'Advanced',
+  SectionExercise_DifficultyElite: 'Elite',
+  SectionExercise_DifficultyProfessional: 'Professional',
   SectionExercise_SharedByUsernameLabel: 'Username who shared',
   SectionExercise_SharedByMovesbookPlaceholder: 'Movesbook staff label (optional)',
   SectionExercise_SharedByGenericPlaceholder: 'Username or staff label (optional)',
@@ -135,11 +162,16 @@ export const SECTION_EXERCISE_UI_DEFAULTS_EN: Record<string, string> = {
     'Hold Ctrl / ⌘ to select several tags.',
   SectionExercise_CheckAll: 'Check all',
   SectionExercise_Clear: 'Clear',
-  SectionExercise_PathologiesNotesLabel: 'Additional notes (optional free text)',
+  SectionExercise_PathologiesPicturesLabel: 'Pictures of selected pathologies',
+  SectionExercise_PathologiesPicturesEmpty: 'Select pathology tags to preview their catalog pictures here.',
+  SectionExercise_PathologiesInfoTitle: 'Info & Contraindications',
+  SectionExercise_PathologiesInfoHelp:
+    'Exercise-specific info and contraindications — rich text per language, same workflow as Execution, Suggestions, and Breathing (English source, then Translation).',
+  SectionExercise_PathologiesNotesLabel: 'Info & Contraindications',
   SectionExercise_PathologiesNotesHelp:
-    'Extra wording beyond the tagged catalog (shown in lists only as part of notes, not as separate tags).',
+    'Rich text per language for this exercise: extra contraindication notes beyond the tagged catalog entries.',
   SectionExercise_PathologiesNotesPlaceholder:
-    'e.g. physician clearance required before return to training…',
+    'Enter English info and contraindications for this exercise…',
 
   SectionExercise_Label6Tag: 'Input form — label 6',
   SectionExercise_Label6Title: 'Select the muscular areas interested',
@@ -163,8 +195,12 @@ export const SECTION_EXERCISE_UI_DEFAULTS_EN: Record<string, string> = {
 
   SectionExercise_MoreTitle: 'Short description (optional)',
   SectionExercise_MoreHelp:
-    'One-line or short summary for lists. Use the lower tabs for long-form multilingual text, Label 6 for muscle %, and the FAQs tab (label 7 — FAQs of the current exercise) for question + answer pairs.',
+    'One-line or short summary for lists — enter English first, then use Translation or edit each language manually (same workflow as Execution, Suggestions, and Breathing). Use Label 6 for muscle % and the FAQs tab for question + answer pairs.',
   SectionExercise_MorePlaceholder: 'Brief summary for tables and cards',
+  SectionExercise_MoreEnglishHint: 'English is the source language for automatic translation into the other supported languages.',
+  SectionExercise_MoreTranslationLabel: 'Short description',
+  SectionExercise_MorePlaceholderLang: '{languageName} short description…',
+  SectionExercise_MoreCharsSuffix: 'characters',
 
   SectionExercise_DeleteGuardTitle: 'Optional delete protection',
   SectionExercise_DeleteGuardHelp:
@@ -216,9 +252,15 @@ export const SECTION_EXERCISE_UI_DEFAULTS_EN: Record<string, string> = {
   SectionExercise_PictureAFemale: 'Picture A female',
   SectionExercise_PictureBFemale: 'Picture B female',
   SectionExercise_ImageUrlPlaceholder: 'Image URL',
+  SectionExercise_PictureUrlLabel: 'Picture — URL',
   SectionExercise_OfficialVideoUrlLabel: 'Official video — URL',
   SectionExercise_OfficialVideoUrlPlaceholder: 'Paste video URL',
   SectionExercise_OfficialVideoLocalLabel: 'Official video — load from local',
+  SectionExercise_PictureLocalLabel: 'Picture — load from local',
+  SectionExercise_ReferenceVideoPreview: 'Video preview',
+  SectionExercise_ReferenceVideoPreviewUnavailable:
+    'Cannot preview this URL inline. Open the link in a new tab to watch.',
+  SectionExercise_ReferenceVideoOpenLink: 'Open link',
   SectionExercise_NameEnglishTitle: 'English',
 };
 

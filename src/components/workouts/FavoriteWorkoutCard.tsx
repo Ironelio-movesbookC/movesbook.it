@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Star, Eye, Calendar, Edit2, Trash2, Dumbbell, Target, Zap, Tag } from 'lucide-react';
+import { Star, Eye, Calendar, Edit2, Trash2, Dumbbell, Target, Zap, Tag, Copy } from 'lucide-react';
 import { SPORT_OPTIONS } from '@/constants/workout.constants';
 import { WORKOUT_GOALS } from '@/components/workouts/WorkoutInfoModal';
 
@@ -10,6 +10,8 @@ interface FavoriteWorkoutCardProps {
   onDelete: (id: string) => void;
   onOverview: (workout: any) => void;
   onUseInPlanner: (workout: any) => void;
+  onDuplicate?: (workout: any) => void;
+  onExport?: (workout: any, destination: 'YEARLY_PLAN' | 'WORKOUTS_DONE' | 'ARCHIVE' | 'STRUCTURE') => void;
   onUpdate?: () => void;
 }
 
@@ -18,6 +20,8 @@ export default function FavoriteWorkoutCard({
   onDelete, 
   onOverview, 
   onUseInPlanner,
+  onDuplicate,
+  onExport,
   onUpdate
 }: FavoriteWorkoutCardProps) {
   const [showEditModal, setShowEditModal] = useState(false);
@@ -204,14 +208,44 @@ export default function FavoriteWorkoutCard({
         )}
         
         <div className="flex gap-2">
-          <button
-            onClick={() => onUseInPlanner(workout)}
-            className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2"
-            title="Add to planner"
-          >
-            <Calendar className="w-4 h-4" />
-            Use in my planner
-          </button>
+          {onExport ? (
+            <select
+              defaultValue=""
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) return;
+                onExport(workout, v as 'YEARLY_PLAN' | 'WORKOUTS_DONE' | 'ARCHIVE' | 'STRUCTURE');
+                e.target.value = '';
+              }}
+              className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg border-0 cursor-pointer"
+            >
+              <option value="" disabled>
+                Export to…
+              </option>
+              <option value="YEARLY_PLAN">Yearly Plan</option>
+              <option value="WORKOUTS_DONE">Workouts Done</option>
+              <option value="ARCHIVE">Archive</option>
+              <option value="STRUCTURE">Weekly Structure</option>
+            </select>
+          ) : (
+            <button
+              onClick={() => onUseInPlanner(workout)}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2"
+              title="Add to planner"
+            >
+              <Calendar className="w-4 h-4" />
+              Use in my planner
+            </button>
+          )}
+          {onDuplicate && (
+            <button
+              onClick={() => onDuplicate(workout)}
+              className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition"
+              title="Clone workout"
+            >
+              <Copy className="w-4 h-4" />
+            </button>
+          )}
           <button
             onClick={() => onOverview(workout)}
             className="px-4 py-2 border-2 border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition"
