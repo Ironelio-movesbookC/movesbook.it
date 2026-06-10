@@ -38,6 +38,7 @@ import {
 import { useLanguage } from '@/contexts/LanguageContext';
 import FontAwesomeIconPicker, { normalizeFaIconClass } from '@/components/desk/FontAwesomeIconPicker';
 import { deskTreeRowInsetStyle } from '@/components/desk/deskTreeDepth';
+import { openDeskItemPath } from '@/components/desk/deskPathNavigation';
 
 type DeskIconKey = 'at' | 'book' | 'id' | 'trophy' | 'wheelchair' | 'landmark';
 
@@ -149,7 +150,7 @@ function mapApiNodeToTree(node: ApiMyDeskNode): MyDeskNode {
     faIconClass: node.faIconClass ?? undefined,
     bgColor: node.bgColor ?? undefined,
     titleColor: node.titleColor ?? undefined,
-    path: node.path ?? undefined,
+    path: node.path?.trim() || undefined,
     displayMode: (node.displayMode as 'new_label' | 'central_page' | null) ?? undefined,
     visible: node.visible,
     children: (node.children ?? []).map(mapApiNodeToTree)
@@ -161,6 +162,7 @@ function SortableMyDeskRow({
   depth,
   expanded,
   toggle,
+  onPathClick,
   onAddChild,
   onEdit,
   onDelete,
@@ -170,6 +172,7 @@ function SortableMyDeskRow({
   depth: number;
   expanded: Record<string, boolean>;
   toggle: (id: string) => void;
+  onPathClick: (node: MyDeskNode) => void;
   onAddChild: (parentId: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
@@ -177,6 +180,7 @@ function SortableMyDeskRow({
 }) {
   const { t } = useLanguage();
   const hasChildren = Boolean(node.children?.length);
+  const hasPath = Boolean(node.path?.trim());
   const open = expanded[node.id] ?? false;
   const Icon = node.icon ? ICONS[node.icon] : null;
   const faIconClass = node.faIconClass?.trim();
@@ -194,6 +198,16 @@ function SortableMyDeskRow({
 
   const childIds = node.children?.map((c) => c.id) ?? [];
   const insetStyle = deskTreeRowInsetStyle(depth);
+
+  const onTitleClick = () => {
+    if (hasPath) {
+      onPathClick(node);
+      return;
+    }
+    if (hasChildren) {
+      toggle(node.id);
+    }
+  };
 
   return (
     <div
@@ -231,12 +245,12 @@ function SortableMyDeskRow({
             <Icon className="h-4 w-4" aria-hidden />
           </span>
         ) : null}
-        {hasChildren ? (
+        {hasPath || hasChildren ? (
           <button
             type="button"
-            className="min-w-0 flex-1 truncate text-left uppercase hover:opacity-95"
-            onClick={() => toggle(node.id)}
-            aria-expanded={open}
+            className={`min-w-0 flex-1 truncate text-left uppercase transition-opacity hover:opacity-95 ${hasPath ? 'cursor-pointer underline-offset-2 hover:underline' : ''}`}
+            onClick={onTitleClick}
+            aria-expanded={hasChildren ? open : undefined}
           >
             {node.label}
           </button>
@@ -304,6 +318,7 @@ function SortableMyDeskRow({
               depth={depth + 1}
               expanded={expanded}
               toggle={toggle}
+              onPathClick={onPathClick}
               onAddChild={onAddChild}
               onEdit={onEdit}
               onDelete={onDelete}
@@ -483,6 +498,14 @@ export default function MyDeskSettingsTree() {
 
   const router = useRouter();
 
+  const onPathClick = useCallback(
+    (node: MyDeskNode) => {
+      if (!node.path?.trim()) return;
+      openDeskItemPath(node.path, node.displayMode, router);
+    },
+    [router]
+  );
+
   const onDelete = useCallback(async (id: string) => {
     if (!window.confirm(t('desk_delete_confirm'))) {
       return;
@@ -590,6 +613,7 @@ export default function MyDeskSettingsTree() {
                   depth={0}
                   expanded={expanded}
                   toggle={toggle}
+                  onPathClick={onPathClick}
                   onAddChild={onAddChild}
                   onEdit={onEdit}
                   onDelete={onDelete}

@@ -156,6 +156,7 @@ export default function ClubWebsiteMemberDisplay({
         <RightSidebar
           context="my-club"
           onAddMember={() => {}}
+          isClubAccount
           athleteMyClubRightSidebar
         />
       </div>
