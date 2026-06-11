@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import ModernNavbar from '@/components/ModernNavbar';
 import AdminNavbar from '@/components/AdminNavbar';
 import ModernFooter from '@/components/ModernFooter';
@@ -51,7 +51,7 @@ export default function SettingsPage() {
   const { user, loading } = useAuth();
   const { t } = useLanguage();
   const [isAdmin, setIsAdmin] = useState(false);
-  const searchParams = useSearchParams();
+  const [queryParams, setQueryParams] = useState<URLSearchParams | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
     if (typeof window === 'undefined') return 'grid';
     const valid: SettingsSection[] = [
@@ -118,13 +118,23 @@ export default function SettingsPage() {
     }
   }, [user, loading, isAdmin, router]);
 
+  useEffect(() => {
+    const updateParams = () => {
+      setQueryParams(new URLSearchParams(window.location.search));
+    };
+    updateParams();
+    window.addEventListener('popstate', updateParams);
+    return () => window.removeEventListener('popstate', updateParams);
+  }, []);
+
   // Persist active section across refreshes
   useEffect(() => {
     localStorage.setItem('settings_active_section', activeSection);
   }, [activeSection]);
 
   useEffect(() => {
-    const sectionParam = searchParams.get('section');
+    if (!queryParams) return;
+    const sectionParam = queryParams.get('section');
     if (!sectionParam) return;
     if (sectionParam === 'periodization') {
       setActiveSection('tools');
@@ -151,7 +161,7 @@ export default function SettingsPage() {
     if (allowed.includes(sectionParam as SettingsSection)) {
       setActiveSection(sectionParam as SettingsSection);
     }
-  }, [searchParams, isAdmin]);
+  }, [queryParams, isAdmin]);
 
   // Don't render if not authenticated
   if (loading || (!user && !isAdmin)) {
@@ -180,8 +190,8 @@ export default function SettingsPage() {
         { id: 'mybest' as SettingsSection, label: t('settings_my_best'), icon: Trophy }
       ];
 
-  const requestedTab = searchParams.get('tab') || undefined;
-  const requestedWorkoutTabRaw = searchParams.get('workoutTab');
+  const requestedTab = queryParams?.get('tab') || undefined;
+  const requestedWorkoutTabRaw = queryParams?.get('workoutTab');
   const requestedWorkoutTab =
     requestedWorkoutTabRaw === 'changesVolumesSeries' ||
     requestedWorkoutTabRaw === 'parametersByObjective' ||
