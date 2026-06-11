@@ -186,6 +186,9 @@ export default function TypologySubscriptionPage() {
       return;
     }
 
+    const confirmed = window.confirm('Do you want to copy this item?');
+    if (!confirmed) return;
+
     setCopying(true);
     try {
       const token = localStorage.getItem('token');
