@@ -49,9 +49,11 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const effectiveTypologyId = selectedTypologyId || form.typologyId || initialTypologyId;
+
   const selectedTypologyName = useMemo(
-    () => typologies.find((item) => item.id === selectedTypologyId)?.name ?? '',
-    [typologies, selectedTypologyId]
+    () => typologies.find((item) => item.id === effectiveTypologyId)?.name ?? '',
+    [typologies, effectiveTypologyId]
   );
 
   const loadTimetable = useCallback(async (typologyId: string, sourceTypologyId?: string) => {
@@ -73,9 +75,16 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
     setOperators(Array.isArray(data.operators) ? data.operators : []);
 
     if (data.timetable) {
-      setForm(data.timetable as CardTimetableForm);
+      const timetable = data.timetable as CardTimetableForm;
+      setForm(timetable);
+      if (typologyId) {
+        setSelectedTypologyId(typologyId);
+      } else if (timetable.typologyId) {
+        setSelectedTypologyId(timetable.typologyId);
+      }
     } else if (typologyId) {
       setForm(createEmptyTimetableForm(typologyId));
+      setSelectedTypologyId(typologyId);
     }
   }, []);
 
@@ -105,10 +114,15 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
   }, [selectedTypologyId, loadTimetable]);
 
   useEffect(() => {
-    if (initialTypologyId && initialTypologyId !== selectedTypologyId) {
+    if (initialTypologyId) {
       setSelectedTypologyId(initialTypologyId);
+      setForm((current) =>
+        current.typologyId === initialTypologyId
+          ? current
+          : { ...current, typologyId: initialTypologyId }
+      );
     }
-  }, [initialTypologyId, selectedTypologyId]);
+  }, [initialTypologyId]);
 
   const handleLoadTypology = async () => {
     if (!selectedTypologyId) {
@@ -187,7 +201,8 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedTypologyId) {
+    const typologyId = effectiveTypologyId;
+    if (!typologyId) {
       window.alert('Please select a typology first.');
       return;
     }
@@ -209,7 +224,7 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
         },
         body: JSON.stringify({
           ...form,
-          typologyId: selectedTypologyId
+          typologyId
         })
       });
 
@@ -245,7 +260,7 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
       </div>
 
       <section className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm">
-        <ClubSettingsTypologyTabs timetableTypologyId={selectedTypologyId || null} />
+        <ClubSettingsTypologyTabs timetableTypologyId={effectiveTypologyId || null} />
 
         <form onSubmit={handleSubmit}>
           <div className="border-b border-gray-200 bg-gray-50 px-4 py-4">
@@ -295,8 +310,14 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
                 Select typology you want manage
               </span>
               <select
-                value={selectedTypologyId}
-                onChange={(event) => setSelectedTypologyId(event.target.value)}
+                value={selectedTypologyId || form.typologyId}
+                onChange={(event) => {
+                  const nextId = event.target.value;
+                  setSelectedTypologyId(nextId);
+                  if (nextId) {
+                    setForm((current) => ({ ...current, typologyId: nextId }));
+                  }
+                }}
                 className="h-10 w-[220px] shrink-0 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 shadow-sm"
               >
                 <option value="">Select</option>
@@ -467,26 +488,26 @@ export default function ClubCardTimetablePage({ initialTypologyId = '' }: ClubCa
                   Use Set Propriety to configure slot booking rules for this typology.
                 </div>
               )}
-
-              <div className="flex justify-end gap-2 border-t border-gray-200 px-4 py-4">
-                <button
-                  type="button"
-                  onClick={() => router.push(TYPOLOGY_LIST_PATH)}
-                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving || !selectedTypologyId}
-                  className="inline-flex items-center gap-2 rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Save
-                </button>
-              </div>
             </>
           )}
+
+          <div className="flex justify-end gap-2 border-t border-gray-200 px-4 py-4">
+            <button
+              type="button"
+              onClick={() => router.push(TYPOLOGY_LIST_PATH)}
+              className="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving || loading || !effectiveTypologyId}
+              className="inline-flex items-center gap-2 rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save
+            </button>
+          </div>
         </form>
       </section>
     </div>
