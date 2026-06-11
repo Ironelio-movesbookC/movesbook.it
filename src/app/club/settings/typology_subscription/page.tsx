@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getTypologyIconUrlWithDefault } from '@/lib/typologyIcon';
 import {
@@ -18,6 +18,7 @@ import {
   Plus,
   Printer,
   Search,
+  Square,
   Trash2,
   Volume2,
   X
@@ -87,8 +88,41 @@ export default function TypologySubscriptionPage() {
   const [bookingSettings, setBookingSettings] = useState<BookingSettings>(DEFAULT_BOOKING_SETTINGS);
   const [savingBooking, setSavingBooking] = useState(false);
   const [copying, setCopying] = useState(false);
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   const selectedRow = rows.find((row) => row.id === selectedId) ?? null;
+
+  const stopAudio = () => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+    setPlayingAudioId(null);
+  };
+
+  const handleAudioClick = (row: TypologyRow, event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!row.audioUrl) return;
+
+    if (playingAudioId === row.id) {
+      stopAudio();
+      return;
+    }
+
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    audio.src = row.audioUrl;
+    audio.load();
+    void audio.play()
+      .then(() => setPlayingAudioId(row.id))
+      .catch(() => {
+        window.alert('Unable to play audio.');
+        setPlayingAudioId(null);
+      });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -502,18 +536,27 @@ export default function TypologySubscriptionPage() {
                           <button
                             type="button"
                             disabled={!row.audioUrl}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (row.audioUrl) window.open(row.audioUrl, '_blank', 'noopener,noreferrer');
-                            }}
+                            onClick={(event) => handleAudioClick(row, event)}
                             className={`inline-flex h-8 w-8 items-center justify-center rounded border ${
                               row.audioUrl
-                                ? 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                                ? playingAudioId === row.id
+                                  ? 'border-gray-900 bg-gray-100 text-gray-900'
+                                  : 'border-gray-300 text-gray-700 hover:bg-gray-100'
                                 : 'border-gray-200 text-gray-300'
                             }`}
-                            title={row.audioUrl ? 'Open audio' : 'No audio'}
+                            title={
+                              row.audioUrl
+                                ? playingAudioId === row.id
+                                  ? 'Stop audio'
+                                  : 'Play audio'
+                                : 'No audio'
+                            }
                           >
-                            <Volume2 className="h-4 w-4" />
+                            {playingAudioId === row.id ? (
+                              <Square className="h-4 w-4" />
+                            ) : (
+                              <Volume2 className="h-4 w-4" />
+                            )}
                           </button>
                         </td>
                         <td className="px-4 py-3 text-center">
@@ -671,6 +714,8 @@ export default function TypologySubscriptionPage() {
           </div>
         </div>
       )}
+
+      <audio ref={audioRef} className="hidden" onEnded={() => setPlayingAudioId(null)} />
     </div>
   );
 }
