@@ -40,8 +40,13 @@ const publicApiRoutes = [
   '/api/auth/login',
   '/api/auth/register',
   '/api/auth/reset-password',
-  '/api/auth/reset-username'
+  '/api/auth/reset-username',
 ];
+
+/** Public share links (read-only workout day / session). */
+function isPublicSharedWorkoutApi(pathname: string): boolean {
+  return /^\/api\/workouts\/(days|sessions)\/[^/]+\/shared$/.test(pathname);
+}
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -50,15 +55,23 @@ export function middleware(request: NextRequest) {
     return new NextResponse(null, { status: 204 });
   }
 
-  // Allow public routes
-  if (publicRoutes.includes(pathname) || pathname.startsWith('/api/auth/')) {
+  // Allow public routes and shared read-only pages
+  if (
+    publicRoutes.includes(pathname) ||
+    pathname.startsWith('/api/auth/') ||
+    pathname.startsWith('/shared/')
+  ) {
     return NextResponse.next();
   }
 
   // For API routes, check authentication via token in header
   if (pathname.startsWith('/api/')) {
     const token = request.cookies.get('token') || request.headers.get('authorization');
-    if (!token && !publicApiRoutes.some(route => pathname.startsWith(route))) {
+    if (
+      !token &&
+      !publicApiRoutes.some((route) => pathname.startsWith(route)) &&
+      !isPublicSharedWorkoutApi(pathname)
+    ) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

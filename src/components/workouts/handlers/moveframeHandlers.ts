@@ -137,12 +137,11 @@ export async function copyMoveframe(
 
   const data = await response.json();
 
-  if (response.ok && data.success) {
-    showMessage('success', data.message || 'Moveframe copied successfully!');
+  if (response.ok) {
+    showMessage('success', 'Moveframe copied successfully!');
     return data;
-  } else {
-    throw new Error(data.error || 'Failed to copy moveframe');
   }
+  throw new Error(data.error || 'Failed to copy moveframe');
 }
 
 /**
@@ -169,12 +168,11 @@ export async function moveMoveframe(
 
   const data = await response.json();
 
-  if (response.ok && data.success) {
-    showMessage('success', data.message || 'Moveframe moved successfully!');
+  if (response.ok) {
+    showMessage('success', 'Moveframe moved successfully!');
     return data;
-  } else {
-    throw new Error(data.error || 'Failed to move moveframe');
   }
+  throw new Error(data.error || 'Failed to move moveframe');
 }
 
 /**

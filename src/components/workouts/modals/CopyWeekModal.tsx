@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { X, CheckSquare, Square, Hash } from 'lucide-react';
+import { getWeekWorkoutCount, isWeekEmpty } from '@/lib/workoutPlanLoad';
 
 interface CopyWeekModalProps {
   isOpen: boolean;
@@ -7,6 +8,16 @@ interface CopyWeekModalProps {
   allWeeks: any[];
   onClose: () => void;
   onCopy: (targetWeekId: string) => Promise<void>;
+  /** Modal title prefix, e.g. "Assign Week" vs "Copy Week" */
+  title?: string;
+  /** Primary action button label */
+  actionLabel?: string;
+  /** When true, show empty/full on targets and require overwrite confirm if any target has content */
+  checkRecipientStatus?: boolean;
+  /** When true, hide "Copy Next N Weeks" consecutive mode */
+  disableConsecutiveMode?: boolean;
+  /** Max target weeks selectable in select mode (e.g. 2 for Workouts Done) */
+  maxSelectableWeeks?: number;
 }
 
 export default function CopyWeekModal({ 
@@ -14,42 +25,81 @@ export default function CopyWeekModal({
   sourceWeek, 
   allWeeks, 
   onClose, 
-  onCopy 
+  onCopy,
+  title = 'Copy Week',
+  actionLabel = 'Copy',
+  checkRecipientStatus = true,
+  disableConsecutiveMode = false,
+  maxSelectableWeeks,
 }: CopyWeekModalProps) {
   const [copyMode, setCopyMode] = useState<'select' | 'consecutive'>('select');
   const [selectedWeekIds, setSelectedWeekIds] = useState<Set<string>>(new Set());
   const [consecutiveCount, setConsecutiveCount] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
+
+  const sourceWeekIndex = sourceWeek
+    ? allWeeks.findIndex((w) => w.id === sourceWeek.id)
+    : -1;
+
+  const getConsecutiveWeeks = (count: number) => {
+    if (sourceWeekIndex === -1) return [];
+    const startIndex = sourceWeekIndex + 1;
+    return allWeeks.slice(startIndex, startIndex + count);
+  };
+
+  const effectiveCopyMode = disableConsecutiveMode ? 'select' : copyMode;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setCopyMode('select');
+    setSelectedWeekIds(new Set());
+    setConsecutiveCount(1);
+    setConfirmOverwrite(false);
+  }, [isOpen, sourceWeek?.id]);
+
+  const selectedCount =
+    effectiveCopyMode === 'select' ? selectedWeekIds.size : getConsecutiveWeeks(consecutiveCount).length;
+
+  const targetWeekIdsForCheck =
+    effectiveCopyMode === 'select'
+      ? Array.from(selectedWeekIds)
+      : getConsecutiveWeeks(consecutiveCount).map((w) => w.id);
+
+  const anyTargetHasContent = useMemo(() => {
+    if (!checkRecipientStatus) return false;
+    const idSet = new Set(targetWeekIdsForCheck);
+    return allWeeks.some((w) => idSet.has(w.id) && !isWeekEmpty(w));
+  }, [allWeeks, targetWeekIdsForCheck, checkRecipientStatus]);
+
+  const maxConsecutiveWeeks = Math.max(0, allWeeks.length - sourceWeekIndex - 1);
 
   if (!isOpen || !sourceWeek) return null;
 
-  // Find the source week index
-  const sourceWeekIndex = allWeeks.findIndex(w => w.id === sourceWeek.id);
-  
-  // Get consecutive weeks starting from the source week
-  const getConsecutiveWeeks = (count: number) => {
-    if (sourceWeekIndex === -1) return [];
-    const startIndex = sourceWeekIndex + 1; // Start from next week
-    return allWeeks.slice(startIndex, startIndex + count);
-  };
+  // Find the source week index (for display)
+
+  const isSourceWeek = (week: any) => week.id === sourceWeek.id;
 
   const toggleWeekSelection = (weekId: string) => {
     const newSelection = new Set(selectedWeekIds);
     if (newSelection.has(weekId)) {
       newSelection.delete(weekId);
     } else {
+      if (maxSelectableWeeks && newSelection.size >= maxSelectableWeeks) {
+        alert(`You can select at most ${maxSelectableWeeks} target week(s).`);
+        return;
+      }
       newSelection.add(weekId);
     }
     setSelectedWeekIds(newSelection);
   };
 
   const selectAll = () => {
-    const newSelection = new Set(
-      allWeeks
-        .filter(w => w.id !== sourceWeek.id)
-        .map(w => w.id)
-    );
-    setSelectedWeekIds(newSelection);
+    const candidates = allWeeks.filter((w) => !isSourceWeek(w));
+    const limited = maxSelectableWeeks
+      ? candidates.slice(0, maxSelectableWeeks)
+      : candidates;
+    setSelectedWeekIds(new Set(limited.map((w) => w.id)));
   };
 
   const deselectAll = () => {
@@ -59,24 +109,27 @@ export default function CopyWeekModal({
   const handleCopy = async () => {
     let targetWeekIds: string[] = [];
 
-    if (copyMode === 'select') {
+    if (effectiveCopyMode === 'select') {
       if (selectedWeekIds.size === 0) {
-        console.error('âŒ Please select at least one target week');
+        console.error('❌ Please select at least one target week');
         return;
       }
       targetWeekIds = Array.from(selectedWeekIds);
     } else {
-      // consecutive mode
       if (consecutiveCount < 1) {
-        console.error('âŒ Please enter a valid number of weeks');
+        console.error('❌ Please enter a valid number of weeks');
         return;
       }
       const consecutiveWeeks = getConsecutiveWeeks(consecutiveCount);
       if (consecutiveWeeks.length === 0) {
-        console.error('âŒ No weeks available to copy to');
+        console.error('❌ No weeks available to copy to');
         return;
       }
       targetWeekIds = consecutiveWeeks.map(w => w.id);
+    }
+
+    if (checkRecipientStatus && anyTargetHasContent && !confirmOverwrite) {
+      return;
     }
 
     try {
@@ -100,12 +153,6 @@ export default function CopyWeekModal({
     }
   };
 
-  const selectedCount = copyMode === 'select' 
-    ? selectedWeekIds.size 
-    : getConsecutiveWeeks(consecutiveCount).length;
-
-  const maxConsecutiveWeeks = allWeeks.length - sourceWeekIndex - 1;
-
   return (
     <div 
       className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100000] p-4"
@@ -119,7 +166,7 @@ export default function CopyWeekModal({
       >
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 flex items-center justify-between flex-shrink-0">
-          <h2 className="text-xl font-bold">Copy Week {sourceWeek.weekNumber}</h2>
+          <h2 className="text-xl font-bold">{title} {sourceWeek.weekNumber}</h2>
           <button
             onClick={(e) => { e.stopPropagation(); onClose(); }} className="text-white hover:bg-white/20 rounded-full p-1 transition-colors"
             aria-label="Close"
@@ -140,6 +187,7 @@ export default function CopyWeekModal({
           </div>
 
           {/* Copy Mode Toggle */}
+          {!disableConsecutiveMode && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-3">
               Copy Mode
@@ -171,9 +219,16 @@ export default function CopyWeekModal({
               </button>
             </div>
           </div>
+          )}
+
+          {maxSelectableWeeks && copyMode === 'select' && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Select up to {maxSelectableWeeks} target week(s).
+            </p>
+          )}
 
           {/* Select Specific Weeks Mode */}
-          {copyMode === 'select' && (
+          {effectiveCopyMode === 'select' && (
             <div>
               <div className="flex items-center justify-between mb-3">
                 <label className="block text-sm font-medium text-gray-700">
@@ -197,15 +252,15 @@ export default function CopyWeekModal({
               </div>
               
               <div className="border border-gray-300 rounded-lg max-h-80 overflow-y-auto">
-                {allWeeks.map((week, idx) => {
-                  const isSourceWeek = week.id === sourceWeek.id;
+                {allWeeks.map((week) => {
+                  const sourceWeekMatch = isSourceWeek(week);
                   const isSelected = selectedWeekIds.has(week.id);
                   
                   return (
                     <label
                       key={week.id}
                       className={`flex items-center gap-3 px-4 py-3 border-b border-gray-200 last:border-b-0 transition-colors ${
-                        isSourceWeek 
+                        sourceWeekMatch 
                           ? 'bg-gray-100 cursor-not-allowed opacity-60' 
                           : isSelected
                           ? 'bg-blue-50 hover:bg-blue-100 cursor-pointer'
@@ -215,14 +270,14 @@ export default function CopyWeekModal({
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        onChange={() => !isSourceWeek && toggleWeekSelection(week.id)}
-                        disabled={isSourceWeek}
+                        onChange={() => !sourceWeekMatch && toggleWeekSelection(week.id)}
+                        disabled={sourceWeekMatch}
                         className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
                       />
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-gray-900">Week {week.weekNumber}</span>
-                          {isSourceWeek && (
+                          {sourceWeekMatch && (
                             <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">
                               Source
                             </span>
@@ -230,13 +285,26 @@ export default function CopyWeekModal({
                         </div>
                         <div className="text-xs text-gray-500 mt-0.5">
                           {week.days?.[0] ? new Date(week.days[0].date).toLocaleDateString() : 'N/A'}
-                          {week.period && ` â€¢ ${week.period.name}`}
+                          {week.period && ` • ${week.period.name}`}
+                          {checkRecipientStatus && (
+                            <span
+                              className={`ml-2 px-1.5 py-0.5 rounded-full ${
+                                isWeekEmpty(week)
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {isWeekEmpty(week)
+                                ? 'Empty'
+                                : `${getWeekWorkoutCount(week)} workout(s)`}
+                            </span>
+                          )}
                         </div>
                       </div>
-                      {isSelected && !isSourceWeek && (
+                      {isSelected && !sourceWeekMatch && (
                         <CheckSquare className="w-5 h-5 text-blue-600" />
                       )}
-                      {!isSelected && !isSourceWeek && (
+                      {!isSelected && !sourceWeekMatch && (
                         <Square className="w-5 h-5 text-gray-400" />
                       )}
                     </label>
@@ -247,7 +315,7 @@ export default function CopyWeekModal({
           )}
 
           {/* Consecutive Weeks Mode */}
-          {copyMode === 'consecutive' && (
+          {effectiveCopyMode === 'consecutive' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">
                 Number of Consecutive Weeks
@@ -290,7 +358,18 @@ export default function CopyWeekModal({
                         </span>
                         <div className="flex-1">
                           <span className="font-semibold text-gray-900 text-sm">Week {week.weekNumber}</span>
-                          <span className="text-xs text-gray-500 ml-2">
+                          {checkRecipientStatus && (
+                            <span
+                              className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${
+                                isWeekEmpty(week)
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {isWeekEmpty(week) ? 'Empty' : `${getWeekWorkoutCount(week)} workout(s)`}
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-500 ml-2 block sm:inline">
                             {week.days?.[0] ? new Date(week.days[0].date).toLocaleDateString() : 'N/A'}
                           </span>
                         </div>
@@ -302,11 +381,19 @@ export default function CopyWeekModal({
             </div>
           )}
 
-          <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-            <p className="text-xs text-yellow-800">
-              <strong>âš ï¸ Note:</strong> This will copy all workouts, moveframes, and movelaps from the source week to {selectedCount} target week(s). Day-specific info (date, notes) will remain unchanged in the target weeks.
-            </p>
-          </div>
+          {checkRecipientStatus && anyTargetHasContent && (
+            <label className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={confirmOverwrite}
+                onChange={(e) => setConfirmOverwrite(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span className="text-sm text-amber-900">
+                One or more target weeks already have workouts. Replace existing content in those weeks.
+              </span>
+            </label>
+          )}
         </div>
 
         {/* Footer */}
@@ -331,9 +418,13 @@ export default function CopyWeekModal({
             <button
               onClick={handleCopy}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={isLoading || selectedCount === 0}
+              disabled={
+                isLoading ||
+                selectedCount === 0 ||
+                (checkRecipientStatus && anyTargetHasContent && !confirmOverwrite)
+              }
             >
-              {isLoading ? `Copying... (${selectedCount})` : `Copy to ${selectedCount} Week(s)`}
+              {isLoading ? `${actionLabel}ing... (${selectedCount})` : `${actionLabel} to ${selectedCount} Week(s)`}
             </button>
           </div>
         </div>

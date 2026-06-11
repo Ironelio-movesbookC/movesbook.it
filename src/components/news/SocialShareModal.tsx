@@ -2,6 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { X, Link2, MessageCircle, Send, Facebook } from 'lucide-react';
+import {
+  buildTelegramSharePickerUrl,
+  buildWhatsAppShareUrl,
+  ensureShareLinkInMessage,
+  FACEBOOK_SHARE_NOTICE,
+  openExternalShareUrl,
+  shareViaFacebook,
+} from '@/utils/socialShareUrls';
 
 interface SocialShareModalProps {
   isOpen: boolean;
@@ -9,6 +17,10 @@ interface SocialShareModalProps {
   articleUrl: string;
   articleTitle: string;
   articleImage?: string | null;
+  /** Modal heading (default: Share this article) */
+  heading?: string;
+  /** Raise z-index above workout plan overlays */
+  elevated?: boolean;
   onPostToMovesbook?: () => void;
 }
 
@@ -18,6 +30,8 @@ export default function SocialShareModal({
   articleUrl,
   articleTitle,
   articleImage,
+  heading = 'Share this article',
+  elevated = false,
   onPostToMovesbook,
 }: SocialShareModalProps) {
   const [copied, setCopied] = useState(false);
@@ -41,19 +55,30 @@ export default function SocialShareModal({
 
   if (!isOpen) return null;
 
-  const encodedUrl = encodeURIComponent(articleUrl);
-  const encodedTitle = encodeURIComponent(articleTitle);
+  const overlayZ = elevated ? 'z-[10000000]' : 'z-[9999]';
+  const panelZ = elevated ? 'z-[10000001]' : 'z-[10000]';
+
+  const shareText = ensureShareLinkInMessage(
+    articleTitle.trim() || 'Check this out on Movesbook',
+    articleUrl
+  );
 
   const handleWhatsApp = () => {
-    window.open(`https://wa.me/?text=${encodedTitle}%20${encodedUrl}`, '_blank');
+    if (!articleUrl) return;
+    openExternalShareUrl(buildWhatsAppShareUrl(undefined, shareText));
   };
 
   const handleTelegram = () => {
-    window.open(`https://t.me/share/url?url=${encodedUrl}&text=${encodedTitle}`, '_blank');
+    if (!articleUrl) return;
+    openExternalShareUrl(buildTelegramSharePickerUrl(articleUrl, shareText));
   };
 
-  const handleFacebook = () => {
-    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`, '_blank');
+  const handleFacebook = async () => {
+    if (!articleUrl) return;
+    const fb = await shareViaFacebook(articleUrl, shareText);
+    if (fb.copiedToClipboard) {
+      alert(FACEBOOK_SHARE_NOTICE);
+    }
   };
 
   const handleCopyLink = async () => {
@@ -69,18 +94,18 @@ export default function SocialShareModal({
   return (
     <>
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-[9999] transition-opacity"
+        className={`fixed inset-0 bg-black bg-opacity-50 ${overlayZ} transition-opacity`}
         onClick={onClose}
       />
-      <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div className={`fixed inset-0 ${panelZ} flex items-center justify-center p-4 pointer-events-none`}>
         <div
-          className="bg-white rounded-xl shadow-2xl w-full max-w-md border border-gray-200 relative"
+          className="bg-white rounded-xl shadow-2xl w-full max-w-md border border-gray-200 relative pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="p-6">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold text-gray-900">
-                Share this article
+                {heading}
               </h3>
               <button
                 onClick={onClose}

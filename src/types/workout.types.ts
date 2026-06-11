@@ -60,6 +60,8 @@ export interface Week extends BaseEntity {
   weekNumber: number;
   startDate: Date | string;
   endDate: Date | string;
+  periodId?: string | null;
+  period?: Pick<Period, 'id' | 'name' | 'color'> | null;
   days: WorkoutDay[];
 }
 

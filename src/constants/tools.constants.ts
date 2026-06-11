@@ -3,6 +3,11 @@
  * Extracted from ToolsSettings.tsx
  */
 
+import {
+  normalizeSportsIndicatedToLibraryKeys,
+  sanitizeSportsIndicatedForLibrary,
+} from '@/constants/exerciseLibrarySports';
+
 export type IconType = 'emoji' | 'bw_icons';
 export type ToolsTab =
   | 'periods'
@@ -76,8 +81,188 @@ export type BodyBuildingTechnique = ExecutionTechnique;
 /** Catalog row for exercise contraindications (Technical Settings → Pathologies). */
 export interface ExercisePathologyCatalogItem {
   id: string;
+  /** English / canonical label (kept in sync with `nameByLanguage.en`). */
   name: string;
+  /** Localized pathology labels keyed by `SUPPORTED_LANGUAGES` code. */
+  nameByLanguage?: Record<string, string>;
+  /** English / canonical description (kept in sync with `descriptionByLanguage.en`). */
+  description?: string;
+  /** Localized descriptions keyed by `SUPPORTED_LANGUAGES` code. */
+  descriptionByLanguage?: Record<string, string>;
+  /** Illustration (URL or data URL) — same for all languages. */
+  picture?: string;
   order: number;
+}
+
+export function getPathologyNameForLang(item: ExercisePathologyCatalogItem, lang: string): string {
+  const byLang = item.nameByLanguage || {};
+  const en = (byLang.en || item.name || '').trim();
+  if (lang === 'en') return en;
+  return (byLang[lang] || '').trim() || en;
+}
+
+export function getPathologyDescriptionForLang(item: ExercisePathologyCatalogItem, lang: string): string {
+  const byLang = item.descriptionByLanguage || {};
+  const en = (byLang.en || item.description || '').trim();
+  if (lang === 'en') return en;
+  return (byLang[lang] || '').trim() || en;
+}
+
+export function getPathologyInfoForLang(ex: Exercise, lang: string): string {
+  const byLang = ex.contraindicatedPathologiesInfoByLanguage || {};
+  const en = (byLang.en || ex.contraindicatedPathologiesNote || '').trim();
+  if (lang === 'en') return en;
+  return (byLang[lang] || '').trim() || en;
+}
+
+export function getExerciseDescriptionForLang(ex: Exercise, lang: string): string {
+  const byLang = ex.descriptionByLanguage || {};
+  const en = (byLang.en || ex.description || '').trim();
+  if (lang === 'en') return en;
+  return (byLang[lang] || '').trim() || en;
+}
+
+export function normalizePathologyCatalogItem(
+  partial: Partial<ExercisePathologyCatalogItem> & { id: string },
+  order: number
+): ExercisePathologyCatalogItem {
+  const nameByLanguage = { ...(partial.nameByLanguage || {}) };
+  const descriptionByLanguage = { ...(partial.descriptionByLanguage || {}) };
+  const legacyName = (partial.name || '').trim();
+  const legacyDesc = (partial.description || '').trim();
+  if (!nameByLanguage.en?.trim() && legacyName) nameByLanguage.en = legacyName;
+  if (!descriptionByLanguage.en?.trim() && legacyDesc) descriptionByLanguage.en = legacyDesc;
+  const name = (nameByLanguage.en || legacyName).trim();
+  const description = (descriptionByLanguage.en || legacyDesc).trim();
+  const picture = typeof partial.picture === 'string' ? partial.picture.trim() : '';
+  return {
+    id: partial.id,
+    name,
+    nameByLanguage,
+    description,
+    descriptionByLanguage,
+    ...(picture ? { picture } : {}),
+    order,
+  };
+}
+
+export function normalizePathologyCatalog(raw: unknown): ExercisePathologyCatalogItem[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ExercisePathologyCatalogItem[] = [];
+  raw.forEach((row, i) => {
+    if (!row || typeof row !== 'object') return;
+    const o = row as Record<string, unknown>;
+    const id = String(o.id ?? '').trim() || `path-${Date.now()}-${i}`;
+    const nameByLanguage =
+      o.nameByLanguage && typeof o.nameByLanguage === 'object' && !Array.isArray(o.nameByLanguage)
+        ? (o.nameByLanguage as Record<string, string>)
+        : undefined;
+    const descriptionByLanguage =
+      o.descriptionByLanguage &&
+      typeof o.descriptionByLanguage === 'object' &&
+      !Array.isArray(o.descriptionByLanguage)
+        ? (o.descriptionByLanguage as Record<string, string>)
+        : undefined;
+    const order = Number.isFinite(Number(o.order)) ? Number(o.order) : i;
+    out.push(
+      normalizePathologyCatalogItem(
+        {
+          id,
+          name: String(o.name ?? ''),
+          nameByLanguage,
+          description: String(o.description ?? ''),
+          descriptionByLanguage,
+          picture: typeof o.picture === 'string' ? o.picture : undefined,
+        },
+        order
+      )
+    );
+  });
+  return out.sort((a, b) => a.order - b.order).map((p, i) => ({ ...p, order: i }));
+}
+
+/** Training levels for periodization favourites (dropdown on create/edit). */
+export const PERIODIZATION_LEVEL_OPTIONS = [
+  'Beginner',
+  'Intermediate',
+  'Advanced',
+  'Elite',
+  'Professional',
+  'Club',
+  'National',
+  'International',
+] as const;
+
+export type PeriodizationLevel = (typeof PERIODIZATION_LEVEL_OPTIONS)[number];
+
+/** Exercise catalog difficulty bands (levels 1–5), aligned with Workouts → Parameters training levels. */
+export const EXERCISE_DIFFICULTY_LEVEL_LABELS: Record<1 | 2 | 3 | 4 | 5, string> = {
+  1: 'Beginner',
+  2: 'Intermediate',
+  3: 'Advanced',
+  4: 'Elite',
+  5: 'Professional',
+};
+
+export const EXERCISE_DIFFICULTY_LEVELS = [1, 2, 3, 4, 5] as const;
+
+export function getExerciseDifficultyLabel(level: number): string {
+  return EXERCISE_DIFFICULTY_LEVEL_LABELS[level as 1 | 2 | 3 | 4 | 5] ?? `Level ${level}`;
+}
+
+export function formatExerciseDifficultyLevels(levels: number[] | undefined): string {
+  const nums = (levels || []).filter((n) => n >= 1 && n <= 5).sort((a, b) => a - b);
+  if (nums.length === 0) return EXERCISE_DIFFICULTY_LEVEL_LABELS[1];
+  return nums.map(getExerciseDifficultyLabel).join(', ');
+}
+
+/** Muscle / equipment summary for catalog detail cards (admin preview + future user catalog). */
+export function getExerciseCatalogMuscleSummary(exercise: Exercise): {
+  bodyPart: string;
+  primaryMuscles: string;
+  secondaryMuscles: string;
+  equipment: string;
+} {
+  const ex = mergeExerciseWithDefaults(exercise);
+  const tags = normalizeMuscleAreaPercentTags(ex.muscleAreaPercentTags || []);
+  const mainAreas = tags.filter((t) => t.isMain && (t.area || '').trim()).map((t) => t.area.trim());
+  const secondaryFromTags = tags
+    .filter((t) => !t.isMain && (t.area || '').trim())
+    .map((t) => t.area.trim());
+  const primary =
+    mainAreas.length > 0
+      ? mainAreas.join(', ')
+      : (ex.mainMuscleGroup || ex.muscleGroups?.[0] || '').trim();
+  const secondary =
+    secondaryFromTags.length > 0
+      ? secondaryFromTags.join(', ')
+      : (ex.secondaryMuscleGroups || []).filter(Boolean).join(', ');
+  const bodyPart = [primary, secondary].filter(Boolean).join(', ');
+  const equipment = (ex.equipmentType || ex.equipment?.join(', ') || '').trim();
+  return {
+    bodyPart: bodyPart || '—',
+    primaryMuscles: primary || '—',
+    secondaryMuscles: secondary || '—',
+    equipment: equipment || '—',
+  };
+}
+
+export function getExerciseDisplayNameForLang(exercise: Exercise, lang: string): string {
+  const ex = mergeExerciseWithDefaults(exercise);
+  if (lang === 'en') return (ex.name || '').trim() || '—';
+  return (ex.nameByLanguage?.[lang] || ex.name || '').trim() || '—';
+}
+
+/** Saved builder state for a favourite periodization (52-week draft, not live yearly plan). */
+export interface PeriodizationTemplateBuild {
+  notesByPeriodId?: Record<string, string>;
+  attachmentsByPeriodId?: Record<
+    string,
+    { id: string; name: string; url: string; mimeType?: string; size?: number }[]
+  >;
+  displayOrder?: string[];
+  /** Calendar week number (1–52) → period id */
+  weekPeriodByNumber?: Record<number, string>;
 }
 
 /** Named periodization presets (Super Admin defaults + user copies); stored in `toolsSettings` JSON. */
@@ -86,11 +271,28 @@ export interface PeriodizationTemplate {
   name: string;
   sport: string;
   level: string;
+  /** Language of periods shown in the builder (`en`, `it`, …). */
+  language: string;
   tags: string[];
+  build?: PeriodizationTemplateBuild;
   isUserCreated?: boolean;
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+/** Localized period row for builder UI. */
+export function periodForLanguage(period: Period, languageCode: string): Period {
+  const code = (languageCode || 'en').toLowerCase().split('-')[0] || 'en';
+  const title =
+    period.titleByLanguage?.[code]?.trim() ||
+    period.titleByLanguage?.en?.trim() ||
+    period.title;
+  const description =
+    period.descriptionByLanguage?.[code]?.trim() ||
+    period.descriptionByLanguage?.en?.trim() ||
+    period.description;
+  return { ...period, title, description };
 }
 
 export function normalizePeriodizationTemplates(raw: unknown): PeriodizationTemplate[] {
@@ -104,12 +306,43 @@ export function normalizePeriodizationTemplates(raw: unknown): PeriodizationTemp
     } else if (typeof tagsRaw === 'string') {
       tags = tagsRaw.split(',').map((t) => t.trim()).filter(Boolean);
     }
+    const weekRaw = o.build && typeof o.build === 'object' ? (o.build as Record<string, unknown>) : null;
+    let build: PeriodizationTemplateBuild | undefined;
+    if (weekRaw) {
+      const wpm = weekRaw.weekPeriodByNumber;
+      let weekPeriodByNumber: Record<number, string> | undefined;
+      if (wpm && typeof wpm === 'object') {
+        weekPeriodByNumber = {};
+        for (const [k, v] of Object.entries(wpm as Record<string, unknown>)) {
+          const n = parseInt(k, 10);
+          if (!Number.isNaN(n) && typeof v === 'string' && v.trim()) {
+            weekPeriodByNumber[n] = v.trim();
+          }
+        }
+      }
+      build = {
+        notesByPeriodId:
+          weekRaw.notesByPeriodId && typeof weekRaw.notesByPeriodId === 'object'
+            ? { ...(weekRaw.notesByPeriodId as Record<string, string>) }
+            : undefined,
+        attachmentsByPeriodId:
+          weekRaw.attachmentsByPeriodId && typeof weekRaw.attachmentsByPeriodId === 'object'
+            ? { ...(weekRaw.attachmentsByPeriodId as PeriodizationTemplateBuild['attachmentsByPeriodId']) }
+            : undefined,
+        displayOrder: Array.isArray(weekRaw.displayOrder)
+          ? (weekRaw.displayOrder as string[]).map(String)
+          : undefined,
+        weekPeriodByNumber,
+      };
+    }
     return {
       id: String(o.id ?? '').trim() || `pt-${Date.now()}-${i}`,
       name: String(o.name ?? '').trim() || 'Untitled',
       sport: String(o.sport ?? '').trim(),
       level: String(o.level ?? '').trim(),
+      language: String(o.language ?? 'en').trim() || 'en',
       tags,
+      build,
       isUserCreated: Boolean(o.isUserCreated),
       notes: o.notes != null ? String(o.notes) : undefined,
       createdAt: o.createdAt != null ? String(o.createdAt) : undefined,
@@ -236,12 +469,18 @@ export interface Exercise {
   equipmentType?: string;
   /** Technical Settings → Machines: catalogue rows usually used with this exercise (IDs from sport_machines). */
   usualSportMachineIds?: string[];
+  /** Twinned / related exercises in the catalog (exercise ids). */
+  relatedExerciseIds?: string[];
   /** Localized names keyed by `SUPPORTED_LANGUAGES` code (English uses `name`). */
   nameByLanguage?: Record<string, string>;
+  /** Short summary for lists — one entry per supported language (English uses `description`). */
+  descriptionByLanguage?: Record<string, string>;
   /** Short catalog / reference code (optional). */
   exerciseCode?: string;
-  /** Free text: conditions or pathologies for which the exercise is not recommended. */
+  /** Free text: conditions or pathologies for which the exercise is not recommended (legacy plain; use `contraindicatedPathologiesInfoByLanguage`). */
   contraindicatedPathologiesNote?: string;
+  /** Info & contraindications — rich text per language (Pathologies tab). */
+  contraindicatedPathologiesInfoByLanguage?: Record<string, string>;
   /** IDs from Technical Settings → Pathologies — exercise is not suggested when these apply. */
   contraindicatedPathologyIds?: string[];
   /**
@@ -261,7 +500,7 @@ export interface Exercise {
   muscleAreaPercentTags?: MuscleAreaPercentTag[];
   mainMuscleGroup?: string;
   secondaryMuscleGroups?: string[];
-  /** Training levels 1–5 (multi). */
+  /** Difficulty bands 1–5 (multi): Beginner … Professional — see `EXERCISE_DIFFICULTY_LEVEL_LABELS`. */
   levels?: number[];
   sharedBy?: ExerciseSharedBy | '';
   /** Movesbook staff label or approved sharer username. */
@@ -301,9 +540,12 @@ export function createDefaultExercise(): Exercise {
     sportsIndicated: [],
     equipmentType: '',
     usualSportMachineIds: [],
+    relatedExerciseIds: [],
     nameByLanguage: {},
+    descriptionByLanguage: {},
     exerciseCode: '',
     contraindicatedPathologiesNote: '',
+    contraindicatedPathologiesInfoByLanguage: {},
     contraindicatedPathologyIds: [],
     executionByLanguage: {},
     expertSuggestionsByLanguage: {},
@@ -330,20 +572,112 @@ export function createDefaultExercise(): Exercise {
   };
 }
 
-/** Resolved official video src for Male vs Female columns (female falls back to male when unset — legacy data). */
+/**
+ * Official video: URL field wins over inline `data:` (legacy rows may have both after a URL change).
+ */
+export function resolveOfficialVideoFromUrlAndData(
+  url: string | null | undefined,
+  dataUrl: string | null | undefined
+): string {
+  const u = (url || '').trim();
+  const d = (dataUrl || '').trim();
+  if (u) return u;
+  return d;
+}
+
+/** Resolved official video src for Male vs Female (female falls back to male only when female has no source). */
 export function resolveExerciseOfficialVideoSrc(ex: Exercise, sex: 'male' | 'female'): string {
-  const male = (ex.officialVideoDataUrl || '').trim() || (ex.officialVideoUrl || '').trim();
-  const femaleOnly =
-    (ex.officialVideoDataUrlFemale || '').trim() || (ex.officialVideoUrlFemale || '').trim();
+  const male = resolveOfficialVideoFromUrlAndData(ex.officialVideoUrl, ex.officialVideoDataUrl);
+  const femaleOnly = resolveOfficialVideoFromUrlAndData(
+    ex.officialVideoUrlFemale,
+    ex.officialVideoDataUrlFemale
+  );
   if (sex === 'male') return male;
   return femaleOnly || male;
 }
 
+/** Extract YouTube video id from common share / watch URLs. */
+export function extractYouTubeVideoId(url: string): string | null {
+  const u = (url || '').trim();
+  if (!u) return null;
+
+  let m = u.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/i);
+  if (m?.[1]) return m[1];
+
+  m = u.match(/[?&]v=([a-zA-Z0-9_-]{11})/i);
+  if (m?.[1]) return m[1];
+
+  m = u.match(/youtube\.com\/(?:embed|shorts|live)\/([a-zA-Z0-9_-]{11})/i);
+  if (m?.[1]) return m[1];
+
+  return null;
+}
+
+function extractVimeoVideoId(url: string): string | null {
+  const m = (url || '').trim().match(/vimeo\.com\/(?:video\/)?(\d+)/i);
+  return m?.[1] ?? null;
+}
+
+/** YouTube, Vimeo, or direct video URL → iframe or native video for inline preview. */
+export function resolveExerciseVideoEmbed(
+  url: string | null | undefined
+): { kind: 'iframe' | 'video'; src: string } | null {
+  const u = (url || '').trim();
+  if (!u) return null;
+
+  const ytId = extractYouTubeVideoId(u);
+  if (ytId) {
+    return {
+      kind: 'iframe',
+      src: `https://www.youtube-nocookie.com/embed/${ytId}?rel=0`,
+    };
+  }
+
+  const vimeoId = extractVimeoVideoId(u);
+  if (vimeoId) {
+    return { kind: 'iframe', src: `https://player.vimeo.com/video/${vimeoId}` };
+  }
+
+  if (u.startsWith('data:video/') || u.startsWith('data:application/')) {
+    return { kind: 'video', src: u };
+  }
+
+  if (/^https?:\/\//i.test(u)) {
+    if (/\.(mp4|webm|ogg|mov)(\?|$)/i.test(u)) {
+      return { kind: 'video', src: u };
+    }
+    return { kind: 'video', src: u };
+  }
+
+  if (u.startsWith('data:')) {
+    return { kind: 'video', src: u };
+  }
+
+  return null;
+}
+
 export function exerciseHasAnyOfficialVideo(ex: Exercise): boolean {
-  const male = (ex.officialVideoDataUrl || '').trim() || (ex.officialVideoUrl || '').trim();
-  const femaleOnly =
-    (ex.officialVideoDataUrlFemale || '').trim() || (ex.officialVideoUrlFemale || '').trim();
+  const male = resolveOfficialVideoFromUrlAndData(ex.officialVideoUrl, ex.officialVideoDataUrl);
+  const femaleOnly = resolveOfficialVideoFromUrlAndData(
+    ex.officialVideoUrlFemale,
+    ex.officialVideoDataUrlFemale
+  );
   return !!(male || femaleOnly);
+}
+
+/** Drop orphaned inline video when a URL is set (form clears on edit; fixes legacy DB rows). */
+export function normalizeOfficialVideoFieldsForStorage(ex: Exercise): Exercise {
+  const next = { ...ex };
+  if ((next.officialVideoUrl || '').trim() && (next.officialVideoDataUrl || '').trim()) {
+    next.officialVideoDataUrl = '';
+  }
+  if (
+    (next.officialVideoUrlFemale || '').trim() &&
+    (next.officialVideoDataUrlFemale || '').trim()
+  ) {
+    next.officialVideoDataUrlFemale = '';
+  }
+  return next;
 }
 
 /** Sync legacy `category` / `muscleGroups` / `equipment` into extended fields when opening the form. */
@@ -354,6 +688,7 @@ export function mergeExerciseWithDefaults(partial: Partial<Exercise>): Exercise 
     ...partial,
     id: partial.id ?? '',
     nameByLanguage: { ...base.nameByLanguage, ...partial.nameByLanguage },
+    descriptionByLanguage: { ...base.descriptionByLanguage, ...partial.descriptionByLanguage },
     executionByLanguage: { ...base.executionByLanguage, ...partial.executionByLanguage },
     expertSuggestionsByLanguage: {
       ...base.expertSuggestionsByLanguage,
@@ -361,6 +696,10 @@ export function mergeExerciseWithDefaults(partial: Partial<Exercise>): Exercise 
     },
     breathingByLanguage: { ...base.breathingByLanguage, ...partial.breathingByLanguage },
     mistakesByLanguage: { ...base.mistakesByLanguage, ...partial.mistakesByLanguage },
+    contraindicatedPathologiesInfoByLanguage: {
+      ...base.contraindicatedPathologiesInfoByLanguage,
+      ...partial.contraindicatedPathologiesInfoByLanguage,
+    },
     exerciseFaqs: normalizeExerciseFaqs(partial.exerciseFaqs ?? base.exerciseFaqs),
     muscleAreaPercentTags:
       partial.muscleAreaPercentTags && partial.muscleAreaPercentTags.length > 0
@@ -369,6 +708,9 @@ export function mergeExerciseWithDefaults(partial: Partial<Exercise>): Exercise 
     usualSportMachineIds: Array.isArray(partial.usualSportMachineIds)
       ? [...partial.usualSportMachineIds]
       : base.usualSportMachineIds,
+    relatedExerciseIds: Array.isArray(partial.relatedExerciseIds)
+      ? [...partial.relatedExerciseIds]
+      : base.relatedExerciseIds,
     contraindicatedPathologyIds: Array.isArray(partial.contraindicatedPathologyIds)
       ? [...partial.contraindicatedPathologyIds]
       : base.contraindicatedPathologyIds,
@@ -377,6 +719,21 @@ export function mergeExerciseWithDefaults(partial: Partial<Exercise>): Exercise 
   const hasAnyExecution = Object.values(execVals).some((v) => String(v || '').trim() !== '');
   if (!hasAnyExecution && (merged.description || '').trim()) {
     merged.executionByLanguage = { ...execVals, en: merged.description.trim() };
+  }
+  const descVals = merged.descriptionByLanguage || {};
+  const hasAnyShortDesc = Object.values(descVals).some((v) => String(v || '').trim() !== '');
+  if (!hasAnyShortDesc && (merged.description || '').trim()) {
+    merged.descriptionByLanguage = { ...descVals, en: merged.description.trim() };
+  } else if ((descVals.en || '').trim()) {
+    merged.description = descVals.en.trim();
+  }
+  const pathInfoVals = merged.contraindicatedPathologiesInfoByLanguage || {};
+  const hasAnyPathInfo = Object.values(pathInfoVals).some((v) => String(v || '').trim() !== '');
+  if (!hasAnyPathInfo && (merged.contraindicatedPathologiesNote ?? '').trim()) {
+    const legacy = (merged.contraindicatedPathologiesNote ?? '').trim();
+    merged.contraindicatedPathologiesInfoByLanguage = { ...pathInfoVals, en: legacy };
+  } else if ((pathInfoVals.en || '').trim()) {
+    merged.contraindicatedPathologiesNote = pathInfoVals.en.trim();
   }
   if (!merged.typology && merged.category) {
     const c = merged.category;
@@ -420,7 +777,8 @@ export function mergeExerciseWithDefaults(partial: Partial<Exercise>): Exercise 
     }
   }
   if (merged.enabled === undefined) merged.enabled = true;
-  return merged;
+  merged.sportsIndicated = normalizeSportsIndicatedToLibraryKeys(merged.sportsIndicated);
+  return normalizeOfficialVideoFieldsForStorage(merged);
 }
 
 /** Ensure exactly one `isMain` row; keep areas and percents as entered. */
@@ -466,9 +824,10 @@ export function finalizeExerciseForStorage(e: Exercise): Exercise {
   const difficulty: Exercise['difficulty'] =
     maxLv <= 2 ? 'Beginner' : maxLv === 3 ? 'Intermediate' : 'Advanced';
   const enHow = (e.executionByLanguage?.en || '').trim();
-  const description =
-    (e.description || '').trim() ||
-    (enHow ? enHow.slice(0, 500) : '');
+  const descByLang = { ...(e.descriptionByLanguage || {}) };
+  const enShort = (descByLang.en || e.description || '').trim();
+  if (enShort) descByLang.en = enShort;
+  const description = enShort || (enHow ? enHow.slice(0, 500) : '');
 
   const exerciseFaqs = normalizeExerciseFaqs(e.exerciseFaqs).filter(exerciseFaqEntryHasContent);
 
@@ -476,12 +835,26 @@ export function finalizeExerciseForStorage(e: Exercise): Exercise {
     new Set((e.usualSportMachineIds || []).map((x) => String(x).trim()).filter(Boolean))
   );
 
+  const selfId = (e.id || '').trim();
+  const relatedExerciseIds = Array.from(
+    new Set((e.relatedExerciseIds || []).map((x) => String(x).trim()).filter(Boolean))
+  ).filter((id) => id !== selfId);
+
   const contraindicatedPathologyIds = Array.from(
     new Set((e.contraindicatedPathologyIds || []).map((x) => String(x).trim()).filter(Boolean))
   );
 
+  const pathInfoByLang = { ...(e.contraindicatedPathologiesInfoByLanguage || {}) };
+  const enPathInfo = (pathInfoByLang.en || e.contraindicatedPathologiesNote || '').trim();
+  if (enPathInfo) pathInfoByLang.en = enPathInfo;
+  const contraindicatedPathologiesNote = enPathInfo;
+
+  const sportsIndicated = sanitizeSportsIndicatedForLibrary(e.sportsIndicated);
+  const withVideos = normalizeOfficialVideoFieldsForStorage(e);
+
   return {
-    ...e,
+    ...withVideos,
+    sportsIndicated,
     category: typ || e.category,
     muscleGroups,
     mainMuscleGroup: main,
@@ -490,9 +863,13 @@ export function finalizeExerciseForStorage(e: Exercise): Exercise {
     difficulty,
     levels: lv,
     description,
+    descriptionByLanguage: descByLang,
     exerciseFaqs,
     usualSportMachineIds,
+    relatedExerciseIds,
     contraindicatedPathologyIds,
+    contraindicatedPathologiesNote,
+    contraindicatedPathologiesInfoByLanguage: pathInfoByLang,
   };
 }
 

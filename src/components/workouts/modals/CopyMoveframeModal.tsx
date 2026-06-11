@@ -2,13 +2,27 @@
 
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import {
+  resolveMoveframeId,
+  resolveWorkoutSessionId,
+  type MoveframeCopyMovePayload,
+  type MoveframePosition,
+} from '@/lib/moveframeCopyMove';
+import {
+  formatWorkoutSelectLabel,
+  getSortedWorkoutsForPlanDay,
+  getWorkoutDisplayNumber,
+} from '@/lib/workoutDisplayOrder';
+
+export type { MoveframeCopyMovePayload, MoveframePosition };
 
 interface CopyMoveframeModalProps {
   isOpen: boolean;
   onClose: () => void;
   sourceMoveframe: any | any[]; // Can be single or array
+  sourceDay?: any;
   workoutPlan: any;
-  onConfirm: (targetWorkoutId: string, position: 'before' | 'after' | 'replace', targetMoveframeId?: string) => void;
+  onConfirm: (payload: MoveframeCopyMovePayload) => void | Promise<void>;
   activeSection?: 'A' | 'B' | 'C' | 'D';
 }
 
@@ -16,6 +30,7 @@ export default function CopyMoveframeModal({
   isOpen,
   onClose,
   sourceMoveframe,
+  sourceDay,
   workoutPlan,
   onConfirm,
   activeSection = 'A'
@@ -28,21 +43,19 @@ export default function CopyMoveframeModal({
   const [availableMoveframes, setAvailableMoveframes] = useState<any[]>([]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    if (sourceDay?.id) {
+      setSelectedDay(sourceDay.id);
+    }
+  }, [isOpen, sourceDay?.id]);
+
+  useEffect(() => {
     if (selectedDay && workoutPlan) {
-      // Find all workouts for the selected day
-      const workouts: any[] = [];
-      workoutPlan.weeks?.forEach((week: any) => {
-        week.days?.forEach((day: any) => {
-          if (day.id === selectedDay) {
-            day.workouts?.forEach((workout: any) => {
-              workouts.push(workout);
-            });
-          }
-        });
-      });
-      setAvailableWorkouts(workouts);
+      setAvailableWorkouts(getSortedWorkoutsForPlanDay(workoutPlan, selectedDay));
       setSelectedWorkout('');
       setTargetMoveframe('');
+    } else {
+      setAvailableWorkouts([]);
     }
   }, [selectedDay, workoutPlan]);
 
@@ -55,7 +68,20 @@ export default function CopyMoveframeModal({
   }, [selectedWorkout, availableWorkouts]);
 
   const handleSubmit = () => {
-    if (!selectedWorkout) {
+    const sourceMoveframeId = resolveMoveframeId(sourceMoveframe);
+    if (!sourceMoveframeId) {
+      alert('Source moveframe is missing an ID. Refresh the page and try again.');
+      return;
+    }
+
+    const targetWorkout = availableWorkouts.find(
+      (w) => w.id === selectedWorkout || w.workoutSessionId === selectedWorkout
+    );
+    const targetWorkoutId =
+      resolveWorkoutSessionId(targetWorkout) ||
+      (selectedWorkout?.trim() ? selectedWorkout.trim() : undefined);
+
+    if (!targetWorkoutId) {
       alert('Please select a target workout');
       return;
     }
@@ -65,7 +91,12 @@ export default function CopyMoveframeModal({
       return;
     }
 
-    onConfirm(selectedWorkout, position, targetMoveframe || undefined);
+    onConfirm({
+      sourceMoveframeId,
+      targetWorkoutId,
+      position,
+      targetMoveframeId: targetMoveframe?.trim() || undefined,
+    });
   };
 
   if (!isOpen) return null;
@@ -171,12 +202,17 @@ export default function CopyMoveframeModal({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 >
                   <option value="">-- Choose a workout --</option>
-                  {availableWorkouts.map((workout) => (
-                    <option key={workout.id} value={workout.id}>
-                      Workout #{workout.sessionNumber}: {workout.name || 'Unnamed'} 
-                      ({workout.moveframes?.length || 0} moveframes)
+                  {availableWorkouts.map((workout) => {
+                    const workoutId = resolveWorkoutSessionId(workout);
+                    if (!workoutId) return null;
+                    const displayNum =
+                      getWorkoutDisplayNumber(availableWorkouts, workoutId) ?? 0;
+                    return (
+                    <option key={workoutId} value={workoutId}>
+                      {formatWorkoutSelectLabel(workout, Math.max(0, displayNum - 1))}
                     </option>
-                  ))}
+                    );
+                  })}
                 </select>
               ) : (
                 <p className="text-sm text-gray-500 italic">No workouts available for this day</p>

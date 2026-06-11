@@ -11,6 +11,7 @@ import {
   type ExercisePathologyCatalogItem,
   type PeriodizationTemplate,
   normalizePeriodizationTemplates,
+  normalizePathologyCatalog,
   DEFAULT_PERIODS,
   DEFAULT_SECTIONS,
   DEFAULT_BODYBUILDING_TECHNIQUES,
@@ -23,8 +24,7 @@ import {
 import { getAuthToken, getAuthHeaders } from '@/utils/auth.utils';
 
 function coerceExercisePathologyCatalog(raw: unknown): ExercisePathologyCatalogItem[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((x) => x != null && typeof x === 'object') as ExercisePathologyCatalogItem[];
+  return normalizePathologyCatalog(raw);
 }
 
 interface UseToolsDataReturn {

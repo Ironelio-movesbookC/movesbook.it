@@ -34,4 +34,5 @@ export const EXERCISE_EDITOR_LAYOUT_CHECKLIST = [
   'Label 7 FAQs: list reorder/edit/delete; editor uses short multilingual Question table + long multilingual Answer stack.',
   'Equipment tab: opens Machines usually used — violet header, Reset, numeric pages, left checklist + right “Equipment selected” preview.',
   'Future: Multimedia tab ethnolinguistic region sub-tabs (Indo-European, Afrikan, …) per wireframe — wire into multimedia slot + model when schema exists.',
+  'Catalog detail (mobile): video top, Picture A/B left, Exercise details right; equipment name opens official video — see `ExerciseCatalogDetailView` (user account catalog is a separate task).',
 ] as const;
