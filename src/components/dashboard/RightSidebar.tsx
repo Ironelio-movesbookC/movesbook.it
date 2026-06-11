@@ -48,6 +48,8 @@ interface RightSidebarProps {
    * (SPONSORED, EVENTS, NEXT EVENTS stack, social blocks) instead of Quick Actions.
    */
   athleteMyClubRightSidebar?: boolean;
+  /** When true, hide the legacy EVENTS block (birthdays / club event filters) on My Club tab. */
+  isClubAccount?: boolean;
 }
 
 export default function RightSidebar({ 
@@ -59,6 +61,7 @@ export default function RightSidebar({
   onNavigateToSettings,
   athleteMyPageRightSidebar = false,
   athleteMyClubRightSidebar = false,
+  isClubAccount = false,
 }: RightSidebarProps) {
   const { t } = useLanguage();
   const router = useRouter();
@@ -392,8 +395,8 @@ export default function RightSidebar({
           </div>
         )}
 
-        {/* Events Section - Only for My Club/Team/Group */}
-        {currentContext === 'my-club' && (
+        {/* Events Section - My Club/Team/Group (hidden for club accounts) */}
+        {currentContext === 'my-club' && !isClubAccount && (
           <div className="mt-6 border-t pt-4">
             <div className="bg-gray-800 text-white px-3 py-2 rounded-t-lg">
               <h4 className="text-sm font-semibold">{t('sidebar_events')}</h4>
