@@ -148,12 +148,14 @@ export default function ToolsSettings({
   } = useToolsData();
   
   const [activeTab, setActiveTab] = useState<ToolsTab>(() => {
-    if (typeof window === 'undefined' || periodizationOnly) {
+    if (periodizationOnly) return 'periods';
+    const allowed = getAllowedTabs(isAdmin, mode);
+    if (initialTab && allowed.includes(initialTab)) return initialTab;
+    if (typeof window === 'undefined') {
       return mode === 'technical' ? 'equipmentFactories' : 'periods';
     }
     const key = `settings_tools_tab_${mode}`;
     const saved = localStorage.getItem(key) as ToolsTab | null;
-    const allowed = getAllowedTabs(isAdmin, mode);
     if (saved && allowed.includes(saved)) return saved;
     return mode === 'technical' ? 'equipmentFactories' : 'periods';
   });

@@ -1312,7 +1312,7 @@ export default function AddEditMoveframeModal({
           ref={bodyRef}
           className={`flex flex-col ${
             compactFastPlannerModalBody
-              ? 'min-h-0 flex-1 overflow-scroll p-2 pb-0'
+              ? 'min-h-0 flex-1 overflow-hidden px-1.5 py-1 pb-0'
               : effectiveType === 'BATTERY'
                 ? 'overflow-y-auto p-2 pb-2'
                 : 'overflow-y-auto p-4 pb-64'
@@ -1330,7 +1330,7 @@ export default function AddEditMoveframeModal({
               className={
                 effectiveType === 'BATTERY'
                   ? compactFastPlannerModalBody
-                    ? 'flex min-h-0 flex-1 flex-col overflow-y-auto'
+                    ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
                     : 'flex min-h-0 flex-1 flex-col overflow-y-auto'
                   : ''
               }
