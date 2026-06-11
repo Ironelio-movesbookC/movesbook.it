@@ -1055,23 +1055,19 @@ export default function AccessSettingsPage() {
                 <Panel title="Membership to club expired">
                   <RadioField label="Membership Disabled" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'membershipe_disabled'} onChange={() => updateField('membershipClubExpiredStatus', 'membershipe_disabled')} />
                   <RadioField label="Membership Enabled" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'membershipe_enabled'} onChange={() => updateField('membershipClubExpiredStatus', 'membershipe_enabled')} />
-                  <div className="grid gap-3 md:grid-cols-[1fr_160px] md:items-center">
-                    <RadioField label="No tolerance" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'med_no_tolerance'} onChange={() => updateField('membershipClubExpiredStatus', 'med_no_tolerance')} />
-                    <TextField
-                      label="Tolerance"
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={settings.memNoToleranceValue}
-                      error={errors.memNoToleranceValue}
-                      fieldRef={registerField('memNoToleranceValue')}
-                      onChange={(value) => updateField('memNoToleranceValue', value)}
-                    />
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <RadioField label="Yes with alert" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'yes_with_alert'} onChange={() => updateField('membershipClubExpiredStatus', 'yes_with_alert')} />
-                    <RadioField label="Yes" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'yes'} onChange={() => updateField('membershipClubExpiredStatus', 'yes')} />
-                  </div>
+                  <RadioField label="No, but with tolerance" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'med_no_tolerance'} onChange={() => updateField('membershipClubExpiredStatus', 'med_no_tolerance')} />
+                  <TextField
+                    label="Tolerance"
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={settings.memNoToleranceValue}
+                    error={errors.memNoToleranceValue}
+                    fieldRef={registerField('memNoToleranceValue')}
+                    onChange={(value) => updateField('memNoToleranceValue', value)}
+                  />
+                  <RadioField label="Yes with alert" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'yes_with_alert'} onChange={() => updateField('membershipClubExpiredStatus', 'yes_with_alert')} />
+                  <RadioField label="Yes" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'yes'} onChange={() => updateField('membershipClubExpiredStatus', 'yes')} />
                 </Panel>
               </div>
             </div>
