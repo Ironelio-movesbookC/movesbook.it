@@ -1,0 +1,180 @@
+.notification-promocode-page {
+  padding: 0 0 24px;
+}
+
+.notification-promocode-page .re-tab-bar ul {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.notification-promocode-page .re-tab-bar ul li a.top-bar-list {
+  display: block;
+  padding: 8px 14px;
+  border: 1px solid #c3c0c0;
+  background: #f5f5f5;
+  color: #333;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.notification-promocode-page .re-tab-bar ul li a.top-bar-list.active {
+  background: #2f7f92;
+  color: #fff;
+  border-color: #2a6675;
+}
+
+.notification-promocode-page .invite-row {
+  border: 1px solid #c3c0c0;
+  padding: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.notification-promocode-page .invite-row input[type='text'],
+.notification-promocode-page .invite-row select {
+  height: 35px;
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+}
+
+.notification-promocode-page .button-black-promocode {
+  background: #222;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.notification-promocode-page .stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+@media (max-width: 768px) {
+  .notification-promocode-page .stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.notification-promocode-page .stat-box {
+  border: 1px solid #c3c0c0;
+  padding: 8px;
+  display: flex;
+  justify-content: space-between;
+  font-weight: bold;
+}
+
+.notification-promocode-page .return-index {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.notification-promocode-page .return-index-value {
+  font-size: 50px;
+  color: #f31b25;
+  background: #cfee75;
+  padding: 2px 22px;
+}
+
+.notification-promocode-page .print-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.notification-promocode-page .print-table thead th {
+  background: #2f7f92;
+  color: #fff;
+  border: 1px solid #2a6675;
+  padding: 8px;
+  font-weight: bold;
+}
+
+.notification-promocode-page .print-table tbody td {
+  border: 1px solid #d7d7d7;
+  padding: 8px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.notification-promocode-page .print-table tbody tr {
+  cursor: pointer;
+  height: 40px;
+}
+
+.notification-promocode-page .print-table tbody tr.highlighted td {
+  background: #f9f4db;
+}
+
+.notification-promocode-page .credits-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px;
+  margin: 40px 0 20px;
+  border: 1px solid #ccc;
+  padding: 16px;
+}
+
+.notification-promocode-page .connection-header {
+  padding: 15px;
+  background: #cac8c9;
+  color: #70020b;
+  font-weight: bold;
+  font-size: 20px;
+}
+
+.notification-promocode-page .connection-earn-banner {
+  padding: 10px;
+  margin: 10px;
+  border: 2px solid red;
+  font-size: 19px;
+  color: #651b3c;
+}
+
+.notification-promocode-page .connection-list {
+  background: #effbcd;
+  color: #77203c;
+  font-weight: bold;
+  padding: 10px;
+}
+
+.notification-promocode-page .connection-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.notification-promocode-page .connection-columns.three {
+  grid-template-columns: 1fr 0.7fr 1.3fr;
+}
+
+.notification-promocode-page .sub-tab-bar ul {
+  display: flex;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+
+.notification-promocode-page .sub-tab-bar a {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  text-decoration: none;
+  color: #333;
+}
+
+.notification-promocode-page .sub-tab-bar a.active {
+  background: #2f7f92;
+  color: #fff;
+}

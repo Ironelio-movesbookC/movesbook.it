@@ -1,0 +1,79 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { Resend } from 'resend';
+import { sendNotificationByPromocodeInvite } from '@/lib/promocodes/notificationByPromocodeService';
+import { resolvePromocodeSessionUser } from '@/lib/promocodes/promocodeSessionAuth';
+
+export const dynamic = 'force-dynamic';
+
+export async function POST(request: NextRequest) {
+  const session = await resolvePromocodeSessionUser(request);
+  if (!session.ok) {
+    return NextResponse.json({ error: session.error }, { status: session.status });
+  }
+
+  let body: { receiverEmail?: string; promocodeId?: number | string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const receiverEmail = body.receiverEmail?.trim() ?? '';
+  const promocodeId = Number(body.promocodeId);
+  if (!receiverEmail) {
+    return NextResponse.json(
+      { status: 'error', message: 'Please enter the mail address for recipient.' },
+      { status: 400 }
+    );
+  }
+  if (!Number.isFinite(promocodeId) || promocodeId <= 0) {
+    return NextResponse.json(
+      { status: 'error', message: 'Please select a promocode to use for the invite.' },
+      { status: 400 }
+    );
+  }
+
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!apiKey) {
+    return NextResponse.json(
+      { status: 'error', message: 'Email service is not configured. Cannot send invitation.' },
+      { status: 503 }
+    );
+  }
+
+  const resend = new Resend(apiKey);
+  const from = process.env.RESEND_FROM_EMAIL?.trim() || 'Movesbook <onboarding@resend.dev>';
+
+  try {
+    const result = await sendNotificationByPromocodeInvite({
+      legacyUserId: session.user.legacyUserId,
+      senderEmail: session.user.email,
+      senderUsername: session.user.username,
+      receiverEmail,
+      promocodeId,
+      origin: request.nextUrl.origin,
+      sendEmail: async ({ to, subject, html, replyTo }) => {
+        const payload: Parameters<typeof resend.emails.send>[0] = {
+          from,
+          to,
+          subject,
+          html,
+        };
+        if (replyTo) payload.replyTo = replyTo;
+        const sendResult = await resend.emails.send(payload);
+        if (sendResult.error) {
+          throw new Error(sendResult.error.message || 'Failed to send email');
+        }
+      },
+    });
+
+    const status = result.status === 'success' ? 200 : 400;
+    return NextResponse.json(result, { status });
+  } catch (err) {
+    console.error('notification-by-promocode send-invite POST:', err);
+    return NextResponse.json(
+      { status: 'error', message: 'Unable to send the invitation email. Please try again later.' },
+      { status: 500 }
+    );
+  }
+}

@@ -1,0 +1,119 @@
+/* PHP: send_email_with_promocode.ctp + admin.css */
+
+#col_middle label {
+  font-weight: bold;
+}
+
+#col_middle .al_left {
+  float: left;
+  margin-right: 10px;
+  margin-top: 5px;
+}
+
+#col_middle .clear {
+  clear: both;
+}
+
+.sd-legend-content {
+  padding: 10px 0 5px;
+  display: block;
+}
+
+.lang_input_container {
+  overflow: hidden;
+}
+
+.lang_input_container label {
+  display: block;
+}
+
+.lang_input_container .cke_chrome {
+  margin-top: 10px;
+}
+
+.lang_input_container .cke_contents {
+  height: 330px !important;
+}
+
+#cke_email_content_contents,
+#cke_1_contents {
+  height: 330px !important;
+}
+
+.name-information {
+  display: block;
+  border: 1px solid #d1d1d1;
+  padding: 30px;
+}
+
+.name-information + .name-information {
+  margin-top: 0;
+}
+
+.input-form-text {
+  border-radius: 0;
+  border: 1px solid #ccc;
+  font-size: 14px;
+  color: #777;
+  height: 30px;
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+
+.input-click-url {
+  border-radius: 0;
+  border: 1px solid #ccc;
+  font-size: 14px;
+  margin-top: 10px;
+  margin-bottom: 11px;
+  color: #777;
+  height: 30px;
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+
+#col_middle .btn-red,
+#col_middle .btn-gray {
+  display: inline-block;
+  text-align: center;
+  text-decoration: none;
+  color: #fff;
+  font-size: 13px;
+  font-weight: bold;
+  line-height: 22px;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+#col_middle a.btn-red,
+#col_middle a.btn-gray {
+  color: #fff;
+}
+
+#col_middle .btn-red {
+  background: linear-gradient(to bottom, #fb7272 0%, #e03734 100%) repeat scroll 0 0 rgba(0, 0, 0, 0) !important;
+  border: 1px solid #9c0606;
+}
+
+#col_middle .btn-red:hover {
+  background: linear-gradient(to bottom, #e03734 0%, #c32926 100%) repeat scroll 0 0 rgba(0, 0, 0, 0) !important;
+}
+
+#col_middle .btn-gray {
+  background: linear-gradient(to bottom, #666 0%, #333 100%) repeat scroll 0 0 rgba(0, 0, 0, 0);
+  border: 1px solid #333;
+}
+
+#col_middle .btn-gray:hover {
+  background: linear-gradient(to bottom, #444 0%, #222 100%) repeat scroll 0 0 rgba(0, 0, 0, 0);
+}
+
+.send-invite-loading,
+.send-invite-error {
+  padding: 24px;
+  text-align: center;
+}
+
+.send-invite-error {
+  color: #b91c1c;
+}
