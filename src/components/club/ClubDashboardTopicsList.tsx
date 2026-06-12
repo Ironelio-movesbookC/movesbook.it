@@ -18,6 +18,8 @@ function StatusSquare({ active }: { active: boolean }) {
       style={{
         width: 11,
         height: 11,
+        minWidth: 11,
+        minHeight: 11,
         backgroundColor: active ? LEGACY_STATUS_ON : LEGACY_STATUS_OFF,
       }}
       aria-hidden
@@ -25,48 +27,76 @@ function StatusSquare({ active }: { active: boolean }) {
   );
 }
 
-function TopicLink({
+function ExpandChevron({
+  open,
+  onToggle,
+  ariaLabel,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  ariaLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggle();
+      }}
+      className="flex h-7 w-7 shrink-0 items-center justify-center text-white/90 hover:bg-white/10"
+      aria-expanded={open}
+      aria-label={ariaLabel}
+    >
+      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+    </button>
+  );
+}
+
+function TopicRow({
   name,
   href,
   nested = false,
   activated = true,
+  showLink,
+  expandControl,
 }: {
   name: string;
   href: string;
   nested?: boolean;
   activated?: boolean;
+  showLink: boolean;
+  expandControl?: { open: boolean; onToggle: () => void; ariaLabel: string };
 }) {
-  return (
-    <Link
-      href={href}
-      className={`flex min-h-[40px] w-full items-center gap-2 border-b border-black/25 px-3 py-2 text-left text-white no-underline transition-colors hover:bg-zinc-700/90 ${
-        nested ? 'pl-8 text-[13px]' : 'pl-6'
-      }`}
-    >
-      <Mail className={`shrink-0 opacity-90 ${nested ? 'h-3.5 w-3.5' : 'h-4 w-4'}`} />
-      <span className="min-w-0 flex-1 truncate">{name}</span>
-      <StatusSquare active={activated} />
-    </Link>
-  );
-}
+  const rowClass = `flex min-h-[40px] w-full items-center gap-2 border-b border-black/25 py-2 text-left text-white transition-colors hover:bg-zinc-700/90 ${
+    nested ? 'pl-8 pr-3 text-[13px]' : 'px-3'
+  }`;
 
-function TopicHeader({
-  name,
-  activated = true,
-  nested = false,
-}: {
-  name: string;
-  activated?: boolean;
-  nested?: boolean;
-}) {
-  return (
-    <div
-      className={`flex min-h-[40px] items-center gap-2 border-b border-black/25 px-3 py-2 text-white/90 ${
-        nested ? 'pl-8 text-[13px]' : 'pl-6'
-      }`}
-    >
+  const label = (
+    <>
       <Mail className={`shrink-0 opacity-90 ${nested ? 'h-3.5 w-3.5' : 'h-4 w-4'}`} />
-      <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
+      <span className={`min-w-0 flex-1 truncate ${nested ? '' : 'font-medium'}`}>{name}</span>
+    </>
+  );
+
+  const labelClass = 'flex min-w-0 flex-1 items-center gap-2';
+
+  return (
+    <div className={`${rowClass} ${showLink ? '' : 'text-white/90'}`}>
+      {showLink ? (
+        <Link href={href} className={`${labelClass} text-white no-underline hover:underline`}>
+          {label}
+        </Link>
+      ) : (
+        <div className={labelClass}>{label}</div>
+      )}
+      {expandControl ? (
+        <ExpandChevron
+          open={expandControl.open}
+          onToggle={expandControl.onToggle}
+          ariaLabel={expandControl.ariaLabel}
+        />
+      ) : null}
       <StatusSquare active={activated} />
     </div>
   );
@@ -90,6 +120,10 @@ export default function ClubDashboardTopicsList({
 
   const topicHref = (id: string) => clubWebsiteDisplayTopicUrl(clubId, id);
 
+  const toggleSegment = (topicId: string) => {
+    setSegmentOpen((prev) => ({ ...prev, [topicId]: !(prev[topicId] ?? true) }));
+  };
+
   return (
     <div className="border-t border-black/25 bg-[#252525]">
       {friendTopics.map((topic) => {
@@ -99,65 +133,43 @@ export default function ClubDashboardTopicsList({
 
         return (
           <div key={topic.id}>
-            <div className="flex items-stretch border-b border-black/25">
-              {hasNested ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSegmentOpen((prev) => ({ ...prev, [topic.id]: !(prev[topic.id] ?? true) }))
-                  }
-                  className="flex w-8 shrink-0 items-center justify-center text-white/80 transition-colors hover:bg-zinc-700/90"
-                  aria-label={open ? t('collapse') : t('expand')}
-                >
-                  <ChevronDown
-                    className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`}
-                  />
-                </button>
-              ) : null}
-              <div className={hasNested ? 'min-w-0 flex-1' : 'w-full'}>
-                {showTopicLink ? (
-                  <Link
-                    href={topicHref(topic.id)}
-                    className="flex min-h-[40px] w-full items-center gap-2 px-3 py-2 text-left text-white no-underline transition-colors hover:bg-zinc-700/90"
-                  >
-                    <Mail className="h-4 w-4 shrink-0 opacity-90" />
-                    <span className="min-w-0 flex-1 truncate">{topic.name}</span>
-                    <StatusSquare active={topic.item.activated} />
-                  </Link>
-                ) : (
-                  <TopicHeader name={topic.name} activated={topic.item.activated} nested={false} />
-                )}
-              </div>
-            </div>
+            <TopicRow
+              name={topic.name}
+              href={topicHref(topic.id)}
+              activated={topic.item.activated}
+              showLink={showTopicLink}
+              expandControl={
+                hasNested
+                  ? {
+                      open,
+                      onToggle: () => toggleSegment(topic.id),
+                      ariaLabel: open ? t('collapse') : t('expand'),
+                    }
+                  : undefined
+              }
+            />
             {hasNested && open
-              ? topic.subtopics.map((sub) =>
-                  sub.item.showInClubDashboardTopics ? (
-                    <TopicLink
-                      key={sub.id}
-                      name={sub.name}
-                      href={topicHref(sub.id)}
-                      nested
-                      activated={sub.item.activated}
-                    />
-                  ) : (
-                    <TopicHeader
-                      key={sub.id}
-                      name={sub.name}
-                      activated={sub.item.activated}
-                      nested
-                    />
-                  )
-                )
+              ? topic.subtopics.map((sub) => (
+                  <TopicRow
+                    key={sub.id}
+                    name={sub.name}
+                    href={topicHref(sub.id)}
+                    nested
+                    activated={sub.item.activated}
+                    showLink={sub.item.showInClubDashboardTopics}
+                  />
+                ))
               : null}
           </div>
         );
       })}
       {customTopics.map((topic) => (
-        <TopicLink
+        <TopicRow
           key={topic.id}
           name={topic.name}
           href={topicHref(topic.id)}
           activated={topic.activated}
+          showLink={topic.showInClubDashboardTopics}
         />
       ))}
     </div>

@@ -15,10 +15,7 @@ export type FriendListLayout = {
 };
 
 export function buildFriendListLayout(rows: FriendListRow[]): FriendListLayout {
-  const root = rows.find((r) => r.id === 'friends-root');
-  if (!root) {
-    throw new Error('friends-root row is required');
-  }
+  const root = rows.find((r) => r.id === 'friends-root') ?? FRIEND_LIST_ROWS[0];
   const rest = rows.filter((r) => r.id !== 'friends-root');
   const rootNested: FriendListRow[] = [];
   const segments: FriendListLayout['segments'] = [];

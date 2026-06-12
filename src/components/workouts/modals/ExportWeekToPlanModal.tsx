@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { X, Archive, CheckCircle2, Calendar } from 'lucide-react';
 import { fetchPlanWeeks, getWeekWorkoutCount, isWeekEmpty } from '@/lib/workoutPlanLoad';
 import { mergeWeeksByWeekNumber } from '@/lib/mergeWeeksByWeekNumber';
@@ -66,6 +66,8 @@ export default function ExportWeekToPlanModal({
   onConfirm,
 }: ExportWeekToPlanModalProps) {
   const config = DESTINATION_CONFIG[destination];
+  const planType = config.planType;
+  const mergeWeeks = config.mergeWeeks;
   const [targetWeeks, setTargetWeeks] = useState<any[]>([]);
   const [selectedWeekId, setSelectedWeekId] = useState('');
   const [selectedWeekIds, setSelectedWeekIds] = useState<Set<string>>(new Set());
@@ -77,7 +79,7 @@ export default function ExportWeekToPlanModal({
   /** Only match by id — week numbers overlap across plans (template W1 vs archive W1). */
   const isSourceWeek = (week: any) => week.id === sourceWeek.id;
 
-  const loadTargetWeeks = async () => {
+  const loadTargetWeeks = useCallback(async () => {
     setIsLoading(true);
     try {
       const token = localStorage.getItem('token');
@@ -85,14 +87,14 @@ export default function ExportWeekToPlanModal({
         setTargetWeeks([]);
         return;
       }
-      const weeks = await fetchPlanWeeks(token, config.planType);
-      setTargetWeeks(config.mergeWeeks ? mergeWeeksByWeekNumber(weeks) : weeks);
+      const weeks = await fetchPlanWeeks(token, planType);
+      setTargetWeeks(mergeWeeks ? mergeWeeksByWeekNumber(weeks) : weeks);
     } catch {
       setTargetWeeks([]);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [planType, mergeWeeks]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -100,7 +102,7 @@ export default function ExportWeekToPlanModal({
     setSelectedWeekIds(new Set());
     setConfirmOverwrite(false);
     void loadTargetWeeks();
-  }, [isOpen, sourceWeek?.id, destination]);
+  }, [isOpen, sourceWeek?.id, loadTargetWeeks]);
 
   const selectedWeek = useMemo(
     () => targetWeeks.find((w) => w.id === selectedWeekId),

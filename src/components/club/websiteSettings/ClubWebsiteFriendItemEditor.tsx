@@ -239,15 +239,16 @@ export default function ClubWebsiteFriendItemEditor({
           if (!subName?.trim() || !onAddSubtopic) return;
           onAddSubtopic(item.id, subName.trim());
         }}
-        onDeleteContent={
-          getFriendItemSettingsVariant(item) === 'subtopic'
-            ? () => {
-                if (window.confirm(t('club_subtopic_delete_content_confirm'))) {
-                  patch(clearClubWebsiteFriendItemContent());
-                }
-              }
-            : undefined
-        }
+        onDeleteContent={() => {
+          const confirmKey =
+            getFriendItemSettingsVariant(item) === 'subtopic'
+              ? 'club_subtopic_delete_content_confirm'
+              : 'club_topic_delete_content_confirm';
+          if (window.confirm(t(confirmKey))) {
+            patch(clearClubWebsiteFriendItemContent());
+            setSettingsOpen(false);
+          }
+        }}
       />
     </>
   );

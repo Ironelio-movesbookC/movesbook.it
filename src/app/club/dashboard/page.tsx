@@ -572,6 +572,7 @@ function ClubDashboardContent() {
               context="my-club" 
               activeTab={dashboardShellActiveTab}
               onAddMember={() => setShowAddMemberModal(true)}
+              isClubAccount={isClubAccountUserType(user?.userType ?? '')}
               athleteMyPageRightSidebar={
                 isClubAccountUserType(user?.userType ?? '') && dashboardShellActiveTab === 'my-page'
               }

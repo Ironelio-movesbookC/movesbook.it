@@ -45,6 +45,8 @@ export default function ApplyFavoriteWorkoutModal({
   onConfirm,
 }: ApplyFavoriteWorkoutModalProps) {
   const config = CONFIG[destination];
+  const planType = config.planType;
+  const mergeWeeks = config.mergeWeeks;
   const [weeks, setWeeks] = useState<any[]>([]);
   const [selectedWeekId, setSelectedWeekId] = useState('');
   const [selectedDayId, setSelectedDayId] = useState('');
@@ -59,8 +61,8 @@ export default function ApplyFavoriteWorkoutModal({
       try {
         const token = localStorage.getItem('token');
         if (!token) return;
-        const raw = await fetchPlanWeeks(token, config.planType);
-        setWeeks(config.mergeWeeks ? mergeWeeksByWeekNumber(raw) : raw);
+        const raw = await fetchPlanWeeks(token, planType);
+        setWeeks(mergeWeeks ? mergeWeeksByWeekNumber(raw) : raw);
       } finally {
         setLoading(false);
       }
@@ -69,7 +71,7 @@ export default function ApplyFavoriteWorkoutModal({
     setSelectedDayId('');
     setSelectedSlot(null);
     setConfirmOverwrite(false);
-  }, [destination]);
+  }, [planType, mergeWeeks]);
 
   const selectedWeek = useMemo(
     () => weeks.find((w) => w.id === selectedWeekId),
