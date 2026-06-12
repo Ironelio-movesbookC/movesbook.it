@@ -36,6 +36,7 @@ interface AdminEditRecipeFormProps {
   onChange: (recipe: RecipeEditItem) => void;
   onClose: () => void;
   onSave: () => void;
+  onOpenPreparation?: (recipeId: string) => void;
 }
 
 function FormRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -57,28 +58,25 @@ export default function AdminEditRecipeForm({
   onChange,
   onClose,
   onSave,
+  onOpenPreparation,
 }: AdminEditRecipeFormProps) {
   const [nameLangOpen, setNameLangOpen] = useState(false);
-  const [prepLangOpen, setPrepLangOpen] = useState(false);
   const [savingLang, setSavingLang] = useState(false);
 
   const nameTranslations = parseTranslations(recipe.nameTranslations);
   const prepTranslations = parseTranslations(recipe.preparationTranslations);
   const prepEn = prepTranslations.en || recipe.description || '';
+  const canOpenPreparation = !!recipe.id && !!onOpenPreparation;
 
   const updateComponents = (components: RecipeComponent[]) => {
     onChange({ ...recipe, components });
   };
 
-  const persistTranslations = async (
-    field: 'nameTranslations' | 'preparationTranslations',
-    map: TranslationMap
-  ) => {
+  const persistNameTranslations = async (map: TranslationMap) => {
     onChange({
       ...recipe,
-      [field]: JSON.stringify(map),
-      ...(field === 'nameTranslations' && map.en ? { name: map.en } : {}),
-      ...(field === 'preparationTranslations' ? { description: map.en || null } : {}),
+      nameTranslations: JSON.stringify(map),
+      ...(map.en ? { name: map.en } : {}),
     });
   };
 
@@ -188,27 +186,21 @@ export default function AdminEditRecipeForm({
 
                 <FormRow label="Preparation">
                   <div className="space-y-2">
-                    <textarea
-                      value={prepEn}
-                      onChange={(e) => {
-                        const next = { ...prepTranslations, en: e.target.value };
-                        onChange({
-                          ...recipe,
-                          description: e.target.value,
-                          preparationTranslations: JSON.stringify(next),
-                        });
-                      }}
-                      rows={5}
-                      className="w-full border border-gray-300 rounded-sm px-2 py-1.5 text-sm"
-                      placeholder="Step-by-step preparation instructions (English)…"
-                    />
+                    <p className="text-sm text-gray-600">
+                      {!recipe.id
+                        ? 'Save the recipe first, then edit preparation in the supported languages.'
+                        : prepEn.trim()
+                          ? 'Instructions saved. Open the preparation editor to update or translate them.'
+                          : 'No preparation instructions yet.'}
+                    </p>
                     <button
                       type="button"
-                      onClick={() => setPrepLangOpen(true)}
-                      className="inline-flex items-center gap-1 text-sm text-[#0066cc] underline"
+                      disabled={!canOpenPreparation}
+                      onClick={() => onOpenPreparation?.(recipe.id)}
+                      className="inline-flex items-center gap-1 text-sm text-[#0066cc] underline disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
                     >
                       <ChefHat className="w-4 h-4" />
-                      Preparation in other languages
+                      Preparation in the languages supported
                     </button>
                   </div>
                 </FormRow>
@@ -237,24 +229,9 @@ export default function AdminEditRecipeForm({
         saving={savingLang}
         onSave={async (map) => {
           setSavingLang(true);
-          await persistTranslations('nameTranslations', map);
+          await persistNameTranslations(map);
           setSavingLang(false);
           setNameLangOpen(false);
-        }}
-      />
-
-      <AdminFoodTranslationsModal
-        isOpen={prepLangOpen}
-        title="Preparation instructions"
-        multiline
-        translations={{ ...prepTranslations, ...(prepEn ? { en: prepEn } : {}) }}
-        onClose={() => setPrepLangOpen(false)}
-        saving={savingLang}
-        onSave={async (map) => {
-          setSavingLang(true);
-          await persistTranslations('preparationTranslations', map);
-          setSavingLang(false);
-          setPrepLangOpen(false);
         }}
       />
     </>

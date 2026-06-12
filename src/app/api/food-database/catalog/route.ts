@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { ensureBundledFoodDatabaseSeeded } from '@/lib/foodDatabaseImport';
+import { ensureBundledFoodDatabaseSeeded, ensureMissingFoodSections } from '@/lib/foodDatabaseImport';
 import { dbRowToNutrients } from '@/lib/foodDatabase.types';
 import { recipeTotalsToPer100 } from '@/lib/dietBuilderCatalog';
 import { normalizeToolsLanguage } from '@/utils/toolsProfileLanguage';
@@ -9,6 +9,8 @@ import type { FoodCatalogItem, FoodGroupId, FoodSectionId } from '@/data/nutriti
 function mapSectionToCatalogId(sectionName: string): FoodSectionId {
   const n = sectionName.toLowerCase();
   if (n.includes('appetizer')) return 'all';
+  if (n === 'sweets' || (n.includes('sweet') && !n.includes('oil'))) return 'sweets';
+  if (n === 'drinks' || n.includes('drink')) return 'drinks';
   if (n.includes('milk')) return 'milk';
   if (n.includes('cereal')) return 'cereals';
   if (n.includes('meat') || n.includes('fish')) return 'meat_fish';
@@ -20,10 +22,12 @@ function mapSectionToCatalogId(sectionName: string): FoodSectionId {
 
 function mapSectionToGroup(sectionName: string): FoodGroupId {
   const n = sectionName.toLowerCase();
-  if (n.includes('milk') || n.includes('meat') || n.includes('fish')) return 'proteins_dairy';
+  if (n === 'drinks' || n.includes('drink') || n.includes('milk') || n.includes('meat') || n.includes('fish')) {
+    return 'proteins_dairy';
+  }
   if (n.includes('cereal')) return 'carbohydrates';
   if (n.includes('vegetable') || n.includes('fruit')) return 'fruits_vegetables';
-  if (n.includes('oil') || n.includes('sweet')) return 'fats_sweets';
+  if (n === 'sweets' || n.includes('oil') || n.includes('sweet')) return 'fats_sweets';
   return 'carbohydrates';
 }
 
@@ -34,6 +38,7 @@ export async function GET(request: NextRequest) {
 
   try {
     await ensureBundledFoodDatabaseSeeded();
+    await ensureMissingFoodSections();
 
     const [items, recipes, sections] = await Promise.all([
       prisma.foodDatabaseItem.findMany({

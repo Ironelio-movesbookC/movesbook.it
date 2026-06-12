@@ -98,6 +98,52 @@ export const NUTRIENT_DISPLAY_COLUMNS: { key: keyof NutrientTotals; label: strin
   { key: 'omega3', label: 'n-3' },
 ];
 
+/** Background colors for nutrient grid columns (Cal / macros / vitamins / minerals). */
+export type NutrientColorGroup = 'default' | 'calories' | 'macros' | 'vitamins' | 'minerals';
+
+export function getNutrientColorGroup(key: keyof NutrientTotals): NutrientColorGroup {
+  switch (key) {
+    case 'calories':
+      return 'calories';
+    case 'carbohydrates':
+    case 'fats':
+    case 'fiber':
+      return 'macros';
+    case 'vitA':
+    case 'vitC':
+    case 'vitB1':
+    case 'vitB2':
+    case 'vitB6':
+    case 'vitB12':
+      return 'vitamins';
+    case 'potassium':
+    case 'sodium':
+    case 'iron':
+    case 'magnesium':
+    case 'calcium':
+    case 'zinc':
+    case 'omega3':
+      return 'minerals';
+    default:
+      return 'default';
+  }
+}
+
+export function getNutrientColumnBgClass(key: keyof NutrientTotals): string {
+  switch (getNutrientColorGroup(key)) {
+    case 'calories':
+      return 'bg-yellow-300';
+    case 'macros':
+      return 'bg-yellow-100';
+    case 'vitamins':
+      return 'bg-green-200';
+    case 'minerals':
+      return 'bg-blue-200';
+    default:
+      return 'bg-white';
+  }
+}
+
 function parseAmount(value: unknown): number {
   if (value == null || value === '') return 0;
   const n = parseFloat(String(value).replace(/[^\d.-]/g, ''));

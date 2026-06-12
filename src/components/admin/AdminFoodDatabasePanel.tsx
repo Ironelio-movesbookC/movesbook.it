@@ -20,6 +20,7 @@ import DietBuilderNutrientGrid from '@/components/nutrition/modals/DietBuilderNu
 import AdminEditFoodForm, { FoodEditItem } from '@/components/admin/AdminEditFoodForm';
 import AdminEditRecipeForm, { RecipeEditItem, recipeToSavePayload } from '@/components/admin/AdminEditRecipeForm';
 import AdminRecipeInstructionsPanel from '@/components/admin/AdminRecipeInstructionsPanel';
+import AdminRecipeDetailsExpand from '@/components/admin/AdminRecipeDetailsExpand';
 import AdminFoodTranslationsModal from '@/components/admin/AdminFoodTranslationsModal';
 import {
   buildTranslationsFromEnglish,
@@ -29,9 +30,8 @@ import {
   resolveLocalizedLabel,
   TranslationMap,
 } from '@/lib/foodDatabaseTranslations';
-import Image from 'next/image';
-import { dbRowToNutrients } from '@/lib/foodDatabase.types';
-import { NUTRIENT_DISPLAY_COLUMNS } from '@/utils/nutritionMealTotals';
+import { dbRowToNutrients, resolveFoodImageUrl } from '@/lib/foodDatabase.types';
+import { NUTRIENT_DISPLAY_COLUMNS, formatNutrient, getNutrientColumnBgClass } from '@/utils/nutritionMealTotals';
 
 interface FoodSection {
   id: string;
@@ -66,7 +66,7 @@ interface FoodRecipe {
   preparationTranslations?: string | null;
   sectionId: string;
   section: { id: string; name: string };
-  components: { name: string; grams: number }[];
+  components: { name: string; grams: number; foodItemId?: string | null }[];
   calories: number;
   proteins: number;
   carbohydrates: number;
@@ -104,6 +104,10 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
   const [savingRecipe, setSavingRecipe] = useState(false);
   const [foodLangTarget, setFoodLangTarget] = useState<FoodItem | null>(null);
   const [savingLang, setSavingLang] = useState(false);
+  const [pendingInstructionsRecipeId, setPendingInstructionsRecipeId] = useState<string | null>(null);
+  const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(null);
+  const [expandedRecipeTab, setExpandedRecipeTab] = useState<'ingredients' | 'preparation'>('ingredients');
+  const [allFoodItems, setAllFoodItems] = useState<FoodItem[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadSections = useCallback(async () => {
@@ -128,6 +132,12 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
     if (res.ok) setRecipes(data.recipes || []);
   }, [activeSectionFilter]);
 
+  const loadAllFoodItems = useCallback(async () => {
+    const res = await fetch('/api/admin/food-database/items', { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (res.ok) setAllFoodItems(data.items || []);
+  }, []);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
@@ -145,8 +155,11 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
 
   useEffect(() => {
     if (tab === 'foods') loadItems();
-    else loadRecipes();
-  }, [tab, activeSectionFilter, loadItems, loadRecipes]);
+    else if (tab === 'recipes') {
+      loadRecipes();
+      loadAllFoodItems();
+    }
+  }, [tab, activeSectionFilter, loadItems, loadRecipes, loadAllFoodItems]);
 
   const foodLanguages = useMemo(() => getSupportedFoodLanguages(), []);
 
@@ -352,6 +365,24 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
     }
   };
 
+  const openPreparationEditor = useCallback((recipeId: string) => {
+    setEditRecipe(null);
+    setPendingInstructionsRecipeId(recipeId);
+    setTab('instructions');
+  }, []);
+
+  const toggleRecipeDetails = useCallback(
+    (recipeId: string, tab: 'ingredients' | 'preparation') => {
+      if (expandedRecipeId === recipeId && expandedRecipeTab === tab) {
+        setExpandedRecipeId(null);
+        return;
+      }
+      setExpandedRecipeId(recipeId);
+      setExpandedRecipeTab(tab);
+    },
+    [expandedRecipeId, expandedRecipeTab]
+  );
+
   const handleSaveRecipe = async () => {
     if (!editRecipe) return;
     setSavingRecipe(true);
@@ -392,14 +423,14 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
   };
 
   return (
-    <div className={`h-full flex flex-col ${embedded ? '' : 'bg-gray-100'}`}>
+    <div className={`h-full flex flex-col w-full min-w-0 admin-food-db-panel ${embedded ? '' : 'bg-gray-100'}`}>
       {!embedded && (
         <div className="bg-[#a51d2d] text-white py-2 font-bold text-center text-xl uppercase shadow-md border-b-4 border-[#800000]">
           System Dashboard
         </div>
       )}
 
-      <div className={`flex-1 bg-white p-4 sm:p-6 overflow-auto ${embedded ? '' : ''}`}>
+      <div className="flex-1 bg-white p-4 sm:p-6 overflow-auto w-full min-w-0">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-semibold text-gray-800">
@@ -566,6 +597,8 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
             sections={sections}
             displayLanguage={displayLanguage}
             onMessage={(type, text) => setMessage({ type, text })}
+            openRecipeId={pendingInstructionsRecipeId}
+            onOpenRecipeHandled={() => setPendingInstructionsRecipeId(null)}
           />
         ) : tab === 'foods' ? (
           filteredItems.length === 0 ? (
@@ -581,37 +614,46 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto border border-gray-300">
-              <table className="w-full text-sm border-collapse min-w-[900px]">
+            <div className="w-full min-w-0 overflow-x-auto border border-gray-300">
+              <table className="text-sm border-collapse w-max">
                 <thead>
-                  <tr className="bg-gray-100 border-b border-gray-300">
-                    <th className="border border-gray-300 px-2 py-2 text-left font-bold">Id</th>
+                  <tr className="border-b border-gray-300">
+                    <th className="border border-gray-300 px-2 py-2 text-left font-bold bg-white sticky left-0 z-[2]">Id</th>
                     {showImages && (
-                      <th className="border border-gray-300 px-2 py-2 text-center font-bold w-14">Pic</th>
+                      <th className="border border-gray-300 px-2 py-2 text-center font-bold w-14 bg-white">Pic</th>
                     )}
-                    <th className="border border-gray-300 px-2 py-2 text-left font-bold">Food Section</th>
-                    <th className="border border-gray-300 px-2 py-2 text-left font-bold">Food Name</th>
-                    <th className="border border-gray-300 px-2 py-2 text-right font-bold">Calories</th>
-                    <th className="border border-gray-300 px-2 py-2 text-right font-bold">Protein</th>
-                    <th className="border border-gray-300 px-2 py-2 text-right font-bold">Carbs</th>
-                    <th className="border border-gray-300 px-2 py-2 text-right font-bold">Fat</th>
-                    <th className="border border-gray-300 px-2 py-2 text-center font-bold w-[200px]">Actions</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-bold bg-white min-w-[120px]">Food Section</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-bold bg-white min-w-[200px]">Food Name</th>
+                    {NUTRIENT_DISPLAY_COLUMNS.map((col) => (
+                      <th
+                        key={col.key}
+                        className={`border border-gray-300 px-2 py-2 text-right font-bold whitespace-nowrap min-w-[3rem] ${getNutrientColumnBgClass(col.key)}`}
+                      >
+                        {col.short || col.label}
+                      </th>
+                    ))}
+                    <th className="border border-gray-300 px-2 py-2 text-center font-bold bg-white sticky right-0 z-[2] min-w-[200px] shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.08)]">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredItems.map((item, idx) => (
-                    <tr key={item.id} className="even:bg-gray-50 hover:bg-blue-50/40">
-                      <td className="border border-gray-300 px-2 py-1.5">{item.legacyId ?? idx + 1}</td>
+                  {filteredItems.map((item, idx) => {
+                    const nutrients = dbRowToNutrients(item as unknown as Record<string, unknown>);
+                    return (
+                    <tr key={item.id} className="hover:bg-blue-50/40">
+                      <td className="border border-gray-300 px-2 py-1.5 bg-white sticky left-0 z-[1]">
+                        {item.legacyId ?? '—'}
+                      </td>
                       {showImages && (
                         <td className="border border-gray-300 px-2 py-1.5 text-center">
                           {item.imageUrl ? (
-                            <div className="relative w-10 h-10 mx-auto rounded overflow-hidden border border-gray-200">
-                              <Image
-                                src={String(item.imageUrl)}
+                            <div className="w-10 h-10 mx-auto rounded overflow-hidden border border-gray-200">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={resolveFoodImageUrl(String(item.imageUrl)) || String(item.imageUrl)}
                                 alt={localizedFoodName(item)}
-                                fill
-                                className="object-cover"
-                                unoptimized
+                                className="w-full h-full object-cover"
                               />
                             </div>
                           ) : (
@@ -622,14 +664,18 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
                       <td className="border border-gray-300 px-2 py-1.5">
                         {item.section ? localizedSectionName(item.section) : '—'}
                       </td>
-                      <td className="border border-gray-300 px-2 py-1.5 font-medium" title={item.name}>
+                      <td className="border border-gray-300 px-2 py-1.5 font-medium bg-white" title={item.name}>
                         {localizedFoodName(item)}
                       </td>
-                      <td className="border border-gray-300 px-2 py-1.5 text-right">{fmt(item.calories)}</td>
-                      <td className="border border-gray-300 px-2 py-1.5 text-right">{fmt(item.proteins)}</td>
-                      <td className="border border-gray-300 px-2 py-1.5 text-right">{fmt(item.carbohydrates)}</td>
-                      <td className="border border-gray-300 px-2 py-1.5 text-right">{fmt(item.fats)}</td>
-                      <td className="border border-gray-300 px-2 py-1.5">
+                      {NUTRIENT_DISPLAY_COLUMNS.map((col) => (
+                        <td
+                          key={col.key}
+                          className={`border border-gray-300 px-2 py-1.5 text-right whitespace-nowrap ${getNutrientColumnBgClass(col.key)}`}
+                        >
+                          {formatNutrient(nutrients[col.key], col.key)}
+                        </td>
+                      ))}
+                      <td className="border border-gray-300 px-2 py-1.5 bg-white sticky right-0 z-[1] shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.08)]">
                         <div className="flex flex-wrap justify-center gap-1">
                           <ActionBtn label="View" icon={Eye} onClick={() => setViewItem(item)} />
                           <ActionBtn label="Edit" icon={Edit2} onClick={() => openEdit(item)} />
@@ -639,7 +685,8 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -669,26 +716,62 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
                 </tr>
               </thead>
               <tbody>
-                {filteredRecipes.map((r, idx) => (
-                  <tr key={r.id} className="even:bg-gray-50">
-                    <td className="border px-2 py-1.5">{r.legacyId ?? idx + 1}</td>
-                    <td className="border px-2 py-1.5">{localizedSectionName(r.section)}</td>
-                    <td className="border px-2 py-1.5 font-medium" title={r.name}>
-                      {localizedRecipeName(r)}
-                    </td>
-                    <td className="border px-2 py-1.5 text-right">{fmt(r.calories)}</td>
-                    <td className="border px-2 py-1.5 text-xs">
-                      {r.components.map((c) => `${c.name} (${c.grams}g)`).join(', ')}
-                    </td>
-                    <td className="border px-2 py-1.5">
-                      <div className="flex flex-wrap justify-center gap-1">
-                        <ActionBtn label="Edit" icon={Edit2} onClick={() => openEditRecipe(r)} />
-                        <ActionBtn label="Delete" icon={Trash2} onClick={() => handleDeleteRecipe(r)} danger />
-                        <ActionBtn label="Prep" icon={ChefHat} onClick={() => openEditRecipe(r)} />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {filteredRecipes.map((r, idx) => {
+                  const isExpanded = expandedRecipeId === r.id;
+                  const foodLookup = allFoodItems.length > 0 ? allFoodItems : items;
+                  return (
+                    <React.Fragment key={r.id}>
+                      <tr className="even:bg-gray-50">
+                        <td className="border px-2 py-1.5">{r.legacyId ?? idx + 1}</td>
+                        <td className="border px-2 py-1.5">{localizedSectionName(r.section)}</td>
+                        <td className="border px-2 py-1.5" title={r.name}>
+                          <button
+                            type="button"
+                            onClick={() => toggleRecipeDetails(r.id, 'ingredients')}
+                            className={`font-medium text-left w-full ${
+                              isExpanded
+                                ? 'text-[#0066cc] underline'
+                                : 'hover:text-[#0066cc] hover:underline'
+                            }`}
+                          >
+                            {localizedRecipeName(r)}
+                          </button>
+                        </td>
+                        <td className="border px-2 py-1.5 text-right">{fmt(r.calories)}</td>
+                        <td className="border px-2 py-1.5 text-xs">
+                          {r.components.map((c) => `${c.name} (${c.grams}g)`).join(', ')}
+                        </td>
+                        <td className="border px-2 py-1.5">
+                          <div className="flex flex-wrap justify-center gap-1">
+                            <ActionBtn label="Edit" icon={Edit2} onClick={() => openEditRecipe(r)} />
+                            <ActionBtn label="Delete" icon={Trash2} onClick={() => handleDeleteRecipe(r)} danger />
+                            <ActionBtn
+                              label="Prep"
+                              icon={ChefHat}
+                              onClick={() => toggleRecipeDetails(r.id, 'preparation')}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={6} className="border border-gray-300 p-0">
+                            <AdminRecipeDetailsExpand
+                              components={r.components}
+                              foodItems={foodLookup}
+                              preparationTranslations={r.preparationTranslations}
+                              description={r.description}
+                              displayLanguage={displayLanguage}
+                              activeTab={expandedRecipeTab}
+                              onTabChange={setExpandedRecipeTab}
+                              onOpenPreparation={() => openPreparationEditor(r.id)}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -720,6 +803,7 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
           onChange={setEditRecipe}
           onClose={() => setEditRecipe(null)}
           onSave={handleSaveRecipe}
+          onOpenPreparation={openPreparationEditor}
         />
       )}
 
@@ -770,29 +854,38 @@ function ActionBtn({
 
 function NutrientModal({ item, onClose }: { item: FoodItem; onClose: () => void }) {
   const nutrients = dbRowToNutrients(item as unknown as Record<string, unknown>);
+
+  React.useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[85vh] overflow-auto p-4">
-        <div className="flex justify-between items-start mb-3">
-          <div>
-            <h3 className="font-bold text-lg">{item.name}</h3>
-            <p className="text-sm text-gray-500">{item.section?.name} — per 100g</p>
-          </div>
-          <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <DietBuilderNutrientGrid
-          rows={[{ id: item.id, name: item.name, grams: 100, nutrients }]}
-          maxHeight="400px"
-        />
-        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-          {NUTRIENT_DISPLAY_COLUMNS.map((col) => (
-            <div key={col.key} className="bg-gray-50 px-2 py-1 rounded">
-              <span className="text-gray-500">{col.label}: </span>
-              <span className="font-medium">{nutrients[col.key] || '—'}</span>
-            </div>
-          ))}
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="relative bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[85vh] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-2 right-2 z-30 p-1.5 hover:bg-gray-100 rounded bg-white border border-gray-200 shadow-sm"
+          aria-label="Close"
+        >
+          <X className="w-5 h-5" />
+        </button>
+        <div className="p-4 pt-10 min-w-0 overflow-auto max-h-[85vh]">
+          <DietBuilderNutrientGrid
+            rows={[{ id: item.id, name: item.name, grams: 100, nutrients }]}
+            maxHeight="calc(85vh - 3rem)"
+          />
         </div>
       </div>
     </div>

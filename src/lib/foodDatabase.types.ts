@@ -112,3 +112,23 @@ export function sectionNameToSlug(name: string): string {
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_|_$/g, '');
 }
+
+/** Normalize stored food image paths for browser display. */
+export function resolveFoodImageUrl(url: string | null | undefined): string | null {
+  if (!url?.trim()) return null;
+  const trimmed = url.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+    return trimmed;
+  }
+
+  const apiPrefix = '/api/admin/food-database/uploads/';
+  if (trimmed.startsWith(apiPrefix)) return trimmed;
+
+  const staticPrefix = '/uploads/food-database/';
+  if (trimmed.startsWith(staticPrefix)) {
+    return `${apiPrefix}${trimmed.slice(staticPrefix.length)}`;
+  }
+
+  if (trimmed.startsWith('/')) return trimmed;
+  return `/${trimmed.replace(/^\/+/, '')}`;
+}

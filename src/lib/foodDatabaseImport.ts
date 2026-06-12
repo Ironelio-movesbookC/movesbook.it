@@ -21,6 +21,30 @@ export async function ensureBundledFoodDatabaseSeeded(): Promise<boolean> {
   return true;
 }
 
+/** Add any sections from bundled JSON that are not yet in the database. */
+export async function ensureMissingFoodSections(): Promise<number> {
+  const payload = bundledImport as FoodDatabaseImportPayload;
+  const existing = await prisma.foodDatabaseSection.findMany();
+  const existingKeys = new Set(existing.map((s) => s.name.toLowerCase()));
+  let created = 0;
+
+  for (const sec of payload.sections || []) {
+    const key = sec.name.toLowerCase();
+    if (existingKeys.has(key)) continue;
+    await prisma.foodDatabaseSection.create({
+      data: {
+        name: sec.name,
+        legacyId: sec.legacyId ?? null,
+        displayOrder: sec.displayOrder ?? 0,
+      },
+    });
+    existingKeys.add(key);
+    created++;
+  }
+
+  return created;
+}
+
 export interface FoodDatabaseImportResult {
   sectionsCreated: number;
   sectionsUpdated: number;
@@ -176,4 +200,29 @@ export async function importFoodDatabase(
   }
 
   return result;
+}
+
+export async function getNextFoodLegacyId(): Promise<number> {
+  const max = await prisma.foodDatabaseItem.aggregate({ _max: { legacyId: true } });
+  return (max._max.legacyId ?? 0) + 1;
+}
+
+/** Assign sequential legacy IDs to items that were created without one. */
+export async function assignMissingFoodLegacyIds(): Promise<number> {
+  const missing = await prisma.foodDatabaseItem.findMany({
+    where: { legacyId: null },
+    orderBy: [{ createdAt: 'asc' }, { name: 'asc' }],
+    select: { id: true },
+  });
+  if (missing.length === 0) return 0;
+
+  let nextId = await getNextFoodLegacyId();
+  for (const row of missing) {
+    await prisma.foodDatabaseItem.update({
+      where: { id: row.id },
+      data: { legacyId: nextId },
+    });
+    nextId += 1;
+  }
+  return missing.length;
 }

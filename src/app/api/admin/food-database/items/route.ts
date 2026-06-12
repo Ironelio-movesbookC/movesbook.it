@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireSportMachineCompaniesAccess } from '@/lib/adminPanelAuth';
 import { nutrientsToDb } from '@/lib/foodDatabase.types';
+import { getNextFoodLegacyId, assignMissingFoodLegacyIds } from '@/lib/foodDatabaseImport';
 import { serializeTranslations } from '@/lib/foodDatabaseTranslations';
 
 export async function GET(request: NextRequest) {
@@ -9,6 +10,7 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   try {
+    await assignMissingFoodLegacyIds();
     const { searchParams } = new URL(request.url);
     const sectionId = searchParams.get('sectionId');
     const q = searchParams.get('q')?.trim();
@@ -47,12 +49,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Section and name are required' }, { status: 400 });
     }
 
+    const nextLegacyId =
+      typeof legacyId === 'number' && Number.isFinite(legacyId) ? legacyId : await getNextFoodLegacyId();
+
     const item = await prisma.foodDatabaseItem.create({
       data: {
         sectionId,
         name: name.trim().toUpperCase(),
         isLiquid: !!isLiquid,
-        legacyId: legacyId ?? null,
+        legacyId: nextLegacyId,
         imageUrl: imageUrl?.trim() || null,
         nameTranslations: nameTranslations
           ? typeof nameTranslations === 'string'

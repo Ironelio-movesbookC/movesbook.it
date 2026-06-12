@@ -37,11 +37,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <AdminLeftSidebar isOpen={leftOpen} onToggle={() => setLeftOpen(!leftOpen)} />
         )}
 
-        <main className="flex-1 overflow-y-auto bg-gray-50">
+        <main className="flex-1 min-w-0 overflow-y-auto bg-gray-50">
           {children}
         </main>
 
-        <AdminRightSidebar isOpen={rightOpen} onToggle={() => setRightOpen(!rightOpen)} />
+        {!useSystemSidebar && (
+          <AdminRightSidebar isOpen={rightOpen} onToggle={() => setRightOpen(!rightOpen)} />
+        )}
       </div>
       <ModernFooter />
     </div>

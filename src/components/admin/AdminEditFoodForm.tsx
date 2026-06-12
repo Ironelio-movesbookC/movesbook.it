@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import Image from 'next/image';
 import { X, Languages } from 'lucide-react';
 import { getAuthToken } from '@/utils/auth.utils';
-import { dbRowToNutrients } from '@/lib/foodDatabase.types';
+import { dbRowToNutrients, resolveFoodImageUrl } from '@/lib/foodDatabase.types';
 import {
   buildTranslationsFromEnglish,
   parseTranslations,
@@ -50,6 +49,19 @@ const MICRO_ROWS = NUTRIENT_DISPLAY_COLUMNS.filter(
   (c) => !['calories', 'proteins', 'carbohydrates', 'fats', 'fiber'].includes(c.key)
 );
 
+function formatDecimal(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return '0.0';
+  return Number(value).toFixed(1);
+}
+
+function parseDecimalInput(val: string): number {
+  const n = parseFloat(val.replace(',', '.').trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+const nutrientInputClass =
+  'w-full border border-gray-300 rounded-sm px-2 py-1.5 text-base tabular-nums';
+
 function FormRow({
   label,
   children,
@@ -85,8 +97,15 @@ export default function AdminEditFoodForm({
   const nutrients = dbRowToNutrients(item as unknown as Record<string, unknown>);
 
   const setNutrient = (key: keyof NutrientTotals, val: string) => {
-    onChange({ ...item, [key]: parseFloat(val.replace(',', '.')) || 0 });
+    onChange({ ...item, [key]: parseDecimalInput(val) });
   };
+
+  const blurNutrient = (key: keyof NutrientTotals) => {
+    const current = nutrients[key];
+    onChange({ ...item, [key]: parseDecimalInput(formatDecimal(current)) });
+  };
+
+  const foodImageSrc = resolveFoodImageUrl(item.imageUrl);
 
   const handleUpload = async (file: File) => {
     setUploading(true);
@@ -102,7 +121,8 @@ export default function AdminEditFoodForm({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload failed');
-      onChange({ ...item, imageUrl: data.path });
+      const imageUrl = resolveFoodImageUrl(data.path) || data.path;
+      onChange({ ...item, imageUrl });
     } catch (e: unknown) {
       setUploadError(e instanceof Error ? e.message : 'Upload failed');
     } finally {
@@ -172,9 +192,10 @@ export default function AdminEditFoodForm({
                   <input
                     type="text"
                     inputMode="decimal"
-                    value={String(nutrients[key] ?? '')}
+                    value={formatDecimal(nutrients[key])}
                     onChange={(e) => setNutrient(key, e.target.value)}
-                    className="w-full max-w-md border border-gray-300 rounded-sm px-2 py-1.5 text-sm"
+                    onBlur={() => blurNutrient(key)}
+                    className={`max-w-md ${nutrientInputClass}`}
                   />
                 </FormRow>
               ))}
@@ -193,7 +214,7 @@ export default function AdminEditFoodForm({
                 <tr>
                   <td colSpan={2} className="pb-3">
                     <div className="overflow-x-auto border border-gray-200 rounded-sm max-w-full">
-                      <table className="text-xs min-w-[520px] w-full">
+                      <table className="text-sm min-w-[520px] w-full">
                         <tbody>
                           {MICRO_ROWS.map(({ key, label }) => (
                             <tr key={key} className="border-b border-gray-100 last:border-0">
@@ -202,9 +223,10 @@ export default function AdminEditFoodForm({
                                 <input
                                   type="text"
                                   inputMode="decimal"
-                                  value={String(nutrients[key] ?? '')}
+                                  value={formatDecimal(nutrients[key])}
                                   onChange={(e) => setNutrient(key, e.target.value)}
-                                  className="w-full border border-gray-300 rounded-sm px-2 py-1"
+                                  onBlur={() => blurNutrient(key)}
+                                  className={nutrientInputClass}
                                 />
                               </td>
                             </tr>
@@ -218,14 +240,13 @@ export default function AdminEditFoodForm({
 
               <FormRow label="Upload">
                 <div className="space-y-2">
-                  {item.imageUrl && (
-                    <div className="relative w-24 h-24 border border-gray-200 rounded overflow-hidden bg-gray-50">
-                      <Image
-                        src={item.imageUrl}
+                  {foodImageSrc && (
+                    <div className="w-24 h-24 border border-gray-200 rounded overflow-hidden bg-gray-50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={foodImageSrc}
                         alt={item.name || 'Food'}
-                        fill
-                        className="object-cover"
-                        unoptimized
+                        className="w-full h-full object-cover"
                       />
                     </div>
                   )}
@@ -275,7 +296,7 @@ export default function AdminEditFoodForm({
             <button
               type="button"
               onClick={onSave}
-              disabled={saving || !item.name.trim() || !item.sectionId}
+              disabled={saving || uploading || !item.name.trim() || !item.sectionId}
               className="bg-[#c0392b] hover:bg-[#a93226] disabled:opacity-50 text-white font-semibold px-8 py-2 rounded-sm text-sm"
             >
               {saving ? 'Saving…' : 'Save'}
