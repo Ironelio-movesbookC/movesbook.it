@@ -180,52 +180,7 @@ function SponsoredBlock() {
 export default function AthleteMyClubRightSidebar({ showSponsoredBlock = true }: { showSponsoredBlock?: boolean }) {
   return (
     <div className="flex flex-col">
-      <div className="bg-gray-900 px-3 py-2 text-xs font-bold tracking-wide text-white border-b border-gray-300">
-        EVENTS
-      </div>
-
-      <div className="border-b border-gray-300 bg-gray-100 px-2 py-2">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="border border-gray-400 bg-gray-500 px-2.5 py-1.5 text-[11px] font-semibold text-white"
-          >
-            Events
-          </button>
-          <button
-            type="button"
-            className="border border-gray-300 bg-gray-200 px-2.5 py-1.5 text-[11px] font-semibold text-gray-700"
-          >
-            Access Control
-          </button>
-          <button
-            type="button"
-            className="border border-gray-300 bg-gray-200 px-2.5 py-1.5 text-[11px] font-semibold text-gray-700"
-          >
-            Access List
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white">
-        {[
-          'Today is the birthday of',
-          "Events about club's member",
-          'Events about this club',
-          'Events about shared club',
-        ].map((label) => (
-          <div key={label} className="border-b border-gray-300">
-            <div className="flex min-h-16 items-start justify-between px-3 py-4 text-[11px] text-gray-700">
-              <span className="pt-0.5">{label}</span>
-              <span className="whitespace-nowrap text-[10px] text-gray-600">Month ▾</span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-3">
-        <WallNextEventSection />
-      </div>
+      <WallNextEventSection />
 
       <div className="mt-3">
         <WallMembersLastLoggedSection />

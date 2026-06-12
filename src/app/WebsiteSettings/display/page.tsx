@@ -1,25 +1,29 @@
 'use client';
 
 import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import ClubWebsiteMemberDisplay from '@/components/club/websiteSettings/ClubWebsiteMemberDisplay';
-import ClubWebsiteSettingsPageShell from '@/components/club/websiteSettings/ClubWebsiteSettingsPageShell';
+import ClubWebsiteDisplayPageShell from '@/components/club/websiteSettings/ClubWebsiteDisplayPageShell';
 
 function ClubWebsiteDisplayContent() {
+  const searchParams = useSearchParams();
+  const queryClubId = searchParams?.get('clubId');
+
   return (
-      <ClubWebsiteSettingsPageShell>
-        {(ctx) => (
-          <ClubWebsiteMemberDisplay
-            clubId={ctx.clubId}
-            clubDisplayName={ctx.clubDisplayName}
-            adminDisplayName={ctx.adminDisplayName}
-            clubType={ctx.clubType}
-            adminCountry={ctx.adminCountry}
-            adminLocality={ctx.adminLocality}
-            logoImageUrl={ctx.logoImageUrl}
-          />
-        )}
-      </ClubWebsiteSettingsPageShell>
+    <ClubWebsiteDisplayPageShell>
+      {(ctx) => (
+        <ClubWebsiteMemberDisplay
+          clubId={queryClubId ?? ctx.clubId}
+          clubDisplayName={ctx.clubDisplayName}
+          adminDisplayName={ctx.adminDisplayName}
+          clubType={ctx.clubType}
+          adminCountry={ctx.adminCountry}
+          adminLocality={ctx.adminLocality}
+          logoImageUrl={ctx.logoImageUrl}
+        />
+      )}
+    </ClubWebsiteDisplayPageShell>
   );
 }
 
@@ -27,7 +31,7 @@ export default function ClubWebsiteDisplayPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="flex min-h-screen items-center justify-center bg-[#ececec]">
           <Loader2 className="h-8 w-8 animate-spin text-teal-700" />
         </div>
       }

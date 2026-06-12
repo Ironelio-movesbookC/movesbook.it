@@ -86,6 +86,17 @@ export function topicToSettingsFormItem(topic: ClubWebsiteTopic) {
   };
 }
 
+export function clearClubWebsiteTopicContent(): Pick<
+  ClubWebsiteTopic,
+  'contentsByLang' | 'keywordsByLang' | 'lastUpdate'
+> {
+  return {
+    contentsByLang: emptyClubWebsiteLangRecord(),
+    keywordsByLang: emptyClubWebsiteLangRecord(),
+    lastUpdate: '',
+  };
+}
+
 function storageKey(clubId: string): string {
   return `${STORAGE_PREFIX}:${clubId}`;
 }

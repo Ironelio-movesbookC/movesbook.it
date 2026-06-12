@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import ModernNavbar from '@/components/ModernNavbar';
 import DarkSidebar from '@/components/DarkSidebar';
 import SimpleFooter from '@/components/SimpleFooter';
@@ -13,7 +12,7 @@ import { useMyPageHandlers } from '@/app/my-page/hooks/useMyPageHandlers';
 import { getEntityType } from '@/app/my-page/utils/myPageUtils';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import DisplayOptionsToolbar from '@/app/my-page/components/DisplayOptionsToolbar';
-import PersonalBanner from '@/app/my-page/components/PersonalBanner';
+import DashboardStyleBanners from '@/app/my-page/components/DashboardStyleBanners';
 import RightSidebar from '@/app/my-page/components/RightSidebar';
 import AddMemberModal from '@/components/AddMemberModal';
 import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
@@ -76,13 +75,15 @@ export default function MyDeskPage() {
       />
 
       <div className="flex w-full flex-1 flex-col py-2">
-        {showAdBanner ? (
-          <div className="mb-6 flex-shrink-0">
-            <AdvertisementCarousel />
-          </div>
-        ) : null}
-
-        {showPersonalBanner ? <PersonalBanner user={user} currentTab={activeTab} /> : null}
+        <DashboardStyleBanners
+          user={user}
+          activeTab={activeTab}
+          showAdBanner={showAdBanner}
+          showPersonalBanner={showPersonalBanner}
+          clubs={clubs}
+          myClubs={myClubs}
+          selectedClubId={selectedClub}
+        />
 
         <div className="flex flex-1 gap-0">
           {showLeftSidebar ? (

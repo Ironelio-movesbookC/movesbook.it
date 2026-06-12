@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { INFO_REPS_DEFAULT_EN, INFO_REPS_TRANSLATION_KEY } from '../src/constants/infoRepsLongText';
-import { AUTO_PROCESS_INFO_DEFAULT_EN, AUTO_PROCESS_INFO_KEY } from '../src/constants/autoProcessInfoLongText';
+import { AUTO_PROCESS_INFO_DEFAULT_EN, AUTO_PROCESS_INFO_TRANSLATION_KEY } from '../src/constants/autoProcessInfoLongText';
 
 const prisma = new PrismaClient();
 
@@ -395,8 +395,8 @@ const longTexts = [
       },
     },
     {
-      key: AUTO_PROCESS_INFO_KEY,
-      category: 'management',
+      key: AUTO_PROCESS_INFO_TRANSLATION_KEY,
+      category: 'social',
       values: {
         en: AUTO_PROCESS_INFO_DEFAULT_EN,
       },
