@@ -477,6 +477,8 @@ export interface LanguageStrings {
         'club_website_display_bacheca_hint':
           'Club bulletin board content is managed in the website editor.',
         'club_website_display_no_topics': 'No club topics are visible yet.',
+        'club_website_display_example_note':
+          'This is an example of the page displayed to the users',
         'club_bacheca_title': "Club's bacheca",
         'club_bacheca_intro':
           "The club's operators can enter here documents and information using 14 different type of customizable themes.",
@@ -511,6 +513,8 @@ export interface LanguageStrings {
           'Authorized users will always be those of the topic in which this subtopic will be inserted.',
         'club_subtopic_delete_content': 'Delete subtopic content',
         'club_subtopic_delete_content_confirm': 'Delete all content for this subtopic?',
+        'club_topic_delete_content': 'Delete topic content',
+        'club_topic_delete_content_confirm': 'Delete all content for this topic?',
         'club_topic_enable': 'Enable Topic',
         'club_topic_edit_name': 'Edit topic name',
         'club_topic_show_in_club_dashboard': 'Show in My Club - Dashboard - Club topics',
@@ -1588,6 +1592,8 @@ export interface LanguageStrings {
         'club_website_display_bacheca_hint':
           'El contenido del tablón del club se gestiona en el editor del sitio web.',
         'club_website_display_no_topics': 'Aún no hay temas del club visibles.',
+        'club_website_display_example_note':
+          'Este es un ejemplo de la página mostrada a los usuarios',
         'club_bacheca_title': 'Bacheca del club',
         'club_bacheca_intro':
           'Los operadores del club pueden introducir aquí documentos e información con 14 temas personalizables.',
@@ -1623,6 +1629,8 @@ export interface LanguageStrings {
           'Los usuarios autorizados serán siempre los del tema en el que se insertará este subtema.',
         'club_subtopic_delete_content': 'Eliminar contenido del subtema',
         'club_subtopic_delete_content_confirm': '¿Eliminar todo el contenido de este subtema?',
+        'club_topic_delete_content': 'Eliminar contenido del tema',
+        'club_topic_delete_content_confirm': '¿Eliminar todo el contenido de este tema?',
         'club_topic_enable': 'Activar tema',
         'club_topic_edit_name': 'Editar nombre del tema',
         'club_topic_show_in_club_dashboard': 'Mostrar en My Club - Dashboard - Temas del club',

@@ -13,6 +13,11 @@ import {
   loadClubWebsiteTopics,
   type ClubWebsiteTopic,
 } from '@/lib/clubWebsiteTopics';
+import {
+  findFirstMemberEmbedTopic,
+  topicHasEmbedUrl,
+  topicHasHtmlContent,
+} from '@/lib/clubWebsiteDisplayContent';
 import ClubWebsiteSettingsSidebar from '@/components/club/websiteSettings/ClubWebsiteSettingsSidebar';
 import ClubWebsiteMemberContentPanel from '@/components/club/websiteSettings/ClubWebsiteMemberContentPanel';
 import RightSidebar from '@/components/dashboard/RightSidebar';
@@ -22,24 +27,26 @@ function pickInitialSelection(
   topics: ClubWebsiteTopic[]
 ): { id: string; label: string } {
   const visibleFriends = filterClubWebsiteFriendItemsForMembers(friendItems);
-  const linkInPage = visibleFriends.find(
-    (i) =>
-      i.id !== 'friends-root' &&
-      i.contentDisplayMode === 'link' &&
-      i.externalUrl.trim() &&
-      i.openInSamePage
+  const linkTopic = visibleFriends.find(
+    (i) => i.id !== 'friends-root' && topicHasEmbedUrl(i)
   );
-  if (linkInPage) return { id: linkInPage.id, label: linkInPage.name };
+  if (linkTopic) return { id: linkTopic.id, label: linkTopic.name };
 
   const withHtml = visibleFriends.find(
-    (i) =>
-      i.id !== 'friends-root' &&
-      (i.contentsByLang.en?.trim() || Object.values(i.contentsByLang).some((v) => v?.trim()))
+    (i) => i.id !== 'friends-root' && topicHasHtmlContent(i)
   );
   if (withHtml) return { id: withHtml.id, label: withHtml.name };
 
   const visibleTopics = filterClubWebsiteTopicsForMembers(topics);
-  if (visibleTopics[0]) return { id: visibleTopics[0].id, label: visibleTopics[0].name };
+  const topicLink = visibleTopics.find((tpc) => topicHasEmbedUrl(tpc));
+  if (topicLink) return { id: topicLink.id, label: topicLink.name };
+
+  const topicHtml = visibleTopics.find((tpc) => topicHasHtmlContent(tpc));
+  if (topicHtml) return { id: topicHtml.id, label: topicHtml.name };
+
+  if (findFirstMemberEmbedTopic(friendItems, topics)) {
+    return { id: 'bacheca', label: 'Bacheca' };
+  }
 
   if (visibleFriends.some((i) => i.id === 'friends-root')) {
     return { id: 'friends-root', label: 'List of friends' };
@@ -117,7 +124,7 @@ export default function ClubWebsiteMemberDisplay({
   }
 
   return (
-    <div className="flex min-h-0 w-full flex-1 gap-0 border border-zinc-400 bg-zinc-200 shadow-sm">
+    <div className="flex min-h-[calc(100vh-252px)] w-full flex-1 gap-0 border-y border-zinc-400 bg-zinc-200 shadow-sm">
       <ClubWebsiteSettingsSidebar
         displayMode
         adminDisplayName={adminDisplayName}
@@ -144,15 +151,19 @@ export default function ClubWebsiteMemberDisplay({
         onFriendAddSubtopic={noop}
       />
 
-      <ClubWebsiteMemberContentPanel
-        selectedTopicId={selectedTopicId}
-        selectedTopicLabel={selectedTopicLabel}
-        friendItems={friendItems}
-        customTopics={customTopics}
-        clubDisplayName={clubDisplayName}
-      />
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <ClubWebsiteMemberContentPanel
+          selectedTopicId={selectedTopicId}
+          selectedTopicLabel={selectedTopicLabel}
+          friendItems={friendItems}
+          customTopics={customTopics}
+          clubDisplayName={clubDisplayName}
+          displayMode
+          showExampleNote
+        />
+      </div>
 
-      <div className="hidden w-72 shrink-0 xl:block">
+      <div className="hidden w-80 shrink-0 lg:block">
         <RightSidebar
           context="my-club"
           onAddMember={() => {}}

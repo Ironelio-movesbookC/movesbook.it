@@ -45,18 +45,24 @@ function StatusToggleButton({
   ariaLabel: string;
 }) {
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-      className="flex h-7 w-7 shrink-0 items-center justify-center self-center"
-      aria-label={ariaLabel}
-    >
-      <StatusSquare status={status} />
-    </button>
+    <div className="flex w-7 shrink-0 items-center justify-center">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+        className="flex h-7 w-7 items-center justify-center"
+        aria-label={ariaLabel}
+      >
+        <StatusSquare status={status} />
+      </button>
+    </div>
   );
+}
+
+function MenuRowStatusCell({ children }: { children?: ReactNode }) {
+  return <div className="flex w-7 shrink-0 items-center justify-center">{children}</div>;
 }
 
 function MenuRow({
@@ -174,18 +180,17 @@ export default function ClubWebsiteSettingsSidebar({
         {t('club_website_tab_title')}
       </div>
 
-      {/* Profile card */}
+      {/* Profile card — admin editor only */}
+      {!displayMode ? (
       <div className="border-b border-zinc-500 p-2" style={{ backgroundColor: LEGACY_SIDEBAR_PANEL }}>
-        {!displayMode ? (
-          <div className="mb-2 flex justify-end">
-            <button
-              type="button"
-              className="rounded border border-zinc-400 bg-zinc-600 px-2 py-0.5 text-[11px] text-white hover:bg-zinc-500"
-            >
-              {t('club_website_like')}
-            </button>
-          </div>
-        ) : null}
+        <div className="mb-2 flex justify-end">
+          <button
+            type="button"
+            className="rounded border border-zinc-400 bg-zinc-600 px-2 py-0.5 text-[11px] text-white hover:bg-zinc-500"
+          >
+            {t('club_website_like')}
+          </button>
+        </div>
 
         <div className="mb-2 flex items-center gap-1.5 font-semibold">
           <User className="h-4 w-4 shrink-0" aria-hidden />
@@ -203,11 +208,9 @@ export default function ClubWebsiteSettingsSidebar({
                 </div>
               )}
             </div>
-            {!displayMode ? (
-              <button type="button" className="mt-1 text-[11px] text-white underline hover:text-zinc-200">
-                {t('club_website_change_logo')}
-              </button>
-            ) : null}
+            <button type="button" className="mt-1 text-[11px] text-white underline hover:text-zinc-200">
+              {t('club_website_change_logo')}
+            </button>
           </div>
           <dl className="min-w-0 flex-1 space-y-1">
             <div>
@@ -226,8 +229,10 @@ export default function ClubWebsiteSettingsSidebar({
         </div>
         <p className="mt-2 truncate text-[10px] text-zinc-400">{clubDisplayName}</p>
       </div>
+      ) : null}
 
-      {/* Most used buttons */}
+      {/* Most used buttons — admin editor only (display page uses top toolbar) */}
+      {!displayMode ? (
       <div className="flex items-stretch border-b border-zinc-500 bg-gradient-to-r from-[#a31919] to-[#8b0000]">
         <div className="flex flex-1 items-center justify-center py-2.5 text-sm font-semibold tracking-wide text-white/95">
           {t('sidebar_most_used_buttons')}
@@ -240,6 +245,7 @@ export default function ClubWebsiteSettingsSidebar({
           <Settings className="h-4 w-4" />
         </button>
       </div>
+      ) : null}
 
       {/* Website editor block */}
       <div className="border-b border-white/90">
@@ -307,7 +313,9 @@ export default function ClubWebsiteSettingsSidebar({
               {topic.name}
             </span>
             {displayMode ? (
-              <StatusSquare status={topic.activated ? 'on' : 'off'} />
+              <MenuRowStatusCell>
+                <StatusSquare status={topic.activated ? 'on' : 'off'} />
+              </MenuRowStatusCell>
             ) : (
               <StatusToggleButton
                 status={topic.activated ? 'on' : 'off'}
@@ -374,7 +382,9 @@ export default function ClubWebsiteSettingsSidebar({
             </span>
             {row.showStatus ? (
               displayMode ? (
-                <StatusSquare status={topicStatuses[row.id] ?? 'on'} />
+                <MenuRowStatusCell>
+                  <StatusSquare status={topicStatuses[row.id] ?? 'on'} />
+                </MenuRowStatusCell>
               ) : (
                 <StatusToggleButton
                   status={topicStatuses[row.id] ?? 'on'}
@@ -383,7 +393,7 @@ export default function ClubWebsiteSettingsSidebar({
                 />
               )
             ) : (
-              <span className="h-7 w-7 shrink-0" aria-hidden />
+              <MenuRowStatusCell />
             )}
           </MenuRow>
         ))}
