@@ -227,13 +227,27 @@ function WeekPickerDropdown({
   );
 }
 
+export type FavouritePeriodizationDraftBind = {
+  weeks: any[];
+  onApplyPeriodRange: (periodId: string, weekStart: number, weekEnd: number) => void;
+  notesByPeriodId: Record<string, string>;
+  onNotesChange: (notes: Record<string, string>) => void;
+  attachmentsByPeriodId: Record<string, PeriodizationAttachmentMeta[]>;
+  onAttachmentsChange: (attachments: Record<string, PeriodizationAttachmentMeta[]>) => void;
+  onSaveBuild: () => Promise<boolean>;
+};
+
 export default function PeriodizationTabPanel({
   periods,
   onPeriodizationTemplatesChanged,
+  favouriteDraft,
 }: {
   periods: Period[];
   onPeriodizationTemplatesChanged?: () => void;
+  /** Favourites → Build: 52-week draft without touching live yearly plan */
+  favouriteDraft?: FavouritePeriodizationDraftBind;
 }) {
+  const isFavouriteDraft = Boolean(favouriteDraft);
   const [planMode, setPlanMode] = useState<PlanMode>('yearly');
   const [planLoading, setPlanLoading] = useState(true);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -261,9 +275,15 @@ export default function PeriodizationTabPanel({
   const [archiveFetchNote, setArchiveFetchNote] = useState<string | null>(null);
   const [periodNotesModalId, setPeriodNotesModalId] = useState<string | null>(null);
 
-  const includeDates = planMode === 'yearly';
+  const includeDates = !isFavouriteDraft && planMode === 'yearly';
 
   const loadPlan = useCallback(async () => {
+    if (isFavouriteDraft) {
+      setSortedWeeks(favouriteDraft!.weeks);
+      setPlanLoading(false);
+      setPlanError(null);
+      return;
+    }
     const token = getAuthToken();
     if (!token) {
       setPlanError('Please sign in to load your plan.');
@@ -300,9 +320,18 @@ export default function PeriodizationTabPanel({
     } finally {
       setPlanLoading(false);
     }
-  }, [planMode]);
+  }, [planMode, isFavouriteDraft, favouriteDraft]);
 
   const loadPersisted = useCallback(async () => {
+    if (isFavouriteDraft && favouriteDraft) {
+      setNotesByPeriodId({ ...favouriteDraft.notesByPeriodId });
+      setAttachmentsByPeriodId({ ...favouriteDraft.attachmentsByPeriodId });
+      setPersistedSnapshot({
+        notesByPeriodId: { ...favouriteDraft.notesByPeriodId },
+        attachmentsByPeriodId: { ...favouriteDraft.attachmentsByPeriodId },
+      });
+      return;
+    }
     try {
       const res = await fetch('/api/user/settings', { headers: getAuthHeaders() });
       if (!res.ok) return;
@@ -323,11 +352,17 @@ export default function PeriodizationTabPanel({
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [isFavouriteDraft, favouriteDraft]);
 
   useEffect(() => {
     loadPlan();
   }, [loadPlan]);
+
+  useEffect(() => {
+    if (isFavouriteDraft && favouriteDraft) {
+      setSortedWeeks(favouriteDraft.weeks);
+    }
+  }, [isFavouriteDraft, favouriteDraft]);
 
   useEffect(() => {
     if (periods.length) {
@@ -451,17 +486,21 @@ export default function PeriodizationTabPanel({
         return;
       }
       const att = data.attachment as PeriodizationAttachmentMeta;
-      setAttachmentsByPeriodId((prev) => ({ ...prev, [periodId]: [...(prev[periodId] || []), att] }));
+      const nextAttachments = {
+        ...attachmentsByPeriodId,
+        [periodId]: [...(attachmentsByPeriodId[periodId] || []), att],
+      };
+      setAttachmentsByPeriodId(nextAttachments);
+      if (isFavouriteDraft && favouriteDraft) {
+        favouriteDraft.onAttachmentsChange(nextAttachments);
+        return;
+      }
       const ok = await patchPeriodizationMerge((prev) => ({
         ...prev,
         attachmentsByPeriodId: {
           ...((prev.attachmentsByPeriodId as Record<string, PeriodizationAttachmentMeta[]>) || {}),
-          [periodId]: [
-            ...(((prev.attachmentsByPeriodId as Record<string, PeriodizationAttachmentMeta[]>)?.[periodId]) ||
-              []),
-            att
-          ]
-        }
+          [periodId]: nextAttachments[periodId],
+        },
       }));
       if (!ok) alert('Could not save attachment metadata. Click Save to retry.');
     } finally {
@@ -482,15 +521,20 @@ export default function PeriodizationTabPanel({
         },
         body: JSON.stringify({ url: att.url })
       });
-      setAttachmentsByPeriodId((prev) => ({
-        ...prev,
-        [periodId]: (prev[periodId] || []).filter((a) => a.id !== att.id)
-      }));
+      const nextAttachments = {
+        ...attachmentsByPeriodId,
+        [periodId]: (attachmentsByPeriodId[periodId] || []).filter((a) => a.id !== att.id),
+      };
+      setAttachmentsByPeriodId(nextAttachments);
+      if (isFavouriteDraft && favouriteDraft) {
+        favouriteDraft.onAttachmentsChange(nextAttachments);
+        return;
+      }
       const ok = await patchPeriodizationMerge((prev) => {
         const m = {
-          ...((prev.attachmentsByPeriodId as Record<string, PeriodizationAttachmentMeta[]>) || {})
+          ...((prev.attachmentsByPeriodId as Record<string, PeriodizationAttachmentMeta[]>) || {}),
         };
-        m[periodId] = (m[periodId] || []).filter((a) => a.id !== att.id);
+        m[periodId] = nextAttachments[periodId];
         return { ...prev, attachmentsByPeriodId: m };
       });
       if (!ok) alert('Could not update saved attachments.');
@@ -504,16 +548,23 @@ export default function PeriodizationTabPanel({
       alert('Select a period first.');
       return;
     }
-    const token = getAuthToken();
-    if (!token) return;
     const weeksInRange = sortedWeeks.filter(
       (w: any) => w.weekNumber >= weekRangeStart && w.weekNumber <= weekRangeEnd
     );
     if (weeksInRange.length === 0) {
-      alert('No weeks in this range. Create or load a plan first.');
+      alert('No weeks in this range.');
+      return;
+    }
+    if (isFavouriteDraft && favouriteDraft) {
+      const nextNotes = { ...notesByPeriodId, [selectedPeriod.id]: editorHtml };
+      setNotesByPeriodId(nextNotes);
+      favouriteDraft.onNotesChange(nextNotes);
+      favouriteDraft.onApplyPeriodRange(selectedPeriod.id, weekRangeStart, weekRangeEnd);
       return;
     }
     setNotesByPeriodId((prev) => ({ ...prev, [selectedPeriod.id]: editorHtml }));
+    const token = getAuthToken();
+    if (!token) return;
     setApplyBusy(true);
     try {
       const results = await Promise.all(
@@ -540,6 +591,23 @@ export default function PeriodizationTabPanel({
   };
 
   const handleSave = async () => {
+    if (isFavouriteDraft && favouriteDraft) {
+      setSaveBusy(true);
+      try {
+        const notes = {
+          ...notesByPeriodId,
+          ...(selectedPeriodId ? { [selectedPeriodId]: editorHtml } : {}),
+        };
+        favouriteDraft.onNotesChange(notes);
+        favouriteDraft.onAttachmentsChange({ ...attachmentsByPeriodId });
+        const ok = await favouriteDraft.onSaveBuild();
+        if (ok) alert('Periodization saved to this favourite preset.');
+        else alert('Could not save periodization.');
+      } finally {
+        setSaveBusy(false);
+      }
+      return;
+    }
     const token = getAuthToken();
     if (!token) return;
     setSaveBusy(true);
@@ -836,24 +904,33 @@ export default function PeriodizationTabPanel({
         </div>
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-3 justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Plan:</span>
-              <select
-                value={planMode}
-                onChange={(e) => setPlanMode(e.target.value as PlanMode)}
-                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-              >
-                <option value="yearly">Yearly plan (52 weeks)</option>
-                <option value="template">Template weekly plan (3 weeks)</option>
-              </select>
+          {!isFavouriteDraft && (
+            <div className="flex flex-wrap items-center gap-3 justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Plan:</span>
+                <select
+                  value={planMode}
+                  onChange={(e) => setPlanMode(e.target.value as PlanMode)}
+                  className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                >
+                  <option value="yearly">Yearly plan (52 weeks)</option>
+                  <option value="template">Template weekly plan (3 weeks)</option>
+                </select>
+              </div>
+              {planLoading && (
+                <span className="flex items-center gap-2 text-sm text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading plan…
+                </span>
+              )}
             </div>
-            {planLoading && (
-              <span className="flex items-center gap-2 text-sm text-gray-500">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading plan…
-              </span>
-            )}
-          </div>
+          )}
+          {isFavouriteDraft && (
+            <p className="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              Building a <strong>52-week template</strong> for “{favouriteDraft ? 'this preset' : ''}”. Apply
+              assigns weeks in this draft only — your live yearly calendar is not changed until you use this
+              preset elsewhere.
+            </p>
+          )}
 
       {planError && (
         <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">

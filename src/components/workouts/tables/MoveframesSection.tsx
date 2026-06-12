@@ -14,6 +14,7 @@ interface MoveframesSectionProps {
   expandedMoveframeId?: string | null;
   autoExpandAll?: boolean;
   onAddMoveframe: () => void;
+  onQuickTrainingEntry?: () => void;
   onAddMoveframeAfter?: (moveframe: any, index: number, workout: any, day: any) => void;
   onEditMoveframe?: (moveframe: any) => void;
   onDeleteMoveframe?: (moveframe: any) => void;
@@ -21,8 +22,14 @@ interface MoveframesSectionProps {
   onDeleteMovelap?: (movelap: any, moveframe: any) => void;
   onAddMovelap?: (moveframe: any) => void;
   onAddMovelapAfter?: (movelap: any, index: number, moveframe: any, workout: any, day: any) => void;
-  onCopyMoveframe?: (moveframe: any, workout: any, day: any) => void;
-  onMoveMoveframe?: (moveframe: any, workout: any, day: any) => void;
+  onCopyMoveframeToClipboard?: (moveframe: any) => void;
+  hasMoveframeClipboard?: boolean;
+  onPasteMoveframe?: (workout: any) => void;
+  onCopyMoveframe?: (moveframe: any, workout: any, day: any, workoutDisplayNumber?: number) => void;
+  onMoveMoveframe?: (moveframe: any, workout: any, day: any, workoutDisplayNumber?: number) => void;
+  hasMovelapClipboard?: boolean;
+  movelapClipboard?: any;
+  onCopyMovelapToClipboard?: (movelap: any) => void;
   onOpenColumnSettings?: (tableType: 'day' | 'workout' | 'moveframe' | 'movelap') => void;
   onRefreshWorkouts?: () => Promise<void>;
   columnSettings?: any;
@@ -37,6 +44,7 @@ export default function MoveframesSection({
   expandedMoveframeId,
   autoExpandAll = false,
   onAddMoveframe,
+  onQuickTrainingEntry,
   onAddMoveframeAfter,
   onEditMoveframe,
   onDeleteMoveframe,
@@ -44,8 +52,14 @@ export default function MoveframesSection({
   onDeleteMovelap,
   onAddMovelap,
   onAddMovelapAfter,
+  onCopyMoveframeToClipboard,
+  hasMoveframeClipboard = false,
+  onPasteMoveframe,
   onCopyMoveframe,
   onMoveMoveframe,
+  hasMovelapClipboard,
+  movelapClipboard,
+  onCopyMovelapToClipboard,
   onOpenColumnSettings,
   onRefreshWorkouts,
   columnSettings
@@ -346,32 +360,74 @@ export default function MoveframesSection({
           >
             Add a Moveframe
           </button>
+          {onQuickTrainingEntry && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onQuickTrainingEntry();
+              }}
+              className="px-2 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600"
+              title="Quick training entry"
+            >
+              Quick entry
+            </button>
+          )}
           {/* Action Buttons - Now beside Add button */}
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (moveframes.length > 0 && onCopyMoveframe) {
-                onCopyMoveframe(moveframes, workout, day);
-              } else {
+              const selected = moveframes.filter((mf: any) => checkedMoveframes.has(mf.id));
+              if (selected.length === 1 && onCopyMoveframe) {
+                onCopyMoveframe(selected[0], workout, day, workoutIndex);
+              } else if (selected.length > 1) {
+                alert('Select only one moveframe (checkbox) to copy to another workout.');
+              } else if (moveframes.length === 0) {
                 alert('No moveframes to copy');
+              } else {
+                alert('Check one moveframe, or use row Options → Copy moveframe in clipboard.');
               }
             }}
             className="px-2 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600"
-            title="Copy all moveframes"
+            title="Copy to another workout…"
           >
             Copy
           </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (moveframes.length > 0 && onMoveMoveframe) {
-                onMoveMoveframe(moveframes, workout, day);
-              } else {
+              if (!hasMoveframeClipboard) return;
+              onPasteMoveframe?.(workout);
+            }}
+            disabled={!hasMoveframeClipboard}
+            className={`px-2 py-1 text-xs rounded ${
+              hasMoveframeClipboard
+                ? 'bg-green-600 text-white hover:bg-green-700'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
+            title={
+              hasMoveframeClipboard
+                ? 'Paste moveframe from clipboard into this workout'
+                : 'Copy a moveframe to clipboard first'
+            }
+          >
+            Paste
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const selected = moveframes.filter((mf: any) => checkedMoveframes.has(mf.id));
+              if (selected.length === 1 && onMoveMoveframe) {
+                onMoveMoveframe(selected[0], workout, day, workoutIndex);
+              } else if (selected.length > 1) {
+                alert('Select only one moveframe (checkbox) to move.');
+              } else if (moveframes.length === 0) {
                 alert('No moveframes to move');
+              } else {
+                alert('Check one moveframe with the checkbox first.');
               }
             }}
             className="px-2 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600"
-            title="Move all moveframes"
+            title="Move to another workout…"
           >
             Move
           </button>
@@ -448,8 +504,14 @@ export default function MoveframesSection({
                           onAddMovelap={onAddMovelap}
                           onAddMovelapAfter={onAddMovelapAfter}
                           onAddMoveframeAfter={onAddMoveframeAfter}
+                          onCopyMoveframeToClipboard={onCopyMoveframeToClipboard}
+                          hasMoveframeClipboard={hasMoveframeClipboard}
+                          onPasteMoveframe={onPasteMoveframe}
                           onCopyMoveframe={onCopyMoveframe}
                           onMoveMoveframe={onMoveMoveframe}
+                          hasMovelapClipboard={hasMovelapClipboard}
+                          movelapClipboard={movelapClipboard}
+                          onCopyMovelapToClipboard={onCopyMovelapToClipboard}
                           onSetWorkType={handleOpenWorkTypeModal}
                           onRefresh={onRefreshWorkouts}
                           workout={workout}
@@ -485,11 +547,11 @@ export default function MoveframesSection({
           }}
           onCopy={() => {
             setShowInfoPanel(false);
-            if (onCopyMoveframe) onCopyMoveframe(selectedMoveframe, workout, day);
+            if (onCopyMoveframe) onCopyMoveframe(selectedMoveframe, workout, day, workoutIndex);
           }}
           onMove={() => {
             setShowInfoPanel(false);
-            if (onMoveMoveframe) onMoveMoveframe(selectedMoveframe, workout, day);
+            if (onMoveMoveframe) onMoveMoveframe(selectedMoveframe, workout, day, workoutIndex);
           }}
           onDelete={() => {
             setShowInfoPanel(false);

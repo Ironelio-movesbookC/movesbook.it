@@ -1,7 +1,19 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { X, LayoutGrid, CalendarDays, Trash2, Pencil, ArrowRightLeft, Clock3 } from 'lucide-react';
+import {
+  X,
+  LayoutGrid,
+  CalendarDays,
+  Trash2,
+  Pencil,
+  ArrowRightLeft,
+  Clock3,
+  ChevronUp,
+  ChevronDown,
+} from 'lucide-react';
+
+const GRID_PAGE_SIZE = 10;
 type TemplateRow = {
   id: string;
   name: string;
@@ -111,6 +123,84 @@ function stripActionMetaTags(rawDescription: string | null | undefined): string 
   return stripActionTitleTag(stripActionTimeTag(rawDescription || ''));
 }
 
+function ActionsPageSelector({
+  page,
+  totalPages,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+
+  const pages: React.ReactNode[] = [];
+
+  const pushPage = (n: number) => {
+    pages.push(
+      <button
+        key={n}
+        type="button"
+        onClick={() => onPageChange(n)}
+        className={`min-w-[2.25rem] px-3 py-1.5 text-sm font-semibold rounded transition ${
+          page === n
+            ? 'bg-gray-800 text-white'
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+        }`}
+      >
+        {n}
+      </button>
+    );
+  };
+
+  pushPage(1);
+  if (page > 3) {
+    pages.push(
+      <span key="ellipsis-start" className="px-1 text-gray-500">
+        …
+      </span>
+    );
+  }
+  const start = Math.max(2, page - 1);
+  const end = Math.min(totalPages - 1, page + 1);
+  for (let i = start; i <= end; i++) {
+    if (i !== 1 && i !== totalPages) pushPage(i);
+  }
+  if (page < totalPages - 2) {
+    pages.push(
+      <span key="ellipsis-end" className="px-1 text-gray-500">
+        …
+      </span>
+    );
+  }
+  if (totalPages > 1) pushPage(totalPages);
+
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-1 border-t border-gray-200 bg-gray-50 px-3 py-2">
+      <button
+        type="button"
+        onClick={() => onPageChange(Math.max(1, page - 1))}
+        disabled={page <= 1}
+        className="px-3 py-1.5 text-sm font-semibold rounded bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        ←
+      </button>
+      {pages}
+      <button
+        type="button"
+        onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+        disabled={page >= totalPages}
+        className="px-3 py-1.5 text-sm font-semibold rounded bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        →
+      </button>
+      <span className="ml-2 text-xs text-gray-600">
+        Page {page} of {totalPages}
+      </span>
+    </div>
+  );
+}
+
 function withActionMetaTags(description: string, startTime: string, shortTitle: string): string {
   const clean = stripActionMetaTags(description).trim();
   const time = startTime.trim();
@@ -161,7 +251,9 @@ export default function InsertActionsModal({
   const [filterTo, setFilterTo] = useState('');
   const [filterTemplateId, setFilterTemplateId] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'action'>('date');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  /** Newest dates first (most recent at top of the grid). */
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [gridPage, setGridPage] = useState(1);
 
   const loadTemplates = useCallback(async () => {
     const res = await fetch('/api/workouts/planned-action-templates', {
@@ -193,6 +285,21 @@ export default function InsertActionsModal({
     loadTemplates();
     loadActions();
   }, [isOpen, loadTemplates, loadActions]);
+
+  useEffect(() => {
+    setGridPage(1);
+  }, [filterFrom, filterTo, filterTemplateId, sortBy, sortDir, actions.length]);
+
+  const totalGridPages = Math.max(1, Math.ceil(actions.length / GRID_PAGE_SIZE));
+
+  useEffect(() => {
+    if (gridPage > totalGridPages) setGridPage(totalGridPages);
+  }, [gridPage, totalGridPages]);
+
+  const pagedActions = useMemo(() => {
+    const start = (gridPage - 1) * GRID_PAGE_SIZE;
+    return actions.slice(start, start + GRID_PAGE_SIZE);
+  }, [actions, gridPage]);
 
   const selectedTemplate = useMemo(
     () => templates.find((t) => t.id === templateId),
@@ -263,6 +370,7 @@ export default function InsertActionsModal({
   };
 
   const startEdit = (row: ActionRow) => {
+    setShowAddPanel(true);
     setEditingId(row.id);
     setTemplateId(row.templateId || '');
     setDescription(stripActionMetaTags(row.description || ''));
@@ -340,8 +448,10 @@ export default function InsertActionsModal({
       if (!m.has(key)) m.set(key, []);
       m.get(key)!.push(a);
     }
-    return Array.from(m.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [actions]);
+    return Array.from(m.entries()).sort(([a], [b]) =>
+      sortDir === 'desc' ? b.localeCompare(a) : a.localeCompare(b)
+    );
+  }, [actions, sortDir]);
 
   if (!isOpen) return null;
 
@@ -356,10 +466,20 @@ export default function InsertActionsModal({
             <button
               type="button"
               onClick={() => setShowAddPanel((prev) => !prev)}
-              className="px-3 py-1.5 text-sm font-medium rounded-lg text-red-800 hover:bg-red-50"
-              title={showAddPanel ? 'Hide Add panel' : 'Show Add panel'}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-100"
+              title={showAddPanel ? 'Hide Add section' : 'Show Add section'}
             >
-              {showAddPanel ? 'Hide Add panel' : 'Show Add panel'}
+              {showAddPanel ? (
+                <>
+                  <ChevronUp className="w-4 h-4 shrink-0" />
+                  Hide Add section
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-4 h-4 shrink-0" />
+                  Show Add section
+                </>
+              )}
             </button>
             <button
               type="button"
@@ -620,8 +740,8 @@ export default function InsertActionsModal({
                 }}
                 className="border rounded px-2 py-1 text-sm"
               >
-                <option value="date-asc">Date ↑</option>
-                <option value="date-desc">Date ↓</option>
+                <option value="date-desc">Date ↓ (newest first)</option>
+                <option value="date-asc">Date ↑ (oldest first)</option>
                 <option value="action-asc">Action A–Z</option>
                 <option value="action-desc">Action Z–A</option>
               </select>
@@ -652,7 +772,7 @@ export default function InsertActionsModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {actions.map((row) => (
+                  {pagedActions.map((row) => (
                     <tr key={row.id} className="border-b hover:bg-gray-50">
                       <td className="p-2">
                         <input
@@ -727,6 +847,11 @@ export default function InsertActionsModal({
                   No planned actions in this range.
                 </div>
               )}
+              <ActionsPageSelector
+                page={gridPage}
+                totalPages={totalGridPages}
+                onPageChange={setGridPage}
+              />
             </div>
           ) : (
             <div className="space-y-6">

@@ -68,6 +68,7 @@ model User {
   workoutDayPlannedActions WorkoutDayPlannedAction[]
   sportMachines           SportMachine[]
   loginLogs               UserLoginLog[]
+  globalWorkoutArchiveShares GlobalWorkoutArchiveEntry[] @relation("GlobalArchiveSharedBy")
   nutritionDays           NutritionDay[]
   nutritionPlans          NutritionPlan[]
   nutritionSections       NutritionSection[]
@@ -946,6 +947,60 @@ model FavoriteWeeklyPlan {
   @@map("favorite_weekly_plans")
 }
 
+enum GlobalArchiveRecordType {
+  WORKOUT
+  WEEKLY_PLAN
+  STRUCTURED_PROGRAM
+  COACH_PLAN
+}
+
+/// Super Admin global catalog — workouts & weekly plans shared for all Movesbook users.
+model GlobalWorkoutArchiveEntry {
+  id                String                  @id @default(cuid())
+  recordType        GlobalArchiveRecordType @default(WORKOUT)
+
+  title             String
+  mainSport         String?
+  mainGoal          String?
+  trainingLevel     String?
+  period            String?
+  tags              String?                 @db.Text
+
+  originalLanguages String?                 @db.Text
+  authorCountry     String?
+  shortDescription  String?                 @db.Text
+  expirationDate    DateTime?
+
+  sharedByUserId    String?
+  sharedByUsername  String?
+  authorFullName    String?
+  authorAvatarUrl   String?
+  authorCountryName String?
+  authorCountryFlag String?
+  workoutCount      Int                     @default(1)
+  totalMeters       Int?
+  totalTimeSeconds  Int?
+  totalSeries       Int?
+  sharedAt          DateTime?
+
+  payloadData       String                  @db.LongText
+  thumbnailUrl      String?
+  pictureUrls       String?                 @db.Text
+  disabled          Boolean                 @default(false)
+  isFavorite        Boolean                 @default(false)
+
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  sharedByUser      User?                   @relation("GlobalArchiveSharedBy", fields: [sharedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([recordType])
+  @@index([mainSport])
+  @@index([sharedByUserId])
+  @@index([disabled])
+  @@map("global_workout_archive_entries")
+}
+
 model FreeMoveExercise {
   id        String   @id @default(cuid())
   userId    String
@@ -1026,10 +1081,33 @@ model Club {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   members            ClubMember[]
+  websiteTopics      ClubWebsiteTopic[]
   admin              User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId], map: "clubs_new_adminId_fkey")
   @@map("clubs_new")
+}
+
+/// Custom topics under “Topics available” in the club website editor (admin/staff).
+model ClubWebsiteTopic {
+  id             String   @id @default(cuid())
+  clubId         String
+  name           String
+  activated      Boolean  @default(true)
+  title          String   @default("")
+  sectionName    String   @default("")
+  bannerColor    String   @default("#5b9bd5")
+  titleColor     String   @default("#ffffff")
+  lastUpdate     String   @default("")
+  contentsByLang String   @db.Text
+  keywordsByLang String   @db.Text
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  club           Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@index([clubId])
+  @@map("club_website_topics")
 }
 
 model ClubMember {
@@ -1246,6 +1324,8 @@ model SportMachine {
   otherPicturesJson       String?  @db.Text
   videoUrl                String?
   descriptionByLanguage   String?  @db.Text
+  /// JSON: { machineTypes, musclesPositioning, correctExecution, criticalMistakes } → Record<lang, html>
+  richSectionsJson        String?  @db.Text
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 

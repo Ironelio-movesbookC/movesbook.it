@@ -12,9 +12,14 @@ const stripCircuitTags = (content: string | null | undefined): string => {
   return stripInternalWorkoutTags(content).trim();
 };
 
-interface DayOverviewModalProps { day: any; onClose: () => void; }
+interface DayOverviewModalProps {
+  day: any;
+  onClose: () => void;
+  /** `page` = full-screen public share (no modal backdrop) */
+  mode?: 'modal' | 'page';
+}
 
-export default function DayOverviewModal({ day, onClose }: DayOverviewModalProps) {
+export default function DayOverviewModal({ day, onClose, mode = 'modal' }: DayOverviewModalProps) {
   const iconType = useSportIconType();
   const useImageIcons = isImageIcon(iconType);
   const [showMovelaps, setShowMovelaps] = React.useState(true);
@@ -100,14 +105,27 @@ export default function DayOverviewModal({ day, onClose }: DayOverviewModalProps
   const handlePrint = () => { window.print(); };
   const dayName = day.name || day.dayOfWeek || 'Day';
   const weekNumber = day.weekNumber || '';
+  const isPage = mode === 'page';
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-7xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+  const shell = (
+    <div
+      className={`bg-white flex flex-col overflow-hidden ${
+        isPage
+          ? 'min-h-screen w-full max-w-7xl mx-auto shadow-sm'
+          : 'rounded-2xl max-w-7xl w-full max-h-[90vh]'
+      }`}
+    >
         <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-green-50 to-emerald-50">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Day Overview: {dayName}</h2>
-            {weekNumber && <p className="text-sm text-gray-600">Week {weekNumber} {day.dateLabel ? `- ${day.dateLabel}` : ''}</p>}
+            <h2 className="text-xl font-bold text-gray-900">
+              {isPage ? 'Shared day plan (read-only)' : `Day Overview: ${dayName}`}
+            </h2>
+            {weekNumber && (
+              <p className="text-sm text-gray-600">
+                Week {weekNumber} {day.dateLabel ? `- ${day.dateLabel}` : ''}
+                {day.period?.name ? ` · ${day.period.name}` : ''}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={handlePrint} className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 text-sm font-semibold" title="Print this day"><Printer className="w-4 h-4" />Print</button>
@@ -247,9 +265,20 @@ export default function DayOverviewModal({ day, onClose }: DayOverviewModalProps
         </div>
 
         <div className="flex gap-3 p-4 border-t border-gray-200 bg-gray-50">
-          <button onClick={onClose} className="flex-1 px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition">Close</button>
+          <button onClick={onClose} className="flex-1 px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition">
+            {isPage ? 'Go to Movesbook home' : 'Close'}
+          </button>
         </div>
-      </div>
+    </div>
+  );
+
+  if (isPage) {
+    return <div className="min-h-screen bg-gray-100 py-4 px-2 sm:px-4">{shell}</div>;
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      {shell}
     </div>
   );
 }

@@ -1,0 +1,537 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import {
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Settings,
+  Trash2,
+} from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext';
+import type { ClubWebsiteFriendItem } from '@/lib/clubWebsiteFriendList';
+import {
+  canFriendItemHaveSubtopics,
+  clearClubWebsiteFriendItemContent,
+  filterClubWebsiteFriendItemsForMembers,
+  friendItemToSettingsFormItem,
+  friendItemsToRows,
+  getFriendItemDeleteConfirmKey,
+  getFriendItemIdsForRemoval,
+  getFriendItemMoveAvailability,
+  getFriendItemSettingsVariant,
+} from '@/lib/clubWebsiteFriendList';
+import ClubWebsiteTopicSettingsFormModal from '@/components/club/websiteSettings/ClubWebsiteTopicSettingsFormModal';
+import {
+  buildFriendListLayout,
+  LEGACY_SIDEBAR_ROW,
+  LEGACY_STATUS_OFF,
+  LEGACY_STATUS_ON,
+  type FriendListRow,
+  type SidebarTopicStatus,
+} from '@/components/club/websiteSettings/clubWebsiteSettingsSidebarData';
+
+function StatusSquare({ status }: { status: SidebarTopicStatus }) {
+  return (
+    <span
+      className="inline-block shrink-0 rounded-none border border-zinc-300/90"
+      style={{
+        width: 11,
+        height: 11,
+        minWidth: 11,
+        minHeight: 11,
+        backgroundColor: status === 'on' ? LEGACY_STATUS_ON : LEGACY_STATUS_OFF,
+      }}
+      aria-hidden
+    />
+  );
+}
+
+/** Groups nested rows; full width so status buttons stay on the same right rail. */
+function FriendListNestedGroup({ children }: { children: React.ReactNode }) {
+  return <div className="friends-list-nested w-full space-y-0">{children}</div>;
+}
+
+function FriendListExpandChevron({
+  open,
+  onToggle,
+  compact = false,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  compact?: boolean;
+}) {
+  const { t } = useLanguage();
+  return (
+    <button
+      type="button"
+      className={`flex shrink-0 items-center justify-center text-white/95 hover:bg-white/15 ${compact ? 'h-5 w-5' : 'h-7 w-7'}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      aria-expanded={open}
+      aria-label={open ? t('collapse') : t('expand')}
+    >
+      <ChevronDown
+        className={`${compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} transition-transform ${open ? 'rotate-180' : ''}`}
+      />
+    </button>
+  );
+}
+
+function initialSegmentOpen(rows: FriendListRow[]): Record<string, boolean> {
+  if (!rows.some((row) => row.id === 'friends-root')) return {};
+  const { segments } = buildFriendListLayout(rows);
+  return Object.fromEntries(
+    segments.filter((s) => s.nested.length > 0).map((s) => [s.peer.id, true])
+  );
+}
+
+function FriendListRowShell({
+  label,
+  trailing,
+  className = '',
+  size = 'default',
+  active = false,
+  onClick,
+  onMouseEnter,
+}: {
+  label: React.ReactNode;
+  trailing: React.ReactNode;
+  className?: string;
+  /** Nested sub-rows are shorter with an inset label block (legacy MY DESK style). */
+  size?: 'default' | 'nested';
+  active?: boolean;
+  onClick?: () => void;
+  onMouseEnter?: () => void;
+}) {
+  const nested = size === 'nested';
+  const labelClass = nested
+    ? 'min-h-[20px] px-2 py-0.5 text-[10px] leading-tight'
+    : 'min-h-[28px] px-2 py-1 text-xs leading-snug';
+
+  return (
+    <div
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+      className={`flex w-full items-stretch border border-zinc-400/90 text-white ${active ? 'brightness-125 ring-1 ring-inset ring-white/25' : ''} ${onClick ? 'cursor-pointer hover:brightness-110' : ''} ${className}`}
+      style={{ backgroundColor: LEGACY_SIDEBAR_ROW }}
+    >
+      <div className="flex min-w-0 flex-1 items-stretch">
+        {nested ? <div className="w-[10%] shrink-0" aria-hidden /> : null}
+        <div className={`flex min-w-0 flex-1 items-center text-left text-white ${labelClass}`}>
+          {label}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center pr-2">{trailing}</div>
+    </div>
+  );
+}
+
+function FriendListActionToolbar({
+  onDelete,
+  onEdit,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp = true,
+  canMoveDown = true,
+  onSettings,
+  showDelete = true,
+  showReorder = true,
+  showDocument = true,
+  showSettings = true,
+  compact = false,
+}: {
+  onDelete: () => void;
+  onEdit: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  onSettings: () => void;
+  showDelete?: boolean;
+  showReorder?: boolean;
+  showDocument?: boolean;
+  showSettings?: boolean;
+  compact?: boolean;
+}) {
+  const { t } = useLanguage();
+  const iconBtn = compact
+    ? 'flex h-5 w-5 shrink-0 items-center justify-center text-white/95 hover:bg-white/15'
+    : 'flex h-6 w-6 shrink-0 items-center justify-center text-white/95 hover:bg-white/15';
+  const iconSize = compact ? 'h-3 w-3' : 'h-3.5 w-3.5';
+  const chevronSize = compact ? 'h-2 w-2' : 'h-2.5 w-2.5';
+  const reorderBtn = compact
+    ? 'flex h-2.5 w-5 shrink-0 items-center justify-center text-amber-400 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-30'
+    : 'flex h-3 w-6 shrink-0 items-center justify-center text-amber-400 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-30';
+
+  return (
+    <div
+      className="flex shrink-0 items-center gap-px"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+      role="toolbar"
+      aria-label={t('club_friends_list_toolbar_aria')}
+    >
+      {showDelete ? (
+        <button type="button" className={iconBtn} onClick={onDelete} aria-label={t('btn_delete')}>
+          <Trash2 className={iconSize} />
+        </button>
+      ) : null}
+      {showReorder ? (
+        <div
+          className="flex shrink-0 flex-col items-center justify-center"
+          role="group"
+          aria-label={t('club_friends_reorder_aria')}
+        >
+          <button
+            type="button"
+            className={reorderBtn}
+            onClick={onMoveUp}
+            disabled={!canMoveUp}
+            aria-label={t('club_friends_move_up_aria')}
+          >
+            <ChevronUp className={chevronSize} strokeWidth={3} />
+          </button>
+          <button
+            type="button"
+            className={reorderBtn}
+            onClick={onMoveDown}
+            disabled={!canMoveDown}
+            aria-label={t('club_friends_move_down_aria')}
+          >
+            <ChevronDown className={chevronSize} strokeWidth={3} />
+          </button>
+        </div>
+      ) : null}
+      {showDocument ? (
+        <button type="button" className={iconBtn} onClick={onEdit} aria-label={t('club_friends_edit_content_aria')}>
+          <FileText className={iconSize} />
+        </button>
+      ) : null}
+      {showSettings ? (
+        <button
+          type="button"
+          className={iconBtn}
+          onClick={onSettings}
+          aria-label={t('sidebar_options')}
+        >
+          <Settings className={iconSize} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function FriendRowStatusZone({
+  rowId,
+  onActivate,
+  children,
+}: {
+  rowId: string;
+  onActivate: (rowId: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="flex w-[10.5rem] shrink-0 items-center justify-end gap-0.5 py-0.5"
+      onMouseEnter={() => onActivate(rowId)}
+      onFocus={() => onActivate(rowId)}
+    >
+      {children}
+    </div>
+  );
+}
+
+export default function ClubWebsiteFriendListSection({
+  selectedTopicId,
+  onSelectTopic,
+  items,
+  adminMode = true,
+  onToggleActivated,
+  onDelete,
+  onMove,
+  onUpdateItem,
+  onEditContent,
+  onAddSubtopic,
+}: {
+  selectedTopicId: string;
+  onSelectTopic: (id: string, label: string) => void;
+  items: ClubWebsiteFriendItem[];
+  /** Admin/staff only — hover toolbars hidden for members. */
+  adminMode?: boolean;
+  onToggleActivated: (id: string) => void;
+  onDelete: (id: string) => void;
+  onMove: (id: string, direction: 'up' | 'down') => void;
+  onUpdateItem: (id: string, patch: Partial<ClubWebsiteFriendItem>) => void;
+  onEditContent: (id: string, label: string) => void;
+  onAddSubtopic?: (parentId: string, name: string) => void;
+}) {
+  const { t } = useLanguage();
+  const allRows = useMemo(() => friendItemsToRows(items), [items]);
+  const rows = useMemo(() => {
+    if (adminMode) return allRows;
+    const visibleIds = new Set(filterClubWebsiteFriendItemsForMembers(items).map((i) => i.id));
+    return allRows.filter((row) => visibleIds.has(row.id));
+  }, [allRows, items, adminMode]);
+  const [childrenOpen, setChildrenOpen] = useState(true);
+  const [segmentOpen, setSegmentOpen] = useState<Record<string, boolean>>(() =>
+    initialSegmentOpen(rows)
+  );
+  const [activeToolbarRowId, setActiveToolbarRowId] = useState<string | null>(null);
+  const [settingsItemId, setSettingsItemId] = useState<string | null>(null);
+
+  const hasFriendListRoot = rows.some((row) => row.id === 'friends-root');
+  const layout = useMemo(
+    () => (hasFriendListRoot ? buildFriendListLayout(rows) : null),
+    [hasFriendListRoot, rows]
+  );
+
+  const itemById = useMemo(() => Object.fromEntries(items.map((i) => [i.id, i])), [items]);
+
+  const toggleSegmentOpen = (peerId: string) => {
+    setSegmentOpen((prev) => ({ ...prev, [peerId]: !(prev[peerId] ?? true) }));
+  };
+
+  const rowsWithStatus = useMemo(
+    () =>
+      rows.map((row) => ({
+        ...row,
+        status: (itemById[row.id]?.activated ? 'on' : 'off') as SidebarTopicStatus,
+      })),
+    [rows, itemById]
+  );
+
+  const rowById = useMemo(
+    () => Object.fromEntries(rowsWithStatus.map((r) => [r.id, r])),
+    [rowsWithStatus]
+  );
+
+  const activateToolbar = (rowId: string) => {
+    if (adminMode) setActiveToolbarRowId(rowId);
+  };
+
+  const settingsItem = settingsItemId ? itemById[settingsItemId] : null;
+
+  const selectRowContent = (row: FriendListRow) => {
+    const label = row.id === 'friends-root' ? t('club_website_list_of_friends') : row.label;
+    if (!row.label.trim() && row.id !== 'friends-root') return;
+    const item = itemById[row.id];
+    if (item?.contentDisplayMode === 'link') {
+      onUpdateItem(row.id, { contentDisplayMode: 'editor' });
+    }
+    setActiveToolbarRowId(null);
+    onEditContent(row.id, label);
+    onSelectTopic(row.id, label);
+  };
+
+  const renderStatusOrToolbar = (
+    row: FriendListRow & { status: SidebarTopicStatus },
+    variant: 'root' | 'sub',
+    compact = false,
+    options?: { showDelete?: boolean; showDocument?: boolean }
+  ) => {
+    const isActive = adminMode && activeToolbarRowId === row.id;
+    if (isActive) {
+      const moveAvailability = getFriendItemMoveAvailability(items, row.id);
+      return (
+        <FriendListActionToolbar
+          compact={compact}
+          showDelete={options?.showDelete ?? row.id !== 'friends-root'}
+          showReorder={variant === 'sub'}
+          showDocument={options?.showDocument ?? (variant === 'sub' || row.id === 'friends-root')}
+          showSettings
+          canMoveUp={moveAvailability.up}
+          canMoveDown={moveAvailability.down}
+          onDelete={() => {
+            if (row.id === 'friends-root') return;
+            const confirmKey = getFriendItemDeleteConfirmKey(items, row.id);
+            if (!window.confirm(t(confirmKey))) return;
+            const removedIds = getFriendItemIdsForRemoval(items, row.id);
+            onDelete(row.id);
+            if (settingsItemId && removedIds.includes(settingsItemId)) {
+              setSettingsItemId(null);
+            }
+          }}
+          onEdit={() => selectRowContent(row)}
+          onMoveUp={() => onMove(row.id, 'up')}
+          onMoveDown={() => onMove(row.id, 'down')}
+          onSettings={() => setSettingsItemId(row.id)}
+        />
+      );
+    }
+    return (
+      adminMode ? (
+        <button
+          type="button"
+          className="flex h-7 w-7 items-center justify-center"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleActivated(row.id);
+          }}
+          aria-label={t('club_website_toggle_visibility')}
+        >
+          <StatusSquare status={row.status} />
+        </button>
+      ) : (
+        <span className="flex h-7 w-7 items-center justify-center">
+          <StatusSquare status={row.status} />
+        </span>
+      )
+    );
+  };
+
+  const renderFriendRow = (
+    row: FriendListRow,
+    variant: 'root' | 'sub',
+    options?: { expandControl?: { open: boolean; onToggle: () => void } }
+  ) => {
+    const withStatus = rowById[row.id];
+    if (!withStatus) return null;
+    const isActive = activeToolbarRowId === row.id;
+    const nested = row.indent;
+    const expandControl = options?.expandControl;
+
+    return (
+      <FriendListRowShell
+        key={row.id}
+        size={nested ? 'nested' : 'default'}
+        active={isActive}
+        className={!row.label && !nested ? '[&>div:first-child>div:last-child]:min-h-[24px]' : ''}
+        onClick={() => row.label.trim() && onSelectTopic(row.id, row.label)}
+        label={
+          <span
+            className={`block min-w-0 truncate ${nested ? 'leading-tight' : 'leading-snug'} ${
+              selectedTopicId === row.id && row.label ? 'font-semibold underline' : ''
+            }`}
+          >
+            {row.label || '\u00A0'}
+          </span>
+        }
+        trailing={
+          <FriendRowStatusZone rowId={row.id} onActivate={activateToolbar}>
+            {expandControl && isActive ? (
+              <FriendListExpandChevron
+                open={expandControl.open}
+                onToggle={expandControl.onToggle}
+                compact={nested}
+              />
+            ) : null}
+            {renderStatusOrToolbar(withStatus, variant, nested)}
+          </FriendRowStatusZone>
+        }
+      />
+    );
+  };
+
+  const root = rowById['friends-root'];
+
+  if (!hasFriendListRoot || !layout) return null;
+
+  return (
+    <div
+      className="friends-list-block flex w-full flex-col"
+      onMouseLeave={() => setActiveToolbarRowId(null)}
+    >
+      <FriendListRowShell
+        className="font-semibold"
+        active={activeToolbarRowId === 'friends-root'}
+        onClick={() => {
+          onSelectTopic('friends-root', t('club_website_list_of_friends'));
+          if (adminMode) {
+            onEditContent('friends-root', t('club_website_list_of_friends'));
+          }
+        }}
+        label={
+          <span className={`block min-w-0 truncate ${selectedTopicId === 'friends-root' ? 'underline' : ''}`}>
+            {t('club_website_list_of_friends')}
+          </span>
+        }
+        trailing={
+          <FriendRowStatusZone rowId="friends-root" onActivate={activateToolbar}>
+            {layout.rootNested.length > 0 && activeToolbarRowId === 'friends-root' ? (
+              <FriendListExpandChevron
+                open={childrenOpen}
+                onToggle={() => setChildrenOpen((v) => !v)}
+              />
+            ) : null}
+            {root
+              ? renderStatusOrToolbar(root, 'root', false, {
+                  showDelete: false,
+                  showDocument: true,
+                })
+              : null}
+          </FriendRowStatusZone>
+        }
+      />
+
+      {childrenOpen && layout.rootNested.length > 0 ? (
+        <FriendListNestedGroup>
+          {layout.rootNested.map((row) => renderFriendRow(row, 'sub'))}
+        </FriendListNestedGroup>
+      ) : null}
+
+      {layout.segments.map(({ peer, nested }) => {
+        const hasNested = nested.length > 0;
+        const peerOpen = segmentOpen[peer.id] ?? true;
+        return (
+          <div key={peer.id} className="friends-list-segment w-full">
+            {renderFriendRow(
+                peer,
+                'sub',
+                hasNested
+                  ? {
+                      expandControl: {
+                        open: peerOpen,
+                        onToggle: () => toggleSegmentOpen(peer.id),
+                      },
+                    }
+                  : undefined
+            )}
+            {hasNested && peerOpen ? (
+              <FriendListNestedGroup>{nested.map((row) => renderFriendRow(row, 'sub'))}</FriendListNestedGroup>
+            ) : null}
+          </div>
+        );
+      })}
+      {settingsItem ? (
+        <ClubWebsiteTopicSettingsFormModal
+          item={friendItemToSettingsFormItem(settingsItem)}
+          open
+          variant={getFriendItemSettingsVariant(settingsItem)}
+          onClose={() => setSettingsItemId(null)}
+          onSave={(patch) => onUpdateItem(settingsItem.id, patch)}
+          showAddSubtopic={Boolean(onAddSubtopic) && canFriendItemHaveSubtopics(settingsItem)}
+          onAddSubtopic={() => {
+            const subName = window.prompt(t('club_topic_subtopic_prompt'));
+            if (!subName?.trim()) return;
+            onAddSubtopic?.(settingsItem.id, subName.trim());
+          }}
+          onDeleteContent={() => {
+            const confirmKey =
+              getFriendItemSettingsVariant(settingsItem) === 'subtopic'
+                ? 'club_subtopic_delete_content_confirm'
+                : 'club_topic_delete_content_confirm';
+            if (window.confirm(t(confirmKey))) {
+              onUpdateItem(settingsItem.id, clearClubWebsiteFriendItemContent());
+              setSettingsItemId(null);
+            }
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}

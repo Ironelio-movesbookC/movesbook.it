@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 // import { Inter } from 'next/font/google';
 import './globals.css';
 import { ClientProviders } from '@/components/providers/ClientProviders';
+import { getSiteOrigin } from '@/lib/siteUrl';
 
 // const inter = Inter({ 
 //   subsets: ['latin'],
@@ -10,6 +11,7 @@ import { ClientProviders } from '@/components/providers/ClientProviders';
 // });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(getSiteOrigin()),
   title: 'Movesbook - Workout Management System',
   description: 'Professional workout planning and tracking platform',
   icons: {

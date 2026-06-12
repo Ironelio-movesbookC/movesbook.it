@@ -1,7 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { X, Share2, Mail, MessageCircle, Send, Facebook } from 'lucide-react';
+import { isValidShareEmail } from '@/lib/shareEmail';
+import { sharedWorkoutPublicUrl } from '@/lib/siteUrl';
+import {
+  buildTelegramShareUrl,
+  buildWhatsAppShareUrl,
+  ensureShareLinkInMessage,
+  FACEBOOK_SHARE_NOTICE,
+  openExternalShareUrl,
+  shareViaFacebook,
+} from '@/utils/socialShareUrls';
 
 interface ShareWorkoutModalProps {
   isOpen: boolean;
@@ -19,75 +29,134 @@ export default function ShareWorkoutModal({
   const [selectedPlatform, setSelectedPlatform] = useState<'whatsapp' | 'telegram' | 'facebook' | 'email' | ''>('');
   const [recipient, setRecipient] = useState('');
   const [message, setMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
+
+  const shareableLink = useMemo(() => {
+    if (!workout?.id) return '';
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/shared/workout/${workout.id}`;
+    }
+    return sharedWorkoutPublicUrl(workout.id);
+  }, [workout?.id]);
+
+  const workoutTitle = workout?.name || `Workout ${workout?.sessionNumber || ''}`;
+  const dayDate = day?.date
+    ? new Date(day.date).toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : '';
+
+  const defaultMessage = useMemo(
+    () =>
+      shareableLink
+        ? `Check out this workout: ${workoutTitle}${dayDate ? ` on ${dayDate}` : ''}\n\n${shareableLink}`
+        : '',
+    [shareableLink, workoutTitle, dayDate]
+  );
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedPlatform('');
+      setRecipient('');
+      setMessage('');
+      return;
+    }
+    if (defaultMessage) setMessage(defaultMessage);
+  }, [isOpen, defaultMessage]);
 
   if (!isOpen || !workout) return null;
 
-  // Generate shareable link (this should be a public URL to the workout overview)
-  const workoutId = workout.id;
-  const shareableLink = `${window.location.origin}/shared/workout/${workoutId}`;
-  
-  const workoutTitle = workout.name || `Workout ${workout.sessionNumber || ''}`;
-  const dayDate = day?.date ? new Date(day.date).toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  }) : '';
-
-  const defaultMessage = `Check out this workout: ${workoutTitle}${dayDate ? ` on ${dayDate}` : ''}\n\n${shareableLink}`;
-
-  const handleShare = () => {
+  const handleShare = async () => {
     if (!selectedPlatform) {
       alert('Please select a platform');
       return;
     }
+    if (!shareableLink) {
+      alert('Share link is not ready. Please try again.');
+      return;
+    }
 
-    const messageText = message || defaultMessage;
-    const encodedMessage = encodeURIComponent(messageText);
-    const encodedLink = encodeURIComponent(shareableLink);
+    const messageText = ensureShareLinkInMessage(
+      message.trim() || defaultMessage,
+      shareableLink
+    );
 
     let shareUrl = '';
 
     switch (selectedPlatform) {
       case 'whatsapp':
-        if (recipient) {
-          // Share to specific phone number
-          shareUrl = `https://wa.me/${recipient.replace(/[^0-9]/g, '')}?text=${encodedMessage}`;
-        } else {
-          // Share via WhatsApp (will open contact selector)
-          shareUrl = `https://wa.me/?text=${encodedMessage}`;
+        shareUrl = buildWhatsAppShareUrl(recipient, messageText);
+        break;
+      case 'telegram': {
+        const telegram = buildTelegramShareUrl(recipient, shareableLink, messageText);
+        shareUrl = telegram.url;
+        if (telegram.notice) {
+          alert(telegram.notice);
         }
         break;
-
-      case 'telegram':
-        if (recipient) {
-          // Share to specific username
-          shareUrl = `https://t.me/${recipient}?text=${encodedMessage}`;
+      }
+      case 'facebook': {
+        const fb = await shareViaFacebook(shareableLink, messageText);
+        if (fb.copiedToClipboard) {
+          alert(FACEBOOK_SHARE_NOTICE);
         } else {
-          // Share via Telegram (will open contact selector)
-          shareUrl = `https://t.me/share/url?url=${encodedLink}&text=${encodeURIComponent(workoutTitle)}`;
+          alert(
+            `${FACEBOOK_SHARE_NOTICE}\n\n(Could not copy automatically — select and copy the message box above.)`
+          );
         }
-        break;
+        onClose();
+        return;
+      }
+      case 'email': {
+        const to = recipient.trim();
+        if (!to) {
+          alert('Email address is required');
+          return;
+        }
+        if (!isValidShareEmail(to)) {
+          alert('Please enter a valid email address (e.g. name@example.com).');
+          return;
+        }
 
-      case 'facebook':
-        // Share to Facebook
-        shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodedLink}&quote=${encodeURIComponent(messageText)}`;
-        break;
-
-      case 'email':
-        // Share via email
-        const subject = encodeURIComponent(`Workout: ${workoutTitle}`);
-        const body = encodeURIComponent(messageText);
-        shareUrl = `mailto:${recipient}?subject=${subject}&body=${body}`;
-        break;
-
+        setIsSending(true);
+        try {
+          const token = localStorage.getItem('token');
+          const response = await fetch('/api/workouts/share/email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              to,
+              subject: `Workout: ${workoutTitle} — Movesbook`,
+              message: messageText,
+              shareLink: shareableLink,
+            }),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to send email');
+          }
+          alert(`Email sent to ${to}`);
+          onClose();
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Failed to send email';
+          alert(msg);
+        } finally {
+          setIsSending(false);
+        }
+        return;
+      }
       default:
         alert('Invalid platform selected');
         return;
     }
 
-    // Open the share URL
-    window.open(shareUrl, '_blank');
+    openExternalShareUrl(shareUrl);
     onClose();
   };
 
@@ -101,7 +170,7 @@ export default function ShareWorkoutModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black bg-opacity-50 p-4">
+    <div className="fixed inset-0 z-[10000000] flex items-center justify-center bg-black bg-opacity-50 p-4">
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg">
         {/* Header */}
         <div className="bg-blue-500 text-white px-6 py-4 flex items-center justify-between rounded-t-lg">
@@ -218,16 +287,16 @@ export default function ShareWorkoutModal({
                 {selectedPlatform !== 'email' && <span className="text-gray-500">(Optional)</span>}
               </label>
               <input
-                type="text"
+                type={selectedPlatform === 'email' ? 'email' : 'text'}
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value)}
                 placeholder={
                   selectedPlatform === 'whatsapp'
                     ? 'Phone number (e.g., +1234567890)'
                     : selectedPlatform === 'telegram'
-                    ? 'Username (e.g., @username)'
+                    ? 'Telegram @username (e.g., johndoe)'
                     : selectedPlatform === 'email'
-                    ? 'Email address (required)'
+                    ? 'name@example.com'
                     : 'Not required for Facebook'
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
@@ -238,9 +307,16 @@ export default function ShareWorkoutModal({
                   Leave empty to open WhatsApp contact selector
                 </p>
               )}
-              {selectedPlatform === 'telegram' && !recipient && (
+              {selectedPlatform === 'telegram' && (
                 <p className="text-xs text-gray-500 mt-1">
-                  Leave empty to open Telegram share dialog
+                  {recipient.trim()
+                    ? 'Opens a chat with that @username and your message (including the link).'
+                    : 'Opens Telegram so you can choose who to send the link to.'}
+                </p>
+              )}
+              {selectedPlatform === 'email' && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Movesbook sends the email directly to this address (not your local mail app).
                 </p>
               )}
             </div>
@@ -255,12 +331,11 @@ export default function ShareWorkoutModal({
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder={defaultMessage}
-                rows={4}
+                rows={5}
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-sm"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Leave empty to use default message
+                The link is always sent with your message, even if you edit the text above.
               </p>
             </div>
           )}
@@ -275,11 +350,22 @@ export default function ShareWorkoutModal({
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleShare}
-            disabled={!selectedPlatform || (selectedPlatform === 'email' && !recipient)}
+            disabled={
+              isSending ||
+              !selectedPlatform ||
+              (selectedPlatform === 'email' && !recipient.trim())
+            }
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            Share via {selectedPlatform ? selectedPlatform.charAt(0).toUpperCase() + selectedPlatform.slice(1) : 'Platform'}
+            {isSending
+              ? 'Sending…'
+              : `Share via ${
+                  selectedPlatform
+                    ? selectedPlatform.charAt(0).toUpperCase() + selectedPlatform.slice(1)
+                    : 'Platform'
+                }`}
           </button>
         </div>
       </div>

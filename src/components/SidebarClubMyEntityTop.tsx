@@ -154,7 +154,18 @@ export default function SidebarClubMyEntityTop({
 
       </div>
 
-      {/* Primary menus (same strip styles as sidebar below; replaces legacy red "Most used" bar) */}
+      {/* MY CLUB - Dashboard for the members (topics/subtopics from website editor) */}
+      <div className="border-t border-gray-700/60">
+        <ClubMembersDashboardSection
+          clubId={club?.id}
+          youtubeChannelUrl={club?.youtubeChannelUrl}
+          canManageClub={isClubAccountUserType(userType)}
+          onYoutubeChannelUrlSaved={onClubYoutubeSaved}
+          onClubBootstrapped={onClubBootstrapped}
+        />
+      </div>
+
+      {/* Primary menus below dashboard */}
       <div className="border-t border-gray-700/60">
         <div className="w-full bg-teal-800 text-white border-b border-teal-700">
           <div className="flex items-center justify-between py-2.5 px-3">
@@ -205,13 +216,6 @@ export default function SidebarClubMyEntityTop({
           <ChevronDown className="w-4 h-4 opacity-90" />
         </button>
 
-        <ClubMembersDashboardSection
-          clubId={club?.id}
-          youtubeChannelUrl={club?.youtubeChannelUrl}
-          canManageClub={isClubAccountUserType(userType)}
-          onYoutubeChannelUrlSaved={onClubYoutubeSaved}
-          onClubBootstrapped={onClubBootstrapped}
-        />
       </div>
     </div>
   );

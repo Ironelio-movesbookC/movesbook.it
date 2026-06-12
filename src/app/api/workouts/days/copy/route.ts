@@ -1,9 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import {
+  buildWorkoutSessionCreate,
+  isSameCalendarDay,
+  mapPrismaWorkoutForSessionCreate,
+} from '@/lib/workoutDayCopy';
 
+type SourceDayWithTree = Awaited<ReturnType<typeof loadSourceDay>>;
 
-// POST /api/workouts/days/copy - Copy a day to a new date
+async function loadSourceDay(sourceDayId: string) {
+  return prisma.workoutDay.findUnique({
+    where: { id: sourceDayId },
+    include: {
+      workouts: {
+        include: {
+          sports: true,
+          moveframes: {
+            include: {
+              movelaps: true,
+              section: true,
+            },
+          },
+        },
+      },
+      period: true,
+    },
+  });
+}
+
+async function replaceTargetDayWorkouts(
+  targetDayId: string,
+  sourceDay: NonNullable<SourceDayWithTree>
+) {
+  await prisma.$transaction(async (tx) => {
+    await tx.workoutSession.deleteMany({ where: { workoutDayId: targetDayId } });
+    for (const workout of sourceDay.workouts) {
+      await tx.workoutSession.create({
+        data: {
+          workoutDayId: targetDayId,
+          ...buildWorkoutSessionCreate(mapPrismaWorkoutForSessionCreate(workout)),
+        },
+      });
+    }
+  });
+}
+
+// POST /api/workouts/days/copy - Copy a day to another slot (template) or date (yearly)
 export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization');
@@ -18,71 +61,119 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { sourceDayId, targetDate, targetWeekId } = body;
+    const { sourceDayId, targetDate, targetWeekId, targetDayId } = body;
 
-    console.log('📋 Copying day:', { sourceDayId, targetDate, targetWeekId });
-
-    // Validate required fields
-    if (!sourceDayId || !targetDate || !targetWeekId) {
-      return NextResponse.json(
-        { error: 'sourceDayId, targetDate, and targetWeekId are required' },
-        { status: 400 }
-      );
+    if (!sourceDayId) {
+      return NextResponse.json({ error: 'sourceDayId is required' }, { status: 400 });
     }
 
-    // Get the source day with all its data
-    const sourceDay = await prisma.workoutDay.findUnique({
-      where: { id: sourceDayId },
-      include: {
-        workouts: {
-          include: {
-            sports: true,
-            moveframes: {
-              include: {
-                movelaps: true,
-                section: true
-              }
-            }
-          }
-        },
-        period: true
-      }
-    });
-
+    const sourceDay = await loadSourceDay(sourceDayId);
     if (!sourceDay) {
       return NextResponse.json({ error: 'Source day not found' }, { status: 404 });
     }
 
-    // Check if target date already has a day
-    const existingDay = await prisma.workoutDay.findFirst({
-      where: {
-        userId: decoded.userId,
-        date: new Date(targetDate)
-      }
-    });
+    if (sourceDayId === targetDayId) {
+      return NextResponse.json({ error: 'Cannot copy a day onto itself' }, { status: 400 });
+    }
 
-    if (existingDay) {
+    // Template plan: copy workouts into an existing day slot (week + dayOfWeek)
+    if (targetDayId) {
+      const targetDay = await prisma.workoutDay.findFirst({
+        where: {
+          id: targetDayId,
+          userId: decoded.userId,
+        },
+        include: {
+          workoutWeek: { include: { workoutPlan: { select: { type: true } } } },
+        },
+      });
+
+      if (!targetDay) {
+        return NextResponse.json({ error: 'Target day not found' }, { status: 404 });
+      }
+
+      await replaceTargetDayWorkouts(targetDayId, sourceDay);
+
+      const updated = await prisma.workoutDay.findUnique({
+        where: { id: targetDayId },
+        include: {
+          workouts: {
+            include: {
+              sports: true,
+              moveframes: { include: { movelaps: true, section: true } },
+            },
+          },
+          period: true,
+        },
+      });
+
+      return NextResponse.json({ success: true, day: updated }, { status: 200 });
+    }
+
+    if (!targetDate || !targetWeekId) {
       return NextResponse.json(
-        { error: 'A workout day already exists on this date' },
-        { status: 409 }
+        { error: 'targetDate and targetWeekId are required when targetDayId is omitted' },
+        { status: 400 }
       );
     }
 
-    // Determine storageZone from the target week's plan
     const targetWeek = await prisma.workoutWeek.findUnique({
       where: { id: targetWeekId },
-      include: { workoutPlan: { select: { type: true } } }
+      include: { workoutPlan: { select: { type: true } } },
     });
 
-    let storageZone: 'A' | 'B' | 'C' | 'D' = sourceDay.storageZone || 'B';
-    if (targetWeek?.workoutPlan) {
-      if (targetWeek.workoutPlan.type === 'TEMPLATE_WEEKS') storageZone = 'A';
-      else if (targetWeek.workoutPlan.type === 'YEARLY_PLAN') storageZone = 'B';
-      else if (targetWeek.workoutPlan.type === 'WORKOUTS_DONE') storageZone = 'C';
-      else if (targetWeek.workoutPlan.type === 'ARCHIVE') storageZone = 'D';
+    if (!targetWeek?.workoutPlan) {
+      return NextResponse.json({ error: 'Target week not found' }, { status: 404 });
     }
 
-    // Create new day with copied data
+    const targetDateObj = new Date(targetDate);
+
+    // Yearly plan: each date already has a day row (often with zero workouts) — replace in place
+    if (targetWeek.workoutPlan.type !== 'TEMPLATE_WEEKS') {
+      const weekDays = await prisma.workoutDay.findMany({
+        where: {
+          userId: decoded.userId,
+          workoutWeekId: targetWeekId,
+        },
+      });
+
+      const targetDayInWeek = weekDays.find((d) =>
+        isSameCalendarDay(d.date, targetDateObj)
+      );
+
+      if (targetDayInWeek) {
+        if (targetDayInWeek.id === sourceDayId) {
+          return NextResponse.json(
+            { error: 'Cannot copy a day onto itself' },
+            { status: 400 }
+          );
+        }
+
+        await replaceTargetDayWorkouts(targetDayInWeek.id, sourceDay);
+
+        const updated = await prisma.workoutDay.findUnique({
+          where: { id: targetDayInWeek.id },
+          include: {
+            workouts: {
+              include: {
+                sports: true,
+                moveframes: { include: { movelaps: true, section: true } },
+              },
+            },
+            period: true,
+          },
+        });
+
+        return NextResponse.json({ success: true, day: updated }, { status: 200 });
+      }
+    }
+
+    let storageZone: 'A' | 'B' | 'C' | 'D' = sourceDay.storageZone || 'B';
+    if (targetWeek.workoutPlan.type === 'TEMPLATE_WEEKS') storageZone = 'A';
+    else if (targetWeek.workoutPlan.type === 'YEARLY_PLAN') storageZone = 'B';
+    else if (targetWeek.workoutPlan.type === 'WORKOUTS_DONE') storageZone = 'C';
+    else if (targetWeek.workoutPlan.type === 'ARCHIVE') storageZone = 'D';
+
     const newDay = await prisma.workoutDay.create({
       data: {
         userId: decoded.userId,
@@ -94,92 +185,35 @@ export async function POST(request: NextRequest) {
         storageZone,
         weather: sourceDay.weather,
         feelingStatus: sourceDay.feelingStatus,
-        notes: `${sourceDay.notes || ''} (Copied from ${new Date(sourceDay.date).toLocaleDateString()})`,
-        // Copy workouts
+        notes: sourceDay.notes
+          ? `${sourceDay.notes} (Copied)`
+          : '(Copied)',
         workouts: {
-          create: sourceDay.workouts.map((workout: any) => ({
-            sessionNumber: workout.sessionNumber,
-            name: workout.name,
-            code: workout.code,
-            time: workout.time,
-            location: workout.location,
-            notes: workout.notes,
-            status: 'NOT_PLANNED', // Reset status for copied workout
-            symbol: workout.symbol,
-            includeStretching: workout.includeStretching,
-            // Copy sports
-            sports: {
-              create: workout.sports.map((sport: any) => ({
-                sport: sport.sport
-              }))
-            },
-            // Copy moveframes
-            moveframes: {
-              create: workout.moveframes.map((mf: any) => ({
-                letter: mf.letter,
-                code: mf.code,
-                type: mf.type,
-                description: mf.description,
-                sport: mf.sport,
-                distance: mf.distance,
-                distanceUnit: mf.distanceUnit,
-                speed: mf.speed,
-                pace: mf.pace,
-                pause: mf.pause,
-                repetitions: mf.repetitions,
-                style: mf.style,
-                notes: mf.notes,
-                sectionId: mf.sectionId,
-                // Copy movelaps
-                movelaps: {
-                  create: mf.movelaps.map((lap: any) => ({
-                    repetitionNumber: lap.repetitionNumber,
-                    distance: lap.distance,
-                    speed: lap.speed,
-                    style: lap.style,
-                    pace: lap.pace,
-                    time: lap.time,
-                    pause: lap.pause,
-                    alarm: lap.alarm,
-                    sound: lap.sound,
-                    notes: lap.notes,
-                    reps: lap.reps,
-                    weight: lap.weight,
-                    status: 'PENDING', // Reset status
-                    isSkipped: false,
-                    isDisabled: false
-                  }))
-                }
-              }))
-            }
-          }))
-        }
+          create: sourceDay.workouts.map((workout) =>
+            buildWorkoutSessionCreate(mapPrismaWorkoutForSessionCreate(workout))
+          ),
+        },
       },
       include: {
         workouts: {
           include: {
             sports: true,
-            moveframes: {
-              include: {
-                movelaps: true,
-                section: true
-              }
-            }
-          }
+            moveframes: { include: { movelaps: true, section: true } },
+          },
         },
-        period: true
-      }
+        period: true,
+      },
     });
 
-    console.log('✅ Day copied successfully:', newDay.id);
-
-    return NextResponse.json({ day: newDay }, { status: 201 });
-  } catch (error: any) {
-    console.error('❌ Error copying day:', error);
+    return NextResponse.json({ success: true, day: newDay }, { status: 201 });
+  } catch (error: unknown) {
+    console.error('Error copying day:', error);
     return NextResponse.json(
-      { error: 'Failed to copy day', details: error.message },
+      {
+        error: 'Failed to copy day',
+        details: error instanceof Error ? error.message : 'Unknown',
+      },
       { status: 500 }
     );
   }
 }
-

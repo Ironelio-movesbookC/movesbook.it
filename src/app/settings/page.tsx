@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import ModernNavbar from '@/components/ModernNavbar';
 import AdminNavbar from '@/components/AdminNavbar';
@@ -11,6 +11,7 @@ import FavouritesSettings from '@/components/settings/FavouritesSettings';
 import MyBestSettings from '@/components/settings/MyBestSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
 import WorkoutsParametersSettings from '@/components/settings/WorkoutsParametersSettings';
+import GlobalWorkoutArchiveClient from '@/components/admin/GlobalWorkoutArchiveClient';
 import { useAuth } from '@/hooks/useAuth';
 import {
   isFullAdminPanelSession,
@@ -28,12 +29,18 @@ import {
   Trophy,
   Grid,
   Save,
+  Archive,
 } from 'lucide-react';
+import {
+  SettingsLayoutExpandProvider,
+  useSettingsLayoutExpand,
+} from '@/contexts/SettingsLayoutExpandContext';
 
 type SettingsSection =
   | 'backgrounds'
   | 'tools'
   | 'technical'
+  | 'globalWorkoutArchive'
   | 'workoutParameters'
   | 'favourites'
   | 'mybest'
@@ -44,27 +51,37 @@ export default function SettingsPage() {
   const { user, loading } = useAuth();
   const { t } = useLanguage();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [queryParams, setQueryParams] = useState<URLSearchParams | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
     if (typeof window === 'undefined') return 'grid';
+    const valid: SettingsSection[] = [
+      'backgrounds',
+      'tools',
+      'technical',
+      'globalWorkoutArchive',
+      'workoutParameters',
+      'favourites',
+      'mybest',
+      'grid',
+    ];
+    const urlSection = new URLSearchParams(window.location.search).get('section');
+    if (urlSection === 'periodization') {
+      localStorage.setItem('settings_active_section', 'tools');
+      localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
+      return 'tools';
+    }
+    if (urlSection && valid.includes(urlSection as SettingsSection)) {
+      return urlSection as SettingsSection;
+    }
     const raw = localStorage.getItem('settings_active_section');
     if (raw === 'periodization') {
       localStorage.setItem('settings_active_section', 'tools');
       localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
       return 'tools';
     }
-    const valid: SettingsSection[] = [
-      'backgrounds',
-      'tools',
-      'technical',
-      'workoutParameters',
-      'favourites',
-      'mybest',
-      'grid',
-    ];
     return raw && valid.includes(raw as SettingsSection) ? (raw as SettingsSection) : 'grid';
   });
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [queryParams, setQueryParams] = useState<URLSearchParams | null>(null);
 
   // Check for admin authentication and auto-cleanup invalid tokens
   useEffect(() => {
@@ -128,6 +145,7 @@ export default function SettingsPage() {
       'backgrounds',
       'tools',
       'technical',
+      'globalWorkoutArchive',
       'workoutParameters',
       'favourites',
       'grid',
@@ -156,6 +174,11 @@ export default function SettingsPage() {
         { id: 'backgrounds' as SettingsSection, label: t('settings_backgrounds'), icon: Palette },
         { id: 'tools' as SettingsSection, label: 'Tools Settings', icon: SettingsIcon },
         { id: 'technical' as SettingsSection, label: 'Technical Settings', icon: Wrench },
+        {
+          id: 'globalWorkoutArchive' as SettingsSection,
+          label: 'Global archive of workouts & weekly plans',
+          icon: Archive,
+        },
         { id: 'workoutParameters' as SettingsSection, label: 'Workouts parameters settings', icon: SlidersHorizontal },
         { id: 'favourites' as SettingsSection, label: t('settings_favourites'), icon: Star },
       ]
@@ -184,12 +207,80 @@ export default function SettingsPage() {
   };
 
   return (
+    <SettingsLayoutExpandProvider>
+      <SettingsPageLayout
+        isAdmin={isAdmin}
+        t={t}
+        hasUnsavedChanges={hasUnsavedChanges}
+        handleSaveAll={handleSaveAll}
+        settingsSections={settingsSections}
+        activeSection={activeSection}
+        setActiveSection={setActiveSection}
+        requestedTab={requestedTab}
+        requestedWorkoutTab={requestedWorkoutTab}
+        user={user}
+      />
+    </SettingsLayoutExpandProvider>
+  );
+}
+
+function SettingsPageLayout({
+  isAdmin,
+  t,
+  hasUnsavedChanges,
+  handleSaveAll,
+  settingsSections,
+  activeSection,
+  setActiveSection,
+  requestedTab,
+  requestedWorkoutTab,
+  user,
+}: {
+  isAdmin: boolean;
+  t: (key: string) => string;
+  hasUnsavedChanges: boolean;
+  handleSaveAll: () => void;
+  settingsSections: { id: SettingsSection; label: string; icon: typeof Grid }[];
+  activeSection: SettingsSection;
+  setActiveSection: (section: SettingsSection) => void;
+  requestedTab: string | undefined;
+  requestedWorkoutTab: 'changesVolumesSeries' | 'parametersByObjective' | 'formulaParameters' | undefined;
+  user: { userType?: string } | null;
+}) {
+  const layoutExpand = useSettingsLayoutExpand();
+  const contentExpanded = layoutExpand?.contentExpanded ?? false;
+
+  const handleSectionChange = useCallback(
+    (section: SettingsSection) => {
+      if (section !== 'technical' && section !== 'tools' && section !== 'globalWorkoutArchive') {
+        layoutExpand?.setContentExpanded(false);
+      }
+      setActiveSection(section);
+    },
+    [layoutExpand, setActiveSection]
+  );
+
+  useEffect(() => {
+    if (activeSection !== 'technical' && activeSection !== 'tools' && activeSection !== 'globalWorkoutArchive') {
+      layoutExpand?.setContentExpanded(false);
+    }
+  }, [activeSection, layoutExpand]);
+
+  return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors">
       {isAdmin ? <AdminNavbar /> : <ModernNavbar />}
       
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+      <div
+        className={`w-full py-4 sm:py-8 ${
+          contentExpanded ? 'px-2 sm:px-3 lg:px-4' : 'px-4 sm:px-6 lg:px-8'
+        }`}
+      >
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
+        <div
+          className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8 ${
+            contentExpanded ? 'hidden' : ''
+          }`}
+        >
           <div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white mb-1 sm:mb-2 transition-colors">
               {t('settings_title')}
@@ -209,7 +300,11 @@ export default function SettingsPage() {
         </div>
 
         {/* Mobile Horizontal Scroll Navigation */}
-        <div className="lg:hidden mb-6 -mx-4 px-4 overflow-x-auto">
+        <div
+          className={`lg:hidden mb-6 -mx-4 px-4 overflow-x-auto ${
+            contentExpanded ? 'hidden' : ''
+          }`}
+        >
           <div className="flex gap-2 min-w-max pb-2">
             {settingsSections.map((section) => {
               const Icon = section.icon;
@@ -218,7 +313,7 @@ export default function SettingsPage() {
               return (
                 <button
                   key={section.id}
-                  onClick={() => setActiveSection(section.id)}
+                  onClick={() => handleSectionChange(section.id)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${
                     isActive
                       ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg'
@@ -234,8 +329,12 @@ export default function SettingsPage() {
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
-          {/* Settings Sidebar - Desktop Only */}
-          <div className="hidden lg:block w-64 xl:w-80 flex-shrink-0">
+          {/* Settings Sidebar - Desktop Only (hidden when Exercise Bank is expanded) */}
+          <div
+            className={`hidden flex-shrink-0 lg:block w-64 xl:w-80 ${
+              contentExpanded ? 'lg:!hidden' : ''
+            }`}
+          >
             <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-700 p-6 sticky top-6 transition-colors">
               <nav className="space-y-2">
                 {settingsSections.map((section) => {
@@ -245,15 +344,17 @@ export default function SettingsPage() {
                   return (
                     <button
                       key={section.id}
-                      onClick={() => setActiveSection(section.id)}
+                      onClick={() => handleSectionChange(section.id)}
                       className={`w-full flex items-center px-4 py-4 rounded-2xl text-left transition-all duration-300 ${
                         isActive
                           ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg'
                           : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
                       }`}
                     >
-                      <Icon className="w-5 h-5 mr-3" />
-                      <span className="font-semibold text-sm xl:text-base">{section.label}</span>
+                      <Icon className="w-5 h-5 mr-3 shrink-0" />
+                      <span className="font-semibold text-sm xl:text-base leading-snug">
+                        {section.label}
+                      </span>
                     </button>
                   );
                 })}
@@ -274,10 +375,17 @@ export default function SettingsPage() {
 
           {/* Settings Content */}
           <div className="flex-1 min-w-0">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl sm:rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6 lg:p-8 transition-colors">
+            <div
+              className={`bg-white dark:bg-gray-800 shadow-2xl border border-gray-200 dark:border-gray-700 transition-colors ${
+                contentExpanded
+                  ? 'rounded-xl p-2 sm:p-3 lg:p-4'
+                  : 'rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8'
+              }`}
+            >
             {activeSection === 'backgrounds' && <BackgroundsColorsSettings isAdmin={isAdmin} />}
             {activeSection === 'tools' && <ToolsSettings isAdmin={isAdmin} userType={user?.userType} mode="tools" initialTab={requestedTab as any} />}
             {activeSection === 'technical' && <ToolsSettings isAdmin={isAdmin} userType={user?.userType} mode="technical" initialTab={requestedTab as any} />}
+            {activeSection === 'globalWorkoutArchive' && isAdmin && <GlobalWorkoutArchiveClient />}
             {activeSection === 'workoutParameters' && <WorkoutsParametersSettings initialTab={requestedWorkoutTab} />}
             {activeSection === 'favourites' && <FavouritesSettings />}
               {activeSection === 'mybest' && <MyBestSettings />}
