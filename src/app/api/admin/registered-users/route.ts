@@ -5,6 +5,7 @@ import { requireAdmin } from '@/lib/adminAuth';
 import {
   aggregateClubAdminSubscriptionStatus,
   inferMembershipEndDateYmd,
+  membershipStatusToneFromLabel,
   parseClubSubscriptionEndDate,
   parseClubSubscriptionStartDate,
   type ClubSubscriptionStatusTone,
@@ -482,12 +483,7 @@ export async function GET(request: NextRequest) {
       (clubsByAdmin.get(u.id)?.length ?? 0) > 0;
     if (!usesClubAggregate) {
       status = periodStatusFromDates({ dateStart, dateEnd });
-      statusTone =
-        status === 'Expired'
-          ? 'all-expired'
-          : status === 'Expiring'
-            ? 'expiring'
-            : 'active';
+      statusTone = membershipStatusToneFromLabel(status);
     }
 
     return {
@@ -506,11 +502,11 @@ export async function GET(request: NextRequest) {
       version: versionLabel(u.userType),
       amount: '—',
       status,
+      statusTone,
       ...((isClubsSegment || isAllSegment) && clubsOwnedCount !== undefined
         ? {
             clubsOwnedCount,
             companyName,
-            statusTone,
             primaryClubId: isClubsSegment || userIsClubAdmin ? primaryClubId : null,
           }
         : isTeamsSegment || isGroupsSegment || isCoachesSegment || isAllSegment

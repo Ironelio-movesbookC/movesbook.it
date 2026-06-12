@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { readPcuSettings } from '@/lib/admin/userPcuSettings';
+import { readPcuSettingsForScope, resolvePcuEntityId } from '@/lib/admin/userPcuSettings';
 import {
   resolvePcuAlertDisplay,
   type PcuAlertTrigger,
@@ -45,7 +45,11 @@ export async function GET(request: Request) {
         ? 'it'
         : 'en';
 
-    const pcu = readPcuSettings(settings?.adminSettings);
+    const entityId = resolvePcuEntityId(
+      url.searchParams.get('entityId'),
+      url.searchParams.get('clubId'),
+    );
+    const pcu = readPcuSettingsForScope(settings?.adminSettings, entityId);
     const alert = resolvePcuAlertDisplay(pcu, trigger, lang);
 
     if (!alert) {

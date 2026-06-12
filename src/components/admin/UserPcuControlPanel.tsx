@@ -176,6 +176,22 @@ function normalizeIsoDate(value: string | null | undefined): string {
   return mmDdYyyyToIso(raw) || raw;
 }
 
+function pcuSettingsEndpoint(userId: string, entityId?: string | null): string {
+  const base = `/api/admin/registered-users/${encodeURIComponent(userId)}/pcu-settings`;
+  const id = entityId?.trim();
+  if (!id) return base;
+  return `${base}?${new URLSearchParams({ entityId: id }).toString()}`;
+}
+
+function withPcuEntityScope(
+  payload: Record<string, unknown>,
+  entityId?: string | null,
+): Record<string, unknown> {
+  const id = entityId?.trim();
+  if (!id) return payload;
+  return { ...payload, entityId: id, clubId: id };
+}
+
 function resolvePcuAccessDates(
   user: PcuPanelPayload,
   subscriptionRows: SubscriptionRow[],
@@ -255,6 +271,7 @@ export default function UserPcuControlPanel({
   const router = useRouter();
   const searchParams = useSearchParams();
   const segmentForActions = resolveRegisteredUserActionSegment(actionSegment, user.segment);
+  const pcuEntityId = user.entityId;
   const loadedPcuSettingsRef = useRef<PcuSettings | null>(null);
   const reloadPcuFromServerRef = useRef<(pcu: PcuSettings | undefined) => void>(() => {});
   const initialPcuHydratedRef = useRef(false);
@@ -790,16 +807,21 @@ export default function UserPcuControlPanel({
     try {
       const token = localStorage.getItem('adminToken');
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          deletePosts: {
-            types: { question: deletePostsQuestion, suggestion: deletePostsSuggestion, problem: deletePostsProblem },
-            from: deletePostsFrom,
-            to: deletePostsTo,
-          },
-        }),
+        body: JSON.stringify(
+          withPcuEntityScope(
+            {
+              deletePosts: {
+                types: { question: deletePostsQuestion, suggestion: deletePostsSuggestion, problem: deletePostsProblem },
+                from: deletePostsFrom,
+                to: deletePostsTo,
+              },
+            },
+            pcuEntityId,
+          ),
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save delete posts');
@@ -844,18 +866,23 @@ export default function UserPcuControlPanel({
       setAlertMsgEnableFrom(enableFrom);
       setAlertMsgEnableTo(enableTo);
 
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          alertMsg: {
-            activated: alertMsgActivated,
-            enableFrom,
-            enableTo,
-            showAt: { login: alertMsgShowLogin, logout: alertMsgShowLogout },
-            htmlByLang,
-          },
-        }),
+        body: JSON.stringify(
+          withPcuEntityScope(
+            {
+              alertMsg: {
+                activated: alertMsgActivated,
+                enableFrom,
+                enableTo,
+                showAt: { login: alertMsgShowLogin, logout: alertMsgShowLogout },
+                htmlByLang,
+              },
+            },
+            pcuEntityId,
+          ),
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save alert message');
@@ -876,39 +903,44 @@ export default function UserPcuControlPanel({
     try {
       const token = localStorage.getItem('adminToken');
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          idCards: {
-            terms: { creditCard: idCardsCreditCard, sendMoneyLaterDays: idCardsSendMoneyLaterDays },
-            messages: {
-              afterExpeditionNotPaid: {
-                enabled: idCardsMsgAfterExpeditionEnabled,
-                days: idCardsMsgAfterExpeditionDays,
-                htmlByLang: idCardsMsgAfterExpeditionHtmlByLang,
-              },
-              thirdPartyPricelist: {
-                enabled: idCardsThirdPartyEnabled,
-                htmlByLang: idCardsThirdPartyHtmlByLang,
+        body: JSON.stringify(
+          withPcuEntityScope(
+            {
+              idCards: {
+                terms: { creditCard: idCardsCreditCard, sendMoneyLaterDays: idCardsSendMoneyLaterDays },
+                messages: {
+                  afterExpeditionNotPaid: {
+                    enabled: idCardsMsgAfterExpeditionEnabled,
+                    days: idCardsMsgAfterExpeditionDays,
+                    htmlByLang: idCardsMsgAfterExpeditionHtmlByLang,
+                  },
+                  thirdPartyPricelist: {
+                    enabled: idCardsThirdPartyEnabled,
+                    htmlByLang: idCardsThirdPartyHtmlByLang,
+                  },
+                },
+                cardsEnabled: {
+                  tab: idCardsEnabledTab,
+                  from: idCardsFrom,
+                  to: idCardsTo,
+                  blockDate: idCardsBlockDate,
+                  sendEmail: idCardsSendEmail,
+                  allow: {
+                    magnetic: idCardsAllowMagnetic,
+                    rfid: idCardsAllowRfid,
+                    smartcard: idCardsAllowSmartcard,
+                    qr: idCardsAllowQr,
+                  },
+                },
+                history: { query: idCardsHistoryQuery, invoice: idCardsHistoryInvoice, page: idCardsHistoryPage },
               },
             },
-            cardsEnabled: {
-              tab: idCardsEnabledTab,
-              from: idCardsFrom,
-              to: idCardsTo,
-              blockDate: idCardsBlockDate,
-              sendEmail: idCardsSendEmail,
-              allow: {
-                magnetic: idCardsAllowMagnetic,
-                rfid: idCardsAllowRfid,
-                smartcard: idCardsAllowSmartcard,
-                qr: idCardsAllowQr,
-              },
-            },
-            history: { query: idCardsHistoryQuery, invoice: idCardsHistoryInvoice, page: idCardsHistoryPage },
-          },
-        }),
+            pcuEntityId,
+          ),
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save ID cards');
@@ -1164,10 +1196,12 @@ export default function UserPcuControlPanel({
     try {
       const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ functions: buildFunctionsSettingsPayload() }),
+        body: JSON.stringify(
+          withPcuEntityScope({ functions: buildFunctionsSettingsPayload() }, pcuEntityId),
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save functions');
@@ -1245,10 +1279,12 @@ export default function UserPcuControlPanel({
     async (functionsPatch: Partial<PcuFunctionsSettings>) => {
       const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ functions: functionsPatch }),
+        body: JSON.stringify(
+          withPcuEntityScope({ functions: functionsPatch }, pcuEntityId),
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save section');
@@ -1366,18 +1402,20 @@ export default function UserPcuControlPanel({
       const token = getAdminBearerToken();
       if (!token) return;
       try {
-        const res = await fetch(
-          `/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`,
-          {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({
-              functions: {
-                procedure: buildProcedureSavePayload(nextByTab, tab),
+        const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(
+            withPcuEntityScope(
+              {
+                functions: {
+                  procedure: buildProcedureSavePayload(nextByTab, tab),
+                },
               },
-            }),
-          },
-        );
+              pcuEntityId,
+            ),
+          ),
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) return;
         if (data.pcuSettings) {
@@ -1387,7 +1425,7 @@ export default function UserPcuControlPanel({
         /* optional auto-save; use Save for explicit confirmation */
       }
     },
-    [user.userId],
+    [user.userId, pcuEntityId],
   );
 
   const updateProcedureRows = useCallback(
@@ -1619,7 +1657,7 @@ export default function UserPcuControlPanel({
   useEffect(() => {
     initialPcuHydratedRef.current = false;
     clearVipBannerPreviewBlob();
-  }, [user.userId, clearVipBannerPreviewBlob]);
+  }, [user.userId, pcuEntityId, clearVipBannerPreviewBlob]);
 
   useEffect(() => {
     if (!initialPcuSettings || initialPcuHydratedRef.current) return;
@@ -1757,10 +1795,10 @@ export default function UserPcuControlPanel({
     async (bannerImage: string | null) => {
       const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ vip: { bannerImage } }),
+        body: JSON.stringify(withPcuEntityScope({ vip: { bannerImage } }, pcuEntityId)),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save banner');
@@ -1768,7 +1806,7 @@ export default function UserPcuControlPanel({
         loadedPcuSettingsRef.current = data.pcuSettings as PcuSettings;
       }
     },
-    [user.userId],
+    [user.userId, pcuEntityId],
   );
 
   const handleVipBannerFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -1846,10 +1884,10 @@ export default function UserPcuControlPanel({
     try {
       const token = getAdminBearerToken();
       if (!token) throw new Error('Admin session not found. Please log in as admin.');
-      const res = await fetch(`/api/admin/registered-users/${encodeURIComponent(user.userId)}/pcu-settings`, {
+      const res = await fetch(pcuSettingsEndpoint(user.userId, pcuEntityId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(buildAdminSettingsPayload()),
+        body: JSON.stringify(withPcuEntityScope(buildAdminSettingsPayload(), pcuEntityId)),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save settings');

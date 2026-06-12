@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import {
   membershipDateClassName,
+  membershipStatusLabelClassName,
   type ClubSubscriptionStatusTone,
 } from '@/lib/admin/clubSubscriptionStatus';
 import { flagEmojiFromCountryName } from '@/lib/admin/countryFlag';
@@ -159,6 +160,8 @@ function CountryFlagCell({ country }: { country: string | null | undefined }) {
 
 function clubAdminStatusClassName(tone?: ClubSubscriptionStatusTone): string {
   switch (tone) {
+    case 'not-yet-active':
+      return 'text-sky-400 font-semibold';
     case 'expiring':
       return 'text-amber-600 font-semibold';
     case 'partial-expired':
@@ -1679,13 +1682,7 @@ export default function AdminRegisteredUsersList({
                           <td className="px-3 py-2 border-t border-gray-300 font-medium">{row.username}</td>
                           <td className="px-2 py-2 border-t border-gray-300 text-gray-700">{row.e}</td>
                           <td className="px-3 py-2 border-t border-gray-300">
-                            <span
-                              className={
-                                row.status === 'Expired'
-                                  ? 'text-red-600 font-semibold'
-                                  : 'text-green-700 font-semibold'
-                              }
-                            >
+                            <span className={membershipStatusLabelClassName(row.status)}>
                               {row.status}
                             </span>
                           </td>

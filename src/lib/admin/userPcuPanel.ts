@@ -7,11 +7,13 @@ import {
 } from '@/lib/club/clubSidebarLabel';
 import { readAdminReferences } from '@/lib/admin/userProfilePanelSettings';
 import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
-import { parseClubSubscriptionEndDate } from '@/lib/admin/clubSubscriptionStatus';
 import {
-  entityKindFromAdminSegment,
-  type MembershipEntityKind,
-} from '@/lib/admin/membershipEntity';
+  parseClubSubscriptionEndDate,
+  parseClubSubscriptionStartDate,
+} from '@/lib/admin/clubSubscriptionStatus';
+import type { MembershipEntityKind } from '@/lib/admin/membershipEntity';
+import { resolveMembershipDatesForEntity } from '@/lib/admin/networkSubscriptionHistory';
+import { readPcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
 
@@ -364,6 +366,20 @@ function findSelectedEntity(
   return null;
 }
 
+function subscriptionDatesFromEntity(
+  description: string | null | undefined,
+  createdAt: Date,
+): { startDate: Date; endDate: Date | null } {
+  const startYmd =
+    parseClubSubscriptionStartDate(description, createdAt) ||
+    createdAt.toISOString().slice(0, 10);
+  const start = new Date(`${startYmd}T12:00:00.000Z`);
+  return {
+    startDate: Number.isNaN(start.getTime()) ? createdAt : start,
+    endDate: parseClubSubscriptionEndDate(description, createdAt),
+  };
+}
+
 function buildEntityProfileFromRecord(
   entity: DescribedEntity,
   locationFallback?: string | null,
@@ -403,7 +419,15 @@ export function buildPcuPanel(
   const primaryGroup = user.ownedGroups[0];
   const primaryCoaching = user.ownedCoachingGroups[0];
   const memberClub = user.clubMemberships[0]?.club;
-  const clubMeta = parseClubDescriptionMeta(primaryClub?.description);
+  const clubForPanel =
+    segment === 'clubs' ? selectedEntity ?? primaryClub : primaryClub;
+  const teamForPanel =
+    segment === 'teams' ? selectedEntity ?? primaryTeam : primaryTeam;
+  const groupForPanel =
+    segment === 'groups' ? selectedEntity ?? primaryGroup : primaryGroup;
+  const coachingForPanel =
+    segment === 'coaches' ? selectedEntity ?? primaryCoaching : primaryCoaching;
+  const clubMeta = parseClubDescriptionMeta(clubForPanel?.description);
 
   let entityName = '';
   let cityClubTeam = '';
@@ -414,38 +438,90 @@ export function buildPcuPanel(
   let entityId: string | null = null;
   let visitPagePath: string | null = null;
 
-  if (segment === 'clubs' && (primaryClub || memberClub)) {
-    entityName = primaryClub?.name?.trim() || memberClub?.name?.trim() || '';
-    cityClubTeam = primaryClub?.location?.trim() || memberClub?.location?.trim() || clubMeta.region?.trim() || '';
-    startDate = primaryClub?.createdAt ?? user.createdAt;
-    endDate = primaryClub
-      ? parseClubSubscriptionEndDate(primaryClub.description, primaryClub.createdAt)
-      : null;
-    entityId = primaryClub?.id ?? null;
+  if (segment === 'clubs' && (clubForPanel || memberClub)) {
+    entityName = clubForPanel?.name?.trim() || memberClub?.name?.trim() || '';
+    cityClubTeam =
+      clubForPanel?.location?.trim() ||
+      memberClub?.location?.trim() ||
+      clubMeta.region?.trim() ||
+      '';
+    if (clubForPanel) {
+      const window = subscriptionDatesFromEntity(clubForPanel.description, clubForPanel.createdAt);
+      startDate = window.startDate;
+      endDate = window.endDate;
+    } else {
+      startDate = user.createdAt;
+    }
+    entityId = clubForPanel?.id ?? null;
     if (clubMeta.category?.trim() && clubMeta.category !== 'Other') {
       version = `Club ${clubMeta.category}`;
     }
     if (entityName) visitPagePath = clubSearchResultsPath(entityName);
-  } else if (segment === 'teams' && primaryTeam) {
-    entityName = primaryTeam.name.trim();
-    cityClubTeam = primaryTeam.sport?.trim() || entityName;
-    startDate = primaryTeam.createdAt;
-    entityId = primaryTeam.id;
-  } else if (segment === 'groups' && primaryGroup) {
-    entityName = primaryGroup.name.trim();
-    cityClubTeam = primaryGroup.groupType?.trim() || entityName;
-    startDate = primaryGroup.createdAt;
-    entityId = primaryGroup.id;
-  } else if (segment === 'coaches' && primaryCoaching) {
-    entityName = primaryCoaching.name.trim();
+  } else if (segment === 'teams' && teamForPanel) {
+    entityName = teamForPanel.name.trim();
+    cityClubTeam = teamForPanel.sport?.trim() || entityName;
+    const window = subscriptionDatesFromEntity(teamForPanel.description, teamForPanel.createdAt);
+    startDate = window.startDate;
+    endDate = window.endDate;
+    entityId = teamForPanel.id;
+  } else if (segment === 'groups' && groupForPanel) {
+    entityName = groupForPanel.name.trim();
+    cityClubTeam = groupForPanel.groupType?.trim() || entityName;
+    const window = subscriptionDatesFromEntity(groupForPanel.description, groupForPanel.createdAt);
+    startDate = window.startDate;
+    endDate = window.endDate;
+    entityId = groupForPanel.id;
+  } else if (segment === 'coaches' && coachingForPanel) {
+    entityName = coachingForPanel.name.trim();
     cityClubTeam = entityName;
-    startDate = primaryCoaching.createdAt;
-    entityId = primaryCoaching.id;
+    const window = subscriptionDatesFromEntity(
+      coachingForPanel.description,
+      coachingForPanel.createdAt,
+    );
+    startDate = window.startDate;
+    endDate = window.endDate;
+    entityId = coachingForPanel.id;
   } else {
     cityClubTeam = user.country?.trim() || '';
     if (memberClub) {
       entityName = memberClub.name?.trim() || '';
       cityClubTeam = memberClub.location?.trim() || cityClubTeam;
+    }
+  }
+
+  if (!entityId && user.settings?.adminSettings) {
+    const accountDefaults = {
+      accessStartIso: toIsoDate(startDate),
+      accessEndIso: endDate ? toIsoDate(endDate) : '',
+    };
+    const accountPcuAccess = readPcuAccessSettings(
+      user.settings.adminSettings,
+      accountDefaults,
+    );
+    const accountStartIso =
+      accountPcuAccess.accessStartIso.trim() || accountDefaults.accessStartIso;
+    const accountEndIso =
+      accountPcuAccess.accessEndIso.trim() || accountDefaults.accessEndIso;
+    if (accountPcuAccess.accessStartIso.trim() && accountPcuAccess.accessEndIso.trim()) {
+      const accountStart = new Date(`${accountStartIso}T12:00:00.000Z`);
+      startDate = Number.isNaN(accountStart.getTime()) ? user.createdAt : accountStart;
+      endDate = accountEndIso ? new Date(`${accountEndIso}T12:00:00.000Z`) : null;
+    } else {
+      const accountDates = resolveMembershipDatesForEntity({
+        userId: user.id,
+        entityId: null,
+        adminSettingsRaw: user.settings.adminSettings,
+        entityDescription: null,
+        entityCreatedAt: user.createdAt,
+        companyName: entityName || user.username,
+        username: user.username,
+        version,
+      });
+      const accountStart = new Date(`${accountDates.dateStart}T12:00:00.000Z`);
+      startDate = Number.isNaN(accountStart.getTime()) ? user.createdAt : accountStart;
+      endDate = accountDates.dateEnd
+        ? new Date(`${accountDates.dateEnd}T12:00:00.000Z`)
+        : null;
     }
   }
 
@@ -488,11 +564,22 @@ export function buildPcuPanel(
       )
     : null;
 
-  const profileEntityId = selectedEntity?.id ?? null;
-  const profileEntityName = selectedEntity
-    ? getClubMyPageDisplayName(selectedEntity) || selectedEntity.name.trim()
+  const profileEntityId = entityId;
+  const profileEntityRecord =
+    selectedEntity ??
+    (segment === 'clubs'
+      ? clubForPanel
+      : segment === 'teams'
+        ? teamForPanel
+        : segment === 'groups'
+          ? groupForPanel
+          : segment === 'coaches'
+            ? coachingForPanel
+            : null);
+  const profileEntityName = profileEntityRecord
+    ? getClubMyPageDisplayName(profileEntityRecord) || profileEntityRecord.name.trim()
     : entityName;
-  const profileEntityKind: MembershipEntityKind | null = selectedEntity
+  const profileEntityKind: MembershipEntityKind | null = profileEntityRecord
     ? segment === 'clubs'
       ? 'club'
       : segment === 'teams'
@@ -502,7 +589,7 @@ export function buildPcuPanel(
           : segment === 'coaches'
             ? 'coaching_group'
             : null
-    : entityKindFromAdminSegment(segment);
+    : 'account';
 
   return {
     userId: user.id,

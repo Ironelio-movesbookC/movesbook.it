@@ -3,10 +3,14 @@ import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
 export type ClubSubscriptionDisplayStatus =
   | 'Active'
   | 'Expiring'
-  | 'Expired';
+  | 'Expired'
+  | 'Not yet active';
+
+export const MEMBERSHIP_STATUS_NOT_YET_ACTIVE = 'Not yet active' as const;
 
 export type ClubSubscriptionStatusTone =
   | 'active'
+  | 'not-yet-active'
   | 'expiring'
   | 'partial-expired'
   | 'all-expired';
@@ -118,7 +122,37 @@ export function defaultClubSubscriptionEndDate(from: Date = new Date()): string 
   return end.toISOString().slice(0, 10);
 }
 
-/** Text color for membership date cells: expired red, expiring orange, current dark green. */
+/** Map resolved membership status label → color tone. */
+export function membershipStatusToneFromLabel(status: string): ClubSubscriptionStatusTone {
+  switch (status) {
+    case 'Expired':
+      return 'all-expired';
+    case 'Expiring':
+      return 'expiring';
+    case MEMBERSHIP_STATUS_NOT_YET_ACTIVE:
+      return 'not-yet-active';
+    default:
+      return 'active';
+  }
+}
+
+/** Text color for membership status labels (profile tables, grid cards). */
+export function membershipStatusLabelClassName(status: string): string {
+  switch (membershipStatusToneFromLabel(status)) {
+    case 'all-expired':
+      return 'text-red-600 font-semibold';
+    case 'expiring':
+    case 'partial-expired':
+      return 'text-orange-600 font-semibold';
+    case 'not-yet-active':
+      return 'text-sky-400 font-semibold';
+    case 'active':
+    default:
+      return 'text-green-700 font-semibold';
+  }
+}
+
+/** Text color for membership date cells: expired red, expiring orange, not-yet-active light blue, current dark green. */
 export function membershipDateClassName(tone?: ClubSubscriptionStatusTone): string {
   switch (tone) {
     case 'all-expired':
@@ -126,6 +160,8 @@ export function membershipDateClassName(tone?: ClubSubscriptionStatusTone): stri
     case 'expiring':
     case 'partial-expired':
       return 'text-orange-600';
+    case 'not-yet-active':
+      return 'text-sky-400';
     case 'active':
     default:
       return 'text-green-800';

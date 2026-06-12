@@ -191,7 +191,7 @@ function ClubDashboardContent() {
       };
 
       if (!isEntityWorkspaceSession('club')) {
-        const alert = await fetchPcuAlert('login', user?.language || 'en');
+        const alert = await fetchPcuAlert('login', user?.language || 'en', clubId);
         if (alert) {
           showAlert(alert, openMyClub);
           return;

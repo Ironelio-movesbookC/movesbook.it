@@ -60,6 +60,8 @@ type AdminPcuDatePickerProps = {
   value: string;
   onChange: (iso: string) => void;
   disabled?: boolean;
+  /** When true (default), admins can pick past subscription dates. */
+  allowPastDates?: boolean;
   /** ISO date (yyyy-mm-dd); dates on or before this day are not selectable. */
   minDateIso?: string;
   placeholder?: string;
@@ -70,6 +72,7 @@ export default function AdminPcuDatePicker({
   value,
   onChange,
   disabled,
+  allowPastDates = true,
   minDateIso,
   placeholder = '0000-00-00',
   className = '',
@@ -185,7 +188,7 @@ export default function AdminPcuDatePicker({
                 return <span key={key} className="py-1.5" />;
               }
               const dayStart = startOfDay(date);
-              const isPast = dayStart.getTime() < today.getTime();
+              const isPast = !allowPastDates && dayStart.getTime() < today.getTime();
               const isOnOrBeforeMin =
                 minDate != null && dayStart.getTime() <= minDate.getTime();
               const isToday = dayStart.getTime() === today.getTime();

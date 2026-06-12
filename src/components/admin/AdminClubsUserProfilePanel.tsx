@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { flagEmojiFromCountryName, countryCodeFromName } from '@/lib/admin/countryFlag';
+import { membershipStatusLabelClassName } from '@/lib/admin/clubSubscriptionStatus';
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
 
@@ -472,13 +473,7 @@ export default function AdminClubsUserProfilePanel({
                       <td className="px-3 py-2 border-t border-gray-300 font-medium">{row.username}</td>
                       <td className="px-2 py-2 border-t border-gray-300 text-gray-700">{row.e}</td>
                       <td className="px-3 py-2 border-t border-gray-300">
-                        <span
-                          className={
-                            row.status === 'Expired'
-                              ? 'text-red-600 font-semibold'
-                              : 'text-green-700 font-semibold'
-                          }
-                        >
+                        <span className={membershipStatusLabelClassName(row.status)}>
                           {row.status}
                         </span>
                       </td>

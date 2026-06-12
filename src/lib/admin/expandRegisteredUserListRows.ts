@@ -6,6 +6,7 @@ import {
 } from '@/lib/club/clubSidebarLabel';
 import {
   inferMembershipEndDateYmd,
+  membershipStatusToneFromLabel,
   parseClubSubscriptionEndDate,
   parseClubSubscriptionStartDate,
   type ClubSubscriptionStatusTone,
@@ -103,12 +104,7 @@ function membershipStatusFromDates(
   dateEnd: string | null,
 ): { status: string; statusTone: ClubSubscriptionStatusTone } {
   const status = periodStatusFromDates({ dateStart, dateEnd });
-  const statusTone: ClubSubscriptionStatusTone =
-    status === 'Expired'
-      ? 'all-expired'
-      : status === 'Expiring'
-        ? 'expiring'
-        : 'active';
+  const statusTone: ClubSubscriptionStatusTone = membershipStatusToneFromLabel(status);
   return { status, statusTone };
 }
 

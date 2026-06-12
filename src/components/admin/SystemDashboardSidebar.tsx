@@ -67,6 +67,7 @@ import {
   Users2
 } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 // Define types for sidebar items
 interface SidebarItemType {
@@ -112,9 +113,12 @@ interface SystemDashboardSidebarProps {
 }
 
 const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSidebarProps) => {
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const foodsPanelActive =
     searchParams?.get('panel') === 'foods-and-dishes' || searchParams?.get('panel') === 'foods';
+  const subscriptionUserType = searchParams?.get('userType');
+  const isSubscriptionRoute = pathname?.startsWith('/subscriptions');
 
   const [internalIsOpen, setInternalIsOpen] = useState(true);
   const isSidebarOpen = isOpen !== undefined ? isOpen : internalIsOpen;
@@ -174,9 +178,9 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
       id: 'subscriptions',
       label: 'Subscriptions',
       items: [
-        { label: 'Versions', icon: Layers },
-        { label: 'Functions enabled', icon: CheckSquare },
-        { label: 'Packages infos', icon: Package },
+        { label: 'Versions', icon: Layers, href: '/subscriptions/subscription_settings' },
+        { label: 'Functions enabled', icon: CheckSquare, href: '/subscriptions/function_settings/1' },
+        { label: 'Packages infos', icon: Package, href: '/subscriptions/package/5/en' },
         { label: 'Other Settings', icon: Settings }
       ]
     },
@@ -402,11 +406,11 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
       id: 'settings_users',
       label: 'Settings for users',
       items: [
-        { label: 'Single users', icon: User },
-        { label: 'Coaches', icon: User },
-        { label: 'Teams', icon: Users },
-        { label: 'Groups', icon: Users },
-        { label: 'Clubs', icon: Briefcase }
+        { label: 'Single users', icon: User, href: '/subscriptions/subscription_settings?userType=athlete' },
+        { label: 'Coaches', icon: User, href: '/subscriptions/subscription_settings?userType=coach' },
+        { label: 'Teams', icon: Users, href: '/subscriptions/subscription_settings?userType=team' },
+        { label: 'Groups', icon: Users, href: '/subscriptions/subscription_settings?userType=group' },
+        { label: 'Clubs', icon: Briefcase, href: '/subscriptions/subscription_settings?userType=club' }
       ]
     },
     {
@@ -587,7 +591,27 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
     // Different styling based on nesting level
     const paddingLeft = isLevel0 ? '45px' : `${45 + (level * 20)}px`;
     const iconLeft = isLevel0 ? '8px' : `${8 + (level * 20)}px`;
-    const bgClass = isLevel0 ? 'bg-[#4e4e4e] hover:bg-[#5e5e5e]' : 'bg-[#333] hover:bg-[#444]';
+    const isActive =
+      item.href &&
+      isSubscriptionRoute &&
+      (item.href === '/subscriptions/subscription_settings'
+        ? pathname === '/subscriptions/subscription_settings' && !subscriptionUserType
+        : item.href.startsWith('/subscriptions/subscription_settings?userType=')
+          ? subscriptionUserType === new URL(item.href, 'http://local').searchParams.get('userType')
+          : item.href.startsWith('/subscriptions/function_settings')
+            ? Boolean(
+                pathname?.startsWith('/subscriptions/function_settings') ||
+                  pathname?.startsWith('/subscriptions/function_training_settings') ||
+                  pathname?.startsWith('/subscriptions/function_settings_mang'),
+              )
+            : item.href.startsWith('/subscriptions/package/')
+              ? pathname?.startsWith('/subscriptions/package/')
+              : false);
+    const bgClass = isActive
+      ? 'bg-[#008080] hover:bg-[#009090]'
+      : isLevel0
+        ? 'bg-[#4e4e4e] hover:bg-[#5e5e5e]'
+        : 'bg-[#333] hover:bg-[#444]';
     
     return (
       <div className="mb-[1px]">

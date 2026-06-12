@@ -51,6 +51,7 @@ export function consumePendingPcuAlert(): PcuAlertDisplayPayload | null {
 export async function fetchPcuAlert(
   trigger: PcuAlertTrigger,
   lang?: string,
+  entityId?: string | null,
 ): Promise<PcuAlertDisplayPayload | null> {
   if (typeof window === 'undefined') return null;
   const token = localStorage.getItem('token');
@@ -62,6 +63,11 @@ export async function fetchPcuAlert(
     'en';
 
   const params = new URLSearchParams({ trigger, lang: langCode });
+  const scopedEntityId = entityId?.trim();
+  if (scopedEntityId) {
+    params.set('entityId', scopedEntityId);
+    params.set('clubId', scopedEntityId);
+  }
   const res = await fetch(`/api/user/pcu-alert?${params.toString()}`, {
     headers: { Authorization: `Bearer ${token}` },
   });

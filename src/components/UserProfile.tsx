@@ -17,6 +17,7 @@ import { formatSportLabel } from '@/lib/profileSports';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
 import ClubAdminInfoForm from '@/components/profile/ClubAdminInfoForm';
+import ClubReferencesDisplay from '@/components/club/ClubReferencesDisplay';
 
 const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), {
   ssr: false,
@@ -466,17 +467,27 @@ export default function UserProfile({
               ← Back to dashboard
             </Link>
             <span className="text-gray-300">|</span>
-            <a href={`#${infoSectionId}`} className="text-gray-600 hover:text-gray-900 font-medium">
-              {infoSectionTitle}
-            </a>
-            {!isClubAdmin ? (
+            {isClubAdmin ? (
               <>
+                <a href="#member-profile" className="text-gray-600 hover:text-gray-900 font-medium">
+                  User Profile
+                </a>
+                <span className="text-gray-300">|</span>
+                <a href={`#${infoSectionId}`} className="text-gray-600 hover:text-gray-900">
+                  {infoSectionTitle}
+                </a>
+              </>
+            ) : (
+              <>
+                <a href={`#${infoSectionId}`} className="text-gray-600 hover:text-gray-900 font-medium">
+                  {infoSectionTitle}
+                </a>
                 <span className="text-gray-300">|</span>
                 <a href="#member-profile" className="text-gray-600 hover:text-gray-900">
                   User Profile
                 </a>
               </>
-            ) : null}
+            )}
           </div>
         )}
         {/* Header */}
@@ -517,27 +528,21 @@ export default function UserProfile({
           </div>
         )}
 
-        {/* Member info / Admin info (full profile page only; my-club Contact Info tab uses ClubAdminInfoForm) */}
-        {!embedded && (
+        {/* Member info (non-club accounts only; club Admin info appears after User Profile) */}
+        {!embedded && !isClubAdmin && (
         <section
           id={infoSectionId}
-          className={`scroll-mt-24 mb-6 ${isClubAdmin ? '' : 'bg-white rounded-lg shadow-lg p-6'}`}
+          className="scroll-mt-24 mb-6 bg-white rounded-lg shadow-lg p-6"
         >
-          {isClubAdmin ? (
-            <ClubAdminInfoForm profileYoutubeUrl={profile.youtubeChannelUrl} />
-          ) : (
-            <>
-              <h2 className="text-xl font-bold text-gray-800 mb-4">{infoSectionTitle}</h2>
-              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                {memberInfoFields.map(({ label, value }) => (
-                  <div key={label}>
-                    <dt className="text-gray-500 font-medium">{label}</dt>
-                    <dd className="text-gray-900 mt-0.5 break-words">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </>
-          )}
+          <h2 className="text-xl font-bold text-gray-800 mb-4">{infoSectionTitle}</h2>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            {memberInfoFields.map(({ label, value }) => (
+              <div key={label}>
+                <dt className="text-gray-500 font-medium">{label}</dt>
+                <dd className="text-gray-900 mt-0.5 break-words">{value}</dd>
+              </div>
+            ))}
+          </dl>
         </section>
         )}
 
@@ -815,7 +820,22 @@ export default function UserProfile({
               ) : null}
             </div>
           </form>
+
+          {!embedded && isClubAdmin ? (
+            <ClubReferencesDisplay
+              variant="admin"
+              referencesHtml={referencesHtml}
+              referencesLevel={referencesLevel}
+            />
+          ) : null}
         </section>
+
+        {/* Admin info (club accounts only; my-club Contact Info tab uses ClubAdminInfoForm) */}
+        {!embedded && isClubAdmin && (
+        <section id={infoSectionId} className="scroll-mt-24 mb-6">
+          <ClubAdminInfoForm profileYoutubeUrl={profile.youtubeChannelUrl} />
+        </section>
+        )}
 
         {/* Statistics */}
         {!embedded && !editProfileMode && (

@@ -3,6 +3,7 @@ import {
   classifyClubSubscriptionEnd,
   inferMembershipEndDateYmd,
   MEMBERSHIP_RENEWAL_DURATION_DAYS,
+  MEMBERSHIP_STATUS_NOT_YET_ACTIVE,
   parseClubSubscriptionEndDate,
   parseClubSubscriptionStartDate,
 } from '@/lib/admin/clubSubscriptionStatus';
@@ -11,6 +12,7 @@ import {
   readPcuAccessSettings,
 } from '@/lib/admin/userPcuAccessSettings';
 import type { RegisteredUserListRow } from '@/lib/admin/expandRegisteredUserListRows';
+import { membershipStatusToneFromLabel } from '@/lib/admin/clubSubscriptionStatus';
 
 /** One Movesbook network membership period (typically 6 months or 1 year). */
 export type NetworkSubscriptionPeriod = {
@@ -150,14 +152,19 @@ export function dedupeSubscriptionPeriods(
 }
 
 /**
- * Active / Expired / Expiring from subscription dates.
- * Expired only after the end date; future start dates before end remain Active/Expiring.
+ * Active / Expired / Expiring / Not yet active from subscription dates.
+ * Not yet active when start is strictly after today; expired only after the end date.
  */
 export function periodStatusFromDates(
   period: Pick<NetworkSubscriptionPeriod, 'dateStart' | 'dateEnd'>,
   now: Date = new Date(),
 ): string {
   const todayMs = parseYmdMs(now.toISOString().slice(0, 10));
+  const startMs = parseYmdMs(period.dateStart);
+  if (startMs && todayMs < startMs) {
+    return MEMBERSHIP_STATUS_NOT_YET_ACTIVE;
+  }
+
   const effectiveEnd = inferMembershipEndDateYmd(period.dateStart, period.dateEnd);
   const endMs = effectiveEnd ? parseYmdMs(effectiveEnd) : null;
 
@@ -554,12 +561,7 @@ function periodToListRow(
     companyName: period.companyName?.trim() || row.companyName,
     username: period.username?.trim() || row.username,
     status,
-    statusTone:
-      status === 'Expired'
-        ? 'all-expired'
-        : status === 'Expiring'
-          ? 'expiring'
-          : 'active',
+    statusTone: membershipStatusToneFromLabel(status),
   };
 }
 

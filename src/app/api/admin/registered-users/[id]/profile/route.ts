@@ -16,10 +16,11 @@ import {
 import { readProfilePanelSettings } from '@/lib/admin/userProfilePanelSettings';
 import { readPcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
 import { pickClubForAdminProfile } from '@/lib/admin/pickClubForAdminProfile';
-import { readPcuSettings } from '@/lib/admin/userPcuSettings';
+import { readPcuSettingsForScope } from '@/lib/admin/userPcuSettings';
 import { loadClubAdminInfoForUser } from '@/lib/user/clubAdminInfoPersistence';
 import { buildAdminUserPanelFields } from '@/lib/admin/clubUserPanel';
 import { buildProfileSubscriptionRows } from '@/lib/admin/buildProfileSubscriptionRows';
+import { resolveMembershipDatesForEntity } from '@/lib/admin/networkSubscriptionHistory';
 
 export const dynamic = 'force-dynamic';
 
@@ -259,17 +260,24 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     };
   } else if (segment === 'teams' && primaryTeam) {
     const teamMeta = parseClubDescriptionMeta(primaryTeam.description);
-    const endDate = parseClubSubscriptionEndDate(
-      primaryTeam.description,
-      primaryTeam.createdAt,
-    );
+    const teamVersion = primaryTeam.sport?.trim()
+      ? `Team ${primaryTeam.sport.trim()}`
+      : 'Team account';
+    const { dateStart, dateEnd } = resolveMembershipDatesForEntity({
+      userId: user.id,
+      entityId: primaryTeam.id,
+      adminSettingsRaw: user.settings?.adminSettings,
+      entityDescription: primaryTeam.description,
+      entityCreatedAt: primaryTeam.createdAt,
+      companyName: primaryTeam.name.trim(),
+      username: teamMeta.username?.trim() || user.username,
+      version: teamVersion,
+    });
     subscriptionCurrent = {
       id: `account-${user.id}`,
-      dateStart: primaryTeam.createdAt.toISOString().slice(0, 10),
-      dateEnd: endDate?.toISOString().slice(0, 10) ?? null,
-      version: primaryTeam.sport?.trim()
-        ? `Team ${primaryTeam.sport.trim()}`
-        : 'Team account',
+      dateStart,
+      dateEnd,
+      version: teamVersion,
       username: teamMeta.username?.trim() || user.username,
       companyName: primaryTeam.name.trim(),
       e: String(planCount),
@@ -277,17 +285,24 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     };
   } else if (segment === 'groups' && primaryGroup) {
     const groupMeta = parseClubDescriptionMeta(primaryGroup.description);
-    const endDate = parseClubSubscriptionEndDate(
-      primaryGroup.description,
-      primaryGroup.createdAt,
-    );
+    const groupVersion = primaryGroup.groupType?.trim()
+      ? `Group ${primaryGroup.groupType.trim()}`
+      : 'Group account';
+    const { dateStart, dateEnd } = resolveMembershipDatesForEntity({
+      userId: user.id,
+      entityId: primaryGroup.id,
+      adminSettingsRaw: user.settings?.adminSettings,
+      entityDescription: primaryGroup.description,
+      entityCreatedAt: primaryGroup.createdAt,
+      companyName: primaryGroup.name.trim(),
+      username: groupMeta.username?.trim() || user.username,
+      version: groupVersion,
+    });
     subscriptionCurrent = {
       id: `account-${user.id}`,
-      dateStart: primaryGroup.createdAt.toISOString().slice(0, 10),
-      dateEnd: endDate?.toISOString().slice(0, 10) ?? null,
-      version: primaryGroup.groupType?.trim()
-        ? `Group ${primaryGroup.groupType.trim()}`
-        : 'Group account',
+      dateStart,
+      dateEnd,
+      version: groupVersion,
       username: groupMeta.username?.trim() || user.username,
       companyName: primaryGroup.name.trim(),
       e: String(planCount),
@@ -295,14 +310,20 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     };
   } else if (segment === 'coaches' && primaryCoaching) {
     const coachMeta = parseClubDescriptionMeta(primaryCoaching.description);
-    const endDate = parseClubSubscriptionEndDate(
-      primaryCoaching.description,
-      primaryCoaching.createdAt,
-    );
+    const { dateStart, dateEnd } = resolveMembershipDatesForEntity({
+      userId: user.id,
+      entityId: primaryCoaching.id,
+      adminSettingsRaw: user.settings?.adminSettings,
+      entityDescription: primaryCoaching.description,
+      entityCreatedAt: primaryCoaching.createdAt,
+      companyName: primaryCoaching.name.trim(),
+      username: coachMeta.username?.trim() || user.username,
+      version: 'Coach account',
+    });
     subscriptionCurrent = {
       id: `account-${user.id}`,
-      dateStart: primaryCoaching.createdAt.toISOString().slice(0, 10),
-      dateEnd: endDate?.toISOString().slice(0, 10) ?? null,
+      dateStart,
+      dateEnd,
       version: 'Coach account',
       username: coachMeta.username?.trim() || user.username,
       companyName: primaryCoaching.name.trim(),
@@ -332,27 +353,68 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     };
   }
 
+  if (!subscriptionCurrent.entityId) {
+    const accountDefaults = {
+      accessStartIso: subscriptionCurrent.dateStart,
+      accessEndIso: subscriptionCurrent.dateEnd ?? '',
+    };
+    const accountPcuAccess = readPcuAccessSettings(
+      user.settings?.adminSettings,
+      accountDefaults,
+    );
+    if (accountPcuAccess.accessStartIso.trim() && accountPcuAccess.accessEndIso.trim()) {
+      subscriptionCurrent = {
+        ...subscriptionCurrent,
+        dateStart: accountPcuAccess.accessStartIso,
+        dateEnd: accountPcuAccess.accessEndIso,
+      };
+    } else {
+      const accountDates = resolveMembershipDatesForEntity({
+        userId: user.id,
+        entityId: null,
+        adminSettingsRaw: user.settings?.adminSettings,
+        entityDescription: null,
+        entityCreatedAt: user.createdAt,
+        companyName: subscriptionCurrent.companyName || officialClubName || user.username,
+        username: subscriptionCurrent.username || user.username,
+        version: subscriptionCurrent.version,
+      });
+      subscriptionCurrent = {
+        ...subscriptionCurrent,
+        dateStart: accountDates.dateStart,
+        dateEnd: accountDates.dateEnd,
+      };
+    }
+  }
+
   const personalWebsiteHref =
     segment === 'clubs' ? await getUserPersonalWebsiteHref(user.id) : null;
+
+  const entityPcuAccessWindow = {
+    accessStartIso: subscriptionCurrent.dateStart,
+    accessEndIso: subscriptionCurrent.dateEnd ?? '',
+  };
+  const pcuAccessStored = readPcuAccessSettings(
+    user.settings?.adminSettings,
+    entityPcuAccessWindow,
+  );
+  const pcuAccess =
+    subscriptionCurrent.entityId != null
+      ? { ...pcuAccessStored, ...entityPcuAccessWindow }
+      : pcuAccessStored;
 
   const subscriptionRows = buildProfileSubscriptionRows(
     user.settings?.adminSettings,
     { ...subscriptionCurrent, userId: user.id },
-    {
-      accessStartIso: subscriptionCurrent.dateStart,
-      accessEndIso: subscriptionCurrent.dateEnd ?? '',
-    },
+    subscriptionCurrent.entityId != null
+      ? entityPcuAccessWindow
+      : pcuAccessStored.accessStartIso.trim() && pcuAccessStored.accessEndIso.trim()
+        ? {
+            accessStartIso: pcuAccessStored.accessStartIso,
+            accessEndIso: pcuAccessStored.accessEndIso,
+          }
+        : entityPcuAccessWindow,
   );
-
-  const pcuAccessStored = readPcuAccessSettings(user.settings?.adminSettings, {
-    accessStartIso: subscriptionCurrent.dateStart,
-    accessEndIso: subscriptionCurrent.dateEnd ?? '',
-  });
-  const pcuAccess = {
-    ...pcuAccessStored,
-    accessStartIso: subscriptionCurrent.dateStart,
-    accessEndIso: subscriptionCurrent.dateEnd ?? '',
-  };
 
   const pcuUser =
     segment === 'clubs' && primaryOwned
@@ -363,7 +425,31 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
             ...user.ownedClubs.filter((c) => c.id !== primaryOwned.id),
           ],
         }
-      : user;
+      : segment === 'teams' && primaryTeam
+        ? {
+            ...user,
+            ownedTeams: [
+              primaryTeam,
+              ...user.ownedTeams.filter((t) => t.id !== primaryTeam.id),
+            ],
+          }
+        : segment === 'groups' && primaryGroup
+          ? {
+              ...user,
+              ownedGroups: [
+                primaryGroup,
+                ...user.ownedGroups.filter((g) => g.id !== primaryGroup.id),
+              ],
+            }
+          : segment === 'coaches' && primaryCoaching
+            ? {
+                ...user,
+                ownedCoachingGroups: [
+                  primaryCoaching,
+                  ...user.ownedCoachingGroups.filter((g) => g.id !== primaryCoaching.id),
+                ],
+              }
+            : user;
 
   const pcuPanel = buildPcuPanel(pcuUser, segment, loginLogCount, planCount, {
     selectedEntityId: entityIdParam || null,
@@ -386,7 +472,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 
   const profilePanel = readProfilePanelSettings(user.settings?.adminSettings);
-  const pcuSettings = readPcuSettings(user.settings?.adminSettings);
+  const pcuSettings = readPcuSettingsForScope(
+    user.settings?.adminSettings,
+    entityIdParam || null,
+  );
 
   return NextResponse.json({
     id: user.id,
