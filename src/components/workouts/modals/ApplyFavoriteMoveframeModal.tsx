@@ -38,6 +38,7 @@ export default function ApplyFavoriteMoveframeModal({
   onConfirm,
 }: ApplyFavoriteMoveframeModalProps) {
   const config = CONFIG[destination];
+  const planType = config.planType;
   const [weeks, setWeeks] = useState<any[]>([]);
   const [selectedWeekId, setSelectedWeekId] = useState('');
   const [selectedDayId, setSelectedDayId] = useState('');
@@ -51,7 +52,7 @@ export default function ApplyFavoriteMoveframeModal({
       try {
         const token = localStorage.getItem('token');
         if (!token) return;
-        const raw = await fetchPlanWeeks(token, config.planType);
+        const raw = await fetchPlanWeeks(token, planType);
         setWeeks(mergeWeeksByWeekNumber(raw));
       } finally {
         setLoading(false);
@@ -60,7 +61,7 @@ export default function ApplyFavoriteMoveframeModal({
     setSelectedWeekId('');
     setSelectedDayId('');
     setSelectedWorkoutId('');
-  }, [destination]);
+  }, [planType]);
 
   const selectedWeek = useMemo(
     () => weeks.find((w) => w.id === selectedWeekId),
