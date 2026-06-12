@@ -1,15 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Languages, ChefHat } from 'lucide-react';
-import { dbRowToNutrients } from '@/lib/foodDatabase.types';
+import { X, Languages, ChefHat, UtensilsCrossed, Globe } from 'lucide-react';
+import { dbRowToNutrients, nutrientsToDb } from '@/lib/foodDatabase.types';
 import {
   buildTranslationsFromEnglish,
   parseTranslations,
   TranslationMap,
 } from '@/lib/foodDatabaseTranslations';
 import AdminFoodTranslationsModal from '@/components/admin/AdminFoodTranslationsModal';
+import AdminRecipeIngredientBuilder from '@/components/admin/AdminRecipeIngredientBuilder';
 import type { FoodEditSection } from '@/components/admin/AdminEditFoodForm';
+import { NutrientTotals } from '@/utils/nutritionMealTotals';
+import { getToolsProfileLanguageDisplayName } from '@/utils/toolsProfileLanguage';
 
 export interface RecipeComponent {
   name: string;
@@ -31,6 +34,7 @@ export interface RecipeEditItem {
 interface AdminEditRecipeFormProps {
   recipe: RecipeEditItem;
   sections: FoodEditSection[];
+  displayLanguage?: string;
   isNew?: boolean;
   saving?: boolean;
   onChange: (recipe: RecipeEditItem) => void;
@@ -39,20 +43,10 @@ interface AdminEditRecipeFormProps {
   onOpenPreparation?: (recipeId: string) => void;
 }
 
-function FormRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <tr>
-      <td className="py-2 pr-4 align-top whitespace-nowrap">
-        <span className="text-[#0066cc] font-medium text-sm">{label}</span>
-      </td>
-      <td className="py-2 w-full">{children}</td>
-    </tr>
-  );
-}
-
 export default function AdminEditRecipeForm({
   recipe,
   sections,
+  displayLanguage = 'en',
   isNew = false,
   saving = false,
   onChange,
@@ -67,9 +61,20 @@ export default function AdminEditRecipeForm({
   const prepTranslations = parseTranslations(recipe.preparationTranslations);
   const prepEn = prepTranslations.en || recipe.description || '';
   const canOpenPreparation = !!recipe.id && !!onOpenPreparation;
+  const langDisplay = getToolsProfileLanguageDisplayName(displayLanguage);
 
-  const updateComponents = (components: RecipeComponent[]) => {
-    onChange({ ...recipe, components });
+  const hasIngredients =
+    recipe.components.length > 0 && recipe.components.some((c) => (Number(c.grams) || 0) > 0);
+
+  const sectionLabel =
+    sections.find((s) => s.id === recipe.sectionId)?.name || '—';
+
+  const handleIngredientsChange = (components: RecipeComponent[], totalNutrients: NutrientTotals) => {
+    onChange({
+      ...recipe,
+      components,
+      ...nutrientsToDb(totalNutrients),
+    });
   };
 
   const persistNameTranslations = async (map: TranslationMap) => {
@@ -82,141 +87,152 @@ export default function AdminEditRecipeForm({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 overflow-y-auto py-8 px-4">
-        <div className="bg-white w-full max-w-[720px] shadow-lg border border-gray-200">
-          <div className="flex items-center justify-between px-6 pt-5 pb-2 border-b">
-            <h2 className="text-xl font-normal">{isNew ? 'Add Recipe' : 'Edit Recipe'}</h2>
-            <button type="button" onClick={onClose} aria-label="Close">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-2 sm:p-4 backdrop-blur-sm">
+        <div className="flex max-h-[96vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl bg-slate-50 shadow-2xl ring-1 ring-slate-200">
+          {/* Header — same pattern as Diet Builder */}
+          <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4">
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm">
+                <UtensilsCrossed size={20} />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold tracking-tight text-slate-900">
+                  {isNew ? 'Add Recipe' : 'Edit Recipe'}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Select foods, set quantity, build the recipe — same workflow as Diet Builder
+                </p>
+              </div>
+            </div>
 
-          <div className="px-6 py-5">
-            <table className="w-full border-collapse">
-              <tbody>
-                <FormRow label="Food Section">
-                  <select
-                    value={recipe.sectionId}
-                    onChange={(e) => onChange({ ...recipe, sectionId: e.target.value })}
-                    className="w-full max-w-md border border-gray-300 rounded-sm px-2 py-1.5 text-sm"
-                  >
-                    {sections.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </FormRow>
-
-                <FormRow label="Recipe Name">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="text"
-                      value={recipe.name}
-                      onChange={(e) =>
-                        onChange({
-                          ...recipe,
-                          name: e.target.value.toUpperCase(),
-                          nameTranslations: JSON.stringify(
-                            buildTranslationsFromEnglish(e.target.value, nameTranslations)
-                          ),
-                        })
-                      }
-                      className="flex-1 min-w-[200px] border border-gray-300 rounded-sm px-2 py-1.5 text-sm uppercase"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setNameLangOpen(true)}
-                      className="inline-flex items-center gap-1 text-sm text-[#0066cc] underline"
-                    >
-                      <Languages className="w-4 h-4" />
-                      Other languages
-                    </button>
-                  </div>
-                </FormRow>
-
-                <FormRow label="Ingredients">
-                  <div className="space-y-2">
-                    {recipe.components.map((c, idx) => (
-                      <div key={idx} className="flex gap-2">
-                        <input
-                          type="text"
-                          value={c.name}
-                          onChange={(e) => {
-                            const next = [...recipe.components];
-                            next[idx] = { ...c, name: e.target.value };
-                            updateComponents(next);
-                          }}
-                          className="flex-1 border border-gray-300 rounded-sm px-2 py-1 text-sm"
-                          placeholder="Food name"
-                        />
-                        <input
-                          type="number"
-                          value={c.grams}
-                          onChange={(e) => {
-                            const next = [...recipe.components];
-                            next[idx] = { ...c, grams: parseFloat(e.target.value) || 0 };
-                            updateComponents(next);
-                          }}
-                          className="w-24 border border-gray-300 rounded-sm px-2 py-1 text-sm"
-                          placeholder="g"
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateComponents(recipe.components.filter((_, i) => i !== idx))
-                          }
-                          className="text-red-600 text-xs px-2"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateComponents([...recipe.components, { name: '', grams: 0 }])
-                      }
-                      className="text-sm text-[#0066cc] underline"
-                    >
-                      + Add ingredient
-                    </button>
-                  </div>
-                </FormRow>
-
-                <FormRow label="Preparation">
-                  <div className="space-y-2">
-                    <p className="text-sm text-gray-600">
-                      {!recipe.id
-                        ? 'Save the recipe first, then edit preparation in the supported languages.'
-                        : prepEn.trim()
-                          ? 'Instructions saved. Open the preparation editor to update or translate them.'
-                          : 'No preparation instructions yet.'}
-                    </p>
-                    <button
-                      type="button"
-                      disabled={!canOpenPreparation}
-                      onClick={() => onOpenPreparation?.(recipe.id)}
-                      className="inline-flex items-center gap-1 text-sm text-[#0066cc] underline disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
-                    >
-                      <ChefHat className="w-4 h-4" />
-                      Preparation in the languages supported
-                    </button>
-                  </div>
-                </FormRow>
-              </tbody>
-            </table>
-
-            <div className="mt-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="hidden items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 sm:inline-flex">
+                <Globe size={12} />
+                {langDisplay}
+              </span>
               <button
                 type="button"
-                onClick={onSave}
-                disabled={saving || !recipe.name.trim()}
-                className="bg-[#c0392b] hover:bg-[#a93226] disabled:opacity-50 text-white font-semibold px-8 py-2 rounded-sm text-sm"
+                onClick={onClose}
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close"
               >
-                {saving ? 'Saving…' : 'Save'}
+                <X size={22} />
               </button>
             </div>
+          </div>
+
+          {/* Recipe metadata strip */}
+          <div className="shrink-0 border-b border-slate-200 bg-white px-5 py-3">
+            <div className="flex flex-wrap items-end gap-4">
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                Food Section
+                <select
+                  value={recipe.sectionId}
+                  onChange={(e) => onChange({ ...recipe, sectionId: e.target.value })}
+                  className="min-w-[160px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm"
+                >
+                  {sections.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-xs font-medium text-slate-600">
+                Recipe Name
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="text"
+                    value={recipe.name}
+                    onChange={(e) =>
+                      onChange({
+                        ...recipe,
+                        name: e.target.value.toUpperCase(),
+                        nameTranslations: JSON.stringify(
+                          buildTranslationsFromEnglish(e.target.value, nameTranslations)
+                        ),
+                      })
+                    }
+                    className="flex-1 min-w-[180px] rounded-lg border border-slate-200 px-3 py-2 text-sm uppercase shadow-sm"
+                    placeholder="RICE AND PEAS"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setNameLangOpen(true)}
+                    className="inline-flex items-center gap-1 text-xs text-violet-700 underline"
+                  >
+                    <Languages className="w-3.5 h-3.5" />
+                    Other languages
+                  </button>
+                </div>
+              </label>
+
+              {recipe.name.trim() && (
+                <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-800">
+                  {recipe.name || sectionLabel}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* B + D + C — Diet Builder picker */}
+          <div className="min-h-0 flex-1 overflow-hidden p-4">
+            <AdminRecipeIngredientBuilder
+              components={recipe.components}
+              displayLanguage={displayLanguage}
+              onChange={handleIngredientsChange}
+            />
+          </div>
+
+          {/* Preparation */}
+          <div className="shrink-0 border-t border-slate-200 bg-white px-5 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Preparation</p>
+                <p className="text-xs text-slate-500">
+                  {!recipe.id
+                    ? 'Save the recipe with ingredients first, then add preparation instructions.'
+                    : prepEn.trim()
+                      ? 'Instructions saved.'
+                      : 'No preparation instructions yet.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={!canOpenPreparation}
+                onClick={() => onOpenPreparation?.(recipe.id)}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-40"
+              >
+                <ChefHat className="w-4 h-4" />
+                Preparation in the languages supported
+              </button>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-white px-5 py-4">
+            {!hasIngredients && (
+              <p className="mr-auto text-xs text-amber-700">
+                Add at least one food with quantity before saving.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving || !recipe.name.trim() || !hasIngredients}
+              className="rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {saving ? 'Saving…' : 'Save recipe'}
+            </button>
           </div>
         </div>
       </div>
@@ -239,12 +255,13 @@ export default function AdminEditRecipeForm({
 }
 
 export function recipeToSavePayload(recipe: RecipeEditItem) {
+  const nutrientTotals = dbRowToNutrients(recipe as unknown as Record<string, unknown>);
   return {
     sectionId: recipe.sectionId,
     name: recipe.name,
     description: recipe.description,
     components: recipe.components,
-    per100: dbRowToNutrients(recipe as unknown as Record<string, unknown>),
+    per100: nutrientTotals,
     nameTranslations: recipe.nameTranslations
       ? parseTranslations(recipe.nameTranslations)
       : buildTranslationsFromEnglish(recipe.name),

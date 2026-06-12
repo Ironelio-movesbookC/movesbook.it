@@ -349,7 +349,7 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
         sectionId: sections[0]?.id || '',
         name: '',
         description: '',
-        components: [{ name: '', grams: 0 }],
+        components: [],
         calories: 0,
         proteins: 0,
         carbohydrates: 0,
@@ -798,6 +798,7 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
         <AdminEditRecipeForm
           recipe={editRecipe}
           sections={sections}
+          displayLanguage={displayLanguage}
           isNew={!editRecipe.id}
           saving={savingRecipe}
           onChange={setEditRecipe}

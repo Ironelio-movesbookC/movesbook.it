@@ -1,9 +1,15 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import DietBuilderNutrientGrid from '@/components/nutrition/modals/DietBuilderNutrientGrid';
-import { buildRecipeIngredientGrid, RecipeComponentInput } from '@/lib/adminRecipeIngredients';
+import {
+  buildRecipeIngredientGrid,
+  buildRecipeIngredientGridFromCatalog,
+  RecipeComponentInput,
+} from '@/lib/adminRecipeIngredients';
 import { parseTranslations } from '@/lib/foodDatabaseTranslations';
+import { FOOD_CATALOG, FoodCatalogItem } from '@/data/nutritionFoodCatalog';
+import { localizeCatalog } from '@/lib/dietBuilderCatalog';
 
 type DetailTab = 'ingredients' | 'preparation';
 
@@ -28,10 +34,29 @@ export default function AdminRecipeDetailsExpand({
   onTabChange,
   onOpenPreparation,
 }: AdminRecipeDetailsExpandProps) {
-  const { rows, total } = useMemo(
-    () => buildRecipeIngredientGrid(components, foodItems),
-    [components, foodItems]
-  );
+  const [catalog, setCatalog] = useState<FoodCatalogItem[]>([]);
+  const [catalogReady, setCatalogReady] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/food-database/catalog?lang=${encodeURIComponent(displayLanguage)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data.catalog) && data.catalog.length > 0) {
+          setCatalog(localizeCatalog(data.catalog, displayLanguage));
+        } else {
+          setCatalog(localizeCatalog(FOOD_CATALOG, displayLanguage));
+        }
+      })
+      .catch(() => setCatalog(localizeCatalog(FOOD_CATALOG, displayLanguage)))
+      .finally(() => setCatalogReady(true));
+  }, [displayLanguage]);
+
+  const { rows, total } = useMemo(() => {
+    if (catalogReady && catalog.length > 0) {
+      return buildRecipeIngredientGridFromCatalog(components, catalog);
+    }
+    return buildRecipeIngredientGrid(components, foodItems);
+  }, [components, catalog, catalogReady, foodItems]);
 
   const preparationHtml = useMemo(() => {
     const prep = parseTranslations(preparationTranslations);
@@ -42,14 +67,14 @@ export default function AdminRecipeDetailsExpand({
   const hasPreparation = preparationHtml.replace(/<[^>]*>/g, '').trim().length > 0;
 
   return (
-    <div className="border-t-2 border-gray-300 bg-gray-50">
+    <div className="bg-white border-t-2 border-gray-400">
       <div className="flex border-b border-gray-300">
         <button
           type="button"
           onClick={() => onTabChange('ingredients')}
-          className={`px-5 py-2 text-sm font-semibold border-r border-gray-300 ${
+          className={`px-6 py-2.5 text-sm font-semibold border-r border-gray-300 transition ${
             activeTab === 'ingredients'
-              ? 'bg-gray-700 text-white'
+              ? 'bg-gray-900 text-white'
               : 'bg-gradient-to-b from-gray-100 to-gray-200 text-gray-800 hover:from-gray-200 hover:to-gray-300'
           }`}
         >
@@ -58,9 +83,9 @@ export default function AdminRecipeDetailsExpand({
         <button
           type="button"
           onClick={() => onTabChange('preparation')}
-          className={`px-5 py-2 text-sm font-semibold ${
+          className={`px-6 py-2.5 text-sm font-semibold transition ${
             activeTab === 'preparation'
-              ? 'bg-gray-700 text-white'
+              ? 'bg-gray-900 text-white'
               : 'bg-gradient-to-b from-gray-100 to-gray-200 text-gray-800 hover:from-gray-200 hover:to-gray-300'
           }`}
         >
@@ -68,39 +93,43 @@ export default function AdminRecipeDetailsExpand({
         </button>
       </div>
 
-      <div className="p-3">
-        {activeTab === 'ingredients' ? (
-          components.length === 0 ? (
-            <p className="text-sm text-gray-500 py-4 text-center">No ingredients listed for this recipe.</p>
-          ) : (
+      {activeTab === 'ingredients' ? (
+        components.length === 0 ? (
+          <p className="text-sm text-gray-500 py-8 text-center">No ingredients listed for this recipe.</p>
+        ) : (
+          <div className="w-full min-w-0 overflow-x-auto">
             <DietBuilderNutrientGrid
               rows={rows}
               totalRow={total}
-              compact
               maxHeight="none"
               nameColumnLabel="Ingredients"
+              stickyLeadColumns
             />
-          )
-        ) : hasPreparation ? (
-          <div
-            className="prose prose-sm max-w-none bg-white border border-gray-200 rounded p-4"
-            dangerouslySetInnerHTML={{ __html: preparationHtml }}
-          />
-        ) : (
-          <div className="text-sm text-gray-500 py-6 text-center space-y-2">
-            <p>No preparation instructions yet.</p>
-            {onOpenPreparation && (
-              <button
-                type="button"
-                onClick={onOpenPreparation}
-                className="text-[#0066cc] underline font-medium"
-              >
-                Preparation in the languages supported
-              </button>
-            )}
           </div>
-        )}
-      </div>
+        )
+      ) : (
+        <div className="p-4">
+          {hasPreparation ? (
+            <div
+              className="prose prose-sm max-w-none bg-white border border-gray-200 rounded p-4"
+              dangerouslySetInnerHTML={{ __html: preparationHtml }}
+            />
+          ) : (
+            <div className="text-sm text-gray-500 py-8 text-center space-y-2">
+              <p>No preparation instructions yet.</p>
+              {onOpenPreparation && (
+                <button
+                  type="button"
+                  onClick={onOpenPreparation}
+                  className="text-[#0066cc] underline font-medium"
+                >
+                  Preparation in the languages supported
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

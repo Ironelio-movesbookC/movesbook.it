@@ -32,6 +32,8 @@ interface DietBuilderNutrientGridProps {
   compact?: boolean;
   maxHeight?: string;
   nameColumnLabel?: string;
+  /** Pin Ingredients + Grams when scrolling horizontally (recipe list expand). */
+  stickyLeadColumns?: boolean;
 }
 
 /** Horizontally scrollable nutrient table — Grams, Cal, Pro, Carb, Fats, Fiber, vitamins, minerals. */
@@ -47,10 +49,18 @@ export default function DietBuilderNutrientGrid({
   compact = false,
   maxHeight = '220px',
   nameColumnLabel = 'Name',
+  stickyLeadColumns = false,
 }: DietBuilderNutrientGridProps) {
   const cellClass = compact
     ? 'border border-gray-300 px-1.5 py-1 text-[11px] whitespace-nowrap'
     : 'border border-gray-300 px-2 py-1.5 text-xs whitespace-nowrap';
+
+  const stickyNameClass = stickyLeadColumns
+    ? 'sticky left-0 z-[2] bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] min-w-[140px]'
+    : 'bg-white';
+  const stickyGramsClass = stickyLeadColumns
+    ? 'sticky left-[140px] z-[2] bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]'
+    : 'bg-white';
 
   const stickyOmegaClass =
     'sticky right-0 z-20 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.12)]';
@@ -83,8 +93,8 @@ export default function DietBuilderNutrientGrid({
                 {h}
               </th>
             ))}
-            <th className={`${cellClass} font-bold bg-white`}>{nameColumnLabel}</th>
-            <th className={`${cellClass} font-bold text-right bg-white`}>Grams</th>
+            <th className={`${cellClass} font-bold ${stickyNameClass}`}>{nameColumnLabel}</th>
+            <th className={`${cellClass} font-bold text-right ${stickyGramsClass}`}>Grams</th>
             {NUTRIENT_DISPLAY_COLUMNS.map((col) => (
               <th key={col.key} className={`${nutrientCellClass(col.key)} font-bold`}>
                 {col.short || col.label}
@@ -130,10 +140,15 @@ export default function DietBuilderNutrientGrid({
                     {cell}
                   </td>
                 ))}
-                <td className={`${cellClass} font-medium max-w-[180px] truncate bg-white`} title={row.name}>
+                <td
+                  className={`${cellClass} font-medium max-w-[200px] truncate ${stickyNameClass}`}
+                  title={row.name}
+                >
                   {row.name}
                 </td>
-                <td className={`${cellClass} text-right bg-white`}>{row.grams.toFixed(1)}</td>
+                <td className={`${cellClass} text-right ${stickyGramsClass}`}>
+                  {row.grams.toFixed(1)}
+                </td>
                 {NUTRIENT_DISPLAY_COLUMNS.map((col) => (
                   <td key={col.key} className={nutrientCellClass(col.key)}>
                     {formatNutrient(row.nutrients[col.key], col.key)}
@@ -153,8 +168,8 @@ export default function DietBuilderNutrientGrid({
               {prefixHeaders.map((_, i) => (
                 <td key={i} className={`${cellClass} bg-white`} />
               ))}
-              <td className={`${cellClass} bg-white`}>Total</td>
-              <td className={`${cellClass} text-right bg-white`}>
+              <td className={`${cellClass} ${stickyNameClass}`}>Total</td>
+              <td className={`${cellClass} text-right ${stickyGramsClass}`}>
                 {rows.reduce((s, r) => s + r.grams, 0).toFixed(1)}
               </td>
               {NUTRIENT_DISPLAY_COLUMNS.map((col) => (
