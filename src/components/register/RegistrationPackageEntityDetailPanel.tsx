@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import { Check, Share2, X } from 'lucide-react';
 import { getSubscriptionEditData } from '@/lib/admin/subscriptionSettingsMock';
-import { getManagementSettingsData } from '@/lib/admin/managementFunctionSettingsMock';
 import {
   getEntityDisplayTitle,
   getOverviewFeaturesForEntity,
@@ -13,6 +12,9 @@ import {
   type RegistrationUserType,
 } from '@/lib/registration/waysToGetStarted';
 import type { SubscriptionTier } from '@/types/adminSubscriptionSettings';
+import RegistrationClubPricelistsPanel, {
+  type ClubPricelistTab,
+} from './RegistrationClubPricelistsPanel';
 
 type EntityDetailTab =
   | 'overview'
@@ -21,27 +23,12 @@ type EntityDetailTab =
   | 'last_news'
   | 'club_pricelists';
 
-type ClubPricelistTab =
-  | 'versions_features'
-  | 'optional_modules'
-  | 'account_pricelist'
-  | 'identification_devices'
-  | 'others';
-
 const ENTITY_TABS: { key: EntityDetailTab; label: string; clubOnly?: boolean }[] = [
   { key: 'overview', label: 'Overview' },
   { key: 'detailed_overview', label: 'Detailed overview' },
   { key: 'availability_shares', label: 'Availability shares' },
   { key: 'last_news', label: 'Last news' },
   { key: 'club_pricelists', label: 'Club pricelists', clubOnly: true },
-];
-
-const CLUB_PRICELIST_TABS: { key: ClubPricelistTab; label: string }[] = [
-  { key: 'versions_features', label: 'Versions and features' },
-  { key: 'optional_modules', label: 'Optional Modules' },
-  { key: 'account_pricelist', label: 'Account pricelist' },
-  { key: 'identification_devices', label: 'Identification devices' },
-  { key: 'others', label: 'Others' },
 ];
 
 const SUBSCRIPTION_TIERS: { key: SubscriptionTier; label: string }[] = [
@@ -400,124 +387,6 @@ function LastNewsTab({ entity, lang }: { entity: RegistrationSelectedEntity; lan
   );
 }
 
-function ClubPricelistsTab({
-  entity,
-  lang,
-  activeSubTab,
-  onSubTabChange,
-  onBack,
-}: {
-  entity: RegistrationSelectedEntity;
-  lang: string;
-  activeSubTab: ClubPricelistTab;
-  onSubTabChange: (tab: ClubPricelistTab) => void;
-  onBack: () => void;
-}) {
-  const managementData = getManagementSettingsData(lang);
-  const row = getSubscriptionRowForEntity(entity);
-
-  const renderSubTabContent = () => {
-    switch (activeSubTab) {
-      case 'versions_features':
-        return (
-          <div className="p-4 space-y-2">
-            <p className="text-sm font-bold text-gray-800">
-              Versions and features — {row?.name ?? entity.versionLabel}
-            </p>
-            <ul className="divide-y divide-gray-200 border border-gray-200">
-              {managementData.features
-                .filter((f) => f.basic || f.premium || f.pro)
-                .map((feature) => (
-                  <li key={feature.id} className="px-3 py-2 text-sm text-gray-800">
-                    {feature.name}
-                  </li>
-                ))}
-            </ul>
-          </div>
-        );
-      case 'optional_modules':
-        return (
-          <div className="p-4">
-            <p className="mb-3 text-sm font-bold text-gray-800">Optional Modules</p>
-            <ul className="divide-y divide-gray-200 border border-gray-200">
-              {managementData.features
-                .filter((f) => f.optionalEnabled)
-                .map((feature) => (
-                  <li
-                    key={feature.id}
-                    className="flex items-center justify-between px-3 py-2 text-sm"
-                  >
-                    <span>{feature.name}</span>
-                    <span className="text-gray-600">
-                      € {feature.priceOneYear} / € {feature.priceNoLimit}
-                    </span>
-                  </li>
-                ))}
-            </ul>
-          </div>
-        );
-      case 'account_pricelist':
-        return (
-          <div className="p-4 text-sm text-gray-700">
-            <p className="font-bold text-gray-800 mb-2">Account pricelist</p>
-            <p>
-              First subscription: {row?.days1 ?? '—'} days — € {row?.price1 ?? 0}
-            </p>
-            <p className="mt-1">
-              Renewal: {row?.days2 ?? '—'} days — € {row?.price2 ?? 0}
-            </p>
-          </div>
-        );
-      case 'identification_devices':
-        return (
-          <div className="p-4 text-sm text-gray-700">
-            <p className="font-bold text-gray-800 mb-2">Identification devices</p>
-            <p>Device licensing and identification options for club management.</p>
-          </div>
-        );
-      case 'others':
-        return (
-          <div className="p-4 text-sm text-gray-700">
-            <p className="font-bold text-gray-800 mb-2">Others</p>
-            <p>Additional club pricelist information for {entity.versionLabel}.</p>
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
-
-  return (
-    <div className="flex flex-col h-full min-h-[280px]">
-      <div className="flex flex-wrap border-b border-gray-300 bg-[#f0f0f0]">
-        <button
-          type="button"
-          onClick={onBack}
-          className="px-3 py-2 text-xs font-bold text-gray-800 hover:bg-gray-200 border-r border-gray-300"
-        >
-          Back
-        </button>
-        {CLUB_PRICELIST_TABS.map((tab) => {
-          const isActive = activeSubTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => onSubTabChange(tab.key)}
-              className={`px-3 py-2 text-xs font-bold border-r border-gray-300 transition-colors ${
-                isActive ? 'bg-[#555] text-white' : 'bg-[#ddd] text-gray-800 hover:bg-[#ccc]'
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex-1 overflow-y-auto bg-white">{renderSubTabContent()}</div>
-    </div>
-  );
-}
-
 export default function RegistrationPackageEntityDetailPanel({
   entity,
   userType,
@@ -583,8 +452,7 @@ export default function RegistrationPackageEntityDetailPanel({
 
       <div className="flex-1 overflow-hidden">
         {showClubSubNav && activeTab === 'club_pricelists' ? (
-          <ClubPricelistsTab
-            entity={entity}
+          <RegistrationClubPricelistsPanel
             lang={lang}
             activeSubTab={clubSubTab}
             onSubTabChange={setClubSubTab}
