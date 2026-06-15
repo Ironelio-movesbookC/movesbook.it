@@ -374,7 +374,7 @@ const SystemDashboardSidebarContent = ({ isOpen, onToggle }: SystemDashboardSide
       label: 'Promotions',
       items: [
         { label: 'Catalog of products', icon: ShoppingCart },
-        { label: 'Promocode subscriptions', icon: Gift, href: '/admin/promocode/subscription' },
+        { label: 'Promocode subscriptions', icon: Gift, href: '/promocodes' },
         {
           label: 'Sponsors',
           icon: Star,

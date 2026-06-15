@@ -33,3 +33,9 @@ export const ALL_COUNTRIES: string[] = [
   'Yemen',
   'Zambia', 'Zimbabwe',
 ];
+
+/** Country dropdown options — value is country name (stable; not tied to sparse legacy DB ids). */
+export const COUNTRY_SELECT_OPTIONS = ALL_COUNTRIES.map((name) => ({
+  id: name,
+  name,
+}));
