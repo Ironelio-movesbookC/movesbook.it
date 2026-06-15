@@ -17,7 +17,6 @@ import { formatSportLabel } from '@/lib/profileSports';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
 import ClubAdminInfoForm from '@/components/profile/ClubAdminInfoForm';
-import ClubReferencesDisplay from '@/components/club/ClubReferencesDisplay';
 
 const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), {
   ssr: false,
@@ -259,7 +258,7 @@ export default function UserProfile({
           telegramAccount: form.telegramAccount.trim() || null,
           youtubeChannelUrl: form.youtubeChannelUrl.trim() || null,
           mainSports: form.mainSports,
-          ...(embedded && embeddedVariant === 'admin-profile'
+          ...(profile && isClubAccountUserType(profile.userType)
             ? {
                 referencesHtml,
                 referencesLevel,
@@ -762,7 +761,7 @@ export default function UserProfile({
               />
               <p className="mt-1 text-xs text-gray-500">Select one or more sports from the list.</p>
             </div>
-            {isEmbeddedAdminProfile ? (
+            {isClubAdmin ? (
               <div className="md:col-span-2">
                 <div className="mb-2 border border-[#c9bd7a] bg-[#efe7b3] px-4 py-2 text-sm font-semibold text-gray-900">
                   References of the admin
@@ -820,14 +819,6 @@ export default function UserProfile({
               ) : null}
             </div>
           </form>
-
-          {!embedded && isClubAdmin ? (
-            <ClubReferencesDisplay
-              variant="admin"
-              referencesHtml={referencesHtml}
-              referencesLevel={referencesLevel}
-            />
-          ) : null}
         </section>
 
         {/* Admin info (club accounts only; my-club Contact Info tab uses ClubAdminInfoForm) */}

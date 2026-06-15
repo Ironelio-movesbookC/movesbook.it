@@ -191,7 +191,9 @@ export function navScopeToProfileSegment(scope: string): string {
 
 export function formatPcuDate(d: Date | null | undefined): string {
   if (!d || Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
 export function typeBadgeLabel(userType: UserType): string {
@@ -309,6 +311,10 @@ type DescribedEntity = {
   name: string;
   description: string | null;
   createdAt: Date;
+  location?: string | null;
+  sport?: string | null;
+  groupType?: string | null;
+  _count?: { members: number };
 };
 
 function sortEntitiesByCreatedAtAsc<T extends { createdAt: Date }>(items: T[]): T[] {

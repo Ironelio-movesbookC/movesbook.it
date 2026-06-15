@@ -1,10 +1,17 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { User, X } from 'lucide-react';
 import { COUNTRIES_WITH_CODES } from '@/lib/news/countries';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
+import {
+  membershipDateClassName,
+  membershipStatusToneFromLabel,
+} from '@/lib/admin/clubSubscriptionStatus';
+import { periodStatusFromDates } from '@/lib/admin/networkSubscriptionHistory';
+import { formatPcuIsoDate } from '@/components/admin/AdminPcuDatePicker';
 
 export interface ClubUserPanelData {
   modalTitle: string;
@@ -19,6 +26,7 @@ export interface ClubUserPanelData {
   sport: string;
   dateStart: string;
   dateEnd: string | null;
+  alreadyRenewed?: boolean;
   version: string;
   paid: number;
   adminImageUrl: string | null;
@@ -58,11 +66,24 @@ function countryCodeFromName(name: string): string {
   return COUNTRIES_WITH_CODES.find((c) => c.name === name.trim())?.id ?? '';
 }
 
-function PanelRow({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
+function PanelRow({
+  label,
+  value,
+  valueClassName,
+  suffix,
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+  suffix?: ReactNode;
+}) {
   return (
     <div className="grid grid-cols-[9rem_1fr] gap-2 py-1 text-sm">
       <span className="font-bold text-gray-900">{label}</span>
-      <span className={valueClassName ?? 'text-gray-900'}>{value || '—'}</span>
+      <span className={valueClassName ?? 'text-gray-900'}>
+        {value || '—'}
+        {suffix}
+      </span>
     </div>
   );
 }
@@ -95,6 +116,16 @@ export default function AdminClubUserPanelModal({
     data?.visitPagePath?.trim() ||
     (data?.officialName ? clubSearchResultsPath(data.officialName) : null);
   const websiteUrl = data?.websiteUrl?.trim() || null;
+  const membershipDateClass = data
+    ? membershipDateClassName(
+        membershipStatusToneFromLabel(
+          periodStatusFromDates({ dateStart: data.dateStart, dateEnd: data.dateEnd }),
+        ),
+      )
+    : undefined;
+  const alreadyRenewedSuffix = data?.alreadyRenewed ? (
+    <span className="text-green-600 font-semibold ml-2">(already renewed)</span>
+  ) : null;
 
   return (
     <div
@@ -196,8 +227,13 @@ export default function AdminClubUserPanelModal({
               <PanelRow label="Country:" value={data.country} />
               <PanelRow label="Address:" value={data.address} />
               <PanelRow label="Sport:" value={data.sport} />
-              <PanelRow label="Data Start:" value={data.dateStart} />
-              <PanelRow label="Data End:" value={data.dateEnd ?? '—'} />
+              <PanelRow label="Data Start:" value={formatPcuIsoDate(data.dateStart)} valueClassName={membershipDateClass} />
+              <PanelRow
+                label="Data End:"
+                value={formatPcuIsoDate(data.dateEnd) || '—'}
+                valueClassName={membershipDateClass}
+                suffix={alreadyRenewedSuffix}
+              />
               <PanelRow label="Version:" value={data.version} />
               <PanelRow
                 label="Paid:"

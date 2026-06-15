@@ -4,7 +4,6 @@ import {
   isSubscriptionPeriodDeleted,
   periodStatusFromDates,
   periodsForRow,
-  pickCurrentSubscriptionPeriod,
   readDeletedSubscriptionPeriods,
   readNetworkSubscriptionHistory,
   type NetworkSubscriptionPeriod,
@@ -100,9 +99,6 @@ export function buildProfileSubscriptionRows(
     pcuAccess ?? undefined,
   ).filter((p) => !isSubscriptionPeriodDeleted(p, deleted, rowKey));
 
-  const activePeriod = pickCurrentSubscriptionPeriod(periods, pcuAccess ?? undefined);
-  const activeId = activePeriod?.id ?? null;
-
   const defaults = {
     username: current.username,
     companyName: current.companyName,
@@ -111,8 +107,8 @@ export function buildProfileSubscriptionRows(
 
   return periods
     .map((period) => {
-      const isCurrent = activeId != null && period.id === activeId;
-      const resolved = isCurrent
+      const isLiveCurrent = period.id.startsWith('current-');
+      const resolved = isLiveCurrent
         ? {
             ...period,
             dateStart: current.dateStart,
@@ -122,7 +118,7 @@ export function buildProfileSubscriptionRows(
             companyName: current.companyName,
           }
         : period;
-      return periodToProfileRow(resolved, defaults, isCurrent);
+      return periodToProfileRow(resolved, defaults, isLiveCurrent);
     })
     .sort((a, b) => new Date(a.dateStart).getTime() - new Date(b.dateStart).getTime());
 }

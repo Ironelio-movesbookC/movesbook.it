@@ -3,7 +3,7 @@ import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
 import type { ClubProfilePickSource } from '@/lib/admin/pickClubForAdminProfile';
 import { clubSearchResultsPath } from '@/lib/searchresultsPaths';
 import { typeBadgeLabel } from '@/lib/admin/userPcuPanel';
-import { resolveMembershipDatesForEntity } from '@/lib/admin/networkSubscriptionHistory';
+import { resolvePcuDisplayMembershipDatesForEntity } from '@/lib/admin/networkSubscriptionHistory';
 import { getLogoUrlFromEntityDescription } from '@/lib/entity/entityLogo';
 
 const PLACEHOLDER_LOCATIONS = new Set([
@@ -47,6 +47,7 @@ export type ClubUserPanelPayload = {
   sport: string;
   dateStart: string;
   dateEnd: string | null;
+  alreadyRenewed: boolean;
   version: string;
   paid: number;
   adminImageUrl: string | null;
@@ -130,7 +131,7 @@ export function buildClubUserPanelFields(
   const clubCreatedAt = club.createdAt;
   const panelVersion =
     category && category !== 'Other' ? `Club ${category}` : versionLabel(user.userType);
-  const { dateStart, dateEnd } = resolveMembershipDatesForEntity({
+  const { dateStart, dateEnd, alreadyRenewed } = resolvePcuDisplayMembershipDatesForEntity({
     userId: user.id,
     entityId: club.id,
     adminSettingsRaw: opts.adminSettingsRaw,
@@ -157,6 +158,7 @@ export function buildClubUserPanelFields(
     sport,
     dateStart,
     dateEnd,
+    alreadyRenewed,
     version: panelVersion,
     paid: memberCount > 0 ? memberCount : opts.planCount,
     adminImageUrl: user.image?.trim() || null,
@@ -222,8 +224,8 @@ export function buildAdminUserPanelFields(
     panelVersion = 'User — base version';
   }
 
-  const { dateStart, dateEnd } = entity
-    ? resolveMembershipDatesForEntity({
+  const { dateStart, dateEnd, alreadyRenewed } = entity
+    ? resolvePcuDisplayMembershipDatesForEntity({
         userId: user.id,
         entityId: entity.id,
         adminSettingsRaw: opts.adminSettingsRaw,
@@ -233,7 +235,7 @@ export function buildAdminUserPanelFields(
         username: entityUsername,
         version: panelVersion,
       })
-    : resolveMembershipDatesForEntity({
+    : resolvePcuDisplayMembershipDatesForEntity({
         userId: user.id,
         entityId: null,
         adminSettingsRaw: opts.adminSettingsRaw,
@@ -262,6 +264,7 @@ export function buildAdminUserPanelFields(
     sport,
     dateStart,
     dateEnd,
+    alreadyRenewed,
     version: panelVersion,
     paid: memberCount > 0 ? memberCount : opts.planCount,
     adminImageUrl: user.image?.trim() || null,

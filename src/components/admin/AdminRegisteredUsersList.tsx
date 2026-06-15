@@ -365,6 +365,7 @@ export default function AdminRegisteredUsersList({
 
   const [profileState, setProfileState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [profileData, setProfileData] = useState<ProfilePayload | null>(null);
+  const [profileEntityId, setProfileEntityId] = useState<string | null>(null);
   const [profileError, setProfileError] = useState('');
   const [profileRowSelected, setProfileRowSelected] = useState<Set<string>>(new Set());
   const [profileSubFilterOpen, setProfileSubFilterOpen] = useState(false);
@@ -848,6 +849,7 @@ export default function AdminRegisteredUsersList({
   const closeUserProfile = useCallback(() => {
     setProfileState('idle');
     setProfileData(null);
+    setProfileEntityId(null);
     setProfileError('');
     setProfileRowSelected(new Set());
     setProfileSubFilterOpen(false);
@@ -942,6 +944,7 @@ export default function AdminRegisteredUsersList({
       setProfileState('loading');
       setProfileError('');
       setProfileData(null);
+      setProfileEntityId(clubId?.trim() || null);
       setProfileRowSelected(new Set());
       setProfileSubFilterOpen(false);
       setProfileSubFilterDraft(EMPTY_PROFILE_SUB_FILTERS);
@@ -1212,6 +1215,7 @@ export default function AdminRegisteredUsersList({
           sport: String(panel.sport ?? ''),
           dateStart: String(panel.dateStart ?? ''),
           dateEnd: panel.dateEnd != null && panel.dateEnd !== '' ? String(panel.dateEnd) : null,
+          alreadyRenewed: Boolean(panel.alreadyRenewed),
           version: String(panel.version ?? ''),
           paid: typeof panel.paid === 'number' ? panel.paid : parseInt(String(panel.paid ?? '0'), 10) || 0,
           adminImageUrl: panel.adminImageUrl != null ? String(panel.adminImageUrl) : null,
@@ -1392,6 +1396,13 @@ export default function AdminRegisteredUsersList({
               onProfileSubFilterOk={profileSubFilterOk}
               onProfileSubProceed={profileSubProceed}
               onClose={closeUserProfile}
+              userId={profileData.id}
+              profileEntityId={profileEntityId}
+              onPeriodDatesSaved={
+                profileData
+                  ? () => openUserProfile(profileData.id, profileEntityId)
+                  : undefined
+              }
             />
           )}
 

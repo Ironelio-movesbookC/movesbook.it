@@ -8,8 +8,9 @@ import { CalendarDays, CreditCard, Mail, User, X } from 'lucide-react';
 import { ALL_COUNTRIES } from '@/constants/countries.constants';
 import { COUNTRIES_WITH_CODES } from '@/lib/news/countries';
 import AdminPcuDatePicker, {
-  isoToMmDdYyyy,
-  mmDdYyyyToIso,
+  ddMmYyyyToIso,
+  formatPcuIsoDate,
+  isoToDdMmYyyy,
   parseIsoDate,
   toIsoDate,
 } from '@/components/admin/AdminPcuDatePicker';
@@ -70,6 +71,11 @@ import {
 } from '@/lib/admin/userPcuPanel';
 import { buildPcuHistoryUserUrl } from '@/lib/admin/pcuHistoryUserUrl';
 import type { PcuAccessSettings } from '@/lib/admin/userPcuAccessSettings';
+import { resolveProfileAccessDates, hasPendingMembershipRenewal } from '@/lib/admin/profileAccessDates';
+import NotYetActivePeriodEditControl, {
+  subscriptionPeriodDateClassName,
+} from '@/components/admin/NotYetActivePeriodEditControl';
+import ProfileReferencesReadOnly from '@/components/admin/ProfileReferencesReadOnly';
 import {
   normalizeFavouritePriority,
   type FavouritePriority,
@@ -173,7 +179,7 @@ function normalizeIsoDate(value: string | null | undefined): string {
   const raw = value?.trim() || '';
   if (!raw) return '';
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  return mmDdYyyyToIso(raw) || raw;
+  return ddMmYyyyToIso(raw) || raw;
 }
 
 function pcuSettingsEndpoint(userId: string, entityId?: string | null): string {
@@ -197,18 +203,13 @@ function resolvePcuAccessDates(
   subscriptionRows: SubscriptionRow[],
   initialPcuAccess?: PcuAccessSettings,
 ): { accessStart: string; accessEnd: string } {
-  const latestRow = [...subscriptionRows].sort((a, b) => {
-    const da = new Date(a.dateStart).getTime();
-    const db = new Date(b.dateStart).getTime();
-    return db - da;
-  })[0];
-  const activeRow =
-    subscriptionRows.find((row) => row.status?.toLowerCase() === 'active') ?? latestRow;
-  const defaultStart = activeRow?.dateStart || user.startDateIso || '';
-  const defaultEnd = activeRow?.dateEnd || user.endDateIso || '';
+  const resolved = resolveProfileAccessDates(subscriptionRows, initialPcuAccess, {
+    start: user.startDateIso,
+    end: user.endDateIso,
+  });
   return {
-    accessStart: normalizeIsoDate(initialPcuAccess?.accessStartIso?.trim() || defaultStart),
-    accessEnd: normalizeIsoDate(initialPcuAccess?.accessEndIso?.trim() || defaultEnd),
+    accessStart: normalizeIsoDate(resolved.accessStart),
+    accessEnd: normalizeIsoDate(resolved.accessEnd),
   };
 }
 
@@ -321,7 +322,6 @@ export default function UserPcuControlPanel({
   const [filterYear, setFilterYear] = useState<string>('2010');
   const [ordering, setOrdering] = useState<OrderingOption>('ordering');
   const [adminTab, setAdminTab] = useState<'operator' | 'blocks' | 'vip'>('operator');
-  const [adminLang, setAdminLang] = useState<PcuLangKey>('en');
   const [adminSaving, setAdminSaving] = useState(false);
   const [adminSaveError, setAdminSaveError] = useState('');
   const [adminSaveSuccess, setAdminSaveSuccess] = useState('');
@@ -379,25 +379,8 @@ export default function UserPcuControlPanel({
   const [vipReferencesHtmlByLang, setVipReferencesHtmlByLang] = useState<Record<string, string>>(() =>
     emptyHtmlByLang(),
   );
-  const vipReferencesEditor = useLangHtmlEditor(
-    adminLang,
-    setAdminLang,
-    vipReferencesHtmlByLang,
-    setVipReferencesHtmlByLang,
-  );
   const [vipPriorityLevel, setVipPriorityLevel] = useState('First');
   const [vipFavourite, setVipFavourite] = useState(false);
-  const [profileReferencesHtml, setProfileReferencesHtml] = useState(user.referencesHtml || '');
-  const [profileReferencesLevel, setProfileReferencesLevel] = useState(user.referencesLevel || '1');
-  const [clubReferencesHtml, setClubReferencesHtml] = useState(
-    () => user.entityProfile?.referencesHtml ?? '',
-  );
-  const [clubReferencesLevel, setClubReferencesLevel] = useState(
-    () => user.entityProfile?.referencesLevel ?? '1',
-  );
-  const [clubReferencesSaving, setClubReferencesSaving] = useState(false);
-  const [clubReferencesSaveError, setClubReferencesSaveError] = useState('');
-  const [clubReferencesSaveSuccess, setClubReferencesSaveSuccess] = useState('');
 
   // Admin's settings (single user / athlete) - VIP Settings selections
   const [vipEnabled, setVipEnabled] = useState(false);
@@ -445,7 +428,7 @@ export default function UserPcuControlPanel({
   const [newsCategoriesFollowed, setNewsCategoriesFollowed] = useState<Record<string, boolean>>(() =>
     createNewsCategoriesState(),
   );
-  const [vipDuration, setVipDuration] = useState(() => isoToMmDdYyyy(new Date().toISOString().slice(0, 10)));
+  const [vipDuration, setVipDuration] = useState(() => isoToDdMmYyyy(new Date().toISOString().slice(0, 10)));
   const [vipAllowVisitorsProfile, setVipAllowVisitorsProfile] = useState(true);
   const [vipAllowVisitorsBiography, setVipAllowVisitorsBiography] = useState(true);
   const [vipAllowVisitorsFriendship, setVipAllowVisitorsFriendship] = useState(true);
@@ -1490,12 +1473,6 @@ export default function UserPcuControlPanel({
     user.segment === 'single-user' || user.segment === 'clubs';
 
   useEffect(() => {
-    setProfileReferencesHtml(user.referencesHtml || '');
-    setProfileReferencesLevel(user.referencesLevel || '1');
-    setClubReferencesHtml(user.entityProfile?.referencesHtml ?? '');
-    setClubReferencesLevel(user.entityProfile?.referencesLevel ?? '1');
-    setClubReferencesSaveError('');
-    setClubReferencesSaveSuccess('');
     setAdminSaveError('');
     setAdminSaveSuccess('');
   }, [user.userId, user.referencesHtml, user.referencesLevel, user.entityProfile]);
@@ -1967,6 +1944,11 @@ export default function UserPcuControlPanel({
     }
   }, [user.segment]);
 
+  const alreadyRenewed = useMemo(
+    () => hasPendingMembershipRenewal(subscriptionRows),
+    [subscriptionRows],
+  );
+
   useEffect(() => {
     if (profilePanel) {
       setTagUser(Boolean(profilePanel.tagged));
@@ -2004,49 +1986,6 @@ export default function UserPcuControlPanel({
   }, [accessStart, accessEnd, suspendAccessControl, suspend]);
 
   const isFavourite = favouritePriority !== 'not_selected';
-
-  const saveClubReferences = useCallback(async () => {
-    const token = getAdminBearerToken();
-    if (!token) {
-      setClubReferencesSaveError('Admin session not found. Please log in again.');
-      return;
-    }
-    if (!user.entityId) {
-      setClubReferencesSaveError('No club selected for this user.');
-      return;
-    }
-
-    setClubReferencesSaving(true);
-    setClubReferencesSaveError('');
-    setClubReferencesSaveSuccess('');
-    try {
-      const res = await fetch(
-        `/api/admin/registered-users/${encodeURIComponent(user.userId)}/club-references`,
-        {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            clubId: user.entityId,
-            referencesHtml: clubReferencesHtml,
-            referencesLevel: clubReferencesLevel,
-          }),
-        },
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Failed to save club references');
-      setClubReferencesSaveSuccess('Saved');
-      window.setTimeout(() => setClubReferencesSaveSuccess(''), 2500);
-    } catch (e: unknown) {
-      setClubReferencesSaveError(
-        e instanceof Error ? e.message : 'Failed to save club references',
-      );
-    } finally {
-      setClubReferencesSaving(false);
-    }
-  }, [user.userId, user.entityId, clubReferencesHtml, clubReferencesLevel]);
 
   const saveProfilePanelSettings = useCallback(
     async (patch: { tagged?: boolean; favouritePriority?: FavouritePriority }) => {
@@ -2509,6 +2448,9 @@ export default function UserPcuControlPanel({
                   className="w-32 text-red-600"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
+                {alreadyRenewed ? (
+                  <span className="text-green-600 font-semibold">(already renewed)</span>
+                ) : null}
               </div>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input
@@ -2710,28 +2652,11 @@ export default function UserPcuControlPanel({
                             <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
                               References
                             </div>
-                            <div className="border border-gray-300 p-3 bg-white">
-                              <CKEditorComponent
-                                value={profileReferencesHtml}
-                                onChange={(html) => setProfileReferencesHtml(html)}
-                                minHeightPx={260}
-                                placeholder=""
-                              />
-                              <div className="mt-3 grid grid-cols-[120px_1fr] items-center gap-2">
-                                <label className="text-sm text-gray-700">References level</label>
-                                <select
-                                  value={profileReferencesLevel}
-                                  onChange={(e) => setProfileReferencesLevel(e.target.value)}
-                                  className="px-3 py-1.5 border border-gray-300 rounded bg-white text-sm w-24"
-                                >
-                                  {['1', '2', '3', '4', '5', '6'].map((n) => (
-                                    <option key={n} value={n}>
-                                      {n}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
+                            <ProfileReferencesReadOnly
+                              referencesHtml={user.referencesHtml}
+                              referencesLevel={user.referencesLevel}
+                              emptyMessage="No admin references have been added yet."
+                            />
                           </div>
                         </>
                       ) : profileSubTab === 'admin' ? (
@@ -2763,28 +2688,11 @@ export default function UserPcuControlPanel({
                             <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
                               References
                             </div>
-                            <div className="border border-gray-300 p-3 bg-white">
-                              <CKEditorComponent
-                                value={profileReferencesHtml}
-                                onChange={(html) => setProfileReferencesHtml(html)}
-                                minHeightPx={260}
-                                placeholder=""
-                              />
-                              <div className="mt-3 grid grid-cols-[120px_1fr] items-center gap-2">
-                                <label className="text-sm text-gray-700">References level</label>
-                                <select
-                                  value={profileReferencesLevel}
-                                  onChange={(e) => setProfileReferencesLevel(e.target.value)}
-                                  className="px-3 py-1.5 border border-gray-300 rounded bg-white text-sm w-24"
-                                >
-                                  {['1', '2', '3', '4', '5', '6'].map((n) => (
-                                    <option key={n} value={n}>
-                                      {n}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
+                            <ProfileReferencesReadOnly
+                              referencesHtml={user.referencesHtml}
+                              referencesLevel={user.referencesLevel}
+                              emptyMessage="No admin references have been added yet."
+                            />
                           </div>
                         </>
                       ) : profileSubTab === 'entity' && user.entityProfile ? (
@@ -2819,48 +2727,15 @@ export default function UserPcuControlPanel({
                                 ? 'References of the club'
                                 : `References of the ${user.roleTitle.toLowerCase()}`}
                             </div>
-                            <div className="border border-gray-300 p-3 bg-white">
-                              <CKEditorComponent
-                                value={clubReferencesHtml}
-                                onChange={(html) => setClubReferencesHtml(html)}
-                                minHeightPx={260}
-                                placeholder=""
-                              />
-                              <div className="mt-3 grid grid-cols-[120px_1fr] items-center gap-2">
-                                <label className="text-sm text-gray-700">References level</label>
-                                <select
-                                  value={clubReferencesLevel}
-                                  onChange={(e) => setClubReferencesLevel(e.target.value)}
-                                  className="px-3 py-1.5 border border-gray-300 rounded bg-white text-sm w-24"
-                                >
-                                  {['1', '2', '3', '4', '5', '6'].map((n) => (
-                                    <option key={n} value={n}>
-                                      {n}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() => void saveClubReferences()}
-                                  disabled={clubReferencesSaving}
-                                  className="px-8 py-2 bg-red-600 text-white text-sm font-semibold rounded disabled:opacity-50"
-                                >
-                                  {clubReferencesSaving ? 'Saving…' : 'Save'}
-                                </button>
-                              </div>
-                              {clubReferencesSaveError ? (
-                                <p className="mt-2 text-center text-sm text-red-600">
-                                  {clubReferencesSaveError}
-                                </p>
-                              ) : null}
-                              {clubReferencesSaveSuccess ? (
-                                <p className="mt-2 text-center text-sm text-green-700">
-                                  {clubReferencesSaveSuccess}
-                                </p>
-                              ) : null}
-                            </div>
+                            <ProfileReferencesReadOnly
+                              referencesHtml={user.entityProfile.referencesHtml}
+                              referencesLevel={user.entityProfile.referencesLevel}
+                              emptyMessage={
+                                user.segment === 'clubs'
+                                  ? 'No club references have been added yet.'
+                                  : `No ${user.roleTitle.toLowerCase()} references have been added yet.`
+                              }
+                            />
                           </div>
                         </>
                       ) : profileSubTab === 'entity' ? (
@@ -2895,28 +2770,11 @@ export default function UserPcuControlPanel({
                             <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
                               References
                             </div>
-                            <div className="border border-gray-300 p-3 bg-white">
-                              <CKEditorComponent
-                                value={profileReferencesHtml}
-                                onChange={(html) => setProfileReferencesHtml(html)}
-                                minHeightPx={260}
-                                placeholder=""
-                              />
-                              <div className="mt-3 grid grid-cols-[120px_1fr] items-center gap-2">
-                                <label className="text-sm text-gray-700">References level</label>
-                                <select
-                                  value={profileReferencesLevel}
-                                  onChange={(e) => setProfileReferencesLevel(e.target.value)}
-                                  className="px-3 py-1.5 border border-gray-300 rounded bg-white text-sm w-24"
-                                >
-                                  {['1', '2', '3', '4', '5', '6'].map((n) => (
-                                    <option key={n} value={n}>
-                                      {n}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
+                            <ProfileReferencesReadOnly
+                              referencesHtml={user.referencesHtml}
+                              referencesLevel={user.referencesLevel}
+                              emptyMessage="No references have been added yet."
+                            />
                           </div>
                         </>
                       )}
@@ -3209,11 +3067,23 @@ export default function UserPcuControlPanel({
                               <td className="px-2 py-2">{r.username || user.username}</td>
                               <td className="px-2 py-2">{user.roleTitle}</td>
                               <td className="px-2 py-2">{r.version}</td>
-                              <td className="px-2 py-2">{r.dateStart}</td>
-                              <td className="px-2 py-2">{r.dateEnd || '—'}</td>
+                              <td className={`px-2 py-2 whitespace-nowrap ${subscriptionPeriodDateClassName(r.status)}`}>
+                                {formatPcuIsoDate(r.dateStart)}
+                              </td>
+                              <td className={`px-2 py-2 whitespace-nowrap ${subscriptionPeriodDateClassName(r.status)}`}>
+                                {formatPcuIsoDate(r.dateEnd) || '—'}
+                              </td>
                               <td className="px-2 py-2">{String(user.logs ?? 0)}</td>
                               <td className="px-2 py-2">{r.e}</td>
-                              <td className="px-2 py-2">{r.status}</td>
+                              <td className="px-2 py-2">
+                                <NotYetActivePeriodEditControl
+                                  userId={user.userId}
+                                  entityId={user.entityId}
+                                  entityKind={user.entityKind}
+                                  row={r}
+                                  onSaved={onAccessDatesSaved}
+                                />
+                              </td>
                             </tr>
                           ))
                         ) : (
@@ -3715,8 +3585,8 @@ export default function UserPcuControlPanel({
                           <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-4 items-center mt-4">
                             <div className="text-sm text-gray-700">Duration</div>
                             <AdminPcuDatePicker
-                              value={mmDdYyyyToIso(vipDuration)}
-                              onChange={(iso) => setVipDuration(isoToMmDdYyyy(iso))}
+                              value={ddMmYyyyToIso(vipDuration)}
+                              onChange={(iso) => setVipDuration(isoToDdMmYyyy(iso))}
                             />
                           </div>
 
@@ -3847,63 +3717,68 @@ export default function UserPcuControlPanel({
 
                           <div className="mt-6">
                             <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
-                              References
+                              References of the admin
                             </div>
-                            <div className="border border-gray-300 p-3 bg-white">
-                              <div className="flex flex-wrap gap-3 text-sm mb-2">
-                                {LANG_KEYS.map((l) => (
-                                  <button
-                                    key={l}
-                                    type="button"
-                                    onClick={() => vipReferencesEditor.switchLang(l)}
-                                    className={`px-2 py-1 border ${adminLang === l ? 'border-red-600 text-red-700' : 'border-transparent'} `}
-                                  >
-                                    {l}
-                                  </button>
-                                ))}
-                              </div>
-                              <CKEditorComponent
-                                instanceId="vip-references-editor"
-                                localeKey={vipReferencesEditor.localeKey}
-                                registerGetData={vipReferencesEditor.registerGetData}
-                                value={vipReferencesEditor.editorValue}
-                                onChange={vipReferencesEditor.onEditorChange}
-                                minHeightPx={260}
-                                placeholder=""
-                              />
-                              <div className="mt-3 flex flex-wrap items-center gap-6 text-sm">
-                                <div className="flex items-center gap-2">
-                                  <span>Priority Level :</span>
-                                  <select
-                                    value={vipPriorityLevel}
-                                    onChange={(e) => setVipPriorityLevel(e.target.value)}
-                                    className="px-2 py-1 border border-gray-300 bg-white"
-                                  >
-                                    {['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth'].map((p) => (
-                                      <option key={p} value={p}>
-                                        {p}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                                <label className="inline-flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={vipFavourite}
-                                    onChange={(e) => setVipFavourite(e.target.checked)}
-                                  />
-                                  Favourite VIP
-                                </label>
-                              </div>
+                            <ProfileReferencesReadOnly
+                              referencesHtml={user.referencesHtml}
+                              referencesLevel={user.referencesLevel}
+                              emptyMessage="No admin references have been added yet."
+                            />
+                          </div>
 
-                              <AdminSettingsSaveBar
-                                saving={adminSaving}
-                                error={adminSaveError}
-                                success={adminSaveSuccess}
-                                onSave={() => void saveAdminSettings()}
-                                onCancel={resetAdminSettingsForm}
+                          {user.entityProfile ? (
+                            <div className="mt-6">
+                              <div className="bg-[#efe7b3] border border-[#c9bd7a] px-4 py-2 text-sm font-semibold">
+                                {user.segment === 'clubs'
+                                  ? 'References of the club'
+                                  : `References of the ${user.roleTitle.toLowerCase()}`}
+                              </div>
+                              <ProfileReferencesReadOnly
+                                referencesHtml={user.entityProfile.referencesHtml}
+                                referencesLevel={user.entityProfile.referencesLevel}
+                                emptyMessage={
+                                  user.segment === 'clubs'
+                                    ? 'No club references have been added yet.'
+                                    : `No ${user.roleTitle.toLowerCase()} references have been added yet.`
+                                }
                               />
                             </div>
+                          ) : null}
+
+                          <div className="mt-6 border border-gray-300 p-3 bg-white">
+                            <div className="text-sm font-semibold mb-3">VIP list settings</div>
+                            <div className="flex flex-wrap items-center gap-6 text-sm">
+                              <div className="flex items-center gap-2">
+                                <span>Priority Level :</span>
+                                <select
+                                  value={vipPriorityLevel}
+                                  onChange={(e) => setVipPriorityLevel(e.target.value)}
+                                  className="px-2 py-1 border border-gray-300 bg-white"
+                                >
+                                  {['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth'].map((p) => (
+                                    <option key={p} value={p}>
+                                      {p}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <label className="inline-flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={vipFavourite}
+                                  onChange={(e) => setVipFavourite(e.target.checked)}
+                                />
+                                Favourite VIP
+                              </label>
+                            </div>
+
+                            <AdminSettingsSaveBar
+                              saving={adminSaving}
+                              error={adminSaveError}
+                              success={adminSaveSuccess}
+                              onSave={() => void saveAdminSettings()}
+                              onCancel={resetAdminSettingsForm}
+                            />
                           </div>
                         </div>
                       </div>
@@ -3990,11 +3865,10 @@ export default function UserPcuControlPanel({
                         <label className="text-sm">
                           Date of expiration of the subscription to Movesbook and related licenses:
                         </label>
-                        <input
-                          type="date"
+                        <AdminPcuDatePicker
                           value={subscriptionExpiration}
-                          onChange={(e) => setSubscriptionExpiration(e.target.value)}
-                          className="px-2 py-1 border border-gray-300 w-40"
+                          onChange={setSubscriptionExpiration}
+                          className="w-40"
                         />
                       </div>
                       <div className="grid grid-cols-[260px_1fr] items-center gap-2">
@@ -4537,7 +4411,7 @@ export default function UserPcuControlPanel({
                           readOnly
                           value={
                             currentSubscriptionExpirationIso
-                              ? isoToMmDdYyyy(currentSubscriptionExpirationIso)
+                              ? isoToDdMmYyyy(currentSubscriptionExpirationIso)
                               : ''
                           }
                           placeholder="—"
@@ -5546,27 +5420,17 @@ export default function UserPcuControlPanel({
                   <div className="flex items-center justify-center gap-3 text-sm mb-6">
                     <span className="font-semibold">From</span>
                     <div className="flex items-center gap-2">
-                      <input
-                        type="date"
+                      <AdminPcuDatePicker
                         value={deletePostsFrom}
-                        onChange={(e) => setDeletePostsFrom(e.target.value)}
-                        className="px-3 py-2 border border-gray-300"
+                        onChange={setDeletePostsFrom}
                       />
-                      <span className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center">
-                        📅
-                      </span>
                     </div>
                     <span className="font-semibold">To</span>
                     <div className="flex items-center gap-2">
-                      <input
-                        type="date"
+                      <AdminPcuDatePicker
                         value={deletePostsTo}
-                        onChange={(e) => setDeletePostsTo(e.target.value)}
-                        className="px-3 py-2 border border-gray-300"
+                        onChange={setDeletePostsTo}
                       />
-                      <span className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center">
-                        📅
-                      </span>
                     </div>
                   </div>
 
@@ -5632,28 +5496,18 @@ export default function UserPcuControlPanel({
 
                       <div className="flex items-center gap-2">
                         <span>Enable From</span>
-                        <input
-                          type="date"
+                        <AdminPcuDatePicker
                           value={alertMsgEnableFrom}
-                          onChange={(e) => setAlertMsgEnableFrom(e.target.value)}
-                          className="px-2 py-1 border border-gray-300"
+                          onChange={setAlertMsgEnableFrom}
                         />
-                        <span className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center">
-                          📅
-                        </span>
                       </div>
 
                       <div className="flex items-center gap-2">
                         <span>To</span>
-                        <input
-                          type="date"
+                        <AdminPcuDatePicker
                           value={alertMsgEnableTo}
-                          onChange={(e) => setAlertMsgEnableTo(e.target.value)}
-                          className="px-2 py-1 border border-gray-300"
+                          onChange={setAlertMsgEnableTo}
                         />
-                        <span className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center">
-                          📅
-                        </span>
                       </div>
                     </div>
 

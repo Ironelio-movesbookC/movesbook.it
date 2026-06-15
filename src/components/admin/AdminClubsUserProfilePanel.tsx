@@ -14,7 +14,10 @@ import {
   X,
 } from 'lucide-react';
 import { flagEmojiFromCountryName, countryCodeFromName } from '@/lib/admin/countryFlag';
-import { membershipStatusLabelClassName } from '@/lib/admin/clubSubscriptionStatus';
+import NotYetActivePeriodEditControl, {
+  subscriptionPeriodDateClassName,
+} from '@/components/admin/NotYetActivePeriodEditControl';
+import AdminPcuDatePicker, { formatPcuIsoDate } from '@/components/admin/AdminPcuDatePicker';
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
 
@@ -92,6 +95,9 @@ interface AdminClubsUserProfilePanelProps {
   onProfileSubFilterOk: () => void;
   onProfileSubProceed: () => void;
   onClose: () => void;
+  userId: string;
+  profileEntityId?: string | null;
+  onPeriodDatesSaved?: () => void | Promise<void>;
 }
 
 function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -121,6 +127,9 @@ export default function AdminClubsUserProfilePanel({
   onProfileSubFilterOk,
   onProfileSubProceed,
   onClose,
+  userId,
+  profileEntityId,
+  onPeriodDatesSaved,
 }: AdminClubsUserProfilePanelProps) {
   const countryCode = countryCodeFromName(profileData.country);
   const resolvedAccessDates = useMemo(
@@ -219,24 +228,25 @@ export default function AdminClubsUserProfilePanel({
               </button>
               <div className="flex items-center gap-2 text-sm">
                 <span>Start</span>
-                <input
-                  type="date"
+                <AdminPcuDatePicker
                   value={accessStart}
-                  onChange={(e) => setAccessStart(e.target.value)}
-                  className="px-2 py-1 border border-gray-400 bg-white w-32"
+                  onChange={setAccessStart}
+                  className="w-32"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
                 <CreditCard className="w-5 h-5 text-gray-600" />
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <span>End</span>
-                <input
-                  type="date"
+                <AdminPcuDatePicker
                   value={accessEnd}
-                  onChange={(e) => setAccessEnd(e.target.value)}
-                  className="px-2 py-1 border border-gray-400 bg-white w-32"
+                  onChange={setAccessEnd}
+                  className="w-32"
                 />
                 <CalendarDays className="w-5 h-5 text-gray-600" />
+                {resolvedAccessDates.alreadyRenewed ? (
+                  <span className="text-green-600 font-semibold">(already renewed)</span>
+                ) : null}
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <Square className="w-4 h-4 text-gray-600" />
@@ -323,23 +333,21 @@ export default function AdminClubsUserProfilePanel({
                       </select>
                     </FilterRow>
                     <FilterRow label="From">
-                      <input
-                        type="date"
+                      <AdminPcuDatePicker
                         value={profileSubFilterDraft.dateFrom}
-                        onChange={(e) =>
-                          setProfileSubFilterDraft((f) => ({ ...f, dateFrom: e.target.value }))
+                        onChange={(iso) =>
+                          setProfileSubFilterDraft((f) => ({ ...f, dateFrom: iso }))
                         }
-                        className="w-full max-w-[220px] border border-gray-500 bg-white px-2 py-1.5 text-sm ml-auto"
+                        className="ml-auto"
                       />
                     </FilterRow>
                     <FilterRow label="To">
-                      <input
-                        type="date"
+                      <AdminPcuDatePicker
                         value={profileSubFilterDraft.dateTo}
-                        onChange={(e) =>
-                          setProfileSubFilterDraft((f) => ({ ...f, dateTo: e.target.value }))
+                        onChange={(iso) =>
+                          setProfileSubFilterDraft((f) => ({ ...f, dateTo: iso }))
                         }
-                        className="w-full max-w-[220px] border border-gray-500 bg-white px-2 py-1.5 text-sm ml-auto"
+                        className="ml-auto"
                       />
                     </FilterRow>
                   </div>
@@ -466,16 +474,23 @@ export default function AdminClubsUserProfilePanel({
                         {flagEmojiFromCountryName(profileData.country) || '—'}
                       </td>
                       <td className="px-3 py-2 border-t border-gray-300">{profileData.location || '—'}</td>
-                      <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{row.dateStart}</td>
-                      <td className="px-3 py-2 border-t border-gray-300 whitespace-nowrap">{row.dateEnd ?? '—'}</td>
+                      <td className={`px-3 py-2 border-t border-gray-300 whitespace-nowrap ${subscriptionPeriodDateClassName(row.status)}`}>
+                        {formatPcuIsoDate(row.dateStart)}
+                      </td>
+                      <td className={`px-3 py-2 border-t border-gray-300 whitespace-nowrap ${subscriptionPeriodDateClassName(row.status)}`}>
+                        {formatPcuIsoDate(row.dateEnd) || '—'}
+                      </td>
                       <td className="px-3 py-2 border-t border-gray-300">{row.version}</td>
                       <td className="px-3 py-2 border-t border-gray-300">{row.companyName || '—'}</td>
                       <td className="px-3 py-2 border-t border-gray-300 font-medium">{row.username}</td>
                       <td className="px-2 py-2 border-t border-gray-300 text-gray-700">{row.e}</td>
                       <td className="px-3 py-2 border-t border-gray-300">
-                        <span className={membershipStatusLabelClassName(row.status)}>
-                          {row.status}
-                        </span>
+                        <NotYetActivePeriodEditControl
+                          userId={userId}
+                          entityId={profileEntityId}
+                          row={row}
+                          onSaved={onPeriodDatesSaved}
+                        />
                       </td>
                     </tr>
                   ))

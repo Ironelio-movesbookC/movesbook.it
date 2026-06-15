@@ -11,6 +11,7 @@ import {
   normalizePcuAlertDateToInput,
   parseAlertMessagePreview,
 } from '@/lib/admin/userPcuAlertMsg';
+import AdminPcuDatePicker from '@/components/admin/AdminPcuDatePicker';
 
 const isDataUrl = (src?: string | null) => typeof src === 'string' && src.startsWith('data:image/');
 
@@ -212,33 +213,11 @@ export default function AdminPcuUserOverview({
             <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-gray-800">Enable From</span>
-                <input
-                  type="date"
-                  readOnly
-                  value={enableFromValue}
-                  className="px-2 py-1 border border-gray-400 bg-white text-sm w-[9.5rem]"
-                />
-                <span
-                  className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center text-base"
-                  aria-hidden
-                >
-                  📅
-                </span>
+                <AdminPcuDatePicker value={enableFromValue} onChange={() => {}} disabled />
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-800">To</span>
-                <input
-                  type="date"
-                  readOnly
-                  value={enableToValue}
-                  className="px-2 py-1 border border-gray-400 bg-white text-sm w-[9.5rem]"
-                />
-                <span
-                  className="w-7 h-7 border border-gray-300 rounded bg-gray-100 inline-flex items-center justify-center text-base"
-                  aria-hidden
-                >
-                  📅
-                </span>
+                <AdminPcuDatePicker value={enableToValue} onChange={() => {}} disabled />
               </div>
               <div className="ml-auto text-sm text-gray-800">Read on 13th November 2025</div>
             </div>

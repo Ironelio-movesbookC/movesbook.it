@@ -5,8 +5,10 @@ import {
 } from '@/lib/admin/clubSubscriptionStatus';
 import {
   applyMembershipRenewalToAdminSettings,
+  appendMembershipPeriodToHistory,
   computeRenewalEndDate,
   computeRenewalStartDate,
+  isNotYetActiveMembershipPeriod,
   shouldSyncPcuAccessOnRenewal,
   type MembershipRenewalInput,
 } from '@/lib/admin/networkSubscriptionHistory';
@@ -153,6 +155,10 @@ export async function renewMembershipForTarget(
 
   const nextStart = computeRenewalStartDate(previousEnd);
   const nextEnd = computeRenewalEndDate(nextStart);
+  const nextIsNotYetActive = isNotYetActiveMembershipPeriod({
+    dateStart: nextStart,
+    dateEnd: nextEnd,
+  });
 
   let nextAdminSettings = applyMembershipRenewalToAdminSettings(
     adminSettingsRaw,
@@ -160,6 +166,18 @@ export async function renewMembershipForTarget(
     nextStart,
     nextEnd,
   );
+
+  if (nextIsNotYetActive && (target.entityKind === 'account' || target.entityId === user.id)) {
+    nextAdminSettings = appendMembershipPeriodToHistory(nextAdminSettings, {
+      id: `pending-${Date.now()}`,
+      dateStart: nextStart,
+      dateEnd: nextEnd,
+      version: previous.version,
+      entityId: previousMeta.entityId ?? null,
+      companyName: previousMeta.companyName,
+      username: previousMeta.username,
+    });
+  }
 
   const pcuDefaults = {
     accessStartIso: previousStart,
@@ -169,6 +187,7 @@ export async function renewMembershipForTarget(
   const primaryEntityId = pickPrimaryMembershipEntityId(user);
 
   if (
+    !nextIsNotYetActive &&
     shouldSyncPcuAccessOnRenewal(
       target.entityKind === 'account' ? null : target.entityId,
       primaryEntityId,
