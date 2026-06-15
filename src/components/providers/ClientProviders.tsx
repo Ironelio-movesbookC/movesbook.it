@@ -1,3 +1,5 @@
+'use client';
+
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';

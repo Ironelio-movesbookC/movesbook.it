@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma, prismaConnect, resetPrismaClient } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { resolveWorkoutDatabaseUserId } from '@/lib/workoutUserId';
+import { ensureUserSettingsColumns } from '@/lib/userSettingsDb';
 import { YOUTUBE_CHANNEL_URL_KEY } from '@/utils/youtubeChannelUrl';
 
 function isPrismaEngineTransportError(error: unknown): boolean {
@@ -134,6 +135,7 @@ export async function GET(request: NextRequest) {
     }
 
     await prismaConnect();
+    await ensureUserSettingsColumns();
 
     const dbUserId = await resolveWorkoutDatabaseUserId(userId);
     if (!dbUserId) {
@@ -312,6 +314,7 @@ export async function POST(request: NextRequest) {
     }
 
     await prismaConnect();
+    await ensureUserSettingsColumns();
 
     const dbUserId = await resolveWorkoutDatabaseUserId(userId);
     if (!dbUserId) {
@@ -466,6 +469,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     await prismaConnect();
+    await ensureUserSettingsColumns();
 
     const dbUserId = await resolveWorkoutDatabaseUserId(userId);
     if (!dbUserId) {
