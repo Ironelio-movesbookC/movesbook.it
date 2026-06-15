@@ -2,24 +2,11 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import Script from 'next/script';
-
-type CkeInstance = {
-  getData: () => string;
-  setData: (data: string, options?: { internal?: boolean }) => void;
-  on: (event: string, callback: () => void) => void;
-  destroy: (noUpdate?: boolean) => void;
-};
-
-declare global {
-  interface Window {
-    CKEDITOR?: {
-      replace: (element: string | HTMLElement, config?: Record<string, unknown>) => CkeInstance;
-      instances: Record<string, CkeInstance>;
-      replaceClass?: string;
-    };
-    RootURL?: string;
-  }
-}
+import {
+  destroyCke4Instance,
+  getCke4Window,
+  type Cke4Instance,
+} from '@/lib/ckeditor4Legacy';
 
 type PromocodeInviteCKEditor4Props = {
   id?: string;
@@ -27,17 +14,6 @@ type PromocodeInviteCKEditor4Props = {
   onChange: (html: string) => void;
   minHeightPx?: number;
 };
-
-function destroyCkeInstance(editorId: string): void {
-  const CKEDITOR = window.CKEDITOR;
-  if (!CKEDITOR?.instances[editorId]) return;
-  try {
-    CKEDITOR.instances[editorId].destroy(true);
-  } catch {
-    /* already torn down */
-  }
-  delete CKEDITOR.instances[editorId];
-}
 
 /** Legacy CKEditor 4 — matches PHP send-invite popup (manual init, not auto-replace). */
 export default function PromocodeInviteCKEditor4({
@@ -49,24 +25,27 @@ export default function PromocodeInviteCKEditor4({
   const reactId = useId().replace(/:/g, '');
   const editorId = id?.trim() || `promocode_invite_editor_${reactId}`;
   const [scriptReady, setScriptReady] = useState(
-    () => typeof window !== 'undefined' && !!window.CKEDITOR
+    () => typeof window !== 'undefined' && !!getCke4Window().CKEDITOR
   );
   const onChangeRef = useRef(onChange);
   const valueRef = useRef(value);
   const suppressChangeRef = useRef(false);
-  const editorRef = useRef<CkeInstance | null>(null);
+  const editorRef = useRef<Cke4Instance | null>(null);
   onChangeRef.current = onChange;
   valueRef.current = value;
 
   useEffect(() => {
-    if (!scriptReady || typeof window === 'undefined' || !window.CKEDITOR) return;
+    if (!scriptReady || typeof window === 'undefined') return;
+
+    const CKEDITOR = getCke4Window().CKEDITOR;
+    if (!CKEDITOR) return;
 
     const element = document.getElementById(editorId);
     if (!element) return;
 
-    destroyCkeInstance(editorId);
+    destroyCke4Instance(editorId);
 
-    const editor = window.CKEDITOR.replace(editorId, {
+    const editor = CKEDITOR.replace(editorId, {
       height: minHeightPx,
       allowedContent: true,
     });
@@ -85,14 +64,14 @@ export default function PromocodeInviteCKEditor4({
 
     return () => {
       editorRef.current = null;
-      destroyCkeInstance(editorId);
+      destroyCke4Instance(editorId);
     };
   }, [editorId, minHeightPx, scriptReady]);
 
   useEffect(() => {
     const editor =
       editorRef.current ??
-      (typeof window !== 'undefined' ? window.CKEDITOR?.instances[editorId] : undefined);
+      (typeof window !== 'undefined' ? getCke4Window().CKEDITOR?.instances[editorId] : undefined);
     if (!editor) return;
     const next = value || '';
     if (editor.getData() !== next) {
@@ -108,11 +87,12 @@ export default function PromocodeInviteCKEditor4({
         src="/js/ckeditor/ckeditor.js"
         strategy="afterInteractive"
         onLoad={() => {
-          window.RootURL = '/';
-          if (window.CKEDITOR) {
+          const win = getCke4Window();
+          win.RootURL = '/';
+          if (win.CKEDITOR) {
             // CKEditor auto-replaces textareas with class "ckeditor" on domReady.
             // We initialize manually to avoid editor-element-conflict.
-            window.CKEDITOR.replaceClass = '';
+            win.CKEDITOR.replaceClass = '';
           }
           setScriptReady(true);
         }}

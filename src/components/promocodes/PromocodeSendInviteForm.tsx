@@ -6,16 +6,9 @@ import { promocodesFetch, usePromocodesAdminAuth } from '@/components/promocodes
 import { usePromocodeDialogs } from '@/components/promocodes/usePromocodeDialogs';
 import PromocodeInviteCKEditor4 from '@/components/promocodes/PromocodeInviteCKEditor4';
 import { notifyPromocodeInviteSentOpener } from '@/lib/promocodes/promocodeInviteEvents';
+import { getCke4Window } from '@/lib/ckeditor4Legacy';
 import type { SendInvitePreview } from '@/lib/promocodes/sendInviteService';
 import './send-invite.css';
-
-declare global {
-  interface Window {
-    CKEDITOR?: {
-      instances: Record<string, { getData: () => string }>;
-    };
-  }
-}
 
 export default function PromocodeSendInviteForm() {
   const ready = usePromocodesAdminAuth();
@@ -65,8 +58,8 @@ export default function PromocodeSendInviteForm() {
     setSending(true);
     try {
       const latestHtml =
-        typeof window !== 'undefined' && window.CKEDITOR?.instances.email_content
-          ? window.CKEDITOR.instances.email_content.getData()
+        typeof window !== 'undefined' && getCke4Window().CKEDITOR?.instances.email_content
+          ? getCke4Window().CKEDITOR!.instances.email_content.getData()
           : emailContent;
 
       const res = await promocodesFetch('/api/admin/promocodes/send-invite', {
