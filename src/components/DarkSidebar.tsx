@@ -258,14 +258,15 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
   ],
   [
     { kind: 'icon', Icon: ShoppingCart, label: 'Shop/Selling of products', path: '/ArchiveSeles/product_sale_list' },
-    { kind: 'icon', Icon: ShoppingBasket, label: 'Services for the customers', path: '' },
+    { kind: 'icon', Icon: ShoppingBasket, label: 'Services for the customers', path: '/clubs/new_moment_cash' },
+    { kind: 'icon', Icon: FileText, label: 'Archive of Services', path: '/clubs/archive_service_list' },
   ],
   [
     { kind: 'icon', Icon: CornerDownLeft, label: 'Cash In', path: '/clubs/movement_cash_details/IN' },
     { kind: 'icon', Icon: CornerDownRight, label: 'Cash Out', path: '/clubs/movement_cash_details/OUT' },
     { kind: 'icon', Icon: Repeat2, label: 'Cash (all movements)', path: '/clubs/movement_cash_details' },
   ],
-  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubMembers/movement_cash' }],
+  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubs/service_receipts' }],
   [
     { kind: 'icon', Icon: FileStack, label: 'Cards assignments', path: '' },
     { kind: 'icon', Icon: FileWarning, label: 'Alert assigned', path: '' },
