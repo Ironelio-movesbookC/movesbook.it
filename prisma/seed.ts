@@ -3,6 +3,10 @@ import bcrypt from 'bcryptjs';
 import { serializeMultiLanguageContent } from '../src/lib/news/contentParser';
 import { INFO_REPS_DEFAULT_EN, INFO_REPS_TRANSLATION_KEY } from '../src/constants/infoRepsLongText';
 import { AUTO_PROCESS_INFO_DEFAULT_EN, AUTO_PROCESS_INFO_TRANSLATION_KEY } from '../src/constants/autoProcessInfoLongText';
+import {
+  IDENTIFICATION_DEVICES_INFO_DEFAULT_EN,
+  IDENTIFICATION_DEVICES_INFO_TRANSLATION_KEY
+} from '../src/constants/identificationDevicesInfoLongText';
 
 const prisma = new PrismaClient() as any;
 
@@ -416,6 +420,13 @@ async function seedTranslations() {
       category: 'social',
       values: {
         en: AUTO_PROCESS_INFO_DEFAULT_EN,
+      },
+    },
+    {
+      key: IDENTIFICATION_DEVICES_INFO_TRANSLATION_KEY,
+      category: 'management',
+      values: {
+        en: IDENTIFICATION_DEVICES_INFO_DEFAULT_EN,
       },
     },
   ];
