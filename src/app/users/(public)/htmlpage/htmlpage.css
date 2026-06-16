@@ -1,0 +1,192 @@
+.htmlpage-shell {
+  min-height: 100vh;
+  background: #f4f4f4;
+  color: #333;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.htmlpage-header {
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.htmlpage-logo img {
+  height: 56px;
+  width: auto;
+}
+
+.htmlpage-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.htmlpage-btn {
+  display: inline-block;
+  border: 1px solid #a56d6d;
+  background: #c0392b;
+  color: #fff;
+  padding: 6px 16px;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.htmlpage-main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px 16px 40px;
+}
+
+.htmlpage-wrap {
+  background: #fff;
+  border: 1px solid #ddd;
+  padding: 20px;
+}
+
+.htmlpage-content,
+.htmlpage-content * {
+  text-align: left !important;
+  word-break: break-word;
+  word-wrap: break-word;
+}
+
+.htmlpage-content {
+  line-height: 1.45;
+}
+
+.htmlpage-content img {
+  max-width: 100%;
+  height: auto;
+}
+
+.htmlpage-empty {
+  text-align: center;
+  color: #c0392b;
+  padding: 24px;
+}
+
+.sp-line {
+  border-top: 1px solid #ddd;
+  margin: 16px 0;
+}
+
+.mtop10 {
+  margin-top: 10px;
+}
+
+.mtop5 {
+  margin-top: 5px;
+}
+
+.select-version table td {
+  vertical-align: top;
+  padding-right: 16px;
+}
+
+.htmlpage-related-list {
+  height: 150px;
+  width: 100%;
+  max-width: 800px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  background: #fafafa;
+  padding: 8px;
+}
+
+.htmlpage-related-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.htmlpage-related-link {
+  color: #000;
+  font-size: 16px;
+  text-decoration: none;
+}
+
+.htmlpage-related-link:hover {
+  text-decoration: underline;
+}
+
+.htmlpage-related-date {
+  white-space: nowrap;
+  font-size: 13px;
+  color: #666;
+}
+
+.htmlpage-muted {
+  color: #777;
+  font-size: 14px;
+}
+
+.htmlpage-get-col {
+  width: 220px;
+}
+
+.getmovesbook {
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.btn-light-gray {
+  display: inline-block;
+  background: #ddd;
+  color: #333;
+  padding: 8px 14px;
+  text-decoration: none;
+  border: 1px solid #bbb;
+}
+
+.opp-comment {
+  margin-top: 20px;
+  border-top: 1px solid #ddd;
+  padding-top: 12px;
+}
+
+.opp-comment-toprow {
+  margin-bottom: 12px;
+}
+
+.opp-comment-title-top {
+  float: left;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.opp-follow-us {
+  float: right;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.htmlpage-lang-select select {
+  border: 1px solid #ccc;
+  padding: 4px 8px;
+  background: #fff;
+}
+
+.opp-load-more {
+  margin-top: 10px;
+}
+
+.opp-load-more a {
+  color: #c0392b;
+}
+
+.clear {
+  clear: both;
+}

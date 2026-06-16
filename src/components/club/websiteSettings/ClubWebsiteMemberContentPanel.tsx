@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import type { ClubWebsiteLanguageCode } from '@/lib/clubWebsiteLanguages';
 import { CLUB_WEBSITE_LANGUAGE_TABS } from '@/lib/clubWebsiteLanguages';
@@ -13,6 +13,11 @@ import {
   type ClubWebsiteTopic,
 } from '@/lib/clubWebsiteTopics';
 import {
+  resolveMemberDisplayEmbed,
+  topicHasEmbedUrl,
+  topicHasHtmlContent,
+} from '@/lib/clubWebsiteDisplayContent';
+import {
   MOVEBOOK_TOPIC_ROWS,
   SOCIAL_SITE_ROWS,
 } from '@/components/club/websiteSettings/clubWebsiteSettingsSidebarData';
@@ -22,6 +27,55 @@ const PLACEHOLDER_IDS = new Set([
   ...SOCIAL_SITE_ROWS.map((r) => r.id),
 ]);
 
+function ContentShell({
+  children,
+  showExampleNote,
+}: {
+  children: ReactNode;
+  showExampleNote?: boolean;
+}) {
+  const { t } = useLanguage();
+
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {children}
+      {showExampleNote ? (
+        <div
+          className="pointer-events-none absolute bottom-4 left-1/2 z-10 max-w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 rounded-full bg-zinc-600/90 px-5 py-2 text-center text-xs text-white shadow-lg sm:text-sm"
+          role="note"
+        >
+          {t('club_website_display_example_note')}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SiteEmbedFrame({
+  url,
+  title,
+  showTitleBar = false,
+}: {
+  url: string;
+  title: string;
+  showTitleBar?: boolean;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-white">
+      {showTitleBar && title.trim() ? (
+        <div className="shrink-0 border-b border-zinc-300 bg-[#5b9bd5] px-4 py-2.5 text-sm font-semibold text-white">
+          {title}
+        </div>
+      ) : null}
+      <iframe
+        title={title.trim() || 'Club website preview'}
+        src={url}
+        className="min-h-0 flex-1 w-full border-0 bg-white"
+      />
+    </div>
+  );
+}
+
 export default function ClubWebsiteMemberContentPanel({
   selectedTopicId,
   selectedTopicLabel,
@@ -29,6 +83,8 @@ export default function ClubWebsiteMemberContentPanel({
   customTopics,
   clubDisplayName,
   lang = 'en',
+  displayMode = false,
+  showExampleNote = false,
 }: {
   selectedTopicId: string;
   selectedTopicLabel: string;
@@ -36,6 +92,8 @@ export default function ClubWebsiteMemberContentPanel({
   customTopics: ClubWebsiteTopic[];
   clubDisplayName: string;
   lang?: ClubWebsiteLanguageCode;
+  displayMode?: boolean;
+  showExampleNote?: boolean;
 }) {
   const { t } = useLanguage();
 
@@ -59,56 +117,113 @@ export default function ClubWebsiteMemberContentPanel({
 
   const activeLang = CLUB_WEBSITE_LANGUAGE_TABS.some((l) => l.code === lang) ? lang : 'en';
 
+  const displayEmbed = useMemo(() => {
+    if (!displayMode) return null;
+    return resolveMemberDisplayEmbed(friendItems, customTopics, selectedTopicId, activeLang);
+  }, [displayMode, friendItems, customTopics, selectedTopicId, activeLang]);
+
+  const showEmbedNote = showExampleNote && displayMode;
+
+  if (displayMode && displayEmbed) {
+    const selected = friendItem ?? customTopic;
+    const selectedHasHtml = selected ? topicHasHtmlContent(selected, activeLang) : false;
+    if (!selectedHasHtml) {
+      return (
+        <ContentShell showExampleNote={showEmbedNote}>
+          <SiteEmbedFrame url={displayEmbed.url} title={displayEmbed.title} />
+        </ContentShell>
+      );
+    }
+  }
+
   if (selectedTopicId === 'bacheca') {
+    if (displayMode && displayEmbed) {
+      return (
+        <ContentShell showExampleNote={showEmbedNote}>
+          <SiteEmbedFrame url={displayEmbed.url} title={displayEmbed.title} />
+        </ContentShell>
+      );
+    }
     return (
-      <div className="flex min-h-[480px] flex-1 flex-col bg-[#ececec]">
-        <div className="border-b border-[#3d6d9e] bg-[#5b9bd5] px-4 py-3">
-          <h2 className="text-sm font-semibold text-white">{t('club_website_bacheca')}</h2>
+      <ContentShell showExampleNote={showExampleNote}>
+        <div className="flex min-h-0 flex-1 flex-col bg-[#ececec]">
+          <div className="border-b border-[#3d6d9e] bg-[#5b9bd5] px-4 py-3">
+            <h2 className="text-sm font-semibold text-white">{t('club_website_bacheca')}</h2>
+          </div>
+          <div className="flex flex-1 items-center justify-center p-8">
+            <p className="max-w-md text-center text-sm text-zinc-600">
+              {t('club_website_display_bacheca_hint')}
+            </p>
+          </div>
         </div>
-        <div className="flex flex-1 items-center justify-center p-8">
-          <p className="max-w-md text-center text-sm text-zinc-600">
-            {t('club_website_display_bacheca_hint')}
-          </p>
-        </div>
-      </div>
+      </ContentShell>
     );
   }
 
   if (friendItem) {
     return (
-      <FriendItemContent
-        item={friendItem}
-        clubDisplayName={clubDisplayName}
-        lang={activeLang}
-      />
+      <ContentShell showExampleNote={showExampleNote}>
+        <FriendItemContent
+          item={friendItem}
+          clubDisplayName={clubDisplayName}
+          lang={activeLang}
+          displayMode={displayMode}
+        />
+      </ContentShell>
     );
   }
 
   if (customTopic) {
     return (
-      <TopicContent topic={customTopic} clubDisplayName={clubDisplayName} lang={activeLang} />
+      <ContentShell showExampleNote={showExampleNote}>
+        <TopicContent
+          topic={customTopic}
+          clubDisplayName={clubDisplayName}
+          lang={activeLang}
+          displayMode={displayMode}
+        />
+      </ContentShell>
     );
   }
 
   if (PLACEHOLDER_IDS.has(selectedTopicId)) {
+    if (displayMode && displayEmbed) {
+      return (
+        <ContentShell showExampleNote={showEmbedNote}>
+          <SiteEmbedFrame url={displayEmbed.url} title={displayEmbed.title} />
+        </ContentShell>
+      );
+    }
     return (
-      <div className="flex min-h-[480px] flex-1 flex-col bg-[#ececec]">
-        <div className="border-b border-[#3d6d9e] bg-[#5b9bd5] px-4 py-3">
-          <h2 className="text-sm font-semibold text-white">
-            {selectedTopicLabel || selectedTopicId}
-          </h2>
+      <ContentShell showExampleNote={showExampleNote}>
+        <div className="flex min-h-0 flex-1 flex-col bg-[#ececec]">
+          <div className="border-b border-[#3d6d9e] bg-[#5b9bd5] px-4 py-3">
+            <h2 className="text-sm font-semibold text-white">
+              {selectedTopicLabel || selectedTopicId}
+            </h2>
+          </div>
+          <div className="flex flex-1 items-center justify-center p-8">
+            <p className="text-sm text-zinc-500">{t('club_website_display_no_topics')}</p>
+          </div>
         </div>
-        <div className="flex flex-1 items-center justify-center p-8">
-          <p className="text-sm text-zinc-500">{t('club_website_display_no_topics')}</p>
-        </div>
-      </div>
+      </ContentShell>
+    );
+  }
+
+  if (displayMode && displayEmbed) {
+    return (
+      <ContentShell showExampleNote={showEmbedNote}>
+        <SiteEmbedFrame url={displayEmbed.url} title={displayEmbed.title} />
+      </ContentShell>
     );
   }
 
   return (
-    <div className="flex min-h-[480px] flex-1 items-center justify-center bg-[#ececec] p-8">
-      <p className="text-sm text-zinc-500">{t('club_website_display_no_topics')}</p>
-    </div>
+    <ContentShell showExampleNote={showExampleNote}>
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-[#ececec] p-8">
+        <p className="text-sm text-zinc-500">{t('club_website_display_no_topics')}</p>
+      </div>
+    </ContentShell>
   );
 }
 
@@ -116,30 +231,16 @@ function FriendItemContent({
   item,
   clubDisplayName,
   lang,
+  displayMode = false,
 }: {
   item: ClubWebsiteFriendItem;
   clubDisplayName: string;
   lang: ClubWebsiteLanguageCode;
+  displayMode?: boolean;
 }) {
-  const { t } = useLanguage();
-
-  if (item.contentDisplayMode === 'link' && item.externalUrl.trim()) {
-    if (item.openInSamePage) {
-      return (
-        <div className="flex min-h-[480px] flex-1 flex-col bg-white">
-          <div
-            className="shrink-0 px-4 py-2.5 text-sm font-semibold"
-            style={{ backgroundColor: item.bannerColor, color: item.titleColor }}
-          >
-            {item.title}
-          </div>
-          <iframe
-            title={item.title}
-            src={item.externalUrl}
-            className="min-h-0 flex-1 w-full border-0 bg-white"
-          />
-        </div>
-      );
+  if (topicHasEmbedUrl(item)) {
+    if (displayMode || item.openInSamePage) {
+      return <SiteEmbedFrame url={item.externalUrl.trim()} title={item.title} />;
     }
     return (
       <ExternalLinkContent
@@ -172,11 +273,27 @@ function TopicContent({
   topic,
   clubDisplayName,
   lang,
+  displayMode = false,
 }: {
   topic: ClubWebsiteTopic;
   clubDisplayName: string;
   lang: ClubWebsiteLanguageCode;
+  displayMode?: boolean;
 }) {
+  if (topicHasEmbedUrl(topic)) {
+    if (displayMode || topic.openInSamePage) {
+      return <SiteEmbedFrame url={topic.externalUrl.trim()} title={topic.title} />;
+    }
+    return (
+      <ExternalLinkContent
+        title={topic.title}
+        bannerColor={topic.bannerColor}
+        titleColor={topic.titleColor}
+        url={topic.externalUrl}
+      />
+    );
+  }
+
   const html = topic.contentsByLang[lang] || topic.contentsByLang.en || '';
   const keywords = topic.keywordsByLang[lang] || topic.keywordsByLang.en || '';
 
@@ -207,7 +324,7 @@ function ExternalLinkContent({
 }) {
   const { t } = useLanguage();
   return (
-    <div className="flex min-h-[480px] flex-1 flex-col bg-[#ececec]">
+    <div className="flex min-h-0 flex-1 flex-col bg-[#ececec]">
       <div
         className="px-4 py-3 text-sm font-semibold"
         style={{ backgroundColor: bannerColor, color: titleColor }}
@@ -249,7 +366,7 @@ function HtmlContent({
 }) {
   const { t } = useLanguage();
   return (
-    <div className="flex min-h-[480px] flex-1 flex-col overflow-y-auto bg-[#ececec]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[#ececec]">
       <div
         className="shrink-0 px-4 py-3 text-sm font-semibold"
         style={{ backgroundColor: bannerColor, color: titleColor }}

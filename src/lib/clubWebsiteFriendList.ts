@@ -288,18 +288,17 @@ export type ClubDashboardFriendTopicEntry = {
   subtopics: ClubDashboardFriendTopicEntry[];
 };
 
-function isClubDashboardFriendItem(items: ClubWebsiteFriendItem[], item: ClubWebsiteFriendItem): boolean {
-  return item.showInClubDashboardTopics && isClubWebsiteFriendItemVisibleToMembers(items, item);
-}
-
-function mapDashboardSubtopics(
+function mapVisibleDashboardSubtopics(
   items: ClubWebsiteFriendItem[],
   rows: FriendListRow[],
   byId: Record<string, ClubWebsiteFriendItem>
 ): ClubDashboardFriendTopicEntry[] {
   return rows
     .map((row) => byId[row.id])
-    .filter((item): item is ClubWebsiteFriendItem => Boolean(item && isClubDashboardFriendItem(items, item)))
+    .filter(
+      (item): item is ClubWebsiteFriendItem =>
+        Boolean(item && isClubWebsiteFriendItemVisibleToMembers(items, item) && item.name.trim())
+    )
     .map((item) => ({
       id: item.id,
       name: item.name,
@@ -308,7 +307,7 @@ function mapDashboardSubtopics(
     }));
 }
 
-/** Topics/subtopics flagged for My Club → Dashboard → Club Topics (member sidebar). */
+/** Member-visible friend list tree for dashboard sidebars (link vs label uses showInClubDashboardTopics in UI). */
 export function getClubDashboardFriendTopics(
   items: ClubWebsiteFriendItem[]
 ): ClubDashboardFriendTopicEntry[] {
@@ -319,29 +318,25 @@ export function getClubDashboardFriendTopics(
 
   const rootItem = byId['friends-root'];
   if (rootItem && isClubWebsiteFriendItemVisibleToMembers(items, rootItem)) {
-    const subtopics = mapDashboardSubtopics(items, layout.rootNested, byId);
-    if (isClubDashboardFriendItem(items, rootItem) || subtopics.length > 0) {
-      result.push({
-        id: rootItem.id,
-        name: rootItem.name,
-        item: rootItem,
-        subtopics,
-      });
-    }
+    result.push({
+      id: rootItem.id,
+      name: rootItem.name,
+      item: rootItem,
+      subtopics: mapVisibleDashboardSubtopics(items, layout.rootNested, byId),
+    });
   }
 
   for (const segment of layout.segments) {
     const peerItem = byId[segment.peer.id];
-    if (!peerItem || !isClubWebsiteFriendItemVisibleToMembers(items, peerItem)) continue;
-    const subtopics = mapDashboardSubtopics(items, segment.nested, byId);
-    if (isClubDashboardFriendItem(items, peerItem) || subtopics.length > 0) {
-      result.push({
-        id: peerItem.id,
-        name: peerItem.name,
-        item: peerItem,
-        subtopics,
-      });
+    if (!peerItem || !isClubWebsiteFriendItemVisibleToMembers(items, peerItem) || !peerItem.name.trim()) {
+      continue;
     }
+    result.push({
+      id: peerItem.id,
+      name: peerItem.name,
+      item: peerItem,
+      subtopics: mapVisibleDashboardSubtopics(items, segment.nested, byId),
+    });
   }
 
   return result;

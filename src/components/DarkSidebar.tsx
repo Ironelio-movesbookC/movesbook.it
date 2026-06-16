@@ -1733,7 +1733,16 @@ export default function DarkSidebar({
                       <Settings className="w-4 h-4" />
                     </button>
                   </div>
-                  {user?.id ? <PersonalMyTopicsSidebarBlock userId={user.id} /> : null}
+                  {user?.id ? (
+                    <PersonalMyTopicsSidebarBlock
+                      userId={user.id}
+                      clubId={
+                        clubWebsiteManage && displaySelectedClub
+                          ? (displaySelectedClub as { id: string }).id
+                          : undefined
+                      }
+                    />
+                  ) : null}
                   <div className="flex w-full items-stretch min-h-[44px]">
                     {myPageYoutubeOpenHref ? (
                       <a
@@ -2529,13 +2538,7 @@ export default function DarkSidebar({
                               <div className="flex min-h-[44px] w-full items-stretch border-b border-gray-500/60">
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    window.open(
-                                      CLUB_WEBSITE_SETTINGS_INDEX_PATH,
-                                      '_blank',
-                                      'noopener,noreferrer'
-                                    );
-                                  }}
+                                  onClick={openMovesbookWebsite}
                                   className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left text-[12px] font-normal text-white transition-colors hover:bg-[#555]"
                                 >
                                   <Home className="h-4 w-4 shrink-0 opacity-95" aria-hidden />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { X, Calendar, Archive, CheckCircle2 } from 'lucide-react';
 import { fetchPlanWeeks, getWeekWorkoutCount, isWeekEmpty } from '@/lib/workoutPlanLoad';
 import { mergeWeeksByWeekNumber } from '@/lib/mergeWeeksByWeekNumber';
@@ -62,6 +62,8 @@ export default function ApplyFavoriteWeekModal({
   onConfirm,
 }: ApplyFavoriteWeekModalProps) {
   const config = CONFIG[destination];
+  const planType = config.planType;
+  const mergeWeeks = config.mergeWeeks;
   const [weeks, setWeeks] = useState<any[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -70,7 +72,7 @@ export default function ApplyFavoriteWeekModal({
   const [confirmOverwrite, setConfirmOverwrite] = useState(false);
   const [error, setError] = useState('');
 
-  const loadWeeks = async () => {
+  const loadWeeks = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -79,20 +81,20 @@ export default function ApplyFavoriteWeekModal({
         setError('Please log in');
         return;
       }
-      const raw = await fetchPlanWeeks(token, config.planType);
-      setWeeks(config.mergeWeeks ? mergeWeeksByWeekNumber(raw) : raw);
+      const raw = await fetchPlanWeeks(token, planType);
+      setWeeks(mergeWeeks ? mergeWeeksByWeekNumber(raw) : raw);
     } catch {
       setError('Failed to load target weeks');
     } finally {
       setLoading(false);
     }
-  };
+  }, [planType, mergeWeeks]);
 
   useEffect(() => {
     void loadWeeks();
     setSelectedIds(new Set());
     setConfirmOverwrite(false);
-  }, [destination]);
+  }, [loadWeeks]);
 
   const selectedWeeks = useMemo(
     () => weeks.filter((w) => selectedIds.has(w.id)),

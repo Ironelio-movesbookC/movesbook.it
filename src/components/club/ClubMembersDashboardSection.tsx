@@ -18,7 +18,7 @@ import {
   loadClubWebsiteFriendItems,
 } from '@/lib/clubWebsiteFriendList';
 import {
-  filterClubWebsiteTopicsForDashboard,
+  filterClubWebsiteTopicsForMembers,
   loadClubWebsiteTopics,
 } from '@/lib/clubWebsiteTopics';
 import {
@@ -149,7 +149,7 @@ export default function ClubMembersDashboardSection({
     ReturnType<typeof getClubDashboardFriendTopics>
   >([]);
   const [customDashboardTopics, setCustomDashboardTopics] = useState<
-    ReturnType<typeof filterClubWebsiteTopicsForDashboard>
+    ReturnType<typeof filterClubWebsiteTopicsForMembers>
   >([]);
 
   const refreshDashboardTopics = useCallback(() => {
@@ -161,7 +161,7 @@ export default function ClubMembersDashboardSection({
     const friendItems = loadClubWebsiteFriendItems(effectiveClubId);
     setFriendDashboardTopics(getClubDashboardFriendTopics(friendItems));
     setCustomDashboardTopics(
-      filterClubWebsiteTopicsForDashboard(loadClubWebsiteTopics(effectiveClubId))
+      filterClubWebsiteTopicsForMembers(loadClubWebsiteTopics(effectiveClubId))
     );
   }, [effectiveClubId]);
 

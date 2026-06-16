@@ -88,12 +88,12 @@ export default function ClubWebsiteTopicSettingsFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-12 pb-8"
+      className="fixed inset-0 z-[200] overflow-y-auto bg-black/50"
       role="dialog"
       aria-modal="true"
       aria-labelledby="club-topic-settings-form-title"
     >
-      <div className="w-full max-w-lg overflow-hidden rounded border border-zinc-500 bg-[#f0f0f0] shadow-2xl">
+      <div className="absolute left-[calc(300px+0.5rem)] top-12 w-full max-w-[16rem] overflow-hidden rounded border border-zinc-500 bg-[#f0f0f0] shadow-2xl">
         <div
           className="flex items-center justify-between px-3 py-2 text-sm font-semibold text-white"
           style={{ backgroundColor: LEGACY_HEADER_RED }}
@@ -107,7 +107,7 @@ export default function ClubWebsiteTopicSettingsFormModal({
               }}
               className="text-xs font-bold text-yellow-300 hover:underline"
             >
-              + {t('club_topic_add_subtopic')}
+              +{t('club_topic_add_subtopic')}
             </button>
           ) : null}
         </div>
@@ -124,8 +124,14 @@ export default function ClubWebsiteTopicSettingsFormModal({
               {t(enableKey)}
             </label>
             <span
-              className="inline-block h-3 w-3 rounded-none border border-zinc-300"
-              style={{ backgroundColor: activated ? LEGACY_STATUS_ON : LEGACY_STATUS_OFF }}
+              className="inline-block rounded-none border border-zinc-300"
+              style={{
+                width: 11,
+                height: 11,
+                minWidth: 11,
+                minHeight: 11,
+                backgroundColor: activated ? LEGACY_STATUS_ON : LEGACY_STATUS_OFF,
+              }}
               aria-hidden
             />
           </div>
@@ -137,26 +143,26 @@ export default function ClubWebsiteTopicSettingsFormModal({
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full border border-zinc-400 bg-[#ffffd9] px-2 py-1.5 text-zinc-900"
+                className="w-full border border-zinc-400 bg-white px-2 py-1.5 text-zinc-900"
               />
             </label>
           </div>
 
           <div className="border-b border-zinc-300 bg-white px-3 py-2">
-            <label className="flex cursor-pointer items-start gap-2 text-sm text-zinc-900">
+            <label className="flex cursor-pointer items-start gap-2 text-zinc-900">
               <input
                 type="checkbox"
                 checked={showInClubDashboardTopics}
                 onChange={(e) => setShowInClubDashboardTopics(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0"
+                className="mt-0.5 h-3.5 w-3.5 shrink-0"
               />
-              <span>{t('club_topic_show_in_club_dashboard')}</span>
+              <span className="text-[11px] leading-snug">{t('club_topic_show_in_club_dashboard')}</span>
             </label>
           </div>
 
           <div>
             <div
-              className="px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"
+              className="px-3 py-1.5 text-xs font-bold text-white"
               style={{ backgroundColor: LEGACY_SECTION_PURPLE }}
             >
               {t('club_topic_content_display_type')}
@@ -203,7 +209,7 @@ export default function ClubWebsiteTopicSettingsFormModal({
 
           <div>
             <div
-              className="px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"
+              className="px-3 py-1.5 text-xs font-bold text-white"
               style={{ backgroundColor: LEGACY_SECTION_DARK_RED }}
             >
               {t('club_topic_authorized_users')}
@@ -254,7 +260,14 @@ export default function ClubWebsiteTopicSettingsFormModal({
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-zinc-300 bg-[#e8e8e8] px-3 py-3">
+          <div className="flex justify-center gap-2 border-t border-zinc-300 bg-[#e8e8e8] px-3 py-3">
+            <button
+              type="button"
+              onClick={handleSave}
+              className="rounded-none border border-zinc-700 bg-zinc-800 px-5 py-1.5 text-sm font-medium text-white hover:bg-zinc-900"
+            >
+              {t('btn_save')}
+            </button>
             <button
               type="button"
               onClick={onClose}
@@ -262,25 +275,15 @@ export default function ClubWebsiteTopicSettingsFormModal({
             >
               {t('btn_cancel')}
             </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              className="rounded-none border border-red-800 bg-red-600 px-5 py-1.5 text-sm font-medium text-white hover:bg-red-700"
-            >
-              {t('btn_save')}
-            </button>
           </div>
-          {isSubtopic && onDeleteContent ? (
+          {onDeleteContent ? (
             <div className="border-t border-zinc-300 bg-[#e8e8e8] px-3 pb-3">
               <button
                 type="button"
-                onClick={() => {
-                  onDeleteContent();
-                  onClose();
-                }}
+                onClick={onDeleteContent}
                 className="w-full rounded-none border border-red-900 bg-red-700 px-5 py-2 text-sm font-medium text-white hover:bg-red-800"
               >
-                {t('club_subtopic_delete_content')}
+                {t(isSubtopic ? 'club_subtopic_delete_content' : 'club_topic_delete_content')}
               </button>
             </div>
           ) : null}

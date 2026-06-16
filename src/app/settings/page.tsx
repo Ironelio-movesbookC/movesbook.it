@@ -51,14 +51,9 @@ export default function SettingsPage() {
   const { user, loading } = useAuth();
   const { t } = useLanguage();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [queryParams, setQueryParams] = useState<URLSearchParams | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
     if (typeof window === 'undefined') return 'grid';
-    const raw = localStorage.getItem('settings_active_section');
-    if (raw === 'periodization') {
-      localStorage.setItem('settings_active_section', 'tools');
-      localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
-      return 'tools';
-    }
     const valid: SettingsSection[] = [
       'backgrounds',
       'tools',
@@ -69,10 +64,24 @@ export default function SettingsPage() {
       'mybest',
       'grid',
     ];
+    const urlSection = new URLSearchParams(window.location.search).get('section');
+    if (urlSection === 'periodization') {
+      localStorage.setItem('settings_active_section', 'tools');
+      localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
+      return 'tools';
+    }
+    if (urlSection && valid.includes(urlSection as SettingsSection)) {
+      return urlSection as SettingsSection;
+    }
+    const raw = localStorage.getItem('settings_active_section');
+    if (raw === 'periodization') {
+      localStorage.setItem('settings_active_section', 'tools');
+      localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
+      return 'tools';
+    }
     return raw && valid.includes(raw as SettingsSection) ? (raw as SettingsSection) : 'grid';
   });
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [queryParams, setQueryParams] = useState<URLSearchParams | null>(null);
 
   // Check for admin authentication and auto-cleanup invalid tokens
   useEffect(() => {
