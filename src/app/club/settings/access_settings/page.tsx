@@ -29,6 +29,7 @@ type AccessSettings = {
   accessAllowedToMembersBlocked: boolean;
   accessAllowedMembersCardSuspended: boolean;
   debtorsStatus: string;
+  maxDebtExpiredEnabled: boolean;
   maxDebtValue: string;
   includeDebtsOnPurchases: boolean;
   includeDebtsOnServices: boolean;
@@ -157,6 +158,7 @@ const DEFAULT_SETTINGS: AccessSettings = {
   accessAllowedToMembersBlocked: true,
   accessAllowedMembersCardSuspended: false,
   debtorsStatus: 'yes_with_alert',
+  maxDebtExpiredEnabled: false,
   maxDebtValue: '',
   includeDebtsOnPurchases: false,
   includeDebtsOnServices: false,
@@ -269,7 +271,8 @@ const numericFields: Array<{
     key: 'maxDebtValue',
     label: 'Value',
     min: 0,
-    isRequired: (settings) => settings.debtorsStatus === 'max_debt'
+    isRequired: (settings) =>
+      settings.debtorsStatus === 'yes' && settings.maxDebtExpiredEnabled
   },
   {
     key: 'medNoToleranceValue',
@@ -488,6 +491,7 @@ const requiredChoiceFields: Array<{
 
 const dependentErrorFields: Partial<Record<keyof AccessSettings, Array<keyof AccessSettings>>> = {
   debtorsStatus: ['maxDebtValue'],
+  maxDebtExpiredEnabled: ['maxDebtValue'],
   medCertificationExpiredStatus: ['medNoToleranceValue'],
   membershipClubExpiredStatus: ['memNoToleranceValue'],
   expSubscriptionsStatus: ['dayToleranceValue', 'noAccessesValue'],
@@ -552,11 +556,35 @@ function toBooleanSetting(value: unknown, fallback: boolean): boolean {
     || value === 'true';
 }
 
+function normalizeDebtorsSettings(source: Partial<AccessSettings>) {
+  let debtorsStatus = source.debtorsStatus ?? DEFAULT_SETTINGS.debtorsStatus;
+  let maxDebtValue = source.maxDebtValue ?? DEFAULT_SETTINGS.maxDebtValue;
+  let maxDebtExpiredEnabled = toBooleanSetting(
+    source.maxDebtExpiredEnabled,
+    DEFAULT_SETTINGS.maxDebtExpiredEnabled
+  );
+
+  if (debtorsStatus === 'max_debt') {
+    debtorsStatus = 'yes';
+    maxDebtExpiredEnabled = true;
+  } else if (source.maxDebtExpiredEnabled == null && String(maxDebtValue).trim()) {
+    maxDebtExpiredEnabled = true;
+  }
+
+  if (debtorsStatus !== 'yes') {
+    maxDebtExpiredEnabled = false;
+  }
+
+  return { debtorsStatus, maxDebtExpiredEnabled, maxDebtValue };
+}
+
 function normalizeSettings(value: unknown): AccessSettings {
   const source = value && typeof value === 'object' ? value as Partial<AccessSettings> : {};
+  const debtors = normalizeDebtorsSettings(source);
   return {
     ...DEFAULT_SETTINGS,
     ...source,
+    ...debtors,
     useAdvancedSettings: toBooleanSetting(source.useAdvancedSettings, DEFAULT_SETTINGS.useAdvancedSettings),
     noneBlockOrFreeAccess: toBooleanSetting(source.noneBlockOrFreeAccess, DEFAULT_SETTINGS.noneBlockOrFreeAccess),
     exceptMembersAuthorized: toBooleanSetting(source.exceptMembersAuthorized, DEFAULT_SETTINGS.exceptMembersAuthorized),
@@ -994,12 +1022,51 @@ export default function AccessSettingsPage() {
 
             <div className="grid gap-4 xl:grid-cols-2">
               <Panel title="Debtors">
-                <RadioField label="No" name="debtorsStatus" checked={settings.debtorsStatus === 'access_members_authorized'} onChange={() => updateField('debtorsStatus', 'access_members_authorized')} />
-                <RadioField label="Yes but with alert" name="debtorsStatus" checked={settings.debtorsStatus === 'yes_with_alert'} onChange={() => updateField('debtorsStatus', 'yes_with_alert')} />
-                <RadioField label="Yes" name="debtorsStatus" checked={settings.debtorsStatus === 'yes'} onChange={() => updateField('debtorsStatus', 'yes')} />
+                <RadioField
+                  label="No"
+                  name="debtorsStatus"
+                  checked={settings.debtorsStatus === 'access_members_authorized'}
+                  onChange={() =>
+                    updateFields({
+                      debtorsStatus: 'access_members_authorized',
+                      maxDebtExpiredEnabled: false,
+                      maxDebtValue: ''
+                    })
+                  }
+                />
+                <RadioField
+                  label="Yes but with alert"
+                  name="debtorsStatus"
+                  checked={settings.debtorsStatus === 'yes_with_alert'}
+                  onChange={() =>
+                    updateFields({
+                      debtorsStatus: 'yes_with_alert',
+                      maxDebtExpiredEnabled: false,
+                      maxDebtValue: ''
+                    })
+                  }
+                />
+                <RadioField
+                  label="Yes"
+                  name="debtorsStatus"
+                  checked={settings.debtorsStatus === 'yes'}
+                  onChange={() => updateField('debtorsStatus', 'yes')}
+                />
                 <div className="rounded-none border border-gray-300 bg-gray-50 p-3">
                   <div className="grid gap-3 md:grid-cols-[1fr_96px] md:items-center">
-                    <RadioField label="Max debt expired of subscriptions" name="debtorsStatus" checked={settings.debtorsStatus === 'max_debt'} onChange={() => updateField('debtorsStatus', 'max_debt')} />
+                    <CheckboxField
+                      label="Max debt expired of subscriptions"
+                      checked={settings.maxDebtExpiredEnabled}
+                      disabled={settings.debtorsStatus !== 'yes'}
+                      onChange={(value) => {
+                        if (settings.debtorsStatus !== 'yes') return;
+                        if (value) {
+                          updateField('maxDebtExpiredEnabled', true);
+                        } else {
+                          updateFields({ maxDebtExpiredEnabled: false, maxDebtValue: '' });
+                        }
+                      }}
+                    />
                     <TextField
                       label=""
                       type="number"
@@ -1008,6 +1075,7 @@ export default function AccessSettingsPage() {
                       value={settings.maxDebtValue}
                       error={errors.maxDebtValue}
                       fieldRef={registerField('maxDebtValue')}
+                      disabled={settings.debtorsStatus !== 'yes' || !settings.maxDebtExpiredEnabled}
                       onChange={(value) => updateField('maxDebtValue', value)}
                     />
                   </div>
@@ -1031,7 +1099,7 @@ export default function AccessSettingsPage() {
               <div className="space-y-4">
                 <Panel title="Medical certification expired">
                   <div className="grid gap-3 md:grid-cols-[1fr_160px] md:items-center">
-                    <RadioField label="No tolerance" name="medCertificationExpiredStatus" checked={settings.medCertificationExpiredStatus === 'med_no_tolerance'} onChange={() => updateField('medCertificationExpiredStatus', 'med_no_tolerance')} />
+                    <RadioField label="No but with tolerance" name="medCertificationExpiredStatus" checked={settings.medCertificationExpiredStatus === 'med_no_tolerance'} onChange={() => updateField('medCertificationExpiredStatus', 'med_no_tolerance')} />
                     <TextField
                       label="Tolerance"
                       type="number"
@@ -1056,7 +1124,7 @@ export default function AccessSettingsPage() {
                   <RadioField label="Membership Disabled" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'membershipe_disabled'} onChange={() => updateField('membershipClubExpiredStatus', 'membershipe_disabled')} />
                   <RadioField label="Membership Enabled" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'membershipe_enabled'} onChange={() => updateField('membershipClubExpiredStatus', 'membershipe_enabled')} />
                   <div className="grid gap-3 md:grid-cols-[1fr_160px] md:items-center">
-                    <RadioField label="No tolerance" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'med_no_tolerance'} onChange={() => updateField('membershipClubExpiredStatus', 'med_no_tolerance')} />
+                    <RadioField label="No, but with tolerance" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'med_no_tolerance'} onChange={() => updateField('membershipClubExpiredStatus', 'med_no_tolerance')} />
                     <TextField
                       label="Tolerance"
                       type="number"
@@ -1068,10 +1136,8 @@ export default function AccessSettingsPage() {
                       onChange={(value) => updateField('memNoToleranceValue', value)}
                     />
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <RadioField label="Yes with alert" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'yes_with_alert'} onChange={() => updateField('membershipClubExpiredStatus', 'yes_with_alert')} />
-                    <RadioField label="Yes" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'yes'} onChange={() => updateField('membershipClubExpiredStatus', 'yes')} />
-                  </div>
+                  <RadioField label="Yes with alert" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'yes_with_alert'} onChange={() => updateField('membershipClubExpiredStatus', 'yes_with_alert')} />
+                  <RadioField label="Yes" name="membershipClubExpiredStatus" checked={settings.membershipClubExpiredStatus === 'yes'} onChange={() => updateField('membershipClubExpiredStatus', 'yes')} />
                 </Panel>
               </div>
             </div>
@@ -1138,9 +1204,42 @@ export default function AccessSettingsPage() {
 
             <Panel title="Control the number of weekly accesses">
               <div className="grid gap-3 md:grid-cols-3">
-                <CheckboxField label="Disabled" checked={settings.numberWeeklyAccessesDisabled} onChange={(value) => updateField('numberWeeklyAccessesDisabled', value)} />
-                <CheckboxField label="Yes" checked={settings.numberWeeklyAccessesYes} onChange={(value) => updateField('numberWeeklyAccessesYes', value)} />
-                <CheckboxField label="Yes + alert" checked={settings.numberWeeklyAccessesYesAlert} onChange={(value) => updateField('numberWeeklyAccessesYesAlert', value)} />
+                <RadioField
+                  label="Disabled"
+                  name="numberWeeklyAccesses"
+                  checked={settings.numberWeeklyAccessesDisabled}
+                  onChange={() =>
+                    updateFields({
+                      numberWeeklyAccessesDisabled: true,
+                      numberWeeklyAccessesYes: false,
+                      numberWeeklyAccessesYesAlert: false
+                    })
+                  }
+                />
+                <RadioField
+                  label="Yes"
+                  name="numberWeeklyAccesses"
+                  checked={settings.numberWeeklyAccessesYes}
+                  onChange={() =>
+                    updateFields({
+                      numberWeeklyAccessesDisabled: false,
+                      numberWeeklyAccessesYes: true,
+                      numberWeeklyAccessesYesAlert: false
+                    })
+                  }
+                />
+                <RadioField
+                  label="Yes + alert"
+                  name="numberWeeklyAccesses"
+                  checked={settings.numberWeeklyAccessesYesAlert}
+                  onChange={() =>
+                    updateFields({
+                      numberWeeklyAccessesDisabled: false,
+                      numberWeeklyAccessesYes: false,
+                      numberWeeklyAccessesYesAlert: true
+                    })
+                  }
+                />
               </div>
             </Panel>
 
@@ -2368,6 +2467,7 @@ function TextField({
   step,
   error,
   fieldRef,
+  disabled = false,
   onChange
 }: {
   label: string;
@@ -2378,6 +2478,7 @@ function TextField({
   step?: number | 'any';
   error?: string;
   fieldRef?: (node: HTMLElement | null) => void;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -2389,6 +2490,7 @@ function TextField({
         max={max}
         step={step}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         className={`${inputClass} ${error ? 'border-red-500 ring-1 ring-red-500' : ''}`}
       />
@@ -2406,20 +2508,27 @@ function CheckboxField({
   label,
   checked,
   tone = 'default',
+  disabled = false,
   onChange
 }: {
   label: ReactNode;
   checked: boolean;
   tone?: 'default' | 'danger';
+  disabled?: boolean;
   onChange: (value: boolean) => void;
 }) {
   return (
-    <label className={`flex min-h-9 items-center gap-2 text-sm font-medium ${tone === 'danger' ? 'text-red-600' : 'text-gray-700'}`}>
+    <label
+      className={`flex min-h-9 items-center gap-2 text-sm font-medium ${
+        tone === 'danger' ? 'text-red-600' : disabled ? 'text-gray-400' : 'text-gray-700'
+      }`}
+    >
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="h-4 w-4 rounded border-gray-300 accent-gray-900"
+        className="h-4 w-4 rounded border-gray-300 accent-gray-900 disabled:cursor-not-allowed disabled:opacity-50"
       />
       <span>{label}</span>
     </label>

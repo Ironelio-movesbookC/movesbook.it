@@ -1,0 +1,68 @@
+/**
+ * MessagesHelpRail — explicit text colors (OS dark mode + Tailwind preflight color:inherit).
+ */
+
+.railStripRoot {
+  color-scheme: light;
+}
+
+.railStripToggle {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+.railStripToggle svg {
+  color: #ffffff !important;
+  stroke: currentColor;
+}
+
+.railStripNav {
+  color: #ffffff !important;
+}
+
+.railStripNav :global(button),
+.railStripNav :global(span) {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+.railStripNav :global(svg) {
+  color: #ffffff !important;
+  stroke: currentColor;
+}
+
+.railDrawer {
+  color-scheme: light;
+  background-color: #ffffff;
+  color: #0a0a0a;
+}
+
+.railDrawer :global(label) {
+  color: #0a0a0a !important;
+  -webkit-text-fill-color: #0a0a0a !important;
+}
+
+.railDrawer :global(input:not([type='radio']):not([type='checkbox']):not([type='hidden'])),
+.railDrawer :global(textarea),
+.railDrawer :global(select) {
+  color: #0a0a0a !important;
+  -webkit-text-fill-color: #0a0a0a !important;
+  caret-color: #0a0a0a;
+}
+
+.railDrawer :global(input::placeholder),
+.railDrawer :global(textarea::placeholder) {
+  color: #64748b !important;
+  -webkit-text-fill-color: #64748b !important;
+  opacity: 1;
+}
+
+.railDrawer :global(input:-webkit-autofill),
+.railDrawer :global(textarea:-webkit-autofill) {
+  -webkit-text-fill-color: #0a0a0a !important;
+}
+
+.railDrawerInner {
+  min-height: 0;
+  min-width: 0;
+}

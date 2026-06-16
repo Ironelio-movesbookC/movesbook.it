@@ -136,6 +136,7 @@ import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardS
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH, clubWebsiteDisplayUrl } from '@/lib/clubWebsiteSettingsPaths';
+import { writeClubWorkspaceTab } from '@/lib/club/clubWorkspaceTab';
 
 function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
   return (
@@ -258,14 +259,15 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
   ],
   [
     { kind: 'icon', Icon: ShoppingCart, label: 'Shop/Selling of products', path: '/ArchiveSeles/product_sale_list' },
-    { kind: 'icon', Icon: ShoppingBasket, label: 'Services for the customers', path: '' },
+    { kind: 'icon', Icon: ShoppingBasket, label: 'Services for the customers', path: '/clubs/new_moment_cash' },
+    { kind: 'icon', Icon: FileText, label: 'Archive of Services', path: '/clubs/archive_service_list' },
   ],
   [
     { kind: 'icon', Icon: CornerDownLeft, label: 'Cash In', path: '/clubs/movement_cash_details/IN' },
     { kind: 'icon', Icon: CornerDownRight, label: 'Cash Out', path: '/clubs/movement_cash_details/OUT' },
     { kind: 'icon', Icon: Repeat2, label: 'Cash (all movements)', path: '/clubs/movement_cash_details' },
   ],
-  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubMembers/movement_cash' }],
+  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubs/service_receipts' }],
   [
     { kind: 'icon', Icon: FileStack, label: 'Cards assignments', path: '' },
     { kind: 'icon', Icon: FileWarning, label: 'Alert assigned', path: '' },
@@ -346,6 +348,8 @@ interface DarkSidebarProps {
    * only while that workspace is open from the sidebar — hidden on My Page.
    */
   clubMyClubTabVisible?: boolean;
+  /** Club workspace: clubs list has finished loading from the API. */
+  clubProfileLoaded?: boolean;
 }
 
 export default function DarkSidebar({
@@ -372,6 +376,7 @@ export default function DarkSidebar({
   onCreateTeamClick,
   onCreateGroupClick,
   clubMyClubTabVisible = false,
+  clubProfileLoaded = true,
 }: DarkSidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
@@ -413,7 +418,9 @@ export default function DarkSidebar({
     isGroupAdminUser ||
     isCoachUser;
   const showMyClubTab = isManagedEntityWorkspaceUser
-    ? clubMyClubTabVisible === true
+    ? isClubAccountUserType(userType)
+      ? clubUserHasProfile || !clubProfileLoaded
+      : clubMyClubTabVisible === true
     : isAthleteUser
       ? athleteHasClubMembership
       : clubUserHasProfile;
@@ -622,10 +629,10 @@ export default function DarkSidebar({
   const setCurrentTab = onTabChange ? onTabChange : setInternalActiveTab;
 
   useEffect(() => {
-    if (!showMyClubTab && currentTab === 'my-entity') {
+    if (clubProfileLoaded && !showMyClubTab && currentTab === 'my-entity') {
       setCurrentTab('my-page');
     }
-  }, [showMyClubTab, currentTab, setCurrentTab]);
+  }, [clubProfileLoaded, showMyClubTab, currentTab, setCurrentTab]);
 
   const savedYoutubeUrl = userYoutubeChannelUrl;
 
@@ -3668,6 +3675,9 @@ export default function DarkSidebar({
                                           return;
                                         }
                                         if (path) {
+                                          if (isClubAccountUserType(userType)) {
+                                            writeClubWorkspaceTab('my-entity');
+                                          }
                                           router.push(path);
                                         }
                                       }}
