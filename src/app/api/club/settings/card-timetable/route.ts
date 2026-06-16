@@ -28,6 +28,13 @@ function yesNo(value: unknown): boolean {
   return value === 'Y' || value === 'y' || value === true || value === 1 || value === '1';
 }
 
+/** Legacy CakePHP stores lesson cost as `cost_for_lesson`; some schemas use `cost`. */
+function resolveCostColumn(columns: Set<string>): 'cost_for_lesson' | 'cost' | null {
+  if (columns.has('cost_for_lesson')) return 'cost_for_lesson';
+  if (columns.has('cost')) return 'cost';
+  return null;
+}
+
 function isClubAccountUserType(userType: string): boolean {
   return userType === 'CLUB' || userType === 'CLUB_TRAINER';
 }
@@ -291,7 +298,8 @@ async function fetchTypologyMeta(typologyId: string, userIds: string[]) {
     selectParts.push('payment_posteciped_or_credit_card');
   }
   if (columns.has('pay_within_days')) selectParts.push('pay_within_days');
-  if (columns.has('cost')) selectParts.push('cost');
+  const costColumn = resolveCostColumn(columns);
+  if (costColumn) selectParts.push(costColumn);
 
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
     `SELECT ${selectParts.join(', ')}
@@ -317,7 +325,7 @@ async function fetchTypologyMeta(typologyId: string, userIds: string[]) {
       enabledForBooking: row.enabled_for_booking == null ? true : yesNo(row.enabled_for_booking),
       paymentPostecipedOrCreditCard: yesNo(row.payment_posteciped_or_credit_card),
       payWithinDays: row.pay_within_days != null ? String(row.pay_within_days) : '',
-      cost: row.cost != null ? String(row.cost) : ''
+      cost: costColumn && row[costColumn] != null ? String(row[costColumn]) : ''
     } as Partial<TimetableBookingSettings>
   };
 }
@@ -374,8 +382,9 @@ async function updateTypologyFlags(
       updates.push('pay_within_days = ?');
       values.push(bookingSettings.payWithinDays || null);
     }
-    if (columns.has('cost')) {
-      updates.push('cost = ?');
+    const costColumn = resolveCostColumn(columns);
+    if (costColumn) {
+      updates.push(`${costColumn} = ?`);
       values.push(bookingSettings.cost || null);
     }
   }
