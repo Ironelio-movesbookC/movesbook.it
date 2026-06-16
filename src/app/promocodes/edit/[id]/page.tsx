@@ -1,10 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import PromocodeAddForm from '@/components/promocodes/PromocodeAddForm';
+import PromocodeEditHeader, { PromocodeFormLoading } from '@/components/promocodes/PromocodeEditHeader';
 import { promocodesFetch, usePromocodesAdminAuth } from '@/components/promocodes/usePromocodesAdminAuth';
 import type { PromocodeSettingRow } from '@/lib/promocodes/types';
+import '@/components/promocodes/promocode-edit.css';
 
 export default function PromocodesEditPage() {
   const ready = usePromocodesAdminAuth();
@@ -26,11 +29,23 @@ export default function PromocodesEditPage() {
       .finally(() => setLoading(false));
   }, [ready, id]);
 
-  if (!ready || loading) return null;
-  if (!setting) return <div className="p-8 text-center text-red-700">Promocode not found.</div>;
+  if (!ready || loading) {
+    return <PromocodeFormLoading />;
+  }
+
+  if (!setting) {
+    return (
+      <div className="promocode-edit-not-found">
+        <h2>Promocode not found</h2>
+        <p>The promocode you are looking for does not exist or was removed.</p>
+        <Link href="/promocodes/promoList">Back to promo list</Link>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-[980px] mx-auto">
+    <div className="promocodes-page promocode-edit-shell">
+      <PromocodeEditHeader setting={setting} />
       <PromocodeAddForm
         mode="edit"
         settingId={id}

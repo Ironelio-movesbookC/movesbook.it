@@ -405,12 +405,12 @@ export default function PromocodeAddForm({
   };
 
   return (
-    <div className="promocode-add-page">
+    <div className="promocode-add-page promocode-form-page">
       <form id="filterForm" onSubmit={handleSubmit}>
         {flashMessage && <div className="flash-message">{flashMessage}</div>}
 
         <div className="clear" />
-        <div className="blue_row1"> Promo code setting</div>
+        <div className="blue_row1">Promocode settings</div>
 
         <div className="promo-code-content">
           <table>
@@ -694,6 +694,7 @@ export default function PromocodeAddForm({
                             <td colSpan={4}>
                               <div className="invite-send-row">
                                 <button type="button" className="btn-red" onClick={openInviteModal}>
+                                  <Mail size={16} aria-hidden style={{ verticalAlign: 'middle', marginRight: 6 }} />
                                   Send mail invitation
                                 </button>
                               </div>
@@ -710,11 +711,11 @@ export default function PromocodeAddForm({
         </div>
 
         <div className="purple_row1 yellow">
-          {' '}
           Club settings
           <span className="font12">(Only for club versions)</span>
         </div>
 
+        <div className="club-settings-block">
         <div className="pt-10 pb-5">
           <label>
             <input
@@ -832,10 +833,11 @@ export default function PromocodeAddForm({
           </div>
           <div className="clear" />
         </div>
+        </div>
 
-        <div className="mt-20 text-center">
+        <div className="promocode-form-actions mt-20 text-center">
           <button type="submit" className="btn-red" disabled={saving}>
-            {isEdit ? 'Save' : 'Save'}
+            {saving ? (isEdit ? 'Saving…' : 'Creating…') : isEdit ? 'Save' : 'Create promocode'}
           </button>
           <Link href="/promocodes/promoList" className="btn-gray">
             Cancel
@@ -844,7 +846,7 @@ export default function PromocodeAddForm({
       </form>
 
       {inviteOpen && (
-        <div className="promo-invite-modal-backdrop" role="dialog" aria-modal="true">
+        <div className="promo-invite-modal-backdrop promo-invite-modal-backdrop--edit" role="dialog" aria-modal="true">
           <div className="promo-invite-modal">
             <div className="promo-invite-modal-header">
               Invite to become member
