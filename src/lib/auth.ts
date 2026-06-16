@@ -2,6 +2,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 
+const CAKEPHP_SECURITY_SALT =
+  process.env.CAKEPHP_SECURITY_SALT || 'DYhG93b0qyJfIxfs2guVoUubWwvniR2G0Fqwerty';
+
 // JWT Secret (use environment variable or fallback)
 const getJwtSecret = (): string => {
   return process.env.JWT_SECRET || 'movesbook-nextjs-jwt-secret-key-2024';
@@ -17,16 +20,22 @@ export const hashPasswordSHA1 = (password: string): string => {
   return crypto.createHash('sha1').update(password).digest('hex');
 };
 
+// CakePHP 2 SimplePasswordHasher: Security::hash($password, null, true)
+export const hashPasswordCakePHP = (password: string): string => {
+  return crypto.createHash('sha1').update(CAKEPHP_SECURITY_SALT + password).digest('hex');
+};
+
 // Verify password - supports both SHA1 (old) and bcrypt (new)
 export const verifyPassword = async (password: string, hashedPassword: string): Promise<boolean> => {
   if (/^[a-f0-9]+$/i.test(hashedPassword)) {
     const sha1Hash = hashPasswordSHA1(password);
     if (hashedPassword.length === 40) {
+      const cakePhpHash = hashPasswordCakePHP(password);
       const md5Hash = crypto.createHash('md5').update(password).digest('hex');
       const sha1OfMd5 = crypto.createHash('sha1').update(md5Hash).digest('hex');
       const md5OfSha1 = crypto.createHash('md5').update(sha1Hash).digest('hex');
       const sha1OfSha1 = crypto.createHash('sha1').update(sha1Hash).digest('hex');
-      return [sha1Hash, sha1OfMd5, md5OfSha1, sha1OfSha1].includes(hashedPassword);
+      return [cakePhpHash, sha1Hash, sha1OfMd5, md5OfSha1, sha1OfSha1].includes(hashedPassword);
     }
     if (hashedPassword.length === 32) {
       const md5Hash = crypto.createHash('md5').update(password).digest('hex');
@@ -84,6 +93,7 @@ export const verifyToken = (token: string): any => {
 const auth = {
   hashPassword,
   hashPasswordSHA1,
+  hashPasswordCakePHP,
   verifyPassword,
   generateToken,
   verifyToken

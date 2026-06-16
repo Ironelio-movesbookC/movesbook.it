@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/adminAuth';
+import { requirePromocodeAccess } from '@/lib/promocodes/promocodeAccess';
 import {
   createPromocodeSetting,
   getPromocodeSettingById,
@@ -44,7 +44,7 @@ function parseForm(body: Record<string, unknown>): PromocodeSettingFormData {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requirePromocodeAccess(request);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const url = new URL(request.url);
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requirePromocodeAccess(request);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   try {
@@ -85,7 +85,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Promo code is required' }, { status: 400 });
     }
 
-    const creatorId = parseInt(String(body.creatorId ?? '1'), 10) || 1;
+    const creatorId = auth.access.isAdmin
+      ? parseInt(String(body.creatorId ?? '1'), 10) || 1
+      : auth.access.legacyUserId;
     const id = await createPromocodeSetting(form, creatorId);
     if (!id) {
       return NextResponse.json({ error: 'Failed to save promocode' }, { status: 500 });
@@ -99,7 +101,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requirePromocodeAccess(request);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   try {
@@ -117,7 +119,7 @@ export async function DELETE(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requirePromocodeAccess(request);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   try {

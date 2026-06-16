@@ -1,21 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/adminAuth';
 import { sendIonosEmail } from '@/lib/ionosEmail';
+import { requirePromocodeAccess } from '@/lib/promocodes/promocodeAccess';
 import { loadSendInvitePreview, sendPromocodeInvite } from '@/lib/promocodes/sendInviteService';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-/** Admin promocode invites are sent by Movesbook staff (PHP roles 1–3). */
-function staffInviteContext(_auth: { ok: true; isSuperAdmin: boolean }) {
-  return true;
-}
-
 export async function GET(req: NextRequest) {
-  const auth = await requireAdmin(req);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const accessResult = await requirePromocodeAccess(req);
+  if (!accessResult.ok) {
+    return NextResponse.json({ error: accessResult.error }, { status: accessResult.status });
   }
+  const access = accessResult.access;
 
   const sp = req.nextUrl.searchParams;
   const emailAddress = sp.get('email_address')?.trim() ?? '';
@@ -24,7 +20,7 @@ export async function GET(req: NextRequest) {
   const languageId = sp.get('language_id')?.trim() ?? '1';
   const otherInfo = sp.get('other_info')?.trim() ?? '';
   const advPage = sp.get('adv_page')?.trim() ?? '';
-  const username = sp.get('username')?.trim() ?? null;
+  const username = access.isAdmin ? sp.get('username')?.trim() ?? null : access.username;
 
   if (!emailAddress || !promocode) {
     return NextResponse.json({ error: 'email_address and promocode are required' }, { status: 400 });
@@ -40,7 +36,7 @@ export async function GET(req: NextRequest) {
       advPage,
       username,
       origin: req.nextUrl.origin,
-      isStaff: staffInviteContext(auth),
+      isStaff: access.isStaff,
       inviterUsername: username,
     });
     return NextResponse.json(preview);
@@ -51,10 +47,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAdmin(req);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const accessResult = await requirePromocodeAccess(req);
+  if (!accessResult.ok) {
+    return NextResponse.json({ error: accessResult.error }, { status: accessResult.status });
   }
+  const access = accessResult.access;
 
   let body: {
     emailAddress?: string;
@@ -83,8 +80,11 @@ export async function POST(req: NextRequest) {
       advPage: body.advPage?.trim() ?? '',
       emailContent: body.emailContent?.trim() ?? '',
       origin: req.nextUrl.origin,
-      isStaff: staffInviteContext(auth),
-      inviterUsername: body.inviterUsername?.trim() ?? null,
+      isStaff: access.isStaff,
+      inviterUsername: access.isAdmin ? body.inviterUsername?.trim() ?? null : access.username,
+      senderLegacyUserId: access.isAdmin ? null : access.legacyUserId,
+      senderEmail: access.isAdmin ? null : access.email,
+      senderName: access.isAdmin ? null : access.username ?? access.email,
       sendEmail: async ({ to, subject, html, replyTo }) => {
         await sendIonosEmail({
           to,

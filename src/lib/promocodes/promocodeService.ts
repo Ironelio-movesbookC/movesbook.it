@@ -491,30 +491,79 @@ export async function getPromocodeMeta(): Promise<PromocodeMeta> {
       return rows as T;
     };
 
-    const subscriptions = await query<{ id: number | bigint; subscription_name: string | null }[]>(
-      `SELECT id, subscription_name FROM subscription_settings
-       WHERE subscription_name IS NOT NULL AND subscription_name != ''
-       ORDER BY id ASC`
-    ).catch(() => [] as { id: number | bigint; subscription_name: string | null }[]);
+    const tableExists = async (tableName: string): Promise<boolean> => {
+      const rows = await query<{ TABLE_NAME: string }[]>(
+        `SELECT TABLE_NAME FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1`,
+        [tableName]
+      );
+      return rows.length > 0;
+    };
 
-    const helpHtmlPages = await query<{ id: number | bigint; page_title: string | null }[]>(
-      `SELECT id, page_title FROM help_html_pages
-       WHERE lang_id = 1 AND page_title IS NOT NULL AND page_title != ''
-       ORDER BY id DESC`
-    ).catch(() => [] as { id: number | bigint; page_title: string | null }[]);
+    const tableColumns = async (tableName: string): Promise<Set<string>> => {
+      const rows = await query<{ COLUMN_NAME: string }[]>(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+        [tableName]
+      );
+      return new Set(rows.map((row) => row.COLUMN_NAME));
+    };
 
-    const helpFallback =
-      helpHtmlPages.length > 0
-        ? helpHtmlPages
-        : await query<{ id: number | bigint; page_title: string | null }[]>(
-            `SELECT id, page_title FROM help_html_pages
-             WHERE page_title IS NOT NULL AND page_title != ''
-             ORDER BY id DESC`
-          ).catch(() => [] as { id: number | bigint; page_title: string | null }[]);
+    const pickColumn = (columns: Set<string>, candidates: string[]): string | null =>
+      candidates.find((column) => columns.has(column)) ?? null;
 
-    const languages = await query<{ id: number | bigint; lang_name: string | null }[]>(
-      `SELECT id, lang_name FROM language_values ORDER BY id ASC`
-    ).catch(() => [] as { id: number | bigint; lang_name: string | null }[]);
+    const subscriptions = await (async () => {
+      if (!(await tableExists('subscription_settings'))) return [];
+      const columns = await tableColumns('subscription_settings');
+      const idCol = pickColumn(columns, ['id']);
+      const nameCol = pickColumn(columns, ['subscription_name', 'name']);
+      if (!idCol || !nameCol) return [];
+      return query<{ id: number | bigint; subscription_name: string | null }[]>(
+        `SELECT \`${idCol}\` AS id, \`${nameCol}\` AS subscription_name
+         FROM subscription_settings
+         WHERE \`${nameCol}\` IS NOT NULL AND \`${nameCol}\` != ''
+         ORDER BY \`${idCol}\` ASC`
+      );
+    })().catch(() => [] as { id: number | bigint; subscription_name: string | null }[]);
+
+    const helpFallback = await (async () => {
+      if (!(await tableExists('help_html_pages'))) return [];
+      const columns = await tableColumns('help_html_pages');
+      const idCol = pickColumn(columns, ['id']);
+      const titleCol = pickColumn(columns, ['page_title', 'title']);
+      const langCol = pickColumn(columns, ['lang_id', 'language_id']);
+      if (!idCol || !titleCol) return [];
+
+      if (langCol) {
+        const rows = await query<{ id: number | bigint; page_title: string | null }[]>(
+          `SELECT \`${idCol}\` AS id, \`${titleCol}\` AS page_title
+           FROM help_html_pages
+           WHERE \`${langCol}\` = 1 AND \`${titleCol}\` IS NOT NULL AND \`${titleCol}\` != ''
+           ORDER BY \`${idCol}\` DESC`
+        );
+        if (rows.length > 0) return rows;
+      }
+
+      return query<{ id: number | bigint; page_title: string | null }[]>(
+        `SELECT \`${idCol}\` AS id, \`${titleCol}\` AS page_title
+         FROM help_html_pages
+         WHERE \`${titleCol}\` IS NOT NULL AND \`${titleCol}\` != ''
+         ORDER BY \`${idCol}\` DESC`
+      );
+    })().catch(() => [] as { id: number | bigint; page_title: string | null }[]);
+
+    const languages = await (async () => {
+      if (!(await tableExists('language_values'))) return [];
+      const columns = await tableColumns('language_values');
+      const idCol = pickColumn(columns, ['id']);
+      const nameCol = pickColumn(columns, ['lang_name', 'name', 'lang_value']);
+      if (!idCol || !nameCol) return [];
+      return query<{ id: number | bigint; lang_name: string | null }[]>(
+        `SELECT \`${idCol}\` AS id, \`${nameCol}\` AS lang_name
+         FROM language_values
+         ORDER BY \`${idCol}\` ASC`
+      );
+    })().catch(() => [] as { id: number | bigint; lang_name: string | null }[]);
 
     return {
       subscriptions: subscriptions.map((row) => ({
