@@ -1,13 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import {
-  ChevronDown,
-  ChevronUp,
-  FileText,
-  Settings,
-  Trash2,
-} from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText, Settings, Trash2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import type { ClubWebsiteFriendItem } from '@/lib/clubWebsiteFriendList';
 import {
@@ -21,6 +15,11 @@ import {
   getFriendItemMoveAvailability,
   getFriendItemSettingsVariant,
 } from '@/lib/clubWebsiteFriendList';
+import {
+  clearClubWebsiteTopicContent,
+  topicToSettingsFormItem,
+  type ClubWebsiteTopic,
+} from '@/lib/clubWebsiteTopics';
 import ClubWebsiteTopicSettingsFormModal from '@/components/club/websiteSettings/ClubWebsiteTopicSettingsFormModal';
 import {
   buildFriendListLayout,
@@ -261,6 +260,12 @@ export default function ClubWebsiteFriendListSection({
   onSelectTopic,
   items,
   adminMode = true,
+  customTopics = [],
+  onSelectCustomTopic,
+  onToggleCustomTopicActivated,
+  onDeleteCustomTopic,
+  onUpdateCustomTopic,
+  onCustomTopicEditContent,
   onToggleActivated,
   onDelete,
   onMove,
@@ -273,6 +278,12 @@ export default function ClubWebsiteFriendListSection({
   items: ClubWebsiteFriendItem[];
   /** Admin/staff only — hover toolbars hidden for members. */
   adminMode?: boolean;
+  customTopics?: ClubWebsiteTopic[];
+  onSelectCustomTopic?: (id: string) => void;
+  onToggleCustomTopicActivated?: (id: string) => void;
+  onDeleteCustomTopic?: (id: string) => void;
+  onUpdateCustomTopic?: (id: string, patch: Partial<ClubWebsiteTopic>) => void;
+  onCustomTopicEditContent?: (id: string) => void;
   onToggleActivated: (id: string) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, direction: 'up' | 'down') => void;
@@ -293,6 +304,7 @@ export default function ClubWebsiteFriendListSection({
   );
   const [activeToolbarRowId, setActiveToolbarRowId] = useState<string | null>(null);
   const [settingsItemId, setSettingsItemId] = useState<string | null>(null);
+  const [settingsCustomTopicId, setSettingsCustomTopicId] = useState<string | null>(null);
 
   const hasFriendListRoot = rows.some((row) => row.id === 'friends-root');
   const layout = useMemo(
@@ -325,6 +337,56 @@ export default function ClubWebsiteFriendListSection({
   };
 
   const settingsItem = settingsItemId ? itemById[settingsItemId] : null;
+  const settingsCustomTopic = settingsCustomTopicId
+    ? customTopics.find((topic) => topic.id === settingsCustomTopicId)
+    : null;
+
+  const renderCustomTopicStatusOrToolbar = (topic: ClubWebsiteTopic) => {
+    const status: SidebarTopicStatus = topic.activated ? 'on' : 'off';
+    const isActive = adminMode && activeToolbarRowId === topic.id;
+
+    if (isActive) {
+      return (
+        <FriendListActionToolbar
+          showDelete
+          showReorder={false}
+          showDocument
+          showSettings
+          onDelete={() => {
+            if (!window.confirm(t('club_topic_delete_confirm'))) return;
+            onDeleteCustomTopic?.(topic.id);
+            if (settingsCustomTopicId === topic.id) setSettingsCustomTopicId(null);
+            setActiveToolbarRowId(null);
+          }}
+          onEdit={() => {
+            setActiveToolbarRowId(null);
+            onCustomTopicEditContent?.(topic.id);
+          }}
+          onMoveUp={() => {}}
+          onMoveDown={() => {}}
+          onSettings={() => setSettingsCustomTopicId(topic.id)}
+        />
+      );
+    }
+
+    return adminMode ? (
+      <button
+        type="button"
+        className="flex h-7 w-7 items-center justify-center"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleCustomTopicActivated?.(topic.id);
+        }}
+        aria-label={t('club_website_toggle_visibility')}
+      >
+        <StatusSquare status={status} />
+      </button>
+    ) : (
+      <span className="flex h-7 w-7 items-center justify-center">
+        <StatusSquare status={status} />
+      </span>
+    );
+  };
 
   const selectRowContent = (row: FriendListRow) => {
     const label = row.id === 'friends-root' ? t('club_website_list_of_friends') : row.label;
@@ -438,14 +500,38 @@ export default function ClubWebsiteFriendListSection({
   };
 
   const root = rowById['friends-root'];
+  const hasTopics = customTopics.length > 0 || (hasFriendListRoot && layout);
 
-  if (!hasFriendListRoot || !layout) return null;
+  if (!hasTopics) return null;
 
   return (
     <div
       className="friends-list-block flex w-full flex-col"
       onMouseLeave={() => setActiveToolbarRowId(null)}
     >
+      {customTopics.map((topic) => (
+        <FriendListRowShell
+          key={topic.id}
+          className="font-medium"
+          active={activeToolbarRowId === topic.id}
+          onClick={() => onSelectCustomTopic?.(topic.id)}
+          label={
+            <span
+              className={`block min-w-0 truncate ${selectedTopicId === topic.id ? 'font-bold underline' : ''}`}
+            >
+              {topic.name}
+            </span>
+          }
+          trailing={
+            <FriendRowStatusZone rowId={topic.id} onActivate={activateToolbar}>
+              {renderCustomTopicStatusOrToolbar(topic)}
+            </FriendRowStatusZone>
+          }
+        />
+      ))}
+
+      {hasFriendListRoot && layout ? (
+        <>
       <FriendListRowShell
         className="font-semibold"
         active={activeToolbarRowId === 'friends-root'}
@@ -507,6 +593,8 @@ export default function ClubWebsiteFriendListSection({
           </div>
         );
       })}
+        </>
+      ) : null}
       {settingsItem ? (
         <ClubWebsiteTopicSettingsFormModal
           item={friendItemToSettingsFormItem(settingsItem)}
@@ -529,6 +617,20 @@ export default function ClubWebsiteFriendListSection({
               onUpdateItem(settingsItem.id, clearClubWebsiteFriendItemContent());
               setSettingsItemId(null);
             }
+          }}
+        />
+      ) : null}
+      {settingsCustomTopic ? (
+        <ClubWebsiteTopicSettingsFormModal
+          item={topicToSettingsFormItem(settingsCustomTopic)}
+          open
+          variant="topic"
+          onClose={() => setSettingsCustomTopicId(null)}
+          onSave={(patch) => onUpdateCustomTopic?.(settingsCustomTopic.id, patch)}
+          onDeleteContent={() => {
+            if (!window.confirm(t('club_topic_delete_content_confirm'))) return;
+            onUpdateCustomTopic?.(settingsCustomTopic.id, clearClubWebsiteTopicContent());
+            setSettingsCustomTopicId(null);
           }}
         />
       ) : null}
