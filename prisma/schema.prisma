@@ -1157,6 +1157,23 @@ model ClubWebsiteTopic {
   @@map("club_website_topics")
 }
 
+/// Bulletin board label slots (14 themes) in the club website bacheca editor.
+model ClubBachecaLabel {
+  id        String   @id @default(cuid())
+  clubId    String   @map("club_id")
+  labelKey  String   @map("label_key")
+  slotIndex Int      @map("slot_index")
+  name      String
+  activated Boolean  @default(false)
+  content   String   @db.LongText
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([clubId, labelKey])
+  @@index([clubId])
+  @@map("bacheca_settings")
+}
+
 model ClubMember {
   id             String   @id @default(cuid())
   clubId         String
