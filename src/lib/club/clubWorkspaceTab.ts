@@ -14,6 +14,12 @@ export function writeClubWorkspaceTab(tab: ClubWorkspaceTab): void {
   localStorage.setItem(CLUB_WORKSPACE_ACTIVE_TAB_KEY, tab);
 }
 
+/** True when a club was opened from the sidebar (persisted for hydration). */
+export function readSelectedClubHint(): boolean {
+  if (typeof window === 'undefined') return false;
+  return Boolean(localStorage.getItem('selectedClub'));
+}
+
 /** Optimistic hint so My Club tab does not flash away while clubs are still loading. */
 export function readClubFormProfileHint(): boolean {
   if (typeof window === 'undefined') return false;

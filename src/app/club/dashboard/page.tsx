@@ -131,7 +131,7 @@ function ClubDashboardContent() {
   }
 
   const dashboardShellActiveTab: 'my-page' | 'my-entity' =
-    hasFormClub ? activeTab : 'my-page';
+    activeClub ? activeTab : 'my-page';
 
   return (
     <>

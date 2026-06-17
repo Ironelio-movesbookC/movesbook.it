@@ -65,12 +65,11 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
     [clubs],
   );
   const hasFormClub = formClubs.length > 0;
-  const hasFormClubEffective = hasFormClub || !clubsLoaded;
   const activeClub = selectedClubId
     ? formClubs.find((c) => c.id === selectedClubId) ?? null
     : null;
   const bannerClub = activeClub ?? formClubs[0] ?? null;
-  const shellActiveTab: ClubWorkspaceTab = hasFormClubEffective ? activeTab : 'my-page';
+  const shellActiveTab: ClubWorkspaceTab = activeClub ? activeTab : 'my-page';
 
   const loadClubs = useCallback(async () => {
     try {
@@ -137,6 +136,13 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   }, [clubsLoaded, hasFormClub, activeTab]);
 
   useEffect(() => {
+    if (clubsLoaded && !selectedClubId && activeTab === 'my-entity') {
+      setActiveTab('my-page');
+      writeClubWorkspaceTab('my-page');
+    }
+  }, [clubsLoaded, selectedClubId, activeTab]);
+
+  useEffect(() => {
     if (!loading && !user) {
       router.push('/');
     }
@@ -176,10 +182,10 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   }, [pathname, router]);
 
   const handleMyClubTabClick = useCallback(() => {
-    if (!hasFormClubEffective) return;
+    if (!selectedClubId) return;
     writeClubWorkspaceTab('my-entity');
     setActiveTab('my-entity');
-  }, [hasFormClubEffective]);
+  }, [selectedClubId]);
 
   const openCreateClubFlow = () => setShowAdminPasswordConfirm(true);
 
