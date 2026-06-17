@@ -26,6 +26,7 @@ import {
 } from '@/lib/clubWebsiteSettingsPaths';
 import { CLUB_WEBSITE_SETTINGS_CHANGED_EVENT } from '@/lib/clubWebsiteSettingsEvents';
 import ClubDashboardTopicsList from '@/components/club/ClubDashboardTopicsList';
+import { consumeOpenClubTopicsSection } from '@/lib/club/clubTopicsNavigation';
 
 type BootstrappedClub = {
   id: string;
@@ -63,6 +64,13 @@ export default function ClubMembersDashboardSection({
 
   useEffect(() => {
     setResolvedClubId(clubId || undefined);
+  }, [clubId]);
+
+  useEffect(() => {
+    if (consumeOpenClubTopicsSection()) {
+      setOpen(true);
+      setTopicsOpen(true);
+    }
   }, [clubId]);
 
   useEffect(() => {
