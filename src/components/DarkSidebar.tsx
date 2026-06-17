@@ -136,7 +136,10 @@ import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardS
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH, clubWebsiteDisplayUrl } from '@/lib/clubWebsiteSettingsPaths';
-import { writeClubWorkspaceTab } from '@/lib/club/clubWorkspaceTab';
+import {
+  readSelectedClubHint,
+  writeClubWorkspaceTab,
+} from '@/lib/club/clubWorkspaceTab';
 
 function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
   return (
@@ -389,6 +392,10 @@ export default function DarkSidebar({
   useEffect(() => {
     setInternalActiveTab(activeTab);
   }, [activeTab]);
+
+  const currentTab = onTabChange ? activeTab : internalActiveTab;
+  const setCurrentTab = onTabChange ? onTabChange : setInternalActiveTab;
+
   const [communitiesOpen, setCommunitiesOpen] = useState(false);
   const [currentClubMembersOpen, setCurrentClubMembersOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
@@ -417,9 +424,12 @@ export default function DarkSidebar({
     isTeamManagerUser ||
     isGroupAdminUser ||
     isCoachUser;
+  const clubHasSelectedEntity =
+    Boolean(selectedEntityId) ||
+    (!clubProfileLoaded && readSelectedClubHint());
   const showMyClubTab = isManagedEntityWorkspaceUser
     ? isClubAccountUserType(userType)
-      ? clubUserHasProfile || !clubProfileLoaded
+      ? clubHasSelectedEntity && currentTab === 'my-entity'
       : clubMyClubTabVisible === true
     : isAthleteUser
       ? athleteHasClubMembership
@@ -624,10 +634,6 @@ export default function DarkSidebar({
   const messagesCount = 0;
   const onlineCount = 0;
 
-  // Sync internal state with prop
-  const currentTab = onTabChange ? activeTab : internalActiveTab;
-  const setCurrentTab = onTabChange ? onTabChange : setInternalActiveTab;
-
   useEffect(() => {
     if (clubProfileLoaded && !showMyClubTab && currentTab === 'my-entity') {
       setCurrentTab('my-page');
@@ -767,7 +773,9 @@ export default function DarkSidebar({
   const showClubMyEntityTop =
     currentTab === 'my-entity' &&
     (userType === 'ATHLETE' ||
-      (isClubAccountUserType(userType) && formCreatedClubs.length > 0));
+      (isClubAccountUserType(userType) &&
+        formCreatedClubs.length > 0 &&
+        clubHasSelectedEntity));
 
   const handleMyPage = () => {
     router.push('/privacy');
@@ -1159,7 +1167,7 @@ export default function DarkSidebar({
   return (
     <>
     <div className="w-full h-full bg-gray-900 text-white flex flex-col overflow-hidden" style={{ width: '320px' }}>
-      {/* Tab Navigation — club accounts: My Club tab appears when a sidebar club is opened */}
+      {/* Tab Navigation — club accounts: My Club tab only while a sidebar club workspace is open */}
       <div className="flex flex-shrink-0 border-b border-gray-700 bg-gray-900">
         <button
           onClick={handleMyPageTab}
