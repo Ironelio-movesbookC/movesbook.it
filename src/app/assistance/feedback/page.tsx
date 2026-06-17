@@ -21,7 +21,7 @@ function AssistanceFeedbackInner() {
     setReady(true);
   }, [router]);
 
-  const tab = searchParams.get('tab');
+  const tab = searchParams?.get('tab');
   const initialMainTab: MainTab =
     tab === 'reviews' ? 'review' : tab === 'version' ? 'version' : 'support';
 
