@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 
 export type UserThreadKind = 'REVIEW' | 'SUPPORT';
 export type SupportCategory = 'feedback' | 'question' | 'suggestion' | 'problem';
@@ -29,7 +30,7 @@ type AuthorFields = {
 };
 
 async function loadSuperAdminNames(ids: Array<string | null | undefined>) {
-  const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  const unique = Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
   if (!unique.length) return new Map<string, { name: string | null; username: string }>();
   const rows = await prisma.superAdmin.findMany({
     where: { id: { in: unique } },
@@ -78,7 +79,7 @@ export type SupportFeedFilters = {
 };
 
 export async function listSupportFeed(viewerId: string, filters: SupportFeedFilters) {
-  const where: Record<string, unknown> = {
+  const where: Prisma.UserMessageThreadWhereInput = {
     kind: 'SUPPORT',
     isPublic: true,
     ...(filters.mineOnly ? { userId: viewerId } : {}),
@@ -90,8 +91,7 @@ export async function listSupportFeed(viewerId: string, filters: SupportFeedFilt
   };
 
   const threads = await prisma.userMessageThread.findMany({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    where: where as any,
+    where,
     orderBy: { updatedAt: 'desc' },
     take: 80,
     include: {
