@@ -115,6 +115,7 @@ import { useRouter } from 'next/navigation';
 import {
   isClubAccountUserType,
   isGroupAccountUserType,
+  isManagedEntityAdminUserType,
   isTeamAccountUserType,
 } from '@/utils/dashboardRouting';
 import {
@@ -123,6 +124,7 @@ import {
   isClubCreatedFromForm,
   userHasClubProfile,
 } from '@/lib/club/clubSidebarLabel';
+import { canManageClubWebsite } from '@/lib/club/clubWebsitePermissions';
 import {
   formatEntitySidebarLabel,
   getFormCreatedEntitiesSortedByCreatedAt,
@@ -134,6 +136,7 @@ import {
 import SidebarClubMyEntityTop from '@/components/SidebarClubMyEntityTop';
 import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
+import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSidebarBlock';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH, clubWebsiteDisplayUrl } from '@/lib/clubWebsiteSettingsPaths';
@@ -729,7 +732,11 @@ export default function DarkSidebar({
         }
       : null;
 
-  const clubWebsiteManage = isClubAccountUserType(userType);
+  const clubWebsiteManage = canManageClubWebsite(
+    user?.id,
+    userType,
+    displaySelectedClub as { id?: string; adminId?: string; admin?: { id?: string } } | null,
+  );
   const movesbookWebsiteHref = clubWebsiteDisplayUrl(
     displaySelectedClub ? (displaySelectedClub as { id: string }).id : null
   );
@@ -1794,6 +1801,9 @@ export default function DarkSidebar({
                       <Settings className="w-4 h-4" />
                     </button>
                   </div>
+                  {isManagedEntityAdminUserType(userType) ? (
+                    <PersonalMyTopicsSidebarBlock userId={user?.id} canManage />
+                  ) : null}
                   <div className="flex w-full items-stretch min-h-[44px]">
                     {myPageYoutubeOpenHref ? (
                       <a
@@ -2228,7 +2238,7 @@ export default function DarkSidebar({
                         (displaySelectedClub as { youtubeChannelUrl?: string | null })
                           ?.youtubeChannelUrl ?? null
                       }
-                      canManageClub={isClubAccountUserType(userType)}
+                      canManageClub={clubWebsiteManage}
                       onYoutubeChannelUrlSaved={handleClubYoutubeSaved}
                     />
                   </>
