@@ -2,6 +2,7 @@ import { serialize, unserialize } from 'php-serialize';
 import { prisma } from '@/lib/prisma';
 import {
   ensurePromocodeMetaTables,
+  getDefaultPromocodeMeta,
   loadHelpHtmlPagesFromTable,
   loadLanguagesFromTable,
   loadSubscriptionsFromTable,
@@ -483,7 +484,11 @@ export async function getPromocodeSettingById(id: number): Promise<PromocodeSett
 }
 
 export async function getPromocodeMeta(): Promise<PromocodeMeta> {
-  await ensurePromocodeMetaTables();
+  try {
+    await ensurePromocodeMetaTables();
+  } catch (err) {
+    console.warn('promocode meta bootstrap skipped:', err);
+  }
 
   const legacyMeta = await withLegacyConnection(async (connection) => {
     const query = async <T>(sql: string, params: unknown[] = []): Promise<T> => {
@@ -588,11 +593,27 @@ export async function getPromocodeMeta(): Promise<PromocodeMeta> {
   const prismaQuery = async <T>(sql: string, params: unknown[] = []): Promise<T> =>
     prisma.$queryRawUnsafe<T>(sql, ...params);
 
-  return {
-    subscriptions: await loadSubscriptionsFromTable(prismaQuery),
-    helpHtmlPages: await loadHelpHtmlPagesFromTable(prismaQuery),
-    languages: await loadLanguagesFromTable(prismaQuery),
-  };
+  let meta: PromocodeMeta;
+  try {
+    meta = {
+      subscriptions: await loadSubscriptionsFromTable(prismaQuery),
+      helpHtmlPages: await loadHelpHtmlPagesFromTable(prismaQuery),
+      languages: await loadLanguagesFromTable(prismaQuery),
+    };
+  } catch (err) {
+    console.error('promocode meta prisma load failed:', err);
+    meta = { subscriptions: [], helpHtmlPages: [], languages: [] };
+  }
+
+  if (
+    meta.subscriptions.length === 0 &&
+    meta.helpHtmlPages.length === 0 &&
+    meta.languages.length === 0
+  ) {
+    return getDefaultPromocodeMeta();
+  }
+
+  return meta;
 }
 
 export function generatePromocode(): string {

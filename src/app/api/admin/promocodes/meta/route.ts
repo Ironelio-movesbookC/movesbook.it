@@ -13,6 +13,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(meta);
   } catch (e) {
     console.error('promocodes meta GET:', e);
-    return NextResponse.json({ error: 'Failed to load metadata' }, { status: 500 });
+    const message = e instanceof Error ? e.message : String(e);
+    const exposeDetails =
+      process.env.NODE_ENV !== 'production' || process.env.PROMOCODE_META_DEBUG === '1';
+    return NextResponse.json(
+      exposeDetails ? { error: 'Failed to load metadata', details: message } : { error: 'Failed to load metadata' },
+      { status: 500 }
+    );
   }
 }
