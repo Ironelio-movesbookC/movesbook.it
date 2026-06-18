@@ -13,6 +13,10 @@ import {
 import type { PromocodeMeta, PromocodeSettingRow } from '@/lib/promocodes/types';
 import { promocodesFetch } from './usePromocodesAdminAuth';
 import { usePromocodeDialogs } from './usePromocodeDialogs';
+import {
+  mergePromocodeLanguageOptions,
+  PROMOCODE_FORM_LANGUAGES,
+} from '@/lib/promocodes/promocodeLanguages';
 import './promocode-add.css';
 
 const MONTHS: Record<string, string> = {
@@ -64,10 +68,7 @@ const DAYS: Record<string, string> = {
   '31': '31',
 };
 
-const DEFAULT_LANGUAGES = [
-  { id: 1, value: 'En' },
-  { id: 4, value: 'It' },
-];
+const DEFAULT_LANGUAGES = PROMOCODE_FORM_LANGUAGES;
 
 function capitalizeFirstLetter(value: string): string {
   if (!value) return value;
@@ -278,14 +279,8 @@ export default function PromocodeAddForm({
       body: JSON.stringify({ html_doc_title: pageTitle }),
     });
     const langs = await res.json();
-    if (Array.isArray(langs) && langs.length > 0) {
-      setLanguageOptions(
-        langs.map((el: { id: number; value: string }) => ({
-          id: el.id,
-          value: capitalizeFirstLetter(el.value),
-        }))
-      );
-      setLanguageId(langs[0].id);
+    if (Array.isArray(langs)) {
+      setLanguageOptions(mergePromocodeLanguageOptions(langs));
     }
   };
 
