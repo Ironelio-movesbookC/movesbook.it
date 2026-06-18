@@ -378,11 +378,9 @@ export async function loadSubscriptionsFromTable(
   const columns = await getTableColumns(table);
   const idCol = pickColumn(columns, ['id']) ?? 'id';
   const nameCol = pickColumn(columns, ['subscription_name', 'name']) ?? 'subscription_name';
-  const deleteCol = pickColumn(columns, ['delete_status']);
 
   let sql = `SELECT \`${idCol}\` AS id, \`${nameCol}\` AS subscription_name
              FROM \`${table}\``;
-  if (deleteCol) sql += ` WHERE \`${deleteCol}\` = 2 OR \`${deleteCol}\` IS NULL`;
   sql += ` ORDER BY \`${idCol}\` ASC`;
 
   const rows = await query<{ id: number | bigint; subscription_name: string | null }[]>(sql);

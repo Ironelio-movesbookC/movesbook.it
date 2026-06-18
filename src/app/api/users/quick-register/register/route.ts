@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
     invite_by_movesbook: Boolean(body.invite_by_movesbook ?? body.inviteByMovesbook),
     origin_email: body.origin_email != null ? String(body.origin_email) : undefined,
     disccount_hidden: body.disccount_hidden != null ? String(body.disccount_hidden) : undefined,
+    origin: req.nextUrl.origin,
   };
 
   const result = await quickRegisterUser(payload);
