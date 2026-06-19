@@ -27,7 +27,8 @@
         "db:migrate-text": "node scripts/migrate-text-fields.js",
         "db:add-moveframe-fields": "node scripts/add-moveframe-fields.js",
         "db:check-manual": "node scripts/check-manual-moveframes.js",
-        "db:seed-outcome-settings": "node scripts/seed-outcome-settings-dev.js"
+        "db:seed-outcome-settings": "node scripts/seed-outcome-settings-dev.js",
+        "db:seed-procedures": "ts-node --transpile-only -P prisma/tsconfig.seed.json prisma/seed-procedure-types.ts"
     },
     "dependencies": {
         "@ckeditor/ckeditor5-alignment": "^47.5.0",
