@@ -1888,6 +1888,7 @@ model FoodDatabaseRecipe {
 }
 
 // ---------------------------------------------------------------------------
+<<<<<<< HEAD
 // Club procedure engine (greenfield)
 // ---------------------------------------------------------------------------
 
@@ -1991,4 +1992,122 @@ model ProcedureReceipt {
 
   @@index([clubId, procedureRecordId])
   @@map("procedure_receipts")
+=======
+// Legacy promocode tables (PHP movesbook-new compatibility)
+// Run: npm run db:push  OR  npx prisma migrate deploy
+// ---------------------------------------------------------------------------
+
+model PromocodeSetting {
+  id                  Int       @id @default(autoincrement())
+  code                String    @db.VarChar(100)
+  validFrom           DateTime  @map("valid_from") @db.Date
+  validTo             DateTime  @map("valid_to") @db.Date
+  usableBy            String    @default("Once") @map("usable_by") @db.VarChar(16)
+  used                Int       @default(0)
+  versionId           String    @default("") @map("version_id") @db.VarChar(100)
+  discount            Int       @default(0)
+  enable              String    @default("Disable") @db.VarChar(16)
+  enableExtension     Int?      @default(0) @map("enable_extension")
+  subscriptionExtends Int?      @map("subscription_extends")
+  socialOptions       String?   @map("social_options") @db.VarChar(500)
+  managementSection   String?   @map("management_section") @db.VarChar(50)
+  enableFreeAccounts  Int?      @default(0) @map("enable_free_accounts")
+  basicVersion        String?   @map("basic_version") @db.VarChar(100)
+  premiumVersion      String?   @map("premium_version") @db.VarChar(100)
+  professionalVersion String?   @map("professional_version") @db.VarChar(100)
+  deleteStatus        Int       @default(2) @map("delete_status")
+  deleteDate          DateTime? @map("delete_date") @db.Date
+  created             DateTime  @default(now())
+  modified              DateTime  @default(now()) @updatedAt
+  email               String?   @db.VarChar(255)
+  recipient           String?   @db.VarChar(50)
+  helpHtmlPagesId     String?   @map("help_html_pages_id") @db.VarChar(20)
+  createrId           String?   @map("creater_id") @db.VarChar(50)
+  creatorId           Int?      @map("creator_id")
+  languageId          String?   @map("language_id") @db.VarChar(10)
+
+  @@index([code])
+  @@index([deleteStatus])
+  @@map("promocode_settings")
+}
+
+model PromocodeApply {
+  id                      Int       @id @default(autoincrement())
+  userId                  Int       @default(0) @map("user_id")
+  promocodeId             Int       @default(0) @map("promocode_id")
+  deleteStatus            Int       @default(2) @map("delete_status")
+  deleteDate              DateTime? @map("delete_date") @db.Date
+  created                 DateTime  @default(now())
+  modified                DateTime  @default(now()) @updatedAt
+  senderEmail             String?   @map("sender_email") @db.VarChar(255)
+  receiverEmail           String?   @map("receiver_email") @db.VarChar(255)
+  senderId                Int?      @default(0) @map("sender_id")
+  receiverId              Int?      @default(0) @map("receiver_id")
+  senderCredit            String?   @map("sender_credit") @db.VarChar(32)
+  receiverCredit          String?   @map("receiver_credit") @db.VarChar(32)
+  receiverVersion         String?   @map("receiver_version") @db.VarChar(32)
+  secondarySenderId       Int?      @map("secondary_sender_id")
+  secondarySenderUsername String?   @map("secondary_sender_username") @db.VarChar(255)
+  secondarySenderCredit   String?   @map("secondary_sender_credit") @db.VarChar(32)
+  newReceiver             String?   @map("new_receiver") @db.VarChar(8)
+  level                   String?   @db.VarChar(20)
+  otherInfo               String?   @map("other_info") @db.VarChar(512)
+  advPage                 String?   @map("adv_page") @db.VarChar(512)
+
+  @@index([promocodeId])
+  @@index([userId])
+  @@index([deleteStatus])
+  @@map("promocode_applies")
+}
+
+model SubscriptionSetting {
+  id               Int      @id @default(autoincrement())
+  subscriptionName String   @map("subscription_name") @db.VarChar(255)
+  shortName        String?  @map("short_name") @db.VarChar(64)
+  roleId           Int?     @map("role_id")
+  price            Decimal? @db.Decimal(10, 2)
+  credit1          String?  @db.VarChar(32)
+  deleteStatus     Int?     @default(2) @map("delete_status")
+
+  @@map("subscription_settings")
+}
+
+model HelpHtmlPage {
+  id        Int       @id @default(autoincrement())
+  pageTitle String    @map("page_title") @db.VarChar(255)
+  langId    Int       @default(1) @map("lang_id")
+  uniqueid  String?   @db.VarChar(64)
+  userId    Int?      @map("user_id")
+  content   String?   @db.MediumText
+  created   DateTime? @default(now())
+
+  @@index([langId])
+  @@map("help_html_pages")
+}
+
+model LanguageValue {
+  id       Int    @id @default(autoincrement())
+  langName String @map("lang_name") @db.VarChar(64)
+
+  @@map("language_values")
+}
+
+model LanguageParagraph {
+  id           Int    @id @default(autoincrement())
+  en           String @db.MediumText
+  fr           String @db.MediumText
+  it           String @db.MediumText
+  de           String @db.MediumText
+  es           String @db.MediumText
+  por          String @db.MediumText
+  rus          String @db.MediumText
+  ind          String @db.MediumText
+  chin         String @db.MediumText
+  arab         String @db.MediumText
+  variableName String @default("") @map("variable_name") @db.VarChar(255)
+  created      String @default("")
+  modified     String @default("")
+
+  @@map("language_paragraphs")
+>>>>>>> main
 }

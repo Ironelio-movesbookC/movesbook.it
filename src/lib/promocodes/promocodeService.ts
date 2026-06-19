@@ -1,7 +1,13 @@
 import { serialize, unserialize } from 'php-serialize';
+import {
+  PROMOCODE_FORM_LANGUAGES,
+  PROMOCODE_FORM_LANGUAGE_IDS,
+  formatPromocodeLanguageLabel,
+} from './promocodeLanguages';
 import { prisma } from '@/lib/prisma';
 import {
   ensurePromocodeMetaTables,
+  getDefaultPromocodeMeta,
   loadHelpHtmlPagesFromTable,
   loadLanguagesFromTable,
   loadSubscriptionsFromTable,
@@ -483,7 +489,11 @@ export async function getPromocodeSettingById(id: number): Promise<PromocodeSett
 }
 
 export async function getPromocodeMeta(): Promise<PromocodeMeta> {
-  await ensurePromocodeMetaTables();
+  try {
+    await ensurePromocodeMetaTables();
+  } catch (err) {
+    console.warn('promocode meta bootstrap skipped:', err);
+  }
 
   const legacyMeta = await withLegacyConnection(async (connection) => {
     const query = async <T>(sql: string, params: unknown[] = []): Promise<T> => {
@@ -491,30 +501,79 @@ export async function getPromocodeMeta(): Promise<PromocodeMeta> {
       return rows as T;
     };
 
-    const subscriptions = await query<{ id: number | bigint; subscription_name: string | null }[]>(
-      `SELECT id, subscription_name FROM subscription_settings
-       WHERE subscription_name IS NOT NULL AND subscription_name != ''
-       ORDER BY id ASC`
-    ).catch(() => [] as { id: number | bigint; subscription_name: string | null }[]);
+    const tableExists = async (tableName: string): Promise<boolean> => {
+      const rows = await query<{ TABLE_NAME: string }[]>(
+        `SELECT TABLE_NAME FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1`,
+        [tableName]
+      );
+      return rows.length > 0;
+    };
 
-    const helpHtmlPages = await query<{ id: number | bigint; page_title: string | null }[]>(
-      `SELECT id, page_title FROM help_html_pages
-       WHERE lang_id = 1 AND page_title IS NOT NULL AND page_title != ''
-       ORDER BY id DESC`
-    ).catch(() => [] as { id: number | bigint; page_title: string | null }[]);
+    const tableColumns = async (tableName: string): Promise<Set<string>> => {
+      const rows = await query<{ COLUMN_NAME: string }[]>(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+        [tableName]
+      );
+      return new Set(rows.map((row) => row.COLUMN_NAME));
+    };
 
-    const helpFallback =
-      helpHtmlPages.length > 0
-        ? helpHtmlPages
-        : await query<{ id: number | bigint; page_title: string | null }[]>(
-            `SELECT id, page_title FROM help_html_pages
-             WHERE page_title IS NOT NULL AND page_title != ''
-             ORDER BY id DESC`
-          ).catch(() => [] as { id: number | bigint; page_title: string | null }[]);
+    const pickColumn = (columns: Set<string>, candidates: string[]): string | null =>
+      candidates.find((column) => columns.has(column)) ?? null;
 
-    const languages = await query<{ id: number | bigint; lang_name: string | null }[]>(
-      `SELECT id, lang_name FROM language_values ORDER BY id ASC`
-    ).catch(() => [] as { id: number | bigint; lang_name: string | null }[]);
+    const subscriptions = await (async () => {
+      if (!(await tableExists('subscription_settings'))) return [];
+      const columns = await tableColumns('subscription_settings');
+      const idCol = pickColumn(columns, ['id']);
+      const nameCol = pickColumn(columns, ['subscription_name', 'name']);
+      if (!idCol || !nameCol) return [];
+      return query<{ id: number | bigint; subscription_name: string | null }[]>(
+        `SELECT \`${idCol}\` AS id, \`${nameCol}\` AS subscription_name
+         FROM subscription_settings
+         WHERE \`${nameCol}\` IS NOT NULL AND \`${nameCol}\` != ''
+         ORDER BY \`${idCol}\` ASC`
+      );
+    })().catch(() => [] as { id: number | bigint; subscription_name: string | null }[]);
+
+    const helpFallback = await (async () => {
+      if (!(await tableExists('help_html_pages'))) return [];
+      const columns = await tableColumns('help_html_pages');
+      const idCol = pickColumn(columns, ['id']);
+      const titleCol = pickColumn(columns, ['page_title', 'title']);
+      const langCol = pickColumn(columns, ['lang_id', 'language_id']);
+      if (!idCol || !titleCol) return [];
+
+      if (langCol) {
+        const rows = await query<{ id: number | bigint; page_title: string | null }[]>(
+          `SELECT \`${idCol}\` AS id, \`${titleCol}\` AS page_title
+           FROM help_html_pages
+           WHERE \`${langCol}\` = 1 AND \`${titleCol}\` IS NOT NULL AND \`${titleCol}\` != ''
+           ORDER BY \`${idCol}\` DESC`
+        );
+        if (rows.length > 0) return rows;
+      }
+
+      return query<{ id: number | bigint; page_title: string | null }[]>(
+        `SELECT \`${idCol}\` AS id, \`${titleCol}\` AS page_title
+         FROM help_html_pages
+         WHERE \`${titleCol}\` IS NOT NULL AND \`${titleCol}\` != ''
+         ORDER BY \`${idCol}\` DESC`
+      );
+    })().catch(() => [] as { id: number | bigint; page_title: string | null }[]);
+
+    const languages = await (async () => {
+      if (!(await tableExists('language_values'))) return [];
+      const columns = await tableColumns('language_values');
+      const idCol = pickColumn(columns, ['id']);
+      const nameCol = pickColumn(columns, ['lang_name', 'name', 'lang_value']);
+      if (!idCol || !nameCol) return [];
+      return query<{ id: number | bigint; lang_name: string | null }[]>(
+        `SELECT \`${idCol}\` AS id, \`${nameCol}\` AS lang_name
+         FROM language_values
+         ORDER BY \`${idCol}\` ASC`
+      );
+    })().catch(() => [] as { id: number | bigint; lang_name: string | null }[]);
 
     return {
       subscriptions: subscriptions.map((row) => ({
@@ -539,11 +598,27 @@ export async function getPromocodeMeta(): Promise<PromocodeMeta> {
   const prismaQuery = async <T>(sql: string, params: unknown[] = []): Promise<T> =>
     prisma.$queryRawUnsafe<T>(sql, ...params);
 
-  return {
-    subscriptions: await loadSubscriptionsFromTable(prismaQuery),
-    helpHtmlPages: await loadHelpHtmlPagesFromTable(prismaQuery),
-    languages: await loadLanguagesFromTable(prismaQuery),
-  };
+  let meta: PromocodeMeta;
+  try {
+    meta = {
+      subscriptions: await loadSubscriptionsFromTable(prismaQuery),
+      helpHtmlPages: await loadHelpHtmlPagesFromTable(prismaQuery),
+      languages: await loadLanguagesFromTable(prismaQuery),
+    };
+  } catch (err) {
+    console.error('promocode meta prisma load failed:', err);
+    meta = { subscriptions: [], helpHtmlPages: [], languages: [] };
+  }
+
+  if (
+    meta.subscriptions.length === 0 &&
+    meta.helpHtmlPages.length === 0 &&
+    meta.languages.length === 0
+  ) {
+    return getDefaultPromocodeMeta();
+  }
+
+  return meta;
 }
 
 export function generatePromocode(): string {
@@ -553,14 +628,27 @@ export function generatePromocode(): string {
 }
 
 function buildValidTo(form: PromocodeSettingFormData): string {
-  return `${form.toYear}-${form.toMonth}-${form.toDay}`;
+  const year = parseInt(String(form.toYear), 10);
+  const month = parseInt(String(form.toMonth), 10);
+  let day = parseInt(String(form.toDay), 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  const lastDay = new Date(year, month, 0).getDate();
+  if (!Number.isFinite(day) || day < 1) day = 1;
+  if (day > lastDay) day = lastDay;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 export async function createPromocodeSetting(
   form: PromocodeSettingFormData,
   creatorId: number
 ): Promise<number | null> {
-  await ensurePromocodeMetaTables();
+  try {
+    await ensurePromocodeMetaTables();
+  } catch (err) {
+    console.warn('promocode create bootstrap skipped:', err);
+  }
 
   const settingsTable = await getPromocodeSettingsTable();
   if (!settingsTable) return null;
@@ -794,5 +882,18 @@ export async function getLanguageListForHelpPage(pageTitle: string): Promise<{ i
     }
   }
 
-  return Array.from(langIds).map((id) => ({ id, value: langMap.get(id) ?? `Lang ${id}` }));
+  for (const id of PROMOCODE_FORM_LANGUAGE_IDS) {
+    if (langMap.has(id)) langIds.add(id);
+  }
+
+  if (langIds.size === 0) {
+    return PROMOCODE_FORM_LANGUAGES.map((row) => ({ id: row.id, value: row.value.toLowerCase() }));
+  }
+
+  return Array.from(langIds)
+    .sort((a, b) => a - b)
+    .map((id) => ({
+      id,
+      value: formatPromocodeLanguageLabel(langMap.get(id) ?? `Lang ${id}`),
+    }));
 }

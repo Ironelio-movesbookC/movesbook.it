@@ -296,11 +296,24 @@ export async function validateEnabledPromocode(promocode: string): Promise<{
   return { ok: true, id: Number(rows[0].id) };
 }
 
-async function resolveApplySender(isStaff: boolean): Promise<{
+async function resolveApplySender(params: {
+  isStaff: boolean;
+  senderLegacyUserId?: number | null;
+  senderEmail?: string | null;
+  senderName?: string | null;
+}): Promise<{
   senderId: number;
   senderEmail: string;
   senderName: string;
 }> {
+  if (!params.isStaff && params.senderLegacyUserId) {
+    return {
+      senderId: params.senderLegacyUserId,
+      senderEmail: params.senderEmail?.trim() || 'support@movesbook.net',
+      senderName: params.senderName?.trim() || params.senderEmail?.trim() || 'Movesbook',
+    };
+  }
+
   const superAdmin = await prisma.superAdmin.findFirst({
     where: { isActive: true },
     select: { id: true, email: true, name: true },
@@ -321,7 +334,7 @@ async function resolveApplySender(isStaff: boolean): Promise<{
   let senderId = 0;
   const usersTable = await getLegacyUsersTable();
   if (usersTable) {
-    if (isStaff) {
+    if (params.isStaff) {
       const legacySuper = await runQuery<{ id: number | bigint }[]>(
         `SELECT id FROM \`${usersTable}\` WHERE role_id = 1 AND delete_status = 'N' ORDER BY id ASC LIMIT 1`
       );
@@ -334,7 +347,7 @@ async function resolveApplySender(isStaff: boolean): Promise<{
     if (senderId === 0) senderId = 1;
   }
 
-  if (isStaff && superAdmin) {
+  if (params.isStaff && superAdmin) {
     const legacySuper = await runQuery<{ id: number | bigint; email: string | null }[]>(
       `SELECT id, email FROM \`${usersTable ?? 'legacy_users'}\` WHERE role_id = 1 AND delete_status = 'N' ORDER BY id ASC LIMIT 1`
     ).catch(() => []);
@@ -361,6 +374,9 @@ export async function sendPromocodeInvite(params: {
   origin: string;
   isStaff: boolean;
   inviterUsername?: string | null;
+  senderLegacyUserId?: number | null;
+  senderEmail?: string | null;
+  senderName?: string | null;
   sendEmail: (payload: { to: string; subject: string; html: string; replyTo?: string }) => Promise<void>;
 }): Promise<{ status: 'success' | 'error'; message: string }> {
   const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
@@ -409,7 +425,12 @@ export async function sendPromocodeInvite(params: {
     else finalMessage = helpContent;
   }
 
-  const { senderId, senderEmail, senderName } = await resolveApplySender(params.isStaff);
+  const { senderId, senderEmail, senderName } = await resolveApplySender({
+    isStaff: params.isStaff,
+    senderLegacyUserId: params.senderLegacyUserId,
+    senderEmail: params.senderEmail,
+    senderName: params.senderName,
+  });
   const appliesTable = await getPromocodeAppliesTable();
   if (!appliesTable) {
     return { status: 'error', message: 'Promocode applies table not found.' };

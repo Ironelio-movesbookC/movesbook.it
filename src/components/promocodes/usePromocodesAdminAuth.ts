@@ -9,7 +9,9 @@ export function usePromocodesAdminAuth() {
 
   useEffect(() => {
     const adminData = localStorage.getItem('adminUser');
-    if (!adminData) {
+    const userData = localStorage.getItem('user');
+    const token = localStorage.getItem('token');
+    if (!adminData && (!userData || !token)) {
       router.push('/');
       return;
     }
@@ -21,7 +23,7 @@ export function usePromocodesAdminAuth() {
 
 export async function promocodesFetch(path: string, init?: RequestInit) {
   const { getAdminBearerToken } = await import('@/lib/admin/clientAdminAuth');
-  const token = getAdminBearerToken();
+  const token = getAdminBearerToken() || localStorage.getItem('token')?.trim();
   const headers = new Headers(init?.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (init?.body && !headers.has('Content-Type')) {
