@@ -1,4 +1,9 @@
 import { serialize, unserialize } from 'php-serialize';
+import {
+  PROMOCODE_FORM_LANGUAGES,
+  PROMOCODE_FORM_LANGUAGE_IDS,
+  formatPromocodeLanguageLabel,
+} from './promocodeLanguages';
 import { prisma } from '@/lib/prisma';
 import {
   ensurePromocodeMetaTables,
@@ -623,14 +628,27 @@ export function generatePromocode(): string {
 }
 
 function buildValidTo(form: PromocodeSettingFormData): string {
-  return `${form.toYear}-${form.toMonth}-${form.toDay}`;
+  const year = parseInt(String(form.toYear), 10);
+  const month = parseInt(String(form.toMonth), 10);
+  let day = parseInt(String(form.toDay), 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  const lastDay = new Date(year, month, 0).getDate();
+  if (!Number.isFinite(day) || day < 1) day = 1;
+  if (day > lastDay) day = lastDay;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 export async function createPromocodeSetting(
   form: PromocodeSettingFormData,
   creatorId: number
 ): Promise<number | null> {
-  await ensurePromocodeMetaTables();
+  try {
+    await ensurePromocodeMetaTables();
+  } catch (err) {
+    console.warn('promocode create bootstrap skipped:', err);
+  }
 
   const settingsTable = await getPromocodeSettingsTable();
   if (!settingsTable) return null;
@@ -864,5 +882,18 @@ export async function getLanguageListForHelpPage(pageTitle: string): Promise<{ i
     }
   }
 
-  return Array.from(langIds).map((id) => ({ id, value: langMap.get(id) ?? `Lang ${id}` }));
+  for (const id of PROMOCODE_FORM_LANGUAGE_IDS) {
+    if (langMap.has(id)) langIds.add(id);
+  }
+
+  if (langIds.size === 0) {
+    return PROMOCODE_FORM_LANGUAGES.map((row) => ({ id: row.id, value: row.value.toLowerCase() }));
+  }
+
+  return Array.from(langIds)
+    .sort((a, b) => a - b)
+    .map((id) => ({
+      id,
+      value: formatPromocodeLanguageLabel(langMap.get(id) ?? `Lang ${id}`),
+    }));
 }

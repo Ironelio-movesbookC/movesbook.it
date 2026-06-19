@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { PromocodeMeta, PromocodeSettingFormData, PromocodeSettingRow } from '@/lib/promocodes/types';
 import { promocodesFetch } from './usePromocodesAdminAuth';
+import { mergePromocodeLanguageOptions, PROMOCODE_FORM_LANGUAGES } from '@/lib/promocodes/promocodeLanguages';
 
 const MONTHS = [
   { value: '01', label: 'January' },
@@ -83,7 +84,9 @@ export default function PromocodeForm({
   );
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [languageOptions, setLanguageOptions] = useState<{ id: number; value: string }[]>([]);
+  const [languageOptions, setLanguageOptions] = useState<{ id: number; value: string }[]>(
+    PROMOCODE_FORM_LANGUAGES
+  );
 
   useEffect(() => {
     promocodesFetch('/api/admin/promocodes/meta')
@@ -116,7 +119,9 @@ export default function PromocodeForm({
       body: JSON.stringify({ pageTitle: page.title }),
     });
     const langs = await res.json();
-    if (Array.isArray(langs)) setLanguageOptions(langs);
+    if (Array.isArray(langs)) {
+      setLanguageOptions(mergePromocodeLanguageOptions(langs));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

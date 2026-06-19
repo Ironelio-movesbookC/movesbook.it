@@ -90,13 +90,29 @@ export async function POST(request: NextRequest) {
       : auth.access.legacyUserId;
     const id = await createPromocodeSetting(form, creatorId);
     if (!id) {
-      return NextResponse.json({ error: 'Failed to save promocode' }, { status: 500 });
+      return NextResponse.json(
+        { error: 'Failed to save promocode. Ensure promocode tables exist (run npm run db:push or db:ensure-promocode-meta).' },
+        { status: 500 }
+      );
     }
-    const setting = await getPromocodeSettingById(id);
+    let setting = null;
+    try {
+      setting = await getPromocodeSettingById(id);
+    } catch (loadErr) {
+      console.warn('promocodes settings POST: created but load failed:', loadErr);
+    }
     return NextResponse.json({ ok: true, id, setting });
   } catch (e) {
     console.error('promocodes settings POST:', e);
-    return NextResponse.json({ error: 'Failed to create promocode' }, { status: 500 });
+    const message = e instanceof Error ? e.message : String(e);
+    const exposeDetails =
+      process.env.NODE_ENV !== 'production' || process.env.PROMOCODE_META_DEBUG === '1';
+    return NextResponse.json(
+      exposeDetails
+        ? { error: 'Failed to create promocode', details: message }
+        : { error: 'Failed to create promocode' },
+      { status: 500 }
+    );
   }
 }
 
