@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sendIonosEmail } from '@/lib/ionosEmail';
 import { requirePromocodeAccess } from '@/lib/promocodes/promocodeAccess';
 import { loadSendInvitePreview, sendPromocodeInvite } from '@/lib/promocodes/sendInviteService';
+import { resolvePublicOrigin } from '@/lib/siteUrl';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
       otherInfo,
       advPage,
       username,
-      origin: req.nextUrl.origin,
+      origin: resolvePublicOrigin(req),
       isStaff: access.isStaff,
       inviterUsername: username,
     });
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
       otherInfo: body.otherInfo?.trim() ?? '',
       advPage: body.advPage?.trim() ?? '',
       emailContent: body.emailContent?.trim() ?? '',
-      origin: req.nextUrl.origin,
+      origin: resolvePublicOrigin(req),
       isStaff: access.isStaff,
       inviterUsername: access.isAdmin ? body.inviterUsername?.trim() ?? null : access.username,
       senderLegacyUserId: access.isAdmin ? null : access.legacyUserId,

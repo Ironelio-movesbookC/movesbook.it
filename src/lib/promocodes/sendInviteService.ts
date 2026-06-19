@@ -17,6 +17,7 @@ import {
   legacyLanguageCodeFromId,
   normalizeLegacyLanguageCode,
 } from './legacyLanguageCode';
+import { coercePublicOrigin } from '@/lib/siteUrl';
 
 export type SendInvitePreview = {
   emailAddress: string;
@@ -138,6 +139,7 @@ export function buildRegisterUrl(
   languageName: string,
   options: { isStaff: boolean; inviterUsername?: string | null }
 ): string {
+  const publicOrigin = coercePublicOrigin(origin);
   const params = new URLSearchParams({
     user_email: email,
     promocode,
@@ -150,7 +152,7 @@ export function buildRegisterUrl(
   if (languageName) {
     params.set('lang', languageName);
   }
-  return `${origin}/users/quickRegister?${params.toString()}`;
+  return `${publicOrigin}/users/quickRegister?${params.toString()}`;
 }
 
 export function buildInviteEmailHtml(data: {

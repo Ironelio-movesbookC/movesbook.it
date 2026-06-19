@@ -146,11 +146,29 @@ export async function PUT(request: NextRequest) {
     }
     const form = parseForm(body);
     const ok = await updatePromocodeSetting(id, form);
-    if (!ok) return NextResponse.json({ error: 'Failed to update promocode' }, { status: 500 });
-    const setting = await getPromocodeSettingById(id);
+    if (!ok) {
+      return NextResponse.json(
+        { error: 'Failed to update promocode. Ensure promocode tables exist (run npm run db:push or db:ensure-promocode-meta).' },
+        { status: 500 }
+      );
+    }
+    let setting = null;
+    try {
+      setting = await getPromocodeSettingById(id);
+    } catch (loadErr) {
+      console.warn('promocodes settings PUT: updated but load failed:', loadErr);
+    }
     return NextResponse.json({ ok: true, setting });
   } catch (e) {
     console.error('promocodes settings PUT:', e);
-    return NextResponse.json({ error: 'Failed to update promocode' }, { status: 500 });
+    const message = e instanceof Error ? e.message : String(e);
+    const exposeDetails =
+      process.env.NODE_ENV !== 'production' || process.env.PROMOCODE_META_DEBUG === '1';
+    return NextResponse.json(
+      exposeDetails
+        ? { error: 'Failed to update promocode', details: message }
+        : { error: 'Failed to update promocode' },
+      { status: 500 }
+    );
   }
 }

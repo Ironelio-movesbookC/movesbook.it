@@ -551,7 +551,22 @@ export default function QuickRegisterForm() {
           disccount_hidden: discountHidden,
         }),
       });
-      const data = await res.json();
+      const raw = await res.text();
+      let data: { success?: boolean; message?: string; error?: string } | null = null;
+      if (raw.trim()) {
+        try {
+          data = JSON.parse(raw) as { success?: boolean; message?: string; error?: string };
+        } catch {
+          throw new Error('Registration failed: invalid server response.');
+        }
+      }
+      if (!data) {
+        throw new Error(
+          res.ok
+            ? 'Registration failed: empty server response.'
+            : `Registration failed (${res.status}). Please try again.`
+        );
+      }
       if (!res.ok || !data.success) {
         throw new Error(data.message || data.error || 'Registration failed');
       }

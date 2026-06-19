@@ -18,6 +18,7 @@ import {
   buildInviteEmailHtml,
   buildRegisterUrl,
 } from '@/lib/promocodes/sendInviteService';
+import { buildPromocodeSettingsSelectSql } from '@/lib/promocodes/promocodeSettingsQuery';
 
 const ROLE_NAMES: Record<number, string> = {
   1: 'Super Admin',
@@ -272,7 +273,7 @@ export async function getNotificationByPromocodeDashboard(params: {
     if (promoIds.length > 0) {
       const placeholders = promoIds.map(() => '?').join(',');
       const promoRows = await prisma.$queryRawUnsafe<PromoRow[]>(
-        `SELECT id, code, valid_to FROM \`${settingsTable}\` WHERE id IN (${placeholders})`,
+        `SELECT id, code, CAST(valid_to AS CHAR) AS valid_to FROM \`${settingsTable}\` WHERE id IN (${placeholders})`,
         ...promoIds
       );
       for (const p of promoRows) {
@@ -332,12 +333,14 @@ export async function getNotificationByPromocodeDashboard(params: {
       legacyUserId
     );
 
+    const promoSelectSql = await buildPromocodeSettingsSelectSql(settingsTable);
+
     for (const applyRecord of receivedInvitations) {
       const promocodeId = rowNum(applyRecord, 'promocode_id');
       if (promocodeId <= 0) continue;
 
       const promoRows = await prisma.$queryRawUnsafe<PromoRow[]>(
-        `SELECT * FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,
+        `SELECT ${promoSelectSql} FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,
         promocodeId
       );
       const promocodeData = promoRows[0];
@@ -385,6 +388,7 @@ export async function getNotificationByPromocodeDashboard(params: {
 
   const registeredUsers: RegisteredUserRow[] = [];
   if (appliesTable && settingsTable && usersTable) {
+    const promoSelectSql = await buildPromocodeSettingsSelectSql(settingsTable);
     const friendRows = await prisma.$queryRawUnsafe<{ receiver_id: number | null }[]>(
       `SELECT receiver_id FROM \`${appliesTable}\`
        WHERE sender_id = ? AND delete_status = 2`,
@@ -410,7 +414,7 @@ export async function getNotificationByPromocodeDashboard(params: {
       if (promocodeId <= 0) continue;
 
       const promoRows = await prisma.$queryRawUnsafe<PromoRow[]>(
-        `SELECT * FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,
+        `SELECT ${promoSelectSql} FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,
         promocodeId
       );
       const promocodeData = promoRows[0];
@@ -788,8 +792,9 @@ export async function sendNotificationByPromocodeInvite(params: {
     };
   }
 
+  const promoSelectSql = await buildPromocodeSettingsSelectSql(settingsTable);
   const promoRows = await prisma.$queryRawUnsafe<PromoRow[]>(
-    `SELECT * FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,
+    `SELECT ${promoSelectSql} FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,
     params.promocodeId
   );
   const promocode = promoRows[0];
