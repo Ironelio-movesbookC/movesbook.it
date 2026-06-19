@@ -4,21 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import ServiceArchiveTabs from '@/components/club/services/ServiceArchiveTabs';
 import ServiceDataTable from '@/components/club/services/ServiceDataTable';
 import { Member, Column } from '@/types/clubTable';
-import { clubApiFetch, formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
-
-type Receipt = {
-  id: string;
-  memberName: string;
-  typology: string;
-  serviceName: string;
-  receiptDate: string | null;
-  documentType: string;
-  documentNumber: string;
-  cost: number;
-  paymentIn: number;
-  annotations: string;
-  operatorName: string;
-};
+import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
+import { fetchReceipts } from '@/lib/club/serviceSaleClient';
 
 const columns: Column[] = [
   { key: 'name', header: 'Full Name' },
@@ -42,7 +29,7 @@ export default function ServiceReceiptsPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await clubApiFetch<{ receipts: Receipt[] }>('/api/club/services/receipts');
+      const res = await fetchReceipts();
       setData(
         res.receipts.map((r) => ({
           id: r.id,

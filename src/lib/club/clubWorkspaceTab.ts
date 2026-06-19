@@ -3,6 +3,20 @@ export const CLUB_HAS_FORM_PROFILE_KEY = 'clubHasFormProfile';
 
 export type ClubWorkspaceTab = 'my-page' | 'my-entity';
 
+/** Routes opened from the club admin sidebar — keep My Club tab active here. */
+const CLUB_WORKSPACE_PATH_PREFIXES = [
+  '/club/',
+  '/clubs/',
+  '/clubMembers/',
+  '/clubSettings/',
+  '/ArchiveSeles/',
+] as const;
+
+export function isClubWorkspacePath(pathname: string | null | undefined): boolean {
+  if (!pathname) return false;
+  return CLUB_WORKSPACE_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
 export function readClubWorkspaceTab(): ClubWorkspaceTab | null {
   if (typeof window === 'undefined') return null;
   const value = localStorage.getItem(CLUB_WORKSPACE_ACTIVE_TAB_KEY);

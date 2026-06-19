@@ -25,8 +25,31 @@ function toDateOnly(value: string): Date {
   return new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
 }
 
+
+function buildPaymentCreateData(data: {
+  procedureRecordId: string;
+  amount: number;
+  balanceAfter: number;
+  paymentDate: Date;
+  operatorId: string;
+  payMode: string | null;
+  notes: string | null;
+}): Prisma.ProcedurePaymentUncheckedCreateInput {
+  return data as Prisma.ProcedurePaymentUncheckedCreateInput;
+}
+
+function readBalanceAfter(payment: unknown): number | null {
+  const value = (payment as { balanceAfter?: Prisma.Decimal | null }).balanceAfter;
+  return value != null ? decimalToNumber(value) : null;
+}
+
 function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function metaString(metadata: Record<string, unknown> | null | undefined, key: string): string {
+  const value = metadata?.[key];
+  return value != null ? String(value).trim() : '';
 }
 
 async function loadUserNames(ids: string[]): Promise<Map<string, string>> {
@@ -82,14 +105,15 @@ export class ProcedureService {
       let paymentId: string | null = null;
       if (initialPayment > 0) {
         const payment = await tx.procedurePayment.create({
-          data: {
+          data: buildPaymentCreateData({
             procedureRecordId: record.id,
             amount: initialPayment,
+            balanceAfter: balanceAmount,
             paymentDate: recordDate,
             operatorId,
             payMode: input.payMode ?? null,
             notes: input.notes ?? null,
-          },
+          }),
         });
         paymentId = payment.id;
       }
@@ -152,14 +176,15 @@ export class ProcedureService {
 
     return prisma.$transaction(async (tx) => {
       const payment = await tx.procedurePayment.create({
-        data: {
+        data: buildPaymentCreateData({
           procedureRecordId: record.id,
           amount,
+          balanceAfter: newBalance,
           paymentDate,
           operatorId,
           payMode: input.payMode ?? null,
           notes: input.notes ?? null,
-        },
+        }),
       });
 
       await tx.procedureRecord.update({
@@ -287,7 +312,7 @@ export class ProcedureService {
         orderBy: { paymentDate: 'desc' },
         skip,
         take: pageSize,
-        include: { procedureRecord: { select: { memberId: true } } },
+        include: { procedureRecord: { select: { memberId: true, metadata: true } } },
       }),
     ]);
 
@@ -295,17 +320,23 @@ export class ProcedureService {
       rows.flatMap((r) => [r.procedureRecord.memberId, r.operatorId].filter(Boolean) as string[])
     );
 
-    const items: ProcedurePaymentDto[] = rows.map((row) => ({
-      id: row.id,
-      procedureRecordId: row.procedureRecordId,
-      memberName: nameById.get(row.procedureRecord.memberId) ?? row.procedureRecord.memberId,
-      amount: decimalToNumber(row.amount),
-      paymentDate: row.paymentDate.toISOString().slice(0, 10),
-      operatorId: row.operatorId,
-      operatorName: row.operatorId ? nameById.get(row.operatorId) ?? '-' : '-',
-      payMode: row.payMode,
-      notes: row.notes,
-    }));
+    const items: ProcedurePaymentDto[] = rows.map((row) => {
+      const metadata = (row.procedureRecord.metadata as Record<string, unknown> | null) ?? null;
+      return {
+        id: row.id,
+        procedureRecordId: row.procedureRecordId,
+        memberName: nameById.get(row.procedureRecord.memberId) ?? row.procedureRecord.memberId,
+        amount: decimalToNumber(row.amount),
+        paymentDate: row.paymentDate.toISOString().slice(0, 10),
+        operatorId: row.operatorId,
+        operatorName: row.operatorId ? nameById.get(row.operatorId) ?? '-' : '-',
+        payMode: row.payMode,
+        notes: row.notes,
+        serviceName: metaString(metadata, 'serviceName') || null,
+        typology: 'SERVICES',
+        balanceAfter: readBalanceAfter(row),
+      };
+    });
 
     return paginated(items, total, page, pageSize);
   }
@@ -334,7 +365,9 @@ export class ProcedureService {
       }),
     ]);
 
-    const nameById = await loadUserNames(rows.map((r) => r.memberId));
+    const nameById = await loadUserNames(
+      rows.flatMap((r) => [r.memberId, r.operatorId].filter(Boolean) as string[])
+    );
 
     const items: ProcedureReceiptDto[] = rows.map((row) => ({
       id: row.id,
@@ -348,6 +381,8 @@ export class ProcedureService {
       serviceName: row.serviceName,
       receiptDate: row.receiptDate.toISOString().slice(0, 10),
       annotations: row.annotations,
+      typology: 'SERVICES',
+      operatorName: row.operatorId ? nameById.get(row.operatorId) ?? '-' : '-',
     }));
 
     return paginated(items, total, page, pageSize);

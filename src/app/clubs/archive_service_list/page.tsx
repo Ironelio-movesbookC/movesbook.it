@@ -5,25 +5,15 @@ import { useRouter } from 'next/navigation';
 import ServiceArchiveTabs from '@/components/club/services/ServiceArchiveTabs';
 import ServiceDataTable from '@/components/club/services/ServiceDataTable';
 import { Member, Column } from '@/types/clubTable';
-import { clubApiFetch, formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
+import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
+import {
+  deletePurchase,
+  fetchPurchases,
+  type ServiceSalePurchase,
+} from '@/lib/club/serviceSaleClient';
 import { Trash2 } from 'lucide-react';
 
-type Purchase = {
-  id: string;
-  memberName: string;
-  typology: string;
-  sectorName: string;
-  serviceName: string;
-  paydate: string | null;
-  value: number;
-  pay: number;
-  rest: number;
-  notes: string;
-  operatorName: string;
-  lastPaymentDate: string | null;
-};
-
-function mapPurchase(p: Purchase, i: number, onDelete: (id: string) => void): Member {
+function mapPurchase(p: ServiceSalePurchase, i: number, onDelete: (id: string) => void): Member {
   return {
     id: p.id,
     number: i + 1,
@@ -79,13 +69,13 @@ export default function ArchiveServiceListPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await clubApiFetch<{ purchases: Purchase[] }>('/api/club/services/purchases');
+      const res = await fetchPurchases();
       setData(
         res.purchases.map((p, i) =>
           mapPurchase(p, i, async (id) => {
             if (!confirm('Delete this service record?')) return;
             try {
-              await clubApiFetch(`/api/club/services/purchases?id=${id}`, { method: 'DELETE' });
+              await deletePurchase(id);
               load();
             } catch (e) {
               alert(e instanceof Error ? e.message : 'Delete failed');

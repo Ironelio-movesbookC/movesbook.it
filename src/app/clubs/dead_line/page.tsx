@@ -5,22 +5,8 @@ import { useRouter } from 'next/navigation';
 import ServiceArchiveTabs from '@/components/club/services/ServiceArchiveTabs';
 import ServiceDataTable from '@/components/club/services/ServiceDataTable';
 import { Member, Column } from '@/types/clubTable';
-import { clubApiFetch, formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
-
-type Purchase = {
-  id: string;
-  memberName: string;
-  typology: string;
-  sectorName: string;
-  serviceName: string;
-  paydate: string | null;
-  value: number;
-  pay: number;
-  rest: number;
-  notes: string;
-  operatorName: string;
-  lastPaymentDate: string | null;
-};
+import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
+import { fetchDeadlines } from '@/lib/club/serviceSaleClient';
 
 const columns: Column[] = [
   { key: 'name', header: 'Full Name' },
@@ -46,9 +32,7 @@ export default function DeadLinePage() {
     setLoading(true);
     setError('');
     try {
-      const res = await clubApiFetch<{ purchases: Purchase[] }>(
-        '/api/club/services/purchases?view=deadlines'
-      );
+      const res = await fetchDeadlines();
       setData(
         res.purchases.map((p) => ({
           id: p.id,

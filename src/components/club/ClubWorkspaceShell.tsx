@@ -20,8 +20,10 @@ import {
 } from '@/lib/club/clubSidebarLabel';
 import {
   readClubWorkspaceTab,
+  readSelectedClubHint,
   writeClubWorkspaceTab,
   writeClubFormProfileHint,
+  isClubWorkspacePath,
   type ClubWorkspaceTab,
 } from '@/lib/club/clubWorkspaceTab';
 import ClubDashboardMyPageBanner from '@/app/club/dashboard/components/ClubDashboardMyPageBanner';
@@ -125,8 +127,16 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const savedTab = readClubWorkspaceTab();
+    const hasClubContext = Boolean(selectedClubId) || readSelectedClubHint();
+
+    if (isClubWorkspacePath(pathname) && hasClubContext && savedTab !== 'my-page') {
+      setActiveTab('my-entity');
+      writeClubWorkspaceTab('my-entity');
+      return;
+    }
+
     if (savedTab) setActiveTab(savedTab);
-  }, [pathname]);
+  }, [pathname, selectedClubId]);
 
   useEffect(() => {
     if (clubsLoaded && !hasFormClub && activeTab === 'my-entity') {

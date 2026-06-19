@@ -1950,6 +1950,7 @@ model ProcedurePayment {
   id                String   @id @default(cuid())
   procedureRecordId String
   amount            Decimal  @db.Decimal(12, 2)
+  balanceAfter      Decimal? @db.Decimal(12, 2)
   paymentDate       DateTime @db.Date
   operatorId        String?
   payMode           String?

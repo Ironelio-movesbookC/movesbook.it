@@ -47,6 +47,9 @@ export type ProcedurePaymentDto = {
   operatorName: string;
   payMode: string | null;
   notes: string | null;
+  serviceName: string | null;
+  typology: string;
+  balanceAfter: number | null;
 };
 
 export type ProcedureReceiptDto = {
@@ -61,6 +64,8 @@ export type ProcedureReceiptDto = {
   serviceName: string | null;
   receiptDate: string;
   annotations: string | null;
+  typology: string;
+  operatorName: string;
 };
 
 export type CreateProcedureRecordInput = {

@@ -3,26 +3,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import ServiceArchiveTabs from '@/components/club/services/ServiceArchiveTabs';
-import { clubApiFetch, formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
-
-type Purchase = {
-  id: string;
-  memberName: string;
-  serviceName: string;
-  sectorName: string;
-  value: number;
-  pay: number;
-  rest: number;
-  paydate: string | null;
-  notes: string;
-};
+import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
+import { addPayment, fetchPurchase, type ServiceSalePurchase } from '@/lib/club/serviceSaleClient';
 
 export default function PaymentDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = String(params?.id ?? '');
 
-  const [purchase, setPurchase] = useState<Purchase | null>(null);
+  const [purchase, setPurchase] = useState<ServiceSalePurchase | null>(null);
   const [amountPaid, setAmountPaid] = useState('');
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
@@ -34,18 +23,8 @@ export default function PaymentDetailPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await clubApiFetch<{ purchase: Purchase }>(`/api/club/services/purchases/${id}`);
-      setPurchase({
-        id: res.purchase.id,
-        memberName: res.purchase.memberName,
-        serviceName: res.purchase.serviceName,
-        sectorName: res.purchase.sectorName,
-        value: res.purchase.value,
-        pay: res.purchase.pay,
-        rest: res.purchase.rest,
-        paydate: res.purchase.paydate,
-        notes: res.purchase.notes,
-      });
+      const res = await fetchPurchase(id);
+      setPurchase(res.purchase);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     }
@@ -74,17 +53,14 @@ export default function PaymentDetailPage() {
 
     setSaving(true);
     try {
-      await clubApiFetch(`/api/club/services/purchases/${id}`, {
-        method: 'POST',
-        body: JSON.stringify({
-          amountPaid: paidAmount,
-          paymentDate,
-          notes,
-          createReceipt,
-          receiptDocumentType: 'Invoice',
-          receiptNumber: receiptNumber || undefined,
-          receiptAnnotations: notes,
-        }),
+      await addPayment(id, {
+        amountPaid: paidAmount,
+        paymentDate,
+        notes,
+        createReceipt,
+        receiptDocumentType: 'Invoice',
+        receiptNumber: receiptNumber || undefined,
+        receiptAnnotations: notes,
       });
       setSuccess('Payment saved successfully.');
       setAmountPaid('');

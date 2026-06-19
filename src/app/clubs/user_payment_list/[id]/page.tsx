@@ -5,20 +5,8 @@ import { useParams } from 'next/navigation';
 import ServiceArchiveTabs from '@/components/club/services/ServiceArchiveTabs';
 import ServiceDataTable from '@/components/club/services/ServiceDataTable';
 import { Member, Column } from '@/types/clubTable';
-import { clubApiFetch, formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
-
-type Payment = {
-  id: string;
-  spId: string;
-  memberName: string;
-  typology: string;
-  serviceName: string;
-  paymentDate: string | null;
-  paid: number;
-  balance: number;
-  description: string;
-  operatorName: string;
-};
+import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
+import { fetchPaymentsForRecord } from '@/lib/club/serviceSaleClient';
 
 const columns: Column[] = [
   { key: 'name', header: 'Full Name' },
@@ -43,9 +31,7 @@ export default function UserPaymentListPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await clubApiFetch<{ payments: Payment[] }>(
-        `/api/club/services/payments?spId=${spId}`
-      );
+      const res = await fetchPaymentsForRecord(spId);
       setData(
         res.payments.map((p) => ({
           id: p.id,
