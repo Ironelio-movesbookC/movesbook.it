@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { findExistingTable } from '@/lib/club/servicePurchasesDb';
+import { findExistingTable } from '@/lib/club/legacyTableLookup';
 
 const SERVICE_TABLE_CANDIDATES = ['club_setting_services', 'club_setting_service'];
 const SECTOR_TABLE_CANDIDATES = ['club_setting_sectors', 'club_setting_sector'];

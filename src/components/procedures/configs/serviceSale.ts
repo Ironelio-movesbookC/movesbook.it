@@ -99,3 +99,13 @@ export const serviceSaleMovementColumns: Column[] = [
   { key: 'casual', header: 'Notes' },
   { key: 'operator', header: 'Operator' },
 ];
+
+export const serviceSaleCashInColumns: Column[] = [
+  { key: 'name', header: 'Full Name' },
+  { key: 'paid', header: 'Value In', render: (v) => formatEuro(v) },
+  { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
+  { key: 'typology', header: 'Typology' },
+  { key: 'service', header: 'Service slot' },
+  { key: 'operator', header: 'Operator' },
+  { key: 'casual', header: 'Notes' },
+];
