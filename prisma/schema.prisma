@@ -1991,6 +1991,7 @@ model ProcedureReceipt {
 
   @@index([clubId, procedureRecordId])
   @@map("procedure_receipts")
+}
 // Legacy promocode tables (PHP movesbook-new compatibility)
 // Run: npm run db:push  OR  npx prisma migrate deploy
 // ---------------------------------------------------------------------------
