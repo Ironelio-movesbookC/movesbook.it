@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { resolvePublicPath, verifyPublicFile } from '@/lib/serverPublicDir';
 import { audioPublicPath, outcomeService } from '@/lib/outcomes';
+import { mapLegacyLanguageTabs } from '@/lib/outcomes/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,11 +65,10 @@ export async function GET(request: NextRequest) {
       lang,
       languageId: lang === 0 ? 'default' : String(lang),
       isDefaultLang: lang === 0,
-      languages: languages.map((l) => ({
-        id: l.legacyLangId ?? l.id,
-        languageId: l.id,
-        name: l.name,
-      })),
+      languages: mapLegacyLanguageTabs(languages).map((tab) => {
+        const lang = languages.find((l) => l.legacyLangId === tab.id);
+        return { ...tab, languageId: lang?.id ?? null };
+      }),
       introParagraph:
         lang === 0
           ? 'Edit descriptions and codes on the Default tab. These defaults apply across all languages.'

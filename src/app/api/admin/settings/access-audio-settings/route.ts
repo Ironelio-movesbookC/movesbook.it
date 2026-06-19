@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
 import { outcomeService } from '@/lib/outcomes';
+import { mapLegacyLanguageTabs } from '@/lib/outcomes/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,10 +46,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       lang,
       isDefaultLang: lang === 0,
-      languages: languages.map((l) => ({
-        id: l.legacyLangId ?? 0,
-        name: l.name,
-      })),
+      languages: mapLegacyLanguageTabs(languages),
       introParagraph:
         lang === 0
           ? 'Edit descriptions and codes on the Default tab. These defaults apply across all languages.'

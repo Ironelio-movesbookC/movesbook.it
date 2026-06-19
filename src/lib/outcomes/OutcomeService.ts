@@ -23,6 +23,8 @@ const LEGACY_LANGUAGE_SEED = [
   { legacyLangId: 8, code: 'hi', name: 'Hindi', isDefault: false },
   { legacyLangId: 9, code: 'zh', name: 'Chinese', isDefault: false },
   { legacyLangId: 10, code: 'ar', name: 'Arabic', isDefault: false },
+  { legacyLangId: 11, code: 'ja', name: 'Japanese', isDefault: false },
+  { legacyLangId: 12, code: 'id', name: 'Indonesia', isDefault: false },
 ] as const;
 
 function slugCode(description: string, fallback: string): string {
@@ -49,9 +51,38 @@ export function clubAudioPublicPath(clubId: string, filename: string): string {
 export class OutcomeService {
   async seedLanguagesIfEmpty(): Promise<void> {
     const count = await prisma.language.count();
-    if (count > 0) return;
+    if (count === 0) {
+      for (const lang of LEGACY_LANGUAGE_SEED) {
+        await prisma.language.create({
+          data: {
+            code: lang.code,
+            name: lang.name,
+            isDefault: lang.isDefault,
+            isActive: true,
+            legacyLangId: lang.legacyLangId,
+          },
+        });
+      }
+      return;
+    }
 
+    await this.ensureLegacyLanguages();
+  }
+
+  /** Create or backfill languages from LEGACY_LANGUAGE_SEED (ids 1–12). */
+  async ensureLegacyLanguages(): Promise<void> {
     for (const lang of LEGACY_LANGUAGE_SEED) {
+      const existing = await prisma.language.findFirst({ where: { code: lang.code } });
+      if (existing) {
+        if (existing.legacyLangId == null) {
+          await prisma.language.update({
+            where: { id: existing.id },
+            data: { legacyLangId: lang.legacyLangId, isActive: true },
+          });
+        }
+        continue;
+      }
+
       await prisma.language.create({
         data: {
           code: lang.code,
@@ -343,23 +374,25 @@ export class OutcomeService {
     code: string;
     message: string;
   }): Promise<string> {
-    if (params.settingId) {
-      await prisma.clubCustomOutcome.update({
-        where: { id: params.settingId },
-        data: { code: params.code, message: params.message },
-      });
-      return params.settingId;
-    }
-
-    const created = await prisma.clubCustomOutcome.create({
-      data: {
+    const row = await prisma.clubCustomOutcome.upsert({
+      where: {
+        clubId_outcomeTypeId: {
+          clubId: params.clubId,
+          outcomeTypeId: params.typeId,
+        },
+      },
+      create: {
         clubId: params.clubId,
         outcomeTypeId: params.typeId,
         code: params.code,
         message: params.message,
       },
+      update: {
+        code: params.code,
+        message: params.message,
+      },
     });
-    return created.id;
+    return row.id;
   }
 
   async setClubCustomAudio(settingId: string, audioFile: string | null): Promise<void> {
@@ -375,6 +408,27 @@ export class OutcomeService {
       select: { audioFile: true },
     });
     return row?.audioFile ?? null;
+  }
+
+  async resolveClubCustomSettingId(clubId: string, typeId: string): Promise<string | null> {
+    const row = await prisma.clubCustomOutcome.findUnique({
+      where: {
+        clubId_outcomeTypeId: { clubId, outcomeTypeId: typeId },
+      },
+      select: { id: true },
+    });
+    return row?.id ?? null;
+  }
+
+  async getClubCustomOutcomeForClub(
+    settingId: string,
+    clubId: string
+  ): Promise<{ id: string; audioFile: string | null } | null> {
+    const row = await prisma.clubCustomOutcome.findFirst({
+      where: { id: settingId, clubId },
+      select: { id: true, audioFile: true },
+    });
+    return row;
   }
 
   async findOutcomeType(params: { typeId?: string; code?: string }) {

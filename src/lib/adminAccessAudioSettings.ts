@@ -1,11 +1,12 @@
 import { prisma } from '@/lib/prisma';
 import { outcomeService } from '@/lib/outcomes';
+import { mapLegacyLanguageTabs } from '@/lib/outcomes/types';
 
 export { audioPublicPath } from '@/lib/outcomes';
 
 export async function fetchLanguages() {
   const langs = await outcomeService.listLanguages();
-  return langs.map((l) => ({ id: l.legacyLangId ?? 0, name: l.name }));
+  return mapLegacyLanguageTabs(langs);
 }
 
 export async function seedTypesIfEmpty(): Promise<void> {

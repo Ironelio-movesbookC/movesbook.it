@@ -40,6 +40,8 @@ export const LEGACY_OUTCOME_LANGUAGES: OutcomeLanguage[] = [
   { id: 8, name: 'Hindi' },
   { id: 9, name: 'Chinese' },
   { id: 10, name: 'Arabic' },
+  { id: 11, name: 'Japanese' },
+  { id: 12, name: 'Indonesia' },
 ];
 
 /** Languages for outcome UI — prefers greenfield languages_new, falls back to legacy. */

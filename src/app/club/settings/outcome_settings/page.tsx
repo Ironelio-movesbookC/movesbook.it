@@ -18,7 +18,13 @@ export default function ClubOutcomeSettingsPage() {
       return;
     }
     const params = new URLSearchParams(window.location.search);
-    setClubId(params.get('clubId'));
+    const fromUrl = params.get('clubId');
+    if (fromUrl) {
+      setClubId(fromUrl);
+      return;
+    }
+    const saved = localStorage.getItem('selectedClub');
+    setClubId(saved);
   }, [loading, user, router]);
 
   if (loading || !user) {

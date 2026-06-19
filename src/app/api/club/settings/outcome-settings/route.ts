@@ -49,6 +49,25 @@ function modeToLegacyDefault(mode: ClubOutcomeMode): 'custom' | 'default' {
   return mode === ClubOutcomeMode.CUSTOM ? 'custom' : 'default';
 }
 
+function resolveRequestedClubId(request: NextRequest, body: Record<string, unknown>): string | null {
+  const fromQuery = request.nextUrl.searchParams.get('clubId');
+  if (fromQuery) return fromQuery;
+  if (body.clubId != null) return String(body.clubId);
+  return null;
+}
+
+function audioExtensionFromUpload(mime: string, fileName?: string): 'mp3' | 'wav' | null {
+  const normalized = mime.toLowerCase();
+  if (normalized.includes('wav') || normalized.includes('wave')) return 'wav';
+  if (normalized.includes('mpeg') || normalized.includes('mp3')) return 'mp3';
+  if (fileName) {
+    const lower = fileName.toLowerCase();
+    if (lower.endsWith('.wav')) return 'wav';
+    if (lower.endsWith('.mp3')) return 'mp3';
+  }
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const decoded = getTokenPayload(request);
@@ -102,7 +121,7 @@ export async function PATCH(request: NextRequest) {
 
     const userId = String(decoded.userId);
     const body = await request.json();
-    const clubIdParam = body.clubId != null ? String(body.clubId) : null;
+    const clubIdParam = resolveRequestedClubId(request, body);
     const club = await getOwnedClub(userId, clubIdParam);
     if (!club) return NextResponse.json({ error: 'Club not found.' }, { status: 404 });
 
@@ -170,7 +189,7 @@ export async function POST(request: NextRequest) {
 
     const userId = String(decoded.userId);
     const body = await request.json();
-    const clubIdParam = body.clubId != null ? String(body.clubId) : null;
+    const clubIdParam = resolveRequestedClubId(request, body);
     const club = await getOwnedClub(userId, clubIdParam);
     if (!club) return NextResponse.json({ error: 'Club not found.' }, { status: 404 });
 
@@ -179,10 +198,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Switch to Custom mode to upload audio.' }, { status: 400 });
     }
 
-    const settingId = text(body.settingId);
     const fileData = text(body.file);
-    if (!settingId || !fileData.startsWith('data:')) {
+    if (!fileData.startsWith('data:')) {
       return NextResponse.json({ error: 'Invalid upload.' }, { status: 400 });
+    }
+
+    let settingId = text(body.settingId);
+    if (!settingId) {
+      const typeId = text(body.typeId);
+      if (typeId) {
+        settingId =
+          (await outcomeService.resolveClubCustomSettingId(club.id, typeId)) ?? '';
+      }
+    }
+    if (!settingId) {
+      return NextResponse.json(
+        { error: 'Save the message first, then upload audio.' },
+        { status: 400 },
+      );
+    }
+
+    const customRow = await outcomeService.getClubCustomOutcomeForClub(settingId, club.id);
+    if (!customRow) {
+      return NextResponse.json({ error: 'Outcome setting not found for this club.' }, { status: 404 });
     }
 
     const match = fileData.match(/^data:([^;]+);base64,(.+)$/);
@@ -190,13 +228,12 @@ export async function POST(request: NextRequest) {
 
     const mime = match[1];
     const buffer = Buffer.from(match[2], 'base64');
-    const ext = mime.includes('wav') ? 'wav' : mime.includes('mpeg') || mime.includes('mp3') ? 'mp3' : null;
+    const ext = audioExtensionFromUpload(mime, text(body.fileName));
     if (!ext) {
       return NextResponse.json({ error: 'Allowed files: .mp3 or .wav' }, { status: 400 });
     }
 
-    const existingAudio = await outcomeService.getClubCustomAudioFile(settingId);
-    if (existingAudio) {
+    if (customRow.audioFile) {
       return NextResponse.json({ error: 'Remove existing audio before uploading a new file.' }, { status: 400 });
     }
 
@@ -215,6 +252,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Audio saved.',
+      id: settingId,
       filename,
       audioUrl: clubAudioPublicPath(club.id, filename),
     });

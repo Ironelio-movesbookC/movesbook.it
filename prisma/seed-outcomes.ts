@@ -13,6 +13,8 @@ const LEGACY_LANGUAGE_SEED = [
   { legacyLangId: 8, code: 'hi', name: 'Hindi', isDefault: false },
   { legacyLangId: 9, code: 'zh', name: 'Chinese', isDefault: false },
   { legacyLangId: 10, code: 'ar', name: 'Arabic', isDefault: false },
+  { legacyLangId: 11, code: 'ja', name: 'Japanese', isDefault: false },
+  { legacyLangId: 12, code: 'id', name: 'Indonesia', isDefault: false },
 ];
 
 async function main() {
@@ -21,10 +23,13 @@ async function main() {
     for (const lang of LEGACY_LANGUAGE_SEED) {
       await prisma.language.create({ data: { ...lang, isActive: true } });
     }
-    console.log('Seeded languages_new with legacy lang ids 1–10.');
+    console.log('Seeded languages_new with legacy lang ids 1–12.');
   }
 
   const { outcomeService } = await import('../src/lib/outcomes');
+  await outcomeService.ensureLegacyLanguages();
+  console.log('Ensured legacy languages (ids 1–12), including Japanese and Indonesia.');
+
   await outcomeService.seedOutcomeTypesIfEmpty();
   console.log('Seeded outcome types and English system messages.');
 }

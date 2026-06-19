@@ -275,7 +275,7 @@ model Language {
   name      String
   isActive  Boolean  @default(true)
   isDefault Boolean  @default(false)
-  /// Maps legacy language_values.id / audio_settings.language (1–10).
+  /// Maps legacy language_values.id / audio_settings.language (1–12).
   legacyLangId Int?  @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

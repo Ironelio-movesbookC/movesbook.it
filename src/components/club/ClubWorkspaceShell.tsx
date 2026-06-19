@@ -261,14 +261,21 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   const goToDashboardPanel = useCallback(
     (panel: 'identification-devices' | 'outcome-settings' | 'news') => {
       if (!hasFormClub) return;
-      if (!selectedClubId && formClubs[0]?.id) {
-        setSelectedClubId(formClubs[0].id);
-        localStorage.setItem('selectedClub', formClubs[0].id);
+      const clubId = selectedClubId ?? formClubs[0]?.id ?? null;
+      if (!selectedClubId && clubId) {
+        setSelectedClubId(clubId);
+        localStorage.setItem('selectedClub', clubId);
       }
       writeClubWorkspaceTab('my-entity');
       setActiveTab('my-entity');
-      const query =
-        panel === 'news' ? 'open=news' : `panel=${panel}`;
+
+      if (panel === 'outcome-settings') {
+        const qs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
+        router.push(`/club/settings/outcome_settings${qs}`);
+        return;
+      }
+
+      const query = panel === 'news' ? 'open=news' : `panel=${panel}`;
       router.push(`/club/dashboard?${query}`);
     },
     [formClubs, hasFormClub, router, selectedClubId],
