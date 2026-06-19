@@ -1888,7 +1888,6 @@ model FoodDatabaseRecipe {
 }
 
 // ---------------------------------------------------------------------------
-<<<<<<< HEAD
 // Club procedure engine (greenfield)
 // ---------------------------------------------------------------------------
 
@@ -1992,7 +1991,6 @@ model ProcedureReceipt {
 
   @@index([clubId, procedureRecordId])
   @@map("procedure_receipts")
-=======
 // Legacy promocode tables (PHP movesbook-new compatibility)
 // Run: npm run db:push  OR  npx prisma migrate deploy
 // ---------------------------------------------------------------------------
@@ -2109,5 +2107,4 @@ model LanguageParagraph {
   modified     String @default("")
 
   @@map("language_paragraphs")
->>>>>>> main
 }
