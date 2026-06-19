@@ -2,24 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import ServiceArchiveTabs from '@/components/club/services/ServiceArchiveTabs';
-import ServiceDataTable from '@/components/club/services/ServiceDataTable';
-import { Member, Column } from '@/types/clubTable';
-import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
+import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
+import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
+import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import {
+  getServiceSaleTabs,
+  SERVICE_SALE_PAGE_SIZE,
+  serviceSaleDeadlineColumns,
+} from '@/components/procedures/configs/serviceSale';
+import { Member } from '@/types/clubTable';
 import { fetchDeadlines } from '@/lib/club/serviceSaleClient';
-
-const columns: Column[] = [
-  { key: 'name', header: 'Full Name' },
-  { key: 'typology', header: 'Typology' },
-  { key: 'service', header: 'Service slot' },
-  { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
-  { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
-  { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
-  { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
-  { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
-  { key: 'casual', header: 'Notes' },
-  { key: 'operator', header: 'Operator' },
-];
 
 export default function DeadLinePage() {
   const router = useRouter();
@@ -27,14 +19,17 @@ export default function DeadLinePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetchDeadlines();
+      const res = await fetchDeadlines({ page, pageSize: SERVICE_SALE_PAGE_SIZE });
+      setTotal(res.total);
       setData(
-        res.purchases.map((p) => ({
+        res.items.map((p) => ({
           id: p.id,
           name: p.memberName,
           typology: p.typology,
@@ -54,32 +49,36 @@ export default function DeadLinePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   return (
-    <div className="p-4">
-      <div className="bg-teal-800 text-white px-4 py-3 rounded-t-lg">
-        <h1 className="text-lg font-semibold">Archive of Deadlines</h1>
-      </div>
-      <div className="bg-white border border-gray-200 rounded-b-lg p-4">
-        <ServiceArchiveTabs active="deadline" selectedPurchaseId={selectedId} />
-        {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
-        <ServiceDataTable
-          columns={columns}
-          rows={data}
-          selectedId={selectedId}
-          loading={loading}
-          onRowClick={(row) => row.id && setSelectedId(row.id)}
-          onRowDoubleClick={(row) => row.id && router.push(`/clubs/payment_detail/${row.id}`)}
+    <ProcedureArchiveShell
+      title="Archive of Deadlines"
+      activeTab="deadline"
+      tabs={getServiceSaleTabs('deadline', selectedId)}
+      error={error}
+      footerHint="Shows services with remaining balance. Double-click to record a payment."
+      pagination={
+        <ProcedurePagination
+          page={page}
+          pageSize={SERVICE_SALE_PAGE_SIZE}
+          total={total}
+          onPageChange={setPage}
         />
-        <p className="text-xs text-gray-500 mt-2">
-          Shows services with remaining balance. Double-click to record a payment.
-        </p>
-      </div>
-    </div>
+      }
+    >
+      <ProcedureArchiveTable
+        columns={serviceSaleDeadlineColumns}
+        rows={data}
+        selectedId={selectedId}
+        loading={loading}
+        onRowClick={(row) => row.id && setSelectedId(row.id)}
+        onRowDoubleClick={(row) => row.id && router.push(`/clubs/payment_detail/${row.id}`)}
+      />
+    </ProcedureArchiveShell>
   );
 }

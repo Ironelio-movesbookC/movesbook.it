@@ -1,37 +1,32 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import ServiceArchiveTabs from '@/components/club/services/ServiceArchiveTabs';
-import ServiceDataTable from '@/components/club/services/ServiceDataTable';
-import { Member, Column } from '@/types/clubTable';
-import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
+import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
+import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
+import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import {
+  getServiceSaleTabs,
+  SERVICE_SALE_PAGE_SIZE,
+  serviceSaleReceiptColumns,
+} from '@/components/procedures/configs/serviceSale';
+import { Member } from '@/types/clubTable';
 import { fetchReceipts } from '@/lib/club/serviceSaleClient';
-
-const columns: Column[] = [
-  { key: 'name', header: 'Full Name' },
-  { key: 'typology', header: 'Typology' },
-  { key: 'service', header: 'Service slot' },
-  { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
-  { key: 'category', header: 'Document' },
-  { key: 'contract', header: 'No. of document' },
-  { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
-  { key: 'paid', header: 'Payment IN', render: (v) => formatEuro(v) },
-  { key: 'casual', header: 'Annotations' },
-  { key: 'operator', header: 'Operator' },
-];
 
 export default function ServiceReceiptsPage() {
   const [data, setData] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetchReceipts();
+      const res = await fetchReceipts({ page, pageSize: SERVICE_SALE_PAGE_SIZE });
+      setTotal(res.total);
       setData(
-        res.receipts.map((r) => ({
+        res.items.map((r) => ({
           id: r.id,
           name: r.memberName,
           typology: r.typology,
@@ -50,22 +45,28 @@ export default function ServiceReceiptsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   return (
-    <div className="p-4">
-      <div className="bg-teal-800 text-white px-4 py-3 rounded-t-lg">
-        <h1 className="text-lg font-semibold">Archive of Receipts</h1>
-      </div>
-      <div className="bg-white border border-gray-200 rounded-b-lg p-4">
-        <ServiceArchiveTabs active="receipts" />
-        {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
-        <ServiceDataTable columns={columns} rows={data} loading={loading} />
-      </div>
-    </div>
+    <ProcedureArchiveShell
+      title="Archive of Receipts"
+      activeTab="receipts"
+      tabs={getServiceSaleTabs('receipts')}
+      error={error}
+      pagination={
+        <ProcedurePagination
+          page={page}
+          pageSize={SERVICE_SALE_PAGE_SIZE}
+          total={total}
+          onPageChange={setPage}
+        />
+      }
+    >
+      <ProcedureArchiveTable columns={serviceSaleReceiptColumns} rows={data} loading={loading} />
+    </ProcedureArchiveShell>
   );
 }

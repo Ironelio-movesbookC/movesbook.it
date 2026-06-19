@@ -119,7 +119,35 @@ export function mapReceipt(receipt: ProcedureReceiptDto): ServiceSaleReceipt {
   };
 }
 
-type Paginated<T> = { items: T[]; total: number; page: number; pageSize: number; clubId?: string };
+export type ListParams = {
+  page?: number;
+  pageSize?: number;
+  recordId?: string;
+};
+
+export type PaginatedResult<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  clubId?: string;
+};
+
+type Paginated<T> = PaginatedResult<T>;
+
+export const DEFAULT_LIST_PAGE_SIZE = 25;
+
+function buildQuery(params?: ListParams & { view?: string }): string {
+  const page = params?.page ?? 1;
+  const pageSize = params?.pageSize ?? DEFAULT_LIST_PAGE_SIZE;
+  const qs = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+  if (params?.view) qs.set('view', params.view);
+  if (params?.recordId) qs.set('recordId', params.recordId);
+  return qs.toString();
+}
 
 export async function fetchFormOptions(): Promise<ServiceSaleFormOptions> {
   return clubApiFetch<ServiceSaleFormOptions>(`${BASE}/form-options`);
@@ -131,16 +159,33 @@ export async function fetchServiceCost(serviceId: string): Promise<number | null
   return service?.cost ?? null;
 }
 
-export async function fetchPurchases(): Promise<{ purchases: ServiceSalePurchase[]; clubId?: string }> {
-  const res = await clubApiFetch<Paginated<ProcedureRecordDto>>(`${BASE}/records?pageSize=1000`);
-  return { purchases: res.items.map(mapRecord), clubId: res.clubId };
+export async function fetchPurchases(
+  params?: ListParams
+): Promise<PaginatedResult<ServiceSalePurchase>> {
+  const res = await clubApiFetch<Paginated<ProcedureRecordDto>>(
+    `${BASE}/records?${buildQuery(params)}`
+  );
+  return {
+    items: res.items.map(mapRecord),
+    total: res.total,
+    page: res.page,
+    pageSize: res.pageSize,
+    clubId: res.clubId,
+  };
 }
 
-export async function fetchDeadlines(): Promise<{ purchases: ServiceSalePurchase[] }> {
+export async function fetchDeadlines(
+  params?: ListParams
+): Promise<PaginatedResult<ServiceSalePurchase>> {
   const res = await clubApiFetch<Paginated<ProcedureRecordDto>>(
-    `${BASE}/records?view=deadlines&pageSize=1000`
+    `${BASE}/records?${buildQuery({ ...params, view: 'deadlines' })}`
   );
-  return { purchases: res.items.map(mapRecord) };
+  return {
+    items: res.items.map(mapRecord),
+    total: res.total,
+    page: res.page,
+    pageSize: res.pageSize,
+  };
 }
 
 export async function fetchPurchase(id: string): Promise<{ purchase: ServiceSalePurchase }> {
@@ -221,19 +266,37 @@ export async function addPayment(recordId: string, input: AddPaymentInput): Prom
   });
 }
 
-export async function fetchPayments(): Promise<{ payments: ServiceSalePayment[] }> {
-  const res = await clubApiFetch<Paginated<ProcedurePaymentDto>>(`${BASE}/payments?pageSize=1000`);
-  return { payments: res.items.map(mapPayment) };
-}
-
-export async function fetchPaymentsForRecord(recordId: string): Promise<{ payments: ServiceSalePayment[] }> {
+export async function fetchPayments(
+  params?: ListParams
+): Promise<PaginatedResult<ServiceSalePayment>> {
   const res = await clubApiFetch<Paginated<ProcedurePaymentDto>>(
-    `${BASE}/payments?recordId=${encodeURIComponent(recordId)}&pageSize=1000`
+    `${BASE}/payments?${buildQuery(params)}`
   );
-  return { payments: res.items.map(mapPayment) };
+  return {
+    items: res.items.map(mapPayment),
+    total: res.total,
+    page: res.page,
+    pageSize: res.pageSize,
+  };
 }
 
-export async function fetchReceipts(): Promise<{ receipts: ServiceSaleReceipt[] }> {
-  const res = await clubApiFetch<Paginated<ProcedureReceiptDto>>(`${BASE}/receipts?pageSize=1000`);
-  return { receipts: res.items.map(mapReceipt) };
+export async function fetchPaymentsForRecord(
+  recordId: string,
+  params?: ListParams
+): Promise<PaginatedResult<ServiceSalePayment>> {
+  return fetchPayments({ ...params, recordId });
+}
+
+export async function fetchReceipts(
+  params?: ListParams
+): Promise<PaginatedResult<ServiceSaleReceipt>> {
+  const res = await clubApiFetch<Paginated<ProcedureReceiptDto>>(
+    `${BASE}/receipts?${buildQuery(params)}`
+  );
+  return {
+    items: res.items.map(mapReceipt),
+    total: res.total,
+    page: res.page,
+    pageSize: res.pageSize,
+  };
 }
