@@ -64,14 +64,18 @@ export async function fetchServiceSaleFormOptions(clubId: string): Promise<Servi
         select: { id: true, name: true, firstName: true, surname: true, username: true },
       },
     },
+    orderBy: { joinedAt: 'desc' },
   });
 
   for (const cm of clubMembers) {
     const m = cm.member;
     const name =
       [m.firstName, m.surname].filter(Boolean).join(' ').trim() || m.name || m.username;
+    if (!name) continue;
     members.push({ id: m.id, name });
   }
+
+  members.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   return { sectors, services, members };
 }

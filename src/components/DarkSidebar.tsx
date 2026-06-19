@@ -109,7 +109,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSidebarBlock';
 import {
   isClubAccountUserType,
@@ -138,9 +138,7 @@ import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH, clubWebsiteDisplayUrl } from '@/lib/clubWebsiteSettingsPaths';
 import {
   readSelectedClubHint,
-  readClubWorkspaceTab,
   writeClubWorkspaceTab,
-  isClubWorkspacePath,
 } from '@/lib/club/clubWorkspaceTab';
 
 function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
@@ -385,7 +383,6 @@ export default function DarkSidebar({
 }: DarkSidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
   const { t } = useLanguage();
   const [allowVisiting, setAllowVisiting] = useState(true);
   const [showChangeProfilePhotoModal, setShowChangeProfilePhotoModal] = useState(false);
@@ -431,7 +428,7 @@ export default function DarkSidebar({
     Boolean(selectedEntityId) || readSelectedClubHint();
   const showMyClubTab = isManagedEntityWorkspaceUser
     ? isClubAccountUserType(userType)
-      ? clubHasSelectedEntity
+      ? clubHasSelectedEntity && currentTab === 'my-entity'
       : clubMyClubTabVisible === true
     : isAthleteUser
       ? athleteHasClubMembership
@@ -642,20 +639,6 @@ export default function DarkSidebar({
       setCurrentTab('my-page');
     }
   }, [clubProfileLoaded, clubHasSelectedEntity, currentTab, setCurrentTab]);
-
-  useEffect(() => {
-    if (
-      !isClubAccountUserType(userType) ||
-      !clubHasSelectedEntity ||
-      readClubWorkspaceTab() === 'my-page'
-    ) {
-      return;
-    }
-    if (isClubWorkspacePath(pathname) && currentTab !== 'my-entity') {
-      writeClubWorkspaceTab('my-entity');
-      setCurrentTab('my-entity');
-    }
-  }, [pathname, userType, clubHasSelectedEntity, currentTab, setCurrentTab]);
 
   const savedYoutubeUrl = userYoutubeChannelUrl;
 
@@ -1425,6 +1408,7 @@ export default function DarkSidebar({
                                 type="button"
                                 onClick={() => {
                                   onEntitySelect?.(club.id);
+                                  writeClubWorkspaceTab('my-entity');
                                   setCurrentTab('my-entity');
                                 }}
                                 className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${

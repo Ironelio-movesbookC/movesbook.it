@@ -126,12 +126,25 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (pathname?.startsWith('/my-club')) {
+      const clubFromUrl = new URLSearchParams(
+        typeof window !== 'undefined' ? window.location.search : ''
+      ).get('clubId');
+      const clubId = clubFromUrl ?? selectedClubId ?? localStorage.getItem('selectedClub');
+      if (clubId) {
+        if (!selectedClubId) setSelectedClubId(clubId);
+        localStorage.setItem('selectedClub', clubId);
+        setActiveTab('my-entity');
+        writeClubWorkspaceTab('my-entity');
+      }
+      return;
+    }
+
     const savedTab = readClubWorkspaceTab();
     const hasClubContext = Boolean(selectedClubId) || readSelectedClubHint();
 
-    if (isClubWorkspacePath(pathname) && hasClubContext && savedTab !== 'my-page') {
+    if (isClubWorkspacePath(pathname) && hasClubContext && savedTab === 'my-entity') {
       setActiveTab('my-entity');
-      writeClubWorkspaceTab('my-entity');
       return;
     }
 
@@ -192,10 +205,18 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   }, [pathname, router]);
 
   const handleMyClubTabClick = useCallback(() => {
-    if (!selectedClubId) return;
+    const clubId = selectedClubId ?? formClubs[0]?.id ?? null;
+    if (!clubId) return;
+
+    if (!selectedClubId) {
+      localStorage.setItem('selectedClub', clubId);
+      setSelectedClubId(clubId);
+    }
+
     writeClubWorkspaceTab('my-entity');
     setActiveTab('my-entity');
-  }, [selectedClubId]);
+    router.push(`/my-club?clubId=${encodeURIComponent(clubId)}`);
+  }, [selectedClubId, formClubs, router]);
 
   const openCreateClubFlow = () => setShowAdminPasswordConfirm(true);
 

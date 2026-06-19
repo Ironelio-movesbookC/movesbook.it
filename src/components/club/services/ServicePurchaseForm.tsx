@@ -133,6 +133,14 @@ export default function ServicePurchaseForm() {
                 <option key={m.id} value={m.id}>{m.name}</option>
               ))}
             </select>
+            {options && options.members.length === 0 && (
+              <p className="mt-1 text-xs text-amber-700">
+                No real members in the database for this club. The Members archive page
+                (`/clubMembers/memberList`) still shows sample/demo rows — it is not connected
+                to the DB yet. Add members from <strong>My Club</strong> (member management)
+                or <code className="text-[11px]">/api/clubs/[clubId]/members/add</code>.
+              </p>
+            )}
           </label>
           <label className="block">
             <span className="text-sm text-gray-600">Date</span>
