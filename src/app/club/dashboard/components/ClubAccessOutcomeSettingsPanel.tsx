@@ -52,7 +52,7 @@ export default function ClubAccessOutcomeSettingsPanel({
   const [toast, setToast] = useState<string | null>(null);
   const [data, setData] = useState<OutcomeSettingsResponse | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { code: string; message: string }>>({});
-  const [defaultLang, setDefaultLang] = useState<'custom' | 'default'>('default');
+  const [outcomeMode, setOutcomeMode] = useState<'EN' | 'COUNTRY_STANDARD' | 'CUSTOM'>('COUNTRY_STANDARD');
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -78,7 +78,11 @@ export default function ClubAccessOutcomeSettingsPanel({
       }
       const payload = json as OutcomeSettingsResponse;
       setData(payload);
-      setDefaultLang(payload.defaultOutcomeLanguage);
+      if (payload.outcomeMode) {
+        setOutcomeMode(payload.outcomeMode);
+      } else {
+        setOutcomeMode(payload.defaultOutcomeLanguage === 'custom' ? 'CUSTOM' : 'COUNTRY_STANDARD');
+      }
       const nextDrafts: Record<string, { code: string; message: string }> = {};
       for (const item of payload.items) {
         nextDrafts[item.typeId] = { code: item.code, message: item.message };
@@ -164,28 +168,30 @@ export default function ClubAccessOutcomeSettingsPanel({
     if (data?.editable) debouncedSave(item);
   }
 
-  function handleDefaultLangChange(value: string) {
-    if (value !== 'custom' && value !== 'default') return;
+  function handleOutcomeModeChange(value: string) {
+    if (value !== 'EN' && value !== 'COUNTRY_STANDARD' && value !== 'CUSTOM') return;
     setConfirm({
-      title: 'Change default outcome language?',
-      message: "You're about to change the default outcome language.",
+      title: 'Change outcome language mode?',
+      message: "You're about to change how access outcome messages are resolved for this club.",
       confirmLabel: 'Yes, change',
       onConfirm: async () => {
         setConfirm(null);
         try {
           const token = localStorage.getItem('token');
-          const response = await fetch(`/api/club/settings/outcome-settings${qs}`, {
-            method: 'PATCH',
+          const prefQs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
+          const response = await fetch(`/api/club/settings/outcome-preferences${prefQs}`, {
+            method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
-            body: JSON.stringify({ action: 'default-language', lang: value }),
+            body: JSON.stringify({ mode: value, clubId }),
           });
           const json = await response.json().catch(() => null);
           if (!response.ok) throw new Error(json?.error || 'Failed to update.');
-          setDefaultLang(value);
-          setToast(json?.message ?? 'Default language updated.');
+          setOutcomeMode(value);
+          setToast(json?.message ?? 'Outcome mode updated.');
+          await load(tab);
         } catch (err) {
           setToast(err instanceof Error ? err.message : 'Failed to update.');
         }
@@ -322,16 +328,17 @@ export default function ClubAccessOutcomeSettingsPanel({
           </div>
           <div className="flex items-center gap-2">
             <label htmlFor="default-outcome-lang" className="text-xs font-medium text-slate-300">
-              Language for outcome
+              Outcome mode
             </label>
             <select
               id="default-outcome-lang"
-              value={defaultLang}
-              onChange={(e) => handleDefaultLangChange(e.target.value)}
+              value={outcomeMode}
+              onChange={(e) => handleOutcomeModeChange(e.target.value)}
               className="rounded border border-slate-500 bg-slate-900 px-2 py-1.5 text-sm text-white"
             >
-              <option value="custom">Custom</option>
-              <option value="default">Default</option>
+              <option value="EN">English (system)</option>
+              <option value="COUNTRY_STANDARD">Country standard</option>
+              <option value="CUSTOM">Custom</option>
             </select>
           </div>
         </div>

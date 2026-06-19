@@ -275,12 +275,16 @@ model Language {
   name      String
   isActive  Boolean  @default(true)
   isDefault Boolean  @default(false)
+  /// Maps legacy language_values.id / audio_settings.language (1–10).
+  legacyLangId Int?  @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   news                                    News[]                 @relation("NewsOriginalLanguage")
   newsLanguageTitles                      NewsLanguageTitle[]
   newsSettingLanguages                   NewsSettingLanguage[]
+  systemOutcomes                          SystemOutcome[]
+  outcomeCountries                        OutcomeCountry[]       @relation("CountryDefaultLanguage")
 
   @@map("languages_new")
 }
@@ -1135,6 +1139,8 @@ model Club {
   websiteTopics      ClubWebsiteTopic[]
   procedureRecords   ProcedureRecord[]
   procedureReceipts  ProcedureReceipt[]
+  outcomeSetting     ClubOutcomeSetting?
+  customOutcomes     ClubCustomOutcome[]
   admin              User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId], map: "clubs_new_adminId_fkey")
@@ -1992,6 +1998,92 @@ model ProcedureReceipt {
   @@index([clubId, procedureRecordId])
   @@map("procedure_receipts")
 }
+
+// ---------------------------------------------------------------------------
+// Access control outcomes (greenfield)
+// ---------------------------------------------------------------------------
+
+model OutcomeCountry {
+  id                String   @id @default(cuid())
+  code              String   @unique
+  name              String
+  legacyCountryId   Int?     @unique
+  defaultLanguageId String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  defaultLanguage Language @relation("CountryDefaultLanguage", fields: [defaultLanguageId], references: [id], onDelete: Restrict)
+
+  @@index([defaultLanguageId])
+  @@map("outcome_countries")
+}
+
+model OutcomeType {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  description  String?  @db.Text
+  defaultCode  String   @default("")
+  sortOrder    Int      @default(0)
+  isActive     Boolean  @default(true)
+  legacyTypeId Int?     @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  systemOutcomes   SystemOutcome[]
+  clubCustomOutcomes ClubCustomOutcome[]
+
+  @@map("outcome_types")
+}
+
+model SystemOutcome {
+  id            String   @id @default(cuid())
+  outcomeTypeId String
+  languageId    String
+  code          String   @default("")
+  message       String   @db.Text
+  audioFile     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  outcomeType OutcomeType @relation(fields: [outcomeTypeId], references: [id], onDelete: Cascade)
+  language    Language    @relation(fields: [languageId], references: [id], onDelete: Cascade)
+
+  @@unique([outcomeTypeId, languageId])
+  @@index([languageId])
+  @@map("system_outcomes")
+}
+
+model ClubOutcomeSetting {
+  id        String          @id @default(cuid())
+  clubId    String          @unique
+  mode      ClubOutcomeMode @default(COUNTRY_STANDARD)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@map("club_outcome_settings")
+}
+
+model ClubCustomOutcome {
+  id            String   @id @default(cuid())
+  clubId        String
+  outcomeTypeId String
+  code          String   @default("")
+  message       String   @db.Text
+  audioFile     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  outcomeType OutcomeType @relation(fields: [outcomeTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, outcomeTypeId])
+  @@index([clubId])
+  @@map("club_custom_outcomes")
+}
+
 // Legacy promocode tables (PHP movesbook-new compatibility)
 // Run: npm run db:push  OR  npx prisma migrate deploy
 // ---------------------------------------------------------------------------

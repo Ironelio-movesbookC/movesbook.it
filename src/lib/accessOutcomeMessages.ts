@@ -1,10 +1,7 @@
 import { prisma } from '@/lib/prisma';
-import {
-  audioPublicPath,
-  findExistingTable,
-  getTableColumns,
-  text,
-} from '@/lib/outcomeSettingsDb';
+import { ClubOutcomeMode } from '@prisma/client';
+import { outcomeService } from '@/lib/outcomes';
+import { findExistingTable, getTableColumns, text, audioPublicPath } from '@/lib/outcomeSettingsDb';
 
 const LANGUAGE_TABLE_CANDIDATES = ['language_values', 'language_value'];
 const TYPE_TABLE_CANDIDATES = ['audio_setting_types', 'audio_setting_type'];
@@ -45,48 +42,14 @@ export const LEGACY_OUTCOME_LANGUAGES: OutcomeLanguage[] = [
   { id: 10, name: 'Arabic' },
 ];
 
-/** Languages from legacy language_values — same IDs stored in countries.country_lang_id. */
+/** Languages for outcome UI — prefers greenfield languages_new, falls back to legacy. */
 export async function fetchOutcomeLanguages(): Promise<OutcomeLanguage[]> {
-  const langTable = await findExistingTable(LANGUAGE_TABLE_CANDIDATES);
-  if (langTable) {
-    const columns = await getTableColumns(langTable);
-    const nameCol = columns.has('lang_value')
-      ? 'lang_value'
-      : columns.has('language')
-        ? 'language'
-        : columns.has('name')
-          ? 'name'
-          : columns.has('lang_name')
-            ? 'lang_name'
-            : null;
-
-    if (nameCol) {
-      const rows = await prisma.$queryRawUnsafe<{ id: number | string; name: string }[]>(
-        `SELECT id, \`${nameCol}\` AS name
-         FROM \`${langTable}\`
-         ORDER BY id ASC`
-      );
-
-      if (rows.length > 0) {
-        return rows.map((row) => ({
-          id: Number(row.id),
-          name: text(row.name) || `Language ${row.id}`,
-        }));
-      }
-    }
-  }
-
-  const prismaLangs = await prisma.language.findMany({
-    where: { isActive: true },
-    orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
-    select: { name: true, code: true },
-  });
-
-  if (prismaLangs.length > 0) {
-    return prismaLangs.map((lang, index) => ({
-      id: index + 1,
-      name: lang.name || lang.code,
-    }));
+  const langs = await outcomeService.listLanguages();
+  if (langs.length > 0) {
+    const mapped = langs
+      .filter((l) => l.legacyLangId != null)
+      .map((l) => ({ id: l.legacyLangId as number, name: l.name }));
+    if (mapped.length > 0) return mapped;
   }
 
   return LEGACY_OUTCOME_LANGUAGES;
@@ -357,6 +320,41 @@ export async function resolveAccessOutcomeMessage(params: {
   languageMode?: 'auto' | 'primary' | 'country' | 'custom';
   clubStorageId?: string;
 }): Promise<(ResolvedOutcomeMessage & { countryLanguageId: number | null }) | null> {
+  const clubId = params.clubIds.find(Boolean);
+  if (clubId) {
+    const typeCount = await prisma.outcomeType.count();
+    if (typeCount > 0) {
+      let modeOverride: ClubOutcomeMode | undefined;
+      if (params.languageMode === 'custom') modeOverride = ClubOutcomeMode.CUSTOM;
+      else if (params.languageMode === 'primary') modeOverride = ClubOutcomeMode.EN;
+      else if (params.languageMode === 'country') modeOverride = ClubOutcomeMode.COUNTRY_STANDARD;
+
+      const gf = await outcomeService.resolveOutcomeMessage({
+        clubId,
+        outcomeTypeId: params.messageTypeId,
+        outcomeTypeCode: params.code,
+        clubAdminUserIds: params.clubOwnerUserIds,
+        memberUserIds: params.memberUserIds,
+        modeOverride,
+      });
+
+      if (gf) {
+        const source: OutcomeMessageSource =
+          gf.source === 'custom' ? 'club_custom' : gf.mode === ClubOutcomeMode.EN ? 'club_primary' : 'member_country';
+        return {
+          messageTypeId: gf.outcomeTypeId,
+          code: gf.code,
+          message: gf.message,
+          audioFile: gf.audioFile,
+          audioUrl: gf.audioUrl,
+          languageId: gf.legacyLanguageId ?? 1,
+          source,
+          countryLanguageId: gf.legacyLanguageId,
+        };
+      }
+    }
+  }
+
   const { languageId, source, countryLanguageId } = await resolveOutcomeLanguage({
     clubIds: params.clubIds,
     clubOwnerUserIds: params.clubOwnerUserIds,
