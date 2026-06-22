@@ -2,9 +2,14 @@ import { prisma } from '@/lib/prisma';
 import { hashPasswordCakePHP } from '@/lib/auth';
 import { UserType } from '@prisma/client';
 import { sendIonosEmail } from '@/lib/ionosEmail';
+import { getSiteOrigin, coercePublicOrigin } from '@/lib/siteUrl';
 import { findExistingTable, getTableColumns } from '@/lib/outcomeSettingsDb';
 import { COUNTRY_SELECT_OPTIONS } from '@/constants/countries.constants';
 import { ensurePromocodeMetaTables } from '@/lib/promocodes/ensureMetaTables';
+import {
+  buildPromocodeSettingsSelectSql,
+  sanitizeLegacyDateString,
+} from '@/lib/promocodes/promocodeSettingsQuery';
 import {
   ensureQuickRegisterSubscriptionSettings,
 } from '@/lib/users/quickRegisterSubscriptionSeed';
@@ -99,8 +104,9 @@ async function fetchPromocodeByCode(code: string, requireDates = true): Promise<
   const params: unknown[] = [code.trim()];
   if (requireDates) params.push(today, today);
 
+  const selectSql = await buildPromocodeSettingsSelectSql(table);
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT id, code, discount, valid_from, valid_to, usable_by, used, version_id, creater_id, enable
+    `SELECT ${selectSql}
      FROM \`${table}\`
      WHERE code = ? AND enable = 'Enable'${dateClause}
      LIMIT 1`,
@@ -113,8 +119,8 @@ async function fetchPromocodeByCode(code: string, requireDates = true): Promise<
     id: Number(row.id),
     code: String(row.code ?? code),
     discount: row.discount != null ? String(row.discount) : '0',
-    valid_from: row.valid_from != null ? String(row.valid_from).slice(0, 10) : null,
-    valid_to: row.valid_to != null ? String(row.valid_to).slice(0, 10) : null,
+    valid_from: sanitizeLegacyDateString(row.valid_from),
+    valid_to: sanitizeLegacyDateString(row.valid_to),
     usable_by: row.usable_by != null ? String(row.usable_by) : null,
     used: Number(row.used ?? 0),
     version_id: row.version_id != null ? String(row.version_id) : null,
@@ -186,7 +192,9 @@ export async function buildRegistrationStatus(email: string): Promise<Registrati
   if (!usersTable) return status;
 
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT id, username, subscription_start_date, subscription_end_date
+    `SELECT id, username,
+            CAST(subscription_start_date AS CHAR) AS subscription_start_date,
+            CAST(subscription_end_date AS CHAR) AS subscription_end_date
      FROM \`${usersTable}\`
      WHERE LOWER(email) = ?
      LIMIT 1`,
@@ -199,7 +207,9 @@ export async function buildRegistrationStatus(email: string): Promise<Registrati
   status.detail = 'renewal_expired';
   status.label = 'Renewal (no active subscription)';
   status.existing_username = rowString(row, 'username') || undefined;
-  status.subscription_end_date = rowString(row, 'subscription_end_date') || undefined;
+  status.subscription_end_date =
+    sanitizeLegacyDateString(row.subscription_end_date) ??
+    (rowString(row, 'subscription_end_date') || undefined);
 
   const subEnd = status.subscription_end_date;
   if (subEnd && subEnd >= todayYmd()) {
@@ -726,7 +736,7 @@ async function sendQuickRegisterConfirmationEmail(params: {
   email: string;
   origin?: string;
 }): Promise<void> {
-  const origin = params.origin?.trim() || process.env.NEXT_PUBLIC_APP_URL || 'https://movesbook.net';
+  const origin = coercePublicOrigin(params.origin);
   const userToken = Buffer.from(String(params.userId), 'utf8').toString('base64');
   const roleToken = Buffer.from(String(params.roleId), 'utf8').toString('base64');
   const confirmationUrl = `${origin.replace(/\/$/, '')}/confirm_register_link/${encodeURIComponent(userToken)}/${encodeURIComponent(roleToken)}`;
@@ -865,7 +875,8 @@ export async function quickRegisterUser(
 
   const emailNorm = payload.email.trim().toLowerCase();
   const existingRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT id, username, subscription_end_date FROM \`${usersTable}\`
+    `SELECT id, username, CAST(subscription_end_date AS CHAR) AS subscription_end_date
+     FROM \`${usersTable}\`
      WHERE LOWER(email) = ?
      LIMIT 1`,
     emailNorm
@@ -881,7 +892,9 @@ export async function quickRegisterUser(
         message: `The username cannot be changed for an existing account. Please use your existing username: ${existingUsername}`,
       };
     }
-    const subEnd = rowString(existingUser, 'subscription_end_date');
+    const subEnd =
+      sanitizeLegacyDateString(existingUser.subscription_end_date) ??
+      rowString(existingUser, 'subscription_end_date');
     if (subEnd && subEnd >= todayYmd()) {
       currentDate = addDays(subEnd, 1);
       endDate = addDays(currentDate, durationDays);
