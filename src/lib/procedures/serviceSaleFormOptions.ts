@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { findExistingTable } from '@/lib/club/legacyTableLookup';
+import { fetchClubMemberOptions } from './clubMembers';
 
 const SERVICE_TABLE_CANDIDATES = ['club_setting_services', 'club_setting_service'];
 const SECTOR_TABLE_CANDIDATES = ['club_setting_sectors', 'club_setting_sector'];
@@ -25,8 +26,6 @@ export async function fetchServiceSaleFormOptions(clubId: string): Promise<Servi
 
   const sectors: { id: string; name: string }[] = [];
   const services: { id: string; name: string; sectorId: string; cost: number }[] = [];
-  const members: { id: string; name: string }[] = [];
-
   if (sectorTable) {
     const sectorRows = await prisma.$queryRawUnsafe<{ id: bigint | number; sector_name: string }[]>(
       `SELECT id, sector_name FROM \`${sectorTable}\` ORDER BY sector_name ASC`
@@ -57,25 +56,7 @@ export async function fetchServiceSaleFormOptions(clubId: string): Promise<Servi
     }
   }
 
-  const clubMembers = await prisma.clubMember.findMany({
-    where: { clubId },
-    include: {
-      member: {
-        select: { id: true, name: true, firstName: true, surname: true, username: true },
-      },
-    },
-    orderBy: { joinedAt: 'desc' },
-  });
-
-  for (const cm of clubMembers) {
-    const m = cm.member;
-    const name =
-      [m.firstName, m.surname].filter(Boolean).join(' ').trim() || m.name || m.username;
-    if (!name) continue;
-    members.push({ id: m.id, name });
-  }
-
-  members.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const members = await fetchClubMemberOptions(clubId);
 
   return { sectors, services, members };
 }

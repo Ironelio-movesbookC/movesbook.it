@@ -1,5 +1,6 @@
 ﻿import { Prisma, ProcedureRecordStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { getProcedureDefinition, getProcedureTypology } from './registry';
 import { paginated, parsePagination } from './pagination';
 import type {
   AddProcedurePaymentInput,
@@ -322,6 +323,8 @@ export class ProcedureService {
 
     const items: ProcedurePaymentDto[] = rows.map((row) => {
       const metadata = (row.procedureRecord.metadata as Record<string, unknown> | null) ?? null;
+      const def = getProcedureDefinition(procedureTypeCode);
+      const primaryKey = def?.metadataKeys.primary ?? 'serviceName';
       return {
         id: row.id,
         procedureRecordId: row.procedureRecordId,
@@ -332,8 +335,8 @@ export class ProcedureService {
         operatorName: row.operatorId ? nameById.get(row.operatorId) ?? '-' : '-',
         payMode: row.payMode,
         notes: row.notes,
-        serviceName: metaString(metadata, 'serviceName') || null,
-        typology: 'SERVICES',
+        serviceName: metaString(metadata, primaryKey) || null,
+        typology: getProcedureTypology(procedureTypeCode),
         balanceAfter: readBalanceAfter(row),
       };
     });
@@ -381,7 +384,7 @@ export class ProcedureService {
       serviceName: row.serviceName,
       receiptDate: row.receiptDate.toISOString().slice(0, 10),
       annotations: row.annotations,
-      typology: 'SERVICES',
+      typology: getProcedureTypology(procedureTypeCode),
       operatorName: row.operatorId ? nameById.get(row.operatorId) ?? '-' : '-',
     }));
 

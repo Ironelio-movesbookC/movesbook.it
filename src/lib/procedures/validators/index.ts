@@ -2,6 +2,10 @@ import type { ZodError } from 'zod';
 import { PROCEDURE_TYPE_CODES, type AddProcedurePaymentInput, type CreateProcedureRecordInput, type ProcedureTypeCode } from '../types';
 import { addProcedurePaymentSchema } from './common';
 import {
+  createExpenseRecordSchema,
+  mapExpenseCreateToInput,
+} from './expense';
+import {
   createServiceSaleRecordSchema,
   mapServiceSaleCreateToInput,
 } from './serviceSale';
@@ -37,6 +41,18 @@ export function parseCreateRecord(type: string, body: unknown): ParseCreateRecor
         };
       }
       return { ok: true, data: mapServiceSaleCreateToInput(parsed.data) };
+    }
+    case PROCEDURE_TYPE_CODES.EXPENSE: {
+      const parsed = createExpenseRecordSchema.safeParse(body);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          status: 400,
+          error: 'Validation failed',
+          details: parsed.error.flatten(),
+        };
+      }
+      return { ok: true, data: mapExpenseCreateToInput(parsed.data) };
     }
     default: {
       const _exhaustive: never = type;
