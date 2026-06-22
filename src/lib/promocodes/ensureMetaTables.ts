@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { findExistingTable, getTableColumns } from '@/lib/outcomeSettingsDb';
 import { clearPromocodeTableCache, ensureLegacyPromocodeUserTables } from './legacyDb';
 import { resetQuickRegisterSubscriptionSeedCache } from '../users/quickRegisterSubscriptionSeed';
+import { repairInvalidPromocodeSettingDates } from './promocodeSettingsQuery';
 import legacyHelpHtmlPages from './helpHtmlPagesLegacySeed.json';
 
 export type LegacyDbConfig = {
@@ -429,6 +430,9 @@ export async function ensurePromocodeMetaTables(): Promise<void> {
 
   clearPromocodeTableCache();
   resetQuickRegisterSubscriptionSeedCache();
+  if (await tableExists('promocode_settings')) {
+    await repairInvalidPromocodeSettingDates('promocode_settings');
+  }
   promocodeMetaTablesEnsured = true;
 }
 
