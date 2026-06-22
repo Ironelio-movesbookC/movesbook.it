@@ -1,6 +1,6 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 import { getClubAuthContext, procedureService } from '@/lib/procedures';
-import { createServiceSaleRecordSchema } from '@/lib/procedures/validators/serviceSale';
+import { parseCreateRecord } from '@/lib/procedures/validators';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,41 +37,21 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if ('error' in auth) return auth.error;
 
     const body = await request.json();
-    const parsed = createServiceSaleRecordSchema.safeParse(body);
-    if (!parsed.success) {
+    const parsed = parseCreateRecord(params.type, body);
+    if (!parsed.ok) {
       return NextResponse.json(
-        { error: 'Validation failed', details: parsed.error.flatten() },
-        { status: 400 }
+        { error: parsed.error, ...(parsed.details ? { details: parsed.details } : {}) },
+        { status: parsed.status }
       );
     }
 
-    const data = parsed.data;
-    const result = await procedureService.createRecord(auth.ctx, params.type, {
-      memberId: data.memberId,
-      totalAmount: data.totalAmount,
-      initialPayment: data.initialPayment,
-      recordDate: data.recordDate,
-      dueDate: data.dueDate,
-      notes: data.notes,
-      metadata: {
-        sectorId: data.sectorId ?? null,
-        serviceId: data.serviceId ?? null,
-        serviceName: data.serviceName ?? null,
-        sectorName: data.sectorName ?? null,
-      },
-      operatorId: data.operatorId,
-      payMode: data.payMode,
-      createReceipt: data.createReceipt,
-      receiptDocumentType: data.receiptDocumentType,
-      receiptNumber: data.receiptNumber,
-      receiptAnnotations: data.receiptAnnotations,
-      serviceName: data.serviceName,
-    });
+    const result = await procedureService.createRecord(auth.ctx, params.type, parsed.data);
 
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error';
-    const status = message.includes('exceeds') ? 400 : 500;
+    const status =
+      message.includes('exceeds') || message.includes('Unknown procedure type') ? 400 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }
