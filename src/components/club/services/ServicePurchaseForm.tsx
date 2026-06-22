@@ -2,21 +2,20 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { clubApiFetch } from '@/lib/club/servicePurchasesClient';
+import {
+  createPurchase,
+  fetchFormOptions,
+  fetchServiceCost,
+  type ServiceSaleFormOptions,
+} from '@/lib/club/serviceSaleClient';
 
 type Sector = { id: string; name: string };
 type Service = { id: string; name: string; sectorId: string; cost: number };
 type Member = { id: string; name: string };
 
-type FormOptions = {
-  sectors: Sector[];
-  services: Service[];
-  members: Member[];
-};
-
 export default function ServicePurchaseForm() {
   const router = useRouter();
-  const [options, setOptions] = useState<FormOptions | null>(null);
+  const [options, setOptions] = useState<ServiceSaleFormOptions | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -34,8 +33,7 @@ export default function ServicePurchaseForm() {
   const [receiptAnnotations, setReceiptAnnotations] = useState('');
 
   useEffect(() => {
-    clubApiFetch<FormOptions>('/api/club/services/purchases?view=form-options')
-      .then(setOptions)
+    fetchFormOptions().then(setOptions)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -63,10 +61,8 @@ export default function ServicePurchaseForm() {
 
   async function loadCostFromApi(id: string) {
     try {
-      const data = await clubApiFetch<{ success: boolean; club_currency_cost: number }>(
-        `/api/club/services/cost/${id}`
-      );
-      if (data.success) setValue(String(data.club_currency_cost));
+      const cost = await fetchServiceCost(id);
+      if (cost != null) setValue(String(cost));
     } catch {
       /* fallback to cached cost */
     }
@@ -88,22 +84,22 @@ export default function ServicePurchaseForm() {
 
     setSaving(true);
     try {
-      const result = await clubApiFetch<{ purchaseId: string }>('/api/club/services/purchases', {
-        method: 'POST',
-        body: JSON.stringify({
-          userId: memberId,
-          sectorId,
-          serviceId,
-          value: total,
-          pay: paid,
-          paydate,
-          notes,
-          payMode,
-          createReceipt: createReceipt && paid > 0,
-          receiptDocumentType: 'Invoice',
-          receiptNumber: receiptNumber || undefined,
-          receiptAnnotations: receiptAnnotations || notes,
-        }),
+      const selectedSector = options?.sectors.find((s) => s.id === sectorId);
+      const result = await createPurchase({
+        userId: memberId,
+        sectorId,
+        serviceId,
+        sectorName: selectedSector?.name,
+        serviceName: selectedService?.name,
+        value: total,
+        pay: paid,
+        paydate,
+        notes,
+        payMode,
+        createReceipt: createReceipt && paid > 0,
+        receiptDocumentType: 'Invoice',
+        receiptNumber: receiptNumber || undefined,
+        receiptAnnotations: receiptAnnotations || notes,
       });
 
       router.push(`/clubs/archive_service_list?created=${result.purchaseId}`);
@@ -137,6 +133,14 @@ export default function ServicePurchaseForm() {
                 <option key={m.id} value={m.id}>{m.name}</option>
               ))}
             </select>
+            {options && options.members.length === 0 && (
+              <p className="mt-1 text-xs text-amber-700">
+                No real members in the database for this club. The Members archive page
+                (`/clubMembers/memberList`) still shows sample/demo rows — it is not connected
+                to the DB yet. Add members from <strong>My Club</strong> (member management)
+                or <code className="text-[11px]">/api/clubs/[clubId]/members/add</code>.
+              </p>
+            )}
           </label>
           <label className="block">
             <span className="text-sm text-gray-600">Date</span>

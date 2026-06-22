@@ -30,6 +30,9 @@
         "db:add-moveframe-fields": "node scripts/add-moveframe-fields.js",
         "db:check-manual": "node scripts/check-manual-moveframes.js",
         "db:seed-outcome-settings": "node scripts/seed-outcome-settings-dev.js",
+        "db:seed-procedures": "ts-node -r tsconfig-paths/register --transpile-only -P prisma/tsconfig.seed.json prisma/seed-procedure-types.ts",
+        "db:seed-outcomes": "ts-node -r tsconfig-paths/register --transpile-only -P prisma/tsconfig.seed.json prisma/seed-outcomes.ts",
+        "db:migrate-outcomes": "ts-node -r tsconfig-paths/register --transpile-only -P prisma/tsconfig.seed.json scripts/migrate-outcomes-from-legacy.ts",
         "db:ensure-promocode-meta": "npx tsx scripts/ensure-promocode-meta.ts"
     },
     "dependencies": {

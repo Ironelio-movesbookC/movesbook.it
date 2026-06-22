@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { outcomeService } from '@/lib/outcomes';
 
 /** Sample outcome types inspired by CakePHP access / card-reader control messages. */
 export const SAMPLE_OUTCOME_TYPES = [
@@ -178,145 +179,25 @@ async function getTableColumns(tableName: string): Promise<Set<string>> {
   return new Set(rows.map((row) => row.COLUMN_NAME));
 }
 
+/** @deprecated Use outcomeService.seedOutcomeTypesIfEmpty() — no runtime DDL. */
 export async function ensureOutcomeSettingsTables(): Promise<{
   typeTable: string;
   audioSettingsTable: string;
   clubAudioTable: string;
 }> {
-  const typeTable = 'audio_setting_types';
-  const audioSettingsTable = 'audio_settings';
-  const clubAudioTable = 'club_audio_settings';
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS \`${typeTable}\` (
-      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-      message_description VARCHAR(500) NOT NULL,
-      default_msg_code VARCHAR(50) NOT NULL DEFAULT '',
-      created DATETIME DEFAULT CURRENT_TIMESTAMP,
-      modified DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    )
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS \`${audioSettingsTable}\` (
-      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-      message_type_id INT NOT NULL,
-      language INT NOT NULL DEFAULT 1,
-      code VARCHAR(50) NOT NULL DEFAULT '',
-      message VARCHAR(500) NOT NULL DEFAULT '',
-      audio VARCHAR(255) NULL,
-      created DATETIME DEFAULT CURRENT_TIMESTAMP,
-      modified DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      INDEX idx_audio_settings_lang_type (language, message_type_id)
-    )
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS \`${clubAudioTable}\` (
-      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-      club_id VARCHAR(191) NOT NULL,
-      message_type_id INT NOT NULL,
-      language INT NOT NULL DEFAULT 0,
-      code VARCHAR(50) NOT NULL DEFAULT '',
-      message VARCHAR(500) NOT NULL DEFAULT '',
-      audio VARCHAR(255) NULL,
-      created DATETIME DEFAULT CURRENT_TIMESTAMP,
-      modified DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      INDEX idx_club_audio_club_lang (club_id, language, message_type_id)
-    )
-  `);
-
-  return { typeTable, audioSettingsTable, clubAudioTable };
+  await outcomeService.seedOutcomeTypesIfEmpty();
+  return {
+    typeTable: 'audio_setting_types',
+    audioSettingsTable: 'audio_settings',
+    clubAudioTable: 'club_audio_settings',
+  };
 }
 
-export async function seedOutcomeSettingsIfEmpty(options: {
+/** @deprecated Migrated to Prisma outcome tables. */
+export async function seedOutcomeSettingsIfEmpty(_options: {
   clubIds: string[];
   primaryLanguageId?: number;
 }): Promise<boolean> {
-  const { clubIds, primaryLanguageId = 1 } = options;
-  const clubId = clubIds[0];
-  if (!clubId) return false;
-
-  let typeTable = await findExistingTable(['audio_setting_types', 'audio_setting_type']);
-  let audioTable = await findExistingTable(['audio_settings', 'audio_setting']);
-  let clubTable = await findExistingTable(['club_audio_settings', 'club_audio_setting']);
-
-  if (!typeTable || !audioTable || !clubTable) {
-    const created = await ensureOutcomeSettingsTables();
-    typeTable = typeTable ?? created.typeTable;
-    audioTable = audioTable ?? created.audioSettingsTable;
-    clubTable = clubTable ?? created.clubAudioTable;
-  }
-
-  const typeCount = await prisma.$queryRawUnsafe<{ c: bigint | number }[]>(
-    `SELECT COUNT(*) AS c FROM \`${typeTable}\``
-  );
-  if (Number(typeCount[0]?.c ?? 0) > 0) {
-    return false;
-  }
-
-  const typeCols = await getTableColumns(typeTable);
-  const audioCols = await getTableColumns(audioTable);
-  const clubCols = await getTableColumns(clubTable);
-
-  const descCol = typeCols.has('message_description') ? 'message_description' : 'name';
-  const codeCol = typeCols.has('default_msg_code') ? 'default_msg_code' : null;
-
-  for (let i = 0; i < SAMPLE_OUTCOME_TYPES.length; i++) {
-    const sample = SAMPLE_OUTCOME_TYPES[i];
-    const typeFields = [descCol];
-    const typeValues: unknown[] = [sample.description];
-    if (codeCol) {
-      typeFields.push(codeCol);
-      typeValues.push(sample.defaultCode);
-    }
-
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO \`${typeTable}\` (${typeFields.map((f) => `\`${f}\``).join(', ')})
-       VALUES (${typeFields.map(() => '?').join(', ')})`,
-      ...typeValues
-    );
-
-    const idRows = await prisma.$queryRawUnsafe<{ id: bigint | number }[]>(
-      'SELECT LAST_INSERT_ID() AS id'
-    );
-    const typeId = Number(idRows[0]?.id ?? i + 1);
-    const primaryCode = sample.defaultCode;
-    const customCode = `${sample.defaultCode}-C`;
-    const primaryMessage = pickRandom(sample.primaryMessages);
-    const customMessage = pickRandom(sample.customMessages);
-
-    const audioFields: Record<string, unknown> = {
-      message_type_id: typeId,
-      language: primaryLanguageId,
-      code: primaryCode,
-      message: primaryMessage,
-    };
-    const audioFieldNames = Object.keys(audioFields).filter((k) => audioCols.has(k));
-    if (audioFieldNames.length > 0) {
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO \`${audioTable}\` (${audioFieldNames.map((f) => `\`${f}\``).join(', ')})
-         VALUES (${audioFieldNames.map(() => '?').join(', ')})`,
-        ...audioFieldNames.map((k) => audioFields[k])
-      );
-    }
-
-    const clubFields: Record<string, unknown> = {
-      club_id: clubId,
-      message_type_id: typeId,
-      language: 0,
-      code: customCode,
-      message: customMessage,
-    };
-    const clubFieldNames = Object.keys(clubFields).filter((k) => clubCols.has(k));
-    if (clubFieldNames.length > 0) {
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO \`${clubTable}\` (${clubFieldNames.map((f) => `\`${f}\``).join(', ')})
-         VALUES (${clubFieldNames.map(() => '?').join(', ')})`,
-        ...clubFieldNames.map((k) => clubFields[k])
-      );
-    }
-  }
-
-  return true;
+  await outcomeService.seedOutcomeTypesIfEmpty();
+  return false;
 }

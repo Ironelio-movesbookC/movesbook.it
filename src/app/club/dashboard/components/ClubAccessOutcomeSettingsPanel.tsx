@@ -52,7 +52,7 @@ export default function ClubAccessOutcomeSettingsPanel({
   const [toast, setToast] = useState<string | null>(null);
   const [data, setData] = useState<OutcomeSettingsResponse | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { code: string; message: string }>>({});
-  const [defaultLang, setDefaultLang] = useState<'custom' | 'default'>('default');
+  const [outcomeMode, setOutcomeMode] = useState<'EN' | 'COUNTRY_STANDARD' | 'CUSTOM'>('COUNTRY_STANDARD');
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -61,6 +61,56 @@ export default function ClubAccessOutcomeSettingsPanel({
 
   const qs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
   const apiQs = clubId ? `clubId=${encodeURIComponent(clubId)}` : '';
+
+  const getLatestItem = useCallback(
+    (typeId: string, fallback: OutcomeSettingItem): OutcomeSettingItem =>
+      data?.items.find((row) => row.typeId === typeId) ?? fallback,
+    [data?.items]
+  );
+
+  const persistItem = useCallback(
+    async (item: OutcomeSettingItem): Promise<string | null> => {
+      const draft = drafts[item.typeId];
+      if (!draft || !data?.editable) {
+        return getLatestItem(item.typeId, item).settingId;
+      }
+
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/club/settings/outcome-settings${qs}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          action: 'save',
+          clubId: clubId ?? undefined,
+          typeId: item.typeId,
+          settingId: getLatestItem(item.typeId, item).settingId,
+          code: draft.code,
+          message: draft.message,
+        }),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(json?.error || 'Failed to save.');
+      }
+      const savedId = json?.id ? String(json.id) : getLatestItem(item.typeId, item).settingId;
+      if (savedId) {
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            items: prev.items.map((row) =>
+              row.typeId === item.typeId ? { ...row, settingId: savedId } : row
+            ),
+          };
+        });
+      }
+      return savedId;
+    },
+    [clubId, data?.editable, drafts, getLatestItem, qs]
+  );
 
   const load = useCallback(async (activeTab: OutcomeSettingsTab) => {
     setLoading(true);
@@ -78,7 +128,11 @@ export default function ClubAccessOutcomeSettingsPanel({
       }
       const payload = json as OutcomeSettingsResponse;
       setData(payload);
-      setDefaultLang(payload.defaultOutcomeLanguage);
+      if (payload.outcomeMode) {
+        setOutcomeMode(payload.outcomeMode);
+      } else {
+        setOutcomeMode(payload.defaultOutcomeLanguage === 'custom' ? 'CUSTOM' : 'COUNTRY_STANDARD');
+      }
       const nextDrafts: Record<string, { code: string; message: string }> = {};
       for (const item of payload.items) {
         nextDrafts[item.typeId] = { code: item.code, message: item.message };
@@ -104,41 +158,13 @@ export default function ClubAccessOutcomeSettingsPanel({
 
   const saveItem = useCallback(
     async (item: OutcomeSettingItem) => {
-      const draft = drafts[item.typeId];
-      if (!draft || !data?.editable) return;
+      if (!data?.editable) return;
 
       setSavingId(item.typeId);
       try {
-        const token = localStorage.getItem('token');
-        const response = await fetch(`/api/club/settings/outcome-settings${qs}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
-            action: 'save',
-            typeId: item.typeId,
-            settingId: item.settingId,
-            code: draft.code,
-            message: draft.message,
-          }),
-        });
-        const json = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(json?.error || 'Failed to save.');
-        }
-        setToast(json?.message ?? 'Saved.');
-        if (json?.id && !item.settingId) {
-          setData((prev) => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              items: prev.items.map((row) =>
-                row.typeId === item.typeId ? { ...row, settingId: String(json.id) } : row
-              ),
-            };
-          });
+        const savedId = await persistItem(item);
+        if (savedId) {
+          setToast('Saved.');
         }
       } catch (err) {
         setToast(err instanceof Error ? err.message : 'Failed to save.');
@@ -146,7 +172,7 @@ export default function ClubAccessOutcomeSettingsPanel({
         setSavingId(null);
       }
     },
-    [data?.editable, drafts, qs]
+    [data?.editable, persistItem]
   );
 
   const debouncedSave = useDebouncedCallback((item: OutcomeSettingItem) => {
@@ -164,28 +190,30 @@ export default function ClubAccessOutcomeSettingsPanel({
     if (data?.editable) debouncedSave(item);
   }
 
-  function handleDefaultLangChange(value: string) {
-    if (value !== 'custom' && value !== 'default') return;
+  function handleOutcomeModeChange(value: string) {
+    if (value !== 'EN' && value !== 'COUNTRY_STANDARD' && value !== 'CUSTOM') return;
     setConfirm({
-      title: 'Change default outcome language?',
-      message: "You're about to change the default outcome language.",
+      title: 'Change outcome language mode?',
+      message: "You're about to change how access outcome messages are resolved for this club.",
       confirmLabel: 'Yes, change',
       onConfirm: async () => {
         setConfirm(null);
         try {
           const token = localStorage.getItem('token');
-          const response = await fetch(`/api/club/settings/outcome-settings${qs}`, {
-            method: 'PATCH',
+          const prefQs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
+          const response = await fetch(`/api/club/settings/outcome-preferences${prefQs}`, {
+            method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
-            body: JSON.stringify({ action: 'default-language', lang: value }),
+            body: JSON.stringify({ mode: value, clubId }),
           });
           const json = await response.json().catch(() => null);
           if (!response.ok) throw new Error(json?.error || 'Failed to update.');
-          setDefaultLang(value);
-          setToast(json?.message ?? 'Default language updated.');
+          setOutcomeMode(value);
+          setToast(json?.message ?? 'Outcome mode updated.');
+          await load(tab);
         } catch (err) {
           setToast(err instanceof Error ? err.message : 'Failed to update.');
         }
@@ -218,29 +246,37 @@ export default function ClubAccessOutcomeSettingsPanel({
 
   function openUploadPicker(item: OutcomeSettingItem) {
     if (!data?.editable) return;
-    if (!item.settingId) {
-      setToast('Please save a message before uploading an audio file.');
+    const latest = getLatestItem(item.typeId, item);
+    if (latest.audioFile) {
+      setToast('Please remove the existing audio before uploading a new file.');
       return;
     }
-    if (item.audioFile) {
-      setToast('Please remove the existing audio before uploading a new file.');
+    const draft = drafts[item.typeId];
+    if (!latest.settingId && !draft?.message?.trim()) {
+      setToast('Enter a message first, then upload audio.');
       return;
     }
     fileInputRefs.current[item.typeId]?.click();
   }
 
   async function uploadAudio(item: OutcomeSettingItem, file: File) {
-    if (!item.settingId) {
-      setToast('Please save a message before uploading an audio file.');
-      return;
-    }
-    if (item.audioFile) {
+    const latest = getLatestItem(item.typeId, item);
+    if (latest.audioFile) {
       setToast('Please remove the existing audio before uploading a new file.');
       return;
     }
 
     setUploadingId(item.typeId);
     try {
+      let settingId = latest.settingId;
+      if (!settingId) {
+        settingId = await persistItem(item);
+      }
+      if (!settingId) {
+        setToast('Save the message first, then upload audio.');
+        return;
+      }
+
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result));
@@ -255,12 +291,37 @@ export default function ClubAccessOutcomeSettingsPanel({
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ settingId: item.settingId, file: base64 }),
+        body: JSON.stringify({
+          settingId,
+          typeId: item.typeId,
+          clubId: clubId ?? undefined,
+          fileName: file.name,
+          file: base64,
+        }),
       });
       const json = await response.json().catch(() => null);
       if (!response.ok) throw new Error(json?.error || 'Upload failed.');
+
+      const filename = json?.filename ? String(json.filename) : null;
+      const audioUrl = json?.audioUrl ? String(json.audioUrl) : null;
+      const savedSettingId = json?.id ? String(json.id) : settingId;
+
+      setData((prev) => {
+        if (!prev || !filename || !audioUrl) return prev;
+        return {
+          ...prev,
+          items: prev.items.map((row) =>
+            row.typeId === item.typeId
+              ? { ...row, settingId: savedSettingId, audioFile: filename, audioUrl }
+              : row
+          ),
+        };
+      });
+
       setToast(json?.message ?? 'Audio saved.');
-      await load(tab);
+      if (!filename || !audioUrl) {
+        await load(tab);
+      }
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Upload failed.');
     } finally {
@@ -322,16 +383,17 @@ export default function ClubAccessOutcomeSettingsPanel({
           </div>
           <div className="flex items-center gap-2">
             <label htmlFor="default-outcome-lang" className="text-xs font-medium text-slate-300">
-              Language for outcome
+              Outcome mode
             </label>
             <select
               id="default-outcome-lang"
-              value={defaultLang}
-              onChange={(e) => handleDefaultLangChange(e.target.value)}
+              value={outcomeMode}
+              onChange={(e) => handleOutcomeModeChange(e.target.value)}
               className="rounded border border-slate-500 bg-slate-900 px-2 py-1.5 text-sm text-white"
             >
-              <option value="custom">Custom</option>
-              <option value="default">Default</option>
+              <option value="EN">English (system)</option>
+              <option value="COUNTRY_STANDARD">Country standard</option>
+              <option value="CUSTOM">Custom</option>
             </select>
           </div>
         </div>
@@ -380,6 +442,20 @@ export default function ClubAccessOutcomeSettingsPanel({
               <div className="mb-4 rounded-lg border border-[#7d0420]/30 bg-[#7d0420] px-4 py-3 text-sm text-white">
                 {data?.introParagraph}
               </div>
+
+              {tab === 'custom' && !data?.editable && (
+                <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Outcome mode is{' '}
+                  <strong>
+                    {outcomeMode === 'EN'
+                      ? 'English (system)'
+                      : outcomeMode === 'CUSTOM'
+                        ? 'Custom'
+                        : 'Country standard'}
+                  </strong>
+                  . Choose <strong>Custom</strong> in the dropdown above to edit messages on this tab.
+                </div>
+              )}
 
               {data?.items.length === 0 ? (
                 <p className="py-12 text-center text-sm text-gray-500">

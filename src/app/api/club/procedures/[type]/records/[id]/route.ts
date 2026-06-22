@@ -1,0 +1,56 @@
+﻿import { NextRequest, NextResponse } from 'next/server';
+import { getClubAuthContext, procedureService } from '@/lib/procedures';
+import { addServiceSalePaymentSchema } from '@/lib/procedures/validators/serviceSale';
+
+export const dynamic = 'force-dynamic';
+
+type RouteContext = { params: { type: string; id: string } };
+
+export async function GET(request: NextRequest, { params }: RouteContext) {
+  try {
+    const auth = await getClubAuthContext(request);
+    if ('error' in auth) return auth.error;
+
+    const result = await procedureService.listRecords(auth.ctx, params.type, {
+      recordId: params.id,
+      page: 1,
+      pageSize: 1,
+    });
+
+    if (!result.items[0]) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ record: result.items[0] });
+  } catch (error) {
+    console.error('GET procedure record:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest, { params }: RouteContext) {
+  try {
+    const auth = await getClubAuthContext(request);
+    if ('error' in auth) return auth.error;
+
+    const body = await request.json();
+    const parsed = addServiceSalePaymentSchema.safeParse({
+      ...body,
+      amount: body.amount ?? body.amountPaid,
+    });
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Validation failed', details: parsed.error.flatten() },
+        { status: 400 }
+      );
+    }
+
+    const result = await procedureService.addPayment(auth.ctx, params.type, params.id, parsed.data);
+    return NextResponse.json({ success: true, ...result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    const status =
+      message === 'Record not found' ? 404 : message.includes('Payment') || message.includes('exceeds') ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}

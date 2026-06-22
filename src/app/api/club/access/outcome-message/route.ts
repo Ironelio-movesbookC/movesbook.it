@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
-import { resolveAccessOutcomeMessage } from '@/lib/accessOutcomeMessages';
-import { findExistingTable, text } from '@/lib/outcomeSettingsDb';
+import { outcomeService } from '@/lib/outcomes';
+import { ClubOutcomeMode } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,83 +10,45 @@ function isClubAccountUserType(userType: string): boolean {
   return userType === 'CLUB' || userType === 'CLUB_TRAINER';
 }
 
-async function getLegacyUserId(userId: string): Promise<string | null> {
-  const fromId = userId.match(/^legacy_(\d+)(?:_|$)/);
-  if (fromId?.[1]) return fromId[1];
-
-  const mappingTable = await findExistingTable(['legacy_id_mappings']);
-  if (!mappingTable) return null;
-
-  const rows = await prisma.$queryRawUnsafe<{ legacy_id: number | string }[]>(
-    `SELECT legacy_id
-     FROM \`${mappingTable}\`
-     WHERE new_id = ?
-       AND legacy_table = 'users'
-     ORDER BY legacy_id DESC
-     LIMIT 1`,
-    userId
-  );
-
-  return rows[0]?.legacy_id != null ? String(rows[0].legacy_id) : null;
-}
-
-async function getLegacyClubId(clubId: string): Promise<string | null> {
-  const mappingTable = await findExistingTable(['legacy_id_mappings']);
-  if (!mappingTable) return null;
-
-  const rows = await prisma.$queryRawUnsafe<{ legacy_id: number | string }[]>(
-    `SELECT legacy_id
-     FROM \`${mappingTable}\`
-     WHERE new_id = ?
-       AND legacy_table = 'clubs'
-     ORDER BY legacy_id DESC
-     LIMIT 1`,
-    clubId
-  );
-
-  return rows[0]?.legacy_id != null ? String(rows[0].legacy_id) : null;
-}
-
 async function getOwnedClub(userId: string, requestedClubId: string | null) {
   if (requestedClubId) {
-    const selected = await prisma.$queryRaw<{ id: string; name: string; adminId: string }[]>`
-      SELECT id, name, adminId
-      FROM clubs_new
-      WHERE id = ${requestedClubId}
-        AND adminId = ${userId}
-      LIMIT 1
-    `;
-    if (selected[0]) return selected[0];
+    const selected = await prisma.club.findFirst({
+      where: { id: requestedClubId, adminId: userId },
+      select: { id: true, name: true, adminId: true },
+    });
+    if (selected) return selected;
   }
 
-  const fallback = await prisma.$queryRaw<{ id: string; name: string; adminId: string }[]>`
-    SELECT id, name, adminId
-    FROM clubs_new
-    WHERE adminId = ${userId}
-    ORDER BY createdAt DESC
-    LIMIT 1
-  `;
-
-  return fallback[0] ?? null;
+  return prisma.club.findFirst({
+    where: { adminId: userId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, name: true, adminId: true },
+  });
 }
 
-/**
- * Resolve the outcome message/audio shown at access control for a member.
- * Language tabs in admin map to countries.country_lang_id — when the club enables
- * country-language outcomes, the member's nationality/country language is used.
- */
+function text(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
+function parseMode(value: string): ClubOutcomeMode | undefined {
+  const raw = value.toUpperCase();
+  if (raw === 'EN') return ClubOutcomeMode.EN;
+  if (raw === 'COUNTRY' || raw === 'COUNTRY_STANDARD' || raw === 'PRIMARY') {
+    return ClubOutcomeMode.COUNTRY_STANDARD;
+  }
+  if (raw === 'CUSTOM') return ClubOutcomeMode.CUSTOM;
+  return undefined;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const token = request.headers.get('authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const decoded = verifyToken(token);
     if (!decoded?.userId || !decoded.userType) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
     if (!isClubAccountUserType(String(decoded.userType))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -106,38 +68,17 @@ export async function GET(request: NextRequest) {
     }
 
     const club = await getOwnedClub(userId, clubId);
-    if (!club) {
-      return NextResponse.json({ error: 'Club not found.' }, { status: 404 });
-    }
+    if (!club) return NextResponse.json({ error: 'Club not found.' }, { status: 404 });
 
-    const legacyUserId = await getLegacyUserId(userId);
-    const legacyMemberId = await getLegacyUserId(memberUserId);
-    const legacyClubId = await getLegacyClubId(club.id);
+    const modeOverride = parseMode(languageModeParam);
 
-    const clubOwnerUserIds = Array.from(
-      new Set([userId, legacyUserId, club.adminId].filter(Boolean) as string[])
-    );
-    const memberUserIds = Array.from(
-      new Set([memberUserId, legacyMemberId].filter(Boolean) as string[])
-    );
-    const clubIds = Array.from(new Set([club.id, legacyClubId].filter(Boolean) as string[]));
-
-    const languageMode =
-      languageModeParam === 'primary' ||
-      languageModeParam === 'country' ||
-      languageModeParam === 'custom' ||
-      languageModeParam === 'auto'
-        ? languageModeParam
-        : 'auto';
-
-    const outcome = await resolveAccessOutcomeMessage({
-      clubIds,
-      clubOwnerUserIds,
-      memberUserIds,
-      messageTypeId: messageTypeId ?? undefined,
-      code: code ?? undefined,
-      languageMode,
-      clubStorageId: clubIds[0],
+    const outcome = await outcomeService.resolveOutcomeMessage({
+      clubId: club.id,
+      outcomeTypeId: messageTypeId || undefined,
+      outcomeTypeCode: code ?? undefined,
+      clubAdminUserIds: [userId, club.adminId],
+      memberUserIds: [memberUserId],
+      modeOverride,
     });
 
     if (!outcome) {
@@ -145,7 +86,14 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      ...outcome,
+      messageTypeId: outcome.outcomeTypeId,
+      code: outcome.code,
+      message: outcome.message,
+      audioFile: outcome.audioFile,
+      audioUrl: outcome.audioUrl,
+      languageId: outcome.legacyLanguageId ?? outcome.languageId,
+      source: outcome.source === 'custom' ? 'club_custom' : 'club_primary',
+      mode: outcome.mode,
       memberUserId,
       clubId: club.id,
     });
