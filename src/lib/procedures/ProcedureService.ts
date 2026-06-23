@@ -2,6 +2,8 @@
 import { prisma } from '@/lib/prisma';
 import { getProcedureDefinition, getProcedureTypology } from './registry';
 import { paginated, parsePagination } from './pagination';
+import { verifyOperatorPassword } from './operatorAuth';
+import { PROCEDURE_TYPE_CODES } from './types';
 import type {
   AddProcedurePaymentInput,
   ClubAuthContext,
@@ -63,6 +65,25 @@ async function loadUserNames(ids: string[]): Promise<Map<string, string>> {
   return new Map(users.map((u) => [u.id, formatUserName(u)]));
 }
 
+async function assertOperatorPassword(
+  procedureTypeCode: string,
+  operatorId: string,
+  password: string | null | undefined
+): Promise<void> {
+  if (procedureTypeCode !== PROCEDURE_TYPE_CODES.SERVICE_SALE) return;
+  const trimmed = password?.trim();
+  if (!trimmed) throw new Error('Operator password is required');
+  const ok = await verifyOperatorPassword(operatorId, trimmed);
+  if (!ok) throw new Error('Operator password is incorrect');
+}
+
+function mergeMetadata(
+  existing: Record<string, unknown> | null | undefined,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  return { ...(existing ?? {}), ...patch };
+}
+
 export class ProcedureService {
   async getProcedureTypeByCode(code: string) {
     return prisma.procedureType.findFirst({ where: { code, isActive: true } });
@@ -82,8 +103,17 @@ export class ProcedureService {
 
     const balanceAmount = roundMoney(totalAmount - initialPayment);
     const operatorId = input.operatorId ?? ctx.userId;
+    await assertOperatorPassword(procedureTypeCode, operatorId, input.operatorPassword);
+
     const recordDate = toDateOnly(input.recordDate);
-    const dueDate = input.dueDate ? toDateOnly(input.dueDate) : null;
+    const paymentDate = input.paymentDate ? toDateOnly(input.paymentDate) : recordDate;
+    const dueDate = input.dueDate ? toDateOnly(input.dueDate) : paymentDate;
+
+    const metadata = mergeMetadata(input.metadata ?? null, {
+      ...(input.paymentType ? { paymentType: input.paymentType } : {}),
+      ...(input.taxDoc != null ? { taxDoc: input.taxDoc } : {}),
+      ...(input.taxDocument ? { taxDocument: input.taxDocument } : {}),
+    });
 
     return prisma.$transaction(async (tx) => {
       const record = await tx.procedureRecord.create({
@@ -98,7 +128,7 @@ export class ProcedureService {
           recordDate,
           dueDate,
           notes: input.notes ?? null,
-          metadata: (input.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+          metadata: metadata as Prisma.InputJsonValue,
           status: ProcedureRecordStatus.ACTIVE,
         },
       });
@@ -110,7 +140,7 @@ export class ProcedureService {
             procedureRecordId: record.id,
             amount: initialPayment,
             balanceAfter: balanceAmount,
-            paymentDate: recordDate,
+            paymentDate,
             operatorId,
             payMode: input.payMode ?? null,
             notes: input.notes ?? null,
@@ -120,7 +150,7 @@ export class ProcedureService {
       }
 
       let receiptId: string | null = null;
-      if (input.createReceipt && initialPayment > 0) {
+      if ((input.createReceipt || input.taxDoc) && initialPayment > 0) {
         const receipt = await tx.procedureReceipt.create({
           data: {
             procedureRecordId: record.id,
@@ -171,9 +201,18 @@ export class ProcedureService {
     if (amount > currentBalance) throw new Error('Payment exceeds remaining balance');
 
     const operatorId = input.operatorId ?? ctx.userId;
+    await assertOperatorPassword(procedureTypeCode, operatorId, input.operatorPassword);
+
     const paymentDate = toDateOnly(input.paymentDate);
     const newPaid = roundMoney(decimalToNumber(record.paidAmount) + amount);
     const newBalance = roundMoney(currentBalance - amount);
+
+    const existingMetadata = (record.metadata as Record<string, unknown> | null) ?? null;
+    const metadata = mergeMetadata(existingMetadata, {
+      ...(input.paymentType ? { paymentType: input.paymentType } : {}),
+      ...(input.taxDoc != null ? { taxDoc: input.taxDoc } : {}),
+      ...(input.taxDocument ? { taxDocument: input.taxDocument } : {}),
+    });
 
     return prisma.$transaction(async (tx) => {
       const payment = await tx.procedurePayment.create({
@@ -190,11 +229,18 @@ export class ProcedureService {
 
       await tx.procedureRecord.update({
         where: { id: record.id },
-        data: { paidAmount: newPaid, balanceAmount: newBalance, operatorId },
+        data: {
+          paidAmount: newPaid,
+          balanceAmount: newBalance,
+          operatorId,
+          notes: input.notes ?? record.notes,
+          dueDate: input.debtExpire ? toDateOnly(input.debtExpire) : record.dueDate,
+          metadata: metadata as Prisma.InputJsonValue,
+        },
       });
 
       let receiptId: string | null = null;
-      if (input.createReceipt) {
+      if (input.createReceipt || input.taxDoc) {
         const receipt = await tx.procedureReceipt.create({
           data: {
             procedureRecordId: record.id,

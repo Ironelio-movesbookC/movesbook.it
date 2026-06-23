@@ -51,7 +51,11 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error';
     const status =
-      message.includes('exceeds') || message.includes('Unknown procedure type') ? 400 : 500;
+      message.includes('exceeds') ||
+      message.includes('Unknown procedure type') ||
+      message.includes('password')
+        ? 400
+        : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

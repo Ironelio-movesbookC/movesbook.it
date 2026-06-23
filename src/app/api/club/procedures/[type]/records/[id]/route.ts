@@ -47,7 +47,13 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error';
     const status =
-      message === 'Record not found' ? 404 : message.includes('Payment') || message.includes('exceeds') ? 400 : 500;
+      message === 'Record not found'
+        ? 404
+        : message.includes('Payment') ||
+            message.includes('exceeds') ||
+            message.includes('password')
+          ? 400
+          : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

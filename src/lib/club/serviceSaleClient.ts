@@ -60,6 +60,8 @@ export type ServiceSaleFormOptions = {
   sectors: { id: string; name: string }[];
   services: { id: string; name: string; sectorId: string; cost: number }[];
   members: { id: string; name: string }[];
+  operators: { id: string; name: string }[];
+  currentOperatorId: string | null;
 };
 
 function metaString(metadata: Record<string, unknown> | null | undefined, key: string): string {
@@ -193,6 +195,13 @@ export async function fetchPurchase(id: string): Promise<{ purchase: ServiceSale
   return { purchase: mapRecord(res.record) };
 }
 
+export async function fetchMemberDiscount(memberId: string): Promise<number> {
+  const data = await clubApiFetch<{ discount: number }>(
+    `${BASE}/member-discount?memberId=${encodeURIComponent(memberId)}`
+  );
+  return data.discount ?? 0;
+}
+
 export type CreatePurchaseInput = {
   userId: string;
   sectorId: string;
@@ -201,10 +210,18 @@ export type CreatePurchaseInput = {
   serviceName?: string;
   value: number;
   pay?: number;
+  recordDate: string;
+  movementTime?: string;
   paydate: string;
+  causal?: string;
   notes?: string;
   payMode?: string;
   operatorId?: string;
+  operatorPassword?: string;
+  discount?: number;
+  discountApplied?: boolean;
+  taxDoc?: boolean;
+  taxDocument?: Record<string, unknown>;
   createReceipt?: boolean;
   receiptDocumentType?: string;
   receiptNumber?: string;
@@ -219,18 +236,27 @@ export async function createPurchase(input: CreatePurchaseInput): Promise<{ purc
       memberId: input.userId,
       totalAmount: input.value,
       initialPayment: pay,
-      recordDate: input.paydate,
-      notes: input.notes ?? null,
+      recordDate: input.recordDate,
+      paymentDate: input.paydate,
+      dueDate: input.paydate,
+      causal: input.causal ?? input.notes ?? null,
+      notes: input.causal ?? input.notes ?? null,
       sectorId: input.sectorId || null,
       serviceId: input.serviceId || null,
       sectorName: input.sectorName ?? null,
       serviceName: input.serviceName ?? null,
       payMode: input.payMode ?? null,
       operatorId: input.operatorId ?? null,
+      operatorPassword: input.operatorPassword ?? null,
+      discount: input.discount ?? 0,
+      discountApplied: input.discountApplied ?? false,
+      movementTime: input.movementTime ?? null,
+      taxDoc: input.taxDoc ?? false,
+      taxDocument: input.taxDocument ?? null,
       createReceipt: input.createReceipt && pay > 0,
       receiptDocumentType: input.receiptDocumentType ?? 'Invoice',
       receiptNumber: input.receiptNumber,
-      receiptAnnotations: input.receiptAnnotations ?? input.notes,
+      receiptAnnotations: input.receiptAnnotations ?? input.causal ?? input.notes,
     }),
   });
   return { purchaseId: result.recordId };
@@ -244,8 +270,17 @@ export async function deletePurchase(id: string): Promise<void> {
 export type AddPaymentInput = {
   amountPaid: number;
   paymentDate: string;
+  description?: string;
   notes?: string;
   payMode?: string;
+  paymentType?: 'D' | 'B';
+  taxDoc?: boolean;
+  operatorId?: string;
+  operatorPassword?: string;
+  debtTotal?: number;
+  debtExpire?: string;
+  payWith?: number;
+  taxDocument?: Record<string, unknown>;
   createReceipt?: boolean;
   receiptDocumentType?: string;
   receiptNumber?: string;
@@ -258,12 +293,21 @@ export async function addPayment(recordId: string, input: AddPaymentInput): Prom
     body: JSON.stringify({
       amount: input.amountPaid,
       paymentDate: input.paymentDate,
-      notes: input.notes ?? null,
+      description: input.description ?? input.notes ?? null,
+      notes: input.description ?? input.notes ?? null,
       payMode: input.payMode ?? null,
-      createReceipt: input.createReceipt ?? false,
+      paymentType: input.paymentType ?? null,
+      taxDoc: input.taxDoc ?? false,
+      operatorId: input.operatorId ?? null,
+      operatorPassword: input.operatorPassword ?? null,
+      debtTotal: input.debtTotal ?? null,
+      debtExpire: input.debtExpire ?? null,
+      payWith: input.payWith ?? null,
+      taxDocument: input.taxDocument ?? null,
+      createReceipt: input.createReceipt ?? input.taxDoc ?? false,
       receiptDocumentType: input.receiptDocumentType ?? 'Invoice',
       receiptNumber: input.receiptNumber,
-      receiptAnnotations: input.receiptAnnotations ?? input.notes,
+      receiptAnnotations: input.receiptAnnotations ?? input.description ?? input.notes,
     }),
   });
 }

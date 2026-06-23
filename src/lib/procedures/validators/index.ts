@@ -85,5 +85,26 @@ export function parseAddPayment(type: string, body: unknown): ParseAddPaymentRes
     };
   }
 
-  return { ok: true, data: parsed.data };
+  const data = parsed.data;
+  const mapped: AddProcedurePaymentInput = {
+    amount: data.amount,
+    paymentDate: data.paymentDate,
+    notes: data.description?.trim() || data.notes?.trim() || null,
+    operatorId: data.operatorId,
+    operatorPassword: data.operatorPassword,
+    payMode: data.payMode,
+    paymentType: data.paymentType,
+    taxDoc: data.taxDoc,
+    debtTotal: data.debtTotal,
+    debtExpire: data.debtExpire,
+    payWith: data.payWith,
+    createReceipt: data.createReceipt ?? data.taxDoc,
+    receiptDocumentType: data.receiptDocumentType ?? data.taxDocument?.documentType ?? 'Invoice',
+    receiptNumber: data.receiptNumber ?? data.taxDocument?.documentNumber,
+    receiptAnnotations: data.receiptAnnotations ?? data.taxDocument?.causal ?? data.description ?? data.notes,
+    serviceName: data.serviceName,
+    taxDocument: data.taxDocument,
+  };
+
+  return { ok: true, data: mapped };
 }
