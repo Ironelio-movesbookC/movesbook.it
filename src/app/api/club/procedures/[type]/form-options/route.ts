@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClubAuthContext } from '@/lib/procedures';
 import { fetchExpenseFormOptions } from '@/lib/procedures/expenseFormOptions';
+import { fetchProductSaleFormOptions } from '@/lib/procedures/productSaleFormOptions';
 import { fetchServiceSaleFormOptions } from '@/lib/procedures/serviceSaleFormOptions';
 import { isKnownProcedureType } from '@/lib/procedures/validators';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
@@ -24,7 +25,12 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     }
 
     if (params.type === PROCEDURE_TYPE_CODES.EXPENSE) {
-      const options = await fetchExpenseFormOptions(auth.ctx.club.id);
+      const options = await fetchExpenseFormOptions(auth.ctx);
+      return NextResponse.json(options);
+    }
+
+    if (params.type === PROCEDURE_TYPE_CODES.PRODUCT_SALE) {
+      const options = await fetchProductSaleFormOptions(auth.ctx);
       return NextResponse.json(options);
     }
 

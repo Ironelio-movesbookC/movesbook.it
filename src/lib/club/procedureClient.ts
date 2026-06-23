@@ -209,12 +209,21 @@ export function createProcedureClient(code: ProcedureTypeCode) {
         amountPaid: number;
         paymentDate: string;
         notes?: string;
+        description?: string;
         payMode?: string;
+        paymentType?: string;
+        taxDoc?: boolean;
+        operatorId?: string;
+        operatorPassword?: string;
+        debtTotal?: number;
+        debtExpire?: string;
+        payWith?: number;
         createReceipt?: boolean;
         receiptDocumentType?: string;
         receiptNumber?: string;
         receiptAnnotations?: string;
         serviceName?: string;
+        taxDocument?: Record<string, unknown>;
       }
     ): Promise<void> {
       await clubApiFetch(`${base}/records/${recordId}`, {
@@ -222,12 +231,21 @@ export function createProcedureClient(code: ProcedureTypeCode) {
         body: JSON.stringify({
           amount: input.amountPaid,
           paymentDate: input.paymentDate,
-          notes: input.notes ?? null,
+          description: input.description ?? input.notes ?? null,
+          notes: input.description ?? input.notes ?? null,
           payMode: input.payMode ?? null,
-          createReceipt: input.createReceipt ?? false,
+          paymentType: input.paymentType ?? null,
+          taxDoc: input.taxDoc ?? false,
+          operatorId: input.operatorId ?? null,
+          operatorPassword: input.operatorPassword ?? null,
+          debtTotal: input.debtTotal ?? null,
+          debtExpire: input.debtExpire ?? null,
+          payWith: input.payWith ?? null,
+          taxDocument: input.taxDocument ?? null,
+          createReceipt: input.createReceipt ?? input.taxDoc ?? false,
           receiptDocumentType: input.receiptDocumentType ?? 'Invoice',
           receiptNumber: input.receiptNumber,
-          receiptAnnotations: input.receiptAnnotations ?? input.notes,
+          receiptAnnotations: input.receiptAnnotations ?? input.description ?? input.notes,
           serviceName: input.serviceName,
         }),
       });

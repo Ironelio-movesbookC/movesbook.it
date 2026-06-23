@@ -106,6 +106,7 @@ export default function PaymentDetailPage() {
               purchase={purchase}
               payments={payments}
               options={options}
+              procedureType="service_sale"
               saving={saving}
               error={error}
               success={success}

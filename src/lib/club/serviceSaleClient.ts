@@ -222,6 +222,8 @@ export type CreatePurchaseInput = {
   discountApplied?: boolean;
   taxDoc?: boolean;
   taxDocument?: Record<string, unknown>;
+  companyId?: string;
+  companyName?: string;
   createReceipt?: boolean;
   receiptDocumentType?: string;
   receiptNumber?: string;
@@ -253,6 +255,8 @@ export async function createPurchase(input: CreatePurchaseInput): Promise<{ purc
       movementTime: input.movementTime ?? null,
       taxDoc: input.taxDoc ?? false,
       taxDocument: input.taxDocument ?? null,
+      companyId: input.companyId ?? null,
+      companyName: input.companyName ?? null,
       createReceipt: input.createReceipt && pay > 0,
       receiptDocumentType: input.receiptDocumentType ?? 'Invoice',
       receiptNumber: input.receiptNumber,

@@ -1,12 +1,19 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import ProcedureFormSection, {
   procedureHighlightInputClass,
   procedureInputClass,
 } from '@/components/procedures/ProcedureFormLayout';
 import TaxDocumentModal, { type TaxDocumentFormValues } from '@/components/procedures/TaxDocumentModal';
+import {
+  createInstallment,
+  deleteInstallment,
+  fetchInstallments,
+  updateInstallment,
+  type InstallmentRow,
+} from '@/lib/club/archives/clubArchiveClient';
 import { PAY_MODE_OPTIONS } from '@/lib/procedures/payModes';
 import { formatEuro } from '@/lib/club/servicePurchasesClient';
 import type { ServiceSaleFormOptions, ServiceSalePayment, ServiceSalePurchase } from '@/lib/club/serviceSaleClient';
@@ -33,6 +40,7 @@ type Props = {
   purchase: ServiceSalePurchase;
   payments: ServiceSalePayment[];
   options: ServiceSaleFormOptions;
+  procedureType?: string;
   saving?: boolean;
   error?: string;
   success?: string;
@@ -50,6 +58,7 @@ export default function ServicePaymentForm({
   purchase,
   payments,
   options,
+  procedureType = 'service_sale',
   saving,
   error,
   success,
@@ -57,7 +66,9 @@ export default function ServicePaymentForm({
   onCancel,
 }: Props) {
   const sectionLabel = `${purchase.sectorName}-${purchase.serviceName}`;
-  const [selectedInstallment, setSelectedInstallment] = useState(true);
+  const [installments, setInstallments] = useState<InstallmentRow[]>([]);
+  const [selectedInstallmentId, setSelectedInstallmentId] = useState<string | null>(null);
+  const [installmentError, setInstallmentError] = useState('');
   const [paymentType, setPaymentType] = useState<'D' | 'B'>('D');
   const [debtTotal, setDebtTotal] = useState(String(purchase.value));
   const [debtExpire, setDebtExpire] = useState(purchase.paydate ?? new Date().toISOString().slice(0, 10));
@@ -73,6 +84,21 @@ export default function ServicePaymentForm({
   const [payWith, setPayWith] = useState('0');
   const [taxModalOpen, setTaxModalOpen] = useState(false);
   const [taxDocument, setTaxDocument] = useState<TaxDocumentFormValues | null>(null);
+  const [modifyOpen, setModifyOpen] = useState(false);
+  const [modifySaving, setModifySaving] = useState(false);
+  const [modifyForm, setModifyForm] = useState({
+    balance: '',
+    paid: '',
+    paymentDate: '',
+    expireDate: '',
+    description: '',
+  });
+
+  useEffect(() => {
+    fetchInstallments(procedureType, purchase.id)
+      .then(setInstallments)
+      .catch(() => setInstallments([]));
+  }, [procedureType, purchase.id]);
 
   const paidAmount = Number(amountPaid) || 0;
   const payWithAmount = Number(payWith) || 0;
@@ -80,6 +106,15 @@ export default function ServicePaymentForm({
   const newRest = Math.max(0, purchase.rest - paidAmount);
 
   const installmentRows = useMemo(() => {
+    if (installments.length > 0) {
+      return installments.map((row) => ({
+        id: row.id,
+        balance: row.balance,
+        paymentDate: row.paymentDate,
+        paid: row.paid,
+        disabled: row.balance <= 0,
+      }));
+    }
     const rows = payments.map((p) => ({
       id: p.id,
       balance: p.balance,
@@ -97,11 +132,88 @@ export default function ServicePaymentForm({
       });
     }
     return rows;
-  }, [payments, purchase]);
+  }, [installments, payments, purchase]);
+
+  async function reloadInstallments() {
+    const rows = await fetchInstallments(procedureType, purchase.id);
+    setInstallments(rows);
+  }
+
+  async function handleNewInstallment() {
+    setInstallmentError('');
+    try {
+      await createInstallment(procedureType, purchase.id, {
+        balance: purchase.rest,
+        paid: 0,
+        paymentDate: new Date().toISOString().slice(0, 10),
+        expireDate: debtExpire,
+        description: description || sectionLabel,
+      });
+      await reloadInstallments();
+    } catch (e) {
+      setInstallmentError(e instanceof Error ? e.message : 'Failed to create installment');
+    }
+  }
+
+  async function handleDeleteInstallment() {
+    const id = selectedInstallmentId;
+    if (!id || id === 'current') return;
+    setInstallmentError('');
+    try {
+      await deleteInstallment(procedureType, purchase.id, id);
+      setSelectedInstallmentId(null);
+      await reloadInstallments();
+    } catch (e) {
+      setInstallmentError(e instanceof Error ? e.message : 'Failed to delete installment');
+    }
+  }
+
+  function handleModifyInstallment() {
+    const id = selectedInstallmentId;
+    if (!id || id === 'current') {
+      setInstallmentError('Select a saved installment to modify.');
+      return;
+    }
+    const row = installments.find((r) => r.id === id);
+    if (!row) return;
+    setInstallmentError('');
+    setModifyForm({
+      balance: String(row.balance),
+      paid: String(row.paid),
+      paymentDate: row.paymentDate.slice(0, 10),
+      expireDate: row.expireDate?.slice(0, 10) ?? '',
+      description: row.description ?? '',
+    });
+    setModifyOpen(true);
+  }
+
+  async function handleSaveModifyInstallment(e: React.FormEvent) {
+    e.preventDefault();
+    const id = selectedInstallmentId;
+    if (!id || id === 'current') return;
+    setModifySaving(true);
+    setInstallmentError('');
+    try {
+      await updateInstallment(procedureType, purchase.id, id, {
+        balance: Number(modifyForm.balance) || 0,
+        paid: Number(modifyForm.paid) || 0,
+        paymentDate: modifyForm.paymentDate,
+        expireDate: modifyForm.expireDate || null,
+        description: modifyForm.description || null,
+      });
+      setModifyOpen(false);
+      await reloadInstallments();
+    } catch (err) {
+      setInstallmentError(err instanceof Error ? err.message : 'Failed to update installment');
+    } finally {
+      setModifySaving(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedInstallment) return;
+    const active = selectedInstallmentId ?? (purchase.rest > 0 ? 'current' : null);
+    if (!active) return;
     if (paidAmount <= 0) return;
     if (paidAmount > purchase.rest) return;
     if (!operatorId) return;
@@ -147,11 +259,9 @@ export default function ServicePaymentForm({
                     <label className="flex items-start gap-2">
                       <input
                         type="checkbox"
-                        checked={row.id === 'current' ? selectedInstallment : false}
-                        disabled={row.disabled}
-                        onChange={() => {
-                          if (row.id === 'current') setSelectedInstallment((v) => !v);
-                        }}
+                        checked={selectedInstallmentId === row.id || (!selectedInstallmentId && row.id === 'current')}
+                        disabled={row.disabled && row.id !== 'current'}
+                        onChange={() => setSelectedInstallmentId(row.id)}
                         className="mt-1"
                       />
                       <span>
@@ -172,17 +282,18 @@ export default function ServicePaymentForm({
               </ul>
             </div>
             <div className="flex flex-col gap-2 md:w-28">
-              <button type="button" className="px-3 py-1.5 text-sm bg-gray-200 rounded" disabled>
+              <button type="button" onClick={handleNewInstallment} className="px-3 py-1.5 text-sm bg-gray-200 rounded hover:bg-gray-300">
                 New
               </button>
-              <button type="button" className="px-3 py-1.5 text-sm bg-gray-200 rounded" disabled>
+              <button type="button" onClick={handleModifyInstallment} className="px-3 py-1.5 text-sm bg-gray-200 rounded hover:bg-gray-300">
                 Modify
               </button>
-              <button type="button" className="px-3 py-1.5 text-sm bg-gray-200 rounded" disabled>
+              <button type="button" onClick={handleDeleteInstallment} className="px-3 py-1.5 text-sm bg-gray-200 rounded hover:bg-gray-300">
                 Delete
               </button>
             </div>
           </div>
+          {installmentError && <p className="text-red-600 text-xs mt-2">{installmentError}</p>}
         </ProcedureFormSection>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -407,6 +518,82 @@ export default function ServicePaymentForm({
           setTaxDoc(true);
         }}
       />
+
+      {modifyOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <form
+            onSubmit={handleSaveModifyInstallment}
+            className="bg-white rounded-lg shadow-lg w-full max-w-md p-5 space-y-3 text-sm"
+          >
+            <h3 className="text-lg font-medium text-gray-900">Modify installment</h3>
+            <label className="block">
+              <span className="text-gray-600">Balance</span>
+              <input
+                type="number"
+                step="0.01"
+                className={`mt-1 ${procedureInputClass}`}
+                value={modifyForm.balance}
+                onChange={(e) => setModifyForm((f) => ({ ...f, balance: e.target.value }))}
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="text-gray-600">Paid</span>
+              <input
+                type="number"
+                step="0.01"
+                className={`mt-1 ${procedureInputClass}`}
+                value={modifyForm.paid}
+                onChange={(e) => setModifyForm((f) => ({ ...f, paid: e.target.value }))}
+              />
+            </label>
+            <label className="block">
+              <span className="text-gray-600">Payment date</span>
+              <input
+                type="date"
+                className={`mt-1 ${procedureInputClass}`}
+                value={modifyForm.paymentDate}
+                onChange={(e) => setModifyForm((f) => ({ ...f, paymentDate: e.target.value }))}
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="text-gray-600">Expire date</span>
+              <input
+                type="date"
+                className={`mt-1 ${procedureInputClass}`}
+                value={modifyForm.expireDate}
+                onChange={(e) => setModifyForm((f) => ({ ...f, expireDate: e.target.value }))}
+              />
+            </label>
+            <label className="block">
+              <span className="text-gray-600">Description</span>
+              <textarea
+                className={`mt-1 ${procedureInputClass}`}
+                rows={2}
+                value={modifyForm.description}
+                onChange={(e) => setModifyForm((f) => ({ ...f, description: e.target.value }))}
+              />
+            </label>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setModifyOpen(false)}
+                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={modifySaving}
+                className="px-4 py-2 bg-red-700 text-white rounded hover:bg-red-800 disabled:opacity-50"
+              >
+                {modifySaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </>
   );
 }

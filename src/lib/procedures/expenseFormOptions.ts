@@ -1,6 +1,9 @@
 import { prisma } from '@/lib/prisma';
 import { findExistingTable } from '@/lib/club/legacyTableLookup';
 import { fetchClubMemberOptions } from './clubMembers';
+import { fetchClubOperatorOptions } from './clubOperators';
+import { listCompanies } from '@/lib/club/archives/clubArchiveService';
+import type { ClubAuthContext } from './types';
 
 const EXPENSE_TABLE_CANDIDATES = ['expenses'];
 
@@ -31,17 +34,26 @@ async function getLegacyUserId(userId: string): Promise<string | null> {
 export type ExpenseFormOptions = {
   expenses: { id: string; name: string }[];
   members: { id: string; name: string }[];
+  operators: { id: string; name: string }[];
+  companies: { id: string; name: string }[];
+  currentOperatorId: string | null;
 };
 
-export async function fetchExpenseFormOptions(clubId: string): Promise<ExpenseFormOptions> {
-  const members = await fetchClubMemberOptions(clubId);
+export async function fetchExpenseFormOptions(ctx: ClubAuthContext): Promise<ExpenseFormOptions> {
+  const members = await fetchClubMemberOptions(ctx.club.id);
   const expenses: { id: string; name: string }[] = [];
 
   const club = await prisma.club.findUnique({
-    where: { id: clubId },
+    where: { id: ctx.club.id },
     select: { adminId: true },
   });
-  if (!club) return { expenses, members };
+  if (!club) {
+    const [operators, companies] = await Promise.all([
+      fetchClubOperatorOptions(ctx.club.id),
+      listCompanies(ctx),
+    ]);
+    return { expenses, members, operators, companies, currentOperatorId: ctx.userId };
+  }
 
   const legacyUserId = await getLegacyUserId(club.adminId);
   const expenseTable = await findExistingTable(EXPENSE_TABLE_CANDIDATES);
@@ -60,5 +72,10 @@ export async function fetchExpenseFormOptions(clubId: string): Promise<ExpenseFo
     }
   }
 
-  return { expenses, members };
+  const [operators, companies] = await Promise.all([
+    fetchClubOperatorOptions(ctx.club.id),
+    listCompanies(ctx),
+  ]);
+
+  return { expenses, members, operators, companies, currentOperatorId: ctx.userId };
 }

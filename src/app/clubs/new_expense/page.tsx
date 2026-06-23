@@ -1,6 +1,6 @@
 'use client';
 
-import ExpenseRecordForm from '@/components/club/expenses/ExpenseRecordForm';
+import ExpensePurchaseForm from '@/components/club/expenses/ExpensePurchaseForm';
 import { getProcedureDefinition } from '@/lib/procedures/registry';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 
@@ -13,7 +13,7 @@ export default function NewExpensePage() {
         <h1 className="text-xl font-semibold">{def.form.title}</h1>
         <p className="text-sm text-teal-100 mt-1">{def.form.subtitle}</p>
       </div>
-      <ExpenseRecordForm />
+      <ExpensePurchaseForm />
     </div>
   );
 }

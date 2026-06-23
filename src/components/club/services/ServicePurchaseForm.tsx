@@ -19,6 +19,7 @@ import {
   fetchServiceCost,
   type ServiceSaleFormOptions,
 } from '@/lib/club/serviceSaleClient';
+import { fetchCompanies } from '@/lib/club/archives/clubArchiveClient';
 
 type Props = {
   initialMemberId?: string;
@@ -91,11 +92,16 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
   const [discountEnabled, setDiscountEnabled] = useState(true);
   const [discountPct, setDiscountPct] = useState('0');
   const [loadingDiscount, setLoadingDiscount] = useState(false);
+  const [companyId, setCompanyId] = useState('');
+  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     fetchFormOptions()
       .then(async (data) => {
         setOptions(data);
+        const co = await fetchCompanies().catch(() => []);
+        setCompanies(co);
+        if (co[0]?.id) setCompanyId(co[0].id);
         if (initialMemberId) {
           const resolved = await resolveInitialMemberId(data, initialMemberId);
           if (resolved) setMemberId(resolved);
@@ -203,6 +209,10 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
         discountApplied: discountEnabled,
         taxDoc,
         taxDocument: taxDocument ?? undefined,
+        companyId: companyId || undefined,
+        companyName: companies.find((c) => c.id === companyId)?.name,
+        companyId: companyId || undefined,
+        companyName: companies.find((c) => c.id === companyId)?.name,
         createReceipt: taxDoc && paid > 0,
         receiptDocumentType: taxDocument?.documentType ?? 'Invoice',
         receiptNumber: taxDocument?.documentNumber || undefined,
@@ -428,8 +438,14 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
           </p>
           <ProcedureFormGrid>
             <ProcedureFormCell label="Company">
-              <select className={procedureInputClass} disabled>
-                <option>Cash</option>
+              <select
+                className={procedureInputClass}
+                value={companyId}
+                onChange={(e) => setCompanyId(e.target.value)}
+              >
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
               </select>
             </ProcedureFormCell>
             <ProcedureFormCell label="Select type of center revenue in which to put this expense 1">

@@ -3,6 +3,7 @@
 export const PROCEDURE_TYPE_CODES = {
   SERVICE_SALE: 'service_sale',
   EXPENSE: 'expense',
+  PRODUCT_SALE: 'product_sale',
 } as const;
 
 export type ProcedureTypeCode =
