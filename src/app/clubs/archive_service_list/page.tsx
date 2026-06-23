@@ -2,28 +2,23 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import ServiceArchiveTabs from '@/components/club/services/ServiceArchiveTabs';
-import ServiceDataTable from '@/components/club/services/ServiceDataTable';
-import { Member, Column } from '@/types/clubTable';
-import { clubApiFetch, formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
 import { Trash2 } from 'lucide-react';
+import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
+import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
+import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import {
+  getServiceSaleTabs,
+  SERVICE_SALE_PAGE_SIZE,
+  serviceSaleRecordColumns,
+} from '@/components/procedures/configs/serviceSale';
+import { Member } from '@/types/clubTable';
+import {
+  deletePurchase,
+  fetchPurchases,
+  type ServiceSalePurchase,
+} from '@/lib/club/serviceSaleClient';
 
-type Purchase = {
-  id: string;
-  memberName: string;
-  typology: string;
-  sectorName: string;
-  serviceName: string;
-  paydate: string | null;
-  value: number;
-  pay: number;
-  rest: number;
-  notes: string;
-  operatorName: string;
-  lastPaymentDate: string | null;
-};
-
-function mapPurchase(p: Purchase, i: number, onDelete: (id: string) => void): Member {
+function mapPurchase(p: ServiceSalePurchase, i: number, onDelete: (id: string) => void): Member {
   return {
     id: p.id,
     number: i + 1,
@@ -53,39 +48,27 @@ function mapPurchase(p: Purchase, i: number, onDelete: (id: string) => void): Me
   };
 }
 
-const columns: Column[] = [
-  { key: 'number', header: 'N' },
-  { key: 'name', header: 'Full Name' },
-  { key: 'typology', header: 'Typology' },
-  { key: 'service', header: 'Service slot' },
-  { key: 'course', header: 'Section' },
-  { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
-  { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
-  { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
-  { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
-  { key: 'casual', header: 'Notes' },
-  { key: 'operator', header: 'Operator' },
-  { key: 'options', header: 'Delete' },
-];
-
 export default function ArchiveServiceListPage() {
   const router = useRouter();
   const [data, setData] = useState<Member[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await clubApiFetch<{ purchases: Purchase[] }>('/api/club/services/purchases');
+      const res = await fetchPurchases({ page, pageSize: SERVICE_SALE_PAGE_SIZE });
+      setTotal(res.total);
       setData(
-        res.purchases.map((p, i) =>
-          mapPurchase(p, i, async (id) => {
+        res.items.map((p, i) =>
+          mapPurchase(p, (page - 1) * SERVICE_SALE_PAGE_SIZE + i, async (id) => {
             if (!confirm('Delete this service record?')) return;
             try {
-              await clubApiFetch(`/api/club/services/purchases?id=${id}`, { method: 'DELETE' });
+              await deletePurchase(id);
               load();
             } catch (e) {
               alert(e instanceof Error ? e.message : 'Delete failed');
@@ -98,16 +81,18 @@ export default function ArchiveServiceListPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   return (
-    <div className="p-4">
-      <div className="flex justify-between items-center bg-teal-800 text-white px-4 py-3 rounded-t-lg">
-        <h1 className="text-lg font-semibold">Archive of Services</h1>
+    <ProcedureArchiveShell
+      title="Archive of Services"
+      activeTab="historical"
+      tabs={getServiceSaleTabs('historical', selectedId)}
+      headerAction={
         <button
           type="button"
           onClick={() => router.push('/clubs/new_moment_cash')}
@@ -115,22 +100,26 @@ export default function ArchiveServiceListPage() {
         >
           + New service
         </button>
-      </div>
-      <div className="bg-white border border-gray-200 rounded-b-lg p-4">
-        <ServiceArchiveTabs active="historical" selectedPurchaseId={selectedId} />
-        {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
-        <ServiceDataTable
-          columns={columns}
-          rows={data}
-          selectedId={selectedId}
-          loading={loading}
-          onRowClick={(row) => row.id && setSelectedId(row.id)}
-          onRowDoubleClick={(row) => row.id && router.push(`/clubs/payment_detail/${row.id}`)}
+      }
+      error={error}
+      footerHint="Click to select · Double-click to open payment form for partial payments"
+      pagination={
+        <ProcedurePagination
+          page={page}
+          pageSize={SERVICE_SALE_PAGE_SIZE}
+          total={total}
+          onPageChange={setPage}
         />
-        <p className="text-xs text-gray-500 mt-2">
-          Click to select · Double-click to open payment form for partial payments
-        </p>
-      </div>
-    </div>
+      }
+    >
+      <ProcedureArchiveTable
+        columns={serviceSaleRecordColumns}
+        rows={data}
+        selectedId={selectedId}
+        loading={loading}
+        onRowClick={(row) => row.id && setSelectedId(row.id)}
+        onRowDoubleClick={(row) => row.id && router.push(`/clubs/payment_detail/${row.id}`)}
+      />
+    </ProcedureArchiveShell>
   );
 }

@@ -2,14 +2,16 @@
     "name": "workout-management-system",
     "version": "1.0.0",
     "prisma": {
-        "seed": "ts-node --transpile-only -P prisma/tsconfig.seed.json prisma/seed.ts"
+        "seed": "ts-node -r tsconfig-paths/register --transpile-only -P prisma/tsconfig.seed.json prisma/seed.ts"
     },
     "scripts": {
         "dev": "next dev -p 3000",
-        "build": "prisma generate && next build",
+        "build": "prisma generate && next build",        
+        "build:clean": "rm -rf .next && npm run build",
         "start": "next start -p 3000",
         "lint": "next lint",
         "db:push": "prisma db push",
+        "db:migrate": "prisma migrate deploy",
         "db:studio": "prisma studio",
         "db:seed": "prisma db seed",
         "prisma:generate": "prisma generate",
@@ -27,7 +29,11 @@
         "db:migrate-text": "node scripts/migrate-text-fields.js",
         "db:add-moveframe-fields": "node scripts/add-moveframe-fields.js",
         "db:check-manual": "node scripts/check-manual-moveframes.js",
-        "db:seed-outcome-settings": "node scripts/seed-outcome-settings-dev.js"
+        "db:seed-outcome-settings": "node scripts/seed-outcome-settings-dev.js",
+        "db:seed-procedures": "ts-node -r tsconfig-paths/register --transpile-only -P prisma/tsconfig.seed.json prisma/seed-procedure-types.ts",
+        "db:seed-outcomes": "ts-node -r tsconfig-paths/register --transpile-only -P prisma/tsconfig.seed.json prisma/seed-outcomes.ts",
+        "db:migrate-outcomes": "ts-node -r tsconfig-paths/register --transpile-only -P prisma/tsconfig.seed.json scripts/migrate-outcomes-from-legacy.ts",
+        "db:ensure-promocode-meta": "npx tsx scripts/ensure-promocode-meta.ts"
     },
     "dependencies": {
         "@ckeditor/ckeditor5-alignment": "^47.5.0",

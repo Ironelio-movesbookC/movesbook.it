@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
   Clock,
@@ -49,8 +49,6 @@ type ThreadDetail = {
   }>;
 };
 
-type VersionSection = { id: string; title: string; body: string };
-
 type Props = {
   variant: 'drawer' | 'page';
   initialMainTab?: MainTab;
@@ -69,9 +67,13 @@ export default function StaffMessagesExperience({
   initialMainTab = 'support',
   onClose,
 }: Props) {
-  const { t } = useLanguage();
+  const { t, currentLanguage } = useLanguage();
   const [mainTab, setMainTab] = useState<MainTab>(initialMainTab);
-  const [versionSections, setVersionSections] = useState<VersionSection[]>([]);
+  const [versionLanguages, setVersionLanguages] = useState<LangOption[]>([]);
+  const [versionSectionList, setVersionSectionList] = useState<Array<{ id: string; title: string }>>([]);
+  const [versionSectionId, setVersionSectionId] = useState<string | null>(null);
+  const [versionContent, setVersionContent] = useState('');
+  const [versionLangId, setVersionLangId] = useState('');
   const [loading, setLoading] = useState(false);
   const [langOptions, setLangOptions] = useState<LangOption[]>([]);
 
@@ -100,6 +102,9 @@ export default function StaffMessagesExperience({
 
   const [replyBody, setReplyBody] = useState('');
   const [replySending, setReplySending] = useState(false);
+
+  const composerRef = useRef<HTMLDivElement>(null);
+  const composerBodyRef = useRef<HTMLTextAreaElement>(null);
 
   const authFetch = useCallback(async (path: string, init?: RequestInit) => {
     const token = typeof window !== 'undefined' ? getAuthToken() : null;
@@ -134,17 +139,40 @@ export default function StaffMessagesExperience({
     }
   }, []);
 
-  const loadVersion = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await authFetch('/api/messages/version-history');
-      setVersionSections(data.sections || []);
-    } catch {
-      setVersionSections([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [authFetch]);
+  const loadVersion = useCallback(
+    async (opts?: { langId?: string; sectionId?: string | null }) => {
+      setLoading(true);
+      try {
+        const qs = new URLSearchParams();
+        const langId = opts?.langId ?? versionLangId;
+        if (langId) qs.set('langId', langId);
+        if (opts?.sectionId) qs.set('sectionId', opts.sectionId);
+        qs.set('lang', currentLanguage);
+        const res = await fetch(`/api/messages/version-history?${qs}`);
+        if (!res.ok) throw new Error(String(res.status));
+        const data = await res.json();
+        setVersionLanguages(
+          (data.languages || []).map((l: { id: string; name: string }) => ({
+            id: l.id,
+            code: l.id,
+            name: l.name,
+          })),
+        );
+        setVersionSectionList(data.sections || []);
+        setVersionSectionId(data.selectedSectionId ?? null);
+        setVersionContent(data.content || '');
+        if (data.langId) setVersionLangId(String(data.langId));
+      } catch {
+        setVersionLanguages([]);
+        setVersionSectionList([]);
+        setVersionSectionId(null);
+        setVersionContent('');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [currentLanguage, versionLangId],
+  );
 
   const loadSupportFeed = useCallback(async () => {
     setLoading(true);
@@ -205,6 +233,27 @@ export default function StaffMessagesExperience({
     setThreadDetail(null);
     setReplyBody('');
   };
+
+  const resetComposer = useCallback(() => {
+    setComposerCategory('feedback');
+    setComposerLang('');
+    setComposerObject('');
+    setComposerPath('');
+    setComposerErrorMsg('');
+    setComposerBody('');
+    setSendError(null);
+    if (typeof window !== 'undefined') {
+      setComposerRealPath(window.location.pathname);
+    }
+  }, []);
+
+  const handlePostNew = useCallback(() => {
+    resetComposer();
+    composerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    window.requestAnimationFrame(() => {
+      composerBodyRef.current?.focus();
+    });
+  }, [resetComposer]);
 
   const submitComposer = useCallback(async () => {
     if (!composerBody.trim()) return;
@@ -363,21 +412,59 @@ export default function StaffMessagesExperience({
         )}
 
         {mainTab === 'version' && (
-          <div className="p-4 overflow-y-auto flex-1">
-            {loading ? (
-              <p className="text-slate-500">{t('messages_panel_loading')}</p>
-            ) : (
-              <div className="space-y-4">
-                <h3 className="font-semibold text-slate-900">{t('messages_version_heading')}</h3>
-                <p className="text-slate-600">{t('messages_version_intro')}</p>
-                {versionSections.map((s) => (
-                  <div key={s.id} className="rounded-lg border border-slate-200 p-3 bg-slate-50">
-                    <div className="font-medium text-slate-800">{s.title}</div>
-                    <p className="mt-2 text-slate-600">{s.body}</p>
-                  </div>
-                ))}
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            {versionLanguages.length > 0 && (
+              <div className="px-4 py-2 border-b border-slate-200 bg-slate-50 shrink-0">
+                <select
+                  value={versionLangId}
+                  onChange={(e) => {
+                    const nextLangId = e.target.value;
+                    setVersionLangId(nextLangId);
+                    void loadVersion({ langId: nextLangId, sectionId: null });
+                  }}
+                  className="border border-slate-300 rounded px-2 py-1 text-sm bg-white !text-black max-w-[200px]"
+                >
+                  {versionLanguages.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
+            <div className="flex flex-1 min-h-0 overflow-hidden flex-col md:flex-row">
+              {versionSectionList.length > 1 && (
+                <aside className="md:w-52 shrink-0 border-b md:border-b-0 md:border-r border-slate-200 bg-white overflow-y-auto">
+                  <ul className="p-2 space-y-1 text-sm">
+                    {versionSectionList.map((section) => (
+                      <li key={section.id}>
+                        <button
+                          type="button"
+                          onClick={() => void loadVersion({ sectionId: section.id })}
+                          className={`w-full text-left px-2 py-1.5 rounded ${
+                            versionSectionId === section.id
+                              ? 'bg-[#c43c54] text-white font-medium'
+                              : 'text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          {section.title}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </aside>
+              )}
+              <div className="flex-1 overflow-y-auto p-4 bg-white">
+                {loading ? (
+                  <p className="text-slate-500">{t('messages_panel_loading')}</p>
+                ) : versionContent ? (
+                  <div
+                    className="opp-editor-content text-slate-800 prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: versionContent }}
+                  />
+                ) : null}
+              </div>
+            </div>
           </div>
         )}
 
@@ -554,17 +641,18 @@ export default function StaffMessagesExperience({
               </div>
             </div>
 
-            <div className="staff-messages-composer flex flex-col min-h-[320px] overflow-y-auto bg-slate-50 p-4 !text-black">
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <div className="flex-1 flex justify-center">
-                  <div className="w-16 h-16 rounded-full bg-amber-100 border-2 border-amber-400 flex items-center justify-center">
-                    <Bug className="w-8 h-8 text-amber-800" />
-                  </div>
+            <div
+              ref={composerRef}
+              className="staff-messages-composer flex flex-col min-h-[320px] overflow-y-auto bg-slate-50 p-4 !text-black"
+            >
+              <div className="relative flex justify-center mb-2">
+                <div className="w-16 h-16 rounded-full bg-amber-100 border-2 border-amber-400 flex items-center justify-center">
+                  <Bug className="w-8 h-8 shrink-0 text-amber-800" strokeWidth={1.75} />
                 </div>
                 <button
                   type="button"
-                  onClick={() => document.getElementById('staff-composer-end')?.scrollIntoView({ behavior: 'smooth' })}
-                  className="shrink-0 text-xs flex items-center gap-1 text-amber-800 font-semibold border border-amber-300 rounded px-2 py-1 bg-amber-50 hover:bg-amber-100"
+                  onClick={handlePostNew}
+                  className="absolute right-0 top-0 shrink-0 text-xs flex items-center gap-1 text-amber-800 font-semibold border border-amber-300 rounded px-2 py-1 bg-amber-50 hover:bg-amber-100"
                 >
                   <Lightbulb className="w-4 h-4" />
                   {t('staff_post_new')}
@@ -634,6 +722,7 @@ export default function StaffMessagesExperience({
 
               <label className="block text-xs font-medium !text-black mb-1">{t('staff_communicate_note')}</label>
               <textarea
+                ref={composerBodyRef}
                 value={composerBody}
                 onChange={(e) => setComposerBody(e.target.value)}
                 rows={6}
@@ -649,7 +738,6 @@ export default function StaffMessagesExperience({
               >
                 {t('staff_post_button')}
               </button>
-              <div id="staff-composer-end" className="h-px" aria-hidden />
             </div>
           </div>
         )}

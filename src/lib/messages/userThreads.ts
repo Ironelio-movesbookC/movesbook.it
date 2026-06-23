@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 
 export type UserThreadKind = 'REVIEW' | 'SUPPORT';
 export type SupportCategory = 'feedback' | 'question' | 'suggestion' | 'problem';

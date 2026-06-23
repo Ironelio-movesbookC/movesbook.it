@@ -1,8 +1,15 @@
-import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
+import { hashPasswordCakePHP } from '@/lib/auth';
+import { UserType } from '@prisma/client';
+import { sendIonosEmail } from '@/lib/ionosEmail';
+import { getSiteOrigin, coercePublicOrigin } from '@/lib/siteUrl';
 import { findExistingTable, getTableColumns } from '@/lib/outcomeSettingsDb';
 import { COUNTRY_SELECT_OPTIONS } from '@/constants/countries.constants';
 import { ensurePromocodeMetaTables } from '@/lib/promocodes/ensureMetaTables';
+import {
+  buildPromocodeSettingsSelectSql,
+  sanitizeLegacyDateString,
+} from '@/lib/promocodes/promocodeSettingsQuery';
 import {
   ensureQuickRegisterSubscriptionSettings,
 } from '@/lib/users/quickRegisterSubscriptionSeed';
@@ -97,8 +104,9 @@ async function fetchPromocodeByCode(code: string, requireDates = true): Promise<
   const params: unknown[] = [code.trim()];
   if (requireDates) params.push(today, today);
 
+  const selectSql = await buildPromocodeSettingsSelectSql(table);
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT id, code, discount, valid_from, valid_to, usable_by, used, version_id, creater_id, enable
+    `SELECT ${selectSql}
      FROM \`${table}\`
      WHERE code = ? AND enable = 'Enable'${dateClause}
      LIMIT 1`,
@@ -111,8 +119,8 @@ async function fetchPromocodeByCode(code: string, requireDates = true): Promise<
     id: Number(row.id),
     code: String(row.code ?? code),
     discount: row.discount != null ? String(row.discount) : '0',
-    valid_from: row.valid_from != null ? String(row.valid_from).slice(0, 10) : null,
-    valid_to: row.valid_to != null ? String(row.valid_to).slice(0, 10) : null,
+    valid_from: sanitizeLegacyDateString(row.valid_from),
+    valid_to: sanitizeLegacyDateString(row.valid_to),
     usable_by: row.usable_by != null ? String(row.usable_by) : null,
     used: Number(row.used ?? 0),
     version_id: row.version_id != null ? String(row.version_id) : null,
@@ -184,7 +192,9 @@ export async function buildRegistrationStatus(email: string): Promise<Registrati
   if (!usersTable) return status;
 
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT id, username, subscription_start_date, subscription_end_date
+    `SELECT id, username,
+            CAST(subscription_start_date AS CHAR) AS subscription_start_date,
+            CAST(subscription_end_date AS CHAR) AS subscription_end_date
      FROM \`${usersTable}\`
      WHERE LOWER(email) = ?
      LIMIT 1`,
@@ -197,7 +207,9 @@ export async function buildRegistrationStatus(email: string): Promise<Registrati
   status.detail = 'renewal_expired';
   status.label = 'Renewal (no active subscription)';
   status.existing_username = rowString(row, 'username') || undefined;
-  status.subscription_end_date = rowString(row, 'subscription_end_date') || undefined;
+  status.subscription_end_date =
+    sanitizeLegacyDateString(row.subscription_end_date) ??
+    (rowString(row, 'subscription_end_date') || undefined);
 
   const subEnd = status.subscription_end_date;
   if (subEnd && subEnd >= todayYmd()) {
@@ -623,6 +635,62 @@ function addDays(baseYmd: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function quickRegisterUserType(roleId: string): UserType {
+  return roleId === '8' ? UserType.CLUB : UserType.ATHLETE;
+}
+
+async function syncQuickRegisterUserNew(params: {
+  legacyUserId: number;
+  username: string;
+  email: string;
+  password: string;
+  usertype: string;
+  country: string;
+  gender: string;
+  createdAt?: Date;
+}) {
+  const username = params.username.trim();
+  const email = params.email.trim();
+  const existing = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email },
+        { username },
+        { email: email.toLowerCase() },
+        { username: username.toLowerCase() },
+      ],
+    },
+    select: { id: true },
+  });
+
+  const data = {
+    email,
+    username,
+    password: params.password,
+    name: username,
+    userType: quickRegisterUserType(params.usertype),
+    country: params.country,
+    gender: params.gender,
+    updatedAt: new Date(),
+  };
+
+  if (existing) {
+    await prisma.user.update({
+      where: { id: existing.id },
+      data,
+    });
+    return;
+  }
+
+  await prisma.user.create({
+    data: {
+      id: `legacy_${params.legacyUserId}`,
+      ...data,
+      createdAt: params.createdAt ?? new Date(),
+    },
+  });
+}
+
 export type QuickRegisterPayload = {
   username: string;
   email: string;
@@ -640,7 +708,128 @@ export type QuickRegisterPayload = {
   invite_by_movesbook?: boolean;
   origin_email?: string;
   disccount_hidden?: string;
+  origin?: string;
 };
+
+function buildQuickRegisterConfirmationHtml(params: {
+  username: string;
+  confirmationUrl: string;
+}): string {
+  return `
+<p>Welcome to Movesbook ${escapeHtml(params.username)}.</p>
+<p>Please click on the link below within 7 days to confirm your email address and Movesbook account.</p>
+<a href="${escapeHtml(params.confirmationUrl)}">CONFIRM MY ACCOUNT</a>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function sendQuickRegisterConfirmationEmail(params: {
+  userId: number;
+  roleId: string;
+  username: string;
+  email: string;
+  origin?: string;
+}): Promise<void> {
+  const origin = coercePublicOrigin(params.origin);
+  const userToken = Buffer.from(String(params.userId), 'utf8').toString('base64');
+  const roleToken = Buffer.from(String(params.roleId), 'utf8').toString('base64');
+  const confirmationUrl = `${origin.replace(/\/$/, '')}/confirm_register_link/${encodeURIComponent(userToken)}/${encodeURIComponent(roleToken)}`;
+
+  await sendIonosEmail({
+    to: params.email,
+    subject: 'Confirmation Register',
+    html: buildQuickRegisterConfirmationHtml({
+      username: params.username,
+      confirmationUrl,
+    }),
+  });
+}
+
+async function completeAlreadyRegisteredPromocodeRetry(params: {
+  appliesTable: string;
+  promocodeId: number;
+  originEmail: string;
+  userId: number;
+  payload: QuickRegisterPayload;
+  hashedPassword: string;
+}): Promise<{ success: boolean; message: string }> {
+  await syncQuickRegisterUserNew({
+    legacyUserId: params.userId,
+    username: params.payload.username,
+    email: params.payload.email,
+    password: params.hashedPassword,
+    usertype: params.payload.usertype,
+    country: params.payload.country,
+    gender: params.payload.gender,
+  });
+
+  const applyColumns = await getTableColumns(params.appliesTable);
+  const activeInvites = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+    `SELECT id FROM \`${params.appliesTable}\`
+     WHERE promocode_id = ? AND delete_status = 2 AND LOWER(receiver_email) = ?
+     ORDER BY id ASC`,
+    params.promocodeId,
+    params.originEmail
+  );
+
+  if (activeInvites.length > 0) {
+    const lastInviteId = Number(activeInvites[activeInvites.length - 1].id);
+    const updates: Record<string, unknown> = {};
+    if (applyColumns.has('invites_count')) updates.invites_count = activeInvites.length;
+    if (applyColumns.has('receiver_email')) updates.receiver_email = params.payload.username.trim();
+
+    const updateKeys = Object.keys(updates);
+    if (updateKeys.length > 0) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE \`${params.appliesTable}\`
+         SET ${updateKeys.map((key) => `\`${key}\` = ?`).join(', ')}
+         WHERE id = ?`,
+        ...updateKeys.map((key) => updates[key]),
+        lastInviteId
+      );
+    }
+
+    const idsToDelete = activeInvites
+      .map((row) => Number(row.id))
+      .filter((id) => id && id !== lastInviteId);
+    if (idsToDelete.length > 0) {
+      const deleteUpdates: Record<string, unknown> = { delete_status: 1 };
+      if (applyColumns.has('delete_date')) deleteUpdates.delete_date = new Date();
+      const deleteKeys = Object.keys(deleteUpdates);
+      await prisma.$executeRawUnsafe(
+        `UPDATE \`${params.appliesTable}\`
+         SET ${deleteKeys.map((key) => `\`${key}\` = ?`).join(', ')}
+         WHERE id IN (${idsToDelete.map(() => '?').join(', ')})`,
+        ...deleteKeys.map((key) => deleteUpdates[key]),
+        ...idsToDelete
+      );
+    }
+  }
+
+  try {
+    await sendQuickRegisterConfirmationEmail({
+      userId: params.userId,
+      roleId: params.payload.usertype,
+      username: params.payload.username.trim(),
+      email: params.payload.email.trim(),
+      origin: params.payload.origin,
+    });
+  } catch (err) {
+    console.error('quickRegister confirmation email:', err);
+    return {
+      success: true,
+      message: 'The user has been saved, but the confirmation email could not be sent.',
+    };
+  }
+
+  return { success: true, message: 'The user has been saved.' };
+}
 
 export async function quickRegisterUser(
   payload: QuickRegisterPayload
@@ -686,7 +875,8 @@ export async function quickRegisterUser(
 
   const emailNorm = payload.email.trim().toLowerCase();
   const existingRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT id, username, subscription_end_date FROM \`${usersTable}\`
+    `SELECT id, username, CAST(subscription_end_date AS CHAR) AS subscription_end_date
+     FROM \`${usersTable}\`
      WHERE LOWER(email) = ?
      LIMIT 1`,
     emailNorm
@@ -702,7 +892,9 @@ export async function quickRegisterUser(
         message: `The username cannot be changed for an existing account. Please use your existing username: ${existingUsername}`,
       };
     }
-    const subEnd = rowString(existingUser, 'subscription_end_date');
+    const subEnd =
+      sanitizeLegacyDateString(existingUser.subscription_end_date) ??
+      rowString(existingUser, 'subscription_end_date');
     if (subEnd && subEnd >= todayYmd()) {
       currentDate = addDays(subEnd, 1);
       endDate = addDays(currentDate, durationDays);
@@ -782,22 +974,33 @@ export async function quickRegisterUser(
   }
 
   const appliesTable = await getPromocodeAppliesTable();
+  const hashedPassword = hashPasswordCakePHP(payload.password);
   if (appliesTable) {
     const usedRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-      `SELECT id FROM \`${appliesTable}\`
+      `SELECT id, receiver_id FROM \`${appliesTable}\`
        WHERE promocode_id = ? AND LOWER(receiver_email) = ? AND receiver_id > 0
        ORDER BY id DESC LIMIT 1`,
       promocode.id,
       originEmail
     );
     if (usedRows[0]) {
+      const usedReceiverId = rowNumber(usedRows[0], 'receiver_id');
+      if (existingUserId && usedReceiverId === existingUserId) {
+        return completeAlreadyRegisteredPromocodeRetry({
+          appliesTable,
+          promocodeId: promocode.id,
+          originEmail,
+          userId: existingUserId,
+          payload,
+          hashedPassword,
+        });
+      }
       return { success: false, message: 'This promocode has already been used for this email address.' };
     }
   }
 
   const countryId = await resolveCountryId(payload.country);
   const sportId = await resolveSportId(payload.sport);
-  const hashedPassword = await bcrypt.hash(payload.password, 10);
   const userColumns = await getTableColumns(usersTable);
 
   const userData: Record<string, unknown> = {
@@ -824,8 +1027,8 @@ export async function quickRegisterUser(
   if (userColumns.has('alternateEmail')) userData.alternateEmail = payload.re_email.trim();
 
   if (payload.usertype === '8' && userColumns.has('alternate_club_pass')) {
-    const clubPass = await bcrypt.hash(`${payload.password}_club`, 10);
-    const altPass = await bcrypt.hash(`${payload.password}_alternative`, 10);
+    const clubPass = hashPasswordCakePHP(`${payload.password}_club`);
+    const altPass = hashPasswordCakePHP(`${payload.password}_alternative`);
     userData.alternate_club_pass = clubPass;
     if (userColumns.has('alternate_pass')) userData.alternate_pass = altPass;
   }
@@ -866,6 +1069,16 @@ export async function quickRegisterUser(
   if (!userId) {
     return { success: false, message: 'The user could not be saved. Please, try again.' };
   }
+
+  await syncQuickRegisterUserNew({
+    legacyUserId: userId,
+    username: payload.username,
+    email: payload.email,
+    password: hashedPassword,
+    usertype: payload.usertype,
+    country: payload.country,
+    gender: payload.gender,
+  });
 
   const profileTable =
     payload.usertype === '8'
@@ -912,6 +1125,7 @@ export async function quickRegisterUser(
       const applyColumns = await getTableColumns(appliesTable);
       const credit = rowString(subSettings, 'credit2') || rowNumber(subSettings, 'credit2') || '';
       const creditSender = rowString(subSettings, 'credit') || rowNumber(subSettings, 'credit') || '';
+      const creditSecondarySender = rowString(subSettings, 'credit1') || rowNumber(subSettings, 'credit1') || '';
       const registrationDate = new Date();
       const updates: Record<string, unknown> = {
         sender_credit: creditSender,
@@ -955,19 +1169,161 @@ export async function quickRegisterUser(
         );
       }
 
-      const senderId = rowNumber(receiverApply, 'sender_id') ?? rowNumber(updates, 'sender_id');
+      const senderId = rowNumber(updates, 'sender_id') || rowNumber(receiverApply, 'sender_id');
       const senderCredit = Number(creditSender);
+      let senderEmail = rowString(receiverApply, 'sender_email');
+      let senderUsername = '';
       if (senderId && senderCredit > 0 && userColumns.has('credits')) {
         const senderRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-          `SELECT credits FROM \`${usersTable}\` WHERE id = ? LIMIT 1`,
+          `SELECT id, email, username, credits FROM \`${usersTable}\` WHERE id = ? LIMIT 1`,
           senderId
         );
+        senderEmail = senderEmail || rowString(senderRows[0] ?? {}, 'email');
+        senderUsername = rowString(senderRows[0] ?? {}, 'username');
         const currentCredits = Number(senderRows[0]?.credits ?? 0);
         await prisma.$executeRawUnsafe(
           `UPDATE \`${usersTable}\` SET credits = ? WHERE id = ?`,
           currentCredits + senderCredit,
           senderId
         );
+      } else if (senderId) {
+        const senderRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+          `SELECT id, email, username FROM \`${usersTable}\` WHERE id = ? LIMIT 1`,
+          senderId
+        );
+        senderEmail = senderEmail || rowString(senderRows[0] ?? {}, 'email');
+        senderUsername = rowString(senderRows[0] ?? {}, 'username');
+      }
+
+      const secondaryCredit = Number(creditSecondarySender);
+      if (applyColumns.has('secondary_sender_credit') && (senderId || senderEmail || senderUsername)) {
+        const secondaryConditions = ['delete_status = 2', 'receiver_id > 0'];
+        const secondaryOr: string[] = [];
+        const secondaryParams: unknown[] = [];
+        if (senderId) {
+          secondaryOr.push('receiver_id = ?');
+          secondaryParams.push(senderId);
+        }
+        if (senderEmail) {
+          secondaryOr.push('LOWER(receiver_email) = ?');
+          secondaryParams.push(senderEmail.toLowerCase());
+        }
+        if (senderUsername) {
+          secondaryOr.push('LOWER(receiver_email) = ?');
+          secondaryParams.push(senderUsername.toLowerCase());
+        }
+
+        if (secondaryOr.length > 0) {
+          const secondaryRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+            `SELECT id, sender_id, sender_email FROM \`${appliesTable}\`
+             WHERE ${secondaryConditions.join(' AND ')} AND (${secondaryOr.join(' OR ')})
+             ORDER BY id DESC LIMIT 1`,
+            ...secondaryParams
+          );
+          const secondaryApply = secondaryRows[0];
+          let secondarySenderId = rowNumber(secondaryApply ?? {}, 'sender_id');
+          let secondarySenderEmail = '';
+          let secondarySenderUsername = '';
+          let secondarySenderCredits = 0;
+
+          if (secondaryApply) {
+            if (secondarySenderId && secondarySenderId > 0) {
+              const secondaryUserRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+                `SELECT id, email, username, credits FROM \`${usersTable}\` WHERE id = ? LIMIT 1`,
+                secondarySenderId
+              );
+              const secondaryUser = secondaryUserRows[0] ?? {};
+              secondarySenderEmail = rowString(secondaryUser, 'email');
+              secondarySenderUsername = rowString(secondaryUser, 'username');
+              secondarySenderCredits = Number(secondaryUser.credits ?? 0);
+            } else {
+              const secondaryApplySenderEmail = rowString(secondaryApply, 'sender_email');
+              if (secondaryApplySenderEmail) {
+                const secondaryUserRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+                  `SELECT id, email, username, credits FROM \`${usersTable}\`
+                   WHERE LOWER(email) = ? LIMIT 1`,
+                  secondaryApplySenderEmail.toLowerCase()
+                );
+                const secondaryUser = secondaryUserRows[0] ?? {};
+                secondarySenderId = rowNumber(secondaryUser, 'id');
+                secondarySenderEmail = rowString(secondaryUser, 'email');
+                secondarySenderUsername = rowString(secondaryUser, 'username');
+                secondarySenderCredits = Number(secondaryUser.credits ?? 0);
+              }
+            }
+          }
+
+          if (secondarySenderId || secondarySenderEmail || secondarySenderUsername) {
+            const secondaryUpdates: Record<string, unknown> = {
+              secondary_sender_id: secondarySenderId,
+              secondary_sender_email: secondarySenderEmail,
+              secondary_sender_username: secondarySenderUsername,
+              secondary_sender_credit: creditSecondarySender,
+            };
+            const secondarySetParts = Object.keys(secondaryUpdates)
+              .filter((k) => applyColumns.has(k))
+              .map((k) => `\`${k}\` = ?`);
+            const secondarySetVals = Object.keys(secondaryUpdates)
+              .filter((k) => applyColumns.has(k))
+              .map((k) => secondaryUpdates[k]);
+            if (secondarySetParts.length > 0) {
+              await prisma.$executeRawUnsafe(
+                `UPDATE \`${appliesTable}\` SET ${secondarySetParts.join(', ')} WHERE id = ?`,
+                ...secondarySetVals,
+                Number(receiverApply.id)
+              );
+            }
+
+            if (secondarySenderId && secondaryCredit > 0 && userColumns.has('credits')) {
+              await prisma.$executeRawUnsafe(
+                `UPDATE \`${usersTable}\` SET credits = ? WHERE id = ?`,
+                secondarySenderCredits + secondaryCredit,
+                secondarySenderId
+              );
+            }
+          }
+        }
+      }
+
+      if (originEmail) {
+        const allInvites = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+          `SELECT id FROM \`${appliesTable}\`
+           WHERE promocode_id = ? AND delete_status = 2 AND LOWER(receiver_email) = ?
+           ORDER BY id ASC`,
+          promocode.id,
+          originEmail
+        );
+        const invitesTotal = allInvites.length;
+        if (invitesTotal > 0) {
+          const lastInviteId = Number(allInvites[invitesTotal - 1].id);
+          const consolidateUpdates: Record<string, unknown> = {};
+          if (applyColumns.has('invites_count')) consolidateUpdates.invites_count = invitesTotal;
+          if (applyColumns.has('receiver_email')) consolidateUpdates.receiver_email = payload.username.trim();
+
+          const consolidateSetParts = Object.keys(consolidateUpdates).map((k) => `\`${k}\` = ?`);
+          if (consolidateSetParts.length > 0) {
+            await prisma.$executeRawUnsafe(
+              `UPDATE \`${appliesTable}\` SET ${consolidateSetParts.join(', ')} WHERE id = ?`,
+              ...Object.values(consolidateUpdates),
+              lastInviteId
+            );
+          }
+
+          const idsToDelete = allInvites
+            .map((row) => Number(row.id))
+            .filter((id) => id && id !== lastInviteId);
+          if (idsToDelete.length > 0) {
+            const deleteUpdates: Record<string, unknown> = { delete_status: 1 };
+            if (applyColumns.has('delete_date')) deleteUpdates.delete_date = new Date();
+            const deleteSetParts = Object.keys(deleteUpdates).map((k) => `\`${k}\` = ?`);
+            await prisma.$executeRawUnsafe(
+              `UPDATE \`${appliesTable}\` SET ${deleteSetParts.join(', ')}
+               WHERE id IN (${idsToDelete.map(() => '?').join(', ')})`,
+              ...Object.values(deleteUpdates),
+              ...idsToDelete
+            );
+          }
+        }
       }
     }
   }
@@ -978,6 +1334,22 @@ export async function quickRegisterUser(
       `UPDATE \`${settingsTable}\` SET used = used + 1, modified = NOW() WHERE id = ?`,
       promocode.id
     );
+  }
+
+  try {
+    await sendQuickRegisterConfirmationEmail({
+      userId,
+      roleId: payload.usertype,
+      username: payload.username.trim(),
+      email: payload.email.trim(),
+      origin: payload.origin,
+    });
+  } catch (err) {
+    console.error('quickRegister confirmation email:', err);
+    return {
+      success: true,
+      message: 'The user has been saved, but the confirmation email could not be sent.',
+    };
   }
 
   return { success: true, message: 'The user has been saved.' };

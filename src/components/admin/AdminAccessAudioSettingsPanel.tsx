@@ -282,6 +282,7 @@ export default function AdminAccessAudioSettingsPanel() {
   }
 
   const languageTabs = [{ id: 0, name: 'Default' }, ...(data?.languages ?? [])];
+  const activeTabName = languageTabs.find((tab) => tab.id === lang)?.name ?? 'Default';
 
   return (
     <div className="p-4 lg:p-6">
@@ -297,21 +298,33 @@ export default function AdminAccessAudioSettingsPanel() {
         </div>
 
         <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium text-gray-600">
+              Currently editing:{' '}
+              <span className="rounded bg-sky-100 px-2 py-0.5 text-sm font-semibold text-sky-800">
+                {activeTabName}
+              </span>
+            </p>
+          </div>
           <div className="flex flex-wrap gap-2">
-            {languageTabs.map((tab) => (
+            {languageTabs.map((tab) => {
+              const isActive = lang === tab.id;
+              return (
               <button
-                key={tab.id}
+                key={tab.id === 0 ? 'default' : `lang-${tab.id}`}
                 type="button"
                 onClick={() => setLang(tab.id)}
+                aria-pressed={isActive}
                 className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
-                  lang === tab.id
-                    ? 'bg-gray-900 text-white'
-                    : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
+                  isActive
+                    ? 'bg-sky-700 text-white shadow-sm ring-2 ring-sky-400 ring-offset-1'
+                    : 'border border-gray-300 bg-white text-gray-700 hover:border-sky-300 hover:bg-sky-50'
                 }`}
               >
                 {tab.name}
               </button>
-            ))}
+            );
+            })}
           </div>
           {data?.introParagraph && (
             <p className="mt-3 text-sm text-gray-600">{data.introParagraph}</p>

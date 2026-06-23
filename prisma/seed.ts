@@ -7,6 +7,7 @@ import {
   IDENTIFICATION_DEVICES_INFO_DEFAULT_EN,
   IDENTIFICATION_DEVICES_INFO_TRANSLATION_KEY
 } from '../src/constants/identificationDevicesInfoLongText';
+import { ensurePromocodeMetaTables } from '../src/lib/promocodes/ensureMetaTables';
 
 const prisma = new PrismaClient() as any;
 
@@ -929,6 +930,16 @@ async function main() {
   }
 
   console.log('✅ News articles seeded');
+
+  if ((process.env.DATABASE_URL || '').startsWith('mysql')) {
+    console.log('\n🎟️ Ensuring promocode meta tables…');
+    try {
+      await ensurePromocodeMetaTables();
+      console.log('✅ Promocode meta tables ready');
+    } catch (err) {
+      console.warn('⚠️ Promocode meta bootstrap skipped:', err);
+    }
+  }
 
   console.log('\n📋 Seed Summary:');
   console.log('   - Admin User: admin@movesbook.com / password123');

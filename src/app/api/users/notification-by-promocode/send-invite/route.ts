@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { sendNotificationByPromocodeInvite } from '@/lib/promocodes/notificationByPromocodeService';
 import { resolvePromocodeSessionUser } from '@/lib/promocodes/promocodeSessionAuth';
+import { resolvePublicOrigin } from '@/lib/siteUrl';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
       senderUsername: session.user.username,
       receiverEmail,
       promocodeId,
-      origin: request.nextUrl.origin,
+      origin: resolvePublicOrigin(request),
       sendEmail: async ({ to, subject, html, replyTo }) => {
         const payload: Parameters<typeof resend.emails.send>[0] = {
           from,

@@ -8,7 +8,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import ClubIdentificationDevicesPanel from './components/ClubIdentificationDevicesPanel';
-import ClubAccessOutcomeSettingsPanel from './components/ClubAccessOutcomeSettingsPanel';
 import {
   getClubMyPageDisplayName,
   getFormCreatedClubsSortedByCreatedAt,
@@ -33,9 +32,7 @@ function ClubDashboardContent() {
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
   const [clubAddSongsOgpOpen, setClubAddSongsOgpOpen] = useState(false);
   const [clubAddSongsOgpExpanded, setClubAddSongsOgpExpanded] = useState(false);
-  const [clubMainPanel, setClubMainPanel] = useState<
-    'default' | 'identification-devices' | 'outcome-settings'
-  >('default');
+  const [clubMainPanel, setClubMainPanel] = useState<'default' | 'identification-devices'>('default');
 
   useEffect(() => {
     if (contextClubId) setSelectedClubId(contextClubId);
@@ -109,8 +106,10 @@ function ClubDashboardContent() {
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
-      setClubMainPanel('outcome-settings');
-      router.replace('/club/dashboard', { scroll: false });
+      const clubId = selectedClubId ?? localStorage.getItem('selectedClub');
+      const qs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
+      router.replace(`/club/settings/outcome_settings${qs}`, { scroll: false });
+      return;
     }
   }, [searchParams, router]);
 
@@ -138,13 +137,6 @@ function ClubDashboardContent() {
       {!clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'identification-devices' ? (
         <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
           <ClubIdentificationDevicesPanel clubId={selectedClubId} />
-        </div>
-      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'outcome-settings' ? (
-        <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
-          <ClubAccessOutcomeSettingsPanel
-            clubId={selectedClubId}
-            onBack={() => setClubMainPanel('default')}
-          />
         </div>
       ) : !clubAddSongsOgpOpen && !showWorkoutSection ? (
         <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">

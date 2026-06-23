@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Resend } from 'resend';
-import { requireAdmin } from '@/lib/adminAuth';
+import { sendIonosEmail } from '@/lib/ionosEmail';
+import { requirePromocodeAccess } from '@/lib/promocodes/promocodeAccess';
 import { loadSendInvitePreview, sendPromocodeInvite } from '@/lib/promocodes/sendInviteService';
+import { resolvePublicOrigin } from '@/lib/siteUrl';
 
 export const dynamic = 'force-dynamic';
-
-/** Admin promocode invites are sent by Movesbook staff (PHP roles 1–3). */
-function staffInviteContext(_auth: { ok: true; isSuperAdmin: boolean }) {
-  return true;
-}
+export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAdmin(req);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const accessResult = await requirePromocodeAccess(req);
+  if (!accessResult.ok) {
+    return NextResponse.json({ error: accessResult.error }, { status: accessResult.status });
   }
+  const access = accessResult.access;
 
   const sp = req.nextUrl.searchParams;
   const emailAddress = sp.get('email_address')?.trim() ?? '';
@@ -23,7 +21,7 @@ export async function GET(req: NextRequest) {
   const languageId = sp.get('language_id')?.trim() ?? '1';
   const otherInfo = sp.get('other_info')?.trim() ?? '';
   const advPage = sp.get('adv_page')?.trim() ?? '';
-  const username = sp.get('username')?.trim() ?? null;
+  const username = access.isAdmin ? sp.get('username')?.trim() ?? null : access.username;
 
   if (!emailAddress || !promocode) {
     return NextResponse.json({ error: 'email_address and promocode are required' }, { status: 400 });
@@ -38,8 +36,8 @@ export async function GET(req: NextRequest) {
       otherInfo,
       advPage,
       username,
-      origin: req.nextUrl.origin,
-      isStaff: staffInviteContext(auth),
+      origin: resolvePublicOrigin(req),
+      isStaff: access.isStaff,
       inviterUsername: username,
     });
     return NextResponse.json(preview);
@@ -50,10 +48,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAdmin(req);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const accessResult = await requirePromocodeAccess(req);
+  if (!accessResult.ok) {
+    return NextResponse.json({ error: accessResult.error }, { status: accessResult.status });
   }
+  const access = accessResult.access;
 
   let body: {
     emailAddress?: string;
@@ -72,17 +71,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: 'RESEND_API_KEY is not configured. Cannot send invitation email.' },
-      { status: 503 }
-    );
-  }
-
-  const resend = new Resend(apiKey);
-  const from = process.env.RESEND_FROM_EMAIL?.trim() || 'Movesbook <onboarding@resend.dev>';
-
   try {
     const result = await sendPromocodeInvite({
       emailAddress: body.emailAddress?.trim() ?? '',
@@ -92,21 +80,19 @@ export async function POST(req: NextRequest) {
       otherInfo: body.otherInfo?.trim() ?? '',
       advPage: body.advPage?.trim() ?? '',
       emailContent: body.emailContent?.trim() ?? '',
-      origin: req.nextUrl.origin,
-      isStaff: staffInviteContext(auth),
-      inviterUsername: body.inviterUsername?.trim() ?? null,
+      origin: resolvePublicOrigin(req),
+      isStaff: access.isStaff,
+      inviterUsername: access.isAdmin ? body.inviterUsername?.trim() ?? null : access.username,
+      senderLegacyUserId: access.isAdmin ? null : access.legacyUserId,
+      senderEmail: access.isAdmin ? null : access.email,
+      senderName: access.isAdmin ? null : access.username ?? access.email,
       sendEmail: async ({ to, subject, html, replyTo }) => {
-        const payload: Parameters<typeof resend.emails.send>[0] = {
-          from,
+        await sendIonosEmail({
           to,
           subject,
           html,
-        };
-        if (replyTo) payload.replyTo = replyTo;
-        const sendResult = await resend.emails.send(payload);
-        if (sendResult.error) {
-          throw new Error(sendResult.error.message || 'Failed to send email');
-        }
+          replyTo,
+        });
       },
     });
 

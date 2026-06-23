@@ -439,8 +439,7 @@ export default function DarkSidebar({
     isGroupAdminUser ||
     isCoachUser;
   const clubHasSelectedEntity =
-    Boolean(selectedEntityId) ||
-    (!clubProfileLoaded && readSelectedClubHint());
+    Boolean(selectedEntityId) || readSelectedClubHint();
   const showMyClubTab = isManagedEntityWorkspaceUser
     ? isClubAccountUserType(userType)
       ? clubHasSelectedEntity && currentTab === 'my-entity'
@@ -650,10 +649,11 @@ export default function DarkSidebar({
   const onlineCount = 0;
 
   useEffect(() => {
-    if (clubProfileLoaded && !showMyClubTab && currentTab === 'my-entity') {
+    if (clubProfileLoaded && !clubHasSelectedEntity && currentTab === 'my-entity') {
+      writeClubWorkspaceTab('my-page');
       setCurrentTab('my-page');
     }
-  }, [clubProfileLoaded, showMyClubTab, currentTab, setCurrentTab]);
+  }, [clubProfileLoaded, clubHasSelectedEntity, currentTab, setCurrentTab]);
 
   const savedYoutubeUrl = userYoutubeChannelUrl;
 
@@ -841,6 +841,7 @@ export default function DarkSidebar({
   };
 
   const handleMyPageTab = () => {
+    writeClubWorkspaceTab('my-page');
     setCurrentTab('my-page');
     if (onMyPageClick) {
       onMyPageClick();
@@ -861,6 +862,7 @@ export default function DarkSidebar({
       return;
     }
 
+    writeClubWorkspaceTab('my-entity');
     setCurrentTab('my-entity');
 
     if (isClubAccountUserType(userType)) {
@@ -3564,6 +3566,10 @@ export default function DarkSidebar({
                                         type="button"
                                         onClick={() => {
                                           if ('path' in item && item.path) {
+                                            if (isClubAccountUserType(userType)) {
+                                              writeClubWorkspaceTab('my-entity');
+                                              setCurrentTab('my-entity');
+                                            }
                                             router.push(item.path);
                                           }
                                           // Handle click event
@@ -3697,7 +3703,7 @@ export default function DarkSidebar({
                                     {
                                       Icon: Volume2,
                                       label: 'Access of outcome settings',
-                                      panel: 'outcome-settings' as const,
+                                      path: '/club/settings/outcome_settings',
                                     },
                                     { Icon: Mic, label: 'Audio messages' },
                                     {
@@ -3725,15 +3731,17 @@ export default function DarkSidebar({
                                           onIdentificationDevicesClick?.();
                                           return;
                                         }
-                                        if (panel === 'outcome-settings') {
-                                          onAccessOutcomeSettingsClick?.();
-                                          return;
-                                        }
                                         if (path) {
                                           if (isClubAccountUserType(userType)) {
                                             writeClubWorkspaceTab('my-entity');
+                                            setCurrentTab('my-entity');
                                           }
-                                          router.push(path);
+                                          const href: string =
+                                            path === '/club/settings/outcome_settings' &&
+                                            selectedEntityId
+                                              ? `${path}?clubId=${encodeURIComponent(selectedEntityId)}`
+                                              : path;
+                                          router.push(href);
                                         }
                                       }}
                                       className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333] ${

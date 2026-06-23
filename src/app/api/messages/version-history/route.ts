@@ -1,15 +1,33 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { loadVersionHistory } from '@/lib/messages/versionHistory';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  return NextResponse.json({
-    sections: [
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const langId = searchParams.get('langId');
+    const sectionId = searchParams.get('sectionId');
+    const languageCode = searchParams.get('lang');
+
+    const payload = await loadVersionHistory({
+      langId,
+      sectionId,
+      languageCode,
+    });
+
+    return NextResponse.json(payload);
+  } catch (error) {
+    console.error('version-history error:', error);
+    return NextResponse.json(
       {
-        id: 'next-intro',
-        title: 'Movesbook Next',
-        body: 'Release notes for the Next.js app will appear here (replaces legacy “Why Movesbook” / version history).',
+        langId: '1',
+        languages: [],
+        sections: [],
+        selectedSectionId: null,
+        content: '',
       },
-    ],
-  });
+      { status: 500 },
+    );
+  }
 }

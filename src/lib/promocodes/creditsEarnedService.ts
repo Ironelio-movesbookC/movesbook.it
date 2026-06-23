@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { getTableColumns } from '@/lib/outcomeSettingsDb';
 import {
   fetchFlagImageByCountryId,
   fetchLegacyUsersByIds,
@@ -36,14 +37,21 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
   const usersTable = await getLegacyUsersTable();
   if (!appliesTable || !usersTable) return [];
 
-  const senderRows = await prisma.$queryRawUnsafe<{ sender_id: number | bigint }[]>(
-    `SELECT DISTINCT sender_id FROM \`${appliesTable}\`
-     WHERE delete_status = 2 AND sender_id > 0`
-  );
-  const secondaryRows = await prisma.$queryRawUnsafe<{ secondary_sender_id: number | bigint }[]>(
-    `SELECT DISTINCT secondary_sender_id FROM \`${appliesTable}\`
-     WHERE delete_status = 2 AND secondary_sender_id > 0`
-  );
+  const applyColumns = await getTableColumns(appliesTable);
+  const userColumns = await getTableColumns(usersTable);
+
+  const senderRows = applyColumns.has('sender_id')
+    ? await prisma.$queryRawUnsafe<{ sender_id: number | bigint }[]>(
+        `SELECT DISTINCT sender_id FROM \`${appliesTable}\`
+         WHERE delete_status = 2 AND sender_id > 0`
+      )
+    : [];
+  const secondaryRows = applyColumns.has('secondary_sender_id')
+    ? await prisma.$queryRawUnsafe<{ secondary_sender_id: number | bigint }[]>(
+        `SELECT DISTINCT secondary_sender_id FROM \`${appliesTable}\`
+         WHERE delete_status = 2 AND secondary_sender_id > 0`
+      )
+    : [];
 
   const earningUserIds = Array.from(
     new Set([
@@ -55,7 +63,8 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
   if (earningUserIds.length === 0) return [];
 
   const placeholders = earningUserIds.map(() => '?').join(',');
-  let userSql = `SELECT id, username, role_id, country_id, credits
+  const creditsSelect = userColumns.has('credits') ? 'credits' : '0 AS credits';
+  let userSql = `SELECT id, username, role_id, country_id, ${creditsSelect}
                  FROM \`${usersTable}\`
                  WHERE id IN (${placeholders}) AND delete_status = 'N'`;
   const userParams: unknown[] = [...earningUserIds];
@@ -80,18 +89,24 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
 
   for (const u of users) {
     const uid = Number(u.id);
-    const sumSender = await prisma.$queryRawUnsafe<{ total_sender: number | string | null }[]>(
-      `SELECT COALESCE(SUM(CAST(sender_credit AS DECIMAL(12,2))), 0) AS total_sender
-       FROM \`${appliesTable}\`
-       WHERE delete_status = 2 AND sender_id = ?`,
-      uid
-    );
-    const sumSecondary = await prisma.$queryRawUnsafe<{ total_secondary: number | string | null }[]>(
-      `SELECT COALESCE(SUM(CAST(secondary_sender_credit AS DECIMAL(12,2))), 0) AS total_secondary
-       FROM \`${appliesTable}\`
-       WHERE delete_status = 2 AND secondary_sender_id = ?`,
-      uid
-    );
+    const sumSender =
+      applyColumns.has('sender_id') && applyColumns.has('sender_credit')
+        ? await prisma.$queryRawUnsafe<{ total_sender: number | string | null }[]>(
+            `SELECT COALESCE(SUM(CAST(sender_credit AS DECIMAL(12,2))), 0) AS total_sender
+             FROM \`${appliesTable}\`
+             WHERE delete_status = 2 AND sender_id = ?`,
+            uid
+          )
+        : [{ total_sender: 0 }];
+    const sumSecondary =
+      applyColumns.has('secondary_sender_id') && applyColumns.has('secondary_sender_credit')
+        ? await prisma.$queryRawUnsafe<{ total_secondary: number | string | null }[]>(
+            `SELECT COALESCE(SUM(CAST(secondary_sender_credit AS DECIMAL(12,2))), 0) AS total_secondary
+             FROM \`${appliesTable}\`
+             WHERE delete_status = 2 AND secondary_sender_id = ?`,
+            uid
+          )
+        : [{ total_secondary: 0 }];
 
     const senderEarned = Number(sumSender[0]?.total_sender ?? 0);
     const secondaryEarned = Number(sumSecondary[0]?.total_secondary ?? 0);
@@ -100,14 +115,17 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
     let used = totalEarned - available;
     if (used < 0) used = 0;
 
-    const primaryApply = await prisma.$queryRawUnsafe<
-      { sender_id: number | null; sender_email: string | null }[]
-    >(
-      `SELECT sender_id, sender_email FROM \`${appliesTable}\`
-       WHERE delete_status = 2 AND receiver_id = ?
-       ORDER BY id DESC LIMIT 1`,
-      uid
-    );
+    const primaryApply =
+      applyColumns.has('receiver_id') && applyColumns.has('sender_id')
+        ? await prisma.$queryRawUnsafe<
+            { sender_id: number | null; sender_email: string | null }[]
+          >(
+            `SELECT sender_id, sender_email FROM \`${appliesTable}\`
+             WHERE delete_status = 2 AND receiver_id = ?
+             ORDER BY id DESC LIMIT 1`,
+            uid
+          )
+        : [];
     let primaryUsername = '';
     const pa = primaryApply[0];
     if (pa?.sender_id) {
@@ -121,13 +139,16 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
       primaryUsername = byEmail[0]?.username ?? '';
     }
 
-    const secondaryApplies = await prisma.$queryRawUnsafe<
-      { receiver_id: number | null; receiver_email: string | null }[]
-    >(
-      `SELECT receiver_id, receiver_email FROM \`${appliesTable}\`
-       WHERE delete_status = 2 AND secondary_sender_id = ?`,
-      uid
-    );
+    const secondaryApplies =
+      applyColumns.has('secondary_sender_id') && applyColumns.has('receiver_id')
+        ? await prisma.$queryRawUnsafe<
+            { receiver_id: number | null; receiver_email: string | null }[]
+          >(
+            `SELECT receiver_id, receiver_email FROM \`${appliesTable}\`
+             WHERE delete_status = 2 AND secondary_sender_id = ?`,
+            uid
+          )
+        : [];
     const secondaryNamesMap = new Map<string, boolean>();
     for (const sr of secondaryApplies) {
       if (sr.receiver_id && Number(sr.receiver_id) > 0) {

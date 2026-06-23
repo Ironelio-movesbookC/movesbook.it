@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/adminAuth';
+import { requirePromocodeAccess } from '@/lib/promocodes/promocodeAccess';
 import { getPromocodeSettingById, parseSocialOptions } from '@/lib/promocodes/promocodeService';
 
 export const dynamic = 'force-dynamic';
@@ -8,7 +8,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAdmin(request);
+  const auth = await requirePromocodeAccess(request);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const { id: idRaw } = await params;
