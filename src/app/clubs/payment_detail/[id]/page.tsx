@@ -59,6 +59,9 @@ export default function PaymentDetailPage() {
       });
       setSuccess('Payment saved successfully.');
       await load();
+      if (purchase && values.amountPaid >= purchase.rest) {
+        setTimeout(() => router.push('/clubs/archive_service_list'), 1200);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
     } finally {
@@ -103,6 +106,39 @@ export default function PaymentDetailPage() {
               onSubmit={handleSubmit}
               onCancel={() => router.push('/clubs/dead_line')}
             />
+
+            {success && (
+              <div className="mt-4 flex flex-wrap gap-3 text-sm">
+                <button
+                  type="button"
+                  className="text-teal-700 underline"
+                  onClick={() => router.push('/clubs/archive_service_list')}
+                >
+                  Services archive
+                </button>
+                <button
+                  type="button"
+                  className="text-teal-700 underline"
+                  onClick={() => router.push('/clubs/dead_line')}
+                >
+                  Deadlines
+                </button>
+                <button
+                  type="button"
+                  className="text-teal-700 underline"
+                  onClick={() => router.push('/clubs/service_payments')}
+                >
+                  Payments
+                </button>
+                <button
+                  type="button"
+                  className="text-teal-700 underline"
+                  onClick={() => router.push('/clubs/service_receipts')}
+                >
+                  Receipts
+                </button>
+              </div>
+            )}
           </>
         )}
       </ProcedureArchiveShell>

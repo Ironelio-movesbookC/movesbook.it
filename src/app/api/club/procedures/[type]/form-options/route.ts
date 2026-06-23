@@ -19,7 +19,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     }
 
     if (params.type === PROCEDURE_TYPE_CODES.SERVICE_SALE) {
-      const options = await fetchServiceSaleFormOptions(auth.ctx.club.id);
+      const options = await fetchServiceSaleFormOptions(auth.ctx.club.id, auth.ctx.userId);
       return NextResponse.json(options);
     }
 

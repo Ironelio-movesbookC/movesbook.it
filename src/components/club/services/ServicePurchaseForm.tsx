@@ -13,7 +13,37 @@ type Sector = { id: string; name: string };
 type Service = { id: string; name: string; sectorId: string; cost: number };
 type Member = { id: string; name: string };
 
-export default function ServicePurchaseForm() {
+type Props = {
+  initialMemberId?: string;
+};
+
+async function resolveInitialMemberId(
+  options: ServiceSaleFormOptions,
+  initialMemberId: string
+): Promise<string> {
+  const direct = options.members.find((m) => m.id === initialMemberId);
+  if (direct) return direct.id;
+
+  const legacyNumeric = initialMemberId.match(/^\d+$/) ? initialMemberId : null;
+  if (legacyNumeric) {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const clubId = typeof window !== 'undefined' ? localStorage.getItem('selectedClub') : null;
+    const qs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
+    try {
+      const res = await fetch(`/api/club/members/resolve-legacy/${legacyNumeric}${qs}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.memberId) return String(data.memberId);
+    } catch {
+      /* fall through */
+    }
+  }
+
+  return '';
+}
+
+export default function ServicePurchaseForm({ initialMemberId }: Props) {
   const router = useRouter();
   const [options, setOptions] = useState<ServiceSaleFormOptions | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,6 +51,7 @@ export default function ServicePurchaseForm() {
   const [error, setError] = useState('');
 
   const [memberId, setMemberId] = useState('');
+  const [operatorId, setOperatorId] = useState('');
   const [sectorId, setSectorId] = useState('');
   const [serviceId, setServiceId] = useState('');
   const [value, setValue] = useState('');
@@ -33,10 +64,19 @@ export default function ServicePurchaseForm() {
   const [receiptAnnotations, setReceiptAnnotations] = useState('');
 
   useEffect(() => {
-    fetchFormOptions().then(setOptions)
+    fetchFormOptions()
+      .then(async (data) => {
+        setOptions(data);
+        if (initialMemberId) {
+          const resolved = await resolveInitialMemberId(data, initialMemberId);
+          if (resolved) setMemberId(resolved);
+        }
+        if (data.currentOperatorId) setOperatorId(data.currentOperatorId);
+        else if (data.operators[0]?.id) setOperatorId(data.operators[0].id);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [initialMemberId]);
 
   const filteredServices = useMemo(() => {
     if (!options) return [];
@@ -96,6 +136,7 @@ export default function ServicePurchaseForm() {
         paydate,
         notes,
         payMode,
+        operatorId: operatorId || undefined,
         createReceipt: createReceipt && paid > 0,
         receiptDocumentType: 'Invoice',
         receiptNumber: receiptNumber || undefined,
@@ -156,6 +197,21 @@ export default function ServicePurchaseForm() {
               Selected: <strong>{selectedMember.name}</strong>
             </div>
           )}
+          <label className="block">
+            <span className="text-sm text-gray-600">Operator</span>
+            <select
+              className="mt-1 w-full border rounded px-3 py-2"
+              value={operatorId}
+              onChange={(e) => setOperatorId(e.target.value)}
+            >
+              <option value="">Current user (default)</option>
+              {options?.operators.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       </div>
 

@@ -17,6 +17,8 @@ import {
   Wifi,
   X
 } from 'lucide-react';
+import AccessOutcomeModeSection from '@/components/club/settings/AccessOutcomeModeSection';
+import AccessOutcomePreview from '@/components/club/settings/AccessOutcomePreview';
 
 type AccessSettings = {
   useAdvancedSettings: boolean;
@@ -705,9 +707,20 @@ export default function AccessSettingsPage() {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [activeTab, setActiveTab] = useState<'access' | 'advanced'>('advanced');
   const [activeModal, setActiveModal] = useState<AccessModal | null>(null);
+  const [clubId, setClubId] = useState<string | null>(null);
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const isDirty = useMemo(() => !sameSettings(settings, savedSettings), [settings, savedSettings]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get('clubId');
+    if (fromUrl) {
+      setClubId(fromUrl);
+      return;
+    }
+    setClubId(localStorage.getItem('selectedClub'));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1453,6 +1466,8 @@ function AccessControlSettingsTab({
       </Section>
 
       <Section title="Outcomes of the access control" accent="bg-sky-700" icon={<ShieldCheck className="h-4 w-4" />}>
+        <AccessOutcomeModeSection clubId={clubId} />
+        <AccessOutcomePreview clubId={clubId} />
         <Panel title="Access outcome messages" headerExtra={<GearButton label="Outcome messages on the main terminal" onClick={() => openModal('outcome')} />}>
           <div className="grid gap-3 lg:grid-cols-2">
           <CheckboxField label="Outcome messages on the main terminal" checked={settings.msgMainTerminal} onChange={(value) => updateField('msgMainTerminal', value)} />

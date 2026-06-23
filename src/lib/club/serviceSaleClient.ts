@@ -204,6 +204,7 @@ export type CreatePurchaseInput = {
   paydate: string;
   notes?: string;
   payMode?: string;
+  operatorId?: string;
   createReceipt?: boolean;
   receiptDocumentType?: string;
   receiptNumber?: string;
@@ -225,6 +226,7 @@ export async function createPurchase(input: CreatePurchaseInput): Promise<{ purc
       sectorName: input.sectorName ?? null,
       serviceName: input.serviceName ?? null,
       payMode: input.payMode ?? null,
+      operatorId: input.operatorId ?? null,
       createReceipt: input.createReceipt && pay > 0,
       receiptDocumentType: input.receiptDocumentType ?? 'Invoice',
       receiptNumber: input.receiptNumber,
