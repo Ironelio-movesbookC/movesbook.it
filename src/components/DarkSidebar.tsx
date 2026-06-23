@@ -109,11 +109,13 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
+import MyPageTopicsEntryRow from '@/components/club/MyPageTopicsEntryRow';
+import SelectClubForTopicsModal from '@/components/club/SelectClubForTopicsModal';
 import { useRouter } from 'next/navigation';
-import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSidebarBlock';
 import {
   isClubAccountUserType,
   isGroupAccountUserType,
+  isManagedEntityAdminUserType,
   isTeamAccountUserType,
 } from '@/utils/dashboardRouting';
 import {
@@ -122,6 +124,7 @@ import {
   isClubCreatedFromForm,
   userHasClubProfile,
 } from '@/lib/club/clubSidebarLabel';
+import { canManageClubWebsite } from '@/lib/club/clubWebsitePermissions';
 import {
   formatEntitySidebarLabel,
   getFormCreatedEntitiesSortedByCreatedAt,
@@ -133,6 +136,7 @@ import {
 import SidebarClubMyEntityTop from '@/components/SidebarClubMyEntityTop';
 import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
+import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSidebarBlock';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH, clubWebsiteDisplayUrl } from '@/lib/clubWebsiteSettingsPaths';
@@ -140,6 +144,7 @@ import {
   readSelectedClubHint,
   writeClubWorkspaceTab,
 } from '@/lib/club/clubWorkspaceTab';
+import { requestOpenClubTopicsSection } from '@/lib/club/clubTopicsNavigation';
 
 function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
   return (
@@ -408,6 +413,15 @@ export default function DarkSidebar({
     () => getFormCreatedClubsSortedByCreatedAt(entities),
     [entities]
   );
+  const clubsForTopicsPicker = useMemo(() => {
+    if (isClubAccountUserType(userType)) {
+      return formCreatedClubs as { id: string; name: string; description?: string | null }[];
+    }
+    if (userType === 'ATHLETE') {
+      return entities as { id: string; name: string; description?: string | null }[];
+    }
+    return [];
+  }, [userType, formCreatedClubs, entities]);
   const formCreatedEntities = useMemo(
     () => getFormCreatedEntitiesSortedByCreatedAt(entities),
     [entities]
@@ -451,6 +465,7 @@ export default function DarkSidebar({
   /** Personal "My channel on YouTube" — persisted on `User.youtubeChannelUrl` (API merges legacy social JSON). */
   const [userYoutubeChannelUrl, setUserYoutubeChannelUrl] = useState('');
   const [youtubeModalOpen, setYoutubeModalOpen] = useState(false);
+  const [clubTopicsPickerOpen, setClubTopicsPickerOpen] = useState(false);
   const [youtubeUrlDraft, setYoutubeUrlDraft] = useState('');
   const [youtubeSaveLoading, setYoutubeSaveLoading] = useState(false);
   const [clubYoutubeOverride, setClubYoutubeOverride] = useState<
@@ -717,7 +732,11 @@ export default function DarkSidebar({
         }
       : null;
 
-  const clubWebsiteManage = isClubAccountUserType(userType);
+  const clubWebsiteManage = canManageClubWebsite(
+    user?.id,
+    userType,
+    displaySelectedClub as { id?: string; adminId?: string; admin?: { id?: string } } | null,
+  );
   const movesbookWebsiteHref = clubWebsiteDisplayUrl(
     displaySelectedClub ? (displaySelectedClub as { id: string }).id : null
   );
@@ -864,6 +883,38 @@ export default function DarkSidebar({
       // The tab change is already handled by setCurrentTab above
     }
   };
+
+  const handleMyPageClubSelect = useCallback(
+    (clubId: string) => {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('selectedClub', clubId);
+        writeClubWorkspaceTab('my-entity');
+      }
+      onEntitySelect?.(clubId);
+      setCurrentTab('my-entity');
+      if (isClubAccountUserType(userType) || isAthleteUser) {
+        onMyClubClick?.();
+      }
+    },
+    [onEntitySelect, setCurrentTab, userType, isAthleteUser, onMyClubClick]
+  );
+
+  const handleClubSelectedForTopics = useCallback(
+    (clubId: string) => {
+      setClubTopicsPickerOpen(false);
+      requestOpenClubTopicsSection();
+      handleMyPageClubSelect(clubId);
+    },
+    [handleMyPageClubSelect]
+  );
+
+  const openMyTopicsClubPicker = useCallback(() => {
+    if (clubsForTopicsPicker.length === 1) {
+      handleClubSelectedForTopics(clubsForTopicsPicker[0]!.id);
+      return;
+    }
+    setClubTopicsPickerOpen(true);
+  }, [clubsForTopicsPicker, handleClubSelectedForTopics]);
 
   const getEntityLabel = () => {
     if (isClubAccountUserType(userType)) return t('sidebar_my_club');
@@ -1406,11 +1457,7 @@ export default function DarkSidebar({
                             <li key={club.id}>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  onEntitySelect?.(club.id);
-                                  writeClubWorkspaceTab('my-entity');
-                                  setCurrentTab('my-entity');
-                                }}
+                                onClick={() => handleMyPageClubSelect(club.id)}
                                 className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
                                   isSelected ? 'bg-zinc-700/60' : ''
                                 }`}
@@ -1427,6 +1474,9 @@ export default function DarkSidebar({
                       </ul>
                     </>
                   )}
+                  <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15 pt-3">
+                    <MyPageTopicsEntryRow onOpenClubPicker={openMyTopicsClubPicker} />
+                  </div>
                 </div>
               )}
               {myClubsOpen && isAthleteUser && (
@@ -1448,7 +1498,7 @@ export default function DarkSidebar({
                             <li key={club.id}>
                               <button
                                 type="button"
-                                onClick={() => onEntitySelect?.(club.id)}
+                                onClick={() => handleMyPageClubSelect(club.id)}
                                 className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
                                   isSelected ? 'bg-zinc-700/60' : ''
                                 }`}
@@ -1467,6 +1517,9 @@ export default function DarkSidebar({
                       </ul>
                     </>
                   )}
+                  <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15 pt-3">
+                    <MyPageTopicsEntryRow onOpenClubPicker={openMyTopicsClubPicker} />
+                  </div>
                 </div>
               )}
               {myClubsOpen && isCoachUser && (
@@ -1750,15 +1803,8 @@ export default function DarkSidebar({
                       <Settings className="w-4 h-4" />
                     </button>
                   </div>
-                  {user?.id ? (
-                    <PersonalMyTopicsSidebarBlock
-                      userId={user.id}
-                      clubId={
-                        clubWebsiteManage && displaySelectedClub
-                          ? (displaySelectedClub as { id: string }).id
-                          : undefined
-                      }
-                    />
+                  {isManagedEntityAdminUserType(userType) ? (
+                    <PersonalMyTopicsSidebarBlock userId={user?.id} canManage />
                   ) : null}
                   <div className="flex w-full items-stretch min-h-[44px]">
                     {myPageYoutubeOpenHref ? (
@@ -2194,7 +2240,7 @@ export default function DarkSidebar({
                         (displaySelectedClub as { youtubeChannelUrl?: string | null })
                           ?.youtubeChannelUrl ?? null
                       }
-                      canManageClub={isClubAccountUserType(userType)}
+                      canManageClub={clubWebsiteManage}
                       onYoutubeChannelUrlSaved={handleClubYoutubeSaved}
                     />
                   </>
@@ -4074,6 +4120,12 @@ export default function DarkSidebar({
         )}
       </div>
     </div>
+    <SelectClubForTopicsModal
+      isOpen={clubTopicsPickerOpen}
+      onClose={() => setClubTopicsPickerOpen(false)}
+      clubs={clubsForTopicsPicker}
+      onSelectClub={handleClubSelectedForTopics}
+    />
     {youtubeModalOpen
       ? createPortal(
           <div
