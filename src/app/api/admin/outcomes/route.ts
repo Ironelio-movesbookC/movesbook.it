@@ -135,7 +135,10 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Unrecognized action.' }, { status: 400 });
   } catch (error) {
     console.error('PATCH /api/admin/outcomes:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    const status =
+      message === 'Language not found' || message.includes('can only be edited') ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 

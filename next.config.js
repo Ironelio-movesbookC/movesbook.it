@@ -16,6 +16,10 @@ const nextConfig = {
         source: '/country-flags/:path*',
         destination: 'https://flagcdn.com/:path*',
       },
+      {
+        source: '/outcome_messages/:path*',
+        destination: '/api/outcome-messages/:path*',
+      },
     ];
   },
   webpack: (config, { dev }) => {
