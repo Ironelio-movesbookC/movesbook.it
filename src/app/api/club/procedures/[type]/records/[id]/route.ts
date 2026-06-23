@@ -1,6 +1,6 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 import { getClubAuthContext, procedureService } from '@/lib/procedures';
-import { addServiceSalePaymentSchema } from '@/lib/procedures/validators/serviceSale';
+import { parseAddPayment } from '@/lib/procedures/validators';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,14 +34,11 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if ('error' in auth) return auth.error;
 
     const body = await request.json();
-    const parsed = addServiceSalePaymentSchema.safeParse({
-      ...body,
-      amount: body.amount ?? body.amountPaid,
-    });
-    if (!parsed.success) {
+    const parsed = parseAddPayment(params.type, body);
+    if (!parsed.ok) {
       return NextResponse.json(
-        { error: 'Validation failed', details: parsed.error.flatten() },
-        { status: 400 }
+        { error: parsed.error, ...(parsed.details ? { details: parsed.details } : {}) },
+        { status: parsed.status }
       );
     }
 
@@ -50,7 +47,13 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error';
     const status =
-      message === 'Record not found' ? 404 : message.includes('Payment') || message.includes('exceeds') ? 400 : 500;
+      message === 'Record not found'
+        ? 404
+        : message.includes('Payment') ||
+            message.includes('exceeds') ||
+            message.includes('password')
+          ? 400
+          : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

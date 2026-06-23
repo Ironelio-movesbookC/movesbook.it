@@ -8,6 +8,11 @@ const PROCEDURE_TYPES = [
     name: 'Service Sale',
     description: 'Sell a club service to a member (pilot procedure).',
   },
+  {
+    code: 'expense',
+    name: 'Member Expense',
+    description: 'Record a member expense with optional partial payments.',
+  },
 ];
 
 async function main() {

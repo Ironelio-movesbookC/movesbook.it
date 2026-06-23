@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { findExistingTable } from '@/lib/club/legacyTableLookup';
+import { fetchClubMemberOptions } from './clubMembers';
+import { fetchClubOperatorOptions } from './clubOperators';
 
 const SERVICE_TABLE_CANDIDATES = ['club_setting_services', 'club_setting_service'];
 const SECTOR_TABLE_CANDIDATES = ['club_setting_sectors', 'club_setting_sector'];
@@ -17,16 +19,19 @@ export type ServiceSaleFormOptions = {
   sectors: { id: string; name: string }[];
   services: { id: string; name: string; sectorId: string; cost: number }[];
   members: { id: string; name: string }[];
+  operators: { id: string; name: string }[];
+  currentOperatorId: string | null;
 };
 
-export async function fetchServiceSaleFormOptions(clubId: string): Promise<ServiceSaleFormOptions> {
+export async function fetchServiceSaleFormOptions(
+  clubId: string,
+  currentUserId?: string | null
+): Promise<ServiceSaleFormOptions> {
   const serviceTable = await findExistingTable(SERVICE_TABLE_CANDIDATES);
   const sectorTable = await findExistingTable(SECTOR_TABLE_CANDIDATES);
 
   const sectors: { id: string; name: string }[] = [];
   const services: { id: string; name: string; sectorId: string; cost: number }[] = [];
-  const members: { id: string; name: string }[] = [];
-
   if (sectorTable) {
     const sectorRows = await prisma.$queryRawUnsafe<{ id: bigint | number; sector_name: string }[]>(
       `SELECT id, sector_name FROM \`${sectorTable}\` ORDER BY sector_name ASC`
@@ -57,25 +62,8 @@ export async function fetchServiceSaleFormOptions(clubId: string): Promise<Servi
     }
   }
 
-  const clubMembers = await prisma.clubMember.findMany({
-    where: { clubId },
-    include: {
-      member: {
-        select: { id: true, name: true, firstName: true, surname: true, username: true },
-      },
-    },
-    orderBy: { joinedAt: 'desc' },
-  });
+  const members = await fetchClubMemberOptions(clubId);
+  const operators = await fetchClubOperatorOptions(clubId);
 
-  for (const cm of clubMembers) {
-    const m = cm.member;
-    const name =
-      [m.firstName, m.surname].filter(Boolean).join(' ').trim() || m.name || m.username;
-    if (!name) continue;
-    members.push({ id: m.id, name });
-  }
-
-  members.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-
-  return { sectors, services, members };
+  return { sectors, services, members, operators, currentOperatorId: currentUserId ?? null };
 }

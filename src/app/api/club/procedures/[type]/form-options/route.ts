@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClubAuthContext } from '@/lib/procedures';
+import { fetchExpenseFormOptions } from '@/lib/procedures/expenseFormOptions';
 import { fetchServiceSaleFormOptions } from '@/lib/procedures/serviceSaleFormOptions';
+import { isKnownProcedureType } from '@/lib/procedures/validators';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 
 export const dynamic = 'force-dynamic';
@@ -12,12 +14,21 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     const auth = await getClubAuthContext(request);
     if ('error' in auth) return auth.error;
 
-    if (params.type !== PROCEDURE_TYPE_CODES.SERVICE_SALE) {
-      return NextResponse.json({ error: 'Unsupported procedure type' }, { status: 400 });
+    if (!isKnownProcedureType(params.type)) {
+      return NextResponse.json({ error: `Unknown procedure type: ${params.type}` }, { status: 400 });
     }
 
-    const options = await fetchServiceSaleFormOptions(auth.ctx.club.id);
-    return NextResponse.json(options);
+    if (params.type === PROCEDURE_TYPE_CODES.SERVICE_SALE) {
+      const options = await fetchServiceSaleFormOptions(auth.ctx.club.id, auth.ctx.userId);
+      return NextResponse.json(options);
+    }
+
+    if (params.type === PROCEDURE_TYPE_CODES.EXPENSE) {
+      const options = await fetchExpenseFormOptions(auth.ctx.club.id);
+      return NextResponse.json(options);
+    }
+
+    return NextResponse.json({ error: 'Form options not implemented for this procedure type' }, { status: 501 });
   } catch (error) {
     console.error('GET procedure form-options:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

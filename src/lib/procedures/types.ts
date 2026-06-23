@@ -2,6 +2,7 @@
 
 export const PROCEDURE_TYPE_CODES = {
   SERVICE_SALE: 'service_sale',
+  EXPENSE: 'expense',
 } as const;
 
 export type ProcedureTypeCode =
@@ -68,6 +69,20 @@ export type ProcedureReceiptDto = {
   operatorName: string;
 };
 
+export type TaxDocumentInput = {
+  documentType?: string | null;
+  heading?: string | null;
+  documentDate?: string | null;
+  documentNumber?: string | null;
+  causal?: string | null;
+  total?: number | null;
+  residualTotal?: number | null;
+  methodPayment?: string | null;
+  vatPercentage?: number | null;
+  vatAmount?: number | null;
+  net?: number | null;
+};
+
 export type CreateProcedureRecordInput = {
   memberId: string;
   totalAmount: number;
@@ -77,12 +92,20 @@ export type CreateProcedureRecordInput = {
   notes?: string | null;
   metadata?: Record<string, unknown> | null;
   operatorId?: string | null;
+  operatorPassword?: string | null;
   payMode?: string | null;
+  paymentType?: string | null;
+  taxDoc?: boolean;
+  discount?: number | null;
+  discountApplied?: boolean;
+  movementTime?: string | null;
+  paymentDate?: string | null;
   createReceipt?: boolean;
   receiptDocumentType?: string | null;
   receiptNumber?: string | null;
   receiptAnnotations?: string | null;
   serviceName?: string | null;
+  taxDocument?: TaxDocumentInput | null;
 };
 
 export type AddProcedurePaymentInput = {
@@ -90,12 +113,19 @@ export type AddProcedurePaymentInput = {
   paymentDate: string;
   notes?: string | null;
   operatorId?: string | null;
+  operatorPassword?: string | null;
   payMode?: string | null;
+  paymentType?: string | null;
+  taxDoc?: boolean;
+  debtTotal?: number | null;
+  debtExpire?: string | null;
+  payWith?: number | null;
   createReceipt?: boolean;
   receiptDocumentType?: string | null;
   receiptNumber?: string | null;
   receiptAnnotations?: string | null;
   serviceName?: string | null;
+  taxDocument?: TaxDocumentInput | null;
 };
 
 export type ListQuery = {

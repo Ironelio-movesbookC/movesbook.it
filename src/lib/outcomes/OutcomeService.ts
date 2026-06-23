@@ -2,6 +2,7 @@ import { ClubOutcomeMode } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { findExistingTable } from '@/lib/club/legacyTableLookup';
 import { SAMPLE_OUTCOME_TYPES } from '@/lib/outcomeSettingsSeed';
+import { seedOutcomeCountriesIfEmpty } from '@/lib/outcomes/seedOutcomeCountries';
 import type {
   AdminOutcomeItemDto,
   ClubOutcomeItemDto,
@@ -38,6 +39,10 @@ function slugCode(description: string, fallback: string): string {
 
 function pickRandom<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)];
+}
+
+function text(value: unknown): string {
+  return String(value ?? '').trim();
 }
 
 export function audioPublicPath(langKey: string | number, filename: string): string {
@@ -126,6 +131,44 @@ export class OutcomeService {
         });
       }
     }
+
+    await this.ensureSystemOutcomesForAllLanguages();
+  }
+
+  /** Backfill missing system_outcomes rows for every active language. */
+  async ensureSystemOutcomesForAllLanguages(): Promise<void> {
+    await this.seedLanguagesIfEmpty();
+
+    const types = await prisma.outcomeType.findMany({ where: { isActive: true } });
+    const languages = await prisma.language.findMany({ where: { isActive: true } });
+    if (types.length === 0 || languages.length === 0) return;
+
+    for (let i = 0; i < types.length; i++) {
+      const type = types[i];
+      const sample = SAMPLE_OUTCOME_TYPES[i] ?? SAMPLE_OUTCOME_TYPES[0];
+      const messages = sample?.primaryMessages ?? [''];
+
+      for (const language of languages) {
+        const existing = await prisma.systemOutcome.findUnique({
+          where: {
+            outcomeTypeId_languageId: {
+              outcomeTypeId: type.id,
+              languageId: language.id,
+            },
+          },
+        });
+        if (existing) continue;
+
+        await prisma.systemOutcome.create({
+          data: {
+            outcomeTypeId: type.id,
+            languageId: language.id,
+            code: type.defaultCode,
+            message: pickRandom(messages),
+          },
+        });
+      }
+    }
   }
 
   async listLanguages(): Promise<OutcomeLanguageDto[]> {
@@ -144,6 +187,7 @@ export class OutcomeService {
   /** Admin API: lang=0 is default/type tab; lang>0 uses legacy language id. */
   async fetchAdminItems(lang: number): Promise<AdminOutcomeItemDto[]> {
     await this.seedOutcomeTypesIfEmpty();
+    await this.ensureSystemOutcomesForAllLanguages();
 
     const types = await prisma.outcomeType.findMany({
       where: { isActive: true },
@@ -285,9 +329,45 @@ export class OutcomeService {
 
   async getLegacyCountryLangIdForUsers(userIds: string[]): Promise<number | null> {
     if (userIds.length === 0) return null;
+
+    await seedOutcomeCountriesIfEmpty();
+
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, country: true },
+    });
+    if (users.length > 0) {
+      for (const user of users) {
+        const countryName = text(user.country);
+        if (!countryName) continue;
+
+        const outcomeCountry = await prisma.outcomeCountry.findFirst({
+          where: {
+            OR: [
+              { name: { equals: countryName } },
+              { code: { equals: countryName } },
+              { code: { equals: countryName.toUpperCase() } },
+            ],
+          },
+          include: { defaultLanguage: { select: { legacyLangId: true } } },
+        });
+        if (outcomeCountry?.defaultLanguage?.legacyLangId != null) {
+          return outcomeCountry.defaultLanguage.legacyLangId;
+        }
+      }
+    }
+
     const usersTable = await findExistingTable(['users_new', 'users']);
     const countriesTable = await findExistingTable(['countries', 'country']);
     if (!usersTable || !countriesTable) return null;
+
+    const userColumns = await prisma.$queryRawUnsafe<{ COLUMN_NAME: string }[]>(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+      usersTable
+    );
+    const columnSet = new Set(userColumns.map((c) => c.COLUMN_NAME));
+    if (!columnSet.has('country_id')) return null;
 
     const placeholders = userIds.map(() => '?').join(',');
     const rows = await prisma.$queryRawUnsafe<{ country_lang_id: number | string | null }[]>(

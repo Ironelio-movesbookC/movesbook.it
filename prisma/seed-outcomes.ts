@@ -32,6 +32,13 @@ async function main() {
 
   await outcomeService.seedOutcomeTypesIfEmpty();
   console.log('Seeded outcome types and English system messages.');
+
+  const { seedOutcomeCountriesIfEmpty } = await import('../src/lib/outcomes/seedOutcomeCountries');
+  await seedOutcomeCountriesIfEmpty();
+  console.log('Seeded outcome_countries from legacy countries when available.');
+
+  await outcomeService.ensureSystemOutcomesForAllLanguages();
+  console.log('Ensured system outcomes for all active languages.');
 }
 
 main()
