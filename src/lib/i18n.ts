@@ -469,6 +469,9 @@ export interface LanguageStrings {
         'sidebar_club_topics_settings_aria': 'Manage club topics',
         'sidebar_my_topics': 'My Topics',
         'sidebar_my_topics_settings_aria': 'Manage My Topics',
+        'modal_select_club_for_topics_title': 'Select a club to view topics',
+        'modal_select_club_for_topics_empty':
+          'No clubs available. Create a club from My clubs to manage topics.',
         'sidebar_display': 'Display',
         'modal_club_youtube_channel_title': 'Input your channel YouTube url.',
         'modal_club_youtube_no_club':
@@ -1584,6 +1587,9 @@ export interface LanguageStrings {
         'sidebar_club_topics_settings_aria': 'Gestionar temas del club',
         'sidebar_my_topics': 'Mis temas',
         'sidebar_my_topics_settings_aria': 'Gestionar Mis temas',
+        'modal_select_club_for_topics_title': 'Selecciona un club para ver los temas',
+        'modal_select_club_for_topics_empty':
+          'No hay clubes disponibles. Crea un club desde Mis clubes para gestionar temas.',
         'sidebar_display': 'Mostrar',
         'modal_club_youtube_channel_title': 'Introduce la URL del canal de YouTube.',
         'modal_club_youtube_no_club':

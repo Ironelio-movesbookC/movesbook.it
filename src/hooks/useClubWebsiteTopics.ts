@@ -80,6 +80,14 @@ export function useClubWebsiteTopics(clubId: string | undefined) {
     [clubId]
   );
 
+  const reload = useCallback(() => {
+    if (!clubId) {
+      setTopics([]);
+      return;
+    }
+    setTopics(loadClubWebsiteTopics(clubId));
+  }, [clubId]);
+
   return {
     topics,
     hydrated,
@@ -88,5 +96,6 @@ export function useClubWebsiteTopics(clubId: string | undefined) {
     toggleActivated,
     removeTopic,
     persist,
+    reload,
   };
 }
