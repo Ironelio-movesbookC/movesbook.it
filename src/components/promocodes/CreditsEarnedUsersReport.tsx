@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import type { CreditsEarnedRow } from '@/lib/promocodes/creditsEarnedService';
 import { promocodeFlagImageUrl } from '@/components/promocodes/promocodeImageUrls';
+import PromocodeAssetImage from '@/components/promocodes/PromocodeAssetImage';
+import { PROMOCODE_NO_FLAG_IMAGE } from '@/components/promocodes/promocodeImageUrls';
 import { promocodesFetch, usePromocodesAdminAuth } from '@/components/promocodes/usePromocodesAdminAuth';
 import '@/components/promocodes/promocodes.css';
 
@@ -109,9 +111,12 @@ export default function CreditsEarnedUsersReport() {
                       <td>{row.username}</td>
                       <td>{row.typeOfUser}</td>
                       <td>
-                        {row.flagImg ? (
-                          <img src={promocodeFlagImageUrl(row.flagImg) ?? ''} alt="" />
-                        ) : null}
+                        <PromocodeAssetImage
+                          src={promocodeFlagImageUrl(row.flagImg, { countryCode: row.countryCode })}
+                          fallbackSrc={PROMOCODE_NO_FLAG_IMAGE}
+                          countryCode={row.countryCode}
+                          className="h-6"
+                        />
                       </td>
                       <td>{row.country}</td>
                       <td>{formatCredits(row.creditsTotal)}</td>

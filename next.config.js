@@ -11,10 +11,15 @@ const nextConfig = {
     ];
   },
   async rewrites() {
+    const legacyOrigin = process.env.MOVESBOOK_LEGACY_ORIGIN || 'https://movesbook.com';
     return [
       {
         source: '/country-flags/:path*',
         destination: 'https://flagcdn.com/:path*',
+      },
+      {
+        source: '/img/flags/:path*',
+        destination: `${legacyOrigin}/img/flags/:path*`,
       },
     ];
   },

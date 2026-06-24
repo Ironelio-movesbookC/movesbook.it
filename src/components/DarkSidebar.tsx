@@ -330,6 +330,8 @@ interface DarkSidebarProps {
   onIdentificationDevicesClick?: () => void;
   /** General settings → Access of outcome settings (dashboard panel) */
   onAccessOutcomeSettingsClick?: () => void;
+  /** Communities → Suggest Movesbook (promocode invite dashboard) */
+  onSuggestMovesbookClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
   /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
@@ -369,6 +371,7 @@ export default function DarkSidebar({
   onClubAddSongsPlaylistsClick,
   onIdentificationDevicesClick,
   onAccessOutcomeSettingsClick,
+  onSuggestMovesbookClick,
   activeTab = 'my-page',
   onTabChange,
   profileImageFromDb,
@@ -830,6 +833,14 @@ export default function DarkSidebar({
     }
   };
 
+  const handleSuggestMovesbookClick = () => {
+    if (onSuggestMovesbookClick) {
+      onSuggestMovesbookClick();
+      return;
+    }
+    router.push('/users/notification_by_promocode');
+  };
+
   const handleMyEntityTab = () => {
     if (
       (isClubAccountUserType(userType) ||
@@ -1107,6 +1118,7 @@ export default function DarkSidebar({
             <div className="py-3 bg-gray-850 border-t border-gray-700">
               <button
                 type="button"
+                onClick={handleSuggestMovesbookClick}
                 className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
               >
                 Suggest Movesbook to your friends
@@ -2116,6 +2128,7 @@ export default function DarkSidebar({
                   <div className="py-3 bg-gray-850 border-t border-gray-700">
                     <button
                       type="button"
+                      onClick={handleSuggestMovesbookClick}
                       className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
                     >
                       Suggest Movesbook to your friends
@@ -2461,45 +2474,46 @@ export default function DarkSidebar({
                 </button>
 
                 <div className="w-full border-b border-teal-700">
-                  <button
-                    type="button"
-                    onClick={() => setClubInternetLinksOpen((v) => !v)}
-                    aria-expanded={clubInternetLinksOpen}
-                    className="flex w-full items-center justify-between bg-teal-800 py-2.5 px-3 text-white transition-colors hover:bg-teal-700"
-                  >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <Globe className="h-5 w-5 shrink-0" />
-                      <span className="truncate font-semibold tracking-wide">
-                        {t('sidebar_internet_links')}
-                      </span>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex w-full items-stretch bg-teal-800 text-white">
+                    <button
+                      type="button"
+                      onClick={() => setClubInternetLinksOpen((v) => !v)}
+                      aria-expanded={clubInternetLinksOpen}
+                      className="flex min-w-0 flex-1 items-center justify-between py-2.5 pl-3 pr-2 text-left transition-colors hover:bg-teal-700"
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <Globe className="h-5 w-5 shrink-0" />
+                        <span className="truncate font-semibold tracking-wide">
+                          {t('sidebar_internet_links')}
+                        </span>
+                      </div>
                       <ChevronDown
-                        className={`h-4 w-4 opacity-90 transition-transform duration-200 ${
+                        className={`h-4 w-4 shrink-0 opacity-90 transition-transform duration-200 ${
                           clubInternetLinksOpen ? 'rotate-180' : ''
                         }`}
                       />
-                      {clubWebsiteManage ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            window.open(
-                              CLUB_WEBSITE_SETTINGS_INDEX_PATH,
-                              '_blank',
-                              'noopener,noreferrer'
-                            );
-                          }}
-                          className="flex h-7 w-7 items-center justify-center text-gray-300 transition-colors hover:text-white"
-                          aria-label={t('sidebar_club_website_editor_aria')}
-                        >
-                          <Settings className="h-4 w-4 opacity-90" />
-                        </button>
-                      ) : (
+                    </button>
+                    {clubWebsiteManage ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.open(
+                            CLUB_WEBSITE_SETTINGS_INDEX_PATH,
+                            '_blank',
+                            'noopener,noreferrer'
+                          );
+                        }}
+                        className="flex shrink-0 items-center border-l border-teal-700/40 px-3 text-gray-300 transition-colors hover:bg-teal-700 hover:text-white"
+                        aria-label={t('sidebar_club_website_editor_aria')}
+                      >
+                        <Settings className="h-4 w-4 opacity-90" />
+                      </button>
+                    ) : (
+                      <span className="flex shrink-0 items-center border-l border-teal-700/40 px-3 text-gray-300">
                         <Settings className="h-4 w-4 opacity-90" aria-hidden />
-                      )}
-                    </div>
-                  </button>
+                      </span>
+                    )}
+                  </div>
                   {clubInternetLinksOpen && (
                     <div className="bg-[#4a4a4a] text-white">
                       <div className="border-b border-gray-500/60">

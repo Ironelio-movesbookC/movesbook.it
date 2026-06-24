@@ -39,6 +39,8 @@ export async function GET(req: NextRequest) {
       origin: resolvePublicOrigin(req),
       isStaff: access.isStaff,
       inviterUsername: username,
+      senderLegacyUserId: access.legacyUserId,
+      senderEmail: access.email,
     });
     return NextResponse.json(preview);
   } catch (err) {

@@ -228,7 +228,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
   };
 
   const goToDashboardPanel = useCallback(
-    (panel: 'identification-devices' | 'outcome-settings' | 'news') => {
+    (panel: 'identification-devices' | 'outcome-settings' | 'news' | 'suggest-movesbook') => {
       if (!hasFormClub) return;
       if (!selectedClubId && formClubs[0]?.id) {
         setSelectedClubId(formClubs[0].id);
@@ -284,6 +284,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
               bannerProfile?.profileBannerAlignment === 'center' ? 'center' : 'default'
             }
             onCoverCameraClick={() => setShowChangeBannerModal(true)}
+            onSuggestMovesbookClick={() => goToDashboardPanel('suggest-movesbook')}
             showSponsored={shellActiveTab === 'my-page'}
           />
         )}
@@ -304,6 +305,7 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
                 onClubAddSongsPlaylistsClick={() => goToDashboardPanel('news')}
                 onIdentificationDevicesClick={() => goToDashboardPanel('identification-devices')}
                 onAccessOutcomeSettingsClick={() => goToDashboardPanel('outcome-settings')}
+                onSuggestMovesbookClick={() => goToDashboardPanel('suggest-movesbook')}
                 onCreateClubClick={openCreateClubFlow}
               />
             </aside>

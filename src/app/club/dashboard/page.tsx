@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import ClubIdentificationDevicesPanel from './components/ClubIdentificationDevicesPanel';
 import ClubAccessOutcomeSettingsPanel from './components/ClubAccessOutcomeSettingsPanel';
+import NotificationByPromocodeDashboardView from '@/components/promocodes/NotificationByPromocodeDashboard';
 import {
   getClubMyPageDisplayName,
   getFormCreatedClubsSortedByCreatedAt,
@@ -34,7 +35,7 @@ function ClubDashboardContent() {
   const [clubAddSongsOgpOpen, setClubAddSongsOgpOpen] = useState(false);
   const [clubAddSongsOgpExpanded, setClubAddSongsOgpExpanded] = useState(false);
   const [clubMainPanel, setClubMainPanel] = useState<
-    'default' | 'identification-devices' | 'outcome-settings'
+    'default' | 'identification-devices' | 'outcome-settings' | 'suggest-movesbook'
   >('default');
 
   useEffect(() => {
@@ -112,6 +113,14 @@ function ClubDashboardContent() {
       setClubMainPanel('outcome-settings');
       router.replace('/club/dashboard', { scroll: false });
     }
+    if (panel === 'suggest-movesbook') {
+      writeClubWorkspaceTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('suggest-movesbook');
+      router.replace('/club/dashboard', { scroll: false });
+    }
   }, [searchParams, router]);
 
   useEffect(() => {
@@ -145,6 +154,11 @@ function ClubDashboardContent() {
             clubId={selectedClubId}
             onBack={() => setClubMainPanel('default')}
           />
+        </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'suggest-movesbook' ? (
+        <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col min-h-0">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Suggest Movesbook to friends</h2>
+          <NotificationByPromocodeDashboardView />
         </div>
       ) : !clubAddSongsOgpOpen && !showWorkoutSection ? (
         <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">

@@ -186,6 +186,7 @@ const LEGACY_USER_SELECT_CANDIDATES = [
   'id',
   'username',
   'email',
+  'created',
   'country_id',
   'image',
   'subscription_start_date',
@@ -265,6 +266,8 @@ export function mapLegacyUser(row: Record<string, unknown> | null | undefined): 
     id,
     username: rowVal(row, 'username', 'Username') != null ? String(rowVal(row, 'username', 'Username')) : null,
     email: rowVal(row, 'email', 'Email') != null ? String(rowVal(row, 'email', 'Email')) : null,
+    created:
+      rowVal(row, 'created', 'Created') != null ? String(rowVal(row, 'created', 'Created')) : null,
     countryId:
       rowVal(row, 'country_id', 'countryId') != null
         ? Number(rowVal(row, 'country_id', 'countryId'))
@@ -370,12 +373,25 @@ export async function fetchFlagImageByCountryId(countryId: number | null): Promi
 
   const countriesTable = await getCountriesTable();
   const flagsTable = await getFlagsTable();
-  if (!countriesTable || !flagsTable) return null;
+  if (!countriesTable) return null;
+
+  const countryColumns = await getTableColumns(countriesTable);
+  const countrySelect = [
+    countryColumns.has('flag_id') ? 'flag_id' : null,
+    countryColumns.has('country_pic') ? 'country_pic' : null,
+  ].filter(Boolean).join(', ');
+  if (!countrySelect) return null;
 
   const countryRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT flag_id FROM \`${countriesTable}\` WHERE id = ? LIMIT 1`,
+    `SELECT ${countrySelect} FROM \`${countriesTable}\` WHERE id = ? LIMIT 1`,
     countryId
   );
+  const countryPic = countryRows[0]?.country_pic ?? countryRows[0]?.countryPic;
+  if (countryPic != null && String(countryPic).trim()) {
+    return String(countryPic);
+  }
+
+  if (!flagsTable) return null;
   const flagId = countryRows[0]?.flag_id ?? countryRows[0]?.flagId;
   if (flagId == null) return null;
 

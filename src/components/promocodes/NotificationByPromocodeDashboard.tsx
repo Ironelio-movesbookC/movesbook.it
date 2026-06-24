@@ -3,9 +3,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import type { NotificationByPromocodeDashboard } from '@/lib/promocodes/notificationByPromocodeService';
 import {
+  PROMOCODE_NO_FLAG_IMAGE,
   promocodeFlagImageUrl,
   promocodeProfileImageUrl,
 } from '@/components/promocodes/promocodeImageUrls';
+import PromocodeAssetImage from '@/components/promocodes/PromocodeAssetImage';
 import '@/components/promocodes/notification-by-promocode.css';
 
 type TabId = 'suggest' | 'invitations' | 'registered' | 'credits' | 'connections';
@@ -271,9 +273,14 @@ export default function NotificationByPromocodeDashboardView() {
                     <td><input type="checkbox" readOnly checked={highlightedPromoId === row.promocodeId} /></td>
                     <td>{row.promocodeCode}</td>
                     <td>
-                      {row.senderFlagImg ? (
-                        <img src={promocodeFlagImageUrl(row.senderFlagImg) ?? ''} alt="" style={{ height: 23 }} />
-                      ) : null}
+                      <PromocodeAssetImage
+                        src={promocodeFlagImageUrl(row.senderFlagImg, { countryCode: row.countryCode })}
+                        fallbackSrc={PROMOCODE_NO_FLAG_IMAGE}
+                        countryCode={row.countryCode}
+                        alt=""
+                        className="inline-block"
+                        style={{ height: 23 }}
+                      />
                     </td>
                     <td>
                       <img src={promocodeProfileImageUrl(row.senderImage)} alt="" style={{ height: 55 }} />
@@ -376,9 +383,16 @@ export default function NotificationByPromocodeDashboardView() {
                   <tr key={idx}>
                     <td>{row.senderUsername}</td>
                     <td>
-                      {row.secondarySenderFlagImg ? (
-                        <img src={promocodeFlagImageUrl(row.secondarySenderFlagImg) ?? ''} alt="" style={{ height: 23, marginRight: 5 }} />
-                      ) : null}
+                      <PromocodeAssetImage
+                        src={promocodeFlagImageUrl(row.secondarySenderFlagImg, {
+                          countryCode: row.secondarySenderCountryCode,
+                        })}
+                        fallbackSrc={PROMOCODE_NO_FLAG_IMAGE}
+                        countryCode={row.secondarySenderCountryCode}
+                        alt=""
+                        className="inline-block mr-1 align-middle"
+                        style={{ height: 23 }}
+                      />
                       {row.secondarySenderUsername || row.creditsThanksTo}
                     </td>
                     <td>{row.receiverUsername || '--'}</td>

@@ -115,6 +115,7 @@ export default function UsersAppLayout({ children }: { children: React.ReactNode
                 window.location.href = `/my-coaching-group?groupId=${coachingGroups[0].id}`;
               }
             }}
+            onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
           />
           <main className="flex-1 overflow-y-auto bg-gray-50">{children}</main>
           {isNetworkSearchList ? (
