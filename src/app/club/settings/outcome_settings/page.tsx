@@ -36,7 +36,7 @@ export default function ClubOutcomeSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6">
+    <div className="w-full p-2 md:p-4">
       <ClubAccessOutcomeSettingsPanel
         clubId={clubId}
         onBack={() => router.push('/club/dashboard')}

@@ -6,6 +6,10 @@ import {
   mapExpenseCreateToInput,
 } from './expense';
 import {
+  createProductSaleRecordSchema,
+  mapProductSaleCreateToInput,
+} from './productSale';
+import {
   createServiceSaleRecordSchema,
   mapServiceSaleCreateToInput,
 } from './serviceSale';
@@ -53,6 +57,18 @@ export function parseCreateRecord(type: string, body: unknown): ParseCreateRecor
         };
       }
       return { ok: true, data: mapExpenseCreateToInput(parsed.data) };
+    }
+    case PROCEDURE_TYPE_CODES.PRODUCT_SALE: {
+      const parsed = createProductSaleRecordSchema.safeParse(body);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          status: 400,
+          error: 'Validation failed',
+          details: parsed.error.flatten(),
+        };
+      }
+      return { ok: true, data: mapProductSaleCreateToInput(parsed.data) };
     }
     default: {
       const _exhaustive: never = type;

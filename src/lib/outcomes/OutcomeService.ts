@@ -41,6 +41,26 @@ function pickRandom<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)];
 }
 
+const PREFERRED_LANGUAGE_LEGACY: Record<string, number> = {
+  en: 1,
+  fr: 2,
+  de: 3,
+  it: 4,
+  es: 5,
+  pt: 6,
+  ru: 7,
+  hi: 8,
+  zh: 9,
+  ar: 10,
+  ja: 11,
+  id: 12,
+};
+
+function preferredLanguageCode(raw: string): string {
+  const normalized = raw.toLowerCase();
+  return normalized.length > 2 ? normalized.slice(0, 2) : normalized;
+}
+
 function text(value: unknown): string {
   return String(value ?? '').trim();
 }
@@ -247,15 +267,15 @@ export class OutcomeService {
     code: string;
     message: string;
   }): Promise<string> {
-    const language = await prisma.language.findFirst({
-      where: { legacyLangId: params.lang },
-    });
-    if (!language) throw new Error('Language not found');
-
     if (params.lang === 0) {
       await this.saveAdminTypeDefaultCode(params.typeId, params.code);
       return params.settingId ?? '';
     }
+
+    const language = await prisma.language.findFirst({
+      where: { legacyLangId: params.lang },
+    });
+    if (!language) throw new Error('Language not found');
 
     const resolvedCode =
       params.code ||
@@ -327,59 +347,160 @@ export class OutcomeService {
     return english?.id ?? null;
   }
 
+  async normalizeLegacyOutcomeLangId(legacyLangId: number): Promise<number> {
+    const langs = await this.listLanguages();
+    const validIds = langs
+      .filter((l) => l.legacyLangId != null)
+      .map((l) => l.legacyLangId as number);
+    if (validIds.includes(legacyLangId)) return legacyLangId;
+    return validIds.includes(1) ? 1 : validIds[0] ?? 1;
+  }
+
+  async getLegacyLangIdFromPreferredLanguage(userId: string): Promise<number | null> {
+    const settings = await prisma.userSettings.findUnique({
+      where: { userId },
+      select: { language: true },
+    });
+    const raw = text(settings?.language).toLowerCase();
+    if (!raw) return null;
+
+    const code = preferredLanguageCode(raw);
+    const lang = await prisma.language.findFirst({
+      where: { code, isActive: true },
+      select: { legacyLangId: true },
+    });
+    const legacyLangId = lang?.legacyLangId ?? PREFERRED_LANGUAGE_LEGACY[code] ?? null;
+    return legacyLangId != null && legacyLangId > 0 ? legacyLangId : null;
+  }
+
+  /** CakePHP: Club.user_id → users.country_id → countries.country_lang_id */
+  async getLegacyCountryLangIdForClub(clubId: string): Promise<number> {
+    await seedOutcomeCountriesIfEmpty();
+
+    const club = await prisma.club.findUnique({
+      where: { id: clubId },
+      select: { adminId: true },
+    });
+    if (club) {
+      const fromPreferred = await this.getLegacyLangIdFromPreferredLanguage(club.adminId);
+      if (fromPreferred != null) {
+        return this.normalizeLegacyOutcomeLangId(fromPreferred);
+      }
+    }
+
+    const clubsTable = await findExistingTable(['clubs_new', 'clubs']);
+    const usersTable = await findExistingTable(['users_new', 'users']);
+    const countriesTable = await findExistingTable(['countries', 'country']);
+
+    if (clubsTable && usersTable && countriesTable) {
+      const clubColumns = await prisma.$queryRawUnsafe<{ COLUMN_NAME: string }[]>(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+        clubsTable
+      );
+      const clubColSet = new Set(clubColumns.map((c) => c.COLUMN_NAME));
+      const adminCol = clubColSet.has('adminId')
+        ? 'adminId'
+        : clubColSet.has('user_id')
+          ? 'user_id'
+          : null;
+
+      if (adminCol) {
+        const userColumns = await prisma.$queryRawUnsafe<{ COLUMN_NAME: string }[]>(
+          `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+          usersTable
+        );
+        const userColSet = new Set(userColumns.map((c) => c.COLUMN_NAME));
+        if (userColSet.has('country_id')) {
+          const rows = await prisma.$queryRawUnsafe<{ country_lang_id: number | string | null }[]>(
+            `SELECT c.country_lang_id
+             FROM \`${clubsTable}\` cl
+             INNER JOIN \`${usersTable}\` u ON u.id = cl.\`${adminCol}\`
+             INNER JOIN \`${countriesTable}\` c ON c.id = u.country_id
+             WHERE cl.id = ?
+             LIMIT 1`,
+            clubId
+          );
+          const lang = Number(rows[0]?.country_lang_id ?? 0);
+          if (Number.isFinite(lang) && lang > 0) {
+            return this.normalizeLegacyOutcomeLangId(lang);
+          }
+        }
+      }
+    }
+
+    if (club) {
+      const fromAdmin = await this.getLegacyCountryLangIdForUsers([club.adminId]);
+      if (fromAdmin != null) return this.normalizeLegacyOutcomeLangId(fromAdmin);
+    }
+
+    return 1;
+  }
+
   async getLegacyCountryLangIdForUsers(userIds: string[]): Promise<number | null> {
     if (userIds.length === 0) return null;
 
     await seedOutcomeCountriesIfEmpty();
 
-    const users = await prisma.user.findMany({
-      where: { id: { in: userIds } },
-      select: { id: true, country: true },
-    });
-    if (users.length > 0) {
-      for (const user of users) {
-        const countryName = text(user.country);
-        if (!countryName) continue;
-
-        const outcomeCountry = await prisma.outcomeCountry.findFirst({
-          where: {
-            OR: [
-              { name: { equals: countryName } },
-              { code: { equals: countryName } },
-              { code: { equals: countryName.toUpperCase() } },
-            ],
-          },
-          include: { defaultLanguage: { select: { legacyLangId: true } } },
-        });
-        if (outcomeCountry?.defaultLanguage?.legacyLangId != null) {
-          return outcomeCountry.defaultLanguage.legacyLangId;
-        }
-      }
+    for (const userId of userIds) {
+      const fromPreferred = await this.getLegacyLangIdFromPreferredLanguage(userId);
+      if (fromPreferred != null) return fromPreferred;
     }
 
     const usersTable = await findExistingTable(['users_new', 'users']);
     const countriesTable = await findExistingTable(['countries', 'country']);
-    if (!usersTable || !countriesTable) return null;
+    if (usersTable && countriesTable) {
+      const userColumns = await prisma.$queryRawUnsafe<{ COLUMN_NAME: string }[]>(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+        usersTable
+      );
+      const columnSet = new Set(userColumns.map((c) => c.COLUMN_NAME));
+      if (columnSet.has('country_id')) {
+        for (const userId of userIds) {
+          const rows = await prisma.$queryRawUnsafe<{ country_lang_id: number | string | null }[]>(
+            `SELECT c.country_lang_id
+             FROM \`${usersTable}\` u
+             INNER JOIN \`${countriesTable}\` c ON c.id = u.country_id
+             WHERE u.id = ?
+             LIMIT 1`,
+            userId
+          );
+          const lang = Number(rows[0]?.country_lang_id ?? 0);
+          if (Number.isFinite(lang) && lang > 0) return lang;
+        }
+      }
+    }
 
-    const userColumns = await prisma.$queryRawUnsafe<{ COLUMN_NAME: string }[]>(
-      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
-       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
-      usersTable
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, country: true },
+    });
+    const userOrder = new Map(userIds.map((id, index) => [id, index]));
+    const sortedUsers = [...users].sort(
+      (a, b) => (userOrder.get(a.id) ?? 0) - (userOrder.get(b.id) ?? 0)
     );
-    const columnSet = new Set(userColumns.map((c) => c.COLUMN_NAME));
-    if (!columnSet.has('country_id')) return null;
+    for (const user of sortedUsers) {
+      const countryName = text(user.country);
+      if (!countryName) continue;
 
-    const placeholders = userIds.map(() => '?').join(',');
-    const rows = await prisma.$queryRawUnsafe<{ country_lang_id: number | string | null }[]>(
-      `SELECT c.country_lang_id
-       FROM \`${usersTable}\` u
-       INNER JOIN \`${countriesTable}\` c ON c.id = u.country_id
-       WHERE u.id IN (${placeholders})
-       LIMIT 1`,
-      ...userIds
-    );
-    const lang = Number(rows[0]?.country_lang_id ?? 0);
-    return Number.isFinite(lang) && lang > 0 ? lang : null;
+      const outcomeCountry = await prisma.outcomeCountry.findFirst({
+        where: {
+          OR: [
+            { name: { equals: countryName } },
+            { code: { equals: countryName } },
+            { code: { equals: countryName.toUpperCase() } },
+          ],
+        },
+        include: { defaultLanguage: { select: { legacyLangId: true } } },
+      });
+      if (outcomeCountry?.defaultLanguage?.legacyLangId != null) {
+        return outcomeCountry.defaultLanguage.legacyLangId;
+      }
+    }
+
+    return null;
   }
 
   async fetchClubCustomItems(clubId: string): Promise<ClubOutcomeItemDto[]> {
@@ -412,15 +533,19 @@ export class OutcomeService {
     });
   }
 
-  async fetchClubPrimaryItems(clubId: string, adminUserIds: string[]): Promise<ClubOutcomeItemDto[]> {
+  async fetchClubPrimaryItems(clubId: string): Promise<ClubOutcomeItemDto[]> {
     await this.seedOutcomeTypesIfEmpty();
-    const languageId = await this.resolveLanguageIdForClubAdmin(adminUserIds);
-    if (!languageId) return this.fetchClubCustomItems(clubId).then((items) =>
-      items.map((i) => ({ ...i, message: '', settingId: null, audioFile: null, audioUrl: null }))
-    );
+    const langKey = await this.getLegacyCountryLangIdForClub(clubId);
+    const language =
+      (await prisma.language.findFirst({ where: { legacyLangId: langKey } })) ??
+      (await this.getEnglishLanguage());
+    const languageId = language?.id ?? null;
 
-    const language = await prisma.language.findUnique({ where: { id: languageId } });
-    const langKey = language?.legacyLangId ?? 1;
+    if (!languageId) {
+      return this.fetchClubCustomItems(clubId).then((items) =>
+        items.map((i) => ({ ...i, message: '', settingId: null, audioFile: null, audioUrl: null }))
+      );
+    }
 
     const types = await prisma.outcomeType.findMany({
       where: { isActive: true },
@@ -580,7 +705,10 @@ export class OutcomeService {
           ? await this.getLegacyCountryLangIdForUsers(params.memberUserIds)
           : null;
       legacyLanguageId =
-        memberLegacy ?? (await this.getLegacyCountryLangIdForUsers(params.clubAdminUserIds)) ?? 1;
+        memberLegacy ??
+        (params.clubId
+          ? await this.getLegacyCountryLangIdForClub(params.clubId)
+          : (await this.getLegacyCountryLangIdForUsers(params.clubAdminUserIds)) ?? 1);
       const lang = await prisma.language.findFirst({ where: { legacyLangId: legacyLanguageId } });
       languageId = lang?.id ?? (await this.getEnglishLanguage())?.id ?? null;
     }

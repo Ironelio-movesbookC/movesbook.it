@@ -249,22 +249,22 @@ type ClubAdminArchiveItem =
   | { kind: 'overview'; label: string };
 
 const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
-  [{ kind: 'overview', label: '» Overview' }],
+  [{ kind: 'icon', Icon: Server, label: '» Overview', path: '/clubs/archive_overview' }],
   [
     { kind: 'icon', Icon: Users, label: 'Members', path: '/clubMembers/memberList'},
     { kind: 'icon', Icon: UserCog, label: 'Operators', path: '/clubs/club_operatorlist' },
-    { kind: 'icon', Icon: User, label: 'Employees', path: '' },
+    { kind: 'icon', Icon: User, label: 'Employees', path: '/clubs/archive_employees' },
   ],
   [
     { kind: 'affiliate', label: 'Affiliations', path: '/clubMembers/membership' },
     { kind: 'icon', Icon: Contact2, label: 'Subscriptions to the club', path: '/clubs/subscription' },
-    { kind: 'icon', Icon: CreditCard, label: 'Accesses', path: '' },
+    { kind: 'icon', Icon: CreditCard, label: 'Accesses', path: '/clubs/access_list' },
   ],
   [
     { kind: 'icon', Icon: Hourglass, label: 'Deadlines of payment', path: '/users/deadline' },
     { kind: 'icon', Icon: Award, label: 'Credit voucher', path: '/clubSettings/creditCustomer' },
-    { kind: 'icon', Icon: Hourglass, label: 'Other debts', path: '' },
-    { kind: 'icon', Icon: Hourglass, label: 'Planned expenses', path: '' },
+    { kind: 'icon', Icon: Hourglass, label: 'Other debts', path: '/clubs/other_debts' },
+    { kind: 'icon', Icon: Hourglass, label: 'Planned expenses', path: '/clubs/arc_expenses' },
   ],
   [
     { kind: 'icon', Icon: ShoppingCart, label: 'Shop/Selling of products', path: '/ArchiveSeles/product_sale_list' },
@@ -280,22 +280,22 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
   ],
   [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubs/service_receipts' }],
   [
-    { kind: 'icon', Icon: FileStack, label: 'Cards assignments', path: '' },
-    { kind: 'icon', Icon: FileWarning, label: 'Alert assigned', path: '' },
+    { kind: 'icon', Icon: FileStack, label: 'Cards assignments', path: '/clubs/cards_assignments' },
+    { kind: 'icon', Icon: FileWarning, label: 'Alert assigned', path: '/clubs/alerts_assigned' },
   ],
   [
-    { kind: 'icon', Icon: Paperclip, label: 'Reservations', path: '' },
-    { kind: 'icon', Icon: Phone, label: 'Contacts of marketing', path: '' },
-    { kind: 'icon', Icon: Calendar, label: 'Events', path: '' },
+    { kind: 'icon', Icon: Paperclip, label: 'Reservations', path: '/clubs/archive_reservations' },
+    { kind: 'icon', Icon: Phone, label: 'Contacts of marketing', path: '/clubs/marketing_contacts' },
+    { kind: 'icon', Icon: Calendar, label: 'Events', path: '/clubs/archive_events' },
   ],
   [
-    { kind: 'icon', Icon: Presentation, label: 'Polls', path: '' },
-    { kind: 'icon', Icon: Megaphone, label: 'Advertising campaigns', path: '' },
+    { kind: 'icon', Icon: Presentation, label: 'Polls', path: '/clubs/archive_polls' },
+    { kind: 'icon', Icon: Megaphone, label: 'Advertising campaigns', path: '/clubs/advertising_campaigns' },
     {
       kind: 'icon',
       Icon: HelpCircle,
       label: 'Queries to the staff ...',
-      path: ''
+      path: '/clubs/staff_queries'
     },
   ],
 ];

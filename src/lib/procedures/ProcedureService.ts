@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { getProcedureDefinition, getProcedureTypology } from './registry';
 import { paginated, parsePagination } from './pagination';
 import { verifyOperatorPassword } from './operatorAuth';
+import { applyCardCreditPayment } from './insertCreditService';
+import { ensureDefaultInstallment } from './installmentService';
 import { PROCEDURE_TYPE_CODES } from './types';
 import type {
   AddProcedurePaymentInput,
@@ -70,7 +72,11 @@ async function assertOperatorPassword(
   operatorId: string,
   password: string | null | undefined
 ): Promise<void> {
-  if (procedureTypeCode !== PROCEDURE_TYPE_CODES.SERVICE_SALE) return;
+  const requiresPassword =
+    procedureTypeCode === PROCEDURE_TYPE_CODES.SERVICE_SALE ||
+    procedureTypeCode === PROCEDURE_TYPE_CODES.PRODUCT_SALE ||
+    procedureTypeCode === PROCEDURE_TYPE_CODES.EXPENSE;
+  if (!requiresPassword) return;
   const trimmed = password?.trim();
   if (!trimmed) throw new Error('Operator password is required');
   const ok = await verifyOperatorPassword(operatorId, trimmed);
@@ -165,10 +171,23 @@ export class ProcedureService {
             paymentAmount: initialPayment,
             annotations: input.receiptAnnotations ?? input.notes ?? null,
             serviceName: input.serviceName ?? null,
-            receiptDate: recordDate,
+            receiptDate: paymentDate,
           },
         });
         receiptId = receipt.id;
+      }
+
+      await ensureDefaultInstallment(
+        record.id,
+        totalAmount,
+        initialPayment,
+        paymentDate.toISOString().slice(0, 10),
+        dueDate?.toISOString().slice(0, 10) ?? null,
+        input.notes ?? null
+      );
+
+      if (initialPayment > 0 && input.payMode === 'card') {
+        await applyCardCreditPayment(ctx.club.id, input.memberId, initialPayment, operatorId);
       }
 
       return { recordId: record.id, paymentId, receiptId };
@@ -259,6 +278,10 @@ export class ProcedureService {
           },
         });
         receiptId = receipt.id;
+      }
+
+      if (input.payMode === 'card') {
+        await applyCardCreditPayment(ctx.club.id, record.memberId, amount, operatorId);
       }
 
       return { paymentId: payment.id, receiptId, balanceAmount: newBalance };

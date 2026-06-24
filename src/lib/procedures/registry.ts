@@ -112,9 +112,39 @@ const EXPENSE: ProcedureDefinition = {
   },
 };
 
+const PRODUCT_SALE: ProcedureDefinition = {
+  code: PROCEDURE_TYPE_CODES.PRODUCT_SALE,
+  name: 'Product Sale',
+  typologyLabel: 'SELLINGS',
+  pageSize: 25,
+  metadataKeys: { primary: 'productName', secondary: 'sectorName' },
+  columnHeaders: { primary: 'Product', secondary: 'Sector' },
+  routes: {
+    form: '/ArchiveSeles/new_product_sale',
+    records: '/ArchiveSeles/product_sale_list',
+    deadlines: '/ArchiveSeles/product_deadline',
+    payments: '/ArchiveSeles/product_payments',
+    receipts: '/ArchiveSeles/product_receipts',
+    paymentDetail: (id) => `/ArchiveSeles/payment_detail/${id}`,
+  },
+  archiveTitles: {
+    records: 'Archive of Product Sales',
+    deadlines: 'Product Deadlines',
+    payments: 'Product Payments',
+    receipts: 'Product Receipts',
+    paymentForm: 'Payment — Product',
+    newRecordButton: '+ New product sale',
+  },
+  form: {
+    title: 'Shop / Selling of products',
+    subtitle: 'Register a product sale and optionally record a payment.',
+  },
+};
+
 export const PROCEDURE_DEFINITIONS: Record<ProcedureTypeCode, ProcedureDefinition> = {
   [PROCEDURE_TYPE_CODES.SERVICE_SALE]: SERVICE_SALE,
   [PROCEDURE_TYPE_CODES.EXPENSE]: EXPENSE,
+  [PROCEDURE_TYPE_CODES.PRODUCT_SALE]: PRODUCT_SALE,
 };
 
 export const ALL_PROCEDURE_CODES = Object.values(PROCEDURE_TYPE_CODES);

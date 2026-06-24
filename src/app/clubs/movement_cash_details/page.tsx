@@ -1,13 +1,29 @@
 'use client';
 
-import ServiceSalePaymentsArchive from '@/components/procedures/ServiceSalePaymentsArchive';
+import ClubArchivePage from '@/components/club/archives/ClubArchivePage';
+import type { Column } from '@/types/clubTable';
+
+const columns: Column[] = [
+  { key: 'name', header: 'Member' },
+  { key: 'typology', header: 'Typology' },
+  { key: 'service', header: 'Service / Product' },
+  { key: 'insertDate', header: 'Date' },
+  { key: 'paid', header: 'Amount' },
+  { key: 'direction', header: 'Direction' },
+  { key: 'payMod', header: 'Pay mode' },
+  { key: 'operator', header: 'Operator' },
+];
 
 export default function MovementCashDetailsPage() {
   return (
-    <ServiceSalePaymentsArchive
-      title="Cash Movements (Service Payments)"
-      footerHint="All service sale payments from the procedure engine."
-      variant="all"
-    />
+    <div className="p-4">
+      <ClubArchivePage
+        title="Cash (all movements)"
+        archiveType="cash-movements"
+        direction="all"
+        columns={columns}
+        footerHint="Service/product cash in and expense cash out from procedure engine."
+      />
+    </div>
   );
 }

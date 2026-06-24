@@ -10,8 +10,6 @@ import type { OutcomeSettingsTab } from '@/types/clubOutcomeSettings';
 
 export const dynamic = 'force-dynamic';
 
-const INTRO_PRIMARY =
-  'Fixed settings in your country standard language (read-only). Change mode to Custom to edit your own messages.';
 const INTRO_CUSTOM =
   'Custom settings. Edit codes and messages below; upload .mp3 or .wav audio for each message.';
 
@@ -86,21 +84,30 @@ export async function GET(request: NextRequest) {
     const tabParam = request.nextUrl.searchParams.get('tab');
     const tab: OutcomeSettingsTab = tabParam === 'custom' ? 'custom' : 'primary';
     const prefs = await outcomeService.getClubPreferences(club.id);
-    const legacyLangId =
-      (await outcomeService.getLegacyCountryLangIdForUsers([userId, club.adminId])) ?? 1;
+    const legacyLangId = await outcomeService.getLegacyCountryLangIdForClub(club.id);
+    const primaryLanguage =
+      (await prisma.language.findFirst({ where: { legacyLangId } })) ??
+      (await outcomeService.getEnglishLanguage());
+    const primaryLanguageName = primaryLanguage?.name ?? 'English';
 
     const items =
       tab === 'custom'
         ? await outcomeService.fetchClubCustomItems(club.id)
-        : await outcomeService.fetchClubPrimaryItems(club.id, [userId, club.adminId]);
+        : await outcomeService.fetchClubPrimaryItems(club.id);
+
+    const introParagraph =
+      tab === 'custom'
+        ? INTRO_CUSTOM
+        : `Fixed settings in your country standard language (${primaryLanguageName}, read-only). Change mode to Custom to edit your own messages.`;
 
     return NextResponse.json({
       tab,
       editable: tab === 'custom' && prefs.mode === ClubOutcomeMode.CUSTOM,
       primaryLanguageId: legacyLangId,
+      primaryLanguageName,
       defaultOutcomeLanguage: modeToLegacyDefault(prefs.mode),
       outcomeMode: prefs.mode,
-      introParagraph: tab === 'custom' ? INTRO_CUSTOM : INTRO_PRIMARY,
+      introParagraph,
       items,
     });
   } catch (error) {

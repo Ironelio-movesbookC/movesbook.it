@@ -239,7 +239,10 @@ export default function ClubAccessOutcomeSettingsPanel({
       }
     });
 
-    void el.play();
+    void el.play().catch(() => {
+      setToast('Unable to play audio. Re-upload the file or check server storage.');
+      setPlayingId(null);
+    });
     setPlayingId(item.typeId);
     el.onended = () => setPlayingId(null);
   }
@@ -362,7 +365,7 @@ export default function ClubAccessOutcomeSettingsPanel({
     'px-3 py-2 text-sm font-semibold rounded border border-gray-300 bg-gray-100 text-gray-950 hover:bg-gray-200 disabled:opacity-50';
 
   return (
-    <div className="space-y-4">
+    <div className="w-full space-y-4">
       {onBack && (
         <button type="button" onClick={onBack} className={`${btnClass} inline-flex items-center gap-2`}>
           <ArrowLeft className="h-4 w-4" />
@@ -409,6 +412,7 @@ export default function ClubAccessOutcomeSettingsPanel({
             }`}
           >
             Fixed settings in your primary language
+            {data?.primaryLanguageName ? ` (${data.primaryLanguageName})` : ''}
           </button>
           <button
             type="button"
@@ -475,7 +479,7 @@ export default function ClubAccessOutcomeSettingsPanel({
                         className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 shadow-sm"
                       >
                         <p className="mb-3 text-sm font-semibold text-gray-900">{item.description}</p>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center">
                           <div className="flex items-center gap-2 sm:w-36 shrink-0">
                             <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
                               Code
@@ -496,23 +500,33 @@ export default function ClubAccessOutcomeSettingsPanel({
                           </div>
 
                           <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <input
-                              type="text"
-                              readOnly={!data?.editable}
-                              placeholder="Message"
-                              className={`h-9 min-w-0 flex-1 rounded border border-gray-300 bg-blue-50/50 px-3 text-sm text-gray-900 placeholder:text-gray-500 ${
-                                data?.editable
-                                  ? ''
-                                  : 'cursor-default bg-blue-50/40 read-only:text-gray-800'
-                              }`}
-                              value={draft.message}
-                              onChange={
-                                data?.editable
-                                  ? (e) =>
-                                      updateDraft(item.typeId, { message: e.target.value }, item)
-                                  : undefined
-                              }
-                            />
+                            <div className={`min-w-0 flex-1 ${item.audioFile ? 'grid grid-cols-2 gap-2' : ''}`}>
+                              <input
+                                type="text"
+                                readOnly={!data?.editable}
+                                placeholder="Message"
+                                className={`h-9 w-full rounded border border-gray-300 bg-blue-50/50 px-3 text-sm text-gray-900 placeholder:text-gray-500 ${
+                                  data?.editable
+                                    ? ''
+                                    : 'cursor-default bg-blue-50/40 read-only:text-gray-800'
+                                }`}
+                                value={draft.message}
+                                onChange={
+                                  data?.editable
+                                    ? (e) =>
+                                        updateDraft(item.typeId, { message: e.target.value }, item)
+                                    : undefined
+                                }
+                              />
+                              {item.audioFile && (
+                                <div
+                                  className="flex h-9 min-w-0 items-center rounded border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700"
+                                  title={item.audioFile}
+                                >
+                                  <span className="truncate">{item.audioFile}</span>
+                                </div>
+                              )}
+                            </div>
 
                             <div
                               className="flex shrink-0 items-center gap-1 border-l border-gray-300 pl-2"
@@ -521,6 +535,7 @@ export default function ClubAccessOutcomeSettingsPanel({
                               {item.audioUrl && (
                                 <>
                                   <audio
+                                    key={item.audioUrl}
                                     ref={(el) => {
                                       audioRefs.current[item.typeId] = el;
                                     }}

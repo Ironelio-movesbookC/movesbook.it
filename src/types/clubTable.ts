@@ -55,6 +55,12 @@ export type Member = {
 
   service?: string;
   options?: React.ReactNode;
+
+  // extended archive fields (legacy tables)
+  outcome?: string;
+  hour?: string;
+  direction?: string;
+  source?: string;
 };
 
 export type Column = {

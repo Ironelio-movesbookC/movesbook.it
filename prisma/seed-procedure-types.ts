@@ -13,6 +13,11 @@ const PROCEDURE_TYPES = [
     name: 'Member Expense',
     description: 'Record a member expense with optional partial payments.',
   },
+  {
+    code: 'product_sale',
+    name: 'Product Sale',
+    description: 'Sell a product to a club member with optional payment.',
+  },
 ];
 
 async function main() {
