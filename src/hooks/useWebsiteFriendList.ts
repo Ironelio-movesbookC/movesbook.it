@@ -131,6 +131,14 @@ export function useWebsiteFriendList(
     [scope, ownerId]
   );
 
+  const reload = useCallback(() => {
+    if (!ownerId) {
+      setItems(defaultClubWebsiteFriendItems());
+      return;
+    }
+    setItems(loadWebsiteFriendItems(scope, ownerId));
+  }, [scope, ownerId]);
+
   return {
     items,
     hydrated,
@@ -142,5 +150,6 @@ export function useWebsiteFriendList(
     addPeerTopic,
     moveItem,
     persist,
+    reload,
   };
 }

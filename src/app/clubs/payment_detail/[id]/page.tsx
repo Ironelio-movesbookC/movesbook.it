@@ -2,50 +2,43 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import ServiceArchiveTabs from '@/components/club/services/ServiceArchiveTabs';
-import { clubApiFetch, formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
-
-type Purchase = {
-  id: string;
-  memberName: string;
-  serviceName: string;
-  sectorName: string;
-  value: number;
-  pay: number;
-  rest: number;
-  paydate: string | null;
-  notes: string;
-};
+import ServicePaymentForm, {
+  type ServicePaymentSubmitValues,
+} from '@/components/club/services/ServicePaymentForm';
+import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
+import { getServiceSaleTabs } from '@/components/procedures/configs/serviceSale';
+import {
+  addPayment,
+  fetchFormOptions,
+  fetchPaymentsForRecord,
+  fetchPurchase,
+  type ServiceSaleFormOptions,
+  type ServiceSalePayment,
+  type ServiceSalePurchase,
+} from '@/lib/club/serviceSaleClient';
 
 export default function PaymentDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = String(params?.id ?? '');
 
-  const [purchase, setPurchase] = useState<Purchase | null>(null);
-  const [amountPaid, setAmountPaid] = useState('');
-  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [notes, setNotes] = useState('');
-  const [createReceipt, setCreateReceipt] = useState(false);
-  const [receiptNumber, setReceiptNumber] = useState('');
+  const [purchase, setPurchase] = useState<ServiceSalePurchase | null>(null);
+  const [payments, setPayments] = useState<ServiceSalePayment[]>([]);
+  const [options, setOptions] = useState<ServiceSaleFormOptions | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   const load = useCallback(async () => {
     try {
-      const res = await clubApiFetch<{ purchase: Purchase }>(`/api/club/services/purchases/${id}`);
-      setPurchase({
-        id: res.purchase.id,
-        memberName: res.purchase.memberName,
-        serviceName: res.purchase.serviceName,
-        sectorName: res.purchase.sectorName,
-        value: res.purchase.value,
-        pay: res.purchase.pay,
-        rest: res.purchase.rest,
-        paydate: res.purchase.paydate,
-        notes: res.purchase.notes,
-      });
+      const [purchaseRes, paymentsRes, formOptions] = await Promise.all([
+        fetchPurchase(id),
+        fetchPaymentsForRecord(id, { pageSize: 50 }),
+        fetchFormOptions(),
+      ]);
+      setPurchase(purchaseRes.purchase);
+      setPayments(paymentsRes.items);
+      setOptions(formOptions);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     }
@@ -55,41 +48,39 @@ export default function PaymentDetailPage() {
     load();
   }, [load]);
 
-  const paidAmount = Number(amountPaid) || 0;
-  const newRest = purchase ? Math.max(0, purchase.rest - paidAmount) : 0;
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSubmit(values: ServicePaymentSubmitValues) {
     setError('');
     setSuccess('');
 
-    if (!paidAmount || paidAmount <= 0) {
-      setError('Enter a payment amount greater than 0.');
-      return;
-    }
-    if (purchase && paidAmount > purchase.rest) {
+    if (purchase && values.amountPaid > purchase.rest) {
       setError('Payment exceeds remaining balance.');
       return;
     }
 
     setSaving(true);
     try {
-      await clubApiFetch(`/api/club/services/purchases/${id}`, {
-        method: 'POST',
-        body: JSON.stringify({
-          amountPaid: paidAmount,
-          paymentDate,
-          notes,
-          createReceipt,
-          receiptDocumentType: 'Invoice',
-          receiptNumber: receiptNumber || undefined,
-          receiptAnnotations: notes,
-        }),
+      await addPayment(id, {
+        amountPaid: values.amountPaid,
+        paymentDate: values.paymentDate,
+        description: values.description,
+        payMode: values.payMode,
+        paymentType: values.paymentType,
+        taxDoc: values.taxDoc,
+        operatorId: values.operatorId,
+        operatorPassword: values.operatorPassword,
+        debtTotal: values.debtTotal,
+        debtExpire: values.debtExpire,
+        payWith: values.payWith,
+        taxDocument: values.taxDocument,
+        createReceipt: values.createReceipt,
+        receiptNumber: values.receiptNumber,
+        receiptAnnotations: values.description,
       });
       setSuccess('Payment saved successfully.');
-      setAmountPaid('');
-      setNotes('');
       await load();
+      if (purchase && values.amountPaid >= purchase.rest) {
+        setTimeout(() => router.push('/clubs/archive_service_list'), 1200);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
     } finally {
@@ -97,121 +88,67 @@ export default function PaymentDetailPage() {
     }
   }
 
-  if (!purchase && !error) {
+  if ((!purchase || !options) && !error) {
     return <div className="p-6 text-gray-500">Loading...</div>;
   }
 
   return (
-    <div className="p-4 max-w-3xl mx-auto">
-      <div className="bg-teal-800 text-white px-4 py-3 rounded-t-lg">
-        <h1 className="text-lg font-semibold">Payment — Deadline</h1>
-      </div>
-      <div className="bg-white border border-gray-200 rounded-b-lg p-4">
-        <ServiceArchiveTabs active="deadline" selectedPurchaseId={id} />
+    <div className="p-4 max-w-4xl mx-auto">
+      <ProcedureArchiveShell
+        title="Payment — Deadline"
+        activeTab="deadline"
+        tabs={getServiceSaleTabs('deadline', id)}
+        error={!purchase ? error : undefined}
+      >
+        {purchase && options && (
+          <>
+            <ServicePaymentForm
+              purchase={purchase}
+              payments={payments}
+              options={options}
+              procedureType="service_sale"
+              saving={saving}
+              error={error}
+              success={success}
+              onSubmit={handleSubmit}
+              onCancel={() => router.push('/clubs/dead_line')}
+            />
 
-        {purchase && (
-          <div className="mb-6 p-4 bg-gray-50 rounded border text-sm space-y-1">
-            <p><strong>Member:</strong> {purchase.memberName}</p>
-            <p><strong>Typology:</strong> SERVICES</p>
-            <p><strong>Service slot:</strong> {purchase.serviceName}</p>
-            <p><strong>Section:</strong> {purchase.sectorName}</p>
-            <p><strong>Date:</strong> {formatDate(purchase.paydate)}</p>
-            <p><strong>Total cost:</strong> {formatEuro(purchase.value)}</p>
-            <p><strong>Already paid:</strong> {formatEuro(purchase.pay)}</p>
-            <p><strong>Rest:</strong> <span className="text-red-600 font-semibold">{formatEuro(purchase.rest)}</span></p>
-          </div>
-        )}
-
-        {purchase && purchase.rest <= 0 ? (
-          <div className="text-green-700 bg-green-50 border border-green-200 rounded p-4">
-            This service is fully paid.
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <label className="block">
-                <span className="text-sm text-gray-600">Payment IN (€)</span>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  max={purchase?.rest}
-                  className="mt-1 w-full border rounded px-3 py-2 bg-yellow-50"
-                  value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
-                  required
-                />
-              </label>
-              <label className="block">
-                <span className="text-sm text-gray-600">Payment date</span>
-                <input
-                  type="date"
-                  className="mt-1 w-full border rounded px-3 py-2"
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                  required
-                />
-              </label>
-            </div>
-
-            <div className="text-sm bg-gray-50 p-3 rounded">
-              After payment — Rest: <strong className="text-red-600">{formatEuro(newRest)}</strong>
-            </div>
-
-            <label className="block">
-              <span className="text-sm text-gray-600">Notes</span>
-              <textarea
-                className="mt-1 w-full border rounded px-3 py-2"
-                rows={2}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </label>
-
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={createReceipt}
-                onChange={(e) => setCreateReceipt(e.target.checked)}
-              />
-              Create receipt for this payment
-            </label>
-
-            {createReceipt && (
-              <label className="block">
-                <span className="text-sm text-gray-600">Document No.</span>
-                <input
-                  type="text"
-                  className="mt-1 w-full border rounded px-3 py-2"
-                  placeholder="0001-2026"
-                  value={receiptNumber}
-                  onChange={(e) => setReceiptNumber(e.target.value)}
-                />
-              </label>
+            {success && (
+              <div className="mt-4 flex flex-wrap gap-3 text-sm">
+                <button
+                  type="button"
+                  className="text-teal-700 underline"
+                  onClick={() => router.push('/clubs/archive_service_list')}
+                >
+                  Services archive
+                </button>
+                <button
+                  type="button"
+                  className="text-teal-700 underline"
+                  onClick={() => router.push('/clubs/dead_line')}
+                >
+                  Deadlines
+                </button>
+                <button
+                  type="button"
+                  className="text-teal-700 underline"
+                  onClick={() => router.push('/clubs/service_payments')}
+                >
+                  Payments
+                </button>
+                <button
+                  type="button"
+                  className="text-teal-700 underline"
+                  onClick={() => router.push('/clubs/service_receipts')}
+                >
+                  Receipts
+                </button>
+              </div>
             )}
-
-            {error && <p className="text-red-600 text-sm">{error}</p>}
-            {success && <p className="text-green-700 text-sm">{success}</p>}
-
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-5 py-2 bg-teal-700 text-white rounded hover:bg-teal-800 disabled:opacity-50"
-              >
-                {saving ? 'Saving...' : 'Save payment'}
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push('/clubs/dead_line')}
-                className="px-5 py-2 bg-gray-200 rounded hover:bg-gray-300"
-              >
-                Back to deadlines
-              </button>
-            </div>
-          </form>
+          </>
         )}
-      </div>
+      </ProcedureArchiveShell>
     </div>
   );
 }

@@ -15,7 +15,9 @@ export type OutcomeSettingsResponse = {
   tab: OutcomeSettingsTab;
   editable: boolean;
   primaryLanguageId: number;
+  primaryLanguageName?: string;
   defaultOutcomeLanguage: 'custom' | 'default';
+  outcomeMode?: 'EN' | 'COUNTRY_STANDARD' | 'CUSTOM';
   introParagraph: string;
   items: OutcomeSettingItem[];
 };

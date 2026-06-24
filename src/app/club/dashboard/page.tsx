@@ -121,6 +121,14 @@ function ClubDashboardContent() {
       setClubMainPanel('suggest-movesbook');
       router.replace('/club/dashboard', { scroll: false });
     }
+    if (panel === 'suggest-movesbook') {
+      writeClubWorkspaceTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('suggest-movesbook');
+      router.replace('/club/dashboard', { scroll: false });
+    }
   }, [searchParams, router]);
 
   useEffect(() => {

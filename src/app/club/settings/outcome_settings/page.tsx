@@ -18,7 +18,13 @@ export default function ClubOutcomeSettingsPage() {
       return;
     }
     const params = new URLSearchParams(window.location.search);
-    setClubId(params.get('clubId'));
+    const fromUrl = params.get('clubId');
+    if (fromUrl) {
+      setClubId(fromUrl);
+      return;
+    }
+    const saved = localStorage.getItem('selectedClub');
+    setClubId(saved);
   }, [loading, user, router]);
 
   if (loading || !user) {
@@ -30,7 +36,7 @@ export default function ClubOutcomeSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6">
+    <div className="w-full p-2 md:p-4">
       <ClubAccessOutcomeSettingsPanel
         clubId={clubId}
         onBack={() => router.push('/club/dashboard')}

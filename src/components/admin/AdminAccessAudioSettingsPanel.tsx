@@ -172,14 +172,15 @@ export default function AdminAccessAudioSettingsPanel() {
     typeId: string,
     patch: Partial<{ description: string; code: string; message: string }>,
     item: AccessAudioSettingItem,
-    field: 'description' | 'setting'
+    field: 'description' | 'setting' | 'code'
   ) {
     setDrafts((prev) => ({
       ...prev,
       [typeId]: { ...prev[typeId], ...patch },
     }));
     if (field === 'description' && lang === 0) debouncedSaveDescription(item);
-    if (field === 'setting') debouncedSaveSetting(item);
+    if (field === 'setting' && lang !== 0) debouncedSaveSetting(item);
+    if (field === 'code' && lang === 0) debouncedSaveSetting(item);
   }
 
   const isDefaultTab = lang === 0;
@@ -202,7 +203,10 @@ export default function AdminAccessAudioSettingsPanel() {
       }
     });
 
-    void el.play();
+    void el.play().catch(() => {
+      setToast('Unable to play audio. Re-upload the file or check server storage.');
+      setPlayingId(null);
+    });
     setPlayingId(item.typeId);
     el.onended = () => setPlayingId(null);
   }
@@ -247,6 +251,21 @@ export default function AdminAccessAudioSettingsPanel() {
       const json = await response.json().catch(() => null);
       if (!response.ok) throw new Error(json?.error || 'Upload failed.');
       setToast(json?.message ?? 'Audio uploaded.');
+      const filename = typeof json?.filename === 'string' ? json.filename : null;
+      const audioUrl = typeof json?.audioUrl === 'string' ? json.audioUrl : null;
+      if (filename) {
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            items: prev.items.map((row) =>
+              row.typeId === item.typeId
+                ? { ...row, audioFile: filename, audioUrl: audioUrl ?? row.audioUrl }
+                : row
+            ),
+          };
+        });
+      }
       await load(lang);
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Upload failed.');
@@ -282,6 +301,7 @@ export default function AdminAccessAudioSettingsPanel() {
   }
 
   const languageTabs = [{ id: 0, name: 'Default' }, ...(data?.languages ?? [])];
+  const activeTabName = languageTabs.find((tab) => tab.id === lang)?.name ?? 'Default';
 
   return (
     <div className="p-4 lg:p-6">
@@ -297,21 +317,33 @@ export default function AdminAccessAudioSettingsPanel() {
         </div>
 
         <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium text-gray-600">
+              Currently editing:{' '}
+              <span className="rounded bg-sky-100 px-2 py-0.5 text-sm font-semibold text-sky-800">
+                {activeTabName}
+              </span>
+            </p>
+          </div>
           <div className="flex flex-wrap gap-2">
-            {languageTabs.map((tab) => (
+            {languageTabs.map((tab) => {
+              const isActive = lang === tab.id;
+              return (
               <button
-                key={tab.id}
+                key={tab.id === 0 ? 'default' : `lang-${tab.id}`}
                 type="button"
                 onClick={() => setLang(tab.id)}
+                aria-pressed={isActive}
                 className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
-                  lang === tab.id
-                    ? 'bg-gray-900 text-white'
-                    : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
+                  isActive
+                    ? 'bg-sky-700 text-white shadow-sm ring-2 ring-sky-400 ring-offset-1'
+                    : 'border border-gray-300 bg-white text-gray-700 hover:border-sky-300 hover:bg-sky-50'
                 }`}
               >
                 {tab.name}
               </button>
-            ))}
+            );
+            })}
           </div>
           {data?.introParagraph && (
             <p className="mt-3 text-sm text-gray-600">{data.introParagraph}</p>
@@ -358,7 +390,7 @@ export default function AdminAccessAudioSettingsPanel() {
                       </p>
                     )}
 
-                    <div className="grid gap-3 sm:grid-cols-[120px_1fr]">
+                    <div className={`grid gap-3 ${isDefaultTab ? '' : 'sm:grid-cols-[120px_1fr]'}`}>
                       <div>
                         <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
                           Code
@@ -367,7 +399,7 @@ export default function AdminAccessAudioSettingsPanel() {
                           <input
                             value={draft.code}
                             onChange={(event) =>
-                              updateDraft(item.typeId, { code: event.target.value }, item, 'setting')
+                              updateDraft(item.typeId, { code: event.target.value }, item, 'code')
                             }
                             className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-gray-500"
                           />
@@ -377,19 +409,31 @@ export default function AdminAccessAudioSettingsPanel() {
                           </div>
                         )}
                       </div>
-                      <div>
-                        <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-                          Message
-                        </span>
-                        <input
-                          value={draft.message}
-                          onChange={(event) =>
-                            updateDraft(item.typeId, { message: event.target.value }, item, 'setting')
-                          }
-                          placeholder="Message"
-                          className="h-10 w-full rounded-md border border-sky-200 bg-sky-50 px-3 text-sm outline-none focus:border-sky-400"
-                        />
-                      </div>
+                      {!isDefaultTab && (
+                        <div>
+                          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            Message
+                          </span>
+                          <div className={item.audioFile ? 'grid grid-cols-2 gap-2' : ''}>
+                            <input
+                              value={draft.message}
+                              onChange={(event) =>
+                                updateDraft(item.typeId, { message: event.target.value }, item, 'setting')
+                              }
+                              placeholder="Message"
+                              className="h-10 w-full rounded-md border border-sky-200 bg-sky-50 px-3 text-sm outline-none focus:border-sky-400"
+                            />
+                            {item.audioFile && (
+                              <div
+                                className="flex h-10 min-w-0 items-center rounded-md border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700"
+                                title={item.audioFile}
+                              >
+                                <span className="truncate">{item.audioFile}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 

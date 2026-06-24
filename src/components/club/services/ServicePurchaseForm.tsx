@@ -2,43 +2,116 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { clubApiFetch } from '@/lib/club/servicePurchasesClient';
+import { Eye, EyeOff } from 'lucide-react';
+import ProcedureFormSection, {
+  ProcedureFormCell,
+  ProcedureFormGrid,
+  procedureHighlightInputClass,
+  procedureInputClass,
+  procedureReadonlyInputClass,
+} from '@/components/procedures/ProcedureFormLayout';
+import TaxDocumentModal, { type TaxDocumentFormValues } from '@/components/procedures/TaxDocumentModal';
+import { PAY_MODE_OPTIONS } from '@/lib/procedures/payModes';
+import {
+  createPurchase,
+  fetchFormOptions,
+  fetchMemberDiscount,
+  fetchServiceCost,
+  type ServiceSaleFormOptions,
+} from '@/lib/club/serviceSaleClient';
+import { fetchCompanies } from '@/lib/club/archives/clubArchiveClient';
 
-type Sector = { id: string; name: string };
-type Service = { id: string; name: string; sectorId: string; cost: number };
-type Member = { id: string; name: string };
-
-type FormOptions = {
-  sectors: Sector[];
-  services: Service[];
-  members: Member[];
+type Props = {
+  initialMemberId?: string;
 };
 
-export default function ServicePurchaseForm() {
+function todayDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function nowTime(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function applyDiscount(cost: number, discountPct: number, enabled: boolean): number {
+  if (!enabled || discountPct <= 0) return cost;
+  return Math.round(cost * (1 - discountPct / 100) * 100) / 100;
+}
+
+async function resolveInitialMemberId(
+  options: ServiceSaleFormOptions,
+  initialMemberId: string
+): Promise<string> {
+  const direct = options.members.find((m) => m.id === initialMemberId);
+  if (direct) return direct.id;
+
+  const legacyNumeric = initialMemberId.match(/^\d+$/) ? initialMemberId : null;
+  if (legacyNumeric) {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const clubId = typeof window !== 'undefined' ? localStorage.getItem('selectedClub') : null;
+    const qs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
+    try {
+      const res = await fetch(`/api/club/members/resolve-legacy/${legacyNumeric}${qs}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.memberId) return String(data.memberId);
+    } catch {
+      /* fall through */
+    }
+  }
+
+  return '';
+}
+
+export default function ServicePurchaseForm({ initialMemberId }: Props) {
   const router = useRouter();
-  const [options, setOptions] = useState<FormOptions | null>(null);
+  const [options, setOptions] = useState<ServiceSaleFormOptions | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [taxModalOpen, setTaxModalOpen] = useState(false);
 
   const [memberId, setMemberId] = useState('');
+  const [operatorId, setOperatorId] = useState('');
+  const [operatorPassword, setOperatorPassword] = useState('');
   const [sectorId, setSectorId] = useState('');
   const [serviceId, setServiceId] = useState('');
+  const [baseCost, setBaseCost] = useState(0);
   const [value, setValue] = useState('');
   const [pay, setPay] = useState('');
-  const [paydate, setPaydate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [notes, setNotes] = useState('');
+  const [movementDate, setMovementDate] = useState(todayDate);
+  const [movementTime, setMovementTime] = useState(nowTime);
+  const [paydate, setPaydate] = useState(todayDate);
+  const [causal, setCausal] = useState('');
   const [payMode, setPayMode] = useState('cash');
-  const [createReceipt, setCreateReceipt] = useState(false);
-  const [receiptNumber, setReceiptNumber] = useState('');
-  const [receiptAnnotations, setReceiptAnnotations] = useState('');
+  const [taxDoc, setTaxDoc] = useState(true);
+  const [taxDocument, setTaxDocument] = useState<TaxDocumentFormValues | null>(null);
+  const [discountEnabled, setDiscountEnabled] = useState(true);
+  const [discountPct, setDiscountPct] = useState('0');
+  const [loadingDiscount, setLoadingDiscount] = useState(false);
+  const [companyId, setCompanyId] = useState('');
+  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
-    clubApiFetch<FormOptions>('/api/club/services/purchases?view=form-options')
-      .then(setOptions)
+    fetchFormOptions()
+      .then(async (data) => {
+        setOptions(data);
+        const co = await fetchCompanies().catch(() => []);
+        setCompanies(co);
+        if (co[0]?.id) setCompanyId(co[0].id);
+        if (initialMemberId) {
+          const resolved = await resolveInitialMemberId(data, initialMemberId);
+          if (resolved) setMemberId(resolved);
+        }
+        if (data.currentOperatorId) setOperatorId(data.currentOperatorId);
+        else if (data.operators[0]?.id) setOperatorId(data.operators[0].id);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [initialMemberId]);
 
   const filteredServices = useMemo(() => {
     if (!options) return [];
@@ -53,28 +126,53 @@ export default function ServicePurchaseForm() {
   const rest = Math.max(0, total - paid);
 
   useEffect(() => {
-    if (!serviceId || !options) return;
-    const svc = options.services.find((s) => s.id === serviceId);
-    if (svc) {
-      setValue(String(svc.cost));
-      if (sectorId !== svc.sectorId) setSectorId(svc.sectorId);
+    if (!memberId) {
+      setDiscountPct('0');
+      return;
     }
-  }, [serviceId, options, sectorId]);
+    setLoadingDiscount(true);
+    fetchMemberDiscount(memberId)
+      .then((discount) => {
+        setDiscountPct(String(discount));
+      })
+      .catch(() => setDiscountPct('0'))
+      .finally(() => setLoadingDiscount(false));
+  }, [memberId]);
+
+  useEffect(() => {
+    const pct = Number(discountPct) || 0;
+    const discounted = applyDiscount(baseCost, pct, discountEnabled);
+    setValue(baseCost > 0 ? String(discounted) : '');
+  }, [baseCost, discountPct, discountEnabled]);
 
   async function loadCostFromApi(id: string) {
     try {
-      const data = await clubApiFetch<{ success: boolean; club_currency_cost: number }>(
-        `/api/club/services/cost/${id}`
-      );
-      if (data.success) setValue(String(data.club_currency_cost));
+      const cost = await fetchServiceCost(id);
+      if (cost != null) {
+        setBaseCost(cost);
+        const pct = Number(discountPct) || 0;
+        setValue(String(applyDiscount(cost, pct, discountEnabled)));
+      }
     } catch {
-      /* fallback to cached cost */
+      const svc = options?.services.find((s) => s.id === id);
+      if (svc) {
+        setBaseCost(svc.cost);
+        const pct = Number(discountPct) || 0;
+        setValue(String(applyDiscount(svc.cost, pct, discountEnabled)));
+      }
     }
   }
 
   function handleServiceChange(id: string) {
     setServiceId(id);
-    if (id) loadCostFromApi(id);
+    if (id) {
+      const svc = options?.services.find((s) => s.id === id);
+      if (svc && sectorId !== svc.sectorId) setSectorId(svc.sectorId);
+      loadCostFromApi(id);
+    } else {
+      setBaseCost(0);
+      setValue('');
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -85,25 +183,40 @@ export default function ServicePurchaseForm() {
     if (!serviceId) return setError('Please select a service.');
     if (!value || Number(value) < 0) return setError('Please enter a valid cost.');
     if (paid > total) return setError('Payment cannot exceed total cost.');
+    if (!operatorId) return setError('Please select an operator.');
+    if (!operatorPassword.trim()) return setError('Operator password is required.');
+
+    const selectedSector = options?.sectors.find((s) => s.id === sectorId);
 
     setSaving(true);
     try {
-      const result = await clubApiFetch<{ purchaseId: string }>('/api/club/services/purchases', {
-        method: 'POST',
-        body: JSON.stringify({
-          userId: memberId,
-          sectorId,
-          serviceId,
-          value: total,
-          pay: paid,
-          paydate,
-          notes,
-          payMode,
-          createReceipt: createReceipt && paid > 0,
-          receiptDocumentType: 'Invoice',
-          receiptNumber: receiptNumber || undefined,
-          receiptAnnotations: receiptAnnotations || notes,
-        }),
+      const result = await createPurchase({
+        userId: memberId,
+        sectorId,
+        serviceId,
+        sectorName: selectedSector?.name,
+        serviceName: selectedService?.name,
+        value: total,
+        pay: paid,
+        recordDate: movementDate,
+        movementTime,
+        paydate,
+        causal,
+        payMode,
+        operatorId,
+        operatorPassword,
+        discount: Number(discountPct) || 0,
+        discountApplied: discountEnabled,
+        taxDoc,
+        taxDocument: taxDocument ?? undefined,
+        companyId: companyId || undefined,
+        companyName: companies.find((c) => c.id === companyId)?.name,
+        companyId: companyId || undefined,
+        companyName: companies.find((c) => c.id === companyId)?.name,
+        createReceipt: taxDoc && paid > 0,
+        receiptDocumentType: taxDocument?.documentType ?? 'Invoice',
+        receiptNumber: taxDocument?.documentNumber || undefined,
+        receiptAnnotations: taxDocument?.causal ?? causal,
       });
 
       router.push(`/clubs/archive_service_list?created=${result.purchaseId}`);
@@ -119,202 +232,271 @@ export default function ServicePurchaseForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-4xl mx-auto p-6 space-y-6">
-      <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
-        <div className="bg-gray-100 px-4 py-2 border-b">
-          <h2 className="text-red-700 font-semibold">Movement data</h2>
-        </div>
-        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <label className="block">
-            <span className="text-sm text-gray-600">Member</span>
-            <select
-              className="mt-1 w-full border rounded px-3 py-2"
-              value={memberId}
-              onChange={(e) => setMemberId(e.target.value)}
-            >
-              <option value="">Select member</option>
-              {options?.members.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-sm text-gray-600">Date</span>
-            <input
-              type="date"
-              className="mt-1 w-full border rounded px-3 py-2"
-              value={paydate}
-              onChange={(e) => setPaydate(e.target.value)}
-            />
-          </label>
-          {selectedMember && (
-            <div className="md:col-span-2 text-sm text-gray-700">
-              Selected: <strong>{selectedMember.name}</strong>
-            </div>
-          )}
-        </div>
-      </div>
+    <>
+      <form onSubmit={handleSubmit} className="max-w-4xl mx-auto p-6 space-y-6">
+        <ProcedureFormSection title="Movement data">
+          <ProcedureFormGrid>
+            <ProcedureFormCell label="User Selected">
+              <input
+                type="text"
+                readOnly
+                className={procedureReadonlyInputClass}
+                value={selectedMember?.name ?? ''}
+                placeholder="Select member below"
+              />
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Discount">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={discountEnabled}
+                  onChange={(e) => setDiscountEnabled(e.target.checked)}
+                />
+                <input
+                  type="text"
+                  className={procedureInputClass}
+                  value={discountPct}
+                  onChange={(e) => setDiscountPct(e.target.value)}
+                  placeholder="%"
+                />
+                {loadingDiscount && <span className="text-xs text-gray-500">Loading…</span>}
+              </div>
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Member">
+              <select
+                className={procedureInputClass}
+                value={memberId}
+                onChange={(e) => setMemberId(e.target.value)}
+              >
+                <option value="">Select member</option>
+                {options?.members.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Date">
+              <input
+                type="date"
+                className={procedureInputClass}
+                value={movementDate}
+                onChange={(e) => setMovementDate(e.target.value)}
+              />
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Hour">
+              <input
+                type="time"
+                className={procedureInputClass}
+                value={movementTime}
+                onChange={(e) => setMovementTime(e.target.value)}
+              />
+            </ProcedureFormCell>
+          </ProcedureFormGrid>
+        </ProcedureFormSection>
 
-      <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
-        <div className="bg-gray-100 px-4 py-2 border-b">
-          <h2 className="text-red-700 font-semibold">Service (Typology SERVICES)</h2>
-        </div>
-        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <label className="block">
-            <span className="text-sm text-gray-600">Sector / Typology</span>
-            <select
-              className="mt-1 w-full border rounded px-3 py-2"
-              value={sectorId}
-              onChange={(e) => {
-                setSectorId(e.target.value);
-                setServiceId('');
-              }}
-            >
-              <option value="">Select sector</option>
-              {options?.sectors.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-sm text-gray-600">Service</span>
-            <select
-              className="mt-1 w-full border rounded px-3 py-2"
-              value={serviceId}
-              onChange={(e) => handleServiceChange(e.target.value)}
-            >
-              <option value="">Select service</option>
-              {filteredServices.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-sm text-gray-600">Cost (€)</span>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              className="mt-1 w-full border rounded px-3 py-2"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-            />
-          </label>
-          {selectedService && (
-            <div className="flex items-end text-sm text-gray-600 pb-2">
-              Service slot: <strong className="ml-1">{selectedService.name}</strong>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
-        <div className="bg-gray-100 px-4 py-2 border-b">
-          <h2 className="text-red-700 font-semibold">Payment (optional — leave empty to skip)</h2>
-        </div>
-        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <label className="block">
-            <span className="text-sm text-gray-600">Payment IN (€)</span>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              className="mt-1 w-full border rounded px-3 py-2 bg-yellow-50"
-              value={pay}
-              onChange={(e) => setPay(e.target.value)}
-              placeholder="0 = skip payment"
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm text-gray-600">Payment mode</span>
-            <select
-              className="mt-1 w-full border rounded px-3 py-2"
-              value={payMode}
-              onChange={(e) => setPayMode(e.target.value)}
-            >
-              <option value="cash">Cash</option>
-              <option value="card">Card</option>
-              <option value="transfer">Transfer</option>
-            </select>
-          </label>
-          <div className="md:col-span-2 grid grid-cols-3 gap-2 text-sm bg-gray-50 p-3 rounded">
+        <ProcedureFormSection title="Payment">
+          <ProcedureFormGrid>
+            <ProcedureFormCell label="Sector">
+              <select
+                className={procedureInputClass}
+                value={sectorId}
+                onChange={(e) => {
+                  setSectorId(e.target.value);
+                  setServiceId('');
+                  setBaseCost(0);
+                  setValue('');
+                }}
+              >
+                <option value="">Select sector</option>
+                {options?.sectors.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Service">
+              <select
+                className={procedureInputClass}
+                value={serviceId}
+                onChange={(e) => handleServiceChange(e.target.value)}
+              >
+                <option value="">Select service</option>
+                {filteredServices.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Value">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className={procedureInputClass}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+              />
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Pay">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className={procedureHighlightInputClass}
+                value={pay}
+                onChange={(e) => setPay(e.target.value)}
+                placeholder="0"
+              />
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Date">
+              <input
+                type="date"
+                readOnly
+                className={procedureReadonlyInputClass}
+                value={paydate}
+              />
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Causal">
+              <input
+                type="text"
+                className={procedureInputClass}
+                value={causal}
+                onChange={(e) => setCausal(e.target.value)}
+              />
+            </ProcedureFormCell>
+          </ProcedureFormGrid>
+          <div className="mt-4 grid grid-cols-3 gap-2 text-sm bg-gray-50 p-3 rounded">
             <div>Total: <strong>€{total.toFixed(2)}</strong></div>
             <div>Paid: <strong>€{paid.toFixed(2)}</strong></div>
             <div>Rest: <strong className="text-red-600">€{rest.toFixed(2)}</strong></div>
           </div>
-          <label className="block md:col-span-2">
-            <span className="text-sm text-gray-600">Notes</span>
-            <textarea
-              className="mt-1 w-full border rounded px-3 py-2"
-              rows={2}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </label>
-        </div>
-      </div>
+        </ProcedureFormSection>
 
-      {paid > 0 && (
-        <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
-          <div className="bg-gray-100 px-4 py-2 border-b flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="createReceipt"
-              checked={createReceipt}
-              onChange={(e) => setCreateReceipt(e.target.checked)}
-            />
-            <label htmlFor="createReceipt" className="text-red-700 font-semibold">
-              Create receipt / tax document
-            </label>
-          </div>
-          {createReceipt && (
-            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <label className="block">
-                <span className="text-sm text-gray-600">Document No.</span>
+        <ProcedureFormSection title="Type of payment">
+          <ProcedureFormGrid>
+            <ProcedureFormCell label="Payment method">
+              <select
+                className={procedureInputClass}
+                value={payMode}
+                onChange={(e) => setPayMode(e.target.value)}
+              >
+                {PAY_MODE_OPTIONS.map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Tax document">
+              <div className="flex items-center gap-3 mt-1">
                 <input
-                  type="text"
-                  className="mt-1 w-full border rounded px-3 py-2"
-                  placeholder="e.g. 0001-2026"
-                  value={receiptNumber}
-                  onChange={(e) => setReceiptNumber(e.target.value)}
+                  type="checkbox"
+                  checked={taxDoc}
+                  onChange={(e) => setTaxDoc(e.target.checked)}
                 />
-              </label>
-              <label className="block md:col-span-2">
-                <span className="text-sm text-gray-600">Annotations</span>
-                <textarea
-                  className="mt-1 w-full border rounded px-3 py-2"
-                  rows={2}
-                  value={receiptAnnotations}
-                  onChange={(e) => setReceiptAnnotations(e.target.value)}
+                <button
+                  type="button"
+                  onClick={() => setTaxModalOpen(true)}
+                  className="px-3 py-1.5 text-sm bg-gray-200 rounded hover:bg-gray-300"
+                >
+                  Open form
+                </button>
+              </div>
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Operator">
+              <select
+                className={procedureInputClass}
+                value={operatorId}
+                onChange={(e) => setOperatorId(e.target.value)}
+              >
+                <option value="">Select operator</option>
+                {options?.operators.map((o) => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Password">
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  className={procedureInputClass}
+                  value={operatorPassword}
+                  onChange={(e) => setOperatorPassword(e.target.value)}
+                  autoComplete="current-password"
                 />
-              </label>
-            </div>
-          )}
-        </div>
-      )}
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+                  onClick={() => setShowPassword((v) => !v)}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </ProcedureFormCell>
+          </ProcedureFormGrid>
+        </ProcedureFormSection>
 
-      {error && (
-        <div className="text-red-600 bg-red-50 border border-red-200 rounded px-4 py-2 text-sm">
-          {error}
-        </div>
-      )}
+        <ProcedureFormSection title="Company" titleClassName="text-green-800">
+          <p className="text-center text-sm text-gray-600 mb-4">
+            If activated multi company option you can select the company for the payment
+          </p>
+          <ProcedureFormGrid>
+            <ProcedureFormCell label="Company">
+              <select
+                className={procedureInputClass}
+                value={companyId}
+                onChange={(e) => setCompanyId(e.target.value)}
+              >
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Select type of center revenue in which to put this expense 1">
+              <select className={procedureInputClass} disabled>
+                <option>Cash</option>
+              </select>
+            </ProcedureFormCell>
+            <ProcedureFormCell label="Select the type of center revenue in which to put this expense 2">
+              <select className={procedureInputClass} disabled>
+                <option>Cash</option>
+              </select>
+            </ProcedureFormCell>
+          </ProcedureFormGrid>
+        </ProcedureFormSection>
 
-      <div className="flex gap-3">
-        <button
-          type="submit"
-          disabled={saving}
-          className="px-6 py-2 bg-teal-700 text-white rounded hover:bg-teal-800 disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Save service'}
-        </button>
-        <button
-          type="button"
-          onClick={() => router.push('/clubs/archive_service_list')}
-          className="px-6 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
+        {error && (
+          <div className="text-red-600 bg-red-50 border border-red-200 rounded px-4 py-2 text-sm">
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-center gap-3">
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-6 py-2 bg-red-700 text-white rounded hover:bg-red-800 disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/clubs/archive_service_list')}
+            className="px-6 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+
+      <TaxDocumentModal
+        open={taxModalOpen}
+        memberName={selectedMember?.name ?? ''}
+        defaultTotal={total}
+        defaultResidual={rest}
+        initial={taxDocument ?? undefined}
+        onClose={() => setTaxModalOpen(false)}
+        onSave={(values) => {
+          setTaxDocument(values);
+          setTaxDoc(true);
+        }}
+      />
+    </>
   );
 }

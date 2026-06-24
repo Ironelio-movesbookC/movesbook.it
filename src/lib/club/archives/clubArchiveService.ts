@@ -1,0 +1,675 @@
+import { prisma } from '@/lib/prisma';
+import { findExistingTable } from '@/lib/club/legacyTableLookup';
+import { procedureService } from '@/lib/procedures';
+import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
+import type { ClubAuthContext } from '@/lib/procedures/types';
+import {
+  type ArchiveQueryParams,
+  applyFilters,
+  formatName,
+  num,
+  paginate,
+  queryClubMemberSubscriptions,
+  queryLegacyTableArchive,
+  text,
+  type PaginatedArchive,
+} from '@/lib/club/archives/legacyArchiveQueries';
+
+export type { ArchiveQueryParams, PaginatedArchive };
+
+async function clubMemberUserIds(clubId: string): Promise<string[]> {
+  const rows = await prisma.clubMember.findMany({
+    where: { clubId },
+    select: { memberId: true },
+  });
+  return rows.map((r) => r.memberId);
+}
+
+export async function listClubMembersArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const rows = await prisma.clubMember.findMany({
+    where: { clubId: ctx.club.id },
+    include: {
+      member: {
+        select: {
+          id: true,
+          firstName: true,
+          surname: true,
+          name: true,
+          username: true,
+          image: true,
+          createdAt: true,
+        },
+      },
+    },
+    orderBy: { joinedAt: 'desc' },
+  });
+
+  const items = rows.map((row, i) => ({
+    id: row.member.id,
+    number: i + 1,
+    name: formatName(row.member.firstName, row.member.surname, row.member.name),
+    surname: row.member.surname ?? '',
+    image: row.member.image,
+    memberType: row.membershipType ?? '-',
+    insertDate: row.joinedAt.toISOString().slice(0, 10),
+    operator: '-',
+    typology: row.role ?? 'Member',
+  }));
+
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
+export async function listClubOperatorsArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const table = await findExistingTable(['club_operators', 'club_operator']);
+  const items: Record<string, unknown>[] = [];
+
+  if (table) {
+    const operatorRows = await prisma.$queryRawUnsafe<
+      { id: bigint | number; user_id: bigint | number | null; clubadmin_id: bigint | number | null }[]
+    >(`SELECT id, user_id, clubadmin_id FROM \`${table}\` ORDER BY id DESC LIMIT 500`);
+
+    const userIds = operatorRows.map((r) => String(r.user_id ?? '')).filter(Boolean);
+    const users =
+      userIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, firstName: true, surname: true, name: true, username: true, image: true },
+          })
+        : [];
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    for (const row of operatorRows) {
+      const user = userMap.get(String(row.user_id ?? ''));
+      if (!user) continue;
+      items.push({
+        id: String(row.id),
+        name: formatName(user.firstName, user.surname, user.name),
+        image: user.image,
+        insertDate: '-',
+        typology: 'Operator',
+        operator: user.username,
+      });
+    }
+  } else {
+    const club = await prisma.club.findUnique({
+      where: { id: ctx.club.id },
+      select: {
+        admin: {
+          select: { id: true, firstName: true, surname: true, name: true, username: true, image: true },
+        },
+      },
+    });
+    if (club?.admin) {
+      items.push({
+        id: club.admin.id,
+        name: formatName(club.admin.firstName, club.admin.surname, club.admin.name),
+        image: club.admin.image,
+        insertDate: '-',
+        typology: 'Operator',
+        operator: club.admin.username,
+      });
+    }
+  }
+
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
+export async function listClubAffiliationsArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  return queryClubMemberSubscriptions(ctx.club.id, params);
+}
+
+export async function listClubSubscriptionsArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const table = await findExistingTable(['club_member_subscriptions', 'club_member_subscription']);
+  const items: Record<string, unknown>[] = [];
+
+  if (table) {
+    const rows = await prisma.$queryRawUnsafe<
+      {
+        id: bigint | number;
+        user_id: bigint | number | null;
+        start_date: string | Date | null;
+        end_date: string | Date | null;
+        subscription_name: string | null;
+        amount: string | number | null;
+        installments: string | number | null;
+      }[]
+    >(
+      `SELECT id, user_id, start_date, end_date, subscription_name, amount, installments
+       FROM \`${table}\` WHERE club_id = ? AND (delete_status IS NULL OR delete_status = 0)
+       ORDER BY id DESC LIMIT 500`,
+      ctx.club.id
+    );
+
+    const userIds = rows.map((r) => String(r.user_id ?? '')).filter(Boolean);
+    const users =
+      userIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, firstName: true, surname: true, name: true, image: true },
+          })
+        : [];
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    for (const row of rows) {
+      const user = userMap.get(String(row.user_id ?? ''));
+      items.push({
+        id: String(row.id),
+        name: user ? formatName(user.firstName, user.surname, user.name) : '-',
+        image: user?.image ?? null,
+        service: text(row.subscription_name) || '-',
+        insertDate: row.start_date ? String(row.start_date).slice(0, 10) : '-',
+        dateEnd: row.end_date ? String(row.end_date).slice(0, 10) : '-',
+        value: num(row.amount),
+        installment: text(row.installments) || '-',
+        typology: 'Subscription',
+      });
+    }
+  }
+
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
+async function loadLegacyProductSaleItems(ctx: ClubAuthContext): Promise<Record<string, unknown>[]> {
+  const table = await findExistingTable(['archive_seles', 'archive_sele']);
+  const items: Record<string, unknown>[] = [];
+  if (!table) return items;
+  {
+    const rows = await prisma.$queryRawUnsafe<
+      {
+        id: bigint | number;
+        user_id: bigint | number | null;
+        purchase_date: string | Date | null;
+        total_amount: string | number | null;
+        sector: string | null;
+        status: string | number | null;
+        order_id: string | null;
+      }[]
+    >(
+      `SELECT id, user_id, purchase_date, total_amount, sector, status, order_id
+       FROM \`${table}\` WHERE delete_status = 0
+       ORDER BY id DESC LIMIT 500`
+    );
+
+    const userIds = rows.map((r) => String(r.user_id ?? '')).filter(Boolean);
+    const users =
+      userIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, firstName: true, surname: true, name: true, image: true },
+          })
+        : [];
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    for (const row of rows) {
+      const user = userMap.get(String(row.user_id ?? ''));
+      items.push({
+        id: String(row.id),
+        name: user ? formatName(user.firstName, user.surname, user.name) : '-',
+        image: user?.image ?? null,
+        insertDate: row.purchase_date ? String(row.purchase_date).slice(0, 10) : '-',
+        typology: 'Sellings',
+        casual: text(row.sector) || text(row.order_id),
+        value: num(row.total_amount),
+        status: String(row.status) === '0' ? 'Paid' : 'Not paid',
+      });
+    }
+  }
+  return items;
+}
+
+export async function listUnifiedProductSales(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const items = await loadLegacyProductSaleItems(ctx);
+
+  try {
+    const procedure = await procedureService.listRecords(ctx, PROCEDURE_TYPE_CODES.PRODUCT_SALE, {
+      page: 1,
+      pageSize: 500,
+    });
+    for (const row of procedure.items) {
+      const meta = (row.metadata ?? {}) as Record<string, unknown>;
+      items.push({
+        id: `proc-${row.id}`,
+        name: row.memberName,
+        image: null,
+        insertDate: row.recordDate,
+        typology: 'Sellings',
+        casual: text(meta.sector) || text(meta.productName) || row.notes || '-',
+        value: row.totalAmount,
+        status: row.balanceAmount > 0 ? 'Not paid' : 'Paid',
+        source: 'procedure',
+      });
+    }
+  } catch {
+    // product_sale procedure type may not be seeded yet
+  }
+
+  items.sort((a, b) => String(b.insertDate).localeCompare(String(a.insertDate)));
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
+export async function listLegacyProductSales(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  return listUnifiedProductSales(ctx, params);
+}
+
+export async function listAccessesArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const memberIds = await clubMemberUserIds(ctx.club.id);
+  const result = await queryLegacyTableArchive(
+    ['club_access_controls'],
+    (row, userMap) => {
+      const uid = String(row.user_id ?? '');
+      if (memberIds.length > 0 && !memberIds.includes(uid)) return null;
+      const user = userMap.get(uid);
+      return {
+        id: String(row.id),
+        name: user ? formatName(user.firstName, user.surname, user.name) : '-',
+        image: user?.image ?? null,
+        outcome: text(row.outcome),
+        insertDate: row.date ? String(row.date).slice(0, 10) : '-',
+        hour: text(row.hour) || '-',
+        typology: 'Access',
+      };
+    },
+    `SELECT id, user_id, date, hour, outcome FROM \`{table}\` ORDER BY date DESC, hour DESC LIMIT 1000`,
+    [],
+    params
+  );
+  return result;
+}
+
+export async function listReservationsArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  return queryLegacyTableArchive(
+    ['reservations'],
+    (row, userMap) => {
+      const user = userMap.get(String(row.user_id ?? ''));
+      return {
+        id: String(row.id),
+        name: text(row.name) || (user ? formatName(user.firstName, user.surname, user.name) : '-'),
+        image: user?.image ?? null,
+        course: text(row.course_name) || text(row.course) || '-',
+        insertDate: row.date ? String(row.date).slice(0, 10) : text(row.reservation_date).slice(0, 10) || '-',
+        typology: 'Reservation',
+        status: text(row.status) || '-',
+      };
+    },
+    `SELECT id, user_id, name, course_name, course, date, reservation_date, status
+     FROM \`{table}\` WHERE club_id = ? ORDER BY id DESC LIMIT 1000`,
+    [ctx.club.id],
+    params
+  );
+}
+
+export async function listCardAssignmentsArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const tables = [
+    'card_rfidbadges_pool_allocations',
+    'card_rfidbracelets_pool_allocations',
+  ];
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const items: Record<string, unknown>[] = [];
+
+  for (const candidate of tables) {
+    const table = await findExistingTable([candidate]);
+    if (!table) continue;
+    try {
+      const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+        `SELECT id, user_id, card_number, badge_number, assigned_date, created, modified
+         FROM \`${table}\` ORDER BY id DESC LIMIT 500`
+      );
+      const userIds = rows.map((r) => String(r.user_id ?? '')).filter(Boolean);
+      const users = userIds.length
+        ? await prisma.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, firstName: true, surname: true, name: true, image: true },
+          })
+        : [];
+      const userMap = new Map(users.map((u) => [u.id, u]));
+      for (const row of rows) {
+        const user = userMap.get(String(row.user_id ?? ''));
+        items.push({
+          id: `${table}-${row.id}`,
+          name: user ? formatName(user.firstName, user.surname, user.name) : '-',
+          image: user?.image ?? null,
+          casual: text(row.card_number) || text(row.badge_number) || '-',
+          insertDate: row.assigned_date
+            ? String(row.assigned_date).slice(0, 10)
+            : row.created
+              ? String(row.created).slice(0, 10)
+              : '-',
+          typology: table.includes('bracelet') ? 'Bracelet' : 'Badge',
+        });
+      }
+    } catch {
+      // skip table variant
+    }
+  }
+
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
+export async function listEventsArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  return queryLegacyTableArchive(
+    ['events'],
+    (row) => ({
+      id: String(row.id),
+      name: text(row.title) || text(row.name) || text(row.event_name) || '-',
+      insertDate: row.date ? String(row.date).slice(0, 10) : row.start_date ? String(row.start_date).slice(0, 10) : '-',
+      typology: text(row.typology) || text(row.event_type) || 'Event',
+      casual: text(row.description) || '-',
+      status: text(row.status) || '-',
+    }),
+    `SELECT id, title, name, event_name, date, start_date, typology, event_type, description, status
+     FROM \`{table}\` WHERE club_id = ? OR user_id = ? ORDER BY id DESC LIMIT 1000`,
+    [ctx.club.id, ctx.userId],
+    params
+  );
+}
+
+export async function listPollsArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  return queryLegacyTableArchive(
+    ['polls'],
+    (row) => ({
+      id: String(row.id),
+      name: text(row.question) || text(row.title) || text(row.name) || '-',
+      insertDate: row.created ? String(row.created).slice(0, 10) : row.start_date ? String(row.start_date).slice(0, 10) : '-',
+      typology: 'Poll',
+      status: text(row.status) || '-',
+    }),
+    `SELECT id, question, title, name, created, start_date, status
+     FROM \`{table}\` WHERE club_id = ? OR user_id = ? ORDER BY id DESC LIMIT 1000`,
+    [ctx.club.id, ctx.userId],
+    params
+  );
+}
+
+export async function listMarketingContactsArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  return queryLegacyTableArchive(
+    ['club_setting_contacts', 'club_setting_contact'],
+    (row) => ({
+      id: String(row.id),
+      name: text(row.name) || text(row.contact_name) || '-',
+      casual: text(row.email) || text(row.phone) || '-',
+      insertDate: row.created ? String(row.created).slice(0, 10) : '-',
+      typology: text(row.contact_type) || 'Marketing',
+    }),
+    `SELECT id, name, contact_name, email, phone, contact_type, created
+     FROM \`{table}\` WHERE club_id = ? ORDER BY id DESC LIMIT 1000`,
+    [ctx.club.id],
+    params
+  );
+}
+
+export async function listAlertsAssignedArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const tables = ['member_alert_users', 'panel_control_alerts', 'automatic_alerts'];
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const items: Record<string, unknown>[] = [];
+
+  for (const candidate of tables) {
+    const table = await findExistingTable([candidate]);
+    if (!table) continue;
+    try {
+      const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+        `SELECT id, user_id, member_id, alert_type, title, message, created, date
+         FROM \`${table}\` ORDER BY id DESC LIMIT 400`
+      );
+      const userIds = rows.flatMap((r) => [String(r.user_id ?? ''), String(r.member_id ?? '')]).filter(Boolean);
+      const users = userIds.length
+        ? await prisma.user.findMany({
+            where: { id: { in: Array.from(new Set(userIds)) } },
+            select: { id: true, firstName: true, surname: true, name: true, image: true },
+          })
+        : [];
+      const userMap = new Map(users.map((u) => [u.id, u]));
+      for (const row of rows) {
+        const uid = String(row.user_id ?? row.member_id ?? '');
+        const user = userMap.get(uid);
+        items.push({
+          id: `${table}-${row.id}`,
+          name: user ? formatName(user.firstName, user.surname, user.name) : text(row.title) || '-',
+          image: user?.image ?? null,
+          casual: text(row.message) || text(row.alert_type) || '-',
+          insertDate: row.date ? String(row.date).slice(0, 10) : row.created ? String(row.created).slice(0, 10) : '-',
+          typology: 'Alert',
+        });
+      }
+    } catch {
+      // column mismatch on legacy table
+    }
+  }
+
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
+export async function listAdvertisingCampaignsArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  return queryLegacyTableArchive(
+    ['campaigns'],
+    (row) => ({
+      id: String(row.id),
+      name: text(row.name) || text(row.title) || '-',
+      insertDate: row.start_date ? String(row.start_date).slice(0, 10) : '-',
+      dateEnd: row.end_date ? String(row.end_date).slice(0, 10) : '-',
+      typology: 'Campaign',
+      status: text(row.status) || '-',
+    }),
+    `SELECT id, name, title, start_date, end_date, status
+     FROM \`{table}\` WHERE club_id = ? OR user_id = ? ORDER BY id DESC LIMIT 1000`,
+    [ctx.club.id, ctx.userId],
+    params
+  );
+}
+
+export async function listStaffQueriesArchive(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  return queryLegacyTableArchive(
+    ['supportcontactmails', 'supportcontactmail'],
+    (row, userMap) => {
+      const user = userMap.get(String(row.user_id ?? ''));
+      return {
+        id: String(row.id),
+        name: user ? formatName(user.firstName, user.surname, user.name) : text(row.name) || '-',
+        image: user?.image ?? null,
+        casual: text(row.subject) || text(row.message) || '-',
+        insertDate: row.created ? String(row.created).slice(0, 10) : row.date ? String(row.date).slice(0, 10) : '-',
+        typology: 'Staff query',
+        status: text(row.status) || '-',
+      };
+    },
+    `SELECT id, user_id, name, subject, message, created, date, status
+     FROM \`{table}\` WHERE club_id = ? OR user_id = ? ORDER BY id DESC LIMIT 1000`,
+    [ctx.club.id, ctx.userId],
+    params
+  );
+}
+
+export async function listCashMovements(
+  ctx: ClubAuthContext,
+  direction: 'all' | 'IN' | 'OUT',
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const items: Record<string, unknown>[] = [];
+
+  if (direction === 'all' || direction === 'IN') {
+    const servicePayments = await procedureService.listPayments(ctx, PROCEDURE_TYPE_CODES.SERVICE_SALE, {
+      page: 1,
+      pageSize: 500,
+    });
+    for (const p of servicePayments.items) {
+      items.push({
+        id: `in-${p.id}`,
+        name: p.memberName,
+        typology: p.typology,
+        service: p.serviceName,
+        insertDate: p.paymentDate,
+        paid: p.amount,
+        direction: 'IN',
+        payMod: p.payMode,
+        casual: p.notes,
+        operator: p.operatorName,
+      });
+    }
+
+    const productPayments = await procedureService.listPayments(ctx, PROCEDURE_TYPE_CODES.PRODUCT_SALE, {
+      page: 1,
+      pageSize: 500,
+    }).catch(() => ({ items: [] as typeof servicePayments.items }));
+    for (const p of productPayments.items) {
+      items.push({
+        id: `pin-${p.id}`,
+        name: p.memberName,
+        typology: p.typology,
+        service: p.serviceName,
+        insertDate: p.paymentDate,
+        paid: p.amount,
+        direction: 'IN',
+        payMod: p.payMode,
+        casual: p.notes,
+        operator: p.operatorName,
+      });
+    }
+  }
+
+  if (direction === 'all' || direction === 'OUT') {
+    const expensePayments = await procedureService.listPayments(ctx, PROCEDURE_TYPE_CODES.EXPENSE, {
+      page: 1,
+      pageSize: 500,
+    });
+    for (const p of expensePayments.items) {
+      items.push({
+        id: `out-${p.id}`,
+        name: p.memberName,
+        typology: p.typology,
+        service: p.serviceName,
+        insertDate: p.paymentDate,
+        paid: p.amount,
+        direction: 'OUT',
+        payMod: p.payMode,
+        casual: p.notes,
+        operator: p.operatorName,
+      });
+    }
+  }
+
+  items.sort((a, b) => String(b.insertDate).localeCompare(String(a.insertDate)));
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
+export async function listInsertCredits(
+  ctx: ClubAuthContext,
+  params: ArchiveQueryParams = {}
+): Promise<PaginatedArchive<Record<string, unknown>>> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  const table = await findExistingTable(['insert_credits', 'insert_credit']);
+  const items: Record<string, unknown>[] = [];
+
+  if (table) {
+    const rows = await prisma.$queryRawUnsafe<
+      {
+        id: bigint | number;
+        user_id: bigint | number | null;
+        credit_available: string | number | null;
+        last_annotations: string | number | null;
+        modified: string | Date | null;
+        operator_id: bigint | number | null;
+      }[]
+    >(`SELECT id, user_id, credit_available, last_annotations, modified, operator_id
+       FROM \`${table}\` ORDER BY modified DESC LIMIT 500`);
+
+    const userIds = rows.flatMap((r) => [String(r.user_id ?? ''), String(r.operator_id ?? '')]).filter(Boolean);
+    const users =
+      userIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: Array.from(new Set(userIds)) } },
+            select: { id: true, firstName: true, surname: true, name: true, image: true },
+          })
+        : [];
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    for (const row of rows) {
+      const member = userMap.get(String(row.user_id ?? ''));
+      const operator = userMap.get(String(row.operator_id ?? ''));
+      items.push({
+        id: String(row.id),
+        name: member ? formatName(member.firstName, member.surname, member.name) : '-',
+        image: member?.image ?? null,
+        value: num(row.credit_available),
+        paid: num(row.last_annotations),
+        insertDate: row.modified ? String(row.modified).slice(0, 10) : '-',
+        operator: operator ? formatName(operator.firstName, operator.surname, operator.name) : '-',
+        typology: 'Credit voucher',
+      });
+    }
+  }
+
+  return paginate(applyFilters(items, params), page, pageSize);
+}
+
+export async function listCompanies(ctx: ClubAuthContext): Promise<{ id: string; name: string }[]> {
+  const table = await findExistingTable(['multifactories', 'multifactory']);
+  if (!table) {
+    return [{ id: 'default', name: 'Default company' }];
+  }
+
+  const rows = await prisma.$queryRawUnsafe<{ id: bigint | number; name: string | null }[]>(
+    `SELECT id, name FROM \`${table}\` WHERE club_id = ? OR user_id = ? ORDER BY name ASC`,
+    ctx.club.id,
+    ctx.userId
+  );
+
+  const companies = rows.map((r) => ({ id: String(r.id), name: text(r.name) || `Company ${r.id}` }));
+  return companies.length > 0 ? companies : [{ id: 'default', name: 'Default company' }];
+}

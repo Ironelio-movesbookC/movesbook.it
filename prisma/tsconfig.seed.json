@@ -15,10 +15,16 @@
     },
     "include": [
       "seed.ts",
+      "seed-outcomes.ts",
+      "seed-procedure-types.ts",
+      "../scripts/migrate-outcomes-from-legacy.ts",
       "../src/lib/news/contentParser.ts",
       "../src/constants/**/*.ts",
       "../src/lib/promocodes/**/*.ts",
       "../src/lib/outcomeSettingsDb.ts",
+      "../src/lib/outcomeSettingsSeed.ts",
+      "../src/lib/outcomes/**/*.ts",
+      "../src/lib/club/legacyTableLookup.ts",
       "../src/lib/prisma.ts",
       "../src/lib/users/quickRegisterSubscriptionSeed.ts"
     ]

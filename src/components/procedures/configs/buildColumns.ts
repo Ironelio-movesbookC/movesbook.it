@@ -1,0 +1,71 @@
+import type { Column } from '@/types/clubTable';
+import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
+import type { ProcedureDefinition } from '@/lib/procedures/registry';
+
+/** Build archive table columns from a procedure registry entry. */
+export function buildProcedureColumns(def: ProcedureDefinition) {
+  const primaryKey = 'service' as const;
+  const secondaryKey = 'course' as const;
+
+  const primaryCol: Column = {
+    key: primaryKey,
+    header: def.columnHeaders.primary,
+  };
+  const secondaryCol: Column | null = def.columnHeaders.secondary
+    ? { key: secondaryKey, header: def.columnHeaders.secondary }
+    : null;
+
+  const recordColumns: Column[] = [
+    { key: 'number', header: 'N' },
+    { key: 'name', header: 'Full Name' },
+    { key: 'typology', header: 'Typology' },
+    primaryCol,
+    ...(secondaryCol ? [secondaryCol] : []),
+    { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
+    { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
+    { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
+    { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
+    { key: 'casual', header: 'Notes' },
+    { key: 'operator', header: 'Operator' },
+    { key: 'options', header: 'Delete' },
+  ];
+
+  const deadlineColumns: Column[] = [
+    { key: 'name', header: 'Full Name' },
+    { key: 'typology', header: 'Typology' },
+    primaryCol,
+    { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
+    { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
+    { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
+    { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
+    { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
+    { key: 'casual', header: 'Notes' },
+    { key: 'operator', header: 'Operator' },
+  ];
+
+  const paymentColumns: Column[] = [
+    { key: 'name', header: 'Full Name' },
+    { key: 'typology', header: 'Typology' },
+    primaryCol,
+    { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
+    { key: 'paid', header: 'Payment IN', render: (v) => formatEuro(v) },
+    { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
+    { key: 'casual', header: 'Notes' },
+    { key: 'operator', header: 'Operator' },
+  ];
+
+  const receiptColumns: Column[] = [
+    { key: 'name', header: 'Full Name' },
+    { key: 'typology', header: 'Typology' },
+    primaryCol,
+    { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
+    { key: 'category', header: 'Document' },
+    { key: 'contract', header: 'No. of document' },
+    { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
+    { key: 'paid', header: 'Payment IN', render: (v) => formatEuro(v) },
+    { key: 'casual', header: 'Annotations' },
+    { key: 'operator', header: 'Operator' },
+  ];
+
+  return { recordColumns, deadlineColumns, paymentColumns, receiptColumns, primaryKey, secondaryKey };
+}
