@@ -1,7 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, FolderOpen, Info, Loader2 } from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext';
+import {
+  fetchIdentificationDevicesInfoText,
+  IDENTIFICATION_DEVICES_INFO_DEFAULT_EN,
+  parseIdentificationDevicesInfoSections
+} from '@/constants/identificationDevicesInfoLongText';
 import type { CardReaderListItem, CardReaderOption } from '@/types/clubCardReaders';
 import ClubCardReaderFormModal from './ClubCardReaderFormModal';
 import ClubCardReaderDeleteConfirmModal from './ClubCardReaderDeleteConfirmModal';
@@ -19,12 +25,15 @@ function readerLabel(row: CardReaderListItem): string {
 }
 
 export default function ClubIdentificationDevicesPanel({ clubId }: ClubIdentificationDevicesPanelProps) {
+  const { currentLanguage } = useLanguage();
   const [items, setItems] = useState<CardReaderListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [helpOpen, setHelpOpen] = useState(false);
+  const [helpBody, setHelpBody] = useState(IDENTIFICATION_DEVICES_INFO_DEFAULT_EN);
+  const [helpLoading, setHelpLoading] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -74,6 +83,27 @@ export default function ClubIdentificationDevicesPanel({ clubId }: ClubIdentific
     const timer = window.setTimeout(() => setSuccessMessage(null), 5000);
     return () => window.clearTimeout(timer);
   }, [successMessage]);
+
+  useEffect(() => {
+    if (!helpOpen) return;
+
+    let cancelled = false;
+    setHelpLoading(true);
+
+    void fetchIdentificationDevicesInfoText(currentLanguage)
+      .then((text) => {
+        if (!cancelled) setHelpBody(text);
+      })
+      .finally(() => {
+        if (!cancelled) setHelpLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [helpOpen, currentLanguage]);
+
+  const helpSections = useMemo(() => parseIdentificationDevicesInfoSections(helpBody), [helpBody]);
 
   async function handleDeleteConfirm() {
     if (!selectedId) return;
@@ -226,12 +256,28 @@ export default function ClubIdentificationDevicesPanel({ clubId }: ClubIdentific
 
       {helpOpen && (
         <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-gray-800">
-          <p className="font-semibold text-red-700">
-            Here you can select the activities that every reader must control.
-          </p>
-          <p className="mt-2">
-            Add new readers, set their control mode, and assign activities or services depending on the reader type.
-          </p>
+          {helpLoading ? (
+            <div className="flex items-center gap-2 text-gray-600">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading help…
+            </div>
+          ) : helpSections.html ? (
+            <div
+              className="prose prose-sm max-w-none text-gray-800 [&_p:first-child]:font-semibold [&_p:first-child]:text-red-700"
+              dangerouslySetInnerHTML={{ __html: helpSections.html }}
+            />
+          ) : (
+            <>
+              {helpSections.title ? (
+                <p className="font-semibold text-red-700 whitespace-pre-wrap">{helpSections.title}</p>
+              ) : null}
+              {helpSections.paragraphs.map((paragraph, index) => (
+                <p key={index} className={`${index === 0 && !helpSections.title ? '' : 'mt-2'} whitespace-pre-wrap`}>
+                  {paragraph}
+                </p>
+              ))}
+            </>
+          )}
         </div>
       )}
 

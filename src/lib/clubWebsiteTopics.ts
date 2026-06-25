@@ -86,8 +86,38 @@ export function topicToSettingsFormItem(topic: ClubWebsiteTopic) {
   };
 }
 
+export function clearClubWebsiteTopicContent(): Pick<
+  ClubWebsiteTopic,
+  'contentsByLang' | 'keywordsByLang' | 'lastUpdate'
+> {
+  return {
+    contentsByLang: emptyClubWebsiteLangRecord(),
+    keywordsByLang: emptyClubWebsiteLangRecord(),
+    lastUpdate: '',
+  };
+}
+
 function storageKey(clubId: string): string {
   return `${STORAGE_PREFIX}:${clubId}`;
+}
+
+function removedTestTopicsMigrationKey(clubId: string): string {
+  return `${STORAGE_PREFIX}-removed:${clubId}:123-football`;
+}
+
+const REMOVED_TEST_TOPIC_NAMES = new Set(['123', 'football']);
+
+function stripRemovedTestTopics(clubId: string, topics: ClubWebsiteTopic[]): ClubWebsiteTopic[] {
+  if (typeof window === 'undefined' || !clubId) return topics;
+  if (localStorage.getItem(removedTestTopicsMigrationKey(clubId))) return topics;
+
+  const cleaned = topics.filter((topic) => !REMOVED_TEST_TOPIC_NAMES.has(topic.name.trim()));
+  localStorage.setItem(removedTestTopicsMigrationKey(clubId), '1');
+  if (cleaned.length !== topics.length) {
+    localStorage.setItem(storageKey(clubId), JSON.stringify(cleaned));
+    dispatchClubWebsiteSettingsChanged(clubId);
+  }
+  return cleaned;
 }
 
 export function loadClubWebsiteTopics(clubId: string): ClubWebsiteTopic[] {
@@ -96,7 +126,10 @@ export function loadClubWebsiteTopics(clubId: string): ClubWebsiteTopic[] {
     const raw = localStorage.getItem(storageKey(clubId));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Partial<ClubWebsiteTopic>[];
-    return Array.isArray(parsed) ? parsed.map((t) => normalizeClubWebsiteTopic(t as ClubWebsiteTopic)) : [];
+    const topics = Array.isArray(parsed)
+      ? parsed.map((t) => normalizeClubWebsiteTopic(t as ClubWebsiteTopic))
+      : [];
+    return stripRemovedTestTopics(clubId, topics);
   } catch {
     return [];
   }

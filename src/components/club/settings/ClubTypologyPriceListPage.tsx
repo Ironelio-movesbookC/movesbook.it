@@ -155,6 +155,7 @@ export default function ClubTypologyPriceListPage() {
               onClick={async () => {
                 const row = requireSelection();
                 if (!row) return;
+                if (!window.confirm('Do you want to copy this item?')) return;
                 setCopying(true);
                 try {
                   const token = localStorage.getItem('token');

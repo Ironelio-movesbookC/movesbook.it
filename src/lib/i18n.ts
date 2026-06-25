@@ -348,6 +348,50 @@ export interface LanguageStrings {
         'sidebar_actions_settings': 'Actions settings',
         'sidebar_action_settings_mb': 'Action settings by MB',
         'sidebar_chat_content': 'Chat panel content will be displayed here.',
+
+        // Messages / Reviews / Support rail (legacy PHP right strip)
+        'messages_rail_toggle_expand': 'Show messages & support tools',
+        'messages_rail_toggle_collapse': 'Hide strip',
+        'messages_rail_version': 'Version history',
+        'messages_rail_reviews': 'Reviews',
+        'messages_rail_support': 'Your support',
+        'messages_panel_title': 'Messages & support',
+        'messages_panel_close': 'Close',
+        'messages_panel_loading': 'Loading…',
+        'messages_version_heading': 'Movesbook Next',
+        'messages_version_intro': 'Release notes for the Next.js app will be listed here.',
+        'messages_back_to_list': 'Back to list',
+        'messages_reply_placeholder': 'Write a reply…',
+        'messages_send': 'Send',
+        'messages_staff_badge': 'Staff',
+        'messages_error_send': 'Could not send. Check you are logged in and try again.',
+        'messages_error_load_thread': 'Could not load this thread.',
+        'staff_open_new_tab': 'Open in a new tab',
+        'staff_posted_by_users': 'Posted by the users',
+        'staff_my_reviews_list': 'Your reviews',
+        'staff_all_languages': 'All languages',
+        'staff_all': 'All',
+        'staff_recent': 'Recent',
+        'staff_post_by_me': 'Post by me',
+        'staff_posted_by_label': 'Posted by',
+        'staff_reply': 'Reply',
+        'staff_mark_spam': 'Mark as spam',
+        'staff_post_new': 'Post new',
+        'staff_send_to_movesbook': 'Send to the movebook staff',
+        'staff_cat_feedback': 'Feedback',
+        'staff_cat_question': 'Question',
+        'staff_cat_suggestion': 'Suggestions',
+        'staff_cat_problem': 'Problems',
+        'staff_select_language': 'Select Your language',
+        'staff_select_language_placeholder': 'Select Your language',
+        'staff_object': 'Object',
+        'staff_path_staff': 'Path (for Movesbook staff)',
+        'staff_error_message': 'Error message (for Movesbook staff)',
+        'staff_communicate_note': 'Message',
+        'staff_communicate_placeholder': 'Type here what you want comunicate to us',
+        'staff_post_button': 'Post',
+        'staff_empty_feed': 'No posts yet. Be the first to share feedback.',
+        'staff_empty_reviews': 'You have no reviews yet.',
         
         // Left Sidebar (DarkSidebar)
         'sidebar_my_page': 'My Page',
@@ -425,6 +469,9 @@ export interface LanguageStrings {
         'sidebar_club_topics_settings_aria': 'Manage club topics',
         'sidebar_my_topics': 'My Topics',
         'sidebar_my_topics_settings_aria': 'Manage My Topics',
+        'modal_select_club_for_topics_title': 'Select a club to view topics',
+        'modal_select_club_for_topics_empty':
+          'No clubs available. Create a club from My clubs to manage topics.',
         'sidebar_display': 'Display',
         'modal_club_youtube_channel_title': 'Input your channel YouTube url.',
         'modal_club_youtube_no_club':
@@ -477,6 +524,8 @@ export interface LanguageStrings {
         'club_website_display_bacheca_hint':
           'Club bulletin board content is managed in the website editor.',
         'club_website_display_no_topics': 'No club topics are visible yet.',
+        'club_website_display_example_note':
+          'This is an example of the page displayed to the users',
         'club_bacheca_title': "Club's bacheca",
         'club_bacheca_intro':
           "The club's operators can enter here documents and information using 14 different type of customizable themes.",
@@ -511,6 +560,8 @@ export interface LanguageStrings {
           'Authorized users will always be those of the topic in which this subtopic will be inserted.',
         'club_subtopic_delete_content': 'Delete subtopic content',
         'club_subtopic_delete_content_confirm': 'Delete all content for this subtopic?',
+        'club_topic_delete_content': 'Delete topic content',
+        'club_topic_delete_content_confirm': 'Delete all content for this topic?',
         'club_topic_enable': 'Enable Topic',
         'club_topic_edit_name': 'Edit topic name',
         'club_topic_show_in_club_dashboard': 'Show in My Club - Dashboard - Club topics',
@@ -1536,6 +1587,9 @@ export interface LanguageStrings {
         'sidebar_club_topics_settings_aria': 'Gestionar temas del club',
         'sidebar_my_topics': 'Mis temas',
         'sidebar_my_topics_settings_aria': 'Gestionar Mis temas',
+        'modal_select_club_for_topics_title': 'Selecciona un club para ver los temas',
+        'modal_select_club_for_topics_empty':
+          'No hay clubes disponibles. Crea un club desde Mis clubes para gestionar temas.',
         'sidebar_display': 'Mostrar',
         'modal_club_youtube_channel_title': 'Introduce la URL del canal de YouTube.',
         'modal_club_youtube_no_club':
@@ -1588,6 +1642,8 @@ export interface LanguageStrings {
         'club_website_display_bacheca_hint':
           'El contenido del tablón del club se gestiona en el editor del sitio web.',
         'club_website_display_no_topics': 'Aún no hay temas del club visibles.',
+        'club_website_display_example_note':
+          'Este es un ejemplo de la página mostrada a los usuarios',
         'club_bacheca_title': 'Bacheca del club',
         'club_bacheca_intro':
           'Los operadores del club pueden introducir aquí documentos e información con 14 temas personalizables.',
@@ -1623,6 +1679,8 @@ export interface LanguageStrings {
           'Los usuarios autorizados serán siempre los del tema en el que se insertará este subtema.',
         'club_subtopic_delete_content': 'Eliminar contenido del subtema',
         'club_subtopic_delete_content_confirm': '¿Eliminar todo el contenido de este subtema?',
+        'club_topic_delete_content': 'Eliminar contenido del tema',
+        'club_topic_delete_content_confirm': '¿Eliminar todo el contenido de este tema?',
         'club_topic_enable': 'Activar tema',
         'club_topic_edit_name': 'Editar nombre del tema',
         'club_topic_show_in_club_dashboard': 'Mostrar en My Club - Dashboard - Temas del club',

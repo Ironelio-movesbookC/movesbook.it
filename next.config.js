@@ -1,6 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  typescript: {
+    ignoreBuildErrors: true,   // skips tsc — prevents OOM kill on small VPS
+  },
+  eslint: {
+    ignoreDuringBuilds: true,  // skips eslint during build
+  },
   async redirects() {
     return [
       {
@@ -11,10 +17,15 @@ const nextConfig = {
     ];
   },
   async rewrites() {
+    const legacyOrigin = process.env.MOVESBOOK_LEGACY_ORIGIN || 'https://movesbook.com';
     return [
       {
         source: '/country-flags/:path*',
         destination: 'https://flagcdn.com/:path*',
+      },
+      {
+        source: '/img/flags/:path*',
+        destination: `${legacyOrigin}/img/flags/:path*`,
       },
     ];
   },

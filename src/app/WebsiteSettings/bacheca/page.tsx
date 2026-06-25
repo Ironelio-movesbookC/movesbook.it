@@ -15,16 +15,23 @@ export default function ClubWebsiteBachecaPage() {
       }
     >
       <ClubWebsiteSettingsPageShell>
-        {(ctx) => (
-          <ClubBachecaEditor
-            clubDisplayName={ctx.clubDisplayName}
-            adminDisplayName={ctx.adminDisplayName}
-            clubType={ctx.clubType}
-            adminCountry={ctx.adminCountry}
-            adminLocality={ctx.adminLocality}
-            logoImageUrl={ctx.logoImageUrl}
-          />
-        )}
+        {(ctx) =>
+          ctx.clubId ? (
+            <ClubBachecaEditor
+              clubId={ctx.clubId}
+              clubDisplayName={ctx.clubDisplayName}
+              adminDisplayName={ctx.adminDisplayName}
+              clubType={ctx.clubType}
+              adminCountry={ctx.adminCountry}
+              adminLocality={ctx.adminLocality}
+              logoImageUrl={ctx.logoImageUrl}
+            />
+          ) : (
+            <p className="py-12 text-center text-sm text-zinc-600">
+              No club selected. Create or select a club from the dashboard first.
+            </p>
+          )
+        }
       </ClubWebsiteSettingsPageShell>
     </Suspense>
   );

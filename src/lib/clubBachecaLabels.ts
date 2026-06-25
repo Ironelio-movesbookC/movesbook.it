@@ -47,3 +47,26 @@ export function createInitialBachecaLabels(): BachecaLabel[] {
     content: '',
   }));
 }
+
+export function bachecaLabelSlotIndex(labelId: string): number {
+  const match = labelId.match(/^bacheca-label-(\d+)$/);
+  if (!match) {
+    throw new Error(`Invalid bacheca label id: ${labelId}`);
+  }
+  const slot = Number.parseInt(match[1], 10);
+  if (slot < 1 || slot > BACHECA_LABEL_COUNT) {
+    throw new Error(`Bacheca label slot out of range: ${slot}`);
+  }
+  return slot;
+}
+
+export function mergeBachecaLabelsWithDefaults(
+  stored: BachecaLabel[],
+): BachecaLabel[] {
+  const defaults = createInitialBachecaLabels();
+  const byId = new Map(stored.map((label) => [label.id, label]));
+  return defaults.map((defaultLabel) => {
+    const saved = byId.get(defaultLabel.id);
+    return saved ?? defaultLabel;
+  });
+}

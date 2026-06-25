@@ -173,6 +173,34 @@ form select {
   color: #111827;
 }
 
+/* Staff messages panel — beat Tailwind preflight input { color: inherit } */
+@layer utilities {
+  .staff-messages-composer,
+  .staff-messages-composer label {
+    color: #000000 !important;
+  }
+
+  .staff-messages-panel input:not([type='radio']):not([type='checkbox']):not([type='hidden']),
+  .staff-messages-panel textarea,
+  .staff-messages-panel select {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
+    caret-color: #000000;
+  }
+
+  .staff-messages-panel input:not([type='radio']):not([type='checkbox']):not([type='hidden'])::placeholder,
+  .staff-messages-panel textarea::placeholder {
+    color: #64748b !important;
+    -webkit-text-fill-color: #64748b !important;
+    opacity: 1;
+  }
+
+  .staff-messages-panel input:-webkit-autofill,
+  .staff-messages-panel textarea:-webkit-autofill {
+    -webkit-text-fill-color: #000000 !important;
+  }
+}
+
 /* Workout Elements with Custom Borders */
 .workout-day,
 .workout-session,

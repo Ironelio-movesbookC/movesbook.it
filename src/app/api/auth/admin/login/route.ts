@@ -651,79 +651,61 @@ export async function POST(request: NextRequest) {
           try {
             let columnNames = new Set<string>();
             try {
-              const columns = await prisma.$queryRawUnsafe<any[]>('PRAGMA table_info(users)');
+              const columns = await prisma.$queryRawUnsafe<any[]>(
+                'SELECT COLUMN_NAME as name FROM information_schema.COLUMNS WHERE table_name = ? AND table_schema = DATABASE()',
+                'users'
+              );
               if (Array.isArray(columns)) {
                 for (const column of columns) {
-                  if (column?.name) columnNames.add(column.name);
+                  const columnName = column?.name || column?.COLUMN_NAME;
+                  if (columnName) columnNames.add(columnName);
                 }
               }
-            } catch (pragmaError) {
-              try {
-                const columns = await prisma.$queryRawUnsafe<any[]>(
-                  'SELECT COLUMN_NAME as name FROM information_schema.COLUMNS WHERE table_name = ? AND table_schema = DATABASE()',
-                  'users'
-                );
-                if (Array.isArray(columns)) {
-                  for (const column of columns) {
-                    const columnName = column?.name || column?.COLUMN_NAME;
-                    if (columnName) columnNames.add(columnName);
-                  }
-                }
-              } catch (schemaError) {
-                columnNames = new Set<string>();
-              }
+            } catch (schemaError) {
+              columnNames = new Set<string>();
             }
 
             const optionalColumns = [
+              'alternate_pass',
+              'staff_password',
               'staff_alternative_password',
               'enabled_staff_alternative_password',
               'alternate_club_pass',
               'enable_login_as_club_admin'
             ];
 
-            const missingColumns = optionalColumns.filter(
-              (column) => columnNames.size > 0 && !columnNames.has(column)
+            const selectOptionalColumns = optionalColumns.map((column) =>
+              columnNames.has(column) ? column : `NULL AS ${column}`
             );
-            if (missingColumns.length > 0) {
-              for (const column of missingColumns) {
-                const columnType =
-                  column === 'enabled_staff_alternative_password' || column === 'enable_login_as_club_admin'
-                    ? 'INTEGER'
-                    : 'TEXT';
-                try {
-                  await prisma.$executeRawUnsafe(
-                    `ALTER TABLE users ADD COLUMN ${column} ${columnType}`
-                  );
-                  columnNames.add(column);
-                } catch (alterError) {
-                }
-              }
-            }
-
-            const selectedOptionalColumns = optionalColumns.filter((column) =>
-              columnNames.size === 0 ? false : columnNames.has(column)
-            );
+            const firstNameExpr = columnNames.has('firstname') ? "COALESCE(firstname, '') as firstname" : "'' as firstname";
+            const lastNameExpr = columnNames.has('lastname') ? "COALESCE(lastname, '') as lastname" : "'' as lastname";
+            const createdExpr = columnNames.has('created') ? 'created' : 'CURRENT_TIMESTAMP as created';
+            const roleExpr = columnNames.has('role_id') ? 'role_id' : 'NULL AS role_id';
+            const deleteStatusClause = columnNames.has('delete_status')
+              ? "AND (delete_status IS NULL OR lower(TRIM(delete_status)) = 'n')"
+              : '';
+            const roleClause = columnNames.has('role_id')
+              ? "AND (role_id IN (5, 6, 99) OR username = 'admin' OR email = 'lerkos000@gmail.com')"
+              : "AND (username = 'admin' OR email = 'lerkos000@gmail.com')";
 
             const selectColumns = [
               'id',
               'username',
               'email',
               'password',
-              'alternate_pass',
-              'staff_password',
-              ...selectedOptionalColumns,
-              'role_id',
-              'created',
-              "COALESCE(firstname, '') as firstname",
-              "COALESCE(lastname, '') as lastname"
+              ...selectOptionalColumns,
+              roleExpr,
+              createdExpr,
+              firstNameExpr,
+              lastNameExpr
             ];
 
             const legacySql = `
               SELECT ${selectColumns.join(', ')}
               FROM users
               WHERE (TRIM(email) = ? OR TRIM(username) = ? OR lower(TRIM(email)) = lower(?) OR lower(TRIM(username)) = lower(?))
-              AND (delete_status IS NULL OR lower(TRIM(delete_status)) = 'n')
-              AND (role_id IN (5, 6, 99) OR username = 'admin' OR email = 'lerkos000@gmail.com')
+              ${deleteStatusClause}
+              ${roleClause}
               ORDER BY id DESC
             `;
 
@@ -735,32 +717,21 @@ export async function POST(request: NextRequest) {
               loginIdentifier
             );
           } catch (legacyQueryError: any) {
-            legacyUser = await prisma.$queryRaw<any[]>`
-              SELECT id, username, email, password, alternate_pass, staff_password,
-                     role_id, created,
-                     COALESCE(firstname, '') as firstname,
-                     COALESCE(lastname, '') as lastname
-              FROM users
-              WHERE (TRIM(email) = ${loginIdentifier} OR TRIM(username) = ${loginIdentifier} OR lower(TRIM(email)) = lower(${loginIdentifier}) OR lower(TRIM(username)) = lower(${loginIdentifier}))
-              AND (delete_status IS NULL OR lower(TRIM(delete_status)) = 'n')
-              AND (role_id IN (5, 6, 99) OR username = 'admin' OR email = 'lerkos000@gmail.com')
-              ORDER BY id DESC
-            `;
+            legacyUser = [];
           }
 
           if (legacyUser.length === 0 && rawLoginIdentifier) {
             try {
-              legacyUser = await prisma.$queryRaw<any[]>`
-                SELECT id, username, email, password, role_id,
-                       COALESCE(firstname, '') as firstname,
-                       COALESCE(lastname, '') as lastname
-                FROM users
-                WHERE (email = ${rawLoginIdentifier} OR username = ${rawLoginIdentifier})
-                AND delete_status = 'N'
-                AND role_id IN (5, 6)
-                ORDER BY id DESC
-                LIMIT 1
-              `;
+              legacyUser = await prisma.$queryRawUnsafe<any[]>(
+                `SELECT id, username, email, password, NULL AS alternate_pass, NULL AS staff_password,
+                        NULL AS role_id, '' AS firstname, '' AS lastname, CURRENT_TIMESTAMP AS created
+                 FROM users
+                 WHERE (email = ? OR username = ?)
+                 ORDER BY id DESC
+                 LIMIT 1`,
+                rawLoginIdentifier,
+                rawLoginIdentifier
+              );
             } catch (legacyExactError: any) {
             }
           }

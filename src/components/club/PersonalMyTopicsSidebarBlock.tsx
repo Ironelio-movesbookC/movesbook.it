@@ -1,106 +1,138 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { ChevronDown, MessagesSquare, Settings } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import ClubDashboardTopicsList from '@/components/club/ClubDashboardTopicsList';
+import { getClubDashboardFriendTopics } from '@/lib/clubWebsiteFriendList';
+import { CLUB_WEBSITE_SETTINGS_CHANGED_EVENT } from '@/lib/clubWebsiteSettingsEvents';
+import { CLUB_WEBSITE_SETTINGS_INDEX_PATH } from '@/lib/clubWebsiteSettingsPaths';
+import { filterClubWebsiteTopicsForMembers } from '@/lib/clubWebsiteTopics';
 import {
-  getClubDashboardFriendTopics,
-  loadWebsiteFriendItems,
-  type ClubDashboardFriendTopicEntry,
-} from '@/lib/clubWebsiteFriendList';
-import { PERSONAL_WEBSITE_TOPICS_PATH, personalWebsiteTopicDisplayUrl } from '@/lib/personalWebsiteSettingsPaths';
-import {
-  LEGACY_STATUS_OFF,
-  LEGACY_STATUS_ON,
-} from '@/components/club/websiteSettings/clubWebsiteSettingsSidebarData';
+  PERSONAL_WEBSITE_TOPICS_PATH,
+  personalWebsiteTopicDisplayUrl,
+} from '@/lib/personalWebsiteSettingsPaths';
+import { useClubWebsiteFriendList } from '@/hooks/useClubWebsiteFriendList';
+import { useClubWebsiteTopics } from '@/hooks/useClubWebsiteTopics';
+import { usePersonalWebsiteFriendList } from '@/hooks/usePersonalWebsiteFriendList';
 
-function StatusSquare({ on }: { on: boolean }) {
-  return (
-    <span
-      className="inline-block h-3 w-3 shrink-0 border border-black/30"
-      style={{ backgroundColor: on ? LEGACY_STATUS_ON : LEGACY_STATUS_OFF }}
-      aria-hidden
-    />
-  );
-}
-
-function TopicRow({
-  entry,
-  nested = false,
-  showLink,
+export default function PersonalMyTopicsSidebarBlock({
+  userId,
+  clubId,
+  canManage = false,
 }: {
-  entry: ClubDashboardFriendTopicEntry;
-  nested?: boolean;
-  showLink: boolean;
+  userId?: string;
+  /** When set (club dashboard), show topics from club website settings. */
+  clubId?: string;
+  /** Entity admins (coach, team, group, club) may edit; members see read-only. */
+  canManage?: boolean;
 }) {
-  const href = personalWebsiteTopicDisplayUrl(entry.id);
-  const inner = (
-    <>
-      <MessagesSquare className={`shrink-0 opacity-90 ${nested ? 'h-3.5 w-3.5' : 'h-4 w-4'}`} />
-      <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-      <StatusSquare on={entry.item.activated} />
-    </>
-  );
-
-  if (showLink) {
-    return (
-      <Link
-        href={href}
-        className={`flex min-h-[36px] w-full items-center gap-2 border-b border-black/25 px-3 py-2 text-left text-sm text-white no-underline transition-colors hover:bg-zinc-700/90 ${
-          nested ? 'pl-6' : ''
-        }`}
-      >
-        {inner}
-      </Link>
-    );
-  }
-
-  return (
-    <div
-      className={`flex min-h-[36px] w-full items-center gap-2 border-b border-black/25 px-3 py-2 text-sm text-white/90 ${
-        nested ? 'pl-6' : ''
-      }`}
-    >
-      {inner}
-    </div>
-  );
-}
-
-export default function PersonalMyTopicsSidebarBlock({ userId }: { userId?: string }) {
   const { t } = useLanguage();
   const [displayOpen, setDisplayOpen] = useState(true);
-  const [segmentOpen, setSegmentOpen] = useState<Record<string, boolean>>({});
-  const [refreshKey, setRefreshKey] = useState(0);
+  const isClubMode = Boolean(clubId);
 
-  const topics = useMemo(() => {
-    if (!userId) return [];
-    return getClubDashboardFriendTopics(loadWebsiteFriendItems('personal', userId));
-  }, [userId, refreshKey]);
+  const {
+    items: clubFriendItems,
+    updateItem: updateClubFriendItem,
+    toggleActivated: toggleClubFriendActivated,
+    removeItem: removeClubFriendItem,
+    moveItem: moveClubFriendItem,
+    addSubtopicUnder: addClubFriendSubtopic,
+    reload: reloadClubFriendItems,
+  } = useClubWebsiteFriendList(clubId);
+  const {
+    topics: clubTopics,
+    updateTopic: updateClubTopic,
+    toggleActivated: toggleClubTopicActivated,
+    removeTopic: removeClubTopic,
+    reload: reloadClubTopics,
+  } = useClubWebsiteTopics(clubId);
+  const {
+    items: personalFriendItems,
+    updateItem: updatePersonalFriendItem,
+    toggleActivated: togglePersonalFriendActivated,
+    removeItem: removePersonalFriendItem,
+    moveItem: movePersonalFriendItem,
+    addSubtopicUnder: addPersonalFriendSubtopic,
+    reload: reloadPersonalFriendItems,
+  } = usePersonalWebsiteFriendList(canManage && !isClubMode ? userId : undefined);
 
-  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const clubFriendTopics = useMemo(
+    () => (isClubMode ? getClubDashboardFriendTopics(clubFriendItems) : []),
+    [isClubMode, clubFriendItems],
+  );
+  const clubCustomTopics = useMemo(
+    () => (isClubMode ? filterClubWebsiteTopicsForMembers(clubTopics) : []),
+    [isClubMode, clubTopics],
+  );
+  const personalTopics = useMemo(
+    () =>
+      !isClubMode && userId ? getClubDashboardFriendTopics(personalFriendItems) : [],
+    [isClubMode, userId, personalFriendItems],
+  );
+
+  const reload = useCallback(() => {
+    if (isClubMode) {
+      reloadClubFriendItems();
+      reloadClubTopics();
+      return;
+    }
+    reloadPersonalFriendItems();
+  }, [isClubMode, reloadClubFriendItems, reloadClubTopics, reloadPersonalFriendItems]);
 
   useEffect(() => {
-    if (!userId) return;
-    refresh();
-  }, [userId, refresh]);
+    reload();
+  }, [userId, clubId, reload]);
 
   useEffect(() => {
-    const onFocus = () => refresh();
+    const onFocus = () => reload();
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [refresh]);
+  }, [reload]);
 
   useEffect(() => {
-    if (!userId) return;
     const onStorage = (e: StorageEvent) => {
-      if (e.key?.startsWith('personal-website-friend-list:')) refresh();
+      if (isClubMode) {
+        if (
+          e.key?.startsWith('club-website-friend-list:') ||
+          e.key?.startsWith('club-website-topics:')
+        ) {
+          reload();
+        }
+        return;
+      }
+      if (e.key?.startsWith('personal-website-friend-list:')) reload();
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, [userId, refresh]);
+  }, [isClubMode, reload]);
 
-  const hasTopics = topics.length > 0;
+  useEffect(() => {
+    if (!isClubMode || !clubId) return;
+    const onSettingsChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ clubId?: string }>).detail;
+      if (!detail?.clubId || detail.clubId === clubId) reload();
+    };
+    window.addEventListener(CLUB_WEBSITE_SETTINGS_CHANGED_EVENT, onSettingsChanged);
+    return () => window.removeEventListener(CLUB_WEBSITE_SETTINGS_CHANGED_EVENT, onSettingsChanged);
+  }, [isClubMode, clubId, reload]);
+
+  const hasTopics = isClubMode
+    ? clubFriendTopics.length > 0 || clubCustomTopics.length > 0
+    : personalTopics.length > 0;
+
+  const toggleDisplay = () => {
+    setDisplayOpen((open) => {
+      const next = !open;
+      if (next) reload();
+      return next;
+    });
+  };
+
+  const settingsPath = isClubMode ? CLUB_WEBSITE_SETTINGS_INDEX_PATH : PERSONAL_WEBSITE_TOPICS_PATH;
+  const settingsAria = isClubMode
+    ? t('sidebar_club_topics_settings_aria')
+    : t('sidebar_my_topics_settings_aria');
 
   return (
     <div className="flex min-h-[44px] w-full flex-col border-b border-black/25">
@@ -109,20 +141,22 @@ export default function PersonalMyTopicsSidebarBlock({ userId }: { userId?: stri
           <MessagesSquare className="h-4 w-4 shrink-0 opacity-90" />
           <span className="truncate">{t('sidebar_my_topics')}</span>
         </div>
+        {canManage ? (
+          <button
+            type="button"
+            title={settingsAria}
+            aria-label={settingsAria}
+            onClick={() => {
+              window.open(settingsPath, '_blank', 'noopener,noreferrer');
+            }}
+            className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
+        ) : null}
         <button
           type="button"
-          title={t('sidebar_my_topics_settings_aria')}
-          aria-label={t('sidebar_my_topics_settings_aria')}
-          onClick={() => {
-            window.open(PERSONAL_WEBSITE_TOPICS_PATH, '_blank', 'noopener,noreferrer');
-          }}
-          className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90"
-        >
-          <Settings className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => setDisplayOpen((v) => !v)}
+          onClick={toggleDisplay}
           aria-expanded={displayOpen}
           aria-label={displayOpen ? t('collapse') : t('expand')}
           className="flex shrink-0 items-center gap-1 border-l border-black/25 px-2 text-[11px] text-gray-300 transition-colors hover:bg-zinc-700/90"
@@ -134,41 +168,41 @@ export default function PersonalMyTopicsSidebarBlock({ userId }: { userId?: stri
         </button>
       </div>
       {displayOpen && hasTopics ? (
-        <div className="border-t border-black/25 bg-[#252525]">
-          {topics.map((topic) => {
-            const hasNested = topic.subtopics.length > 0;
-            const open = segmentOpen[topic.id] ?? true;
-            const showTopicLink = topic.item.showInClubDashboardTopics;
-            return (
-              <div key={topic.id}>
-                <div className="flex items-stretch">
-                  {hasNested ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSegmentOpen((prev) => ({ ...prev, [topic.id]: !(prev[topic.id] ?? true) }))
-                      }
-                      className="flex w-8 shrink-0 items-center justify-center border-b border-black/25 text-white/80 hover:bg-zinc-700/90"
-                      aria-label={open ? t('collapse') : t('expand')}
-                    >
-                      <ChevronDown
-                        className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`}
-                      />
-                    </button>
-                  ) : null}
-                  <div className={hasNested ? 'min-w-0 flex-1' : 'w-full'}>
-                    <TopicRow entry={topic} showLink={showTopicLink} />
-                  </div>
-                </div>
-                {hasNested && open
-                  ? topic.subtopics.map((sub) => (
-                      <TopicRow key={sub.id} entry={sub} nested showLink />
-                    ))
-                  : null}
-              </div>
-            );
-          })}
-        </div>
+        isClubMode ? (
+          <ClubDashboardTopicsList
+            clubId={clubId}
+            friendTopics={clubFriendTopics}
+            customTopics={clubCustomTopics}
+            friendItems={clubFriendItems}
+            adminMode={canManage}
+            onToggleFriendActivated={toggleClubFriendActivated}
+            onDeleteFriend={removeClubFriendItem}
+            onMoveFriend={moveClubFriendItem}
+            onUpdateFriendItem={updateClubFriendItem}
+            onAddFriendSubtopic={addClubFriendSubtopic}
+            onToggleCustomTopicActivated={toggleClubTopicActivated}
+            onDeleteCustomTopic={removeClubTopic}
+            onUpdateCustomTopic={updateClubTopic}
+          />
+        ) : (
+          <ClubDashboardTopicsList
+            friendTopics={personalTopics}
+            customTopics={[]}
+            friendItems={personalFriendItems}
+            adminMode={canManage}
+            topicHrefBuilder={personalWebsiteTopicDisplayUrl}
+            friendEditorHrefBuilder={() => PERSONAL_WEBSITE_TOPICS_PATH}
+            onToggleFriendActivated={togglePersonalFriendActivated}
+            onDeleteFriend={removePersonalFriendItem}
+            onMoveFriend={movePersonalFriendItem}
+            onUpdateFriendItem={updatePersonalFriendItem}
+            onAddFriendSubtopic={addPersonalFriendSubtopic}
+          />
+        )
+      ) : displayOpen && !hasTopics ? (
+        <p className="border-t border-black/25 bg-[#252525] px-3 py-2.5 text-[11px] leading-snug text-white/60">
+          {t('club_dashboard_topics_empty')}
+        </p>
       ) : null}
     </div>
   );

@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { Loader2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
-  createInitialBachecaLabels,
   isDefaultBachecaLabelName,
-  type BachecaLabel,
 } from '@/lib/clubBachecaLabels';
+import { useClubBachecaLabels } from '@/hooks/useClubBachecaLabels';
 import ClubWebsiteSettingsSidebar from '@/components/club/websiteSettings/ClubWebsiteSettingsSidebar';
 
 const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), { ssr: false });
@@ -20,6 +20,7 @@ const DEMO_EVENTS = [
 ];
 
 export default function ClubBachecaEditor({
+  clubId,
   clubDisplayName,
   adminDisplayName,
   clubType,
@@ -27,6 +28,7 @@ export default function ClubBachecaEditor({
   adminLocality,
   logoImageUrl,
 }: {
+  clubId: string;
   clubDisplayName: string;
   adminDisplayName: string;
   clubType?: string | null;
@@ -35,7 +37,8 @@ export default function ClubBachecaEditor({
   logoImageUrl?: string | null;
 }) {
   const { t } = useLanguage();
-  const [labels, setLabels] = useState<BachecaLabel[]>(() => createInitialBachecaLabels());
+  const { labels, setLabels, loading, saving, error, hydrated, applyLabel } =
+    useClubBachecaLabels(clubId);
   const [selectedId, setSelectedId] = useState('bacheca-label-1');
   const [renameDraft, setRenameDraft] = useState('Tracking Workout');
   const [activateDraft, setActivateDraft] = useState(true);
@@ -43,41 +46,57 @@ export default function ClubBachecaEditor({
 
   const selected = labels.find((l) => l.id === selectedId) ?? labels[0];
 
+  useEffect(() => {
+    setSelectedId('bacheca-label-1');
+  }, [clubId]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const initial = labels.find((l) => l.id === selectedId) ?? labels[0];
+    if (!initial) return;
+    setRenameDraft(initial.name);
+    setActivateDraft(initial.activated);
+    setContentDraft(initial.content);
+  }, [clubId, hydrated]);
+
   const selectLabel = (id: string) => {
     if (id === selectedId) return;
-    setLabels((prev) => {
-      const updated = prev.map((l) =>
-        l.id === selectedId
-          ? {
-              ...l,
-              name: renameDraft.trim() || l.name,
-              activated: activateDraft,
-              content: contentDraft,
-            }
-          : l
-      );
-      const next = updated.find((l) => l.id === id);
-      if (next) {
-        setRenameDraft(next.name);
-        setActivateDraft(next.activated);
-        setContentDraft(next.content);
-      }
-      return updated;
-    });
+    const updatedLabels = labels.map((l) =>
+      l.id === selectedId
+        ? {
+            ...l,
+            name: renameDraft.trim() || l.name,
+            activated: activateDraft,
+            content: contentDraft,
+          }
+        : l,
+    );
+    setLabels(updatedLabels);
+    const next = updatedLabels.find((l) => l.id === id);
+    if (next) {
+      setRenameDraft(next.name);
+      setActivateDraft(next.activated);
+      setContentDraft(next.content);
+    }
     setSelectedId(id);
   };
 
-  const applyLabelSettings = () => {
+  const applyLabelSettings = async () => {
     if (!selectedId) return;
     const trimmed = renameDraft.trim();
     if (!trimmed) return;
+
+    const payload = {
+      id: selectedId,
+      name: trimmed,
+      activated: activateDraft,
+      content: contentDraft,
+    };
+
     setLabels((prev) =>
-      prev.map((l) =>
-        l.id === selectedId
-          ? { ...l, name: trimmed, activated: activateDraft, content: contentDraft }
-          : l
-      )
+      prev.map((l) => (l.id === selectedId ? { ...l, ...payload, name: trimmed } : l)),
     );
+    await applyLabel(payload);
   };
 
   const clearRenameDraft = () => {
@@ -87,9 +106,17 @@ export default function ClubBachecaEditor({
   const updateContent = (html: string) => {
     setContentDraft(html);
     setLabels((prev) =>
-      prev.map((l) => (l.id === selectedId ? { ...l, content: html } : l))
+      prev.map((l) => (l.id === selectedId ? { ...l, content: html } : l)),
     );
   };
+
+  if (loading && !hydrated) {
+    return (
+      <div className="flex min-h-[320px] flex-1 items-center justify-center border border-zinc-400 bg-zinc-200">
+        <Loader2 className="h-8 w-8 animate-spin text-teal-700" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 w-full flex-1 gap-0 border border-zinc-400 bg-zinc-200 shadow-sm">
@@ -110,6 +137,11 @@ export default function ClubBachecaEditor({
           <div className="border-b border-zinc-400 bg-white px-4 py-3">
             <h1 className="text-lg font-bold text-zinc-900">{t('club_bacheca_title')}</h1>
             <p className="mt-1 text-xs leading-snug text-zinc-600">{t('club_bacheca_intro')}</p>
+            {error ? (
+              <p className="mt-2 text-xs font-medium text-red-700" role="alert">
+                {error}
+              </p>
+            ) : null}
           </div>
 
           <div className="border-b border-zinc-400 bg-[#e8e8e8] px-3 py-3">
@@ -161,10 +193,18 @@ export default function ClubBachecaEditor({
             />
             <button
               type="button"
-              onClick={applyLabelSettings}
-              className="rounded-none border border-zinc-500 bg-zinc-500 px-4 py-1 text-sm font-medium text-white hover:bg-zinc-600"
+              onClick={() => void applyLabelSettings()}
+              disabled={saving || !renameDraft.trim()}
+              className="rounded-none border border-zinc-500 bg-zinc-500 px-4 py-1 text-sm font-medium text-white hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {t('club_bacheca_apply')}
+              {saving ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t('club_bacheca_apply')}
+                </span>
+              ) : (
+                t('club_bacheca_apply')
+              )}
             </button>
             <button
               type="button"
