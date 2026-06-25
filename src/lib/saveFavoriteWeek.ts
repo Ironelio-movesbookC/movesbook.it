@@ -4,9 +4,16 @@ export type SaveFavoriteWeekResult =
   | { ok: true; message: string; duplicate?: boolean }
   | { ok: false; error: string; skipped?: boolean };
 
+import type { WeeklyPlanSaveMetaInput } from '@/lib/weeklyPlanSaveMeta';
+
 export async function saveWeekToFavorites(
   week: { id: string; weekNumber?: number; workoutPlanId?: string },
-  options?: { name?: string; description?: string }
+  options?: {
+    name?: string;
+    description?: string;
+    saveMeta?: WeeklyPlanSaveMetaInput;
+    sourceTemplate?: string;
+  }
 ): Promise<SaveFavoriteWeekResult> {
   if (!week?.id) {
     return { ok: false, error: 'No week selected' };
@@ -45,6 +52,8 @@ export async function saveWeekToFavorites(
         weekId: week.id,
         name: weekName,
         description: options?.description || `Saved from ${new Date().toLocaleDateString()}`,
+        saveMeta: options?.saveMeta,
+        sourceTemplate: options?.sourceTemplate,
       }),
     });
 

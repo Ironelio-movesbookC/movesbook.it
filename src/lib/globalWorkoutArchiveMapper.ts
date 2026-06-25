@@ -2,6 +2,14 @@ import type { WorkoutArchiveGridRecord } from '@/types/workoutArchiveGrid';
 import type { GlobalWorkoutArchiveEntry } from '@prisma/client';
 import { getSportDisplayName } from '@/constants/moveframe.constants';
 import { parseGlobalArchivePictureUrls } from '@/lib/globalWorkoutArchivePictures';
+import { parseWeeklyPlanShareMeta } from '@/lib/globalWeeklyPlanShare';
+import { enrichArchiveGridRecord } from '@/lib/archiveTrainingCategory';
+
+function planCreatedAtFromPayload(entry: GlobalWorkoutArchiveEntry): string | null {
+  if (entry.recordType !== 'WEEKLY_PLAN') return null;
+  const meta = parseWeeklyPlanShareMeta(entry.payloadData);
+  return meta?.sourceCreatedAt ?? null;
+}
 
 function derivePayloadDisplayFields(entry: GlobalWorkoutArchiveEntry): {
   code: string;
@@ -58,7 +66,7 @@ export function mapGlobalEntryToGridRecord(
   const pictureUrls = parseGlobalArchivePictureUrls(entry.pictureUrls);
   const thumbnailUrl = entry.thumbnailUrl ?? pictureUrls[0] ?? null;
 
-  return {
+  return enrichArchiveGridRecord({
     id: entry.id,
     recordType: entry.recordType as WorkoutArchiveGridRecord['recordType'],
     code,
@@ -84,12 +92,13 @@ export function mapGlobalEntryToGridRecord(
     totalMeters: entry.totalMeters,
     totalTimeSeconds: entry.totalTimeSeconds,
     totalSeries: entry.totalSeries,
-    createdAt: entry.createdAt.toISOString(),
+    createdAt:
+      planCreatedAtFromPayload(entry) ?? entry.createdAt.toISOString(),
     sharedAt: entry.sharedAt?.toISOString() ?? null,
     disabled: entry.disabled,
     isFavorite: entry.isFavorite,
     _raw: entry,
-  };
+  });
 }
 
 export function sportLabel(sport?: string | null): string {

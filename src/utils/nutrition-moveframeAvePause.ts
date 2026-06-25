@@ -6,7 +6,12 @@ export function parseFastPlannerPauseToSeconds(value: unknown): number {
   if (typeof value !== 'string') return 0;
   const s = String(value).trim();
   if (!s) return 0;
-  if (/^\d+$/.test(s)) return Math.max(0, parseInt(s, 10));
+  if (/^\d+$/.test(s)) {
+    const n = parseInt(s, 10);
+    // Bare 1–9 with no unit: break dropdown uses "2'" not "2"; treat as minutes.
+    if (n >= 1 && n <= 9) return n * 60;
+    return Math.max(0, n);
+  }
   if (s.includes("'")) {
     const parts = s.split("'");
     const mStr = (parts[0] ?? '').replace(/\D/g, '');
@@ -162,6 +167,72 @@ export function standardNutritionComponentPauseSecondsForTotal(lap: any): number
   return parseFastPlannerPauseToSeconds(pauseRaw) || parseAerobicRestTimePauseToSecondsLite(pauseStr);
 }
 
+function normalizeFastPlannerExerciseKey(exercise: unknown): string {
+  const value = typeof exercise === 'string' ? exercise : '';
+  if (!value) return '';
+  return value.replace(/\u00A0/g, ' ').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function lapsForExercise(laps: any[], exercise: unknown): any[] {
+  const key = normalizeFastPlannerExerciseKey(exercise);
+  if (!key) return [];
+  return laps.filter((lap) => normalizeFastPlannerExerciseKey(lap?.exercise) === key);
+}
+
+function resolveAnaerobicRowBreakSeconds(row: any, laps: any[]): number {
+  const rowBreak = row?.break != null ? String(row.break).trim() : '';
+  if (rowBreak) return parseFastPlannerPauseToSeconds(rowBreak);
+
+  const exerciseLaps = lapsForExercise(laps, row?.exercise);
+  for (const lap of exerciseLaps) {
+    const candidates = [lap?._fastPlannerBreak, lap?.pause].filter(
+      (v) => v != null && String(v).trim() !== ''
+    );
+    for (const raw of candidates) {
+      const sec = parseFastPlannerPauseToSeconds(raw);
+      if (sec > 0) return sec;
+    }
+  }
+
+  return 0;
+}
+
+function seriesCountForExerciseLaps(exerciseLaps: any[]): number {
+  if (exerciseLaps.length === 0) return 0;
+  const fromMeta = parseInt(String(exerciseLaps[0]?._fastPlannerSeries ?? ''), 10);
+  if (Number.isFinite(fromMeta) && fromMeta > 0) return fromMeta;
+  return exerciseLaps.length;
+}
+
+function accumulateAnaerobicExerciseGroup(
+  exerciseLaps: any[],
+  ripTimeMode: string,
+  sectorSeries: Map<string, number>,
+  breakSecondsPerRow: number[],
+  totals: { totalSeries: number; totalRepVolume: number; totalPauseSec: number }
+) {
+  if (exerciseLaps.length === 0) return;
+  const lap = exerciseLaps[0];
+  const sector = (lap?.muscularSector || lap?.sector || '').trim() || 'Other';
+  const series = seriesCountForExerciseLaps(exerciseLaps);
+  totals.totalSeries += series;
+  sectorSeries.set(sector, (sectorSeries.get(sector) || 0) + series);
+
+  const reps =
+    typeof lap?.reps === 'number' && !Number.isNaN(lap.reps)
+      ? lap.reps
+      : parseFastPlannerRipVolume(lap?._fastPlannerRipTime ?? lap?.reps, ripTimeMode);
+  totals.totalRepVolume += series * reps;
+
+  const breakRaw =
+    (typeof lap?._fastPlannerBreak === 'string' && lap._fastPlannerBreak.trim()) ||
+    (typeof lap?.pause === 'string' && lap.pause.trim()) ||
+    '';
+  const sec = parseFastPlannerPauseToSeconds(breakRaw);
+  totals.totalPauseSec += series * sec;
+  if (sec > 0) breakSecondsPerRow.push(sec);
+}
+
 /**
  * Anaerobic Fast Planner nutritionFood row: sector→series totals, sum of series, sum of series×rip,
  * total pause seconds (per row break/macro/pause), legacy avgMacroSec for any older callers.
@@ -177,7 +248,7 @@ export function computeAnaerobicFastPlannerRowStats(payload: any, nutrition_comp
   let totalRepVolume = 0;
   let totalPauseSec = 0;
   const sectorSeries = new Map<string, number>();
-  const macroSeconds: number[] = [];
+  const breakSecondsPerRow: number[] = [];
   let lastMacroRaw: string | null = null;
   let lastMacroSec = 0;
 
@@ -189,44 +260,48 @@ export function computeAnaerobicFastPlannerRowStats(payload: any, nutrition_comp
     lastMacroSec = parseFastPlannerPauseToSeconds(raw);
   };
 
-  effectiveRows.forEach((r, ord) => {
-    const lap = laps[ord];
+  effectiveRows.forEach((r) => {
+    const exerciseLaps = lapsForExercise(laps, r?.exercise);
     const sector =
-      (String(r?.sector ?? '').trim() || (lap?.muscularSector || '').trim() || (lap?.sector || '').trim() || 'Other');
+      (String(r?.sector ?? '').trim() ||
+        (exerciseLaps[0]?.muscularSector || '').trim() ||
+        (exerciseLaps[0]?.sector || '').trim() ||
+        'Other');
     const series = parseInt(String(r.series || '0'), 10) || 0;
     totalSeries += series;
     sectorSeries.set(sector, (sectorSeries.get(sector) || 0) + series);
     const repsPerSet = parseFastPlannerRipVolume(r.ripTime, ripTimeMode);
     totalRepVolume += series * repsPerSet;
-    const macroOrBreak = lap?.macroFinal ?? r.break ?? lap?.pause ?? lap?._fastPlannerBreak;
-    const sec = parseFastPlannerPauseToSeconds(macroOrBreak);
-    totalPauseSec += sec;
-    if (sec > 0) macroSeconds.push(sec);
+    const sec = resolveAnaerobicRowBreakSeconds(r, laps);
+    totalPauseSec += series * sec;
+    if (sec > 0) breakSecondsPerRow.push(sec);
   });
 
   if (effectiveRows.length > 0) {
-    const ord = effectiveRows.length - 1;
-    const r = effectiveRows[ord];
-    const lap = laps[ord];
-    setEndMacroFromRaw(lap?.macroFinal ?? r?.break ?? lap?.pause ?? lap?._fastPlannerBreak);
+    const r = effectiveRows[effectiveRows.length - 1];
+    const exerciseLaps = lapsForExercise(laps, r?.exercise);
+    const lastLap = exerciseLaps[exerciseLaps.length - 1] ?? laps[laps.length - 1];
+    setEndMacroFromRaw(lastLap?.macroFinal ?? lastLap?.pause ?? lastLap?._fastPlannerBreak);
   }
 
   if (effectiveRows.length === 0 && laps.length > 0) {
-    laps.forEach((lap: any) => {
-      const sector = (lap.muscularSector || '').trim() || 'Other';
-      const series = parseInt(String(lap._fastPlannerSeries || '1'), 10) || 1;
-      totalSeries += series;
-      sectorSeries.set(sector, (sectorSeries.get(sector) || 0) + series);
-      const reps =
-        typeof lap.reps === 'number' && !Number.isNaN(lap.reps)
-          ? lap.reps
-          : parseInt(String(lap._fastPlannerRipTime || '0').replace(/[^\d]/g, '') || '0', 10) || 0;
-      totalRepVolume += series * reps;
-      const macroOrBreak = lap.macroFinal ?? lap.pause ?? lap._fastPlannerBreak;
-      const sec = parseFastPlannerPauseToSeconds(macroOrBreak);
-      totalPauseSec += sec;
-      if (sec > 0) macroSeconds.push(sec);
-    });
+    const seenExercises = new Set<string>();
+    const grouped = { totalSeries: 0, totalRepVolume: 0, totalPauseSec: 0 };
+    for (const lap of laps) {
+      const exKey = normalizeFastPlannerExerciseKey(lap?.exercise);
+      if (!exKey || seenExercises.has(exKey)) continue;
+      seenExercises.add(exKey);
+      accumulateAnaerobicExerciseGroup(
+        lapsForExercise(laps, lap?.exercise),
+        ripTimeMode,
+        sectorSeries,
+        breakSecondsPerRow,
+        grouped
+      );
+    }
+    totalSeries = grouped.totalSeries;
+    totalRepVolume = grouped.totalRepVolume;
+    totalPauseSec = grouped.totalPauseSec;
     const lastLap = laps[laps.length - 1];
     setEndMacroFromRaw(lastLap?.macroFinal ?? lastLap?.pause ?? lastLap?._fastPlannerBreak);
   }
@@ -237,8 +312,10 @@ export function computeAnaerobicFastPlannerRowStats(payload: any, nutrition_comp
 
   const sectorSummaryLine = sectorPairs.map(({ name, series }) => `${name}: ${series}`).join(' · ');
 
-  const avgMacroSec =
-    macroSeconds.length > 0 ? macroSeconds.reduce((a, b) => a + b, 0) / macroSeconds.length : 0;
+  const avgBreakSec =
+    breakSecondsPerRow.length > 0
+      ? breakSecondsPerRow.reduce((a, b) => a + b, 0) / breakSecondsPerRow.length
+      : 0;
 
   const ripPerSet = totalSeries > 0 ? totalRepVolume / totalSeries : null;
   const ripPerSetDisplay =
@@ -254,7 +331,8 @@ export function computeAnaerobicFastPlannerRowStats(payload: any, nutrition_comp
     totalPauseSec,
     sectorSummaryLine,
     sectorPairs,
-    avgMacroSec,
+    avgBreakSec,
+    avgMacroSec: avgBreakSec,
     ripPerSet,
     ripPerSetDisplay,
     lastMacroRaw,
@@ -263,14 +341,11 @@ export function computeAnaerobicFastPlannerRowStats(payload: any, nutrition_comp
 }
 
 /**
- * Average pause (seconds): total pause time ÷ repetitions filled.
- * Anaerobic fast planner: totalPauseSec ÷ totalRepVolume.
- * Aerobic fast planner: sum nutritionComponent rest contributions ÷ filled nutritionComponent count.
- * Otherwise: sum per-lap pause ÷ nutritionComponent count (circuit: total reps).
+ * Average pause (seconds): anaerobic fast planner = simple mean of Break per exercise row.
  */
 export function computeNutritionFoodAvePauseSeconds(
   nutritionFood: any,
-  anaerobicFastPlannerStats: { totalRepVolume: number; totalPauseSec: number } | null,
+  anaerobicFastPlannerStats: { avgBreakSec?: number; avgMacroSec?: number } | null,
   fastPlannerPayload: any | null,
   isFastPlanNutritionFood: boolean
 ): number | null {
@@ -281,9 +356,10 @@ export function computeNutritionFoodAvePauseSeconds(
   if (nutritionFood?.type === 'ANNOTATION' || nutritionFood?.manualMode) return null;
 
   if (isAnaerobicFp && anaerobicFastPlannerStats) {
-    const d = anaerobicFastPlannerStats.totalRepVolume;
-    if (d <= 0) return null;
-    return anaerobicFastPlannerStats.totalPauseSec / d;
+    const avg =
+      anaerobicFastPlannerStats.avgBreakSec ?? anaerobicFastPlannerStats.avgMacroSec ?? 0;
+    if (avg <= 0) return null;
+    return avg;
   }
 
   if (isAerobicFp && laps.length > 0) {
@@ -325,4 +401,12 @@ export function formatAvePauseFromSeconds(seconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const secs = totalSeconds % 60;
   return `${minutes}'${secs.toString().padStart(2, '0')}"`;
+}
+
+export function avgBreakSecondsFromFastPlannerDisplayRows(displayRows: any[]): number {
+  const secs = displayRows
+    .map((m) => parseFastPlannerPauseToSeconds(m?._fastPlannerBreak ?? m?.pause ?? ''))
+    .filter((s) => s > 0);
+  if (secs.length === 0) return 0;
+  return secs.reduce((a, b) => a + b, 0) / secs.length;
 }

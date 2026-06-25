@@ -5,6 +5,10 @@ import { closestCenter, DndContext, DragEndEvent, PointerSensor, useSensor, useS
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { FAST_PLANNER_REST_PAUSE_OPTIONS, getPauseOptions, getSportConfig, REST_TYPES } from '@/constants/moveframe.constants';
+import {
+  aerobicRowsMatchForReplicate,
+  buildAerobicFastPlannerDistanceDescription
+} from '@/utils/aerobicFastPlannerDescription';
 
 type RestChoice = 'rest_time' | 'restart_to' | 'reset_pulse';
 type BreakChoice = 'stopped' | 'speed' | 'watts';
@@ -679,24 +683,9 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
       ].join(' | ');
     }, [rows]);
 
-    /** Row 1: distances only (e.g. 100\\A2+50\\A1+200\\B1); Row 2: typed description if exists */
+    /** Row 1: distances (e.g. 80 track x 10 or 100\\A2+50\\A1); Row 2: typed description if exists */
     const buildDescription = (filled: AerobicPlannerRow[]) => {
-      const withUnit = (value: string) => {
-        const trimmed = value.trim();
-        if (!trimmed) return '';
-        if (/[a-zA-Z]/.test(trimmed)) return trimmed;
-        return `${trimmed}m`;
-      };
-      const parts = filled
-        .map((r) => {
-          const distance = typeof r.distance === 'string' ? r.distance.trim() : '';
-          const style = typeof r.style === 'string' ? r.style.trim() : '';
-          if (!distance) return '';
-          const formattedDistance = withUnit(distance);
-          return style ? `${formattedDistance}\\${style}` : formattedDistance;
-        })
-        .filter(Boolean);
-      const distancesOnly = parts.join('+');
+      const distancesOnly = buildAerobicFastPlannerDistanceDescription(filled);
       const extra = typeof descriptionInstructions === 'string' ? descriptionInstructions.trim() : '';
       if (!extra) return distancesOnly;
       const formatted = escapeHtml(extra).replace(/\r\n/g, '\n').replace(/\n/g, '<br/>');
@@ -914,9 +903,29 @@ const AerobicFastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, Aerob
     };
 
     const replicateSelectedRow = () => {
-      const copies = Math.max(1, Math.min(999, parseInt(replicateCount.replace(/\D/g, '') || '1', 10)));
+      const targetTotal = Math.max(1, Math.min(999, parseInt(replicateCount.replace(/\D/g, '') || '1', 10)));
       if (!selectedRow) return;
-      duplicateSelectedRow(copies);
+      setRows((prev) => {
+        const sourceIdx = prev.findIndex((r) => r.id === selectedRow.id);
+        if (sourceIdx < 0) return prev;
+        const source = prev[sourceIdx];
+        let endIdx = sourceIdx;
+        while (endIdx + 1 < prev.length && aerobicRowsMatchForReplicate(source, prev[endIdx + 1]!)) {
+          endIdx += 1;
+        }
+        const existingCount = endIdx - sourceIdx + 1;
+        if (targetTotal === existingCount) return prev;
+        if (targetTotal < existingCount) {
+          return [...prev.slice(0, sourceIdx + targetTotal), ...prev.slice(endIdx + 1)];
+        }
+        const toAdd = targetTotal - existingCount;
+        const nextId = Math.max(0, ...prev.map((r) => r.id)) + 1;
+        const newRows = Array.from({ length: toAdd }, (_, i) => ({
+          ...source,
+          id: nextId + i
+        }));
+        return [...prev.slice(0, endIdx + 1), ...newRows, ...prev.slice(endIdx + 1)];
+      });
     };
 
     const removeLastFilledRow = () => {

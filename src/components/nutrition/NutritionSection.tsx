@@ -3309,6 +3309,7 @@ export default function NutritionSection({ onClose }: NutritionSectionProps) {
       <PlanGymWeekModal
         isOpen={showPlanGymWeekModal}
         initialStepOnOpen={planGymWeekWizardInitialStep}
+        initialTrainingLevel={planGymWeekTrainingLevel}
         onClose={() => {
           setShowPlanGymWeekModal(false);
           setPlanGymWeekWizardInitialStep(1);
@@ -3375,7 +3376,9 @@ export default function NutritionSection({ onClose }: NutritionSectionProps) {
             setShowPlanGymWeekManualForm(false);
             setPlanGymWeekInitialPlan(null);
             setPlanGymWeekRescanParams(null);
-            // Keep trainingLevel until Fast Plan closes — needed for Lev 1–2 vs 3–4 vs 5 distribution tables
+            if (result.trainingLevel != null) {
+              setPlanGymWeekTrainingLevel(result.trainingLevel);
+            }
             setPlanGymWeekCreatedPlan(result);
           }}
         />
@@ -3391,6 +3394,9 @@ export default function NutritionSection({ onClose }: NutritionSectionProps) {
             setPlanGymWeekCreatedPlan(null);
             setPlanGymWeekManualDaysCount(updatedPlan.daysCount);
             setPlanGymWeekInitialPlan(updatedPlan);
+            if (updatedPlan.trainingLevel != null) {
+              setPlanGymWeekTrainingLevel(updatedPlan.trainingLevel);
+            }
             setShowPlanGymWeekManualForm(true);
           }}
           onClose={() => {

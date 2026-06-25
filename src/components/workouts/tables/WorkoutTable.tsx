@@ -36,8 +36,12 @@ interface WorkoutTableProps {
   onEdit: () => void;
   onDelete: () => void;
   onSaveFavorite?: () => void;
+  onSaveWorkout?: () => void;
   onShowOverview?: () => void;
   onShareWorkout?: (workout: any, day: any) => void;
+  onShareWorkoutLink?: (workout: any, day: any) => void;
+  sharedGlobalEntry?: { id: string; title: string } | null;
+  onUnshareWorkout?: (workout: any, day: any) => void;
   onExportPdfWorkout?: (workout: any, day: any) => void;
   onExportWorkoutToArchive?: (workout: any, day: any) => void;
   onExportWorkoutToDone?: (workout: any, day: any) => void;
@@ -55,11 +59,13 @@ interface WorkoutTableProps {
   onCopyWorkoutToClipboard?: (workout: any) => void;
   hasWorkoutClipboard?: boolean;
   onCopyWorkout?: (workout: any, day: any) => void;
+  onImportWorkout?: (workout: any, day: any) => void;
   onPasteWorkout?: (day: any) => void;
   onMoveWorkout?: (workout: any, day: any) => void;
   onCopyMoveframeToClipboard?: (moveframe: any) => void;
   hasMoveframeClipboard?: boolean;
   onPasteMoveframe?: (workout: any) => void;
+  onImportMoveframe?: (workout: any, day: any) => void;
   onCopyMoveframe?: (moveframe: any, workout: any, day: any) => void;
   onMoveMoveframe?: (moveframe: any, workout: any, day: any) => void;
   hasMovelapClipboard?: boolean;
@@ -89,8 +95,12 @@ export default function WorkoutTable({
   onEdit,
   onDelete,
   onSaveFavorite,
+  onSaveWorkout,
   onShowOverview,
   onShareWorkout,
+  onShareWorkoutLink,
+  sharedGlobalEntry,
+  onUnshareWorkout,
   onExportPdfWorkout,
   onExportWorkoutToArchive,
   onExportWorkoutToDone,
@@ -108,11 +118,13 @@ export default function WorkoutTable({
   onCopyWorkoutToClipboard,
   hasWorkoutClipboard = false,
   onCopyWorkout,
+  onImportWorkout,
   onPasteWorkout,
   onMoveWorkout,
   onCopyMoveframeToClipboard,
   hasMoveframeClipboard,
   onPasteMoveframe,
+  onImportMoveframe,
   onCopyMoveframe,
   onMoveMoveframe,
   hasMovelapClipboard,
@@ -590,6 +602,39 @@ export default function WorkoutTable({
             <button 
               onClick={(e) => {
                 e.stopPropagation();
+                if (onImportWorkout) onImportWorkout(workout, day);
+              }}
+              className="px-3 py-1 text-xs bg-white text-cyan-600 rounded hover:bg-cyan-50 transition-colors font-medium whitespace-nowrap flex-shrink-0"
+              title="Import workout from another source"
+            >
+              Import
+            </button>
+            {activeSection === 'D' && sharedGlobalEntry ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onUnshareWorkout) onUnshareWorkout(workout, day);
+                }}
+                className="px-3 py-1 text-xs bg-white text-red-700 border border-red-300 rounded hover:bg-red-50 transition-colors font-medium whitespace-nowrap flex-shrink-0"
+                title="Remove from Global archive of shared workouts"
+              >
+                Unshare
+              </button>
+            ) : onShareWorkout ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onShareWorkout(workout, day);
+                }}
+                className="px-3 py-1 text-xs bg-white text-cyan-600 rounded hover:bg-cyan-50 transition-colors font-medium whitespace-nowrap flex-shrink-0"
+                title="Share workout — export to archive or share with Movesbook users"
+              >
+                Share
+              </button>
+            ) : null}
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
                 if (onCopyWorkout) onCopyWorkout(workout, day);
               }}
               className="px-2 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600 transition-colors whitespace-nowrap flex-shrink-0"
@@ -597,6 +642,18 @@ export default function WorkoutTable({
             >
               {activeSection === 'D' ? 'Clone' : 'Copy'}
             </button>
+            {onSaveWorkout && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSaveWorkout();
+                }}
+                className="px-2 py-1 text-xs bg-white text-gray-800 border border-gray-400 rounded hover:bg-gray-50 transition-colors whitespace-nowrap flex-shrink-0 font-medium"
+                title="Save workout to Favourites, General Archive, or Yearly Plan"
+              >
+                Save
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -684,12 +741,12 @@ export default function WorkoutTable({
                     onClick={(e) => {
                       e.stopPropagation();
                       closeDropdown();
-                      if (onShareWorkout) onShareWorkout(workout, day);
+                      if (onShareWorkoutLink) onShareWorkoutLink(workout, day);
                     }}
                     className="w-full text-left px-3 py-2 text-[11px] hover:bg-blue-50 transition-colors flex items-center gap-2 border-t border-gray-200"
                   >
                     <span className="text-blue-600">🔗</span>
-                    <span>Share</span>
+                    <span>Share…</span>
                   </button>
                   <button
                     onClick={(e) => {
@@ -1286,10 +1343,10 @@ export default function WorkoutTable({
         </div>
         
       {/* MOVEFRAMES SECTION - Level 2: Indented from workout table */}
-      {isExpanded && showMoveframes !== false && (workout.moveframes || []).length > 0 && (
+      {isExpanded && showMoveframes !== false && (
         <div className="ml-8">
           <MoveframesSection
-            moveframes={workout.moveframes}
+            moveframes={workout.moveframes || []}
             workout={workout}
             workoutIndex={workoutIndex}
             day={day}
@@ -1308,6 +1365,7 @@ export default function WorkoutTable({
             onCopyMoveframeToClipboard={onCopyMoveframeToClipboard}
             hasMoveframeClipboard={hasMoveframeClipboard}
             onPasteMoveframe={onPasteMoveframe}
+            onImportMoveframe={onImportMoveframe}
             onCopyMoveframe={onCopyMoveframe}
             onMoveMoveframe={onMoveMoveframe}
             hasMovelapClipboard={hasMovelapClipboard}

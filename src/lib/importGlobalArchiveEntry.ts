@@ -59,7 +59,7 @@ async function resolveMoveframeSectionId(
   return defaultSectionId;
 }
 
-async function createWorkoutOnDay(
+export async function createWorkoutOnDay(
   tx: Tx,
   userId: string,
   targetDayId: string,

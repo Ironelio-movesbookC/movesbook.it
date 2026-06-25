@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import Image from 'next/image';
 import { X, ChevronUp, ChevronDown, ChevronsDown, Trash2, Settings, ChevronLeft, GripVertical } from 'lucide-react';
@@ -38,11 +38,8 @@ import {
   nextPct1RmFormulaIndex,
   PCT_1RM_FORMULA_COUNT,
 } from '../../../utils/percent1RmFormulas';
-import {
-  INFO_REPS_DEFAULT_EN,
-  fetchInfoRepsText,
-} from '../../../constants/infoRepsLongText';
 import { InfoRepsHelpButton } from '../InfoRepsHelpButton';
+import { InfoRepsModal } from '../InfoRepsModal';
 import {
   AUTO_PROCESS_INFO_DEFAULT_EN,
   fetchAutoProcessInfoText,
@@ -55,16 +52,20 @@ import {
 } from '@/constants/moveframe.constants';
 import {
   readGoalParamsFromWorkoutSettings,
+  isGoalParamsSavedInWorkoutSettings,
   interpolateByPeriod,
   computePlanGymWeekScalarDefaults,
-  levelIndex,
+  totalSeriesVolumeForPlan,
+  volumeSeriesAtPeriod,
   readVolumeDeltaPctFromWorkoutSettings,
+  levelIndex,
 } from '../../../utils/planGymWeekGoalScalars';
 import {
   interpolatedPauseForPeriod,
   interpolatePeriodIntRounded,
   PLAN_YEAR_TOTAL_PERIODS_MAX,
   PLAN_YEAR_TOTAL_PERIODS_MIN,
+  clampPlanYearPeriodPair,
 } from '@/utils/planPeriodInterpolation';
 
 // ─── constants ───────────────────────────────────────────────────────────────
@@ -179,6 +180,104 @@ function rowPauseStrForDayStats(
   return d !== '' ? d : '0';
 }
 
+function avgHeaderPauseFromSectors(
+  sectors: ManualDaySector[],
+  key: 'pause' | 'macroExercise' | 'macroEndOfSector',
+): string {
+  const vals = sectors
+    .map((s) => String(s[key] ?? '').trim())
+    .filter((v) => v !== '' && v !== '-');
+  if (!vals.length) return '';
+  return avgPauseStr(vals);
+}
+
+/** Day-level averages (stats bar) used when inserting a new muscular area. */
+function dayStatsForNewSectorDefaults(
+  day: ManualDayPlan,
+  trainingLevel: TrainingLevel | null | undefined,
+) {
+  const sectors = day.sectors.filter((s) => (s.series ?? 0) > 0);
+  if (!sectors.length) return null;
+
+  const sumSeries = sectors.reduce((s, sec) => s + sec.series, 0);
+  const avgSeries = Math.max(1, Math.min(20, Math.round(sumSeries / sectors.length)));
+
+  const allReps: number[] = [];
+  const allPauses: string[] = [];
+  for (const sec of sectors) {
+    const n = Math.max(0, Math.min(20, sec.series));
+    for (let i = 0; i < n; i++) {
+      allReps.push(rowRepsForDayStats(sec, i));
+      allPauses.push(rowPauseStrForDayStats(sec, i, trainingLevel));
+    }
+  }
+  const repsForAvg = allReps.filter((r) => r > 0);
+  const avgReps = repsForAvg.length
+    ? Math.max(1, Math.min(99, Math.round(repsForAvg.reduce((a, b) => a + b, 0) / repsForAvg.length)))
+    : PLAN_GYM_WEEK_WIZARD_DEFAULT_REPS;
+
+  const rowPauses = allPauses.filter((p) => p && p !== '0');
+  const breakAvg = rowPauses.length ? avgPauseStr(rowPauses) : PLAN_GYM_WEEK_WIZARD_DEFAULT_PAUSE_LABEL;
+
+  return {
+    avgSeries,
+    avgReps,
+    pause: avgHeaderPauseFromSectors(sectors, 'pause') || breakAvg,
+    macroExercise:
+      avgHeaderPauseFromSectors(sectors, 'macroExercise') || PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_EX_LABEL,
+    macroEndOfSector:
+      avgHeaderPauseFromSectors(sectors, 'macroEndOfSector') || PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_END_LABEL,
+  };
+}
+
+type CalculatedSectorScalars = {
+  reps: number;
+  pauseSeries: string;
+  pauseExercises: string;
+  pauseAreas: string;
+};
+
+function buildNewSectorFromDayAverages(
+  group: { id: string; label: string; image: string },
+  day: ManualDayPlan,
+  trainingLevel: TrainingLevel | null | undefined,
+  calculatedScalars?: CalculatedSectorScalars | null,
+): ManualDaySector {
+  const stats = dayStatsForNewSectorDefaults(day, trainingLevel);
+  const series = stats?.avgSeries ?? PLAN_GYM_WEEK_WIZARD_DEFAULT_SERIES_PER_SECTOR;
+  const reps = calculatedScalars?.reps ?? stats?.avgReps ?? PLAN_GYM_WEEK_WIZARD_DEFAULT_REPS;
+  const pause = calculatedScalars?.pauseSeries ?? stats?.pause ?? PLAN_GYM_WEEK_WIZARD_DEFAULT_PAUSE_LABEL;
+  const macroExercise =
+    calculatedScalars?.pauseExercises ?? stats?.macroExercise ?? PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_EX_LABEL;
+  const macroEndOfSector =
+    calculatedScalars?.pauseAreas ?? stats?.macroEndOfSector ?? PLAN_GYM_WEEK_WIZARD_DEFAULT_MACRO_END_LABEL;
+
+  let sec: ManualDaySector = {
+    sectorId: group.id,
+    sectorLabel: group.label,
+    image: group.image,
+    exercises: 0,
+    series: 0,
+    reps,
+    pause,
+    macroExercise,
+    macroEndOfSector,
+    pyramidal: 'flat',
+    seriesReps: [],
+    seriesRepsRaw: [],
+    seriesWeights: [],
+    typeByPercent: false,
+    seriesPcts: [],
+    seriesRowPauses: [],
+    seriesRowAlerts: [],
+  };
+  sec = applySectorScalarUpdate(sec, 'series', String(series), trainingLevel);
+  sec = applySectorScalarUpdate(sec, 'reps', String(reps), trainingLevel);
+  sec = syncSectorPausesFromHeader(sec, trainingLevel);
+  sec = syncSectorExercisesFromLevelTable(sec, trainingLevel);
+  return ensureManualSectorShape(sec, trainingLevel);
+}
+
 // ─── interfaces ──────────────────────────────────────────────────────────────
 
 export interface ManualDaySector {
@@ -266,9 +365,10 @@ export interface PlanGymWeekYearlyPeriodSettings {
 }
 
 export function defaultPlanGymWeekYearlyPeriodSettings(): PlanGymWeekYearlyPeriodSettings {
+  const { totalPeriods, currentPeriod } = clampPlanYearPeriodPair(6, 1);
   return {
-    totalPeriods: 4,
-    currentPeriod: 1,
+    totalPeriods,
+    currentPeriod,
     periodScalarsSource: 'calculated',
     sectorPauseFrom: "1'",
     sectorPauseTo: "2'",
@@ -313,6 +413,8 @@ export interface PlanGymWeekManualResult {
   daysCount: number;
   days:      ManualDayPlan[];
   yearlyPeriodSettings?: PlanGymWeekYearlyPeriodSettings;
+  /** Athlete training level from the wizard — preserved when navigating manual ↔ fast plan. */
+  trainingLevel?: TrainingLevel | null;
 }
 
 /**
@@ -348,18 +450,17 @@ export function suggestedRoutineTotalSeriesForDistMask(params: {
 }): number {
   const d = Math.min(6, Math.max(1, params.daysCount || 1));
   const fromSettings = readGoalParamsFromWorkoutSettings(params.goalId);
-  if (fromSettings) {
-    const idx = Math.min(4, Math.max(0, levelIndex(params.trainingLevel)));
-    const from = Number(fromSettings.volumeFrom?.[idx] ?? 0);
-    const to = Number(fromSettings.volumeTo?.[idx] ?? 0);
-    const curPeriod = Math.max(1, Math.floor(params.currentPeriod ?? 1));
-    const totalPeriods = Math.max(curPeriod, Math.floor(params.totalPeriods ?? 1));
-    const baseAtPeriod = interpolateByPeriod(from, to, curPeriod, totalPeriods);
-    const deltaPct = readVolumeDeltaPctFromWorkoutSettings(params.trainingLevel, d);
-    const adjusted = Math.round(baseAtPeriod * (1 + deltaPct / 100));
-    if (adjusted > 0) {
-      return Math.max(16, Math.min(100, adjusted));
-    }
+  const curPeriod = Math.max(1, Math.floor(params.currentPeriod ?? 1));
+  const totalPeriods = Math.max(curPeriod, Math.floor(params.totalPeriods ?? 1));
+  const adjusted = totalSeriesVolumeForPlan({
+    goalSettings: fromSettings,
+    trainingLevel: params.trainingLevel,
+    daysCount: d,
+    currentPeriod: curPeriod,
+    totalPeriods,
+  });
+  if (adjusted > 0) {
+    return adjusted;
   }
   const level = params.trainingLevel;
   let base = 36;
@@ -433,10 +534,78 @@ function resizeSeriesRowStrings(arr: string[] | undefined, len: number): string[
   return out;
 }
 
-/** Per-row series reps when reps>0; otherwise zeros so table cells stay blank until user enters raw reps */
+/** Split total area series evenly across a manual exercise count (fallback when table length differs). */
+function evenSplitSeriesAcrossExercises(total: number, exerciseCount: number): number[] {
+  const ex = Math.max(1, Math.round(exerciseCount));
+  const base = Math.floor(total / ex);
+  let rem = total - base * ex;
+  return Array.from({ length: ex }, (_, i) => base + (i < rem ? 1 : 0));
+}
+
+/** Per-exercise series blocks for a muscular area (e.g. 12 area series → [3,3,3,3] for 4 exercises). */
+function seriesBlocksForSector(
+  sec: ManualDaySector,
+  trainingLevel?: TrainingLevel | null,
+): number[] {
+  const n = Math.max(0, Math.min(20, sec.series ?? 0));
+  if (n <= 0) return [];
+  const category = trainingLevelToCategory(trainingLevel);
+  const dist = getSeriesDistribution(n, category);
+  const manualEx = sec.exercises ?? 0;
+  if (manualEx > 0 && manualEx !== dist.length) {
+    return evenSplitSeriesAcrossExercises(n, manualEx);
+  }
+  if (dist.reduce((a, b) => a + b, 0) === n) return [...dist];
+  const exCount = manualEx > 0 ? manualEx : dist.length;
+  return evenSplitSeriesAcrossExercises(n, exCount);
+}
+
+/** Series per exercise (first block size; uniform when split is even). */
+function seriesPerExerciseForSector(
+  sec: ManualDaySector,
+  trainingLevel?: TrainingLevel | null,
+): number {
+  const blocks = seriesBlocksForSector(sec, trainingLevel);
+  if (blocks.length === 0) return 0;
+  return blocks[0];
+}
+
+/**
+ * Build reps for every series row in the area.
+ * Pyramidal applies per exercise block (area series ÷ exercises), not across the full area total.
+ */
+function computeSectorSeriesRepsBulk(
+  sec: ManualDaySector,
+  reps: number,
+  pyramidal: PyramidalMode,
+  trainingLevel?: TrainingLevel | null,
+): number[] {
+  const n = Math.max(0, Math.min(20, sec.series ?? 0));
+  if (n <= 0) return [];
+  if (reps <= 0) return Array.from({ length: n }, () => 0);
+  if (pyramidal === 'flat') {
+    return Array.from({ length: n }, () => reps);
+  }
+  const blocks = seriesBlocksForSector(sec, trainingLevel);
+  const out = new Array<number>(n).fill(reps);
+  let offset = 0;
+  for (const blockLen of blocks) {
+    const blockReps = computePyramidalRepsSeries(reps, blockLen, pyramidal);
+    for (let i = 0; i < blockLen && offset + i < n; i++) {
+      out[offset + i] = blockReps[i] ?? reps;
+    }
+    offset += blockLen;
+  }
+  return out;
+}
+
+/** @deprecated use computeSectorSeriesRepsBulk — kept for flat-only callers */
 function computeSeriesRepsBulk(reps: number, series: number, pyramidal: PyramidalMode): number[] {
   if (series <= 0) return [];
   if (reps <= 0) return Array.from({ length: series }, () => 0);
+  if (pyramidal === 'flat') {
+    return Array.from({ length: series }, () => reps);
+  }
   return computePyramidalRepsSeries(reps, series, pyramidal);
 }
 
@@ -445,10 +614,11 @@ function syncSectorRepsFromHeader(
   sec: ManualDaySector,
   reps: number,
   rawTop?: string,
+  trainingLevel?: TrainingLevel | null,
 ): ManualDaySector {
   const n = Math.max(0, Math.min(20, sec.series ?? 0));
   const pyramidal = (sec.pyramidal ?? 'flat') as PyramidalMode;
-  const seriesReps = computeSeriesRepsBulk(reps, n, pyramidal);
+  const seriesReps = computeSectorSeriesRepsBulk(sec, reps, pyramidal, trainingLevel);
   const fi = sec.pctFormulaIndex ?? 0;
   const seriesPcts = sec.typeByPercent
     ? seriesReps.map((r) => percentOf1RmFromReps(r, fi))
@@ -532,6 +702,7 @@ function syncSectorPyramidalFromFirstRowPct(
   sec: ManualDaySector,
   row0Pct?: number,
   row0RepsRaw?: string,
+  trainingLevel?: TrainingLevel | null,
 ): ManualDaySector {
   const n = Math.max(0, Math.min(20, sec.series ?? 0));
   if (n <= 0) return sec;
@@ -547,7 +718,12 @@ function syncSectorPyramidalFromFirstRowPct(
         : sectorPctFromReps(sec, sec.seriesReps?.[0] ?? sec.reps ?? 12);
 
   const baseReps = sectorRepsFromPct(sec, pct0);
-  const seriesReps = computePyramidalRepsSeries(baseReps, n, pyramidal);
+  const seriesReps = computeSectorSeriesRepsBulk(
+    { ...sec, reps: baseReps },
+    baseReps,
+    pyramidal,
+    trainingLevel,
+  );
   if (seriesReps.length > 0) seriesReps[0] = baseReps;
 
   const seriesPcts = seriesReps.map((r) => percentOf1RmFromReps(r, fi));
@@ -572,6 +748,7 @@ function syncSectorPyramidalFromFirstRowReps(
   sec: ManualDaySector,
   baseReps: number,
   row0RepsRaw: string,
+  trainingLevel?: TrainingLevel | null,
 ): ManualDaySector {
   const n = Math.max(0, Math.min(20, sec.series ?? 0));
   if (n <= 0) return sec;
@@ -581,7 +758,12 @@ function syncSectorPyramidalFromFirstRowReps(
   const v = Math.max(1, Math.min(99, baseReps));
   const pct0 = percentOf1RmFromReps(v, fi);
 
-  const seriesReps = computePyramidalRepsSeries(v, n, pyramidal);
+  const seriesReps = computeSectorSeriesRepsBulk(
+    { ...sec, reps: v },
+    v,
+    pyramidal,
+    trainingLevel,
+  );
   if (seriesReps.length > 0) seriesReps[0] = v;
 
   const seriesPcts = seriesReps.map((r) => percentOf1RmFromReps(r, fi));
@@ -600,13 +782,16 @@ function syncSectorPyramidalFromFirstRowReps(
   };
 }
 
-export function ensureManualSectorShape(sec: ManualDaySector): ManualDaySector {
+export function ensureManualSectorShape(
+  sec: ManualDaySector,
+  trainingLevel?: TrainingLevel | null,
+): ManualDaySector {
   const series = Math.max(0, Math.min(20, sec.series ?? 0));
   const reps   = Math.max(0, Math.min(99, sec.reps ?? 0));
   const pyramidal = (sec.pyramidal ?? 'flat') as PyramidalMode;
   let seriesReps = sec.seriesReps;
   if (!Array.isArray(seriesReps) || seriesReps.length !== series) {
-    seriesReps = computeSeriesRepsBulk(reps, series, pyramidal);
+    seriesReps = computeSectorSeriesRepsBulk(sec, reps, pyramidal, trainingLevel);
   }
   let seriesWeights = sec.seriesWeights;
   if (!Array.isArray(seriesWeights) || seriesWeights.length !== series) {
@@ -628,12 +813,29 @@ export function ensureManualSectorShape(sec: ManualDaySector): ManualDaySector {
   if (!Array.isArray(seriesRowAlerts) || seriesRowAlerts.length !== series) {
     seriesRowAlerts = resizeSeriesRowStrings(sec.seriesRowAlerts, series);
   }
+  let exercises = Math.max(0, Math.min(20, sec.exercises ?? 0));
+  if (series > 0) {
+    exercises = Math.max(1, Math.min(series, exercises || 1));
+  } else {
+    exercises = 0;
+  }
   return {
     ...sec,
-    exercises: Math.max(0, Math.min(20, sec.exercises ?? 0)),
+    exercises,
     series, reps, pyramidal, seriesReps, seriesRepsRaw, seriesWeights, typeByPercent, seriesPcts,
     seriesRowPauses, seriesRowAlerts,
   };
+}
+
+/** Effective exercise count for display/stats (manual value or distribution-table default). */
+function sectorExercisesCount(
+  sec: ManualDaySector,
+  trainingLevel: TrainingLevel | null | undefined,
+): number {
+  if (sec.series <= 0) return 0;
+  const manual = sec.exercises ?? 0;
+  if (manual > 0) return Math.min(manual, sec.series);
+  return exercisesFromLevelTable(sec.series, trainingLevel);
 }
 
 /** Exercises count per muscular area from `DIST_TABLE` in seriesDistribution.ts (level low/mid/high from athlete training level). */
@@ -650,8 +852,8 @@ function syncSectorExercisesFromLevelTable(
   sec: ManualDaySector,
   trainingLevel: TrainingLevel | null | undefined
 ): ManualDaySector {
+  if ((sec.exercises ?? 0) > 0) return sec;
   const ex = exercisesFromLevelTable(sec.series, trainingLevel);
-  if ((sec.exercises ?? 0) === ex) return sec;
   return { ...sec, exercises: ex };
 }
 
@@ -703,7 +905,7 @@ function materializeSeriesRowPausesForHeaders(
 }
 
 function ensureManualDayPlan(day: ManualDayPlan): ManualDayPlan {
-  return { ...day, sectors: day.sectors.map(ensureManualSectorShape) };
+  return { ...day, sectors: day.sectors.map((s) => ensureManualSectorShape(s)) };
 }
 
 // ─── sector scalar updates ───────────────────────────────────────────────────
@@ -722,7 +924,20 @@ function applySectorScalarUpdate(
   if (field === 'exercises') {
     if (str === '') return { ...sec, exercises: 0 };
     const n = parseInt(str, 10);
-    return { ...sec, exercises: Number.isNaN(n) ? 0 : Math.max(0, Math.min(20, n)) };
+    if (Number.isNaN(n)) return sec;
+    const series = Math.max(0, Math.min(20, sec.series ?? 0));
+    if (series <= 0) return { ...sec, exercises: 0 };
+    const exercises = Math.max(1, Math.min(series, Math.min(20, n)));
+    let merged: ManualDaySector = { ...sec, exercises };
+    if (series > 0 && sec.reps > 0) {
+      merged = syncSectorRepsFromHeader(
+        merged,
+        sec.reps,
+        String(sec.reps),
+        trainingLevel,
+      );
+    }
+    return merged;
   }
   if (field === 'series') {
     if (str === '' || str === '-') {
@@ -751,10 +966,22 @@ function applySectorScalarUpdate(
       };
     }
     const oldSeries = Math.max(0, Math.min(20, sec.series ?? 0));
-    const series = Math.min(20, parsed);
+    const exercises = Math.max(0, Math.min(20, sec.exercises ?? 0));
+    const minSeries = Math.max(1, exercises > 0 ? exercises : 1);
+    const series = Math.max(minSeries, Math.min(20, parsed));
+    let exercisesOut = exercises;
+    if (series > 0) {
+      if (exercisesOut <= 0) {
+        exercisesOut = exercisesFromLevelTable(series, trainingLevel);
+      }
+      exercisesOut = Math.max(1, Math.min(series, exercisesOut));
+    } else {
+      exercisesOut = 0;
+    }
     let merged: ManualDaySector = {
       ...sec,
       series,
+      exercises: exercisesOut,
       seriesWeights: resizeSeriesWeights(sec.seriesWeights, series),
       seriesRowAlerts: resizeSeriesRowStrings(sec.seriesRowAlerts, series),
     };
@@ -762,9 +989,10 @@ function applySectorScalarUpdate(
       merged,
       sec.reps > 0 ? sec.reps : 0,
       sec.reps > 0 ? String(sec.reps) : undefined,
+      trainingLevel,
     );
     if (merged.typeByPercent) {
-      merged = syncSectorPyramidalFromFirstRowPct(merged);
+      merged = syncSectorPyramidalFromFirstRowPct(merged, undefined, undefined, trainingLevel);
     }
     merged = syncSectorPausesFromHeader(merged, trainingLevel);
     if (trainingLevel == null) {
@@ -782,23 +1010,24 @@ function applySectorScalarUpdate(
   if (field === 'reps') {
     if (str === '') {
       if (sec.typeByPercent) return { ...sec, reps: 0 };
-      return syncSectorRepsFromHeader(sec, 0);
+      return syncSectorRepsFromHeader(sec, 0, undefined, trainingLevel);
     }
     const reps = Math.max(0, Math.min(99, parseInt(str, 10) || 0));
     /** % mode: header Reps is reference only — only row-1 % cascades to other series. */
     if (sec.typeByPercent) return { ...sec, reps };
-    return syncSectorRepsFromHeader(sec, reps, str);
+    return syncSectorRepsFromHeader(sec, reps, str, trainingLevel);
   }
   if (field === 'pyramidal') {
     const pyramidal = String(value) as PyramidalMode;
     if (sec.typeByPercent) {
-      return syncSectorPyramidalFromFirstRowPct({ ...sec, pyramidal });
+      return syncSectorPyramidalFromFirstRowPct({ ...sec, pyramidal }, undefined, undefined, trainingLevel);
     }
     const base = sec.reps > 0 ? sec.reps : 0;
     return syncSectorRepsFromHeader(
       { ...sec, pyramidal },
       base,
       base > 0 ? String(base) : undefined,
+      trainingLevel,
     );
   }
   if (field === 'pause') {
@@ -817,41 +1046,21 @@ function applySectorScalarUpdate(
 
 // ─── workout parameters → sector scalars (reps + pauses) by level & yearly period ───
 
-function sectorStillUsesWizardDefaultScalars(sec: ManualDaySector): boolean {
-  const rs = Math.max(0, Math.round(Number(sec.series) || 0));
-  if (rs !== PLAN_GYM_WEEK_WIZARD_DEFAULT_SERIES_PER_SECTOR) return false;
-  const rp = Math.max(0, Math.round(Number(sec.reps) || 0));
-  return rp === PLAN_GYM_WEEK_WIZARD_DEFAULT_REPS;
-}
-
-/** True when every sector still has wizard-built reps/pauses (safe to seed from `wp_goalParams`). */
-function manualDaysAreWizardScalarDefault(days: ManualDayPlan[]): boolean {
-  for (const day of days) {
-    for (const sec of day.sectors) {
-      if (!sectorStillUsesWizardDefaultScalars(sec)) return false;
-    }
-  }
-  return days.some((d) => d.sectors.length > 0);
-}
-
 function applyComputedScalarsToManualSector(
   sec: ManualDaySector,
   scalars: ReturnType<typeof computePlanGymWeekScalarDefaults>,
   trainingLevel: TrainingLevel | null | undefined,
 ): ManualDaySector {
-  const defaultPauseExercise = scalars.defaultPauseLabel;
-  const defaultPauseSeries = scalars.defaultMacroExerciseLabel;
-  const defaultPauseAreas = scalars.defaultMacroEndSectorLabel;
   const defaultReps = scalars.defaultReps;
   let s: ManualDaySector = {
     ...sec,
-    pause: defaultPauseSeries,
-    macroExercise: defaultPauseExercise,
-    macroEndOfSector: defaultPauseAreas,
+    pause: scalars.defaultPauseLabel,
+    macroExercise: scalars.defaultMacroExerciseLabel,
+    macroEndOfSector: scalars.defaultMacroEndSectorLabel,
   };
   s = applySectorScalarUpdate(s, 'reps', String(defaultReps));
   s = syncSectorExercisesFromLevelTable(s, trainingLevel);
-  s = ensureManualSectorShape(s);
+  s = ensureManualSectorShape(s, trainingLevel);
   const n = Math.max(0, Math.min(20, s.series ?? 0));
   if (n <= 0) {
     return {
@@ -864,7 +1073,7 @@ function applyComputedScalarsToManualSector(
       seriesRowAlerts: [],
     };
   }
-  const rebuiltSeriesReps = computeSeriesRepsBulk(s.reps, n, s.pyramidal);
+  const rebuiltSeriesReps = computeSectorSeriesRepsBulk(s, s.reps, s.pyramidal, trainingLevel);
   const rebuiltSeriesRepsRaw = rebuiltSeriesReps.map((r) => (r > 0 ? String(r) : ''));
   return {
     ...s,
@@ -877,7 +1086,7 @@ function applyComputedScalarsToManualSector(
   };
 }
 
-/** Same percentage rules as `SeriesDistDialog` `initPcts` — drives how total series splits across areas. */
+/** Derive distribution % from each sector’s current series counts (or equal / constant-sector defaults when unset). */
 function initialDistributionPctsForSectors(
   secs: ManualDaySector[],
   constantIds: Set<string>,
@@ -902,6 +1111,68 @@ function initialDistributionPctsForSectors(
   return secs.map(() => 100 / n);
 }
 
+const MIN_SERIES_PER_MUSCULAR_AREA = 2;
+
+/** Min/max area-series for inline edit: ≥2 and ≤ total − (2 × other sectors). */
+export function seriesEditLimitsForSector(
+  sectorCount: number,
+  routineTotalSeries: number,
+): { min: number; max: number } {
+  const n = Math.max(0, sectorCount);
+  if (n <= 0) return { min: 0, max: 0 };
+  if (n === 1) {
+    const total = Math.max(1, routineTotalSeries);
+    return {
+      min: Math.min(MIN_SERIES_PER_MUSCULAR_AREA, total),
+      max: Math.min(20, total),
+    };
+  }
+  const min = MIN_SERIES_PER_MUSCULAR_AREA;
+  const max = Math.min(20, Math.max(min, routineTotalSeries - min * (n - 1)));
+  return { min, max };
+}
+
+/**
+ * When one muscular area's series count changes, redistribute routine total across all areas
+ * (same percentage logic as the Distribution series dialog).
+ */
+export function redistributeDaySeriesFromSectorChange(
+  sectors: ManualDaySector[],
+  dayIdx: number,
+  changedIdx: number,
+  newSeriesRaw: number,
+  constantIds: Set<string>,
+  getSuggestedTotal?: (d: number) => number,
+): number[] {
+  const n = sectors.length;
+  if (n === 0) return [];
+
+  const total = computeDistDialogInitialTotal(sectors, dayIdx, getSuggestedTotal);
+  const { min, max } = seriesEditLimitsForSector(n, total);
+  const fixed = Math.max(min, Math.min(max, Math.round(newSeriesRaw)));
+
+  if (n === 1) return [Math.min(20, fixed)];
+
+  const pcts = initialDistributionPctsForSectors(sectors, constantIds);
+  const newPct = total > 0 ? (fixed / total) * 100 : 0;
+  const constantIdx = sectors.findIndex(
+    (s) => constantIds.has(s.sectorId) || constantIds.has(s.sectorLabel),
+  );
+  const isConst = changedIdx === constantIdx;
+  const cIdxForRedist = constantIdx >= 0 ? constantIdx : null;
+  const newPcts = redistributePcts(
+    pcts,
+    changedIdx,
+    newPct,
+    cIdxForRedist,
+    isConst ? 10 : 0,
+    isConst ? 40 : 100,
+  );
+  return distributeSeriesFromPcts(newPcts, total).map((c) =>
+    Math.min(20, Math.max(0, Math.round(c))),
+  );
+}
+
 function applySeriesCountsToDay(
   day: ManualDayPlan,
   seriesCounts: number[],
@@ -911,13 +1182,14 @@ function applySeriesCountsToDay(
     ...day,
     sectors: day.sectors.map((sec, si) => {
       const raw = seriesCounts[si];
-      if (raw === undefined || Number.isNaN(raw)) return ensureManualSectorShape(sec);
+      if (raw === undefined || Number.isNaN(raw)) return ensureManualSectorShape(sec, trainingLevel);
       const capped = Math.min(20, Math.max(0, Math.round(raw)));
       return ensureManualSectorShape(
         syncSectorExercisesFromLevelTable(
           applySectorScalarUpdate(sec, 'series', String(capped), trainingLevel),
           trainingLevel
-        )
+        ),
+        trainingLevel,
       );
     }),
   };
@@ -1340,6 +1612,64 @@ function formatDistPct(p: number): string {
   const r = Math.round(p * 10) / 10;
   return Number.isInteger(r) ? String(r) : r.toFixed(1);
 }
+function SectorScalarStepper({
+  value,
+  min,
+  max,
+  disabled,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  disabled?: boolean;
+  onChange: (next: number) => void;
+}) {
+  const canUp = !disabled && value < max;
+  const canDown = !disabled && value > min;
+  return (
+    <div
+      className={`flex items-center overflow-hidden rounded border border-gray-400 bg-white ${
+        disabled ? 'opacity-50' : ''
+      }`}
+    >
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value > 0 ? value : ''}
+        disabled={disabled}
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (raw === '') return;
+          const n = parseInt(raw, 10);
+          if (!Number.isFinite(n)) return;
+          onChange(Math.max(min, Math.min(max, n)));
+        }}
+        className="w-10 border-0 bg-transparent py-0.5 text-center text-sm font-semibold tabular-nums focus:outline-none focus:ring-0"
+      />
+      <div className="flex flex-col divide-y divide-gray-300 border-l border-gray-300">
+        <button
+          type="button"
+          disabled={!canUp}
+          onClick={() => onChange(Math.min(max, value + 1))}
+          className="px-1.5 py-0.5 text-[9px] leading-none hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ▲
+        </button>
+        <button
+          type="button"
+          disabled={!canDown}
+          onClick={() => onChange(Math.max(min, value - 1))}
+          className="px-1.5 py-0.5 text-[9px] leading-none hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ▼
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SectorRow({ sec, pct, series, color, isConstant, orderNum, stepPct, onChange, delta = 0 }: SectorRowProps) {
   return (
     <div className={`flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-2 shadow-sm transition-colors ${
@@ -1390,6 +1720,8 @@ function SectorRow({ sec, pct, series, color, isConstant, orderNum, stepPct, onC
 
 const EMPTY_DIST_CONSTANT_SECTOR_IDS = new Set<string>();
 
+export type SeriesDistDaySession = { totalSeries: number; pcts: number[] };
+
 export interface SeriesDistDialogProps {
   days:              ManualDayPlan[];
   initialDayIdx:     number;
@@ -1399,7 +1731,10 @@ export interface SeriesDistDialogProps {
   /** Per-day manual pick for constant sector; shown in this dialog when `onManualDistConstantChange` is set. */
   manualDistConstantByDay?: (string | null)[];
   onManualDistConstantChange?: (dayIdx: number, sectorId: string | null) => void;
-  onSave:            (dayIdx: number, newSeriesCounts: number[]) => void;
+  /** Persisted total + % per day (survives dialog close/reopen). */
+  sessionByDay?: Record<number, SeriesDistDaySession>;
+  onSessionChange?: (dayIdx: number, session: SeriesDistDaySession) => void;
+  onSave:            (dayIdx: number, newSeriesCounts: number[], session?: SeriesDistDaySession) => void;
   onClose:           () => void;
 }
 
@@ -1421,6 +1756,58 @@ function computeDistDialogInitialTotal(
   return Math.max(1, Math.min(200, sum));
 }
 
+export function buildDistSessionForDay(
+  sectors: ManualDaySector[],
+  dayIdx: number,
+  constantIds: Set<string>,
+  getSuggested?: (d: number) => number,
+): SeriesDistDaySession {
+  return {
+    totalSeries: computeDistDialogInitialTotal(sectors, dayIdx, getSuggested),
+    pcts: initialDistributionPctsForSectors(sectors, constantIds),
+  };
+}
+
+function resolveDistDialogState(
+  dayIdx: number,
+  days: ManualDayPlan[],
+  sessionByDay: Record<number, SeriesDistDaySession> | undefined,
+  getConstantSectorIdsForDay: ((d: number) => Set<string>) | undefined,
+  constantSectorIds: Set<string>,
+  getSuggested?: (d: number) => number,
+): SeriesDistDaySession {
+  const n = days[dayIdx]?.sectors?.length ?? 0;
+  if (n === 0) return { totalSeries: 40, pcts: [] };
+  const saved = sessionByDay?.[dayIdx];
+  if (saved && saved.pcts.length === n) {
+    return { totalSeries: saved.totalSeries, pcts: [...saved.pcts] };
+  }
+  const secs = days[dayIdx]!.sectors;
+  const ids = getConstantSectorIdsForDay
+    ? getConstantSectorIdsForDay(dayIdx)
+    : constantSectorIds;
+  return buildDistSessionForDay(secs, dayIdx, ids, getSuggested);
+}
+
+export function buildAllDistSessionsFromDays(
+  planDays: ManualDayPlan[],
+  wizardConstantSectorIds: Set<string>,
+  manualDistConstantByDay: (string | null)[],
+  getSuggested: (dayIdx: number) => number,
+): Record<number, SeriesDistDaySession> {
+  const sessions: Record<number, SeriesDistDaySession> = {};
+  planDays.forEach((day, di) => {
+    if (day.sectors.length === 0) return;
+    const ids = constantSectorIdsForDistributionDay(
+      day,
+      wizardConstantSectorIds,
+      manualDistConstantByDay[di] ?? null,
+    );
+    sessions[di] = buildDistSessionForDay(day.sectors, di, ids, getSuggested);
+  });
+  return sessions;
+}
+
 export function SeriesDistDialog({
   days,
   initialDayIdx,
@@ -1429,6 +1816,8 @@ export function SeriesDistDialog({
   getSuggestedTotalSeriesForDay,
   manualDistConstantByDay,
   onManualDistConstantChange,
+  sessionByDay,
+  onSessionChange,
   onSave,
   onClose,
 }: SeriesDistDialogProps) {
@@ -1445,60 +1834,68 @@ export function SeriesDistDialog({
     (s) => constantIdSetForDay.has(s.sectorId) || constantIdSetForDay.has(s.sectorLabel)
   );
 
-  const initPcts = (secs: ManualDaySector[], cIdx: number) => {
-    const n = secs.length;
-    if (n === 0) return [];
-    if (cIdx >= 0) {
-      const cPct = 20;
-      const others = n - 1;
-      if (others <= 0) return secs.map((_, i) => (i === cIdx ? 100 : 0));
-      const rest = (100 - cPct) / others;
-      return secs.map((_, i) => (i === cIdx ? cPct : rest));
-    }
-    return secs.map(() => 100 / n);
-  };
+  const pctsForDay = useCallback(
+    (dIdx: number) => {
+      const secs = days[dIdx]?.sectors ?? [];
+      const ids = getConstantSectorIdsForDay
+        ? getConstantSectorIdsForDay(dIdx)
+        : constantSectorIds;
+      return initialDistributionPctsForSectors(secs, ids);
+    },
+    [days, getConstantSectorIdsForDay, constantSectorIds]
+  );
 
   const [totalSeries, setTotalSeries] = useState(() =>
-    computeDistDialogInitialTotal(
-      days[initialDayIdx]?.sectors ?? [],
+    resolveDistDialogState(
       initialDayIdx,
-      getSuggestedTotalSeriesForDay
-    )
+      days,
+      sessionByDay,
+      getConstantSectorIdsForDay,
+      constantSectorIds,
+      getSuggestedTotalSeriesForDay,
+    ).totalSeries
   );
-  const [pcts, setPcts] = useState<number[]>(() => {
-    const secs = days[initialDayIdx]?.sectors ?? [];
-    const ids  = getConstantSectorIdsForDay
-      ? getConstantSectorIdsForDay(initialDayIdx)
-      : constantSectorIds;
-    const cIdx = secs.findIndex(
-      (s) => ids.has(s.sectorId) || ids.has(s.sectorLabel)
+  const [pcts, setPcts] = useState<number[]>(() =>
+    resolveDistDialogState(
+      initialDayIdx,
+      days,
+      sessionByDay,
+      getConstantSectorIdsForDay,
+      constantSectorIds,
+      getSuggestedTotalSeriesForDay,
+    ).pcts
+  );
+  const [prevPcts, setPrevPcts] = useState<number[]>(() =>
+    resolveDistDialogState(
+      initialDayIdx,
+      days,
+      sessionByDay,
+      getConstantSectorIdsForDay,
+      constantSectorIds,
+      getSuggestedTotalSeriesForDay,
+    ).pcts
+  );
+
+  /** Load saved draft or sector-derived state when switching day tabs (not when parent `days` updates after Proceed). */
+  useEffect(() => {
+    const state = resolveDistDialogState(
+      dayIdx,
+      days,
+      sessionByDay,
+      getConstantSectorIdsForDay,
+      constantSectorIds,
+      getSuggestedTotalSeriesForDay,
     );
-    return initPcts(secs, cIdx);
-  });
-  const [prevPcts, setPrevPcts] = useState<number[]>(() => {
-    const secs = days[initialDayIdx]?.sectors ?? [];
-    const ids  = getConstantSectorIdsForDay
-      ? getConstantSectorIdsForDay(initialDayIdx)
-      : constantSectorIds;
-    const cIdx = secs.findIndex(
-      (s) => ids.has(s.sectorId) || ids.has(s.sectorLabel)
-    );
-    return initPcts(secs, cIdx);
-  });
+    setTotalSeries(state.totalSeries);
+    setPcts(state.pcts);
+    setPrevPcts(state.pcts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset when the active day tab changes
+  }, [dayIdx]);
 
   useEffect(() => {
-    const secs = days[dayIdx]?.sectors ?? [];
-    const ids  = getConstantSectorIdsForDay
-      ? getConstantSectorIdsForDay(dayIdx)
-      : constantSectorIds;
-    const cIdx = secs.findIndex(
-      (s) => ids.has(s.sectorId) || ids.has(s.sectorLabel)
-    );
-    const init = initPcts(secs, cIdx);
-    setTotalSeries(computeDistDialogInitialTotal(secs, dayIdx, getSuggestedTotalSeriesForDay));
-    setPcts(init);
-    setPrevPcts(init);
-  }, [dayIdx, days, getConstantSectorIdsForDay, constantSectorIds, getSuggestedTotalSeriesForDay]);
+    if (pcts.length === 0) return;
+    onSessionChange?.(dayIdx, { totalSeries, pcts: [...pcts] });
+  }, [dayIdx, totalSeries, pcts, onSessionChange]);
 
   const changePct = (idx: number, newPct: number) => {
     const isConst = idx === constantIdx;
@@ -1530,7 +1927,9 @@ export function SeriesDistDialog({
   let orderCounter = 0;
 
   const handleProceed = () => {
-    onSave(dayIdx, seriesCounts);
+    const session = { totalSeries, pcts: [...pcts] };
+    onSessionChange?.(dayIdx, session);
+    onSave(dayIdx, seriesCounts, session);
     if (dayIdx < days.length - 1) setDayIdx(d => d + 1);
     else onClose();
   };
@@ -1557,8 +1956,10 @@ export function SeriesDistDialog({
 
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
 
-          <div className="flex justify-center rounded-xl bg-white py-2 shadow-sm ring-1 ring-gray-200/80">
-            <PieChart slices={pieSectors} />
+          <div className="sticky top-0 z-10 -mx-4 border-b border-gray-200/80 bg-stone-100 px-4 pb-3 shadow-sm">
+            <div className="flex justify-center rounded-xl bg-white py-2 shadow-sm ring-1 ring-gray-200/80">
+              <PieChart slices={pieSectors} />
+            </div>
           </div>
 
           <div className="flex flex-col items-center gap-1.5">
@@ -1774,10 +2175,14 @@ export default function PlanGymWeekManualModal({
   workoutPlan,
   headerImage,
   rescanParams = null,
-  trainingLevel = null,
+  trainingLevel: trainingLevelProp = null,
   trainingLevelImages,
   onBack,
 }: PlanGymWeekManualModalProps) {
+  /** Wizard prop, then plan snapshot, then rescan params — survives manual ↔ fast-plan navigation. */
+  const trainingLevel =
+    trainingLevelProp ?? initialPlan?.trainingLevel ?? rescanParams?.trainingLevel ?? null;
+
   const [daysCount,              setDaysCount]              = useState(() => clampWeeklyPlanDayCount(initialDaysCount));
   const [activeDayIndex,         setActiveDayIndex]         = useState(0);
   const [days,                   setDays]                   = useState<ManualDayPlan[]>(() =>
@@ -1802,6 +2207,18 @@ export default function PlanGymWeekManualModal({
   const [manualDistConstantByDay, setManualDistConstantByDay] = useState<(string | null)[]>(() =>
     Array.from({ length: 6 }, () => null)
   );
+  /** Per-day series counts baseline for Distribution series reset (snapshot on open + after dialog save). */
+  const distributionBaselineRef = useRef<number[][]>([]);
+  /** Per-day total + % draft for Distribution series dialog (survives close/reopen). */
+  const [seriesDistSessionByDay, setSeriesDistSessionByDay] = useState<
+    Record<number, SeriesDistDaySession>
+  >({});
+
+  const snapshotDistributionBaseline = useCallback((planDays: ManualDayPlan[]) => {
+    distributionBaselineRef.current = planDays.map((d) =>
+      d.sectors.map((s) => Math.max(0, Math.round(Number(s.series) || 0))),
+    );
+  }, []);
 
   const [yearlyPeriodSettings, setYearlyPeriodSettings] = useState<PlanGymWeekYearlyPeriodSettings>(() =>
     defaultPlanGymWeekYearlyPeriodSettings()
@@ -1809,7 +2226,6 @@ export default function PlanGymWeekManualModal({
   /** Pause / macro / series / reps yearly From→To — hidden until user opens manual entry. */
   const [manualPeriodStartEndOpen, setManualPeriodStartEndOpen] = useState(false);
   const [infoRepsModalOpen, setInfoRepsModalOpen] = useState(false);
-  const [infoRepsBody, setInfoRepsBody] = useState(INFO_REPS_DEFAULT_EN);
   const [autoProcessInfoRaw, setAutoProcessInfoRaw] = useState(AUTO_PROCESS_INFO_DEFAULT_EN);
 
   const { currentLanguage: language } = useLanguage();
@@ -1830,35 +2246,68 @@ export default function PlanGymWeekManualModal({
   // Reset on open
   useEffect(() => {
     if (isOpen) {
+      const goalsForInit = goals.length ? goals : (['hypertrophy'] as GoalId[]);
+      const makeSuggestedGetter = (
+        n: number,
+        yp: PlanGymWeekYearlyPeriodSettings,
+      ) => (dIdx: number) => {
+        const cur = Math.max(1, Math.floor(yp.currentPeriod || 1));
+        const tot = Math.max(cur, Math.floor(yp.totalPeriods || 1));
+        return suggestedRoutineTotalSeriesForDistMask({
+          trainingLevel,
+          daysCount: n,
+          goalId: goalsForInit[dIdx],
+          currentPeriod: cur,
+          totalPeriods: tot,
+        });
+      };
+
       if (initialPlan?.days?.length) {
         const n = clampWeeklyPlanDayCount(initialPlan.daysCount);
         setDaysCount(n);
         setActiveDayIndex(0);
         const mergedYp = initialPlan.yearlyPeriodSettings
-          ? { ...defaultPlanGymWeekYearlyPeriodSettings(), ...initialPlan.yearlyPeriodSettings }
+          ? {
+              ...defaultPlanGymWeekYearlyPeriodSettings(),
+              ...initialPlan.yearlyPeriodSettings,
+              ...clampPlanYearPeriodPair(
+                initialPlan.yearlyPeriodSettings.totalPeriods,
+                initialPlan.yearlyPeriodSettings.currentPeriod,
+              ),
+            }
           : defaultPlanGymWeekYearlyPeriodSettings();
         setYearlyPeriodSettings(mergedYp);
-        let loaded = padManualDaysToMaxSlots(initialPlan.days.map(ensureManualDayPlan));
-        if (manualDaysAreWizardScalarDefault(loaded)) {
-          const g = goals.length ? goals : (['hypertrophy'] as GoalId[]);
-          loaded = applyWorkoutParamDefaultsToManualDays(
-            loaded,
-            g,
-            trainingLevel,
-            mergedYp,
-            n,
+        const padded = padManualDaysToMaxSlots(initialPlan.days.map(ensureManualDayPlan));
+        setDays(padded);
+        snapshotDistributionBaseline(padded);
+        const emptyManual = Array.from({ length: MANUAL_PLAN_MAX_DAY_SLOTS }, () => null);
+        setManualDistConstantByDay(emptyManual);
+        setSeriesDistSessionByDay(
+          buildAllDistSessionsFromDays(
+            padded,
             wizardConstantSectorIds,
-            Array.from({ length: MANUAL_PLAN_MAX_DAY_SLOTS }, () => null)
-          );
-        }
-        setDays(loaded);
-        setManualDistConstantByDay(Array.from({ length: MANUAL_PLAN_MAX_DAY_SLOTS }, () => null));
+            emptyManual,
+            makeSuggestedGetter(n, mergedYp),
+          ),
+        );
       } else {
         const n = clampWeeklyPlanDayCount(initialDaysCount);
         setDaysCount(n);
         setActiveDayIndex(0);
-        setDays(padManualDaysToMaxSlots(buildInitialDays(n)));
-        setManualDistConstantByDay(Array.from({ length: MANUAL_PLAN_MAX_DAY_SLOTS }, () => null));
+        const built = padManualDaysToMaxSlots(buildInitialDays(n));
+        setDays(built);
+        snapshotDistributionBaseline(built);
+        const emptyManual = Array.from({ length: MANUAL_PLAN_MAX_DAY_SLOTS }, () => null);
+        setManualDistConstantByDay(emptyManual);
+        const defaultYp = defaultPlanGymWeekYearlyPeriodSettings();
+        setSeriesDistSessionByDay(
+          buildAllDistSessionsFromDays(
+            built,
+            wizardConstantSectorIds,
+            emptyManual,
+            makeSuggestedGetter(n, defaultYp),
+          ),
+        );
       }
       setEditingRoutineName(null);
       setViewMode('edit');
@@ -1871,22 +2320,61 @@ export default function PlanGymWeekManualModal({
       setInfoRepsModalOpen(false);
       setManualPeriodStartEndOpen(false);
     }
-  }, [isOpen, initialDaysCount, initialPlan, goals, trainingLevel, wizardConstantSectorIds]);
+  }, [isOpen, initialDaysCount, initialPlan, goals, trainingLevel, wizardConstantSectorIds, snapshotDistributionBaseline]);
+
+  const totalSectorCount = useMemo(
+    () => days.reduce((n, d) => n + d.sectors.length, 0),
+    [days],
+  );
+
+  const goalsForPlan = useMemo(
+    () => (goals.length ? goals : (['hypertrophy'] as GoalId[])),
+    [goals],
+  );
+
+  const applyCalculatedWorkoutParamsToDays = useCallback(() => {
+    setDays((prev) => {
+      if (!prev.some((d) => d.sectors.length > 0)) return prev;
+      return applyWorkoutParamDefaultsToManualDays(
+        prev,
+        goalsForPlan,
+        trainingLevel,
+        yearlyPeriodSettings,
+        daysCount,
+        wizardConstantSectorIds,
+        manualDistConstantByDay,
+      );
+    });
+  }, [
+    goalsForPlan,
+    trainingLevel,
+    yearlyPeriodSettings,
+    daysCount,
+    wizardConstantSectorIds,
+    manualDistConstantByDay,
+  ]);
+
+  /** Push reps, pauses, and distributed series from Workouts parameters into every sector. */
+  useEffect(() => {
+    if (!isOpen) return;
+    if ((yearlyPeriodSettings.periodScalarsSource ?? 'calculated') !== 'calculated') return;
+    if (totalSectorCount <= 0) return;
+    applyCalculatedWorkoutParamsToDays();
+  }, [
+    isOpen,
+    totalSectorCount,
+    yearlyPeriodSettings.periodScalarsSource,
+    yearlyPeriodSettings.totalPeriods,
+    yearlyPeriodSettings.currentPeriod,
+    trainingLevel,
+    daysCount,
+    goalsForPlan,
+    applyCalculatedWorkoutParamsToDays,
+  ]);
 
   useEffect(() => {
     setSelectedSectorFrameIndex(null);
   }, [activeDayIndex]);
-
-  useEffect(() => {
-    if (!infoRepsModalOpen) return;
-    let cancelled = false;
-    void fetchInfoRepsText(language).then((text) => {
-      if (!cancelled) setInfoRepsBody(text);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [infoRepsModalOpen, language]);
 
   useEffect(() => {
     if (!showAutoWarn) return;
@@ -1935,13 +2423,18 @@ export default function PlanGymWeekManualModal({
   );
 
   const getSuggestedTotalSeriesForDay = useCallback(
-    (dIdx: number) =>
-      suggestedRoutineTotalSeriesForDistMask({
+    (dIdx: number) => {
+      const cur = Math.max(1, Math.floor(yearlyPeriodSettings.currentPeriod || 1));
+      const tot = Math.max(cur, Math.floor(yearlyPeriodSettings.totalPeriods || 1));
+      return suggestedRoutineTotalSeriesForDistMask({
         trainingLevel,
         daysCount,
         goalId: goals[dIdx],
-      }),
-    [trainingLevel, daysCount, goals]
+        currentPeriod: cur,
+        totalPeriods: tot,
+      });
+    },
+    [trainingLevel, daysCount, goals, yearlyPeriodSettings.currentPeriod, yearlyPeriodSettings.totalPeriods],
   );
 
   const setStableDays = (updater: (prev: ManualDayPlan[]) => ManualDayPlan[]) => setDays(updater);
@@ -1963,10 +2456,10 @@ export default function PlanGymWeekManualModal({
       totalPeriods: tot,
     });
     return {
-      hasGoalParams: goalSettings != null,
+      hasGoalParams: isGoalParamsSavedInWorkoutSettings(goalId),
       reps: scalars.defaultReps,
-      pauseSeries: scalars.defaultMacroExerciseLabel,
-      pauseExercises: scalars.defaultPauseLabel,
+      pauseSeries: scalars.defaultPauseLabel,
+      pauseExercises: scalars.defaultMacroExerciseLabel,
       pauseAreas: scalars.defaultMacroEndSectorLabel,
     };
   }, [
@@ -1979,22 +2472,33 @@ export default function PlanGymWeekManualModal({
 
   // ── stats (for active day) ──
   const sumSeriesInAreas = activeDay.sectors.reduce((s, sec) => s + sec.series, 0);
-  const activeGoalForStats = goals[effectiveActiveDayIndex];
-  const hasSavedGoalParams = readGoalParamsFromWorkoutSettings(activeGoalForStats) != null;
+  const yearlyScalarSource = yearlyPeriodSettings.periodScalarsSource ?? 'calculated';
   const calculatedRoutineTotalSeries = getSuggestedTotalSeriesForDay(effectiveActiveDayIndex);
   const showCalculatedTotalInStats =
-    hasSavedGoalParams && calculatedRoutineTotalSeries > 0;
+    yearlyScalarSource === 'calculated' && calculatedRoutineTotalSeries > 0;
   /** Routine total from Workouts parameters (level + period + session %); else sum of sector series. */
   const totalSeriesForStatsBar = showCalculatedTotalInStats
     ? calculatedRoutineTotalSeries
     : sumSeriesInAreas;
-  const totalExercises = activeDay.sectors.reduce(
-    (s, sec) => s + (sec.series <= 0 ? 0 : exercisesFromLevelTable(sec.series, trainingLevel)),
-    0,
-  );
+  const seriesPerMuscularArea = activeDay.sectors.length > 0
+    ? Math.round((totalSeriesForStatsBar / activeDay.sectors.length) * 10) / 10
+    : 0;
   const avgSeriesPerArea = activeDay.sectors.length > 0
     ? Math.round((sumSeriesInAreas / activeDay.sectors.length) * 10) / 10
     : 0;
+  const routineTotalForSeriesEdit = useMemo(
+    () =>
+      computeDistDialogInitialTotal(
+        activeDay.sectors,
+        effectiveActiveDayIndex,
+        getSuggestedTotalSeriesForDay,
+      ),
+    [activeDay.sectors, effectiveActiveDayIndex, getSuggestedTotalSeriesForDay],
+  );
+  const areaSeriesEditLimits = useMemo(
+    () => seriesEditLimitsForSector(activeDay.sectors.length, routineTotalForSeriesEdit),
+    [activeDay.sectors.length, routineTotalForSeriesEdit],
+  );
   const allReps: number[] = [];
   const allPauses: string[] = [];
   for (const sec of activeDay.sectors) {
@@ -2032,25 +2536,16 @@ export default function PlanGymWeekManualModal({
         sectors: [...next[effectiveActiveDayIndex].sectors]
       };
       if (day.sectors.some((s) => s.sectorId === sectorId)) return prev;
-      const newSector = {
-        sectorId:         group.id,
-        sectorLabel:      group.label,
-        image:            group.image,
-        exercises:        0,
-        series:             0,
-        reps:               0,
-        pause:              '',
-        macroExercise:      '',
-        macroEndOfSector:   '',
-        pyramidal:        'flat' as const,
-        seriesReps:       [] as number[],
-        seriesRepsRaw:    [] as string[],
-        seriesWeights:    [] as string[],
-        typeByPercent:    false,
-        seriesPcts:       [] as number[],
-        seriesRowPauses:  [] as string[],
-        seriesRowAlerts:  [] as string[],
-      };
+      const calcScalars =
+        yearlyScalarSource === 'calculated'
+          ? {
+              reps: workoutParamsReferenceScalars.reps,
+              pauseSeries: workoutParamsReferenceScalars.pauseSeries,
+              pauseExercises: workoutParamsReferenceScalars.pauseExercises,
+              pauseAreas: workoutParamsReferenceScalars.pauseAreas,
+            }
+          : null;
+      const newSector = buildNewSectorFromDayAverages(group, day, trainingLevel, calcScalars);
       const sectors = [...day.sectors];
       sectors.splice(insertAt, 0, newSector);
       day.sectors = sectors;
@@ -2165,7 +2660,7 @@ export default function PlanGymWeekManualModal({
         if (newIdx < 0) return prev;
         patch = { newIdx, oldSectorId };
         const next = [...prev];
-        next[dayIdx] = { ...day, sectors: deduped.map(ensureManualSectorShape) };
+        next[dayIdx] = { ...day, sectors: deduped.map((s) => ensureManualSectorShape(s)) };
         return next;
       });
     });
@@ -2186,14 +2681,50 @@ export default function PlanGymWeekManualModal({
   const updateSector = (dayIdx: number, sectorIndex: number, field: SectorScalarField, value: number | string) => {
     setStableDays((prev) => {
       const next = [...prev];
-      const sectors = [...next[dayIdx].sectors];
+      const day = next[dayIdx];
+      if (!day) return prev;
+
+      if (field === 'series') {
+        const parsed = typeof value === 'number' ? value : parseInt(String(value), 10);
+        if (!Number.isFinite(parsed)) return prev;
+        const constIds = constantSectorIdsForDistributionDay(
+          day,
+          wizardConstantSectorIds,
+          manualDistConstantByDay[dayIdx] ?? null,
+        );
+        const newCounts = redistributeDaySeriesFromSectorChange(
+          day.sectors,
+          dayIdx,
+          sectorIndex,
+          parsed,
+          constIds,
+          getSuggestedTotalSeriesForDay,
+        );
+        const updatedDay = applySeriesCountsToDay(day, newCounts, trainingLevel);
+        next[dayIdx] = updatedDay;
+        setSeriesDistSessionByDay((sess) => ({
+          ...sess,
+          [dayIdx]: buildDistSessionForDay(
+            updatedDay.sectors,
+            dayIdx,
+            constIds,
+            getSuggestedTotalSeriesForDay,
+          ),
+        }));
+        return next;
+      }
+
+      const sectors = [...day.sectors];
       const cur = sectors[sectorIndex];
+      if (!cur) return prev;
       let patched: ManualDaySector;
       /** Header Pause: overwrite every row; per-row overrides until header Pause changes again. */
       if (field === 'pause') {
         const pauseVal = String(value).trim();
         patched = syncSectorPausesFromHeader({ ...cur, pause: pauseVal }, trainingLevel);
         patched = syncSectorExercisesFromLevelTable(patched, trainingLevel);
+      } else if (field === 'exercises') {
+        patched = applySectorScalarUpdate(cur, field, value, trainingLevel);
       } else if (field === 'reps' || field === 'pyramidal') {
         patched = applySectorScalarUpdate(cur, field, value, trainingLevel);
         patched = syncSectorExercisesFromLevelTable(patched, trainingLevel);
@@ -2201,8 +2732,8 @@ export default function PlanGymWeekManualModal({
         patched = applySectorScalarUpdate(cur, field, value, trainingLevel);
         patched = syncSectorExercisesFromLevelTable(patched, trainingLevel);
       }
-      sectors[sectorIndex] = ensureManualSectorShape(patched);
-      next[dayIdx] = { ...next[dayIdx], sectors };
+      sectors[sectorIndex] = ensureManualSectorShape(patched, trainingLevel);
+      next[dayIdx] = { ...day, sectors };
       return next;
     });
   };
@@ -2227,30 +2758,19 @@ export default function PlanGymWeekManualModal({
     });
   };
 
-  // ── series reps (% mode): row 1 cascades; rows 2+ manual reps only ──
+  // ── series reps (% mode): manual edit only — never recalc %; red when typed > calc from % ──
   const updateSeriesRepAtPctMode = (dayIdx: number, secIdx: number, rowIdx: number, raw: string) => {
     setStableDays((prev) => {
       const next = [...prev];
       const sectors = [...next[dayIdx].sectors];
       const sec = { ...sectors[secIdx] };
       const parsed = parseInt(raw, 10);
-      if (rowIdx === 0) {
-        if (!Number.isNaN(parsed)) {
-          const v = Math.max(1, Math.min(99, parsed));
-          Object.assign(sec, syncSectorPyramidalFromFirstRowReps(sec, v, raw));
-        } else {
-          const seriesRepsRaw = resizeSeriesRepsRaw(sec.seriesRepsRaw, sec.series);
-          seriesRepsRaw[0] = raw;
-          sec.seriesRepsRaw = seriesRepsRaw;
-        }
-      } else {
-        const seriesRepsRaw = resizeSeriesRepsRaw(sec.seriesRepsRaw, sec.series);
-        seriesRepsRaw[rowIdx] = raw;
-        sec.seriesRepsRaw = seriesRepsRaw;
-        if (!Number.isNaN(parsed)) {
-          const v = Math.max(1, Math.min(99, parsed));
-          Object.assign(sec, patchSeriesRepRowPctModeManual(sec, rowIdx, raw, v));
-        }
+      const seriesRepsRaw = resizeSeriesRepsRaw(sec.seriesRepsRaw, sec.series);
+      seriesRepsRaw[rowIdx] = raw;
+      sec.seriesRepsRaw = seriesRepsRaw;
+      if (!Number.isNaN(parsed)) {
+        const v = Math.max(1, Math.min(99, parsed));
+        Object.assign(sec, patchSeriesRepRowPctModeManual(sec, rowIdx, raw, v));
       }
       sectors[secIdx] = sec;
       next[dayIdx] = { ...next[dayIdx], sectors };
@@ -2269,7 +2789,7 @@ export default function PlanGymWeekManualModal({
       const sec = { ...sectors[secIdx] };
       const n = sec.series;
       if (rowIdx === 0) {
-        Object.assign(sec, syncSectorPyramidalFromFirstRowPct(sec, clampedPct));
+        Object.assign(sec, syncSectorPyramidalFromFirstRowPct(sec, clampedPct, undefined, trainingLevel));
       } else {
         const seriesPcts = [...(sec.seriesPcts ?? (sec.seriesReps ?? []).map((r) => sectorPctFromReps(sec, r)))];
         while (seriesPcts.length < n) {
@@ -2300,7 +2820,7 @@ export default function PlanGymWeekManualModal({
       if (pct && !sec.typeByPercent) {
         sec.typeByPercent = true;
         sec = recalcSectorSeriesPctsFromReps(sec, sec.pctFormulaIndex ?? 0);
-        sec = syncSectorPyramidalFromFirstRowPct(sec);
+        sec = syncSectorPyramidalFromFirstRowPct(sec, undefined, undefined, trainingLevel);
       } else {
         sec.typeByPercent = pct;
       }
@@ -2478,8 +2998,8 @@ export default function PlanGymWeekManualModal({
       daysCount,
       days: stableDays,
       yearlyPeriodSettings: { ...yearlyPeriodSettings },
+      trainingLevel,
     });
-    onClose();
   };
 
   const applyYearlyScalarsToAllDays = useCallback(() => {
@@ -2540,31 +3060,15 @@ export default function PlanGymWeekManualModal({
               const clamped = Math.min(99, Math.max(0, v));
               sec = applySectorScalarUpdate(sec, 'reps', String(clamped), trainingLevel);
             }
-            return ensureManualSectorShape(syncSectorExercisesFromLevelTable(sec, trainingLevel));
+            return ensureManualSectorShape(syncSectorExercisesFromLevelTable(sec, trainingLevel), trainingLevel);
           }),
         }))
       );
       return;
     }
 
-    setDays((prev) =>
-      prev.map((day, dayIdx) => ({
-        ...day,
-        sectors: day.sectors.map((sec0) => {
-          const goalId = goals[dayIdx] ?? goals[0];
-          const goalSettings = readGoalParamsFromWorkoutSettings(goalId);
-          const scalars = computePlanGymWeekScalarDefaults({
-            goalSettings,
-            trainingLevel,
-            currentPeriod: cp,
-            totalPeriods: tp,
-          });
-          const sec = applyComputedScalarsToManualSector(sec0, scalars, trainingLevel);
-          return ensureManualSectorShape(syncSectorExercisesFromLevelTable(sec, trainingLevel));
-        }),
-      }))
-    );
-  }, [yearlyPeriodSettings, trainingLevel, goals]);
+    applyCalculatedWorkoutParamsToDays();
+  }, [yearlyPeriodSettings, trainingLevel, applyCalculatedWorkoutParamsToDays]);
   const handleReset  = () => {
     if (window.confirm('Reset all days and sectors and close? This cannot be undone.')) {
       setDays(padManualDaysToMaxSlots(buildInitialDays(MANUAL_PLAN_MAX_DAY_SLOTS)));
@@ -2631,24 +3135,72 @@ export default function PlanGymWeekManualModal({
     setDays((prev) => reorderDaysConstantPlacement(prev, mergedConstantSectorIds, checked));
   };
 
-  const handleSeriesDistSave: SeriesDistDialogProps['onSave'] = useCallback((dayIdx, newSeriesCounts) => {
-    setStableDays((prev) => prev.map((day, di) => {
-      if (di !== dayIdx) return day;
-      return {
-        ...day,
-        sectors: day.sectors.map((sec, si) => {
-          const n = newSeriesCounts[si];
-          if (n === undefined || Number.isNaN(n)) return ensureManualSectorShape(sec);
-          const capped = Math.min(20, Math.max(0, Math.round(n)));
-          const updated = syncSectorExercisesFromLevelTable(
-            applySectorScalarUpdate(sec, 'series', String(capped), trainingLevel),
-            trainingLevel
-          );
-          return ensureManualSectorShape(updated);
-        }),
-      };
-    }));
+  const handleSeriesDistSessionChange = useCallback(
+    (dayIdx: number, session: SeriesDistDaySession) => {
+      setSeriesDistSessionByDay((prev) => ({ ...prev, [dayIdx]: session }));
+    },
+    [],
+  );
+
+  const handleSeriesDistSave: SeriesDistDialogProps['onSave'] = useCallback((dayIdx, newSeriesCounts, session) => {
+    if (session) {
+      setSeriesDistSessionByDay((prev) => ({ ...prev, [dayIdx]: session }));
+    }
+    setStableDays((prev) => {
+      const next = prev.map((day, di) => {
+        if (di !== dayIdx) return day;
+        return applySeriesCountsToDay(day, newSeriesCounts, trainingLevel);
+      });
+      const baseline = [...distributionBaselineRef.current];
+      while (baseline.length < next.length) baseline.push([]);
+      baseline[dayIdx] = newSeriesCounts.map((c) => Math.max(0, Math.round(c)));
+      distributionBaselineRef.current = baseline;
+      return next;
+    });
   }, [trainingLevel]);
+
+  const handleDistributionSeriesReset = useCallback(() => {
+    const di = effectiveActiveDayIndex;
+    const baseline = distributionBaselineRef.current[di];
+    const day = stableDays[di];
+    if (!baseline?.length || !day?.sectors.length || baseline.length !== day.sectors.length) {
+      return;
+    }
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm('Reset series distribution for this day to the original values?')
+    ) {
+      return;
+    }
+    setStableDays((prev) => {
+      const next = prev.map((d, i) => (i === di ? applySeriesCountsToDay(d, baseline, trainingLevel) : d));
+      const resetDay = next[di];
+      if (resetDay?.sectors.length) {
+        const constIds = constantSectorIdsForDistributionDay(
+          resetDay,
+          wizardConstantSectorIds,
+          manualDistConstantByDay[di] ?? null,
+        );
+        setSeriesDistSessionByDay((sess) => ({
+          ...sess,
+          [di]: buildDistSessionForDay(
+            resetDay.sectors,
+            di,
+            constIds,
+            getSuggestedTotalSeriesForDay,
+          ),
+        }));
+      }
+      return next;
+    });
+  }, [
+    effectiveActiveDayIndex,
+    stableDays,
+    trainingLevel,
+    wizardConstantSectorIds,
+    manualDistConstantByDay,
+    getSuggestedTotalSeriesForDay,
+  ]);
 
   const applyManualAutoProcess = useCallback(() => {
     setShowAutoWarn(false);
@@ -2788,12 +3340,16 @@ export default function PlanGymWeekManualModal({
       currentPeriod: cp,
       totalPeriods: tp,
     });
+    const baseVolume = volumeSeriesAtPeriod(goalSettings, trainingLevel, cp, tp);
+    const sessionDeltaPct = readVolumeDeltaPctFromWorkoutSettings(trainingLevel, daysCount);
     return {
-      hasGoalParams: goalSettings != null,
-      pauseSeriesLabel: scalars.defaultMacroExerciseLabel,
-      pauseExercisesLabel: scalars.defaultPauseLabel,
+      hasGoalParams: isGoalParamsSavedInWorkoutSettings(goalId),
+      pauseSeriesLabel: scalars.defaultPauseLabel,
+      pauseExercisesLabel: scalars.defaultMacroExerciseLabel,
       pauseAreasLabel: scalars.defaultMacroEndSectorLabel,
       totalSeries,
+      baseVolume,
+      sessionDeltaPct,
       reps: scalars.defaultReps,
     };
   }, [
@@ -2805,8 +3361,6 @@ export default function PlanGymWeekManualModal({
     yearlyPeriodSettings.totalPeriods,
   ]);
 
-  const yearlyScalarSource: YearlyPeriodScalarsSource =
-    yearlyPeriodSettings.periodScalarsSource ?? 'calculated';
   const yearlyManualRangesActive = yearlyScalarSource === 'manual';
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -3284,8 +3838,13 @@ export default function PlanGymWeekManualModal({
                   <span className="font-mono tabular-nums text-gray-900">
                     {workoutParamsPeriodPreview.totalSeries} / {workoutParamsPeriodPreview.reps}
                   </span>
+                  {workoutParamsPeriodPreview.sessionDeltaPct !== 0 ? (
+                    <span className="ml-1 text-gray-600">
+                      ({workoutParamsPeriodPreview.baseVolume} + {workoutParamsPeriodPreview.sessionDeltaPct}% sessions)
+                    </span>
+                  ) : null}
                   {!workoutParamsPeriodPreview.hasGoalParams ? (
-                    <span className="ml-1 text-rose-800">(defaults — save Endurance etc. under Workouts parameters)</span>
+                    <span className="ml-1 text-rose-800">(defaults — save Hypertrophy under Workouts parameters)</span>
                   ) : null}
                 </div>
               </div>
@@ -3371,7 +3930,7 @@ export default function PlanGymWeekManualModal({
                           }}
                           className="ml-auto shrink-0 rounded-lg bg-gray-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-900"
                         >
-                          New settings
+                          Distribution series
                         </button>
                       ) : null}
                     </div>
@@ -3442,10 +4001,8 @@ export default function PlanGymWeekManualModal({
                             </div>
                             <span className="font-medium text-gray-900 min-w-[100px] shrink-0">{sec.sectorLabel}</span>
                             <span className="min-w-0 flex-1 text-gray-600">
-                              {sec.series <= 0
-                                ? '0'
-                                : exercisesFromLevelTable(sec.series, trainingLevel)}{' '}
-                              ex · {sec.series} series · reps {sec.seriesReps?.join('/') ?? sec.reps} ·
+                              {sectorExercisesCount(sec, trainingLevel)} ex · {sec.series} series · reps{' '}
+                              {sec.seriesReps?.join('/') ?? sec.reps} ·
                               Pyramidal {sec.pyramidal ?? 'flat'} · Pause (series) {sec.pause || '—'}
                             </span>
                             <span className="text-gray-500 text-xs shrink-0">
@@ -3620,8 +4177,8 @@ export default function PlanGymWeekManualModal({
                 {/* ── Stats bar ── */}
                 {activeDay.sectors.length > 0 && (
                   <div className="flex flex-wrap gap-x-5 gap-y-1 rounded-lg bg-gray-100 border border-gray-200 px-4 py-2 text-sm">
-                    <span title="Sum of exercises across all muscular areas on this day">
-                      Total exercises <strong className="text-gray-900">{totalExercises}</strong>
+                    <span title="Total series for the routine divided by the number of muscular areas on this day">
+                      Series per muscular area <strong className="text-gray-900">{seriesPerMuscularArea}</strong>
                     </span>
                     <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
                       <span className="text-gray-800">Total series</span>
@@ -3696,7 +4253,15 @@ export default function PlanGymWeekManualModal({
                         title="Open the mask to set total series per workout and share of series per muscular area"
                         className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900"
                       >
-                        New settings
+                        Distribution series
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDistributionSeriesReset}
+                        title="Restore series counts for this day to the values from when the plan was opened or last saved in Distribution series"
+                        className="rounded-lg border border-gray-400 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+                      >
+                        Reset
                       </button>
                     </div>
                   </div>
@@ -3908,22 +4473,38 @@ export default function PlanGymWeekManualModal({
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <label
                         className="flex items-center gap-1 text-xs text-gray-600"
-                        title="Exercise count for this area from the distribution table (seriesDistribution.ts) for the athlete’s training level — derived from Series."
+                        title="Suggested number of exercises for this muscular area (from training level). Series per exercise = area series ÷ exercises."
                       >
-                        For each exercise :
-                        <span className="inline-flex min-w-[2.75rem] justify-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-sm font-semibold tabular-nums text-gray-900">
-                          {sec.series <= 0 ? '—' : exercisesFromLevelTable(sec.series, trainingLevel)}
-                        </span>
+                        For each exercise
+                        <SectorScalarStepper
+                          value={sectorExercisesCount(sec, trainingLevel)}
+                          min={sec.series > 0 ? 1 : 0}
+                          max={sec.series > 0 ? sec.series : 0}
+                          disabled={sec.series <= 0}
+                          onChange={(v) => updateSector(activeDayIndex, secIdx, 'exercises', v)}
+                        />
                       </label>
                       <label
                         className="flex items-center gap-1 text-xs text-gray-600"
-                        title="Series in this area come from Series distribution settings (percent split and routine total). Use that dialog to change them."
+                        title={`Total series for this muscular area. Editing redistributes the routine total (${routineTotalForSeriesEdit}) across all areas — same as Distribution series. Min ${areaSeriesEditLimits.min}, max ${areaSeriesEditLimits.max}.`}
                       >
-                        Series
-                        <span className="inline-flex min-w-[2.75rem] justify-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-sm font-semibold tabular-nums text-gray-900">
-                          {sec.series > 0 ? sec.series : '—'}
-                        </span>
+                        Area series
+                        <SectorScalarStepper
+                          value={sec.series > 0 ? sec.series : 0}
+                          min={activeDay.sectors.length > 0 ? areaSeriesEditLimits.min : 1}
+                          max={activeDay.sectors.length > 0 ? areaSeriesEditLimits.max : 20}
+                          disabled={activeDay.sectors.length === 0}
+                          onChange={(v) => updateSector(activeDayIndex, secIdx, 'series', v)}
+                        />
                       </label>
+                      {sec.series > 0 && sectorExercisesCount(sec, trainingLevel) > 0 ? (
+                        <span
+                          className="text-[11px] font-semibold text-amber-900 whitespace-nowrap"
+                          title={`${sec.series} area series ÷ ${sectorExercisesCount(sec, trainingLevel)} exercises`}
+                        >
+                          {seriesPerExerciseForSector(sec, trainingLevel)} series/exercise
+                        </span>
+                      ) : null}
                             <label
                               className="text-xs text-gray-600 flex items-center gap-1"
                               title="Reference default reps for every series in this sector (from Workouts parameters: goal, training level, yearly period). Edit per row in the table to override."
@@ -4110,68 +4691,72 @@ export default function PlanGymWeekManualModal({
                           {/* ── REPS & WEIGHTS table (compact; toggled via Pyramidal) ── */}
                           {isPyramidalFormOpen(activeDayIndex, secIdx) ? (
                           <div
-                            className="inline-block max-w-[min(100%,34rem)] overflow-hidden rounded-lg border border-blue-200 bg-blue-50/40"
+                            className="w-full max-w-[min(100%,52rem)] overflow-hidden rounded-lg border border-blue-200 bg-blue-50/40"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200 bg-blue-100/80 px-2 py-1.5">
-                              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                <span className="text-[13px] leading-none" aria-hidden>💪</span>
-                                <span className="text-[10px] font-bold uppercase tracking-wide text-gray-800">
-                                  REPS &amp; WEIGHTS
-                                </span>
-                                <span className="inline-flex items-center rounded-full bg-blue-200/80 px-1.5 py-0.5 text-[9px] font-bold text-blue-900 tabular-nums">
-                                  {sec.series} series
-                                </span>
-                                <label
-                                  htmlFor={`pct-mode-${sec.sectorId}-${secIdx}`}
-                                  className="flex cursor-pointer select-none items-center gap-1"
-                                >
-                                  <input
-                                    id={`pct-mode-${sec.sectorId}-${secIdx}`}
-                                    type="checkbox"
-                                    checked={isPctMode}
-                                    onChange={(e) => setTypeByPercent(activeDayIndex, secIdx, e.target.checked)}
-                                    className="h-3 w-3 shrink-0 rounded border-gray-400"
-                                  />
-                                  <span className="text-[10px] font-semibold text-red-600 whitespace-nowrap">
-                                    Type by %1MR
-                                  </span>
-                                </label>
-                              </div>
-                              <span className="text-[10px] font-bold uppercase tracking-wide text-blue-900 whitespace-nowrap">
-                                REST &amp; ALERTS
-                              </span>
-                            </div>
-
-                            <div className="max-h-[220px] overflow-y-auto overflow-x-auto bg-white">
-                              <table className="w-full table-fixed text-[11px] border-collapse">
-                                <colgroup>
-                                  <col className="w-7" />
-                                  <col className="w-11" />
-                                  <col className="w-14" />
-                                  <col className="w-12" />
-                                  <col className="w-[4.25rem]" />
-                                  <col className="w-[4.5rem]" />
-                                  <col className="w-10" />
-                                </colgroup>
-                                <thead className="sticky top-0 z-[1] bg-gray-100">
-                                  <tr>
-                                    <th className="border border-gray-300 px-1 py-1 text-center bg-gray-100">#</th>
-                                    <th className="border border-gray-300 px-1 py-1 text-center bg-gray-100">Reps</th>
-                                    <th className="border border-gray-300 px-0.5 py-1 text-center whitespace-nowrap bg-gray-100">
-                                      % on 1 MR
-                                    </th>
-                                    <th
-                                      className="border border-gray-300 px-1 py-1 text-center bg-gray-200 text-[10px] text-gray-500"
-                                      title="Weights are entered per exercise after exercises are assigned to this sector"
+                            <div className="overflow-x-auto overscroll-x-contain [scrollbar-gutter:stable]">
+                              <div className="min-w-[44rem]">
+                                <div className="flex flex-nowrap items-center justify-between gap-3 border-b border-blue-200 bg-blue-100/80 px-3 py-2">
+                                  <div className="flex min-w-0 flex-nowrap items-center gap-2">
+                                    <span className="text-[13px] leading-none shrink-0" aria-hidden>💪</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-gray-800 whitespace-nowrap">
+                                      REPS &amp; WEIGHTS
+                                    </span>
+                                    <span className="inline-flex shrink-0 items-center rounded-full bg-blue-200/80 px-1.5 py-0.5 text-[9px] font-bold text-blue-900 tabular-nums">
+                                      {sectorExercisesCount(sec, trainingLevel) > 0
+                                        ? `${seriesPerExerciseForSector(sec, trainingLevel)} × ${sectorExercisesCount(sec, trainingLevel)} ex. (${sec.series} total)`
+                                        : `${sec.series} series`}
+                                    </span>
+                                    <label
+                                      htmlFor={`pct-mode-${sec.sectorId}-${secIdx}`}
+                                      className="flex shrink-0 cursor-pointer select-none items-center gap-1"
                                     >
-                                      Wt
-                                    </th>
-                                    <th className="border border-gray-300 px-1 py-1 text-center bg-gray-100">Pause</th>
-                                    <th className="border border-gray-300 px-1 py-1 text-center bg-gray-100">Alert</th>
-                                    <th className="border border-gray-300 px-0.5 py-1 bg-gray-100" aria-label="Row actions" />
-                                  </tr>
-                                </thead>
+                                      <input
+                                        id={`pct-mode-${sec.sectorId}-${secIdx}`}
+                                        type="checkbox"
+                                        checked={isPctMode}
+                                        onChange={(e) => setTypeByPercent(activeDayIndex, secIdx, e.target.checked)}
+                                        className="h-3 w-3 shrink-0 rounded border-gray-400"
+                                      />
+                                      <span className="text-[10px] font-semibold text-red-600 whitespace-nowrap">
+                                        Type by %1MR
+                                      </span>
+                                    </label>
+                                  </div>
+                                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-blue-900 whitespace-nowrap">
+                                    REST &amp; ALERTS
+                                  </span>
+                                </div>
+
+                                <div className="max-h-[240px] overflow-y-auto bg-white">
+                                  <table className="w-full min-w-[44rem] text-[11px] border-collapse">
+                                    <colgroup>
+                                      <col className="w-8" />
+                                      <col className="w-14" />
+                                      <col className="w-[6.5rem]" />
+                                      <col className="w-14" />
+                                      <col className="w-[6.5rem]" />
+                                      <col className="w-32" />
+                                      <col className="w-[4.5rem]" />
+                                    </colgroup>
+                                    <thead className="sticky top-0 z-[1] bg-gray-100">
+                                      <tr>
+                                        <th className="border border-gray-300 px-1 py-1 text-center bg-gray-100">#</th>
+                                        <th className="border border-gray-300 px-1 py-1 text-center bg-gray-100">Reps</th>
+                                        <th className="border border-gray-300 px-1 py-1 text-center whitespace-nowrap bg-gray-100">
+                                          % on 1 MR
+                                        </th>
+                                        <th
+                                          className="border border-gray-300 px-1 py-1 text-center bg-gray-200 text-[10px] text-gray-500"
+                                          title="Weights are entered per exercise after exercises are assigned to this sector"
+                                        >
+                                          Wt
+                                        </th>
+                                        <th className="border border-gray-300 px-1 py-1 text-center bg-gray-100">Pause</th>
+                                        <th className="border border-gray-300 px-1 py-1 text-center bg-gray-100">Alert</th>
+                                        <th className="border border-gray-300 px-0.5 py-1 bg-gray-100" aria-label="Row actions" />
+                                      </tr>
+                                    </thead>
                                 <tbody>
                                   {Array.from({ length: sec.series }, (_, rowIdx) => {
                                     // Prefer raw; if empty, show sector-derived reps so workout-parameter defaults appear in the grid.
@@ -4291,7 +4876,7 @@ export default function PlanGymWeekManualModal({
                                                 title={
                                                   'Default by row: within an exercise → Pause (series); last set of a non-final exercise → Macro exercises; last set of the area → Macro end sector. Pick a value to override.'
                                                 }
-                                                className="w-full min-w-0 max-w-[4.25rem] border border-gray-300 bg-white py-0.5 text-[9px]"
+                                                className="w-full min-w-[5.5rem] border border-gray-300 bg-white py-0.5 text-[9px]"
                                               >
                                                 <option value={SERIES_ROW_PAUSE_INHERIT}>
                                                   Calc ({pauseComputed})
@@ -4316,7 +4901,7 @@ export default function PlanGymWeekManualModal({
                                             value={sec.seriesRowAlerts?.[rowIdx] ?? ''}
                                             onChange={(e) => updateSeriesRowAlertAt(activeDayIndex, secIdx, rowIdx, e.target.value)}
                                             placeholder="—"
-                                            className="w-full min-w-[4rem] px-1 py-0.5 border border-gray-300 rounded text-[11px] placeholder:text-gray-300"
+                                            className="w-full min-w-[7rem] px-1 py-0.5 border border-gray-300 rounded text-[11px] placeholder:text-gray-300"
                                             maxLength={120}
                                           />
                                         </td>
@@ -4337,13 +4922,15 @@ export default function PlanGymWeekManualModal({
                                   })}
                                 </tbody>
                               </table>
-                    </div>
-                            <p className="flex items-center gap-1 bg-blue-50/80 px-1.5 py-0.5 text-[8px] leading-snug text-blue-600">
-                              <span className="inline-flex h-3 w-3 flex-shrink-0 items-center justify-center rounded-sm bg-blue-600 text-[7px] font-bold text-white">i</span>
-                              <span>
-                                Scroll for all {sec.series} series. Use header <strong>Recalc % 1RM</strong> for formulas A/B/C.
-                              </span>
-                            </p>
+                                </div>
+                                <p className="flex items-center gap-1 bg-blue-50/80 px-2 py-1 text-[8px] leading-snug text-blue-600">
+                                  <span className="inline-flex h-3 w-3 flex-shrink-0 items-center justify-center rounded-sm bg-blue-600 text-[7px] font-bold text-white">i</span>
+                                  <span>
+                                    Scroll for all {sec.series} series. Use header <strong>Recalc % 1RM</strong> for formulas A/B/C.
+                                  </span>
+                                </p>
+                              </div>
+                            </div>
                           </div>
                           ) : null}
 
@@ -4360,33 +4947,11 @@ export default function PlanGymWeekManualModal({
 
     </div>
 
-      {infoRepsModalOpen && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="info-reps-title"
-        >
-          <div className="max-h-[85vh] w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-xl">
-            <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-              <h3 id="info-reps-title" className="text-base font-bold text-gray-900">
-                Info Reps — % of load on 1 MR
-              </h3>
-              <button
-                type="button"
-                className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
-                onClick={() => setInfoRepsModalOpen(false)}
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="max-h-[calc(85vh-4rem)] overflow-y-auto px-4 py-3 text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">
-              {infoRepsBody}
-            </div>
-          </div>
-        </div>
-      )}
+      <InfoRepsModal
+        open={infoRepsModalOpen}
+        onClose={() => setInfoRepsModalOpen(false)}
+        uiLanguage={language}
+      />
 
       {showAutoWarn && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
@@ -4452,6 +5017,8 @@ export default function PlanGymWeekManualModal({
               return next;
             });
           }}
+          sessionByDay={seriesDistSessionByDay}
+          onSessionChange={handleSeriesDistSessionChange}
           onSave={handleSeriesDistSave}
           onClose={() => setShowSeriesDist(false)}
         />

@@ -77,7 +77,7 @@ export function useTableColumns(tableType: TableType) {
         console.error('Failed to load column config:', error);
       }
     }
-  }, [normalizedType]);
+  }, [normalizedType, tableType]);
 
   // Save column configuration to localStorage
   const saveColumns = useCallback((newColumns: ColumnConfig[]) => {

@@ -25,6 +25,7 @@ interface MoveframesSectionProps {
   onCopyMoveframeToClipboard?: (moveframe: any) => void;
   hasMoveframeClipboard?: boolean;
   onPasteMoveframe?: (workout: any) => void;
+  onImportMoveframe?: (workout: any, day: any) => void;
   onCopyMoveframe?: (moveframe: any, workout: any, day: any, workoutDisplayNumber?: number) => void;
   onMoveMoveframe?: (moveframe: any, workout: any, day: any, workoutDisplayNumber?: number) => void;
   hasMovelapClipboard?: boolean;
@@ -55,6 +56,7 @@ export default function MoveframesSection({
   onCopyMoveframeToClipboard,
   hasMoveframeClipboard = false,
   onPasteMoveframe,
+  onImportMoveframe,
   onCopyMoveframe,
   onMoveMoveframe,
   hasMovelapClipboard,
@@ -360,6 +362,18 @@ export default function MoveframesSection({
           >
             Add a Moveframe
           </button>
+          {onImportMoveframe && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onImportMoveframe(workout, day);
+              }}
+              className="px-2 py-1 text-xs bg-white text-purple-900 border border-purple-300 rounded hover:bg-purple-50"
+              title="Import a moveframe from another source"
+            >
+              Import MF
+            </button>
+          )}
           {onQuickTrainingEntry && (
             <button
               onClick={(e) => {

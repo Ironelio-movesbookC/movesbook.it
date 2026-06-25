@@ -408,6 +408,15 @@ export default function AddEditNutritionFoodModal({
     }
   }, [isOpen, mode, sport, type, setType, setBatterySubmenu]);
 
+  // Keep fast-planner variant aligned with sport category (aerobic vs not aerobic).
+  useEffect(() => {
+    if (fpCategory === 'B' && batteryFastPlannerVariant === 'aerobic') {
+      setBatteryFastPlannerVariant('anaerobic');
+    } else if (fpCategory === 'A' && batteryFastPlannerVariant === 'anaerobic') {
+      setBatteryFastPlannerVariant('aerobic');
+    }
+  }, [fpCategory, batteryFastPlannerVariant]);
+
   // 2026-01-31 - Force BATTERY/circuits mode when editing from a circuit nutritionComponent
   useEffect(() => {
     if (editingFromNutritionComponent && editingNutritionComponentTarget) {
@@ -1018,21 +1027,24 @@ export default function AddEditNutritionFoodModal({
   );
   const renderAnaerobicFastPlannerMacroFooter = () => (
     <div className="flex items-end gap-2 px-2.5 py-1.5 shadow-sm">
-      <div className="flex flex-row gap-0.5 items-center">
-        <span className="text-xs font-bold text-purple-800 mr-2">Macro</span>
-        <select
-          className="max-w-[10rem] rounded border bg-white px-2 py-1 text-sm text-gray-900"
-          value={fastPlannerEndMacro}
-          onChange={(e) => setFastPlannerEndMacro(e.target.value)}
-          aria-label="Macro at end of planned nutritionFood"
-        >
-          <option value="">Select...</option>
-          {MACRO_FINAL_OPTIONS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] font-semibold leading-none text-red-600">Default = 5&apos;</span>
+        <div className="flex flex-row items-center gap-1.5">
+          <span className="mr-1 text-xs font-bold text-purple-800">Macro</span>
+          <select
+            className="max-w-[10rem] rounded border bg-white px-2 py-1 text-sm text-gray-900"
+            value={fastPlannerEndMacro}
+            onChange={(e) => setFastPlannerEndMacro(e.target.value)}
+            aria-label="Macro at end of planned nutritionFood"
+          >
+            <option value="">Select...</option>
+            {MACRO_FINAL_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       <button
         type="button"
@@ -1043,6 +1055,14 @@ export default function AddEditNutritionFoodModal({
       </button>
     </div>
   );
+  React.useEffect(() => {
+    if (!isFastPlannerShown || fpCategory === 'A') return;
+    const timer = window.setTimeout(() => {
+      const macro = fastPlannerRef.current?.getEndMacro?.();
+      if (macro) setFastPlannerEndMacro(macro);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [isFastPlannerShown, fpCategory, existingNutritionFood?.id, mode]);
   /** FAST Not Aerobic: hide favorites/sport/type/section; keep Fast plannings Mode so user can switch (add + edit). */
   const hideTopChromeForNotAerobicFast =
     effectiveType === 'BATTERY' &&
@@ -1785,7 +1805,7 @@ export default function AddEditNutritionFoodModal({
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
-                {(fpCategory === 'A' || fpCategory === 'B') && (
+                {fpCategory === 'A' && (
                   <button
                     type="button"
                     disabled={mode === 'edit'}
@@ -5294,7 +5314,7 @@ export default function AddEditNutritionFoodModal({
             </button>
             )}
             <div className="flex flex-wrap items-center gap-2">
-              {renderAnaerobicFastPlannerMacroFooter()}
+              {fpCategory !== 'A' && renderAnaerobicFastPlannerMacroFooter()}
               <button
                 onClick={() => setIsFastPlannerFullView(prev => !prev)}
                 className="px-6 py-2 bg-white text-black border-2 border-gray-300 rounded hover:border-blue-500"

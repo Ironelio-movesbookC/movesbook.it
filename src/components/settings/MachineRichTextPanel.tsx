@@ -58,7 +58,8 @@ export default function MachineRichTextPanel({
   getValue,
   setValue,
 }: Props) {
-  const meta = MACHINE_RICH_TABS.find((t) => t.id === activeTab)!;
+  const meta =
+    MACHINE_RICH_TABS.find((t) => t.id === activeTab) ?? MACHINE_RICH_TABS[0];
 
   return (
     <section className="space-y-3 rounded-xl border border-gray-200 bg-slate-50/50 p-4 dark:border-gray-700">
