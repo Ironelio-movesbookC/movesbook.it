@@ -17,6 +17,7 @@ import {
   mergePromocodeLanguageOptions,
   PROMOCODE_FORM_LANGUAGES,
 } from '@/lib/promocodes/promocodeLanguages';
+import { fetchGeneratedPromocode } from '@/lib/promocodes/generatePromocode';
 import './promocode-add.css';
 
 const MONTHS: Record<string, string> = {
@@ -220,10 +221,9 @@ export default function PromocodeAddForm({
       });
 
     if (!isEdit) {
-      promocodesFetch('/api/admin/promocodes/change-code')
-        .then((r) => r.json())
-        .then((data) => setCode(data.code ?? ''))
-        .catch(console.error);
+      fetchGeneratedPromocode()
+        .then(setCode)
+        .catch((err) => console.error('initial promocode:', err));
     }
   }, [isEdit]);
 
@@ -262,25 +262,56 @@ export default function PromocodeAddForm({
   }, [isEdit, initialSetting, initialSocialOptions, hydrated]);
 
   useEffect(() => {
-    if (!isEdit || !hydrated || !helpHtmlPagesId || !meta) return;
+    if (!isEdit || !hydrated || !helpHtmlPagesId || !meta || !initialSetting) return;
     const page = meta.helpHtmlPages.find((p) => p.id === helpHtmlPagesId);
-    if (page?.title) void getLanguageList(page.title);
-  }, [isEdit, hydrated, helpHtmlPagesId, meta]);
+    if (page?.title) {
+      void getLanguageList(page.title, initialSetting.languageId ?? undefined);
+    }
+  }, [isEdit, hydrated, helpHtmlPagesId, meta, initialSetting]);
 
   const refreshCode = async () => {
-    const res = await promocodesFetch('/api/admin/promocodes/change-code');
-    const data = await res.json();
-    setCode(data.code ?? code);
+    try {
+      const nextCode = await fetchGeneratedPromocode();
+      setCode(nextCode);
+    } catch (err) {
+      console.error('refreshCode:', err);
+      showAlert(
+        err instanceof Error ? err.message : 'Could not generate a new promocode.',
+        'Notice'
+      );
+    }
   };
 
-  const getLanguageList = async (pageTitle: string) => {
+  const getLanguageList = async (pageTitle: string, preferredLanguageId?: number) => {
     const res = await promocodesFetch('/api/admin/promocodes/language-list', {
       method: 'POST',
       body: JSON.stringify({ html_doc_title: pageTitle }),
     });
     const langs = await res.json();
-    if (Array.isArray(langs)) {
-      setLanguageOptions(mergePromocodeLanguageOptions(langs));
+    if (!Array.isArray(langs)) return;
+
+    let options = langs.map((lang: { id: number | string; value?: string }) => ({
+      id: Number(lang.id),
+      value: capitalizeFirstLetter(String(lang.value ?? '')),
+    }));
+
+    if (
+      preferredLanguageId != null &&
+      Number.isFinite(preferredLanguageId) &&
+      !options.some((opt) => opt.id === preferredLanguageId)
+    ) {
+      const fallback =
+        DEFAULT_LANGUAGES.find((l) => l.id === preferredLanguageId)?.value ??
+        meta?.languages.find((l) => l.id === preferredLanguageId)?.name ??
+        `Lang ${preferredLanguageId}`;
+      options = [...options, { id: preferredLanguageId, value: capitalizeFirstLetter(fallback) }].sort(
+        (a, b) => a.id - b.id
+      );
+    }
+
+    setLanguageOptions(options.length > 0 ? options : mergePromocodeLanguageOptions([]));
+    if (preferredLanguageId != null && Number.isFinite(preferredLanguageId)) {
+      setLanguageId(preferredLanguageId);
     }
   };
 
@@ -640,7 +671,7 @@ export default function PromocodeAddForm({
                                 const id = e.target.value ? Number(e.target.value) : '';
                                 setHelpHtmlPagesId(id);
                                 const page = meta?.helpHtmlPages.find((p) => p.id === id);
-                                if (page?.title) void getLanguageList(page.title);
+                                if (page?.title) void getLanguageList(page.title, languageId);
                               }}
                             >
                               <option value=""> </option>
@@ -683,6 +714,15 @@ export default function PromocodeAddForm({
                             </select>
                           </td>
                           <td />
+                        </tr>
+                        <tr>
+                          <td colSpan={4} className="text-xs text-gray-600 px-2 pb-2">
+                            Invite opening text comes from{' '}
+                            <a href="/settings/language" target="_blank" rel="noopener noreferrer" className="text-red-700 underline">
+                              Language → Long text
+                            </a>{' '}
+                            (variable <code>dim</code>), plus the HTML document selected above. The same language is used in the invitation email.
+                          </td>
                         </tr>
                         {isEdit && (
                           <tr>

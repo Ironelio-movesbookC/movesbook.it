@@ -98,7 +98,7 @@ export default function PromocodeInviteCKEditor4({
         }}
       />
       {/* Do not use className="ckeditor" — triggers CKEDITOR.replaceAll() */}
-      <textarea id={editorId} name="content" defaultValue={value} />
+      <textarea id={editorId} name="content" />
     </>
   );
 }

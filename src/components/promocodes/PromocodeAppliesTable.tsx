@@ -1,5 +1,10 @@
 'use client';
 
+import {
+  promocodeRecipientLabel,
+  promocodeSecondarySenderLabel,
+  promocodeSenderLabel,
+} from '@/lib/promocodes/promocodeApplyDisplay';
 import { formatPromocodeDisplayDate } from '@/lib/promocodes/formatPromocodeDate';
 import PromocodeAssetImage from './PromocodeAssetImage';
 import { PROMOCODE_NO_FLAG_IMAGE, promocodeFlagImageUrl } from './promocodeImageUrls';
@@ -68,22 +73,7 @@ function recipientLabel(row: import('@/lib/promocodes/types').PromocodeApplyRow)
   text: string;
   className: string;
 } {
-  const apply = row;
-  if (apply.receiverId && apply.receiverId > 0) {
-    const text = apply.receiver?.username || '';
-    if (apply.newReceiver === 'N') return { text, className: 'text-blue-600' };
-    const receiverEmail = (apply.receiverEmail || '').toLowerCase();
-    const registeredEmail = (apply.receiver?.email || '').toLowerCase();
-    if (receiverEmail && registeredEmail && receiverEmail !== registeredEmail) {
-      return { text, className: 'text-[#7b0a26] font-bold' };
-    }
-    return { text, className: 'text-black' };
-  }
-  const text = apply.receiverEmail || '';
-  if (apply.existReceiverMatch) {
-    return { text, className: 'text-blue-600 font-bold text-xs' };
-  }
-  return { text, className: 'text-black text-xs' };
+  return promocodeRecipientLabel(row);
 }
 
 export function PromocodeAppliesTable({
@@ -168,10 +158,11 @@ export function PromocodeAppliesTable({
             const dataEnd = formatPromocodeDisplayDate(row.receiver?.subscriptionEndDate);
             const status =
               row.promocodeValidTo && row.promocodeValidTo > today ? 'Current' : 'Expired';
-            const secondary =
-              row.secondarySenderUsername || row.secondarySender?.username || '';
-            const sender = row.sender?.username || '';
-            const flagSrc = promocodeFlagImageUrl(row.flagImage);
+            const secondary = promocodeSecondarySenderLabel(row);
+            const sender = promocodeSenderLabel(row);
+            const flagSrc = promocodeFlagImageUrl(row.flagImage, {
+              countryCode: row.receiverCountryCode,
+            });
 
             return (
               <tr
@@ -190,13 +181,12 @@ export function PromocodeAppliesTable({
                     <td className="p-2 text-center">{secondary}</td>
                     <td className="p-2 text-center">{row.secondarySenderCredit ?? '00'}</td>
                     <td className="p-2 text-center">
-                      {flagSrc ? (
-                        <PromocodeAssetImage
-                          src={flagSrc}
-                          fallbackSrc={PROMOCODE_NO_FLAG_IMAGE}
-                          className="w-12 h-7 object-cover mx-auto"
-                        />
-                      ) : null}
+                      <PromocodeAssetImage
+                        src={flagSrc}
+                        fallbackSrc={PROMOCODE_NO_FLAG_IMAGE}
+                        countryCode={row.receiverCountryCode}
+                        className="w-12 h-7 object-cover mx-auto"
+                      />
                     </td>
                     <td className={`p-2 ${recipient.className}`}>{recipient.text}</td>
                     <td className="p-2 text-center">{row.receiverCredit ?? '00'}</td>
@@ -214,13 +204,12 @@ export function PromocodeAppliesTable({
                     <td className="p-2 text-center">{secondary}</td>
                     <td className="p-2 text-center">{row.secondarySenderCredit}</td>
                     <td className="p-2 text-center">
-                      {flagSrc ? (
-                        <PromocodeAssetImage
-                          src={flagSrc}
-                          fallbackSrc={PROMOCODE_NO_FLAG_IMAGE}
-                          className="w-12 h-7 object-cover mx-auto"
-                        />
-                      ) : null}
+                      <PromocodeAssetImage
+                        src={flagSrc}
+                        fallbackSrc={PROMOCODE_NO_FLAG_IMAGE}
+                        countryCode={row.receiverCountryCode}
+                        className="w-12 h-7 object-cover mx-auto"
+                      />
                     </td>
                     <td className={`p-2 ${recipient.className}`}>{recipient.text}</td>
                     <td className="p-2 text-center">{row.receiverCredit}</td>
@@ -232,13 +221,12 @@ export function PromocodeAppliesTable({
                 {variant === 'index' && (
                   <>
                     <td className="p-2 text-center">
-                      {flagSrc ? (
-                        <PromocodeAssetImage
-                          src={flagSrc}
-                          fallbackSrc={PROMOCODE_NO_FLAG_IMAGE}
-                          className="w-12 h-7 object-cover mx-auto"
-                        />
-                      ) : null}
+                      <PromocodeAssetImage
+                        src={flagSrc}
+                        fallbackSrc={PROMOCODE_NO_FLAG_IMAGE}
+                        countryCode={row.receiverCountryCode}
+                        className="w-12 h-7 object-cover mx-auto"
+                      />
                     </td>
                     <td className={`p-2 ${recipient.className}`}>{recipient.text}</td>
                     <td className="p-2 text-center">{row.receiverVersion}</td>

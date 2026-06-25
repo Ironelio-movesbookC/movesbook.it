@@ -1,18 +1,21 @@
 import { prisma } from '@/lib/prisma';
 import { getTableColumns } from '@/lib/outcomeSettingsDb';
 import {
+  fetchCountryCodeById,
   fetchFlagImageByCountryId,
   fetchLegacyUsersByIds,
   getCountriesTable,
   getLegacyUsersTable,
   getPromocodeAppliesTable,
 } from '@/lib/promocodes/legacyDb';
+import { fetchModernUserCountries, findModernUserCountry } from '@/lib/promocodes/modernUserCountry';
 
 export type CreditsEarnedRow = {
   id: number;
   username: string;
   typeOfUser: string;
   country: string;
+  countryCode: string | null;
   flagImg: string | null;
   creditsTotal: number;
   used: number;
@@ -64,7 +67,8 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
 
   const placeholders = earningUserIds.map(() => '?').join(',');
   const creditsSelect = userColumns.has('credits') ? 'credits' : '0 AS credits';
-  let userSql = `SELECT id, username, role_id, country_id, ${creditsSelect}
+  const emailSelect = userColumns.has('email') ? 'email' : "'' AS email";
+  let userSql = `SELECT id, username, email, role_id, country_id, ${creditsSelect}
                  FROM \`${usersTable}\`
                  WHERE id IN (${placeholders}) AND delete_status = 'N'`;
   const userParams: unknown[] = [...earningUserIds];
@@ -79,11 +83,16 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
     {
       id: number | bigint;
       username: string | null;
+      email: string | null;
       role_id: number | null;
       country_id: number | null;
       credits: number | string | null;
     }[]
-  >(userSql, ...userParams);
+  >(userSql.replace('username, email,', `username, ${emailSelect},`), ...userParams);
+
+  const modernUserCountries = await fetchModernUserCountries(
+    users.map((u) => ({ legacyId: Number(u.id), email: u.email, username: u.username }))
+  );
 
   const rows: CreditsEarnedRow[] = [];
 
@@ -111,7 +120,12 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
     const senderEarned = Number(sumSender[0]?.total_sender ?? 0);
     const secondaryEarned = Number(sumSecondary[0]?.total_secondary ?? 0);
     const totalEarned = senderEarned + secondaryEarned;
-    const available = Number(u.credits ?? 0);
+
+    // Legacy users.credits is incremented when someone registers with a promocode.
+    // Product purchase deduction is not implemented yet, so a zero balance here usually
+    // means the ledger was not synced — not that everything was spent.
+    const legacyBalance = userColumns.has('credits') ? Number(u.credits ?? 0) : 0;
+    const available = legacyBalance > 0 ? legacyBalance : totalEarned;
     let used = totalEarned - available;
     if (used < 0) used = 0;
 
@@ -165,6 +179,7 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
 
     const countryId = u.country_id != null ? Number(u.country_id) : null;
     const flagImg = await fetchFlagImageByCountryId(countryId);
+    const legacyCountryCode = await fetchCountryCodeById(countryId);
     let countryName = '';
     const countriesTable = await getCountriesTable();
     if (countriesTable && countryId) {
@@ -174,13 +189,24 @@ export async function listCreditsEarnedUsers(searchUsername = ''): Promise<Credi
       );
       countryName = cRows[0]?.name ?? '';
     }
+    const modernCountry = findModernUserCountry(modernUserCountries, {
+      legacyId: uid,
+      email: u.email,
+      username: u.username,
+    });
+    const countryCode = modernCountry?.countryCode ?? legacyCountryCode;
+    if (modernCountry?.country) {
+      countryName = modernCountry.country;
+    }
+    const resolvedFlagImg = modernCountry ? null : flagImg;
 
     rows.push({
       id: uid,
       username: u.username ?? '',
       typeOfUser: u.role_id != null ? ROLE_NAMES[Number(u.role_id)] ?? String(u.role_id) : '',
       country: countryName,
-      flagImg,
+      countryCode,
+      flagImg: resolvedFlagImg,
       creditsTotal: totalEarned,
       used,
       available,

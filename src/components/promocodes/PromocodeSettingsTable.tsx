@@ -75,7 +75,10 @@ export default function PromocodeSettingsTable({
             </tr>
           )}
           {rows.map((row) => {
-            const flagSrc = promocodeFlagImageUrl(row.creatorFlagImage);
+            const flagCountryCode = row.inviteCountryCode ?? row.creatorCountryCode;
+            const flagSrc = promocodeFlagImageUrl(row.inviteFlagImage ?? row.creatorFlagImage, {
+              countryCode: flagCountryCode,
+            });
             const photoSrc = promocodeProfileImageUrl(row.creator?.image);
             const created = row.created ? row.created.slice(0, 10) : '';
             const status = row.validTo && row.validTo < today ? 'Expire' : 'Current';
@@ -103,13 +106,12 @@ export default function PromocodeSettingsTable({
                   </Link>
                 </td>
                 <td className="p-2">
-                  {flagSrc ? (
-                    <PromocodeAssetImage
-                      src={flagSrc}
-                      fallbackSrc={PROMOCODE_NO_FLAG_IMAGE}
-                      className="h-6"
-                    />
-                  ) : null}
+                  <PromocodeAssetImage
+                    src={flagSrc}
+                    fallbackSrc={PROMOCODE_NO_FLAG_IMAGE}
+                    countryCode={flagCountryCode}
+                    className="h-6"
+                  />
                 </td>
                 <td className="p-2">
                   <PromocodeAssetImage

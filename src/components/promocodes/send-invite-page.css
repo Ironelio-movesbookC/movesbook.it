@@ -1,0 +1,30 @@
+html.send-invite-popup-active,
+body.send-invite-popup-active {
+  overflow: hidden;
+  height: 100%;
+}
+
+.send-invite-page-banner .h-64 {
+  height: 10rem;
+}
+
+.send-invite-page-main {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.send-invite-page-main::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.send-invite-page-card .send-invite-loading,
+.send-invite-page-card .send-invite-error {
+  padding: 24px;
+  text-align: center;
+}
+
+.send-invite-page-card .send-invite-error {
+  color: #b91c1c;
+}

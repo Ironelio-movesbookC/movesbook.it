@@ -13,18 +13,17 @@ function MarqueeText({
   speedSeconds?: number;
 }) {
   const scrollAmount = Math.max(1, Math.round(120 / speedSeconds));
-  const Marquee = 'marquee' as any;
   return (
     <div className="overflow-hidden whitespace-nowrap">
       {/* eslint-disable-next-line jsx-a11y/no-distracting-elements */}
-      <Marquee
+      <marquee
         direction="left"
         behavior="scroll"
-        scrollAmount={scrollAmount}
+        scrollamount={scrollAmount}
         className="block"
       >
         {text}
-      </Marquee>
+      </marquee>
     </div>
   );
 }

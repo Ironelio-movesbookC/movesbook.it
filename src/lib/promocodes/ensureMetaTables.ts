@@ -5,6 +5,11 @@ import { clearPromocodeTableCache, ensureLegacyPromocodeUserTables } from './leg
 import { resetQuickRegisterSubscriptionSeedCache } from '../users/quickRegisterSubscriptionSeed';
 import { repairInvalidPromocodeSettingDates } from './promocodeSettingsQuery';
 import legacyHelpHtmlPages from './helpHtmlPagesLegacySeed.json';
+import {
+  DEFAULT_INVITE_PARAGRAPH_IT,
+  ensurePromocodeInviteLocalizedContent,
+  OTD_HELP_UNIQUE_ID,
+} from './promocodeInviteLocale';
 
 export type LegacyDbConfig = {
   host: string;
@@ -177,6 +182,13 @@ async function seedHelpHtmlPagesFromLegacy(): Promise<void> {
       if (createdCol) {
         fields.push(createdCol);
         placeholders.push('NOW()');
+      }
+      const uniqueCol = pickColumn(columns, ['uniqueid']);
+      if (uniqueCol && row.id === 2 && row.title === 'OTD') {
+        fields.push(uniqueCol);
+        placeholders.push('?');
+        values.push(OTD_HELP_UNIQUE_ID);
+        updates.push(`\`${uniqueCol}\` = VALUES(\`${uniqueCol}\`)`);
       }
 
       await prisma.$executeRawUnsafe(
@@ -402,12 +414,19 @@ export async function ensurePromocodeMetaTables(): Promise<void> {
     await prisma.$executeRawUnsafe(
       `INSERT INTO language_paragraphs (
          id, en, fr, it, de, es, por, rus, ind, chin, arab, variable_name, created, modified
-       ) VALUES (?, ?, '', '', '', '', '', '', '', '', '', 'dim', ?, ?)`,
+       ) VALUES (?, ?, '', ?, '', '', '', '', '', '', '', 'dim', ?, ?)`,
       3,
       DEFAULT_INVITE_PARAGRAPH_EN,
+      DEFAULT_INVITE_PARAGRAPH_IT,
       String(Math.floor(Date.now() / 1000)),
       String(Math.floor(Date.now() / 1000))
     );
+  }
+
+  try {
+    await ensurePromocodeInviteLocalizedContent();
+  } catch (err) {
+    console.warn('promocode invite localized content bootstrap skipped:', err);
   }
 
   if (await tableExists('promocode_applies')) {

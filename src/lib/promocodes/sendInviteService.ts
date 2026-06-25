@@ -1,9 +1,15 @@
 import { prisma } from '@/lib/prisma';
+import type { Connection } from 'mysql2/promise';
 import { getTableColumns } from '@/lib/outcomeSettingsDb';
+import { ensurePromocodeMetaTables, withLegacyConnection } from './ensureMetaTables';
+import { ensurePromocodeInviteLocalizedContent } from './promocodeInviteLocale';
 import {
-  ensurePromocodeMetaTables,
-  withLegacyConnection,
-} from './ensureMetaTables';
+  loadPromocodeInviteLanguageParagraph,
+} from './promocodeInviteLanguage';
+import {
+  resolveInviteOtherInfoAndAdvPage,
+  saveInviteOtherInfoAndAdvPageToUserSettings,
+} from './promocodeInviteLinks';
 import {
   fetchLegacyUserByEmail,
   getHelpHtmlPagesTable,
@@ -37,6 +43,22 @@ type QueryFn = <T>(sql: string, params?: unknown[]) => Promise<T>;
 
 async function runQuery<T>(sql: string, params: unknown[] = []): Promise<T> {
   return prisma.$queryRawUnsafe<T>(sql, ...params);
+}
+
+function connectionQuery(connection: Connection): QueryFn {
+  return async <T>(sql: string, params: unknown[] = []): Promise<T> => {
+    const [rows] = await connection.query(sql, params);
+    return rows as T;
+  };
+}
+
+function isBlankHtml(value: string): boolean {
+  const text = value
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length === 0;
 }
 
 async function getLegacyLanguageCode(languageId: string): Promise<string> {
@@ -121,15 +143,66 @@ async function resolveHelpHtmlPage(
   return { id: resolvedId, content };
 }
 
-async function loadFirstLanguageParagraph(langColumn: string): Promise<string> {
-  const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT * FROM language_paragraphs ORDER BY id ASC LIMIT 1`
-  ).catch(() => [] as Record<string, unknown>[]);
+/** Strip CKEditor/legacy artifacts that appear as a lone "?" before invite text. */
+export function sanitizeInviteEmailBodyHtml(html: string): string {
+  let out = String(html ?? '').trim();
+  out = out.replace(/^(\s*<p[^>]*>\s*\?\s*<\/p>\s*)+/i, '');
+  out = out.replace(/^(\s*<p[^>]*>\s*&nbsp;\?\s*<\/p>\s*)+/i, '');
+  out = out.replace(/^(\s*\?\s*)+/, '');
+  out = out.replace(
+    /^(\s*<img\b[^>]*(?:src\s*=\s*["']\s*["']|alt\s*=\s*["']\?["'])[^>]*>\s*)+/i,
+    ''
+  );
+  return out;
+}
 
-  if (rows.length === 0) return '';
-  const row = rows[0];
-  const text = row[langColumn];
-  return text != null ? String(text) : '';
+async function loadInviteBodyFromQuery(
+  query: QueryFn,
+  params: { htmlPageId: string; languageId: string }
+): Promise<{ body: string; resolvedHtmlPageId: string }> {
+  const paragraphText = await loadPromocodeInviteLanguageParagraph(params.languageId, query);
+  const helpPage = await resolveHelpHtmlPage(query, params.htmlPageId, params.languageId);
+  const helpContent = helpPage?.content ?? '';
+  return {
+    body: sanitizeInviteEmailBodyHtml(`${paragraphText}${helpContent}`),
+    resolvedHtmlPageId: helpPage?.id ?? params.htmlPageId,
+  };
+}
+
+async function fetchHelpPageLangId(helpPageId: string, query: QueryFn = runQuery): Promise<number | null> {
+  const table = await getHelpHtmlPagesTable();
+  if (!table) return null;
+  const columns = await getTableColumns(table);
+  const langCol = columns.has('lang_id') ? 'lang_id' : columns.has('language_id') ? 'language_id' : null;
+  if (!langCol) return null;
+  const rows = await query<{ lang_id: number | bigint | null }[]>(
+    `SELECT \`${langCol}\` AS lang_id FROM \`${table}\` WHERE id = ? LIMIT 1`,
+    [helpPageId]
+  );
+  const langId = rows[0]?.lang_id;
+  return langId != null ? Number(langId) : null;
+}
+
+/** PHP: LanguageParagraph[lang_name] + help_html_pages content (no separator). */
+async function buildPromocodeInviteEmailBody(params: {
+  htmlPageId: string;
+  languageId: string;
+}): Promise<{ body: string; resolvedHtmlPageId: string }> {
+  const built = await loadInviteBodyFromQuery(runQuery, params);
+  const langNum = Number(params.languageId) || 1;
+  if (langNum === 1) return built;
+
+  const paragraphText = await loadPromocodeInviteLanguageParagraph(params.languageId);
+  const helpPage = await resolveHelpHtmlPage(runQuery, params.htmlPageId, params.languageId);
+  const helpLangId = helpPage ? await fetchHelpPageLangId(helpPage.id) : null;
+  const needsLegacy = isBlankHtml(paragraphText) || helpLangId === 1;
+
+  if (!needsLegacy) return built;
+
+  const legacyBuilt = await withLegacyConnection(async (connection) =>
+    loadInviteBodyFromQuery(connectionQuery(connection), params)
+  );
+  return legacyBuilt?.body.trim() ? legacyBuilt : built;
 }
 
 export function buildRegisterUrl(
@@ -223,29 +296,25 @@ export async function loadSendInvitePreview(
     origin: string;
     isStaff: boolean;
     inviterUsername?: string | null;
+    senderLegacyUserId?: number | null;
+    senderEmail?: string | null;
   }
 ): Promise<SendInvitePreview> {
   await ensurePromocodeMetaTables();
+  await ensurePromocodeInviteLocalizedContent();
 
   const languageName = await getLegacyLanguageCode(params.languageId);
-  const langColumn = languageName;
-
-  const paragraphText = await loadFirstLanguageParagraph(langColumn);
-
-  const helpPage = await withLegacyConnection(async (conn) => {
-    const query: QueryFn = async <T>(sql: string, queryParams: unknown[] = []) => {
-      const [rows] = await conn.query(sql, queryParams);
-      return rows as T;
-    };
-    return resolveHelpHtmlPage(query, params.htmlPageId, params.languageId);
+  const { body: emailBodyHtml, resolvedHtmlPageId } = await buildPromocodeInviteEmailBody({
+    htmlPageId: params.htmlPageId,
+    languageId: params.languageId,
   });
 
-  const helpContent = helpPage?.content ?? '';
-  const resolvedHtmlPageId = helpPage?.id ?? params.htmlPageId;
-  const emailBodyHtml = `${paragraphText}${helpContent}`;
-
-  let otherInfo = params.otherInfo?.trim() ?? '';
-  let advPage = params.advPage?.trim() ?? '';
+  const { otherInfo, advPage } = await resolveInviteOtherInfoAndAdvPage({
+    otherInfo: params.otherInfo,
+    advPage: params.advPage,
+    senderLegacyUserId: params.senderLegacyUserId,
+    senderEmail: params.senderEmail,
+  });
 
   const registerUrl = buildRegisterUrl(
     params.origin,
@@ -409,22 +478,17 @@ export async function sendPromocodeInvite(params: {
     return { status: 'error', message: promocodeCheck.message };
   }
 
+  await ensurePromocodeInviteLocalizedContent();
+
   const languageName = await getLegacyLanguageCode(params.languageId);
 
   let finalMessage = params.emailContent.trim();
   if (!finalMessage) {
-    const paragraphText = await loadFirstLanguageParagraph(languageName);
-    const helpPage = await withLegacyConnection(async (conn) => {
-      const query: QueryFn = async <T>(sql: string, queryParams: unknown[] = []) => {
-        const [rows] = await conn.query(sql, queryParams);
-        return rows as T;
-      };
-      return resolveHelpHtmlPage(query, params.htmlPageId, params.languageId);
+    const built = await buildPromocodeInviteEmailBody({
+      htmlPageId: params.htmlPageId,
+      languageId: params.languageId,
     });
-    const helpContent = helpPage?.content ?? '';
-    if (paragraphText && helpContent) finalMessage = `${paragraphText}<br><br>${helpContent}`;
-    else if (paragraphText) finalMessage = paragraphText;
-    else finalMessage = helpContent;
+    finalMessage = built.body;
   }
 
   const { senderId, senderEmail, senderName } = await resolveApplySender({
@@ -507,6 +571,12 @@ export async function sendPromocodeInvite(params: {
   }
 
   if (successCount > 0) {
+    await saveInviteOtherInfoAndAdvPageToUserSettings(senderId, params.otherInfo, params.advPage).catch(
+      (err) => {
+        console.warn('Failed to save promocode invite link settings:', err);
+      }
+    );
+
     let message = `${successCount} invitation(s) sent successfully.`;
     if (errors.length > 0) message += ` Errors: ${errors.join(', ')}`;
     return { status: 'success', message };

@@ -8,6 +8,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import ClubIdentificationDevicesPanel from './components/ClubIdentificationDevicesPanel';
+import ClubAccessOutcomeSettingsPanel from './components/ClubAccessOutcomeSettingsPanel';
+import NotificationByPromocodeDashboardView from '@/components/promocodes/NotificationByPromocodeDashboard';
 import {
   getClubMyPageDisplayName,
   getFormCreatedClubsSortedByCreatedAt,
@@ -32,7 +34,9 @@ function ClubDashboardContent() {
   const [showWorkoutSection, setShowWorkoutSection] = useState(false);
   const [clubAddSongsOgpOpen, setClubAddSongsOgpOpen] = useState(false);
   const [clubAddSongsOgpExpanded, setClubAddSongsOgpExpanded] = useState(false);
-  const [clubMainPanel, setClubMainPanel] = useState<'default' | 'identification-devices'>('default');
+  const [clubMainPanel, setClubMainPanel] = useState<
+    'default' | 'identification-devices' | 'outcome-settings' | 'suggest-movesbook'
+  >('default');
 
   useEffect(() => {
     if (contextClubId) setSelectedClubId(contextClubId);
@@ -106,10 +110,24 @@ function ClubDashboardContent() {
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
-      const clubId = selectedClubId ?? localStorage.getItem('selectedClub');
-      const qs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
-      router.replace(`/club/settings/outcome_settings${qs}`, { scroll: false });
-      return;
+      setClubMainPanel('outcome-settings');
+      router.replace('/club/dashboard', { scroll: false });
+    }
+    if (panel === 'suggest-movesbook') {
+      writeClubWorkspaceTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('suggest-movesbook');
+      router.replace('/club/dashboard', { scroll: false });
+    }
+    if (panel === 'suggest-movesbook') {
+      writeClubWorkspaceTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('suggest-movesbook');
+      router.replace('/club/dashboard', { scroll: false });
     }
   }, [searchParams, router]);
 
@@ -137,6 +155,18 @@ function ClubDashboardContent() {
       {!clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'identification-devices' ? (
         <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
           <ClubIdentificationDevicesPanel clubId={selectedClubId} />
+        </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'outcome-settings' ? (
+        <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
+          <ClubAccessOutcomeSettingsPanel
+            clubId={selectedClubId}
+            onBack={() => setClubMainPanel('default')}
+          />
+        </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'suggest-movesbook' ? (
+        <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col min-h-0">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Suggest Movesbook to friends</h2>
+          <NotificationByPromocodeDashboardView />
         </div>
       ) : !clubAddSongsOgpOpen && !showWorkoutSection ? (
         <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">
