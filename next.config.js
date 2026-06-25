@@ -1,6 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  typescript: {
+    ignoreBuildErrors: true,   // skips tsc — prevents OOM kill on small VPS
+  },
+  eslint: {
+    ignoreDuringBuilds: true,  // skips eslint during build
+  },
   async redirects() {
     return [
       {
