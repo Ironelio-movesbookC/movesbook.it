@@ -82,6 +82,12 @@ export type TaxDocumentInput = {
   vatPercentage?: number | null;
   vatAmount?: number | null;
   net?: number | null;
+  memberDisplayName?: string | null;
+  originalMemberName?: string | null;
+  memberAlias?: string | null;
+  memberNameEditable?: boolean | null;
+  formCausal?: string | null;
+  counterKey?: string | null;
 };
 
 export type CreateProcedureRecordInput = {

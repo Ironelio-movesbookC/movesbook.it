@@ -117,7 +117,7 @@ export function parseAddPayment(type: string, body: unknown): ParseAddPaymentRes
     createReceipt: data.createReceipt ?? data.taxDoc,
     receiptDocumentType: data.receiptDocumentType ?? data.taxDocument?.documentType ?? 'Invoice',
     receiptNumber: data.receiptNumber ?? data.taxDocument?.documentNumber,
-    receiptAnnotations: data.receiptAnnotations ?? data.taxDocument?.causal ?? data.description ?? data.notes,
+    receiptAnnotations: data.receiptAnnotations ?? data.taxDocument?.causal ?? null,
     serviceName: data.serviceName,
     taxDocument: data.taxDocument,
   };

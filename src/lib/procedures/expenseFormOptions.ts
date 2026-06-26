@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { findExistingTable } from '@/lib/club/legacyTableLookup';
-import { fetchClubMemberOptions } from './clubMembers';
+import { fetchProcedureCustomerOptions } from './clubMembers';
 import { fetchClubOperatorOptions } from './clubOperators';
 import { listCompanies } from '@/lib/club/archives/clubArchiveService';
 import type { ClubAuthContext } from './types';
@@ -40,7 +40,7 @@ export type ExpenseFormOptions = {
 };
 
 export async function fetchExpenseFormOptions(ctx: ClubAuthContext): Promise<ExpenseFormOptions> {
-  const members = await fetchClubMemberOptions(ctx.club.id);
+  const members = await fetchProcedureCustomerOptions(ctx.club.id);
   const expenses: { id: string; name: string }[] = [];
 
   const club = await prisma.club.findUnique({

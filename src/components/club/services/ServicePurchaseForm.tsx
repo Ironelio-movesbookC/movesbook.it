@@ -140,9 +140,10 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
   }, [memberId]);
 
   useEffect(() => {
+    if (baseCost <= 0) return;
     const pct = Number(discountPct) || 0;
     const discounted = applyDiscount(baseCost, pct, discountEnabled);
-    setValue(baseCost > 0 ? String(discounted) : '');
+    setValue(String(discounted));
   }, [baseCost, discountPct, discountEnabled]);
 
   async function loadCostFromApi(id: string) {
@@ -179,7 +180,7 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
     e.preventDefault();
     setError('');
 
-    if (!memberId) return setError('Please select a member.');
+    if (!memberId) return setError('Please select a user.');
     if (!serviceId) return setError('Please select a service.');
     if (!value || Number(value) < 0) return setError('Please enter a valid cost.');
     if (paid > total) return setError('Payment cannot exceed total cost.');
@@ -211,12 +212,10 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
         taxDocument: taxDocument ?? undefined,
         companyId: companyId || undefined,
         companyName: companies.find((c) => c.id === companyId)?.name,
-        companyId: companyId || undefined,
-        companyName: companies.find((c) => c.id === companyId)?.name,
         createReceipt: taxDoc && paid > 0,
         receiptDocumentType: taxDocument?.documentType ?? 'Invoice',
         receiptNumber: taxDocument?.documentNumber || undefined,
-        receiptAnnotations: taxDocument?.causal ?? causal,
+        receiptAnnotations: taxDocument?.causal || undefined,
       });
 
       router.push(`/clubs/archive_service_list?created=${result.purchaseId}`);
@@ -237,13 +236,16 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
         <ProcedureFormSection title="Movement data">
           <ProcedureFormGrid>
             <ProcedureFormCell label="User Selected">
-              <input
-                type="text"
-                readOnly
-                className={procedureReadonlyInputClass}
-                value={selectedMember?.name ?? ''}
-                placeholder="Select member below"
-              />
+              <select
+                className={procedureInputClass}
+                value={memberId}
+                onChange={(e) => setMemberId(e.target.value)}
+              >
+                <option value="">Select user</option>
+                {options?.members.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
             </ProcedureFormCell>
             <ProcedureFormCell label="Discount">
               <div className="flex items-center gap-2">
@@ -261,18 +263,6 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
                 />
                 {loadingDiscount && <span className="text-xs text-gray-500">Loading…</span>}
               </div>
-            </ProcedureFormCell>
-            <ProcedureFormCell label="Member">
-              <select
-                className={procedureInputClass}
-                value={memberId}
-                onChange={(e) => setMemberId(e.target.value)}
-              >
-                <option value="">Select member</option>
-                {options?.members.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
             </ProcedureFormCell>
             <ProcedureFormCell label="Date">
               <input
@@ -488,6 +478,7 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
       <TaxDocumentModal
         open={taxModalOpen}
         memberName={selectedMember?.name ?? ''}
+        defaultCausal={causal}
         defaultTotal={total}
         defaultResidual={rest}
         initial={taxDocument ?? undefined}
