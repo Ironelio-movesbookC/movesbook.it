@@ -36,7 +36,7 @@ export default function AdminAccessAudioSettingsPanel() {
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<AccessAudioSettingItem | null>(null);
-  const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
+  const playerRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const load = useCallback(async (activeLang: number) => {
@@ -80,6 +80,27 @@ export default function AdminAccessAudioSettingsPanel() {
     const t = window.setTimeout(() => setToast(null), 4000);
     return () => window.clearTimeout(t);
   }, [toast]);
+
+  useEffect(() => {
+    return () => {
+      playerRef.current?.pause();
+      playerRef.current = null;
+    };
+  }, []);
+
+  function getPlayer(): HTMLAudioElement {
+    if (!playerRef.current) {
+      playerRef.current = new Audio();
+    }
+    return playerRef.current;
+  }
+
+  function showPlaybackError(item: AccessAudioSettingItem) {
+    setToast(
+      `Unable to play audio (${item.audioFile ?? 'file'}). Re-upload on this server or check storage.`
+    );
+    setPlayingId(null);
+  }
 
   const saveSetting = useCallback(
     async (item: AccessAudioSettingItem) => {
@@ -187,37 +208,28 @@ export default function AdminAccessAudioSettingsPanel() {
 
   function toggleAudio(item: AccessAudioSettingItem) {
     if (!item.audioUrl) return;
-    const el = audioRefs.current[item.typeId];
-    if (!el) return;
+    const player = getPlayer();
 
-    if (!el.paused && playingId === item.typeId) {
-      el.pause();
+    if (!player.paused && playingId === item.typeId) {
+      player.pause();
       setPlayingId(null);
       return;
     }
 
-    Object.values(audioRefs.current).forEach((audio) => {
-      if (audio) {
-        audio.pause();
-        audio.currentTime = 0;
-      }
-    });
+    player.pause();
+    player.onended = null;
+    player.onerror = null;
+    player.src = item.audioUrl;
+    player.load();
 
-    el.onended = () => setPlayingId(null);
-    el.onerror = () => {
-      setToast(
-        `Unable to play audio (${item.audioFile ?? 'file'}). Re-upload on this server or check storage.`
-      );
-      setPlayingId(null);
-    };
+    player.onended = () => setPlayingId(null);
+    player.onerror = () => showPlaybackError(item);
 
-    void el.play().catch(() => {
-      setToast(
-        `Unable to play audio (${item.audioFile ?? 'file'}). Re-upload on this server or check storage.`
-      );
-      setPlayingId(null);
+    void player.play().then(() => {
+      setPlayingId(item.typeId);
+    }).catch(() => {
+      showPlaybackError(item);
     });
-    setPlayingId(item.typeId);
   }
 
   function openUploadPicker(item: AccessAudioSettingItem) {
@@ -501,17 +513,6 @@ export default function AdminAccessAudioSettingsPanel() {
                         event.target.value = '';
                       }}
                     />
-                    {item.audioUrl && (
-                      <audio
-                        key={item.audioUrl}
-                        ref={(node) => {
-                          audioRefs.current[item.typeId] = node;
-                        }}
-                        src={item.audioUrl}
-                        preload="none"
-                        className="hidden"
-                      />
-                    )}
                   </div>
                 </div>
               );
