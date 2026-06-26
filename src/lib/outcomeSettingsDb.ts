@@ -28,6 +28,4 @@ export async function getTableColumns(tableName: string): Promise<Set<string>> {
   return new Set(rows.map((row) => row.COLUMN_NAME));
 }
 
-export function audioPublicPath(lang: number, filename: string): string {
-  return `/outcome_messages/${lang}/${filename}`;
-}
+export { audioPublicPath } from '@/lib/outcomes';

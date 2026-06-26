@@ -41,6 +41,8 @@ const publicApiRoutes = [
   '/api/auth/register',
   '/api/auth/reset-password',
   '/api/auth/reset-username',
+  /** Outcome audio for <audio src> — no Authorization header on GET */
+  '/api/outcome-messages',
 ];
 
 /** Public share links (read-only workout day / session). */

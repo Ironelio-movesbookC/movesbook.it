@@ -203,12 +203,21 @@ export default function AdminAccessAudioSettingsPanel() {
       }
     });
 
+    el.onended = () => setPlayingId(null);
+    el.onerror = () => {
+      setToast(
+        `Unable to play audio (${item.audioFile ?? 'file'}). Re-upload on this server or check storage.`
+      );
+      setPlayingId(null);
+    };
+
     void el.play().catch(() => {
-      setToast('Unable to play audio. Re-upload the file or check server storage.');
+      setToast(
+        `Unable to play audio (${item.audioFile ?? 'file'}). Re-upload on this server or check storage.`
+      );
       setPlayingId(null);
     });
     setPlayingId(item.typeId);
-    el.onended = () => setPlayingId(null);
   }
 
   function openUploadPicker(item: AccessAudioSettingItem) {
@@ -494,6 +503,7 @@ export default function AdminAccessAudioSettingsPanel() {
                     />
                     {item.audioUrl && (
                       <audio
+                        key={item.audioUrl}
                         ref={(node) => {
                           audioRefs.current[item.typeId] = node;
                         }}

@@ -65,12 +65,13 @@ function text(value: unknown): string {
   return String(value ?? '').trim();
 }
 
+/** Browser URL for outcome audio — always via API so playback uses the same disk dir as uploads. */
 export function audioPublicPath(langKey: string | number, filename: string): string {
-  return `/outcome_messages/${langKey}/${filename}`;
+  return `/api/outcome-messages/${langKey}/${filename}`;
 }
 
 export function clubAudioPublicPath(clubId: string, filename: string): string {
-  return `/outcome_messages/club/${clubId}/${filename}`;
+  return `/api/outcome-messages/club/${clubId}/${filename}`;
 }
 
 export class OutcomeService {
