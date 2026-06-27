@@ -1,19 +1,29 @@
 import type { WorkoutArchiveGridRecord } from '@/types/workoutArchiveGrid';
+import { ARCHIVE_DISPLAY_LANGUAGES } from '@/types/workoutArchiveGrid';
+import type { ArchiveTrainingCategory } from '@/lib/archiveTrainingCategory';
+import { formatArchiveDuration } from '@/lib/workoutArchiveMetrics';
 
 export const OFFICIAL_ARCHIVE_COLUMNS = [
-  'Code + Title',
-  'NW',
-  'Type',
-  'Author',
-  'Main sport',
+  'Picture',
+  'Type of training',
+  'Class',
+  'No. workouts',
+  'Duration',
+  'Sport',
   'Goal',
   'Level',
   'Period',
+  'Title',
+  'Date creation',
+  'Sharing date',
+  'Share expiration',
   'Language',
-  'Country',
-  'Exp date',
-  'ACTIONS',
+  'Short description',
+  'User',
+  'Options',
 ] as const;
+
+export type ArchiveTrainingFilter = 'all' | ArchiveTrainingCategory;
 
 export type ArchiveSearchField = 'all' | 'title' | 'author' | 'tags' | 'sport';
 export type ArchiveSortKey = 'nameAsc' | 'nameDesc' | 'dateNewest' | 'dateOldest';
@@ -43,6 +53,45 @@ export function formatArchiveExpDate(value?: string | null): string {
   return new Date(value).toLocaleDateString();
 }
 
+export function formatArchiveGridDate(value?: string | null): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+export function formatArchiveLanguage(code?: string | null): string {
+  if (!code?.trim()) return '—';
+  const parts = code.split(/[,;|/]/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) return code;
+  return parts
+    .map((part) => {
+      const match = ARCHIVE_DISPLAY_LANGUAGES.find(
+        (l) => l.code.toLowerCase() === part.toLowerCase()
+      );
+      return match?.name ?? part;
+    })
+    .join(', ');
+}
+
+export function formatArchiveDurationSummary(record: WorkoutArchiveGridRecord): string {
+  const parts: string[] = [];
+  if (record.totalMeters != null && record.totalMeters > 0) {
+    parts.push(`${record.totalMeters} m`);
+  }
+  if (record.totalTimeSeconds != null && record.totalTimeSeconds > 0) {
+    parts.push(formatArchiveDuration(record.totalTimeSeconds));
+  }
+  if (record.totalSeries != null && record.totalSeries > 0) {
+    parts.push(`${record.totalSeries} series`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : '—';
+}
+
 export function recordMatchesPrimaryTab(
   record: { recordType: WorkoutArchiveGridRecord['recordType'] },
   tab: ArchivePrimaryTab
@@ -68,6 +117,7 @@ export function filterArchiveRecords(
     authorFilter: string;
     countryFilter: string;
     durationFilter: ArchiveDurationFilter;
+    trainingCategoryFilter?: ArchiveTrainingFilter;
     appliedSearch: string;
     searchField: ArchiveSearchField;
     sortKey: ArchiveSortKey;
@@ -92,6 +142,13 @@ export function filterArchiveRecords(
       if (c !== opts.countryFilter) return false;
     }
     if (!matchesDurationFilter(r.totalTimeSeconds, opts.durationFilter)) return false;
+    if (
+      opts.trainingCategoryFilter &&
+      opts.trainingCategoryFilter !== 'all' &&
+      r.trainingCategory !== opts.trainingCategoryFilter
+    ) {
+      return false;
+    }
     if (q) {
       const fields: Record<ArchiveSearchField, string> = {
         all: `${r.title} ${r.tags ?? ''} ${r.sharedByUsername ?? ''} ${opts.sportLabel(r.mainSport)}`,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { resolveWorkoutDatabaseUserId } from '@/lib/workoutUserId';
 
 // Helper function to get the Monday of a given week
 function getMondayOfWeek(date: Date): Date {
@@ -25,6 +26,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
+    const userId = await resolveWorkoutDatabaseUserId(decoded.userId);
+    if (!userId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
     const body = await request.json();
     const { startDate: requestedStartDate } = body;
 
@@ -43,10 +49,10 @@ export async function POST(request: NextRequest) {
 
     // Store start date in user settings
     await prisma.userSettings.upsert({
-      where: { userId: decoded.userId },
+      where: { userId: userId },
       update: { yearlyPlanStartDate: startDate },
       create: {
-        userId: decoded.userId,
+        userId: userId,
         yearlyPlanStartDate: startDate,
         colorSettings: '{}',
         toolsSettings: '{}',
@@ -65,7 +71,7 @@ export async function POST(request: NextRequest) {
     // Delete existing YEARLY_PLAN if exists
     const existingPlan = await prisma.workoutPlan.findFirst({
       where: {
-        userId: decoded.userId,
+        userId: userId,
         type: 'YEARLY_PLAN'
       }
     });
@@ -76,7 +82,7 @@ export async function POST(request: NextRequest) {
       // Delete all days in the plan's date range
       await prisma.workoutDay.deleteMany({
         where: {
-          userId: decoded.userId,
+          userId: userId,
           workoutWeek: {
             workoutPlanId: existingPlan.id
           }
@@ -100,14 +106,14 @@ export async function POST(request: NextRequest) {
 
     // Get or create default period
     let defaultPeriod = await prisma.period.findFirst({
-      where: { userId: decoded.userId }
+      where: { userId: userId }
     });
 
     if (!defaultPeriod) {
       console.log('No period found, creating default...');
       defaultPeriod = await prisma.period.create({
         data: {
-          userId: decoded.userId,
+          userId: userId,
           name: 'Base Period',
           description: 'Default training period',
           color: '#3b82f6'
@@ -119,7 +125,7 @@ export async function POST(request: NextRequest) {
     console.log('Creating new yearly plan...');
     const plan = await prisma.workoutPlan.create({
       data: {
-        userId: decoded.userId,
+        userId: userId,
         name: 'Yearly Plan',
         type: 'YEARLY_PLAN',
         startDate,
@@ -152,7 +158,7 @@ export async function POST(request: NextRequest) {
         await prisma.workoutDay.upsert({
           where: {
             userId_date_storageZone: {
-              userId: decoded.userId,
+              userId: userId,
               date: dayDate,
               storageZone: 'B'
             }
@@ -166,7 +172,7 @@ export async function POST(request: NextRequest) {
           },
           create: {
             workoutWeekId: week.id,
-            userId: decoded.userId,
+            userId: userId,
             dayOfWeek,
             weekNumber: i + 1,
             date: dayDate,
@@ -192,7 +198,7 @@ export async function POST(request: NextRequest) {
     // Delete existing WORKOUTS_DONE if exists
     const existingDonePlan = await prisma.workoutPlan.findFirst({
       where: {
-        userId: decoded.userId,
+        userId: userId,
         type: 'WORKOUTS_DONE'
       }
     });
@@ -202,7 +208,7 @@ export async function POST(request: NextRequest) {
       
       await prisma.workoutDay.deleteMany({
         where: {
-          userId: decoded.userId,
+          userId: userId,
           workoutWeek: {
             workoutPlanId: existingDonePlan.id
           }
@@ -225,7 +231,7 @@ export async function POST(request: NextRequest) {
     // Create "Workouts Done" plan
     const donePlan = await prisma.workoutPlan.create({
       data: {
-        userId: decoded.userId,
+        userId: userId,
         name: 'Workouts Done',
         type: 'WORKOUTS_DONE',
         startDate,

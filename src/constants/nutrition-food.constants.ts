@@ -62,9 +62,68 @@ export const CIRCUIT_SERIES_PAUSE_OPTIONS: { label: string; value: number }[] = 
   { label: "10'", value: 600 }
 ];
 
-/** Sports that use the official indoor / structured tools layout (extend when wiring sport configs). */
-export function isOfficialIndoorToolsLayoutSport(_sport: string): boolean {
-  return false;
+/** Between-circuits pause in circuit planner yellow row (1′…10′ as seconds). */
+export const CIRCUIT_BETWEEN_CIRCUITS_PAUSE_OPTIONS: { label: string; value: number }[] = Array.from(
+  { length: 10 },
+  (_, i) => ({ label: `${i + 1}'`, value: (i + 1) * 60 })
+);
+
+export type CircuitPauseOption = { label: string; value: number };
+
+/** Pause dropdown set for Add/Edit station modal — matches circuit planner grid rules. */
+export function getCircuitStationModalPauseOptions(params: {
+  seriesIdx: number;
+  stationNumber: number;
+  stationsInSeries: number;
+  seriesCount: number;
+  isLastCircuitInWorkout: boolean;
+  seriesMode?: 'count' | 'time';
+}): CircuitPauseOption[] {
+  const {
+    seriesIdx,
+    stationNumber,
+    stationsInSeries,
+    seriesCount,
+    isLastCircuitInWorkout,
+    seriesMode = 'count',
+  } = params;
+  const isLastStationSlot = stationsInSeries > 0 && stationNumber === stationsInSeries;
+  const isLastSeries = seriesCount > 0 && seriesIdx === seriesCount - 1;
+  const isFirstStationSlot = stationNumber === 1;
+
+  if (isLastStationSlot && isLastSeries && !isLastCircuitInWorkout) {
+    return CIRCUIT_BETWEEN_CIRCUITS_PAUSE_OPTIONS;
+  }
+  if (seriesIdx > 0 && isFirstStationSlot) {
+    return CIRCUIT_SERIES_PAUSE_OPTIONS;
+  }
+  if (seriesMode === 'time' && isLastStationSlot && isLastSeries && isLastCircuitInWorkout) {
+    return CIRCUIT_BETWEEN_CIRCUITS_PAUSE_OPTIONS;
+  }
+  return CIRCUIT_STATION_PAUSE_OPTIONS;
+}
+
+/** Keep legacy/custom pause values selectable when not in the standard list. */
+export function withCircuitPauseOptionFallback(
+  options: CircuitPauseOption[],
+  currentSeconds: number
+): CircuitPauseOption[] {
+  if (!Number.isFinite(currentSeconds) || currentSeconds < 0) return options;
+  if (options.some((o) => o.value === currentSeconds)) return options;
+  const minutes = Math.floor(currentSeconds / 60);
+  const seconds = currentSeconds % 60;
+  const label =
+    minutes > 0
+      ? seconds > 0
+        ? `${minutes}'${String(seconds).padStart(2, '0')}"`
+        : `${minutes}'`
+      : `${seconds}"`;
+  return [...options, { label, value: currentSeconds }];
+}
+
+/** @deprecated Use {@link isSportSectionB} — kept for existing imports. */
+export function isOfficialIndoorToolsLayoutSport(sport: string): boolean {
+  return isSportSectionB(sport);
 }
 
 /** Optional map of pause UI mode → whether pace fields apply (placeholder for sport-specific tools). */
@@ -920,6 +979,16 @@ export const SPORT_SECTION_C_TECHNICAL = [
  */
 export const isSportSectionB = (sport: string): boolean => {
   return SPORT_SECTION_B_NON_AEROBIC_CATALOG.includes(sport as any);
+};
+
+export const isSportSectionC = (sport: string): boolean => {
+  return SPORT_SECTION_C_TECHNICAL.includes(sport as any);
+};
+
+export function getStandardMoveframeSectionTitle(sport: string): string {
+  if (isSportSectionB(sport)) return 'EXERCISE AND REPETITIONS';
+  if (isSportSectionC(sport)) return 'EXERCISE & STYLE/TECHNIQUE';
+  return 'DISTANCE & REPETITIONS';
 };
 
 export const ALLOWED_CIRCUIT_SPORTS = [

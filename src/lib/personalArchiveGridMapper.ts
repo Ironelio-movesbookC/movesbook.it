@@ -1,6 +1,14 @@
 import type { WorkoutArchiveGridRecord } from '@/types/workoutArchiveGrid';
-import { computeWeeklyPlanMetrics, computeWorkoutArchiveMetrics } from '@/lib/workoutArchiveMetrics';
+import { computeWorkoutArchiveMetrics } from '@/lib/workoutArchiveMetrics';
 import { getSportDisplayName } from '@/constants/moveframe.constants';
+import { parseGymWeekArchivePayload } from '@/types/gymWeekArchive';
+import {
+  getGoalLabel,
+  getPlanGymWeekTrainingLevelLabel,
+  type GoalId,
+  type TrainingLevel,
+} from '@/components/workouts/modals/PlanGymWeekModal';
+import { enrichArchiveGridRecord } from '@/lib/archiveTrainingCategory';
 
 function extractSports(workout: any): string[] {
   const sports = new Set<string>();
@@ -23,6 +31,9 @@ export function mapPersonalArchiveToGridRecords(workoutPlan: {
   );
 
   for (const week of weeks) {
+    const gymPayload = parseGymWeekArchivePayload(week.notes);
+    const meta = gymPayload?.metadata;
+
     const weekSports = new Set<string>();
     let weekMetrics = { workoutCount: 0, totalMeters: 0, totalTimeSeconds: 0, totalSeries: 0 };
 
@@ -40,19 +51,26 @@ export function mapPersonalArchiveToGridRecords(workoutPlan: {
     records.push({
       id: `week-${week.id}`,
       recordType: 'WEEKLY_PLAN',
-      code: `W${week.weekNumber ?? '?'}`,
+      code: meta?.code ?? `W${week.weekNumber ?? '?'}`,
       numWeeks: 1,
-      title: week.notes?.trim() || `Archive Week ${week.weekNumber ?? '?'}`,
-      mainSport: Array.from(weekSports)[0] ?? week.period?.name ?? null,
-      mainGoal: null,
-      trainingLevel: null,
-      period: week.period?.name ?? null,
-      tags: week.notes ?? null,
-      workoutCount: weekMetrics.workoutCount,
+      title: meta?.title ?? (week.notes?.trim() || `Archive Week ${week.weekNumber ?? '?'}`),
+      mainSport: meta?.workoutType ?? (Array.from(weekSports)[0] ?? week.period?.name ?? null),
+      mainGoal: meta?.goal
+        ? getGoalLabel(meta.goal as GoalId)
+        : null,
+      trainingLevel: meta?.level
+        ? getPlanGymWeekTrainingLevelLabel(meta.level as TrainingLevel)
+        : null,
+      period: meta?.periodName ?? week.period?.name ?? null,
+      tags: meta?.tags ?? null,
+      shortDescription: meta?.description ?? null,
+      expirationDate: meta?.expirationDate ?? null,
+      authorCountry: meta?.authorCountry ?? null,
+      workoutCount: meta?.workoutCount ?? weekMetrics.workoutCount,
       totalMeters: weekMetrics.totalMeters,
       totalTimeSeconds: weekMetrics.totalTimeSeconds,
       totalSeries: weekMetrics.totalSeries,
-      createdAt: week.createdAt,
+      createdAt: meta?.createdAt ?? week.createdAt,
       archiveSource: 'personal',
       _raw: week,
     });
@@ -83,7 +101,7 @@ export function mapPersonalArchiveToGridRecords(workoutPlan: {
     }
   }
 
-  return records;
+  return records.map(enrichArchiveGridRecord);
 }
 
 export { getSportDisplayName };

@@ -24,12 +24,14 @@ export default function RichTextEditor({
   const editorRef = useRef<HTMLDivElement>(null);
   const [isFocused, setIsFocused] = useState(false);
 
-  // Initialize editor content
+  // Initialize editor content (skip while user is typing — avoids wiping the caret)
   useEffect(() => {
-    if (editorRef.current && editorRef.current.innerHTML !== value) {
-      editorRef.current.innerHTML = value;
+    if (!editorRef.current || isFocused) return;
+    const next = value || '';
+    if (editorRef.current.innerHTML !== next) {
+      editorRef.current.innerHTML = next;
     }
-  }, [value]);
+  }, [value, isFocused]);
 
   const handleInput = () => {
     if (editorRef.current) {

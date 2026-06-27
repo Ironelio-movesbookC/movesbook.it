@@ -118,6 +118,22 @@ export function getSeriesDistribution(
 }
 
 /**
+ * Number of exercises for a muscular area.
+ * Uses manual count when set on the manual plan page; otherwise the level lookup table.
+ */
+export function exerciseCountForArea(
+  totalSeries: number,
+  category: SeriesLevelCategory = 'mid',
+  manualExerciseCount?: number | null,
+): number {
+  const series = Math.max(0, Math.round(totalSeries));
+  if (series <= 0) return 0;
+  const manual = manualExerciseCount ?? 0;
+  if (manual > 0) return Math.max(1, Math.min(series, manual));
+  return getSeriesDistribution(series, category).length;
+}
+
+/**
  * Given the distribution array, returns the number of exercises.
  */
 export function exerciseCountFromDist(dist: number[]): number {
@@ -133,4 +149,26 @@ function simpleFallback(n: number): number[] {
   const base  = Math.floor(n / count);
   const rem   = n % count;
   return Array.from({ length: count }, (_, i) => base + (i < rem ? 1 : 0));
+}
+
+/**
+ * Suggested series for the next exercise slot from the distribution table.
+ * Uses `getSeriesDistribution` for slot N (0-based). If residual series
+ * (target − planned so far) is less than the table value, returns the residual.
+ */
+export function suggestedSeriesForExerciseSlot(
+  targetTotalSeries: number,
+  category: SeriesLevelCategory = 'mid',
+  exerciseIndex: number,
+  plannedSoFar: number = 0,
+): number {
+  const target = Math.max(1, Math.round(targetTotalSeries));
+  const planned = Math.max(0, Math.round(plannedSoFar));
+  const residual = Math.max(0, target - planned);
+  if (residual <= 0) return 1;
+
+  const dist = getSeriesDistribution(target, category);
+  const idx = Math.max(0, Math.round(exerciseIndex));
+  const tableValue = dist[idx] ?? dist[dist.length - 1] ?? 1;
+  return Math.max(1, Math.min(tableValue, residual));
 }

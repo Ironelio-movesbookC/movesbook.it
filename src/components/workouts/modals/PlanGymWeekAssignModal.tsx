@@ -4,7 +4,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { X, CheckCircle2, GripVertical } from 'lucide-react';
 import type { PlanGymWeekManualResult } from './PlanGymWeekManualModal';
 import { getGoalLabel, type GoalId } from './PlanGymWeekModal';
-import type { GymWeekSlotAssignment, GymWeekWeekAssignment } from '@/types/gymWeekAssignment';
+import type { GymWeekSlotAssignment, GymWeekWeekAssignment, GymWeekPlanSourceSection } from '@/types/gymWeekAssignment';
 import {
   assignedRoutineDayIndices,
   saveGymWeekAssignment,
@@ -13,6 +13,23 @@ import {
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
 const WORKOUTS = [1, 2, 3] as const;
 
+type WeekDayDetail = {
+  id: string;
+  weekNumber: number;
+  days?: { dayOfWeek?: number; date?: string }[];
+};
+
+function dayDateForWeek(week: WeekDayDetail | undefined, dayOfWeek: number): string | undefined {
+  if (!week?.days?.length) return undefined;
+  const rec = week.days.find((d) => d.dayOfWeek === dayOfWeek) ?? week.days[dayOfWeek - 1];
+  if (!rec?.date) return undefined;
+  return new Date(rec.date).toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 type WeekMeta = { id: string; weekNumber: number };
 
 type Props = {
@@ -20,6 +37,12 @@ type Props = {
   plan: PlanGymWeekManualResult;
   goals: GoalId[];
   targetWeeks: WeekMeta[];
+  sourceSection?: GymWeekPlanSourceSection;
+  templateKey?: 'A' | 'B' | 'C';
+  /** Calendar days (1–7) available for assignment; defaults to all weekdays */
+  allowedDays?: number[];
+  /** Week day records (with dates) from the picker — used for single-week Yearly Plan */
+  targetWeekDetails?: WeekDayDetail[];
   /** Existing assignment when editing (first week used as template for slots). */
   initialAssignment?: GymWeekWeekAssignment | null;
   onClose: () => void;
@@ -35,6 +58,10 @@ export default function PlanGymWeekAssignModal({
   plan,
   goals,
   targetWeeks,
+  sourceSection,
+  templateKey,
+  allowedDays = [1, 2, 3, 4, 5, 6, 7],
+  targetWeekDetails,
   initialAssignment,
   onClose,
   onDone,
@@ -69,6 +96,13 @@ export default function PlanGymWeekAssignModal({
     return out;
   }, [slotMap]);
 
+  const allowedDaySet = useMemo(() => new Set(allowedDays), [allowedDays]);
+
+  const visibleDayIndices = useMemo(
+    () => DAY_NAMES.map((_, idx) => idx).filter((idx) => allowedDaySet.has(idx + 1)),
+    [allowedDaySet]
+  );
+
   const assignedRoutines = useMemo(
     () => assignedRoutineDayIndices({ weekId: '', plan, slots: slotsList, updatedAt: '' }),
     [slotsList, plan]
@@ -102,6 +136,8 @@ export default function PlanGymWeekAssignModal({
         plan,
         slots: slotsList,
         updatedAt: now,
+        sourceSection,
+        templateKey,
       };
       saveGymWeekAssignment(assignment);
     }
@@ -112,6 +148,11 @@ export default function PlanGymWeekAssignModal({
   if (!isOpen) return null;
 
   const activeWeek = targetWeeks[activeWeekIdx];
+  const activeWeekDetail = targetWeekDetails?.find((w) => w.id === activeWeek?.id);
+  const showDayDates =
+    sourceSection === 'B' &&
+    targetWeeks.length === 1 &&
+    Boolean(activeWeekDetail && dayDateForWeek(activeWeekDetail, 1));
 
   return (
     <div className="fixed inset-0 z-[100001] flex items-center justify-center bg-black/55 p-2 sm:p-4">
@@ -122,6 +163,9 @@ export default function PlanGymWeekAssignModal({
             <p className="text-xs text-gray-600">
               Drag each routine card onto a day and workout (WO). Use ✕ on a slot to free the routine
               again.
+              {allowedDays.length < 7
+                ? ` Only selected weekdays (Mon–Sun) are shown below.`
+                : ''}
               {targetWeeks.length > 1
                 ? ` Same layout will be saved for ${targetWeeks.length} selected weeks.`
                 : activeWeek
@@ -195,7 +239,9 @@ export default function PlanGymWeekAssignModal({
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-gray-100 text-left text-xs font-bold uppercase text-gray-600">
-                <th className="border border-gray-200 px-2 py-2">Day</th>
+                <th className="border border-gray-200 px-2 py-2">
+                  {showDayDates ? 'Dayname & Date' : 'Day'}
+                </th>
                 <th className="border border-gray-200 px-2 py-2 w-14">WO</th>
                 <th className="border border-gray-200 px-2 py-2">Sport 1</th>
                 <th className="border border-gray-200 px-2 py-2">Sport 2</th>
@@ -203,8 +249,9 @@ export default function PlanGymWeekAssignModal({
               </tr>
             </thead>
             <tbody>
-              {DAY_NAMES.map((dayName, dayIdx) => {
+              {visibleDayIndices.map((dayIdx) => {
                 const dayOfWeek = dayIdx + 1;
+                const dateStr = showDayDates ? dayDateForWeek(activeWeekDetail, dayOfWeek) : undefined;
                 return WORKOUTS.map((wo, woIdx) => (
                   <tr key={`${dayOfWeek}-${wo}`} className="hover:bg-gray-50/80">
                     {woIdx === 0 ? (
@@ -212,7 +259,10 @@ export default function PlanGymWeekAssignModal({
                         rowSpan={3}
                         className="border border-gray-200 px-2 py-2 align-top font-medium text-gray-800"
                       >
-                        {dayName}
+                        <div>{DAY_NAMES[dayIdx]}</div>
+                        {showDayDates && dateStr ? (
+                          <div className="text-[11px] font-normal text-blue-700">{dateStr}</div>
+                        ) : null}
                       </td>
                     ) : null}
                     <td className="border border-gray-200 px-2 py-2 text-center font-semibold text-gray-700">

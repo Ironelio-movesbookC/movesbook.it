@@ -149,14 +149,7 @@ export default function ToolsSettings({
   
   const [activeTab, setActiveTab] = useState<ToolsTab>(() => {
     if (periodizationOnly) return 'periods';
-    const allowed = getAllowedTabs(isAdmin, mode);
-    if (initialTab && allowed.includes(initialTab)) return initialTab;
-    if (typeof window === 'undefined') {
-      return mode === 'technical' ? 'equipmentFactories' : 'periods';
-    }
-    const key = `settings_tools_tab_${mode}`;
-    const saved = localStorage.getItem(key) as ToolsTab | null;
-    if (saved && allowed.includes(saved)) return saved;
+    // Keep server + first client paint identical — never read localStorage here (hydration crash).
     return mode === 'technical' ? 'equipmentFactories' : 'periods';
   });
 
@@ -245,11 +238,17 @@ export default function ToolsSettings({
   }, [activeTab, allowedTabs]);
 
   useEffect(() => {
-    if (!initialTab) return;
-    if (allowedTabs.includes(initialTab)) {
+    if (periodizationOnly) return;
+    if (initialTab && allowedTabs.includes(initialTab)) {
       setActiveTab(initialTab);
+      return;
     }
-  }, [initialTab, allowedTabs]);
+    const key = `settings_tools_tab_${mode}`;
+    const saved = localStorage.getItem(key) as ToolsTab | null;
+    if (saved && allowedTabs.includes(saved)) {
+      setActiveTab(saved);
+    }
+  }, [initialTab, allowedTabs, mode, periodizationOnly]);
 
   useEffect(() => {
     if (mode !== 'technical' || activeTab !== 'equipmentFactories') return;

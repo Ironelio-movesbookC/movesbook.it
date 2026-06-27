@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { buildDefaultVolumeDeltas } from '@/utils/planGymWeekGoalScalars';
 
 // ─── types ──────────────────────────────────────────────────────────────────
 
@@ -34,38 +35,39 @@ type Goal = (typeof GOALS)[number];
 const LEVEL_BANDS = ['Beginner', 'Intermediate', 'Advanced', 'Elite', 'Professional'] as const;
 
 interface GoalLoadParams {
-  volumeFrom: number[];        
-  volumeTo:   number[];
-  repsFrom:   number;          
-  repsTo:     number;
-  repsFromProfessional: number;
-  repsToProfessional: number;
-  pctFrom:    number;          
-  pctTo:      number;
+  volumeFrom: number[];
+  volumeTo: number[];
+  repsFrom: number[];
+  repsTo: number[];
+  pctFrom: number[];
+  pctTo: number[];
   displayInPercent: boolean;
-  pauseSeriesFrom:     number; 
-  pauseSeriesTo:       number;
-  pauseSeriesFromProfessional: number;
-  pauseSeriesToProfessional: number;
-  pauseExercisesFrom:  number;
-  pauseExercisesTo:    number;
-  pauseExercisesFromProfessional: number;
-  pauseExercisesToProfessional: number;
-  pauseAreasFrom:      number;
-  pauseAreasTo:        number;
-  pauseAreasFromProfessional: number;
-  pauseAreasToProfessional: number;
+  pauseSeriesFrom: number[];
+  pauseSeriesTo: number[];
+  pauseExercisesFrom: number[];
+  pauseExercisesTo: number[];
+  pauseAreasFrom: number[];
+  pauseAreasTo: number[];
 }
+
+type LevelPairField =
+  | 'repsFrom'
+  | 'repsTo'
+  | 'pctFrom'
+  | 'pctTo'
+  | 'pauseSeriesFrom'
+  | 'pauseSeriesTo'
+  | 'pauseExercisesFrom'
+  | 'pauseExercisesTo'
+  | 'pauseAreasFrom'
+  | 'pauseAreasTo';
 
 type AllGoalParams = Partial<Record<Goal, GoalLoadParams>>;
 
 // ─── defaults ────────────────────────────────────────────────────────────────
 
 function buildInitialDeltas(): VolumeChangesByLevel {
-  return TRAINING_LEVELS.reduce((a, l) => {
-    a[l] = SESSIONS.reduce((s, n) => { s[n] = 0; return s; }, {} as SessionDeltas);
-    return a;
-  }, {} as VolumeChangesByLevel);
+  return buildDefaultVolumeDeltas() as VolumeChangesByLevel;
 }
 function buildInitialMeta(): LevelsMeta {
   const defs: Record<TrainingLevel, number> = {
@@ -86,51 +88,135 @@ function percentToReps(pct: number): number {
 
 function buildDefaultGoalParams(): GoalLoadParams {
   /** Indices 0–4 = Beginner … Professional; index 5 mirrors Professional for legacy 6-slot readers. */
+  const repsFrom = [12, 12, 12, 12, 12, 12];
+  const repsTo = [20, 20, 20, 20, 20, 20];
+  const pauseSeriesFrom = [60, 60, 60, 60, 60, 60];
+  const pauseSeriesTo = [55, 55, 55, 55, 55, 55];
+  const pauseExercisesFrom = [90, 90, 90, 90, 90, 90];
+  const pauseExercisesTo = [120, 120, 120, 120, 120, 120];
+  const pauseAreasFrom = [120, 120, 120, 120, 120, 120];
+  const pauseAreasTo = [180, 180, 180, 180, 180, 180];
   return {
-    volumeFrom: [20, 25, 30, 35, 40, 40],
-    volumeTo: [40, 43, 46, 49, 52, 52],
-    repsFrom:   10, repsTo: 22,
-    repsFromProfessional: 15, repsToProfessional: 30,
-    pctFrom:    repsToPercent(10), pctTo: repsToPercent(22),
+    volumeFrom: [10, 4, 5, 6, 10, 10],
+    volumeTo: [50, 5, 6, 8, 50, 50],
+    repsFrom,
+    repsTo,
+    pctFrom: repsFrom.map((r) => repsToPercent(r)),
+    pctTo: repsTo.map((r) => repsToPercent(r)),
     displayInPercent: false,
-    pauseSeriesFrom: 60,    pauseSeriesTo: 90,
-    pauseSeriesFromProfessional: 60, pauseSeriesToProfessional: 90,
-    pauseExercisesFrom: 90, pauseExercisesTo: 120,
-    pauseExercisesFromProfessional: 90, pauseExercisesToProfessional: 120,
-    pauseAreasFrom: 120,    pauseAreasTo: 180,
-    pauseAreasFromProfessional: 120, pauseAreasToProfessional: 180,
+    pauseSeriesFrom,
+    pauseSeriesTo,
+    pauseExercisesFrom,
+    pauseExercisesTo,
+    pauseAreasFrom,
+    pauseAreasTo,
   };
 }
 
-function normalizeGoalParams(raw: Partial<GoalLoadParams> | undefined): GoalLoadParams {
+function normalizeLevelArray(raw: unknown, defaults: number[]): number[] {
+  if (Array.isArray(raw)) {
+    const arr = Array.from({ length: 6 }, (_, i) => Number(raw[i] ?? defaults[i] ?? defaults[0]));
+    arr[5] = Number(raw[5] ?? raw[4] ?? arr[4]);
+    return arr;
+  }
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return [raw, raw, raw, raw, raw, raw];
+  }
+  return [...defaults];
+}
+
+function normalizeGoalParams(raw: Partial<GoalLoadParams> | GoalLoadParams | undefined): GoalLoadParams {
   const d = buildDefaultGoalParams();
-  const next = { ...d, ...(raw || {}) } as GoalLoadParams;
   const num = (v: unknown, fallback: number) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : fallback;
   };
-  next.volumeFrom = Array.from({ length: 6 }, (_, i) => Number(next.volumeFrom?.[i] ?? d.volumeFrom[i]));
-  next.volumeTo = Array.from({ length: 6 }, (_, i) => Number(next.volumeTo?.[i] ?? d.volumeTo[i]));
-  next.volumeFrom[5] = Number(next.volumeFrom[5] ?? next.volumeFrom[4]);
-  next.volumeTo[5] = Number(next.volumeTo[5] ?? next.volumeTo[4]);
-  next.repsFrom = num(next.repsFrom, d.repsFrom);
-  next.repsTo = num(next.repsTo, d.repsTo);
-  next.repsFromProfessional = num(next.repsFromProfessional, d.repsFromProfessional);
-  next.repsToProfessional = num(next.repsToProfessional, d.repsToProfessional);
-  next.pctFrom = num(next.pctFrom, d.pctFrom);
-  next.pctTo = num(next.pctTo, d.pctTo);
-  next.pauseSeriesFrom = num(next.pauseSeriesFrom, d.pauseSeriesFrom);
-  next.pauseSeriesTo = num(next.pauseSeriesTo, d.pauseSeriesTo);
-  next.pauseSeriesFromProfessional = num(next.pauseSeriesFromProfessional, d.pauseSeriesFromProfessional);
-  next.pauseSeriesToProfessional = num(next.pauseSeriesToProfessional, d.pauseSeriesToProfessional);
-  next.pauseExercisesFrom = num(next.pauseExercisesFrom, d.pauseExercisesFrom);
-  next.pauseExercisesTo = num(next.pauseExercisesTo, d.pauseExercisesTo);
-  next.pauseExercisesFromProfessional = num(next.pauseExercisesFromProfessional, d.pauseExercisesFromProfessional);
-  next.pauseExercisesToProfessional = num(next.pauseExercisesToProfessional, d.pauseExercisesToProfessional);
-  next.pauseAreasFrom = num(next.pauseAreasFrom, d.pauseAreasFrom);
-  next.pauseAreasTo = num(next.pauseAreasTo, d.pauseAreasTo);
-  next.pauseAreasFromProfessional = num(next.pauseAreasFromProfessional, d.pauseAreasFromProfessional);
-  next.pauseAreasToProfessional = num(next.pauseAreasToProfessional, d.pauseAreasToProfessional);
+  const legacy = raw as Record<string, unknown> | undefined;
+
+  const legacyRepsFrom = num(raw?.repsFrom, d.repsFrom[0]);
+  const legacyRepsTo = num(raw?.repsTo, d.repsTo[0]);
+  const legacyProfRepsFrom = num(legacy?.repsFromProfessional, legacyRepsFrom);
+  const legacyProfRepsTo = num(legacy?.repsToProfessional, legacyRepsTo);
+
+  const repsFrom = Array.isArray(raw?.repsFrom)
+    ? normalizeLevelArray(raw.repsFrom, d.repsFrom)
+    : [legacyRepsFrom, legacyRepsFrom, legacyRepsFrom, legacyRepsFrom, legacyProfRepsFrom, legacyProfRepsFrom];
+  const repsTo = Array.isArray(raw?.repsTo)
+    ? normalizeLevelArray(raw.repsTo, d.repsTo)
+    : [legacyRepsTo, legacyRepsTo, legacyRepsTo, legacyRepsTo, legacyProfRepsTo, legacyProfRepsTo];
+
+  const migratePause = (
+    fromKey: keyof GoalLoadParams,
+    toKey: keyof GoalLoadParams,
+    profFromKey: string,
+    profToKey: string,
+    defFrom: number[],
+    defTo: number[],
+  ) => {
+    const rawFrom = raw?.[fromKey];
+    const rawTo = raw?.[toKey];
+    if (Array.isArray(rawFrom) && Array.isArray(rawTo)) {
+      return {
+        from: normalizeLevelArray(rawFrom, defFrom),
+        to: normalizeLevelArray(rawTo, defTo),
+      };
+    }
+    const singleFrom = num(rawFrom, defFrom[0]);
+    const singleTo = num(rawTo, defTo[0]);
+    const profFrom = num(legacy?.[profFromKey], singleFrom);
+    const profTo = num(legacy?.[profToKey], singleTo);
+    return {
+      from: [singleFrom, singleFrom, singleFrom, singleFrom, profFrom, profFrom],
+      to: [singleTo, singleTo, singleTo, singleTo, profTo, profTo],
+    };
+  };
+
+  const pauseSeries = migratePause(
+    'pauseSeriesFrom',
+    'pauseSeriesTo',
+    'pauseSeriesFromProfessional',
+    'pauseSeriesToProfessional',
+    d.pauseSeriesFrom,
+    d.pauseSeriesTo,
+  );
+  const pauseExercises = migratePause(
+    'pauseExercisesFrom',
+    'pauseExercisesTo',
+    'pauseExercisesFromProfessional',
+    'pauseExercisesToProfessional',
+    d.pauseExercisesFrom,
+    d.pauseExercisesTo,
+  );
+  const pauseAreas = migratePause(
+    'pauseAreasFrom',
+    'pauseAreasTo',
+    'pauseAreasFromProfessional',
+    'pauseAreasToProfessional',
+    d.pauseAreasFrom,
+    d.pauseAreasTo,
+  );
+
+  const pctFrom = Array.isArray(raw?.pctFrom)
+    ? normalizeLevelArray(raw.pctFrom, d.pctFrom)
+    : repsFrom.map((r) => repsToPercent(r));
+  const pctTo = Array.isArray(raw?.pctTo)
+    ? normalizeLevelArray(raw.pctTo, d.pctTo)
+    : repsTo.map((r) => repsToPercent(r));
+
+  const next = { ...d, ...(raw || {}) } as GoalLoadParams;
+  next.volumeFrom = normalizeLevelArray(raw?.volumeFrom, d.volumeFrom);
+  next.volumeTo = normalizeLevelArray(raw?.volumeTo, d.volumeTo);
+  next.repsFrom = repsFrom;
+  next.repsTo = repsTo;
+  next.pctFrom = pctFrom;
+  next.pctTo = pctTo;
+  next.pauseSeriesFrom = pauseSeries.from;
+  next.pauseSeriesTo = pauseSeries.to;
+  next.pauseExercisesFrom = pauseExercises.from;
+  next.pauseExercisesTo = pauseExercises.to;
+  next.pauseAreasFrom = pauseAreas.from;
+  next.pauseAreasTo = pauseAreas.to;
+  next.displayInPercent = Boolean(raw?.displayInPercent ?? d.displayInPercent);
   return next;
 }
 
@@ -191,45 +277,99 @@ function Spinner({ value, min, max, step = 1, onChange, display, width = 'w-16',
   );
 }
 
-// ─── Pause row ───────────────────────────────────────────────────────────────
+// ─── Level × period from/to table (Volume, Load, Pauses) ─────────────────────
 
-interface PauseRowProps {
+interface LevelPeriodTableProps {
   label: string;
-  fromVal: number;
-  toVal: number;
-  onFromChange: (v: number) => void;
-  onToChange: (v: number) => void;
+  description?: string;
+  levelColors: Record<(typeof LEVEL_BANDS)[number], string>;
+  valuesFrom: number[];
+  valuesTo: number[];
+  onFromChange: (idx: number, v: number) => void;
+  onToChange: (idx: number, v: number) => void;
+  fromMin: number;
+  fromMax: number;
+  toMin: number;
+  toMax: number;
+  step?: number;
+  formatValue?: (v: number) => string;
+  hintFrom?: (v: number) => string;
+  hintTo?: (v: number) => string;
+  headerExtra?: React.ReactNode;
 }
-function PauseRow({ label, fromVal, toVal, onFromChange, onToChange }: PauseRowProps) {
+
+function LevelPeriodTable({
+  label,
+  description,
+  levelColors,
+  valuesFrom,
+  valuesTo,
+  onFromChange,
+  onToChange,
+  fromMin,
+  fromMax,
+  toMin,
+  toMax,
+  step = 1,
+  formatValue,
+  hintFrom,
+  hintTo,
+  headerExtra,
+}: LevelPeriodTableProps) {
   return (
-    <div className="flex items-start gap-6">
-      {/* label */}
-      <div className="w-44 flex-shrink-0 flex items-start pt-1">
-        <span className="text-xs font-semibold border border-yellow-400 bg-yellow-50 text-gray-800 px-3 py-1 rounded">
-          {label}
-        </span>
-      </div>
-      {/* from / to */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 w-8 text-right">from</span>
-          <Spinner
-            value={fromVal} min={5} max={300} step={5}
-            onChange={onFromChange}
-            display={fmtSec(fromVal)}
-            width="w-[72px]"
-          />
-          <span className="text-[10px] text-gray-400">{fmtSec(fromVal)}</span>
+    <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-3">
+      <div className="flex items-start gap-6">
+        <div className="w-44 flex-shrink-0 pt-1 space-y-2">
+          <span className="inline-block text-sm font-semibold border border-yellow-400 bg-yellow-50 text-gray-900 px-3 py-1 rounded">
+            {label}
+          </span>
+          {description ? (
+            <p className="text-[11px] text-gray-500 leading-snug">{description}</p>
+          ) : null}
+          {headerExtra}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 w-8 text-right">to</span>
-          <Spinner
-            value={toVal} min={5} max={300} step={5}
-            onChange={onToChange}
-            display={fmtSec(toVal)}
-            width="w-[72px]"
-          />
-          <span className="text-[10px] text-gray-400">{fmtSec(toVal)}</span>
+        <div className="flex flex-col gap-2 pt-1 flex-1 min-w-0">
+          {LEVEL_BANDS.map((lv, idx) => (
+            <div key={lv} className="flex items-center gap-2 flex-wrap">
+              <span className={`w-28 text-[11px] font-bold px-2 py-0.5 rounded shrink-0 ${levelColors[lv]}`}>
+                {lv}
+              </span>
+              <span className="text-xs text-gray-500 w-8 text-right shrink-0">from</span>
+              <Spinner
+                value={valuesFrom[idx] ?? fromMin}
+                min={fromMin}
+                max={fromMax}
+                step={step}
+                onChange={(v) => onFromChange(idx, v)}
+                display={formatValue ? formatValue(valuesFrom[idx] ?? fromMin) : undefined}
+                width="w-[88px]"
+              />
+              {hintFrom ? (
+                <span className="text-[10px] text-gray-400 shrink-0">{hintFrom(valuesFrom[idx] ?? fromMin)}</span>
+              ) : null}
+              <span className="text-xs text-gray-500 w-8 text-right shrink-0">to</span>
+              <Spinner
+                value={valuesTo[idx] ?? toMin}
+                min={toMin}
+                max={toMax}
+                step={step}
+                onChange={(v) => onToChange(idx, v)}
+                display={formatValue ? formatValue(valuesTo[idx] ?? toMin) : undefined}
+                width="w-[88px]"
+              />
+              {hintTo ? (
+                <span className="text-[10px] text-gray-400 shrink-0">{hintTo(valuesTo[idx] ?? toMin)}</span>
+              ) : null}
+            </div>
+          ))}
+          <div className="flex items-center gap-2 flex-wrap border-t border-gray-100 pt-2 mt-1">
+            <span className="w-28 shrink-0" aria-hidden />
+            <span className="text-xs text-gray-500 w-8 shrink-0" aria-hidden />
+            <span className="w-[88px] text-center text-[11px] font-semibold text-gray-800">First period</span>
+            <span className="w-[88px] shrink-0" aria-hidden />
+            <span className="text-xs text-gray-500 w-8 shrink-0" aria-hidden />
+            <span className="w-[88px] text-center text-[11px] font-semibold text-gray-800">Last period</span>
+          </div>
         </div>
       </div>
     </div>
@@ -297,18 +437,18 @@ export default function WorkoutsParametersSettings({ initialTab = 'changesVolume
   useEffect(() => { setActiveTab(initialTab); }, [initialTab]);
 
   // current goal params (with default fallback)
-  const goalParams: GoalLoadParams = allGoalParams[selectedGoal] ?? buildDefaultGoalParams();
+  const goalParams: GoalLoadParams = normalizeGoalParams(allGoalParams[selectedGoal]);
 
   const updateGoalParams = useCallback(<K extends keyof GoalLoadParams>(key: K, value: GoalLoadParams[K]) => {
     setAllGoalParams(prev => ({
       ...prev,
-      [selectedGoal]: { ...(prev[selectedGoal] ?? buildDefaultGoalParams()), [key]: value }
+      [selectedGoal]: { ...(normalizeGoalParams(prev[selectedGoal])), [key]: value }
     }));
   }, [selectedGoal]);
 
   const updateVolume = useCallback((idx: number, field: 'volumeFrom' | 'volumeTo', value: number) => {
     setAllGoalParams(prev => {
-      const cur = prev[selectedGoal] ?? buildDefaultGoalParams();
+      const cur = normalizeGoalParams(prev[selectedGoal]);
       const arr = [...cur[field]];
       arr[idx] = value;
       if (idx === 4) arr[5] = value;
@@ -316,28 +456,40 @@ export default function WorkoutsParametersSettings({ initialTab = 'changesVolume
     });
   }, [selectedGoal]);
 
+  const updateLevelPair = useCallback(
+    (fromField: LevelPairField, toField: LevelPairField, idx: number, side: 'from' | 'to', value: number) => {
+      setAllGoalParams(prev => {
+        const cur = normalizeGoalParams(prev[selectedGoal]);
+        const field = side === 'from' ? fromField : toField;
+        const arr = [...cur[field]];
+        arr[idx] = value;
+        if (idx === 4) arr[5] = value;
+        return { ...prev, [selectedGoal]: { ...cur, [field]: arr } };
+      });
+    },
+    [selectedGoal],
+  );
+
   // toggle display mode - auto-convert current values
   const toggleDisplayInPercent = () => {
     const cur = goalParams;
     if (!cur.displayInPercent) {
-      // switching to %: auto-calculate from reps
       setAllGoalParams(prev => ({
         ...prev,
         [selectedGoal]: {
           ...cur,
-          pctFrom: repsToPercent(cur.repsFrom),
-          pctTo: repsToPercent(cur.repsTo),
+          pctFrom: cur.repsFrom.map((r) => repsToPercent(r)),
+          pctTo: cur.repsTo.map((r) => repsToPercent(r)),
           displayInPercent: true,
         }
       }));
     } else {
-      // switching back to reps: auto-calculate from %
       setAllGoalParams(prev => ({
         ...prev,
         [selectedGoal]: {
           ...cur,
-          repsFrom: percentToReps(cur.pctFrom),
-          repsTo: percentToReps(cur.pctTo),
+          repsFrom: cur.pctFrom.map((p) => percentToReps(p)),
+          repsTo: cur.pctTo.map((p) => percentToReps(p)),
           displayInPercent: false,
         }
       }));
@@ -521,121 +673,121 @@ export default function WorkoutsParametersSettings({ initialTab = 'changesVolume
             </button>
           </div>
 
-          {/* ── Volume serie (per training level; First/Last period = yearly window endpoints) ── */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-3">
-            <div className="flex items-start gap-6">
-              <div className="w-44 flex-shrink-0 pt-1 space-y-2">
-                <span className="inline-block text-sm font-semibold border border-yellow-400 bg-yellow-50 text-gray-900 px-3 py-1 rounded">
-                  Volume serie
-                </span>
-                <p className="text-[11px] text-gray-500 leading-snug">
-                  Reference total series range by athlete level. &quot;from&quot; / &quot;to&quot; align with First period through Last period across the yearly plan (same idea as Load Repeated / Pauses).
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 pt-1 flex-1 min-w-0">
-                {LEVEL_BANDS.map((lv, idx) => (
-                  <div key={lv} className="flex items-center gap-2 flex-wrap">
-                    <span className={`w-28 text-[11px] font-bold px-2 py-0.5 rounded shrink-0 ${levelColors[lv]}`}>{lv}</span>
-                    <span className="text-xs text-gray-500 w-8 text-right shrink-0">from</span>
-                    <Spinner
-                      value={goalParams.volumeFrom[idx] ?? 20}
-                      min={1}
-                      max={99}
-                      onChange={(v) => updateVolume(idx, 'volumeFrom', v)}
-                      width="w-[88px]"
-                    />
-                    <span className="text-xs text-gray-500 w-8 text-right shrink-0">to</span>
-                    <Spinner
-                      value={goalParams.volumeTo[idx] ?? 40}
-                      min={1}
-                      max={99}
-                      onChange={(v) => updateVolume(idx, 'volumeTo', v)}
-                      width="w-[88px]"
-                    />
-                  </div>
-                ))}
-                <div className="flex items-center gap-2 flex-wrap border-t border-gray-100 pt-2 mt-1">
-                  <span className="w-28 shrink-0" aria-hidden />
-                  <span className="text-xs text-gray-500 w-8 shrink-0" aria-hidden />
-                  <span className="w-[88px] text-center text-[11px] font-semibold text-gray-800">First period</span>
-                  <span className="text-xs text-gray-500 w-8 shrink-0" aria-hidden />
-                  <span className="w-[88px] text-center text-[11px] font-semibold text-gray-800">Last period</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* ── Volume serie ── */}
+          <LevelPeriodTable
+            label="Volume serie"
+            description={'Reference total series range by athlete level. "from" / "to" align with First period through Last period across the yearly plan (same idea as Load Repeated / Pauses).'}
+            levelColors={levelColors}
+            valuesFrom={goalParams.volumeFrom}
+            valuesTo={goalParams.volumeTo}
+            onFromChange={(idx, v) => updateVolume(idx, 'volumeFrom', v)}
+            onToChange={(idx, v) => updateVolume(idx, 'volumeTo', v)}
+            fromMin={1}
+            fromMax={99}
+            toMin={1}
+            toMax={99}
+          />
 
-          {/* ── Load Repeated ── */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-3">
-            <div className="flex items-start gap-6">
-              <div className="w-44 flex-shrink-0 pt-1 space-y-2">
-                <span className="block text-sm font-semibold border border-yellow-400 bg-yellow-50 text-gray-900 px-3 py-1 rounded text-center">
-                  Load Repeated
-                </span>
-                {/* Display in % toggle */}
+          {/* ── Load Repeated (per level) ── */}
+          {goalParams.displayInPercent ? (
+            <LevelPeriodTable
+              label="Load Repeated"
+              levelColors={levelColors}
+              valuesFrom={goalParams.pctFrom}
+              valuesTo={goalParams.pctTo}
+              onFromChange={(idx, v) => updateLevelPair('pctFrom', 'pctTo', idx, 'from', v)}
+              onToChange={(idx, v) => updateLevelPair('pctFrom', 'pctTo', idx, 'to', v)}
+              fromMin={0}
+              fromMax={100}
+              toMin={0}
+              toMax={100}
+              step={2.5}
+              formatValue={(v) => `${v}%`}
+              hintFrom={(v) => `≈ ${percentToReps(v)} reps`}
+              hintTo={(v) => `≈ ${percentToReps(v)} reps`}
+              headerExtra={
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input type="checkbox" checked={goalParams.displayInPercent} onChange={toggleDisplayInPercent}
                     className="w-4 h-4 rounded border-gray-400 text-blue-600 focus:ring-blue-500" />
                   <span className="text-xs text-gray-700">Display in %</span>
                 </label>
-              </div>
+              }
+            />
+          ) : (
+            <LevelPeriodTable
+              label="Load Repeated"
+              levelColors={levelColors}
+              valuesFrom={goalParams.repsFrom}
+              valuesTo={goalParams.repsTo}
+              onFromChange={(idx, v) => updateLevelPair('repsFrom', 'repsTo', idx, 'from', v)}
+              onToChange={(idx, v) => updateLevelPair('repsFrom', 'repsTo', idx, 'to', v)}
+              fromMin={1}
+              fromMax={99}
+              toMin={1}
+              toMax={99}
+              hintFrom={(v) => `≈ ${repsToPercent(v)}% of max`}
+              hintTo={(v) => `≈ ${repsToPercent(v)}% of max`}
+              headerExtra={
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={goalParams.displayInPercent} onChange={toggleDisplayInPercent}
+                    className="w-4 h-4 rounded border-gray-400 text-blue-600 focus:ring-blue-500" />
+                  <span className="text-xs text-gray-700">Display in %</span>
+                </label>
+              }
+            />
+          )}
 
-              <div className="flex flex-col gap-2 pt-1">
-                {goalParams.displayInPercent ? (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500 w-8 text-right">from</span>
-                      <Spinner value={goalParams.pctFrom} min={0} max={100} step={2.5}
-                        onChange={v => updateGoalParams('pctFrom', v)}
-                        display={`${goalParams.pctFrom}%`}
-                        width="w-[80px]" />
-                      <span className="text-[10px] text-gray-400">≈ {percentToReps(goalParams.pctFrom)} reps</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500 w-8 text-right">to</span>
-                      <Spinner value={goalParams.pctTo} min={0} max={100} step={2.5}
-                        onChange={v => updateGoalParams('pctTo', v)}
-                        display={`${goalParams.pctTo}%`}
-                        width="w-[80px]" />
-                      <span className="text-[10px] text-gray-400">≈ {percentToReps(goalParams.pctTo)} reps</span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500 w-8 text-right">from</span>
-                      <Spinner value={goalParams.repsFrom} min={1} max={99}
-                        onChange={v => updateGoalParams('repsFrom', v)}
-                        width="w-[80px]" />
-                      <span className="text-[10px] text-gray-400">≈ {repsToPercent(goalParams.repsFrom)}% of max</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500 w-8 text-right">to</span>
-                      <Spinner value={goalParams.repsTo} min={1} max={99}
-                        onChange={v => updateGoalParams('repsTo', v)}
-                        width="w-[80px]" />
-                      <span className="text-[10px] text-gray-400">≈ {repsToPercent(goalParams.repsTo)}% of max</span>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
+          {/* ── Pauses (per level) ── */}
+          <LevelPeriodTable
+            label="Pause among the series"
+            levelColors={levelColors}
+            valuesFrom={goalParams.pauseSeriesFrom}
+            valuesTo={goalParams.pauseSeriesTo}
+            onFromChange={(idx, v) => updateLevelPair('pauseSeriesFrom', 'pauseSeriesTo', idx, 'from', v)}
+            onToChange={(idx, v) => updateLevelPair('pauseSeriesFrom', 'pauseSeriesTo', idx, 'to', v)}
+            fromMin={5}
+            fromMax={300}
+            toMin={5}
+            toMax={300}
+            step={5}
+            formatValue={fmtSec}
+            hintFrom={fmtSec}
+            hintTo={fmtSec}
+          />
 
-          {/* ── Pauses ── */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-5">
-            <PauseRow label="Pause among the series"
-              fromVal={goalParams.pauseSeriesFrom}   onFromChange={v => updateGoalParams('pauseSeriesFrom', v)}
-              toVal={goalParams.pauseSeriesTo}        onToChange={v => updateGoalParams('pauseSeriesTo', v)} />
-            <div className="border-t border-gray-100" />
-            <PauseRow label="Pause among exercises"
-              fromVal={goalParams.pauseExercisesFrom} onFromChange={v => updateGoalParams('pauseExercisesFrom', v)}
-              toVal={goalParams.pauseExercisesTo}     onToChange={v => updateGoalParams('pauseExercisesTo', v)} />
-            <div className="border-t border-gray-100" />
-            <PauseRow label="Pause among areas"
-              fromVal={goalParams.pauseAreasFrom}     onFromChange={v => updateGoalParams('pauseAreasFrom', v)}
-              toVal={goalParams.pauseAreasTo}         onToChange={v => updateGoalParams('pauseAreasTo', v)} />
-          </div>
+          <LevelPeriodTable
+            label="Pause among exercises"
+            levelColors={levelColors}
+            valuesFrom={goalParams.pauseExercisesFrom}
+            valuesTo={goalParams.pauseExercisesTo}
+            onFromChange={(idx, v) => updateLevelPair('pauseExercisesFrom', 'pauseExercisesTo', idx, 'from', v)}
+            onToChange={(idx, v) => updateLevelPair('pauseExercisesFrom', 'pauseExercisesTo', idx, 'to', v)}
+            fromMin={5}
+            fromMax={300}
+            toMin={5}
+            toMax={300}
+            step={5}
+            formatValue={fmtSec}
+            hintFrom={fmtSec}
+            hintTo={fmtSec}
+          />
+
+          <LevelPeriodTable
+            label="Pause among areas"
+            levelColors={levelColors}
+            valuesFrom={goalParams.pauseAreasFrom}
+            valuesTo={goalParams.pauseAreasTo}
+            onFromChange={(idx, v) => updateLevelPair('pauseAreasFrom', 'pauseAreasTo', idx, 'from', v)}
+            onToChange={(idx, v) => updateLevelPair('pauseAreasFrom', 'pauseAreasTo', idx, 'to', v)}
+            fromMin={5}
+            fromMax={300}
+            toMin={5}
+            toMax={300}
+            step={5}
+            formatValue={fmtSec}
+            hintFrom={fmtSec}
+            hintTo={fmtSec}
+          />
 
           {/* Save / Cancel */}
           <div className="flex items-center gap-3 pt-1">

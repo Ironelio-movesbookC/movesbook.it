@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { ChevronLeft, ChevronRight, Globe, Settings as SettingsIcon, FileText, ArrowUp, ArrowDown } from 'lucide-react';
 import { i18n } from '@/lib/i18n';
@@ -16,6 +16,7 @@ import {
   LONG_TEXT_THRESHOLD,
   SEARCH_FIELD_OPTIONS,
   TranslationCategory,
+  ALL_LANGUAGES,
   getFlagImageSrc,
   getFlagSizeClass,
   filterLongTexts,
@@ -23,6 +24,25 @@ import {
   filterBySearch
 } from '@/constants/language.constants';
 import { getJsonAuthHeaders } from '@/utils/auth.utils';
+import {
+  hasRichTextContent,
+  plainTextToRichHtml,
+  richTextToPlainText,
+} from '@/utils/richTextTranslation';
+
+/** Plain DB strings → HTML for RichTextEditor; leave existing HTML unchanged. */
+function toEditorHtml(text: string): string {
+  if (!text?.trim()) return '';
+  if (/<[a-z][\s\S]*>/i.test(text)) return text;
+  return plainTextToRichHtml(text);
+}
+
+/** Ensure every supported locale has an editor value (empty string when missing). */
+function normalizeEditorTranslations(values: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    ALL_LANGUAGES.map((lang) => [lang.code, toEditorHtml(values[lang.code] || '')])
+  );
+}
 
 export default function LanguageSettings() {
   // Use custom hooks for data and logic management
@@ -88,7 +108,8 @@ export default function LanguageSettings() {
   
   // Auto-translation state
   const [englishText, setEnglishText] = useState('');
-  const [showAllLanguages, setShowAllLanguages] = useState(false);
+  const [translationBannerVisible, setTranslationBannerVisible] = useState(false);
+  const tab3OtherLanguagesRef = useRef<HTMLDivElement | null>(null);
   
   // Tab 2 pagination state
   const [tab2Page, setTab2Page] = useState(1);
@@ -165,9 +186,10 @@ export default function LanguageSettings() {
       const key = filteredKeys[currentIndex];
       setCurrentKey(key);
       setVariableName(key.key);
-      setTranslations(key.values);
-      setEnglishText(key.values.en || '');
-      setShowAllLanguages(false);
+      const normalizedValues = normalizeEditorTranslations(key.values);
+      setTranslations(normalizedValues);
+      setEnglishText(normalizedValues.en || '');
+      setTranslationBannerVisible(false);
     }
   }, [currentIndex, filteredKeys]);
 
@@ -223,8 +245,15 @@ export default function LanguageSettings() {
   const handleReset = () => {
     if (currentKey) {
       setVariableName(currentKey.key);
-      setTranslations(currentKey.values);
+      const normalizedValues = normalizeEditorTranslations(currentKey.values);
+      setTranslations(normalizedValues);
+      setEnglishText(normalizedValues.en || '');
+      setTranslationBannerVisible(false);
     }
+  };
+
+  const handleManualEdit = () => {
+    tab3OtherLanguagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   // Tab 2 specific handlers
@@ -384,36 +413,39 @@ export default function LanguageSettings() {
   };
 
   const handleAutoTranslate = async () => {
+    const plainSource = richTextToPlainText(englishText);
     console.log('\n🌐 ======= STARTING TRANSLATION =======');
-    console.log('📝 English text:', englishText);
-    console.log('📏 Text length:', englishText.length);
-    
-    if (!englishText.trim()) {
+    console.log('📝 English text (plain):', plainSource.slice(0, 120));
+    console.log('📏 Text length:', plainSource.length);
+
+    if (!plainSource.trim()) {
       alert('⚠️ Please enter English text first');
       return;
     }
 
     setIsTranslating(true);
-    
+
     try {
-      // Translate to ALL supported languages (except English), not only active ones.
-      const targetLanguages = languages
-        .filter(l => l.code !== 'en')
-        .map(l => l.code);
+      const activeTargets = languages.filter((l) => l.code !== 'en' && l.isActive).map((l) => l.code);
+      const targetLanguages =
+        activeTargets.length > 0
+          ? activeTargets
+          : languages.filter((l) => l.code !== 'en').map((l) => l.code);
 
       console.log('🌍 Target languages:', targetLanguages.join(', '));
       console.log('📊 Total languages to translate:', targetLanguages.length);
 
       if (targetLanguages.length === 0) {
-        alert('⚠️ No target languages selected.\n\nPlease activate at least one language in Tab 1 ("Set Official Languages").');
+        alert(
+          '⚠️ No target languages selected.\n\nPlease activate at least one language in Tab 1 ("Set Official Languages").',
+        );
         setIsTranslating(false);
         return;
       }
 
-      // Call translation API
       console.log('📤 Sending translation request to API...');
       const startTime = Date.now();
-      
+
       const response = await fetch('/api/translate', {
         method: 'POST',
         cache: 'no-store',
@@ -421,8 +453,8 @@ export default function LanguageSettings() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text: englishText,
-          targetLanguages: targetLanguages,
+          text: plainSource,
+          targetLanguages,
         }),
       });
 
@@ -454,22 +486,24 @@ export default function LanguageSettings() {
           console.warn('⚠️  Missing translations for:', missingLanguages.join(', '));
         }
         
-        // Update translations safely and keep prior values for any language not returned.
-        const updatedTranslations: Record<string, string> = { ...translations, en: englishText };
+        const updatedTranslations: Record<string, string> = {
+          ...translations,
+          en: englishText,
+        };
         targetLanguages.forEach((lang) => {
           const incoming = trans[lang];
           if (typeof incoming === 'string' && incoming.trim() !== '') {
-            updatedTranslations[lang] = incoming;
+            updatedTranslations[lang] = plainTextToRichHtml(incoming);
           } else if (!updatedTranslations[lang]) {
             updatedTranslations[lang] = '';
           }
         });
-        
+
         console.log('💾 Updated translations:', updatedTranslations);
         console.log('======= TRANSLATION COMPLETE =======\n');
-        
+
         setTranslations(updatedTranslations);
-        setShowAllLanguages(true);
+        setTranslationBannerVisible(true);
 
         // Persist immediately so translated values are not lost before manual Save.
         if (currentKey?.key) {
@@ -519,10 +553,6 @@ export default function LanguageSettings() {
     } finally {
       setIsTranslating(false);
     }
-  };
-
-  const handleManualEdit = () => {
-    setShowAllLanguages(true);
   };
 
   const handleSaveLanguageSelection = () => {
@@ -1648,13 +1678,20 @@ export default function LanguageSettings() {
                             <div className="flex flex-col gap-2">
                               <button
                                 onClick={() => {
+                                  const normalizedValues = normalizeEditorTranslations(key.values);
                                   setTab3ViewMode('editor');
                                   setTab3SelectedKey(key);
                                   setCurrentIndex(index);
                                   setVariableName(key.key);
-                                  setTranslations(key.values);
-                                  setEnglishText(key.values.en || '');
-                                  setShowAllLanguages(false);
+                                  setTranslations(normalizedValues);
+                                  setEnglishText(normalizedValues.en || '');
+                                  setTranslationBannerVisible(false);
+                                  requestAnimationFrame(() => {
+                                    tab3OtherLanguagesRef.current?.scrollIntoView({
+                                      behavior: 'smooth',
+                                      block: 'start',
+                                    });
+                                  });
                                 }}
                                 disabled={isDeleted}
                                 className={`px-6 py-2 rounded-lg font-semibold text-sm transition-all ${
@@ -1888,6 +1925,7 @@ export default function LanguageSettings() {
                     </div>
                     
                     <RichTextEditor
+                      key={`en-${tab3SelectedKey?.key ?? variableName}`}
                       value={englishText}
                       onChange={(newValue) => {
                         setEnglishText(newValue);
@@ -1901,9 +1939,9 @@ export default function LanguageSettings() {
                     <div className="flex gap-3 mt-4 items-center">
                       <button
                         onClick={handleAutoTranslate}
-                        disabled={isTranslating || !englishText.trim()}
+                        disabled={isTranslating || !hasRichTextContent(englishText)}
                         className={`flex items-center justify-center gap-2 px-8 py-3 font-bold rounded transition-all duration-300 ${
-                          isTranslating || !englishText.trim()
+                          isTranslating || !hasRichTextContent(englishText)
                             ? 'bg-gray-200 text-gray-400 cursor-not-allowed border-2 border-gray-300'
                             : 'bg-white text-gray-800 border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400'
                         }`}
@@ -1917,8 +1955,9 @@ export default function LanguageSettings() {
                       >
                         Save
                       </button>
-                      
+
                       <button
+                        type="button"
                         onClick={handleManualEdit}
                         className="flex items-center justify-center gap-2 px-8 py-3 bg-white border-2 border-gray-300 text-gray-800 font-bold rounded hover:bg-gray-50 hover:border-gray-400 transition-all"
                       >
@@ -1927,48 +1966,60 @@ export default function LanguageSettings() {
                     </div>
                   </div>
 
-                  {/* Translated Languages (Show after translation or manual edit) */}
-                  {showAllLanguages && (
-                    <div className="space-y-6">
+                  {/* Other languages — always visible in long-text editor */}
+                  <div ref={tab3OtherLanguagesRef} className="mt-8 space-y-6">
+                    {translationBannerVisible && (
                       <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded">
                         <p className="text-sm text-green-900 font-semibold">
-                          ✅ Translations ready! Review and edit if needed.
+                          ✅ Translations ready! Review and edit if needed, then click Save.
                         </p>
                       </div>
-                      
-                      {languages.filter(l => l.code !== 'en').map((lang) => (
-                        <div key={lang.code} className="border border-gray-200 rounded-lg overflow-hidden">
-                          <div className="bg-gradient-to-r from-gray-100 to-gray-200 px-6 py-3 flex items-center gap-3 border-b">
-                            <div className="w-6 h-6 rounded overflow-hidden relative">
-                              <Image 
-                                src={`/flags/${lang.code === 'pt' ? 'por' : lang.code === 'ru' ? 'rus' : lang.code === 'hi' ? 'ind' : lang.code === 'zh' ? 'chin' : lang.code === 'ar' ? 'arab' : lang.code}.png`}
-                                alt={`${lang.name} flag`}
-                                fill
-                                sizes="24px"
-                                className="object-cover"
-                              />
-                            </div>
-                            <div>
-                              <span className="font-bold text-gray-900 text-lg">{lang.name}</span>
-                              <span className="text-sm text-gray-600 ml-2">({lang.nativeName})</span>
-                            </div>
-                          </div>
-                          
-                          <div className="p-4 bg-white">
-                            <RichTextEditor
-                              value={translations[lang.code] || ''}
-                              onChange={(newValue) =>
-                                setTranslations((prev) => ({ ...prev, [lang.code]: newValue }))
-                              }
-                              placeholder={`${lang.name} translation...`}
-                              minHeight="150px"
-                              language={lang.name}
+                    )}
+
+                    <h4 className="text-sm font-bold uppercase tracking-wide text-gray-700">
+                      Other languages
+                    </h4>
+
+                    {ALL_LANGUAGES.filter((l) => l.code !== 'en').map((lang) => {
+                      const activeMeta = languages.find((l) => l.code === lang.code);
+                      const isActive = activeMeta?.isActive ?? true;
+                      return (
+                      <div key={lang.code} className="border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="bg-gradient-to-r from-gray-100 to-gray-200 px-6 py-3 flex items-center gap-3 border-b">
+                          <div className="w-6 h-6 rounded overflow-hidden relative">
+                            <Image
+                              src={getFlagImageSrc(lang.code)}
+                              alt={`${lang.name} flag`}
+                              fill
+                              sizes="24px"
+                              className="object-cover"
                             />
                           </div>
+                          <div>
+                            <span className="font-bold text-gray-900 text-lg">{lang.name}</span>
+                            <span className="text-sm text-gray-600 ml-2">({lang.nativeName})</span>
+                            {!isActive ? (
+                              <span className="ml-2 text-xs text-amber-700">inactive</span>
+                            ) : null}
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+
+                        <div className="p-4 bg-white">
+                          <RichTextEditor
+                            key={`${lang.code}-${tab3SelectedKey?.key ?? variableName}`}
+                            value={translations[lang.code] || ''}
+                            onChange={(newValue) =>
+                              setTranslations((prev) => ({ ...prev, [lang.code]: newValue }))
+                            }
+                            placeholder={`${lang.name} translation...`}
+                            minHeight="150px"
+                            language={lang.name}
+                          />
+                        </div>
+                      </div>
+                    );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
