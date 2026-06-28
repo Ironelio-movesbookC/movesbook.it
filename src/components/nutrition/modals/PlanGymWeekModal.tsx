@@ -97,6 +97,8 @@ interface PlanGymWeekModalProps {
   trainingLevelImages?: Partial<Record<TrainingLevel, string>>;
   /** When the modal opens, land on this step (e.g. 2 after “Back” from manual sector screen). Default 1. */
   initialStepOnOpen?: 1 | 2;
+  /** When returning from manual plan, restore the athlete level selected earlier. */
+  initialTrainingLevel?: TrainingLevel | null;
 }
 
 export default function PlanGymWeekModal({
@@ -105,9 +107,12 @@ export default function PlanGymWeekModal({
   onProceed,
   questionImages = {},
   trainingLevelImages = {},
-  initialStepOnOpen = 1
+  initialStepOnOpen = 1,
+  initialTrainingLevel = null,
 }: PlanGymWeekModalProps) {
-  const [trainingLevel, setTrainingLevel] = useState<TrainingLevel>('intermediate');
+  const [trainingLevel, setTrainingLevel] = useState<TrainingLevel>(
+    initialTrainingLevel ?? 'intermediate',
+  );
   const [daysCount, setDaysCount] = useState<number>(3);
   const [goals, setGoals] = useState<GoalId[]>(() => ['hypertrophy', 'hypertrophy', 'hypertrophy']);
   const [applyGoalToAll, setApplyGoalToAll] = useState(false);
@@ -122,9 +127,12 @@ export default function PlanGymWeekModal({
   React.useEffect(() => {
     if (isOpen && !wasOpenRef.current) {
       setStep(initialStepOnOpen);
+      if (initialTrainingLevel) {
+        setTrainingLevel(initialTrainingLevel);
+      }
     }
     wasOpenRef.current = isOpen;
-  }, [isOpen, initialStepOnOpen]);
+  }, [isOpen, initialStepOnOpen, initialTrainingLevel]);
 
   const timesPerSectorOptions = React.useMemo(() => {
     const opts: { value: 'once' | '2' | '3' | 'all'; label: string }[] = [

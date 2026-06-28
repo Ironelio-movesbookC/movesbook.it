@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import CircuitPreferencesModal from './CircuitPreferencesModal';
 import { GOAL_OPTIONS, type GoalId } from './modals/PlanGymWeekModal';
 import {
   exerciseCountFromDist,
   getSeriesDistribution,
+  suggestedSeriesForExerciseSlot,
   type SeriesLevelCategory,
 } from '@/utils/seriesDistribution';
+import { computePyramidalRepsSeries, type PyramidalMode } from '@/utils/pyramidalReps';
 
 function parseStoredMoveframeGoal(v: unknown): GoalId {
   if (typeof v === 'string' && GOAL_OPTIONS.some((o) => o.value === v)) return v as GoalId;
@@ -42,12 +44,15 @@ interface FastPlannerProps {
   fullView?: boolean;
 }
 
+export const FAST_PLANNER_DEFAULT_END_MACRO = "5'";
+
 export type FastPlannerHandle = {
   saveMoveframe: () => void;
   saveMoveframeAndMovelaps: () => void;
   openPreferences: () => void;
-  /** Anaerobic only: apply rest/macro to the last filled exercise row; default **5'** when selection empty. */
+  /** Anaerobic only: end-of-moveframe macro (minutes); default **5'** when selection empty. */
   applyEndMacro?: (selectedMacro?: string) => void;
+  getEndMacro?: () => string;
 };
 
 const parseFastPlannerDataFromNotes = (notes: unknown): any | null => {
@@ -119,6 +124,22 @@ function suggestedExeFromSeriesAndLevel(totalSeries: number, level: PlanTargetLe
   const dist = getSeriesDistribution(totalSeries, category);
   return exerciseCountFromDist(dist);
 }
+
+function computeSuggestedPlanSeries(
+  targetTotalSeries: string,
+  level: PlanTargetLevelBand,
+  exerciseIndex: number,
+  plannedSoFar: number,
+): string {
+  const t = parseInt(targetTotalSeries, 10);
+  const target = Number.isNaN(t) || t < 1 ? 1 : t;
+  const category = planTargetLevelToCategory(level);
+  return String(
+    suggestedSeriesForExerciseSlot(target, category, exerciseIndex, plannedSoFar),
+  );
+}
+
+const PLAN_SERIES_DROPDOWN_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20] as const;
 
 function parsePauseToSecondsOrNull(p: string): number | null {
   if (!p || p === '0') return 0;
@@ -195,6 +216,13 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   const lastSelectedRowIdRef = React.useRef<number | null>(null);
   const exerciseListScrollRef = React.useRef<HTMLDivElement>(null);
   const sectorListScrollRef = React.useRef<HTMLDivElement>(null);
+  const exerciseTableScrollRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
+
+  const registerRowRef = useCallback((rowId: number, el: HTMLTableRowElement | null) => {
+    if (el) rowRefs.current.set(rowId, el);
+    else rowRefs.current.delete(rowId);
+  }, []);
 
   // State for exercise rows
   const [rows, setRows] = useState<FastPlannerRow[]>([
@@ -211,6 +239,30 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   const SECTOR_ZOOM = 0.68;
   const SECTOR_CARD_WIDTH_PX = 108;
   const [showSubExercises, setShowSubExercises] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!selectedCell?.rowId) return;
+    const rowEl = rowRefs.current.get(selectedCell.rowId);
+    const scrollEl = exerciseTableScrollRef.current;
+    if (!rowEl || !scrollEl) return;
+    const row = rows.find((r) => r.id === selectedCell.rowId);
+    const isBlankExerciseRow = !row?.exercise?.trim();
+    const frame = requestAnimationFrame(() => {
+      const rowRect = rowEl.getBoundingClientRect();
+      const containerRect = scrollEl.getBoundingClientRect();
+      const needsScroll =
+        isBlankExerciseRow ||
+        rowRect.bottom > containerRect.bottom - 8 ||
+        rowRect.top < containerRect.top + 8;
+      if (needsScroll) {
+        rowEl.scrollIntoView({
+          block: isBlankExerciseRow ? 'nearest' : 'nearest',
+          behavior: 'smooth',
+        });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selectedCell?.rowId, selectedCell?.field, rows]);
 
   // State for which exercise toolbar button is active (speed, series, etc.)
   const [activeExerciseButton, setActiveExerciseButton] = useState<'speed' | 'series' | 'riptime' | 'weight' | 'break' | 'mode' | null>(null);
@@ -243,6 +295,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   const [planTargetPause, setPlanTargetPause] = useState<string>("2'");
   const [planExerciseDetailTab, setPlanExerciseDetailTab] = useState<'execution' | 'points' | 'video' | 'other'>('execution');
   const [userDescription, setUserDescription] = useState<string>('');
+  /** Rest after the last set of the planned moveframe (Macro / macroFinal on final movelap). */
+  const [endMacro, setEndMacro] = useState(FAST_PLANNER_DEFAULT_END_MACRO);
   const loadedMoveframeIdRef = React.useRef<string | null>(null);
   const planListRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -272,10 +326,33 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return PLAN_PYRAMIDAL_OPTIONS.some((o) => o.value === v) ? (v as PyramidalUiValue) : 'flat';
   };
 
+  const parseBaseRepsFromRipTime = (ripTime: string): number | null => {
+    const raw = (ripTime || '').trim();
+    if (!raw) return null;
+    const first = raw.split(/\s*\/\s*/)[0]?.trim() ?? raw;
+    const n = parseInt(first, 10);
+    return Number.isNaN(n) ? null : n;
+  };
+
+  const formatRipTimeSeries = (reps: number[]): string => reps.map((r) => String(r)).join(' / ');
+
   const clampSeriesCount = (row: FastPlannerRow): number => {
     const n = parseInt(String(row.series || '').trim(), 10);
     if (!Number.isFinite(n) || n < 1) return 0;
     return Math.min(40, n);
+  };
+
+  /** Apply Plan Gym Week pyramidal formula from series-1 reps (same as computePyramidalRepsSeries). */
+  const applyPyramidalToRow = (row: FastPlannerRow): FastPlannerRow => {
+    const mode = parsePyramidalMode(row.pyramidal) as PyramidalMode;
+    const count = clampSeriesCount(row);
+    if (mode === 'flat' || count <= 0) {
+      const parts = (row.ripTime || '').split(/\s*\/\s*/).map((s) => s.trim()).filter(Boolean);
+      return { ...row, ripTime: parts[0] ?? row.ripTime ?? '' };
+    }
+    const base = parseBaseRepsFromRipTime(row.ripTime) ?? 12;
+    const series = computePyramidalRepsSeries(base, count, mode);
+    return { ...row, ripTime: formatRipTimeSeries(series) };
   };
 
   const resolveFastPlannerRowSeriesReps = (row: FastPlannerRow): string[] => {
@@ -289,12 +366,18 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return Array.from({ length: count }, (_, i) => parts[i] ?? fill);
   };
 
-  const afterSeriesRipTimeOrPyramidalChange = (next: FastPlannerRow): FastPlannerRow => {
-    if (parsePyramidalMode(next.pyramidal) === 'flat') {
-      const parts = (next.ripTime || '').split(/\s*\/\s*/).map((s) => s.trim()).filter(Boolean);
-      return { ...next, ripTime: parts[0] ?? next.ripTime ?? '' };
+  /** Resize per-set rip/time slots when series count changes — does not recalculate pyramidal values. */
+  const resizeRipTimeForSeriesCount = (row: FastPlannerRow): FastPlannerRow => {
+    const mode = parsePyramidalMode(row.pyramidal);
+    const count = clampSeriesCount(row);
+    if (count <= 0) return { ...row, ripTime: '' };
+    if (mode === 'flat') {
+      const parts = (row.ripTime || '').split(/\s*\/\s*/).map((s) => s.trim()).filter(Boolean);
+      return { ...row, ripTime: parts[0] ?? row.ripTime ?? '' };
     }
-    return next;
+    const parts = resolveFastPlannerRowSeriesReps(row);
+    while (parts.length < count) parts.push(parts[parts.length - 1] ?? '');
+    return { ...row, ripTime: parts.slice(0, count).join(' / ') };
   };
 
   const updatePlannerSeriesRep = (rowId: number, seriesIndex: number, value: string) => {
@@ -304,6 +387,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
         const mode = parsePyramidalMode(r.pyramidal);
         const count = clampSeriesCount(r);
         if (mode === 'flat' || count <= 0) return { ...r, ripTime: value };
+
         const reps = resolveFastPlannerRowSeriesReps(r);
         const next = [...reps];
         while (next.length < count) next.push(next[next.length - 1] ?? '');
@@ -577,39 +661,98 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return { seriesSum, exerciseCount, avgReps, avgPauseSec, lastRow };
   }, [rows, planSectorId, getSectorForExercise]);
 
-  const buildMovelapsFromRows = (filledRows: FastPlannerRow[]) => {
-    return filledRows.map((row, index) => {
-      const sector = row.exercise ? getSectorForExercise(row.exercise) : null;
-      const repsValue = ripTimeMode === 'reps' ? (parseInt(row.ripTime || '', 10) || null) : null;
-      const timeValue = ripTimeMode === 'time' ? (row.ripTime || null) : null;
+  const suggestedPlanSeries = React.useMemo(() => {
+    if (!showSeriesPlanModal || !planSectorId) return null;
+    const t = parseInt(planTargetTotalSeries, 10);
+    const target = Number.isNaN(t) || t < 1 ? 1 : t;
+    const category = planTargetLevelToCategory(planTargetLevel);
+    return suggestedSeriesForExerciseSlot(
+      target,
+      category,
+      planSectorPlanningStats.exerciseCount,
+      planSectorPlanningStats.seriesSum,
+    );
+  }, [
+    showSeriesPlanModal,
+    planSectorId,
+    planTargetTotalSeries,
+    planTargetLevel,
+    planSectorPlanningStats.exerciseCount,
+    planSectorPlanningStats.seriesSum,
+  ]);
 
-      const isLast = index === filledRows.length - 1;
+  React.useEffect(() => {
+    if (suggestedPlanSeries == null) return;
+    setPlanSeries(String(suggestedPlanSeries));
+  }, [suggestedPlanSeries]);
+
+  const planSeriesDropdownOptions = React.useMemo(() => {
+    const selected = parseInt(planSeries, 10);
+    if (Number.isFinite(selected) && !(PLAN_SERIES_DROPDOWN_OPTIONS as readonly number[]).includes(selected)) {
+      return [...PLAN_SERIES_DROPDOWN_OPTIONS, selected].sort((a, b) => a - b);
+    }
+    return [...PLAN_SERIES_DROPDOWN_OPTIONS];
+  }, [planSeries]);
+
+  const buildMovelapsFromRows = (filledRows: FastPlannerRow[]) => {
+    const out: any[] = [];
+    const macroTrimmed = endMacro.trim();
+    const lastRowIndex = filledRows.length - 1;
+
+    filledRows.forEach((row, rowIndex) => {
+      const sector = row.exercise ? getSectorForExercise(row.exercise) : null;
+      const seriesCount = clampSeriesCount(row) || 1;
       const pauseVal = row.break && String(row.break).trim() !== '' ? String(row.break).trim() : null;
-      return {
-        repetitionNumber: index + 1,
-        distance: null,
-        speed: row.speed || null,
-        style: null,
-        pace: null,
-        time: timeValue,
-        reps: repsValue,
-        weight: row.weight && row.weight.trim() !== '' && row.weight.trim().toLowerCase() !== 'nc' ? row.weight : null,
-        tools: null,
-        r1: null,
-        r2: null,
-        muscularSector: sector,
-        exercise: row.exercise || null,
-        restType: null,
-        pause: pauseVal,
-        macroFinal: isLast && pauseVal ? pauseVal : null,
-        alarm: null,
-        sound: null,
-        notes: row.mode || null,
-        status: 'PENDING',
-        isSkipped: false,
-        isDisabled: false
-      };
+      const seriesReps = resolveFastPlannerRowSeriesReps(row);
+      const defaultReps = ripTimeMode === 'reps' ? parseInt(row.ripTime || '', 10) || null : null;
+      const defaultTime = ripTimeMode === 'time' ? row.ripTime || null : null;
+
+      for (let s = 0; s < seriesCount; s++) {
+        const isLastOverall = rowIndex === lastRowIndex && s === seriesCount - 1;
+        const repsValue =
+          ripTimeMode === 'reps'
+            ? seriesReps.length > 0
+              ? parseInt(seriesReps[s] ?? seriesReps[seriesReps.length - 1] ?? '', 10) || defaultReps
+              : defaultReps
+            : null;
+        const timeValue =
+          ripTimeMode === 'time'
+            ? seriesReps.length > 0
+              ? seriesReps[s] ?? seriesReps[seriesReps.length - 1] ?? defaultTime
+              : defaultTime
+            : null;
+
+        out.push({
+          repetitionNumber: out.length + 1,
+          distance: null,
+          speed: row.speed || null,
+          style: null,
+          pace: null,
+          time: timeValue,
+          reps: repsValue,
+          weight:
+            row.weight && row.weight.trim() !== '' && row.weight.trim().toLowerCase() !== 'nc'
+              ? row.weight
+              : null,
+          tools: null,
+          r1: null,
+          r2: null,
+          muscularSector: sector,
+          exercise: row.exercise || null,
+          restType: null,
+          pause: pauseVal,
+          macroFinal: isLastOverall && macroTrimmed ? macroTrimmed : null,
+          alarm: null,
+          sound: null,
+          notes: row.mode || null,
+          status: 'PENDING',
+          isSkipped: false,
+          isDisabled: false,
+        });
+      }
     });
+
+    return out;
   };
 
   /** Build distances-only line (e.g. 10\\A1+8\\B2+12\\A2) for moveframe description row 1 */
@@ -694,6 +837,12 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
     return { sectorCount, totalSeries, totalExercises, avgSeriesPerSector };
   }, [sectorSeriesSummaryChips]);
 
+  const selectSectorFromSummaryChip = useCallback((chipId: string) => {
+    setSelectedMuscleGroup(chipId);
+    setShowSubExercises(true);
+    setActiveExerciseButton(null);
+  }, []);
+
   useEffect(() => {
     if (mode !== 'edit') return;
     if (!existingMoveframe?.id) return;
@@ -722,6 +871,19 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       if (parsed.ripTimeMode === 'reps' || parsed.ripTimeMode === 'time') setRipTimeMode(parsed.ripTimeMode);
       if (Array.isArray(parsed.rows) && parsed.rows.length > 0) setRows(parsed.rows);
       if (parsed.preferences != null) setPreferences(parsed.preferences);
+      if (typeof parsed.endMacro === 'string' && parsed.endMacro.trim()) {
+        setEndMacro(parsed.endMacro.trim());
+      } else if (
+        existingMoveframe?.macroFinal != null &&
+        String(existingMoveframe.macroFinal).trim() !== ''
+      ) {
+        setEndMacro(String(existingMoveframe.macroFinal).trim());
+      } else if (Array.isArray(existingMoveframe?.movelaps) && existingMoveframe.movelaps.length > 0) {
+        const lastLap = existingMoveframe.movelaps[existingMoveframe.movelaps.length - 1];
+        if (lastLap?.macroFinal != null && String(lastLap.macroFinal).trim() !== '') {
+          setEndMacro(String(lastLap.macroFinal).trim());
+        }
+      }
       setSelectedCell(null);
       lastSelectedRowIdRef.current = null;
       setShowSubExercises(false);
@@ -758,7 +920,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       setShowSubExercises(false);
       setShowExercisePopup(false);
     }
-  }, [mode, existingMoveframe?.id, existingMoveframe?.movelaps, existingMoveframe?.notes, existingMoveframe?.fastPlannerData]);
+  }, [mode, existingMoveframe?.id, existingMoveframe?.movelaps, existingMoveframe?.notes, existingMoveframe?.fastPlannerData, existingMoveframe?.macroFinal]);
 
   // Mock frequently used exercises (for blue indicator)
   const frequentlyUsedExercises = ['shoulders-0', 'chest-0', 'biceps-1', 'quadriceps-0'];
@@ -1188,7 +1350,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       execMode,
       ripTimeMode,
       rows: filledRows,
-      preferences
+      preferences,
+      endMacro,
     };
     const notes = upsertFastPlannerDataInNotes(userDescription, payload);
     const movelaps = buildMovelapsFromRows(filledRows);
@@ -1203,6 +1366,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       notes,
       fastPlannerData: payload,
       movelaps,
+      macroFinal: endMacro.trim() || null,
       isFastPlannerBased: true,
       goal: moveframeGoal
     };
@@ -1233,7 +1397,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       execMode,
       ripTimeMode,
       rows: filledRows,
-      preferences
+      preferences,
+      endMacro,
     };
     const notes = upsertFastPlannerDataInNotes(userDescription, payload);
     const movelaps = buildMovelapsFromRows(filledRows);
@@ -1248,37 +1413,35 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       notes,
       fastPlannerData: payload,
       movelaps,
+      macroFinal: endMacro.trim() || null,
       isFastPlannerBased: true,
       goal: moveframeGoal
     };
     onSave(moveframeData);
   };
 
-  const DEFAULT_END_MACRO = "5'";
-  const applyEndMacro = React.useCallback((selectedMacro?: string) => {
-    const trimmed = typeof selectedMacro === 'string' ? selectedMacro.trim() : '';
-    const value = trimmed || DEFAULT_END_MACRO;
-    setRows((prev) => {
-      let lastFilledId: number | null = null;
-      for (let i = prev.length - 1; i >= 0; i--) {
-        if ((prev[i].exercise || '').trim() !== '') {
-          lastFilledId = prev[i].id;
-          break;
+  const applyEndMacro = React.useCallback(
+    (selectedMacro?: string) => {
+      const trimmed = typeof selectedMacro === 'string' ? selectedMacro.trim() : '';
+      const value = trimmed || FAST_PLANNER_DEFAULT_END_MACRO;
+      const hasExercise = rows.some((r) => (r.exercise || '').trim() !== '');
+      if (!hasExercise) {
+        if (typeof window !== 'undefined') {
+          window.alert('Add at least one exercise before applying Macro.');
         }
+        return;
       }
-      if (lastFilledId == null) {
-        if (typeof window !== 'undefined') window.alert('Add at least one exercise before applying Macro.');
-        return prev;
-      }
-      return prev.map((row) => (row.id === lastFilledId ? { ...row, break: value } : row));
-    });
-  }, []);
+      setEndMacro(value);
+    },
+    [rows]
+  );
 
   React.useImperativeHandle(ref, () => ({
     saveMoveframe: handleSaveMoveframe,
     saveMoveframeAndMovelaps: handleSaveMoveframeAndMovelaps,
     openPreferences: () => setShowPreferencesModal(true),
-    applyEndMacro
+    applyEndMacro,
+    getEndMacro: () => endMacro,
   }));
   const openSeriesPlan = (sectorId: string) => {
     setPlanSectorId(sectorId);
@@ -1297,7 +1460,10 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       : [];
     const lastRow = sectorRows.length ? sectorRows[sectorRows.length - 1] : null;
     const lastRepsToken = (lastRow?.ripTime || '').split(/\s*\/\s*/)[0]?.trim() ?? '';
-    setPlanSeries(lastRow?.series?.trim() || '3');
+    const seriesSum = sectorRows.reduce((s, r) => s + (parseInt(String(r.series), 10) || 0), 0);
+    setPlanSeries(
+      computeSuggestedPlanSeries('12', 'lev34', sectorRows.length, seriesSum),
+    );
     setPlanReps(/^\d+$/.test(lastRepsToken) ? lastRepsToken : '15');
     setPlanPause(lastRow?.break?.trim() || "2'");
     setPlanPyramidal(parsePyramidalMode(lastRow?.pyramidal));
@@ -1356,17 +1522,21 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
       targetIndex = newRows.length - 1;
     }
     const targetId = newRows[targetIndex].id;
-    newRows = newRows.map(r => r.id === targetId ? {
-      ...r,
-      exercise: planCandidate.name,
-      series: planSeries,
-      ripTime: planReps,
-      break: planPause,
-      speed: r.speed || 'Normal',
-      weight: r.weight || 'nc',
-      mode: r.mode || 'Stopped',
-      pyramidal: planPyramidal
-    } : r);
+    newRows = newRows.map((r) =>
+      r.id === targetId
+        ? applyPyramidalToRow({
+            ...r,
+            exercise: planCandidate.name,
+            series: planSeries,
+            ripTime: planReps,
+            break: planPause,
+            speed: r.speed || 'Normal',
+            weight: r.weight || 'nc',
+            mode: r.mode || 'Stopped',
+            pyramidal: planPyramidal,
+          })
+        : r,
+    );
     setRows(newRows);
     setPlanCandidate(null);
   };
@@ -1464,7 +1634,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
   );
 
   const plannerTableHead = (
-    <thead className="bg-gray-100 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]">
+    <thead className="sticky top-0 z-20 bg-gray-100 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]">
       <tr>
         <th className="sticky left-0 z-30 w-12 border-b border-r border-gray-300 bg-gray-100 px-2 py-1.5 text-left text-xs font-bold text-gray-700">#</th>
         <th className="border-b border-r border-gray-300 px-2 py-1.5 text-left text-xs font-bold text-gray-700" style={{ minWidth: '220px' }}>Exercise</th>
@@ -1482,7 +1652,8 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {!fullView && <>
+      {!fullView && (
+      <div className="flex max-h-[min(46vh,400px)] min-h-0 flex-shrink-0 flex-col overflow-y-auto overscroll-y-contain border-b border-gray-200">
       <div className="flex-shrink-0 z-20 bg-white pb-1 shadow-[0_1px_2px_0_rgba(0,0,0,0.06)]">
         <div className="space-y-1">
           {/* Compact Top Row: Execution | Sector | Name | Intensity | Goal */}
@@ -2119,7 +2290,6 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       ref={exerciseListScrollRef}
                       className="overflow-x-auto overflow-y-hidden flex-1 min-w-0 scroll-smooth"
                       style={{ scrollbarGutter: 'stable' }}
-                      title="Scroll horizontally: use arrows, mouse wheel (Shift+wheel), or drag the scrollbar"
                       onWheel={(e) => {
                         if (e.shiftKey) {
                           e.preventDefault();
@@ -2190,84 +2360,89 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
               </>
             )}
           </div>
-          {/* Area totals — scrollable, ~6 visible */}
-          {sectorSeriesSummaryChips.length > 0 && (
-            <div
-              className="mt-1 flex gap-1.5 overflow-x-auto border-t border-slate-700 pt-1.5 pb-0.5 scroll-smooth"
-              style={{ maxWidth: '100%' }}
-              title="Totals per muscular area"
-            >
-              {sectorSeriesSummaryChips.map((chip) => (
-                <button
-                  key={chip.id}
-                  type="button"
-                  onClick={() => setSelectedMuscleGroup(chip.id)}
-                  className={`inline-flex shrink-0 flex-col items-center rounded-md border px-2 py-1 text-center leading-tight ${
-                    selectedMuscleGroup === chip.id
-                      ? 'border-blue-400 bg-blue-600/20 text-white'
-                      : 'border-slate-600 bg-slate-800 text-slate-100 hover:border-blue-400'
-                  }`}
-                  style={{ minWidth: SECTOR_CARD_WIDTH_PX, maxWidth: SECTOR_CARD_WIDTH_PX }}
-                  title={`${chip.label}: ${chip.series} series, ${chip.exercises} exercises`}
-                >
-                  <span className="truncate w-full text-[10px] font-semibold">{chip.label}</span>
-                  <span className="text-[11px] font-bold tabular-nums text-teal-300">
-                    {chip.series} ser.
-                    {chip.exercises > 0 ? ` · ${chip.exercises} ex.` : ''}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </div>
-      </>}
+      </div>
+      )}
 
-      {/* Exercise Table — toolbar + header pinned together; body scrolls */}
+      {/* Exercise Table — action bar fixed; only rows scroll */}
       <div className={`relative z-0 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-gray-300 bg-white ${!fullView ? 'rounded-t-none border-t-0' : ''}`}>
-        <div className={`min-h-0 flex-1 overflow-auto ${fullView ? 'min-h-[min(52vh,420px)]' : 'min-h-[min(42vh,380px)]'}`}>
-          <div className="sticky top-0 z-30 flex-shrink-0 border-b border-gray-200 bg-gray-50 shadow-[0_1px_3px_0_rgba(0,0,0,0.08)]">
-            <div className={`flex flex-wrap items-center gap-1.5 px-2 py-1.5 ${fullView ? 'justify-center' : ''}`}>
-            {fullView && (
-              <div className="flex min-w-0 max-w-full shrink-0 items-center gap-1.5 border-r border-gray-200 pr-2 mr-1">
-                <label htmlFor="fast-planner-moveframe-goal-full" className="text-[10px] font-bold text-gray-700 whitespace-nowrap">
-                  Goal
-                </label>
-                <select
-                  id="fast-planner-moveframe-goal-full"
-                  value={moveframeGoal}
-                  onChange={(e) => setMoveframeGoal(e.target.value as GoalId)}
-                  className="max-w-[min(20rem,70vw)] rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[10px] text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  aria-label="Goal of this moveframe"
-                >
-                  {GOAL_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
+        <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50 shadow-[0_1px_3px_0_rgba(0,0,0,0.08)]">
+          <div className="flex w-full min-w-0 items-center gap-2 px-2 py-1.5">
+            <div className={`flex shrink-0 flex-wrap items-center gap-1.5 ${fullView ? 'justify-center' : ''}`}>
+              {fullView && (
+                <div className="flex min-w-0 max-w-full shrink-0 items-center gap-1.5 border-r border-gray-200 pr-2 mr-1">
+                  <label htmlFor="fast-planner-moveframe-goal-full" className="text-[10px] font-bold text-gray-700 whitespace-nowrap">
+                    Goal
+                  </label>
+                  <select
+                    id="fast-planner-moveframe-goal-full"
+                    value={moveframeGoal}
+                    onChange={(e) => setMoveframeGoal(e.target.value as GoalId)}
+                    className="max-w-[min(20rem,70vw)] rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[10px] text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    aria-label="Goal of this moveframe"
+                  >
+                    {GOAL_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <button onClick={handleGoNext} className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-900">Go next</button>
+              <button onClick={handleDuplicate} title="Duplicate selected row (appended at the bottom). Or double-click the exercise cell to duplicate." className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-900">Duplicate</button>
+              <button onClick={handleTriplicate} title="Add two copies of selected row (appended at the bottom)." className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-900">Triplicate</button>
+              <button onClick={handleRemove} className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-900">Remove</button>
+              <button onClick={handleResetRow} className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-900">Reset row</button>
+              <button onClick={handleResetAll} className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700">Reset all</button>
+            </div>
+            {sectorSeriesSummaryChips.length > 0 && (
+              <div
+                className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto scroll-smooth border-x border-gray-200/80 px-1.5"
+                title="Sectors selected — totals per muscular area"
+              >
+                {sectorSeriesSummaryChips.map((chip) => (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    onClick={() => selectSectorFromSummaryChip(chip.id)}
+                    className={`inline-flex shrink-0 flex-col items-center rounded-md border px-2 py-0.5 text-center leading-tight ${
+                      selectedMuscleGroup === chip.id
+                        ? 'border-blue-500 bg-blue-50 text-blue-900 ring-1 ring-blue-300'
+                        : 'border-gray-300 bg-white text-gray-900 hover:border-blue-400 hover:bg-blue-50/50'
+                    }`}
+                    style={{ minWidth: '5.5rem', maxWidth: '7rem' }}
+                    title={`${chip.label}: ${chip.series} series, ${chip.exercises} exercises`}
+                  >
+                    <span className="truncate w-full text-[10px] font-semibold">{chip.label}</span>
+                    <span className="text-[10px] font-bold tabular-nums text-teal-700">
+                      {chip.series} ser.
+                      {chip.exercises > 0 ? ` · ${chip.exercises} ex.` : ''}
+                    </span>
+                  </button>
+                ))}
               </div>
             )}
-            <button onClick={handleGoNext} className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-900">Go next</button>
-            <button onClick={handleDuplicate} title="Duplicate selected row (appended at the bottom). Or double-click the exercise cell to duplicate." className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-900">Duplicate</button>
-            <button onClick={handleTriplicate} title="Add two copies of selected row (appended at the bottom)." className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-900">Triplicate</button>
-            <button onClick={handleRemove} className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-900">Remove</button>
-            <button onClick={handleResetRow} className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-900">Reset row</button>
-            <button onClick={handleResetAll} className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700">Reset all</button>
-            <button onClick={handleSaveMoveframe} disabled={!canSaveWithSuperset} className={`rounded-md bg-red-600 px-3 py-1 text-xs font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 ${fullView ? '' : 'ml-auto'}`} title={!canSaveWithSuperset ? 'Fix Superset: each Superset exercise must be grouped with at least one other Superset' : undefined}>Save moveframe</button>
-            </div>
-            <table className="w-full table-fixed border-collapse">
-              {plannerTableColGroup}
-              {plannerTableHead}
-            </table>
+            <button onClick={handleSaveMoveframe} disabled={!canSaveWithSuperset} className="shrink-0 rounded-md bg-red-600 px-3 py-1 text-xs font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50" title={!canSaveWithSuperset ? 'Fix Superset: each Superset exercise must be grouped with at least one other Superset' : undefined}>Save moveframe</button>
           </div>
+        </div>
+        <div
+          ref={exerciseTableScrollRef}
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain"
+          style={fullView ? { minHeight: 'min(52vh, 420px)' } : undefined}
+        >
           <table className="w-full table-fixed border-collapse">
             {plannerTableColGroup}
+            {plannerTableHead}
             <tbody>
               {rows.map((row, index) => (
                 <tr
                   key={row.id}
-                  className="group border-t hover:bg-gray-50"
+                  ref={(el) => registerRowRef(row.id, el)}
+                  className={`group border-t hover:bg-gray-50 ${
+                    selectedCell?.rowId === row.id ? 'bg-blue-50/40' : ''
+                  }`}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={() => handleRowDrop(index)}
                 >
@@ -2372,7 +2547,15 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                     <input
                       type="text"
                       value={row.series}
-                      onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, series: e.target.value } : r))}
+                      onChange={(e) =>
+                        setRows((prevRows) =>
+                          prevRows.map((r) =>
+                            r.id === row.id
+                              ? resizeRipTimeForSeriesCount({ ...r, series: e.target.value })
+                              : r,
+                          ),
+                        )
+                      }
                       onClick={() => handleCellClick(row.id, 'series')}
                       className={`w-full px-2 py-1 text-sm border rounded bg-green-50 ${selectedCell?.rowId === row.id && selectedCell?.field === 'series'
                         ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
@@ -2388,7 +2571,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                           setRows((prevRows) =>
                             prevRows.map((r) =>
                               r.id === row.id
-                                ? afterSeriesRipTimeOrPyramidalChange({ ...r, pyramidal: e.target.value })
+                                ? applyPyramidalToRow({ ...r, pyramidal: e.target.value })
                                 : r
                             )
                           )
@@ -2450,7 +2633,7 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                       <input
                         type="text"
                         value={row.ripTime}
-                        onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? afterSeriesRipTimeOrPyramidalChange({ ...r, ripTime: e.target.value }) : r))}
+                        onChange={(e) => setRows(prevRows => prevRows.map(r => r.id === row.id ? { ...r, ripTime: e.target.value } : r))}
                         onClick={() => handleCellClick(row.id, 'ripTime')}
                         className={`w-full px-2 py-1 text-sm border rounded bg-green-50 ${selectedCell?.rowId === row.id && selectedCell?.field === 'ripTime'
                           ? 'border-blue-500 ring-2 ring-inset ring-blue-300/70'
@@ -2545,34 +2728,34 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
               ))}
             </tbody>
           </table>
+          <div className="min-h-3 shrink-0" aria-hidden="true" />
         </div>
-      </div>
-
-      <div className="mt-1 flex-shrink-0 space-y-1">
-        <p className="overflow-x-auto whitespace-nowrap rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] leading-tight text-gray-800 tabular-nums">
-          <span className="font-semibold text-gray-900">Summary:</span>
-          {' '}
-          Sectors <strong>{moveframeSummaryStats.sectorCount}</strong>
-          {' · '}
-          Total series <strong>{moveframeSummaryStats.totalSeries}</strong>
-          {' · '}
-          Avg series/sector <strong>{moveframeSummaryStats.avgSeriesPerSector}</strong>
-          {' · '}
-          Total exercises <strong>{moveframeSummaryStats.totalExercises}</strong>
-        </p>
-        <div
-          className={`rounded-lg bg-green-50 p-1.5 ${
-            fullView ? 'border-2 border-green-600' : 'border border-green-300'
-          }`}
-        >
-          <textarea
-            value={userDescription}
-            onChange={(e) => setUserDescription(e.target.value)}
-            className="w-full resize-none rounded border border-gray-300 px-2 py-1 text-sm leading-snug focus:outline-none focus:ring-2 focus:ring-green-500"
-            rows={2}
-            placeholder="Add descriptions or instructions here..."
-            aria-label="Descriptions and instructions"
-          />
+        <div className="flex-shrink-0 space-y-1 border-t border-gray-200 bg-white px-2 pb-2 pt-1.5">
+          <p className="overflow-x-auto whitespace-nowrap rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] leading-tight text-gray-800 tabular-nums">
+            <span className="font-semibold text-gray-900">Summary:</span>
+            {' '}
+            Sectors <strong>{moveframeSummaryStats.sectorCount}</strong>
+            {' · '}
+            Total series <strong>{moveframeSummaryStats.totalSeries}</strong>
+            {' · '}
+            Avg series/sector <strong>{moveframeSummaryStats.avgSeriesPerSector}</strong>
+            {' · '}
+            Total exercises <strong>{moveframeSummaryStats.totalExercises}</strong>
+          </p>
+          <div
+            className={`rounded-lg bg-green-50 p-1.5 ${
+              fullView ? 'border-2 border-green-600' : 'border border-green-300'
+            }`}
+          >
+            <textarea
+              value={userDescription}
+              onChange={(e) => setUserDescription(e.target.value)}
+              className="w-full resize-none rounded border border-gray-300 px-2 py-1 text-sm leading-snug focus:outline-none focus:ring-2 focus:ring-green-500"
+              rows={2}
+              placeholder="Add descriptions or instructions here..."
+              aria-label="Descriptions and instructions"
+            />
+          </div>
         </div>
       </div>
 
@@ -2897,8 +3080,13 @@ const FastPlannerOfMoveframes = React.forwardRef<FastPlannerHandle, FastPlannerP
                           value={planSeries}
                           onChange={(e) => setPlanSeries(e.target.value)}
                           className="rounded border border-violet-300 bg-white px-2 py-1 text-sm"
+                          title={
+                            suggestedPlanSeries != null
+                              ? `Table suggests ${suggestedPlanSeries} series for exercise ${planSectorPlanningStats.exerciseCount + 1} (${planTargetTotalSeries} target − ${planSectorPlanningStats.seriesSum} planned)`
+                              : undefined
+                          }
                         >
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20].map(n => (
+                          {planSeriesDropdownOptions.map(n => (
                             <option key={n} value={n.toString()}>{n}</option>
                           ))}
                         </select>

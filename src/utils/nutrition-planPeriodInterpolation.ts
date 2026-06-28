@@ -1,6 +1,6 @@
-/** Yearly macro-period bounds for Plan Gym Week UI. */
-export const PLAN_YEAR_TOTAL_PERIODS_MIN = 1;
-export const PLAN_YEAR_TOTAL_PERIODS_MAX = 52;
+/** Yearly macro-period bounds for Plan Gym Week UI (total periods dropdown). */
+export const PLAN_YEAR_TOTAL_PERIODS_MIN = 2;
+export const PLAN_YEAR_TOTAL_PERIODS_MAX = 9;
 
 function pauseToSeconds(label: string): number {
   const s = String(label ?? '').trim();
@@ -51,4 +51,17 @@ export function interpolatePeriodIntRounded(
   if (tp <= 1) return Math.round(from);
   const t = (cp - 1) / (tp - 1);
   return Math.round(from + (to - from) * t);
+}
+
+/** Clamp total/current period to Plan Gym Week dropdown bounds. */
+export function clampPlanYearPeriodPair(totalPeriods: number, currentPeriod: number): {
+  totalPeriods: number;
+  currentPeriod: number;
+} {
+  const tp = Math.min(
+    PLAN_YEAR_TOTAL_PERIODS_MAX,
+    Math.max(PLAN_YEAR_TOTAL_PERIODS_MIN, Math.floor(Number(totalPeriods) || PLAN_YEAR_TOTAL_PERIODS_MIN))
+  );
+  const cp = Math.min(tp, Math.max(1, Math.floor(Number(currentPeriod) || 1)));
+  return { totalPeriods: tp, currentPeriod: cp };
 }

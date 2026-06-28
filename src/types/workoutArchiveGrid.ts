@@ -42,6 +42,8 @@ export type WorkoutArchiveGridRecord = {
   archiveSource?: 'personal' | 'global';
   /** Original entity for action handlers (workout/week object) */
   _raw?: unknown;
+  /** Aerobic / non-aerobic / weight training — derived from sport & tags */
+  trainingCategory?: 'aerobic' | 'non-aerobic' | 'weight training' | null;
 };
 
 export const ARCHIVE_DISPLAY_LANGUAGES = [

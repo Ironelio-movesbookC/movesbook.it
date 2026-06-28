@@ -1,4 +1,5 @@
 import { formatMoveframeType } from '@/constants/moveframe.constants';
+import { formatCircuitMovelapLabel } from '@/utils/circuitMovelapLabel';
 import { formatDurationSeconds } from '@/utils/formatWorkoutDuration';
 import { stripInternalWorkoutTags, sanitizeWorkoutHtml } from '@/utils/sanitizeWorkoutHtml';
 
@@ -91,12 +92,9 @@ export function formatDistance(value: unknown, sport?: string): string {
   return raw;
 }
 
-export function movelapSequenceLabel(movelap: any, index: number, moveframeLetter: string): string {
-  if (movelap?.circuitLetter) {
-    const s = movelap.localSeriesNumber ?? movelap.seriesNumber ?? '?';
-    const st = movelap.stationNumber ?? '?';
-    return `${movelap.circuitLetter}-${s}-${st}`;
-  }
+export function movelapSequenceLabel(movelap: any, index: number, _moveframeLetter: string): string {
+  const circuitLabel = formatCircuitMovelapLabel(movelap);
+  if (circuitLabel) return circuitLabel;
   return String(movelap?.repetitionNumber ?? index + 1);
 }
 

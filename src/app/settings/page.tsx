@@ -29,7 +29,7 @@ import {
   Trophy,
   Grid,
   Save,
-  Archive,
+  Layers,
 } from 'lucide-react';
 import {
   SettingsLayoutExpandProvider,
@@ -38,6 +38,7 @@ import {
 
 type SettingsSection =
   | 'backgrounds'
+  | 'periodization'
   | 'tools'
   | 'technical'
   | 'globalWorkoutArchive'
@@ -50,37 +51,20 @@ export default function SettingsPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const { t } = useLanguage();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [queryParams, setQueryParams] = useState<URLSearchParams | null>(null);
-  const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
-    if (typeof window === 'undefined') return 'grid';
-    const valid: SettingsSection[] = [
-      'backgrounds',
-      'tools',
-      'technical',
-      'globalWorkoutArchive',
-      'workoutParameters',
-      'favourites',
-      'mybest',
-      'grid',
-    ];
-    const urlSection = new URLSearchParams(window.location.search).get('section');
-    if (urlSection === 'periodization') {
-      localStorage.setItem('settings_active_section', 'tools');
-      localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
-      return 'tools';
-    }
-    if (urlSection && valid.includes(urlSection as SettingsSection)) {
-      return urlSection as SettingsSection;
-    }
-    const raw = localStorage.getItem('settings_active_section');
-    if (raw === 'periodization') {
-      localStorage.setItem('settings_active_section', 'tools');
-      localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
-      return 'tools';
-    }
-    return raw && valid.includes(raw as SettingsSection) ? (raw as SettingsSection) : 'grid';
+  const [isAdmin, setIsAdmin] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const session = readPanelSession();
+    return Boolean(
+      localStorage.getItem('adminToken') &&
+        localStorage.getItem('adminUser') &&
+        isFullAdminPanelSession(session)
+    );
   });
+  const [queryParams, setQueryParams] = useState<URLSearchParams | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search);
+  });
+  const [activeSection, setActiveSection] = useState<SettingsSection>('grid');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Check for admin authentication and auto-cleanup invalid tokens
@@ -135,18 +119,13 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!queryParams) return;
     const sectionParam = queryParams.get('section');
-    if (!sectionParam) return;
-    if (sectionParam === 'periodization') {
-      setActiveSection('tools');
-      localStorage.setItem('settings_tools_tab_tools', 'periodizationPlan');
-      return;
-    }
     const allowedAdminSections: SettingsSection[] = [
       'backgrounds',
+      'periodization',
       'tools',
       'technical',
-      'globalWorkoutArchive',
       'workoutParameters',
+      'globalWorkoutArchive',
       'favourites',
       'grid',
     ];
@@ -158,8 +137,25 @@ export default function SettingsPage() {
       'grid',
     ];
     const allowed = isAdmin ? allowedAdminSections : allowedUserSections;
-    if (allowed.includes(sectionParam as SettingsSection)) {
+
+    if (sectionParam === 'periodization') {
+      setActiveSection('periodization');
+      return;
+    }
+    if (sectionParam && allowed.includes(sectionParam as SettingsSection)) {
       setActiveSection(sectionParam as SettingsSection);
+      return;
+    }
+
+    if (sectionParam) return;
+
+    const raw = localStorage.getItem('settings_active_section');
+    if (raw === 'periodization') {
+      setActiveSection('periodization');
+      return;
+    }
+    if (raw && allowed.includes(raw as SettingsSection)) {
+      setActiveSection(raw as SettingsSection);
     }
   }, [queryParams, isAdmin]);
 
@@ -172,14 +168,19 @@ export default function SettingsPage() {
     ? [
         { id: 'grid' as SettingsSection, label: t('settings_display_mode'), icon: Grid },
         { id: 'backgrounds' as SettingsSection, label: t('settings_backgrounds'), icon: Palette },
+        { id: 'periodization' as SettingsSection, label: 'Periodization', icon: Layers },
         { id: 'tools' as SettingsSection, label: 'Tools Settings', icon: SettingsIcon },
         { id: 'technical' as SettingsSection, label: 'Technical Settings', icon: Wrench },
         {
-          id: 'globalWorkoutArchive' as SettingsSection,
-          label: 'Global archive of workouts & weekly plans',
-          icon: Archive,
+          id: 'workoutParameters' as SettingsSection,
+          label: 'Workouts parameters settings',
+          icon: SlidersHorizontal,
         },
-        { id: 'workoutParameters' as SettingsSection, label: 'Workouts parameters settings', icon: SlidersHorizontal },
+        {
+          id: 'globalWorkoutArchive' as SettingsSection,
+          label: 'Global archive of workouts and weekly plans',
+          icon: Layers,
+        },
         { id: 'favourites' as SettingsSection, label: t('settings_favourites'), icon: Star },
       ]
     : [
@@ -247,21 +248,35 @@ function SettingsPageLayout({
   requestedWorkoutTab: 'changesVolumesSeries' | 'parametersByObjective' | 'formulaParameters' | undefined;
   user: { userType?: string } | null;
 }) {
+  const router = useRouter();
   const layoutExpand = useSettingsLayoutExpand();
   const contentExpanded = layoutExpand?.contentExpanded ?? false;
 
   const handleSectionChange = useCallback(
     (section: SettingsSection) => {
-      if (section !== 'technical' && section !== 'tools' && section !== 'globalWorkoutArchive') {
+      if (
+        section !== 'technical' &&
+        section !== 'tools' &&
+        section !== 'periodization' &&
+        section !== 'globalWorkoutArchive'
+      ) {
         layoutExpand?.setContentExpanded(false);
       }
       setActiveSection(section);
+      const params = new URLSearchParams(window.location.search);
+      params.set('section', section);
+      router.replace(`/settings?${params.toString()}`, { scroll: false });
     },
-    [layoutExpand, setActiveSection]
+    [layoutExpand, router, setActiveSection]
   );
 
   useEffect(() => {
-    if (activeSection !== 'technical' && activeSection !== 'tools' && activeSection !== 'globalWorkoutArchive') {
+    if (
+      activeSection !== 'technical' &&
+      activeSection !== 'tools' &&
+      activeSection !== 'periodization' &&
+      activeSection !== 'globalWorkoutArchive'
+    ) {
       layoutExpand?.setContentExpanded(false);
     }
   }, [activeSection, layoutExpand]);
@@ -283,9 +298,14 @@ function SettingsPageLayout({
         >
           <div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white mb-1 sm:mb-2 transition-colors">
-              {t('settings_title')}
+              {isAdmin ? 'Sport settings' : t('settings_title')}
             </h1>
-            
+            {isAdmin && (
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Super Admin — manage sport tools, periodization, and the global archive of shared
+                workouts &amp; weekly plans.
+              </p>
+            )}
           </div>
           
           {hasUnsavedChanges && (
@@ -383,6 +403,9 @@ function SettingsPageLayout({
               }`}
             >
             {activeSection === 'backgrounds' && <BackgroundsColorsSettings isAdmin={isAdmin} />}
+            {activeSection === 'periodization' && isAdmin && (
+              <ToolsSettings isAdmin={isAdmin} userType={user?.userType} mode="tools" periodizationOnly />
+            )}
             {activeSection === 'tools' && <ToolsSettings isAdmin={isAdmin} userType={user?.userType} mode="tools" initialTab={requestedTab as any} />}
             {activeSection === 'technical' && <ToolsSettings isAdmin={isAdmin} userType={user?.userType} mode="technical" initialTab={requestedTab as any} />}
             {activeSection === 'globalWorkoutArchive' && isAdmin && <GlobalWorkoutArchiveClient />}

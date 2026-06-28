@@ -9,26 +9,35 @@ import { useSportIconType } from '@/hooks/useSportIconType';
 import { formatMoveframeType, getRepsLabelCap, getRepsLabel, isDistanceBasedSport } from '@/constants/moveframe.constants';
 import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
 import { movelapPauseFieldLabel } from '@/utils/restTypeDb';
+import { resolveAerobicMoveframeDistanceDescription } from '@/utils/aerobicFastPlannerDescription';
 
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
   return stripInternalWorkoutTags(content).trim();
 };
 
-/** Build "distances only" line (e.g. 100\\A2+50\\A1+200\\B1) from movelaps; second return is typed description from notes. */
+/** Build "distances only" line from movelaps / fast planner; second return is typed description from notes. */
 function getDistancesAndTypedDescription(moveframe: any): { distancesLine: string; typedDescription: string } {
+  const fastPlannerPayload =
+    extractFastPlannerDataFromNotes(moveframe.notes) ?? moveframe.fastPlannerData ?? null;
+  const aerobicLine = resolveAerobicMoveframeDistanceDescription(
+    fastPlannerPayload,
+    moveframe.movelaps
+  );
   const movelaps = moveframe.movelaps || [];
-  const distancesLine = movelaps.length > 0
-    ? movelaps
-        .map((lap: any) => {
-          const val = lap.distance ?? lap.reps ?? lap.weight ?? '';
-          const sp = lap.speed ?? lap.pace ?? '';
-          const v = val !== '' && val != null ? String(val) : '?';
-          const s = sp !== '' && sp != null ? String(sp) : '?';
-          return `${v}\\${s}`;
-        })
-        .join('+')
-    : '';
+  const distancesLine =
+    aerobicLine ||
+    (movelaps.length > 0
+      ? movelaps
+          .map((lap: any) => {
+            const val = lap.distance ?? lap.reps ?? lap.weight ?? '';
+            const sp = lap.speed ?? lap.pace ?? '';
+            const v = val !== '' && val != null ? String(val) : '?';
+            const s = sp !== '' && sp != null ? String(sp) : '?';
+            return `${v}\\${s}`;
+          })
+          .join('+')
+      : '');
   const typedDescription = typeof moveframe.notes === 'string'
     ? stripCircuitTags(moveframe.notes)
     : '';
@@ -554,29 +563,41 @@ export default function MoveframeInfoPanel({
                     const distanceBasedSports = ['SWIM', 'BIKE', 'MTB', 'SPINNING', 'RUN', 'ROWING', 'CANOEING', 'SKATE', 'SKI', 'SNOWBOARD', 'HIKING', 'WALKING'];
                     const isDistanceBased = distanceBasedSports.includes(moveframe.sport);
                     const hasMovelaps = movelaps && movelaps.length > 0;
-                    const distancesOnlyParts: string[] = [];
-                    if (hasMovelaps && isDistanceBased) {
-                      for (const ml of movelaps) {
-                        const distRaw = ml.distance != null ? String(ml.distance).replace(/\s*m$/, '').trim() : '';
-                        const distNum = distRaw ? distRaw.replace(/\D/g, '') || distRaw : '';
-                        const speed = (ml.speed != null ? String(ml.speed).trim() : '') || '';
-                        if (distNum || distRaw) {
-                          const d = distNum || distRaw;
-                          distancesOnlyParts.push(speed ? `${d}\\${speed}` : d);
+                    let distancesOnlyLine = resolveAerobicMoveframeDistanceDescription(
+                      fastPlannerPayload,
+                      movelaps
+                    );
+                    if (!distancesOnlyLine) {
+                      const distancesOnlyParts: string[] = [];
+                      if (hasMovelaps && isDistanceBased) {
+                        for (const ml of movelaps) {
+                          const distRaw = ml.distance != null ? String(ml.distance).replace(/\s*m$/, '').trim() : '';
+                          const distNum = distRaw ? distRaw.replace(/\D/g, '') || distRaw : '';
+                          const speed = (ml.speed != null ? String(ml.speed).trim() : '') || '';
+                          if (distNum || distRaw) {
+                            const d = distNum || distRaw;
+                            distancesOnlyParts.push(speed ? `${d}\\${speed}` : d);
+                          }
+                        }
+                      } else if (
+                        isDistanceBased &&
+                        fastPlannerPayload?.plannerType === 'aerobic' &&
+                        Array.isArray(fastPlannerPayload.rows) &&
+                        (fastPlannerPayload.rows as any[]).length > 0
+                      ) {
+                        for (const r of fastPlannerPayload.rows as any[]) {
+                          const distRaw = r.distance != null ? String(r.distance).replace(/\s*m$/, '').trim() : '';
+                          const distNum = distRaw ? distRaw.replace(/\D/g, '') || distRaw : '';
+                          const speed = (r.speed != null ? String(r.speed).trim() : '') || '';
+                          if (distNum || distRaw) {
+                            const d = distNum || distRaw;
+                            distancesOnlyParts.push(speed ? `${d}\\${speed}` : d);
+                          }
                         }
                       }
-                    } else if (isDistanceBased && fastPlannerPayload?.plannerType === 'aerobic' && Array.isArray(fastPlannerPayload.rows) && (fastPlannerPayload.rows as any[]).length > 0) {
-                      for (const r of fastPlannerPayload.rows as any[]) {
-                        const distRaw = r.distance != null ? String(r.distance).replace(/\s*m$/, '').trim() : '';
-                        const distNum = distRaw ? distRaw.replace(/\D/g, '') || distRaw : '';
-                        const speed = (r.speed != null ? String(r.speed).trim() : '') || '';
-                        if (distNum || distRaw) {
-                          const d = distNum || distRaw;
-                          distancesOnlyParts.push(speed ? `${d}\\${speed}` : d);
-                        }
-                      }
+                      distancesOnlyLine =
+                        distancesOnlyParts.length > 0 ? distancesOnlyParts.join('+') : '';
                     }
-                    const distancesOnlyLine = distancesOnlyParts.length > 0 ? distancesOnlyParts.join('+') : '';
                     let typedDescriptionLine = '';
                     if (fastPlannerPayload && typeof (fastPlannerPayload as any).descriptionInstructions === 'string') {
                       typedDescriptionLine = ((fastPlannerPayload as any).descriptionInstructions as string).trim();

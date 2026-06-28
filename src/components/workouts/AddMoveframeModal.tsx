@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Star, ChevronsDown } from 'lucide-react';
-import { SPORTS_LIST, MACRO_FINAL_OPTIONS, MUSCULAR_SECTORS, getPaceLabel, shouldShowPaceField, getSportConfig, getPauseOptions, REST_TYPES, REPS_TYPES, hasRepsTypeSelection, getSportDisplayName, DISTANCE_BASED_SPORTS, sportNeedsExerciseName, AEROBIC_SPORTS, getSportFastPlanningCategory, showFastPlanningsForSport, circuitLoadOfWorkToMacroFinal, buildAerobicSportSelectRows, isAerobicSportSelectSeparatorValue } from '@/constants/moveframe.constants';
+import { SPORTS_LIST, MACRO_FINAL_OPTIONS, MUSCULAR_SECTORS, getPaceLabel, shouldShowPaceField, getSportConfig, getPauseOptions, getSetTimePauseOptions, getSectionBPauseOptions, coerceSetTimePauseValue, REST_TYPES, REPS_TYPES, hasRepsTypeSelection, getSportDisplayName, DISTANCE_BASED_SPORTS, sportNeedsExerciseName, AEROBIC_SPORTS, getSportFastPlanningCategory, showFastPlanningsForSport, circuitLoadOfWorkToMacroFinal, isSportSectionB, isSportSectionC, getStandardMoveframeSectionTitle, buildAerobicSportSelectRows, isAerobicSportSelectSeparatorValue } from '@/constants/moveframe.constants';
+import SetTimePauseSelect from '@/components/workouts/SetTimePauseSelect';
 import { useMoveframeForm } from '@/hooks/useMoveframeForm';
 import { formatPercentLoad1MR, type PyramidalMode } from '@/utils/pyramidalReps';
 import { getSportIcon } from '@/utils/sportIcons';
@@ -139,7 +140,8 @@ export default function AddEditMoveframeModal({
     generateDescription,
     initializeIndividualPlans,
     updateIndividualPlan,
-    applyGlobalRepsBodyBuildingIndividualPlans
+    applyGlobalRepsBodyBuildingIndividualPlans,
+    applyPyramidalFromDropdown
   } = useMoveframeForm({
     mode,
     existingMoveframe,
@@ -1772,18 +1774,10 @@ export default function AddEditMoveframeModal({
                 {/* 1. Distance (m) */}
                 <div className="bg-gray-50 p-2.5 rounded-lg">
                   <h3 className="font-bold text-xs text-gray-700 mb-2">
-                    {(() => {
-                      const bodyBuildingSports = ['BODY_BUILDING', 'STRETCHING', 'GYMNASTIC', 'PILATES', 'YOGA', 'CALISTENIC', 'SPARTAN', 'CROSSFIT'];
-                      const aerobicSports = ['SWIM', 'BIKE', 'MTB', 'RUN', 'WALKING', 'ROWING', 'SKATE', 'SNOWBOARD', 'SKI', 'HIKING'];
-                      const otherSports = !bodyBuildingSports.includes(sport) && !aerobicSports.includes(sport);
-                      
-                      if (bodyBuildingSports.includes(sport)) return 'EXERCISE AND REPETITIONS';
-                      if (otherSports) return 'EXERCISE & STYLE/TECHNIQUE';
-                      return 'DISTANCE & REPETITIONS';
-                    })()}
+                    {getStandardMoveframeSectionTitle(sport)}
                   </h3>
                   
-                  {['BODY_BUILDING', 'CALISTENIC', 'SPARTAN', 'CROSSFIT'].includes(sport) ? (
+                  {isSportSectionB(sport) ? (
                     <>
                       <div className="mb-3">
                         <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -1970,13 +1964,7 @@ export default function AddEditMoveframeModal({
                       )}
                     </>
                   ) : (() => {
-                    // Define sport categories
-                    const bodyBuildingSports = ['BODY_BUILDING', 'STRETCHING', 'GYMNASTIC', 'PILATES', 'YOGA', 'CALISTENIC', 'SPARTAN', 'CROSSFIT'];
-                    const aerobicSports = ['SWIM', 'BIKE', 'MTB', 'RUN', 'WALKING', 'ROWING', 'SKATE', 'SNOWBOARD', 'SKI', 'HIKING'];
-                    const isOtherSport = !bodyBuildingSports.includes(sport) && !aerobicSports.includes(sport);
-                    
-                    // OTHER SPORTS (Soccer, Tennis, Boxing, etc.) - Similar to BODY_BUILDING but with Style field
-                    if (isOtherSport) {
+                    if (isSportSectionC(sport)) {
                       return (
                         <>
                           <div className="mb-3">
@@ -2519,9 +2507,6 @@ export default function AddEditMoveframeModal({
                             className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-cyan-500"
                             placeholder="1"
                           />
-                          <p className="mt-1 text-[10px] text-gray-500">
-                            Range: 1-9 (default: 1) | Total will be = Meters × Series × Repetitions
-                          </p>
                         </div>
                       )}
 
@@ -3200,7 +3185,16 @@ export default function AddEditMoveframeModal({
                                 <td className="border border-gray-300 px-2 py-1.5">
                                   <select
                                     value={plan.restType || 'Set time'}
-                                    onChange={(e) => updateIndividualPlan(idx, 'restType', e.target.value)}
+                                    onChange={(e) => {
+                                      const newRestType = e.target.value;
+                                      updateIndividualPlan(idx, 'restType', newRestType);
+                                      if (newRestType === 'Set time') {
+                                        const opts = getSetTimePauseOptions(sport);
+                                        updateIndividualPlan(idx, 'pause', opts[0] ?? '20"');
+                                      } else {
+                                        updateIndividualPlan(idx, 'pause', '');
+                                      }
+                                    }}
                                     className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-cyan-500"
                                   >
                                     <option value="Set time">Set time</option>
@@ -3210,26 +3204,51 @@ export default function AddEditMoveframeModal({
                                 </td>
                                 {/* Pause Time */}
                                 <td className="border border-gray-300 px-2 py-1.5">
-                                  <input
-                                    type="text"
-                                    value={plan.pause || ''}
-                                    onChange={(e) => updateIndividualPlan(idx, 'pause', e.target.value)}
-                                    onBlur={(e) => {
-                                      const restType = plan.restType || 'Set time';
-                                      if (restType === 'Restart time') {
-                                        updateIndividualPlan(idx, 'pause', formatTime(e.target.value));
-                                      } else if (restType === 'Restart pulse') {
-                                        const value = e.target.value.replace(/\D/g, '').slice(0, 3);
-                                        updateIndividualPlan(idx, 'pause', value);
-                                      } else {
-                                        updateIndividualPlan(idx, 'pause', formatTime(e.target.value));
-                                      }
-                                    }}
-                                    className="w-full px-2 py-1.5 border-2 border-green-300 rounded text-xs focus:ring-1 focus:ring-green-500 font-mono bg-green-50"
-                                    placeholder={(plan.restType || 'Set time') === 'Restart pulse' ? 'bpm' : '123456'}
-                                    autoComplete="off"
-                                    title={(plan.restType || 'Set time') === 'Restart pulse' ? 'Enter pulse (bpm)' : 'Type: 123456 â†’ formats to 1h23\'45"6'}
-                                  />
+                                  {(() => {
+                                    const rowRestType = plan.restType || 'Set time';
+                                    if (rowRestType === 'Set time') {
+                                      const pauseOpts = getSetTimePauseOptions(sport);
+                                      return (
+                                        <select
+                                          value={plan.pause ?? ''}
+                                          onChange={(e) => updateIndividualPlan(idx, 'pause', e.target.value)}
+                                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-cyan-500"
+                                        >
+                                          {pauseOpts.map((p) => (
+                                            <option key={p} value={p}>{p}</option>
+                                          ))}
+                                        </select>
+                                      );
+                                    }
+                                    if (rowRestType === 'Restart pulse') {
+                                      return (
+                                        <input
+                                          type="number"
+                                          value={plan.pause || ''}
+                                          onChange={(e) => {
+                                            const value = e.target.value.replace(/\D/g, '').slice(0, 3);
+                                            updateIndividualPlan(idx, 'pause', value);
+                                          }}
+                                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-cyan-500 text-center"
+                                          placeholder="bpm"
+                                          min="0"
+                                          max="220"
+                                        />
+                                      );
+                                    }
+                                    return (
+                                      <input
+                                        type="text"
+                                        value={plan.pause || ''}
+                                        onChange={(e) => updateIndividualPlan(idx, 'pause', e.target.value)}
+                                        onBlur={(e) => updateIndividualPlan(idx, 'pause', formatTime(e.target.value))}
+                                        className="w-full px-2 py-1.5 border-2 border-green-300 rounded text-xs focus:ring-1 focus:ring-green-500 font-mono bg-green-50"
+                                        placeholder="123456"
+                                        autoComplete="off"
+                                        title="Type: 123456 → formats to 1h23'45&quot;6"
+                                      />
+                                    );
+                                  })()}
                                 </td>
                                 {/* Mode */}
                                 <td className="border border-gray-300 px-2 py-1.5">
@@ -3333,7 +3352,7 @@ export default function AddEditMoveframeModal({
                 })()}
 
                 {/* Individual Repetition Planning Table for BODY BUILDING and similar sports */}
-                {['BODY_BUILDING', 'STRETCHING', 'GYMNASTIC', 'PILATES', 'YOGA', 'CALISTENIC', 'SPARTAN', 'CROSSFIT'].includes(sport) && planningMode === 'individual' && canShowIndividualPlanning && (
+                {isSportSectionB(sport) && planningMode === 'individual' && canShowIndividualPlanning && (
                   <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-200">
                     <h3 className="font-bold text-xs text-gray-700 mb-3 flex items-center gap-2">
                       <span>💪 {repsType === 'Time' ? 'TIME' : 'REPS'} & WEIGHTS PLANNING</span>
@@ -3347,7 +3366,7 @@ export default function AddEditMoveframeModal({
                         <label className="text-xs font-medium text-gray-700 whitespace-nowrap">Pyramidal</label>
                         <select
                           value={pyramidalMode}
-                          onChange={(e) => setPyramidalMode(e.target.value as PyramidalMode)}
+                          onChange={(e) => applyPyramidalFromDropdown(e.target.value as PyramidalMode)}
                           className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:ring-2 focus:ring-cyan-500 min-w-[9rem]"
                         >
                           <option value="flat">Flat</option>
@@ -3553,189 +3572,12 @@ export default function AddEditMoveframeModal({
                                   />
                                 </td>
                                 <td className="border border-gray-300 px-2 py-1.5">
-                                  {(() => {
-                                    // For "Reps" mode with "Restart time" - hide/disable the field
-                                    if (repsType === 'Reps' && restType === 'Restart time') {
-                                      return (
-                                        <input
-                                          type="text"
-                                          value=""
-                                          disabled
-                                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs bg-gray-100 text-center"
-                                          placeholder="—"
-                                        />
-                                      );
-                                    }
-                                    
-                                    // For "Set time" - time input (both Reps and Minutes modes)
-                                    if (restType === 'Set time') {
-                                      return (
-                                        <input
-                                          type="text"
-                                          value={plan.pause ?? ''}
-                                          onChange={(e) => {
-                                            const input = e.target.value;
-                                            if (input === '') {
-                                              updateIndividualPlan(idx, 'pause', '');
-                                              return;
-                                            }
-                                            if (/^\d+$/.test(input)) {
-                                              const digits = input.replace(/\D/g, '');
-                                              const len = digits.length;
-                                              let decisec = '0';
-                                              let sec = '00';
-                                              let min = '00';
-                                              let hour = '0';
-                                              
-                                              if (len === 1) {
-                                                decisec = digits[0];
-                                              } else if (len === 2) {
-                                                sec = digits[0].padStart(2, '0');
-                                                decisec = digits[1];
-                                              } else if (len === 3) {
-                                                sec = digits.slice(0, 2);
-                                                decisec = digits[2];
-                                              } else if (len === 4) {
-                                                min = digits[0].padStart(2, '0');
-                                                sec = digits.slice(1, 3);
-                                                decisec = digits[3];
-                                              } else if (len === 5) {
-                                                min = digits.slice(0, 2);
-                                                sec = digits.slice(2, 4);
-                                                decisec = digits[4];
-                                              } else if (len === 6) {
-                                                hour = digits[0];
-                                                min = digits.slice(1, 3);
-                                                sec = digits.slice(3, 5);
-                                                decisec = digits[5];
-                                              } else {
-                                                hour = digits.slice(0, -5);
-                                                min = digits.slice(-5, -3);
-                                                sec = digits.slice(-3, -1);
-                                                decisec = digits.slice(-1);
-                                              }
-                                              
-                                              updateIndividualPlan(idx, 'pause', `${hour}h${min}'${sec}"${decisec}`);
-                                            } else {
-                                              updateIndividualPlan(idx, 'pause', input);
-                                            }
-                                          }}
-                                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-cyan-500 text-center"
-                                          placeholder="1h23'45&quot;6"
-                                        />
-                                      );
-                                    }
-                                    
-                                    // For "Restart time" (Minutes mode only) - time input with validation
-                                    if (restType === 'Restart time' && repsType === 'Time') {
-                                      return (
-                                        <input
-                                          type="text"
-                                          value={plan.pause ?? ''}
-                                          onChange={(e) => {
-                                            const input = e.target.value;
-                                            if (input === '') {
-                                              updateIndividualPlan(idx, 'pause', '');
-                                              return;
-                                            }
-                                            if (/^\d+$/.test(input)) {
-                                              const digits = input.replace(/\D/g, '');
-                                              const len = digits.length;
-                                              let decisec = '0';
-                                              let sec = '00';
-                                              let min = '00';
-                                              let hour = '0';
-                                              
-                                              if (len === 1) {
-                                                decisec = digits[0];
-                                              } else if (len === 2) {
-                                                sec = digits[0].padStart(2, '0');
-                                                decisec = digits[1];
-                                              } else if (len === 3) {
-                                                sec = digits.slice(0, 2);
-                                                decisec = digits[2];
-                                              } else if (len === 4) {
-                                                min = digits[0].padStart(2, '0');
-                                                sec = digits.slice(1, 3);
-                                                decisec = digits[3];
-                                              } else if (len === 5) {
-                                                min = digits.slice(0, 2);
-                                                sec = digits.slice(2, 4);
-                                                decisec = digits[4];
-                                              } else if (len === 6) {
-                                                hour = digits[0];
-                                                min = digits.slice(1, 3);
-                                                sec = digits.slice(3, 5);
-                                                decisec = digits[5];
-                                              } else {
-                                                hour = digits.slice(0, -5);
-                                                min = digits.slice(-5, -3);
-                                                sec = digits.slice(-3, -1);
-                                                decisec = digits.slice(-1);
-                                              }
-                                              
-                                              const formattedTime = `${hour}h${min}'${sec}"${decisec}`;
-                                              updateIndividualPlan(idx, 'pause', formattedTime);
-                                            } else {
-                                              updateIndividualPlan(idx, 'pause', input);
-                                            }
-                                          }}
-                                          onBlur={(e) => {
-                                            // Validate that restart time > minutes value
-                                            const minutesValue = plan.reps ?? '';
-                                            const restartValue = e.target.value;
-                                            // Simple comparison - if both are formatted, compare them
-                                            if (minutesValue && restartValue && restartValue <= minutesValue) {
-                                              alert('⚠️ Restart time must be greater than Minutes value');
-                                              updateIndividualPlan(idx, 'pause', '');
-                                            }
-                                          }}
-                                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-cyan-500 text-center"
-                                          placeholder="1h23'45&quot;6"
-                                        />
-                                      );
-                                    }
-                                    
-                                    // For "Restart pulse" - number input (0-200)
-                                    if (restType === 'Restart pulse') {
-                                      return (
-                                        <input
-                                          type="number"
-                                          value={plan.pause ?? ''}
-                                          onChange={(e) => {
-                                            const value = e.target.value;
-                                            if (value === '' || (parseInt(value) >= 0 && parseInt(value) <= 200)) {
-                                              updateIndividualPlan(idx, 'pause', value);
-                                            }
-                                          }}
-                                          onBlur={(e) => {
-                                            const value = parseInt(e.target.value);
-                                            if (e.target.value && (value < 0 || value > 200)) {
-                                              alert('⚠️ Pulse must be between 0 and 200 bpm');
-                                              updateIndividualPlan(idx, 'pause', '120');
-                                            }
-                                          }}
-                                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-cyan-500 text-center"
-                                          placeholder="120"
-                                          min="0"
-                                          max="200"
-                                        />
-                                      );
-                                    }
-                                    
-                                    // Default - show select dropdown (fallback)
-                                    return (
-                                  <select
+                                  <SetTimePauseSelect
+                                    sport={sport}
                                     value={plan.pause}
-                                    onChange={(e) => updateIndividualPlan(idx, 'pause', e.target.value)}
-                                    className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-cyan-500"
-                                  >
-                                    {(Array.isArray(sportConfig.pauses) ? sportConfig.pauses : (sportConfig.pauses as any)?.['Set time'] || []).map((p: string) => (
-                                      <option key={p} value={p}>{p}</option>
-                                    ))}
-                                  </select>
-                                    );
-                                  })()}
+                                    compact
+                                    onChange={(v) => updateIndividualPlan(idx, 'pause', v)}
+                                  />
                                 </td>
                                 <td className="border border-gray-300 px-1 py-1.5 text-center">
                                   {idx > 0 && idx < individualPlans.length - 1 && (
@@ -3768,11 +3610,7 @@ export default function AddEditMoveframeModal({
 
                 {/* Individual Repetition Planning Table for OTHER SPORTS (Soccer, Tennis, Boxing, etc.) */}
                 {(() => {
-                  const bodyBuildingSports = ['BODY_BUILDING', 'STRETCHING', 'GYMNASTIC', 'PILATES', 'YOGA', 'CALISTENIC', 'SPARTAN', 'CROSSFIT'];
-                  const aerobicSports = ['SWIM', 'BIKE', 'MTB', 'RUN', 'WALKING', 'ROWING', 'SKATE', 'SNOWBOARD', 'SKI', 'HIKING'];
-                  const isOtherSport = !bodyBuildingSports.includes(sport) && !aerobicSports.includes(sport);
-                  
-                  if (!isOtherSport || planningMode !== 'individual' || !canShowIndividualPlanning) return null;
+                  if (!isSportSectionC(sport) || planningMode !== 'individual' || !canShowIndividualPlanning) return null;
                   
                   return (
                     <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-200">
@@ -3909,8 +3747,7 @@ export default function AddEditMoveframeModal({
                   // Don't show in individual planning mode for ANY sport
                   if (planningMode === 'individual') return null;
                   
-                  const bodyBuildingLikeSports = ['BODY_BUILDING', 'STRETCHING', 'GYMNASTIC', 'PILATES', 'YOGA', 'CALISTENIC', 'SPARTAN', 'CROSSFIT'];
-                  const isBodyBuildingLike = bodyBuildingLikeSports.includes(sport);
+                  const isBodyBuildingLike = isSportSectionB(sport);
                   const hasTools = !DISTANCE_BASED_SPORTS.includes(sport as any) && !isBodyBuildingLike;
                   const showSpeedSection = (isBodyBuildingLike || hasTools || planningMode === 'all');
                   

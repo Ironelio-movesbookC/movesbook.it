@@ -1,41 +1,51 @@
 export const ARCHIVE_OFFICIAL_COLUMN_IDS = [
-  'codeTitle',
-  'nw',
-  'type',
-  'author',
+  'picture',
+  'trainingType',
+  'recordClass',
+  'workoutCount',
+  'duration',
   'mainSport',
   'goal',
   'level',
   'period',
-  'language',
-  'country',
+  'title',
+  'createdAt',
+  'sharedAt',
   'expDate',
+  'language',
+  'shortDescription',
+  'author',
   'actions',
 ] as const;
 
 export type ArchiveOfficialColumnId = (typeof ARCHIVE_OFFICIAL_COLUMN_IDS)[number];
 
 export const ARCHIVE_OFFICIAL_COLUMN_LABELS: Record<ArchiveOfficialColumnId, string> = {
-  codeTitle: 'Code + Title',
-  nw: 'NW',
-  type: 'Type',
-  author: 'Author',
-  mainSport: 'Main sport',
+  picture: 'Picture',
+  trainingType: 'Type of training',
+  recordClass: 'Class',
+  workoutCount: 'No. workouts',
+  duration: 'Duration',
+  mainSport: 'Sport',
   goal: 'Goal',
   level: 'Level',
   period: 'Period',
+  title: 'Title',
+  createdAt: 'Date creation',
+  sharedAt: 'Sharing date',
+  expDate: 'Share expiration',
   language: 'Language',
-  country: 'Country',
-  expDate: 'Exp date',
-  actions: 'ACTIONS',
+  shortDescription: 'Short description',
+  author: 'User',
+  actions: 'Options',
 };
 
 export const DEFAULT_ARCHIVE_COLUMN_ORDER: ArchiveOfficialColumnId[] = [
   ...ARCHIVE_OFFICIAL_COLUMN_IDS,
 ];
 
-export const LS_ARCHIVE_COLUMNS_PERSONAL = 'movesbook-personal-archive-column-order';
-export const LS_ARCHIVE_COLUMNS_GLOBAL = 'movesbook-global-archive-column-order';
+export const LS_ARCHIVE_COLUMNS_PERSONAL = 'movesbook-personal-archive-column-order-v2';
+export const LS_ARCHIVE_COLUMNS_GLOBAL = 'movesbook-global-archive-column-order-v2';
 
 export function loadArchiveColumnOrder(storageKey: string): ArchiveOfficialColumnId[] {
   if (typeof window === 'undefined') return [...DEFAULT_ARCHIVE_COLUMN_ORDER];
@@ -47,7 +57,8 @@ export function loadArchiveColumnOrder(storageKey: string): ArchiveOfficialColum
     const valid = parsed.filter((id): id is ArchiveOfficialColumnId =>
       ARCHIVE_OFFICIAL_COLUMN_IDS.includes(id as ArchiveOfficialColumnId)
     );
-    if (valid.length !== ARCHIVE_OFFICIAL_COLUMN_IDS.length) return [...DEFAULT_ARCHIVE_COLUMN_ORDER];
+    const missing = ARCHIVE_OFFICIAL_COLUMN_IDS.filter((id) => !valid.includes(id));
+    if (missing.length > 0) return [...DEFAULT_ARCHIVE_COLUMN_ORDER];
     return valid;
   } catch {
     return [...DEFAULT_ARCHIVE_COLUMN_ORDER];

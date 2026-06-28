@@ -38,6 +38,7 @@ import {
   type ArchivePrimaryTab,
   type ArchiveSearchField,
   type ArchiveSortKey,
+  type ArchiveTrainingFilter,
   type PersonalArchiveSource,
 } from '@/lib/workoutArchiveOfficialShared';
 
@@ -81,6 +82,8 @@ export default function PersonalWorkoutArchiveOfficialShell({
   const [appliedSearch, setAppliedSearch] = useState('');
   const [searchField, setSearchField] = useState<ArchiveSearchField>('all');
   const [durationFilter, setDurationFilter] = useState<ArchiveDurationFilter>('all');
+  const [trainingCategoryFilter, setTrainingCategoryFilter] =
+    useState<ArchiveTrainingFilter>('all');
   const [authorFilter, setAuthorFilter] = useState('all');
   const [countryFilter, setCountryFilter] = useState('all');
   const [displayLanguage, setDisplayLanguage] = useState('en');
@@ -132,6 +135,7 @@ export default function PersonalWorkoutArchiveOfficialShell({
         authorFilter,
         countryFilter,
         durationFilter,
+        trainingCategoryFilter,
         appliedSearch,
         searchField,
         sortKey,
@@ -149,6 +153,7 @@ export default function PersonalWorkoutArchiveOfficialShell({
       authorFilter,
       countryFilter,
       durationFilter,
+      trainingCategoryFilter,
       appliedSearch,
       searchField,
       sortKey,
@@ -190,11 +195,11 @@ export default function PersonalWorkoutArchiveOfficialShell({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <h2 className="text-xl font-bold uppercase tracking-wide text-[#a51d2d]">
-              Personal archive of plans, weekly plans &amp; workouts
+              General Archive of Workouts
             </h2>
             <p className="mt-1 max-w-3xl text-sm text-gray-600">
-              Browse your personal general archive or the official Movesbook global catalog. Filter by
-              your favourite sports, clone, export, and save to favourites.
+              Browse workouts and weekly plans from your personal archive or the shared Movesbook
+              catalog. Filter by training type, sport, duration, author, and more.
             </p>
           </div>
           <label className="flex flex-col gap-1 text-sm shrink-0">
@@ -314,7 +319,7 @@ export default function PersonalWorkoutArchiveOfficialShell({
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-3">
         {onRecordTypeFilterChange && primaryTab === 'WORKOUT_WEEKLY' && (
           <label className="text-sm">
-            <span className="block text-xs font-semibold text-gray-500 mb-1">Type of workout</span>
+            <span className="block text-xs font-semibold text-gray-500 mb-1">Class</span>
             <select
               value={recordTypeFilter}
               onChange={(e) => {
@@ -323,12 +328,28 @@ export default function PersonalWorkoutArchiveOfficialShell({
               }}
               className="rounded border border-gray-300 px-2 py-1.5 text-sm min-w-[10rem]"
             >
-              <option value="ALL">All types</option>
-              <option value="WORKOUT">Workouts</option>
-              <option value="WEEKLY_PLAN">Weekly plans</option>
+              <option value="ALL">All classes</option>
+              <option value="WORKOUT">Workout</option>
+              <option value="WEEKLY_PLAN">Weekly plan</option>
             </select>
           </label>
         )}
+        <label className="text-sm">
+          <span className="block text-xs font-semibold text-gray-500 mb-1">Type of training</span>
+          <select
+            value={trainingCategoryFilter}
+            onChange={(e) => {
+              setTrainingCategoryFilter(e.target.value as ArchiveTrainingFilter);
+              setPage(1);
+            }}
+            className="rounded border border-gray-300 px-2 py-1.5 text-sm min-w-[10rem]"
+          >
+            <option value="all">All training types</option>
+            <option value="aerobic">Aerobic</option>
+            <option value="non-aerobic">Non-aerobic</option>
+            <option value="weight training">Weight training</option>
+          </select>
+        </label>
         <label className="text-sm">
           <span className="block text-xs font-semibold text-gray-500 mb-1">Duration</span>
           <select
@@ -590,8 +611,17 @@ export default function PersonalWorkoutArchiveOfficialShell({
                     selectedId === record.id ? 'border-sky-600 bg-sky-50' : 'border-gray-200'
                   }`}
                 >
-                  <div className="aspect-square rounded bg-gray-100 flex items-center justify-center mb-2">
-                    <Archive className="h-8 w-8 text-gray-400" />
+                  <div className="aspect-square rounded bg-gray-100 flex items-center justify-center mb-2 overflow-hidden">
+                    {record.thumbnailUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={record.thumbnailUrl}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <Archive className="h-8 w-8 text-gray-400" />
+                    )}
                   </div>
                   <p className="text-xs font-bold truncate">{record.code}</p>
                   <p className="text-sm font-semibold truncate">{record.title}</p>
@@ -599,7 +629,7 @@ export default function PersonalWorkoutArchiveOfficialShell({
               ))}
             </div>
           ) : (
-            <table className="w-full text-xs sm:text-sm min-w-[1100px]">
+            <table className="w-full text-xs sm:text-sm min-w-[1800px]">
               <ArchiveOfficialSortableHeader
                 columnOrder={columnOrder}
                 sensors={sensors}
@@ -740,6 +770,12 @@ export default function PersonalWorkoutArchiveOfficialShell({
                       <p className="text-xs">
                         <span className="text-gray-500">Date of creation: </span>
                         {new Date(selectedRecord.createdAt).toLocaleDateString()}
+                      </p>
+                    )}
+                    {selectedRecord.sharedAt && (
+                      <p className="text-xs">
+                        <span className="text-gray-500">Date of sharing: </span>
+                        {new Date(selectedRecord.sharedAt).toLocaleDateString()}
                       </p>
                     )}
                     {selectedRecord.expirationDate && (

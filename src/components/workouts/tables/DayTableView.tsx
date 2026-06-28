@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, FileText, Flag } from 'lucide-react';
 // import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core';
 import { useColorSettings } from '@/hooks/useColorSettings';
@@ -13,6 +13,13 @@ import WeekTotalsModal from '../modals/WeekTotalsModal';
 import CopyWeekModal from '../modals/CopyWeekModal';
 import CloneWeekModal from '../modals/CloneWeekModal';
 import ExportWeekToPlanModal, { type ExportWeekDestination } from '../modals/ExportWeekToPlanModal';
+import ImportWeeklyPlansModal, {
+  type ImportWeeklyPlansPayload,
+} from '../modals/ImportWeeklyPlansModal';
+import ShareWeeklyPlanModal from '../modals/ShareWeeklyPlanModal';
+import SaveTemplateWeeklyPlanModal from '../modals/SaveTemplateWeeklyPlanModal';
+import UnshareWeeklyPlanModal from '../modals/UnshareWeeklyPlanModal';
+import type { WeeklyPlanShareSourceType } from '@/lib/globalWeeklyPlanShare';
 import CloneArchiveWeekModal from '../modals/CloneArchiveWeekModal';
 import MoveWeekModal from '../modals/MoveWeekModal';
 import DayInfoModal from '../DayInfoModal';
@@ -66,6 +73,7 @@ interface DayTableViewProps {
   onDeleteDay?: (day: any) => void;
   onDeleteWorkout?: (workout: any, day: any) => void;
   onSaveFavoriteWorkout?: (workout: any, day: any) => void;
+  onSaveTemplateWorkout?: (workout: any, day: any) => void;
   onShareWorkout?: (workout: any, day: any) => void;
   onExportPdfWorkout?: (workout: any, day: any) => void;
   onExportWorkoutToArchive?: (workout: any, day: any) => void;
@@ -78,11 +86,13 @@ interface DayTableViewProps {
   onCopyWorkoutToClipboard?: (workout: any) => void;
   hasWorkoutClipboard?: boolean;
   onCopyWorkout?: (workout: any, day: any) => void;
+  onImportWorkout?: (workout: any, day: any) => void;
   onPasteWorkout?: (day: any) => void;
   onMoveWorkout?: (workout: any, day: any) => void;
   onCopyMoveframeToClipboard?: (moveframe: any) => void;
   hasMoveframeClipboard?: boolean;
   onPasteMoveframe?: (workout: any) => void;
+  onImportMoveframe?: (workout: any, day: any) => void;
   onCopyMoveframe?: (moveframe: any, workout: any, day: any, workoutDisplayNumber?: number) => void;
   onMoveMoveframe?: (moveframe: any, workout: any, day: any, workoutDisplayNumber?: number) => void;
   hasMovelapClipboard?: boolean;
@@ -93,6 +103,8 @@ interface DayTableViewProps {
   onPlanGymWeek?: (week: { id: string; weekNumber: number }, anchorEl?: HTMLElement | null) => void;
   columnSettings?: any;
   reloadWorkouts?: () => Promise<void>; // Added for reloading after copy/move
+  /** Increment to refresh shared-workout entries after global share from Share modal. */
+  workoutGlobalSharedTick?: number;
 }
 
 // Helper function to get section label and color
@@ -155,9 +167,11 @@ export default function DayTableView({
   onAddMovelap,
   onAddMovelapAfter,
   reloadWorkouts,
+  workoutGlobalSharedTick,
   onDeleteDay,
   onDeleteWorkout,
   onSaveFavoriteWorkout,
+  onSaveTemplateWorkout,
   onShareWorkout,
   onExportPdfWorkout,
   onExportWorkoutToArchive,
@@ -170,11 +184,13 @@ export default function DayTableView({
   onCopyWorkoutToClipboard,
   hasWorkoutClipboard,
   onCopyWorkout,
+  onImportWorkout,
   onPasteWorkout,
   onMoveWorkout,
   onCopyMoveframeToClipboard,
   hasMoveframeClipboard,
   onPasteMoveframe,
+  onImportMoveframe,
   onCopyMoveframe,
   onMoveMoveframe,
   hasMovelapClipboard,
@@ -212,6 +228,8 @@ export default function DayTableView({
   const [showExportWeekModal, setShowExportWeekModal] = useState(false);
   const [exportWeekDestination, setExportWeekDestination] = useState<ExportWeekDestination>('ARCHIVE');
   const [showMoveWeekModal, setShowMoveWeekModal] = useState(false);
+  const [showImportWeeklyPlansModal, setShowImportWeeklyPlansModal] = useState(false);
+  const [importYearlyWeeks, setImportYearlyWeeks] = useState<any[]>([]);
   const [autoPrintWeek, setAutoPrintWeek] = useState(false);
   const [showAllWeeksInModal, setShowAllWeeksInModal] = useState(false);
   const [targetWeeks, setTargetWeeks] = useState<any[]>([]);
@@ -220,6 +238,20 @@ export default function DayTableView({
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
   const [selectedAction, setSelectedAction] = useState<string>('');
   const [savingFavoriteWeekId, setSavingFavoriteWeekId] = useState<string | null>(null);
+  const [showShareWeeklyPlanModal, setShowShareWeeklyPlanModal] = useState(false);
+  const [showSaveTemplateWeeklyPlanModal, setShowSaveTemplateWeeklyPlanModal] = useState(false);
+  const [saveTemplateWeekSource, setSaveTemplateWeekSource] = useState<any>(null);
+  const [showUnshareWeeklyPlanModal, setShowUnshareWeeklyPlanModal] = useState(false);
+  const [shareSourcePlanType, setShareSourcePlanType] =
+    useState<WeeklyPlanShareSourceType>('YEARLY_PLAN');
+  const [mySharedGlobalEntries, setMySharedGlobalEntries] = useState<
+    Array<{ id: string; title: string; shareMeta?: { sourceWeekId?: string } | null }>
+  >([]);
+  const [mySharedWorkoutEntries, setMySharedWorkoutEntries] = useState<
+    Array<{ id: string; title: string; shareMeta?: { sourceWorkoutId?: string } | null }>
+  >([]);
+  const [unshareTarget, setUnshareTarget] = useState<{ id: string; title: string } | null>(null);
+  const [unshareItemKind, setUnshareItemKind] = useState<'weekly plan' | 'workout'>('weekly plan');
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const scrollbarRef = useRef<HTMLDivElement>(null);
   const tableWrapperRef = useRef<HTMLDivElement>(null);
@@ -441,6 +473,50 @@ export default function DayTableView({
     };
   }, []); // Empty dependency array - only run once on mount
 
+  const loadMySharedGlobalEntries = useCallback(async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setMySharedGlobalEntries([]);
+      setMySharedWorkoutEntries([]);
+      return;
+    }
+    try {
+      const headers = { Authorization: 'Bearer ' + token };
+      const [weeklyRes, workoutRes] = await Promise.all([
+        fetch('/api/workouts/my-shared-global?recordType=WEEKLY_PLAN', { headers }),
+        fetch('/api/workouts/my-shared-global?recordType=WORKOUT', { headers }),
+      ]);
+      if (weeklyRes.ok) {
+        const data = await weeklyRes.json();
+        setMySharedGlobalEntries(data.records ?? []);
+      } else {
+        setMySharedGlobalEntries([]);
+      }
+      if (workoutRes.ok) {
+        const data = await workoutRes.json();
+        setMySharedWorkoutEntries(data.records ?? []);
+      } else {
+        setMySharedWorkoutEntries([]);
+      }
+    } catch {
+      setMySharedGlobalEntries([]);
+      setMySharedWorkoutEntries([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSection === 'B' || activeSection === 'D') {
+      void loadMySharedGlobalEntries();
+    }
+  }, [activeSection, loadMySharedGlobalEntries]);
+
+  useEffect(() => {
+    if (!workoutGlobalSharedTick) return;
+    if (activeSection === 'B' || activeSection === 'D') {
+      void loadMySharedGlobalEntries();
+    }
+  }, [workoutGlobalSharedTick, activeSection, loadMySharedGlobalEntries]);
+
   if (!workoutPlan || !workoutPlan.weeks) {
     return (
       <div className="p-8 text-center text-gray-500">
@@ -494,9 +570,11 @@ export default function DayTableView({
     try {
       const weekNumber = logicalWeek.weekNumber || 1;
       const defaultName =
-        activeSection === 'D'
-          ? `Archive Week ${weekNumber}`
-          : `Week ${weekNumber}`;
+        activeSection === 'A'
+          ? `Weekly Plan ${activeSubSection} - Week ${weekNumber}`
+          : activeSection === 'D'
+            ? `Archive Week ${weekNumber}`
+            : `Week ${weekNumber}`;
       const result = await saveWeekToFavorites(
         { ...logicalWeek, workoutPlanId: workoutPlan?.id },
         {
@@ -918,6 +996,26 @@ export default function DayTableView({
     }
   };
 
+  const openCopyWithinTemplateForWeek = (sourceWeek: any) => {
+    if (!sourceWeek?.id) {
+      alert('No week selected');
+      return;
+    }
+    setTargetWeeks(sortedWeeks);
+    setCurrentWeekForModal(sourceWeek);
+    setCopyWeekModalMode('copy');
+    setShowCopyWeekModal(true);
+  };
+
+  const handleSaveTemplateWeekPlan = (week: any) => {
+    if (!week?.id) {
+      alert('No week selected');
+      return;
+    }
+    setSaveTemplateWeekSource(week);
+    setShowSaveTemplateWeeklyPlanModal(true);
+  };
+
   const openCopyWeekModalForWeek = (sourceWeek: any) => {
     if (activeSection === 'A') {
       openAssignWeekModalForWeek(sourceWeek);
@@ -980,6 +1078,322 @@ export default function DayTableView({
         alert('Failed to load target weeks for move');
       }
     })();
+  };
+
+  const findSharedEntryForWeek = (week: any) => {
+    if (!week?.id) return null;
+    return (
+      mySharedGlobalEntries.find((entry) => entry.shareMeta?.sourceWeekId === week.id) ?? null
+    );
+  };
+
+  const findSharedEntryForWorkout = (workoutId: string) => {
+    if (!workoutId) return null;
+    return (
+      mySharedWorkoutEntries.find((entry) => entry.shareMeta?.sourceWorkoutId === workoutId) ??
+      null
+    );
+  };
+
+  const openUnshareWorkoutModal = (workout: any) => {
+    const shared = findSharedEntryForWorkout(workout?.id);
+    if (!shared) return;
+    setUnshareItemKind('workout');
+    setUnshareTarget({ id: shared.id, title: shared.title });
+    setShowUnshareWeeklyPlanModal(true);
+  };
+
+  const openShareWeeklyPlanModalForWeek = (
+    week: any,
+    sourcePlanType: WeeklyPlanShareSourceType = 'YEARLY_PLAN'
+  ) => {
+    setCurrentWeekForModal(week);
+    setShareSourcePlanType(sourcePlanType);
+    setShowShareWeeklyPlanModal(true);
+  };
+
+  const openUnshareWeeklyPlanModalForWeek = (week: any) => {
+    const shared = findSharedEntryForWeek(week);
+    if (!shared) return;
+    setUnshareItemKind('weekly plan');
+    setUnshareTarget({ id: shared.id, title: shared.title });
+    setShowUnshareWeeklyPlanModal(true);
+  };
+
+  const openImportWeeklyPlansModalForWeek = (week: any) => {
+    void (async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('Please log in first');
+        return;
+      }
+      try {
+        const response = await fetch('/api/workouts/plan?type=YEARLY_PLAN', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) {
+          alert('Failed to load yearly plan weeks');
+          return;
+        }
+        const data = await response.json();
+        const weeks = mergeWeeksByWeekNumber(data.plan?.weeks || []);
+        const mergedAnchor = weeks.find((w) => w.weekNumber === week.weekNumber) || week;
+        setImportYearlyWeeks(weeks);
+        setCurrentWeekForModal(mergedAnchor);
+        setShowImportWeeklyPlansModal(true);
+      } catch (error) {
+        console.error('Error loading yearly weeks for import:', error);
+        alert('Failed to load yearly plan weeks');
+      }
+    })();
+  };
+
+  const resolveTargetWeekIds = (anchorWeekNumber: number, count: number): string[] => {
+    const sorted = [...importYearlyWeeks].sort((a, b) => a.weekNumber - b.weekNumber);
+    const startIdx = sorted.findIndex((w) => w.weekNumber === anchorWeekNumber);
+    if (startIdx === -1) return [];
+    return sorted.slice(startIdx, startIdx + count).map((w) => w.id);
+  };
+
+  const handleImportWeeklyPlans = async (payload: ImportWeeklyPlansPayload) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('Please log in first');
+    }
+
+    const { source, anchorWeekNumber, overwrite } = payload;
+
+    if (source.type === 'template') {
+      for (let i = 0; i < source.weekNumbers.length; i++) {
+        const targetWeekNumber = anchorWeekNumber + i;
+        const response = await fetch('/api/workouts/weeks/copy', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sourceSection: source.section,
+            sourceWeekNumber: source.weekNumbers[i],
+            targetSection: 'B',
+            targetWeekNumber,
+          }),
+        });
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || `Failed to import template week ${source.weekNumbers[i]}`);
+        }
+      }
+    } else if (source.type === 'plan_weeks') {
+      const targetIds = resolveTargetWeekIds(anchorWeekNumber, source.weekIds.length);
+      for (let i = 0; i < source.weekIds.length; i++) {
+        const targetWeekId = targetIds[i];
+        if (!targetWeekId) break;
+        const response = await fetch('/api/workouts/weeks/copy', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sourceWeekId: source.weekIds[i],
+            targetWeekId,
+          }),
+        });
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || 'Failed to import week');
+        }
+      }
+    } else if (source.type === 'yearly_plan_copy') {
+      for (const targetWeekId of source.targetWeekIds) {
+        const response = await fetch('/api/workouts/weeks/copy', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sourceWeekId: source.sourceWeekId,
+            targetWeekId,
+          }),
+        });
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || 'Failed to import week');
+        }
+      }
+    } else if (source.type === 'favorite') {
+      const targetIds = resolveTargetWeekIds(anchorWeekNumber, source.favoriteIds.length);
+      for (let i = 0; i < source.favoriteIds.length; i++) {
+        const targetWeekId = targetIds[i];
+        if (!targetWeekId) break;
+        const response = await fetch('/api/workouts/plans/favorites/apply', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            favoriteId: source.favoriteIds[i],
+            targetWeekIds: [targetWeekId],
+            targetPlanType: 'YEARLY_PLAN',
+          }),
+        });
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || err.details || 'Failed to import favourite week');
+        }
+      }
+    } else if (source.type === 'structure') {
+      const targetIds = resolveTargetWeekIds(anchorWeekNumber, source.items.length);
+      for (let i = 0; i < source.items.length; i++) {
+        const targetWeekId = targetIds[i];
+        if (!targetWeekId) break;
+        const response = await fetch('/api/workouts/weekly-structure/apply-week', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            planData: source.items[i].planData,
+            targetWeekId,
+            overwrite,
+          }),
+        });
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || 'Failed to import structure plan');
+        }
+      }
+    } else if (source.type === 'general_archive') {
+      for (const targetWeekId of source.targetWeekIds) {
+        if (source.source.kind === 'personal') {
+          const copyResponse = await fetch('/api/workouts/weeks/copy', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sourceWeekId: source.source.weekId,
+              targetWeekId,
+            }),
+          });
+          if (!copyResponse.ok) {
+            const err = await copyResponse.json();
+            throw new Error(err.error || 'Failed to copy archive week into yearly plan');
+          }
+        } else {
+          const importResponse = await fetch('/api/workouts/global-archive/import', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ globalEntryId: source.source.entryId }),
+          });
+          if (!importResponse.ok) {
+            const err = await importResponse.json();
+            throw new Error(err.error || 'Failed to import from general archive');
+          }
+          const importData = await importResponse.json();
+          const sourceWeekId = importData.weekId as string | undefined;
+          if (!sourceWeekId) {
+            throw new Error('Archive import did not produce a week to copy');
+          }
+
+          const copyResponse = await fetch('/api/workouts/weeks/copy', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ sourceWeekId, targetWeekId }),
+          });
+          if (!copyResponse.ok) {
+            const err = await copyResponse.json();
+            throw new Error(err.error || 'Failed to copy imported week into yearly plan');
+          }
+        }
+      }
+    } else if (source.type === 'coach_annual') {
+      for (const targetWeekId of source.targetWeekIds) {
+        const importResponse = await fetch('/api/workouts/global-archive/import', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ globalEntryId: source.entryId }),
+        });
+        if (!importResponse.ok) {
+          const err = await importResponse.json();
+          throw new Error(err.error || 'Failed to import from coach annual plan');
+        }
+        const importData = await importResponse.json();
+        const sourceWeekId = importData.weekId as string | undefined;
+        if (!sourceWeekId) {
+          throw new Error('Coach plan import did not produce a week to copy');
+        }
+
+        const copyResponse = await fetch('/api/workouts/weeks/copy', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ sourceWeekId, targetWeekId }),
+        });
+        if (!copyResponse.ok) {
+          const err = await copyResponse.json();
+          throw new Error(err.error || 'Failed to copy coach plan into yearly plan');
+        }
+      }
+    } else if (source.type === 'global_archive') {
+      const targetIds = resolveTargetWeekIds(anchorWeekNumber, source.entryIds.length);
+      for (let i = 0; i < source.entryIds.length; i++) {
+        const targetWeekId = targetIds[i];
+        if (!targetWeekId) break;
+
+        const importResponse = await fetch('/api/workouts/global-archive/import', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ globalEntryId: source.entryIds[i] }),
+        });
+        if (!importResponse.ok) {
+          const err = await importResponse.json();
+          throw new Error(err.error || 'Failed to import from general archive');
+        }
+        const importData = await importResponse.json();
+        const sourceWeekId = importData.weekId as string | undefined;
+        if (!sourceWeekId) {
+          throw new Error('Archive import did not produce a week to copy');
+        }
+
+        const copyResponse = await fetch('/api/workouts/weeks/copy', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ sourceWeekId, targetWeekId }),
+        });
+        if (!copyResponse.ok) {
+          const err = await copyResponse.json();
+          throw new Error(err.error || 'Failed to copy imported week into yearly plan');
+        }
+      }
+    }
+
+    setShowImportWeeklyPlansModal(false);
+    setImportYearlyWeeks([]);
+    setCurrentWeekForModal(null);
+    if (reloadWorkouts) await reloadWorkouts();
   };
 
   const handleCopyWeek = async (targetWeekId: string) => {
@@ -1486,6 +1900,26 @@ export default function DayTableView({
                 Export Yearly
               </button>
               )}
+
+              {activeSection === 'D' && currentWeek && (
+                findSharedEntryForWeek(currentWeek) ? (
+                  <button
+                    onClick={() => openUnshareWeeklyPlanModalForWeek(currentWeek)}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all shadow-md hover:shadow-lg"
+                    title="Remove from Global archive of shared plans"
+                  >
+                    Unshare
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => openShareWeeklyPlanModalForWeek(currentWeek, 'ARCHIVE')}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-slate-500 text-white rounded-lg hover:bg-slate-600 transition-all shadow-md hover:shadow-lg"
+                    title="Share this archive week with all Movesbook users"
+                  >
+                    Share
+                  </button>
+                )
+              )}
               
               {/* Overview Button - For Section A/C/D */}
               {activeSection !== 'B' && (
@@ -1506,7 +1940,7 @@ export default function DayTableView({
               </button>
               )}
               
-              {/* Save in Favourites Button - Section A/C/D (not yearly grid) */}
+              {/* Save — template / archive favourites (not yearly grid) */}
               {activeSection !== 'B' && (
               <button
                 type="button"
@@ -1516,14 +1950,18 @@ export default function DayTableView({
                     alert('No week selected');
                     return;
                   }
-                  await handleSaveWeekFavorite(currentWeek);
+                  if (activeSection === 'A') {
+                    await handleSaveTemplateWeekPlan(currentWeek);
+                  } else {
+                    await handleSaveWeekFavorite(currentWeek);
+                  }
                 }}
                 disabled={!!savingFavoriteWeekId}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-all shadow-md hover:shadow-lg"
-                title="Save this week in favourites"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-all shadow-md hover:shadow-lg disabled:opacity-50"
+                title={activeSection === 'A' ? 'Save this week plan to favourites' : 'Save this week in favourites'}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                Save in Favourites
+                Save
               </button>
               )}
           </div>
@@ -1533,9 +1971,9 @@ export default function DayTableView({
         <div className="p-4 pt-0">
            {/* Action Bar - Only for Section B (Yearly Plan) */}
            {activeSection === 'B' && (
-             <div className="bg-gray-100 py-3 flex items-center justify-between gap-3 border-b border-gray-300 shadow-md">
+             <div className="bg-gray-100 py-3 flex flex-nowrap items-center justify-between gap-3 border-b border-gray-300 shadow-md overflow-x-auto">
                {/* Left side - Set periods for Section B */}
-               <div className="flex items-center gap-3">
+               <div className="flex flex-nowrap items-center gap-3 shrink-0">
           <button
             onClick={() => {
                      // Initialize week range to all displayed weeks
@@ -1547,13 +1985,13 @@ export default function DayTableView({
                      setSelectedPeriodForRange(null);
                      setShowPeriodSelector(true);
                    }}
-                   className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all shadow-md bg-gray-700 text-white hover:bg-gray-800"
+                   className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all shadow-md bg-gray-700 text-white hover:bg-gray-800 whitespace-nowrap shrink-0"
                    title="Set periods for multiple weeks in yearly plan"
                  >
-                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                   <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                    </svg>
-                   <span className="font-bold text-sm">
+                   <span className="font-bold text-sm whitespace-nowrap">
                      Set periods of more weeks
                    </span>
                  </button>
@@ -1563,11 +2001,11 @@ export default function DayTableView({
                </div>
               
                {/* Right side - Action Buttons for Section B */}
-               <div className="flex items-center gap-3">
+               <div className="flex flex-nowrap items-center gap-3 shrink-0">
                 {/* Expand/Collapse All Button */}
                 <button
                   onClick={toggleWeekWorkouts}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all shadow-md"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all shadow-md whitespace-nowrap shrink-0"
                   title={expandState === 0 ? "Show workout headers for current week" : expandState === 1 ? "Show moveframes for current week" : "Collapse current week"}
                 >
                   {expandState === 0 ? 'Expand current week' : expandState === 1 ? 'Expand current week (with moveframes)' : 'Collapse current week'}
@@ -1584,10 +2022,10 @@ export default function DayTableView({
                      setCurrentWeekForModal(null);
                      setShowWeekTotalsModal(true);
                    }}
-                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all shadow-md"
+                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all shadow-md whitespace-nowrap shrink-0"
                    title="View overview of all displayed weeks in yearly plan"
                  >
-                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                    Overview of the weeks displayed
                  </button>
 
@@ -1601,20 +2039,20 @@ export default function DayTableView({
                      setCurrentWeekForModal(null);
                      setShowWeekTotalsModal(true);
                    }}
-                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all shadow-md"
+                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all shadow-md whitespace-nowrap shrink-0"
                    title="Print current view"
                  >
-                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
                    Print
                  </button>
                  
                  {/* Move Button */}
                  <button
                    onClick={() => alert('Move functionality coming soon')}
-                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-all shadow-md"
+                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-all shadow-md whitespace-nowrap shrink-0"
                    title="Move selected items"
                  >
-                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="5 9 2 12 5 15"></polyline><polyline points="9 5 12 2 15 5"></polyline><polyline points="15 19 12 22 9 19"></polyline><polyline points="19 9 22 12 19 15"></polyline><line x1="2" y1="12" x2="22" y2="12"></line><line x1="12" y1="2" x2="12" y2="22"></line></svg>
+                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><polyline points="5 9 2 12 5 15"></polyline><polyline points="9 5 12 2 15 5"></polyline><polyline points="15 19 12 22 9 19"></polyline><polyline points="19 9 22 12 19 15"></polyline><line x1="2" y1="12" x2="22" y2="12"></line><line x1="12" y1="2" x2="12" y2="22"></line></svg>
                    Move
                  </button>
         </div>
@@ -1843,6 +2281,42 @@ export default function DayTableView({
                       </button>
                     )}
                     
+                    {/* Import — load weekly plan(s) into this week and following weeks */}
+                    <button
+                      onClick={() => openImportWeeklyPlansModalForWeek(week)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-all shadow-md"
+                      title="Import one or more weekly plans starting from this week"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                      Import
+                    </button>
+
+                    {findSharedEntryForWeek(week) ? (
+                      <button
+                        onClick={() => openUnshareWeeklyPlanModalForWeek(week)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all shadow-md"
+                        title="Remove this week from the Global archive of shared plans"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                        </svg>
+                        Unshare
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => openShareWeeklyPlanModalForWeek(week, 'YEARLY_PLAN')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-slate-500 text-white rounded-lg hover:bg-slate-600 transition-all shadow-md"
+                        title="Share — export to Archive and/or share with Movesbook users"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                        Share
+                      </button>
+                    )}
+
                     {/* Print Button - Single week only */}
                     <button
                       onClick={() => {
@@ -2048,7 +2522,9 @@ export default function DayTableView({
                                         onAddMovelapAfter={onAddMovelapAfter}
                                         onDeleteWorkout={onDeleteWorkout}
                                         onSaveFavoriteWorkout={onSaveFavoriteWorkout}
+                                        onSaveTemplateWorkout={onSaveTemplateWorkout}
                                         onShareWorkout={onShareWorkout}
+                                        onShareWorkoutLink={onShareWorkout}
                                         onExportPdfWorkout={onExportPdfWorkout}
                                         onExportWorkoutToArchive={onExportWorkoutToArchive}
                                         onExportWorkoutToDone={onExportWorkoutToDone}
@@ -2060,11 +2536,13 @@ export default function DayTableView({
                                         onCopyWorkoutToClipboard={onCopyWorkoutToClipboard}
                                         hasWorkoutClipboard={hasWorkoutClipboard}
                                         onCopyWorkout={onCopyWorkout}
+                                        onImportWorkout={onImportWorkout}
                                         onPasteWorkout={onPasteWorkout}
                                         onMoveWorkout={onMoveWorkout}
                                         onCopyMoveframeToClipboard={onCopyMoveframeToClipboard}
                                         hasMoveframeClipboard={hasMoveframeClipboard}
                                         onPasteMoveframe={onPasteMoveframe}
+                                        onImportMoveframe={onImportMoveframe}
                                         onCopyMoveframe={onCopyMoveframe}
                                         onMoveMoveframe={onMoveMoveframe}
                                         hasMovelapClipboard={hasMovelapClipboard}
@@ -2158,7 +2636,58 @@ export default function DayTableView({
                   >
                     {expandState === 0 ? 'Expand All' : expandState === 1 ? 'Expand (with moveframes)' : 'Collapse All'}
                   </button>
-                  
+
+                  {activeSection === 'A' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setIsWeeklyInfoModalOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all shadow-md"
+                        style={{
+                          backgroundColor: colors.buttonEdit,
+                          color: colors.buttonEditText,
+                        }}
+                        title="Edit weekly plan description"
+                      >
+                        <FileText size={16} />
+                        Edit
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAutoPrintWeek(false);
+                          setShowAllWeeksInModal(false);
+                          setShowWeekTotalsModal(true);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-all shadow-md"
+                        title="View week overview"
+                      >
+                        Overview
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openCopyWithinTemplateForWeek(currentWeek)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-md"
+                        title="Copy this week to another week in the same template plan"
+                      >
+                        Copy
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveTemplateWeekPlan(currentWeek)}
+                        disabled={!!savingFavoriteWeekId}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-all shadow-md disabled:opacity-50"
+                        title="Save this week plan to favourites"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        Save
+                      </button>
+                    </>
+                  ) : (
+                    <>
                   {/* Save Grid Settings Button */}
                   <button
                     onClick={async () => {
@@ -2201,6 +2730,8 @@ export default function DayTableView({
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
                     Reset to Default
                   </button>
+                    </>
+                  )}
                 </div>
 
           </div>
@@ -2407,7 +2938,15 @@ export default function DayTableView({
                               onAddMovelapAfter={onAddMovelapAfter}
                               onDeleteWorkout={onDeleteWorkout}
                               onSaveFavoriteWorkout={onSaveFavoriteWorkout}
+                              onSaveTemplateWorkout={onSaveTemplateWorkout}
                               onShareWorkout={onShareWorkout}
+                              onShareWorkoutLink={onShareWorkout}
+                              findSharedWorkoutEntry={
+                                activeSection === 'D' ? findSharedEntryForWorkout : undefined
+                              }
+                              onUnshareWorkout={
+                                activeSection === 'D' ? openUnshareWorkoutModal : undefined
+                              }
                               onExportPdfWorkout={onExportPdfWorkout}
                               onExportWorkoutToArchive={onExportWorkoutToArchive}
                               onExportWorkoutToDone={onExportWorkoutToDone}
@@ -2419,11 +2958,13 @@ export default function DayTableView({
                               onCopyWorkoutToClipboard={onCopyWorkoutToClipboard}
                               hasWorkoutClipboard={hasWorkoutClipboard}
                               onCopyWorkout={onCopyWorkout}
+                              onImportWorkout={onImportWorkout}
                               onPasteWorkout={onPasteWorkout}
                               onMoveWorkout={onMoveWorkout}
                               onCopyMoveframeToClipboard={onCopyMoveframeToClipboard}
                               hasMoveframeClipboard={hasMoveframeClipboard}
                               onPasteMoveframe={onPasteMoveframe}
+                              onImportMoveframe={onImportMoveframe}
                               onCopyMoveframe={onCopyMoveframe}
                               onMoveMoveframe={onMoveMoveframe}
                               hasMovelapClipboard={hasMovelapClipboard}
@@ -2591,6 +3132,69 @@ export default function DayTableView({
           setCurrentWeekForModal(null);
         }}
         onConfirm={handleCloneArchiveWeek}
+      />
+
+      {/* Import Weekly Plans Modal (Yearly Plan) */}
+      {currentWeekForModal?.id && (
+        <ImportWeeklyPlansModal
+          isOpen={showImportWeeklyPlansModal}
+          anchorWeek={{
+            id: currentWeekForModal.id,
+            weekNumber: currentWeekForModal.weekNumber ?? 1,
+          }}
+          yearlyWeeks={importYearlyWeeks}
+          onClose={() => {
+            setShowImportWeeklyPlansModal(false);
+            setImportYearlyWeeks([]);
+            setCurrentWeekForModal(null);
+          }}
+          onConfirm={handleImportWeeklyPlans}
+        />
+      )}
+
+      <ShareWeeklyPlanModal
+        isOpen={showShareWeeklyPlanModal && Boolean(currentWeekForModal?.id)}
+        sourceWeek={currentWeekForModal}
+        sourcePlanType={shareSourcePlanType}
+        periods={periods}
+        onClose={() => {
+          setShowShareWeeklyPlanModal(false);
+          setCurrentWeekForModal(null);
+        }}
+        onArchiveExported={() => {
+          if (reloadWorkouts) void reloadWorkouts();
+        }}
+        onShared={() => void loadMySharedGlobalEntries()}
+      />
+
+      <SaveTemplateWeeklyPlanModal
+        isOpen={showSaveTemplateWeeklyPlanModal && Boolean(saveTemplateWeekSource?.id)}
+        sourceWeek={saveTemplateWeekSource}
+        activeSubSection={activeSubSection}
+        periods={periods}
+        onClose={() => {
+          setShowSaveTemplateWeeklyPlanModal(false);
+          setSaveTemplateWeekSource(null);
+        }}
+        onAssignToYearlyPlan={(sourceWeek) => {
+          setSaveTemplateWeekSource(null);
+          openAssignWeekModalForWeek(sourceWeek);
+        }}
+        onSaved={() => {
+          if (reloadWorkouts) void reloadWorkouts();
+        }}
+      />
+
+      <UnshareWeeklyPlanModal
+        isOpen={showUnshareWeeklyPlanModal && Boolean(unshareTarget?.id)}
+        globalEntryId={unshareTarget?.id ?? ''}
+        planTitle={unshareTarget?.title ?? unshareItemKind}
+        itemKind={unshareItemKind}
+        onClose={() => {
+          setShowUnshareWeeklyPlanModal(false);
+          setUnshareTarget(null);
+        }}
+        onUnshared={() => void loadMySharedGlobalEntries()}
       />
 
       {/* Move Week Modal */}

@@ -394,11 +394,15 @@ export default function SportMachinesSection() {
   const nameLanguages = useMemo(() => supportedLanguagesPeriodAdminOrder(), []);
 
   const loadCompanies = useCallback(async () => {
-    const res = await fetch('/api/workouts/machine-companies-catalog', {
-      headers: getAuthHeaders(),
-    });
-    const data = await res.json();
-    if (res.ok) setCompanies(data.companies || []);
+    try {
+      const res = await fetch('/api/workouts/machine-companies-catalog', {
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setCompanies(data.companies || []);
+    } catch {
+      /* ignore — catalog is optional */
+    }
   }, []);
 
   const loadMachines = useCallback(async () => {
@@ -413,8 +417,10 @@ export default function SportMachinesSection() {
       const res = await fetch(`/api/workouts/sport-machines?${q}`, {
         headers: getAuthHeaders(),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) setMachines(data.machines || []);
+    } catch {
+      /* ignore */
     } finally {
       setLoading(false);
     }

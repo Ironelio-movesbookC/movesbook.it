@@ -13,6 +13,11 @@ import {
   computeMoveframeAvePauseSeconds,
   formatAvePauseFromSeconds
 } from '@/utils/moveframeAvePause';
+import { computeCircuitRipSetsCount } from '@/utils/circuitMovelapPause';
+import {
+  isAerobicFastPlannerContext,
+  resolveAerobicMoveframeDistanceDescription
+} from '@/utils/aerobicFastPlannerDescription';
 
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
@@ -168,17 +173,9 @@ export default function MoveframeTable({
           ((typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]')) ||
             !!fastPlannerPayload);
         if (isFastPlanMoveframe) {
-          const isAerobic = fastPlannerPayload?.plannerType === 'aerobic';
-          const line1 = isAerobic && Array.isArray(fastPlannerPayload?.rows)
-            ? fastPlannerPayload.rows
-                .map((r: any) => {
-                  const distance = typeof r?.distance === 'string' ? r.distance.trim() : '';
-                  if (!distance) return '';
-                  const style = typeof r?.style === 'string' ? r.style.trim() : '';
-                  return style ? `${distance}\\${style}` : distance;
-                })
-                .filter(Boolean)
-                .join('+')
+          const isAerobic = isAerobicFastPlannerContext(fastPlannerPayload, moveframe.movelaps);
+          const line1 = isAerobic
+            ? resolveAerobicMoveframeDistanceDescription(fastPlannerPayload, moveframe.movelaps)
             : (moveframe.movelaps || [])
                 .map((lap: any) => {
                   const val = lap.reps ?? lap.distance ?? lap.weight ?? '';
@@ -219,6 +216,29 @@ export default function MoveframeTable({
         const content = stripCircuitTags(rawContent);
         const displayContent =
           moveframe.isCircuitBased ? stripCircuitCompactExerciseTrail(content) : content;
+        const groupedAerobicLine = resolveAerobicMoveframeDistanceDescription(
+          fastPlannerPayload,
+          moveframe.movelaps
+        );
+        if (groupedAerobicLine) {
+          const brIndex = displayContent.indexOf('<br');
+          const nlIndex = displayContent.indexOf('\n');
+          const splitAt = brIndex >= 0 ? brIndex : nlIndex >= 0 ? nlIndex : -1;
+          const noteLine =
+            splitAt >= 0
+              ? displayContent
+                  .slice(splitAt)
+                  .replace(/<br\s*\/?>/gi, '\n')
+                  .replace(/<[^>]+>/g, '')
+                  .trim()
+              : '';
+          return (
+            <div className="text-left text-sm">
+              <div className="font-medium">{groupedAerobicLine}</div>
+              {noteLine ? <div className="text-gray-600">{noteLine}</div> : null}
+            </div>
+          );
+        }
         console.log('📝 Description column:', {
           moveframeId: moveframe.id,
           manualMode: moveframe.manualMode,
@@ -239,28 +259,11 @@ export default function MoveframeTable({
           return moveframe.repetitions || '0';
         }
         if (moveframe.isCircuitBased) {
-          const totalFromField = Number(moveframe.totalReps);
-          const totalR =
-            Number.isFinite(totalFromField) && totalFromField > 0
-              ? Math.round(totalFromField)
-              : (moveframe.movelaps || []).reduce((s: number, lap: any) => {
-                  const n = parseInt(String(lap?.reps ?? '').replace(/[^\d]/g, ''), 10);
-                  return s + (Number.isFinite(n) ? n : 0);
-                }, 0);
-          let seriesN = Math.max(0, parseInt(String(moveframe.repetitions ?? '0'), 10) || 0);
-          if (seriesN <= 0 && Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0) {
-            const keys = new Set<string>();
-            for (const lap of moveframe.movelaps) {
-              const letter = String(lap?.circuitLetter || '').trim().toUpperCase();
-              if (!letter) continue;
-              const sn = lap?.localSeriesNumber ?? lap?.seriesNumber ?? 1;
-              keys.add(`${letter}:${sn}`);
-            }
-            seriesN = keys.size;
-          }
-          if (seriesN > 0 && totalR > 0) {
-            return String(Math.round(totalR / seriesN));
-          }
+          const ripSets = computeCircuitRipSetsCount({
+            notes: moveframe.notes,
+            movelaps: moveframe.movelaps,
+          });
+          if (ripSets != null && ripSets > 0) return String(ripSets);
           return '—';
         }
         return moveframe.movelaps?.length || '0';

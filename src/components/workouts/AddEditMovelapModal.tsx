@@ -3,6 +3,16 @@
 import React, { useState, useEffect } from 'react';
 import { X, Copy } from 'lucide-react';
 import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
+import {
+  getSportConfig,
+  getSportRestTypes,
+  getPauseOptions,
+  REST_TYPES,
+  isSetMetersRestType,
+} from '@/constants/moveframe.constants';
+import { restTypeDbToDisplay, restTypeDisplayToDb } from '@/utils/restTypeDb';
+import { formatPauseMetersDigits, formatRestartPulseBpm, formatRestartTimePauseDigits } from '@/utils/pauseRestValueFormat';
+import SetTimePauseSelect from './SetTimePauseSelect';
 
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
@@ -82,6 +92,26 @@ const MACRO_FINALS = ["0'", "1'", "2'", "3'", "4'", "5'", "6'", "7'", "8'", "9'"
 const ALARMS = ['-1', '-2', '-3', '-4', '-5', '-6', '-7', '-8', '-9', '-10'];
 const SOUNDS = ['Beep', 'Bell', 'Chime', 'None'];
 
+const resolveFormRestType = (source: { restType?: string | null } | null | undefined, moveframe: { restType?: string | null }) =>
+  restTypeDbToDisplay(source?.restType ?? moveframe?.restType ?? 'Set time');
+
+const resolveFormPause = (
+  source: { pause?: string | null } | null | undefined,
+  moveframe: { pause?: string | null },
+  sport: string
+) => source?.pause ?? moveframe?.pause ?? (sport === 'BODY_BUILDING' ? "1'30\"" : '');
+
+const timeToSeconds = (timeStr: string): number => {
+  if (!timeStr) return 0;
+  const hourMatch = timeStr.match(/(\d+)h/);
+  const minMatch = timeStr.match(/(\d+)'/);
+  const secMatch = timeStr.match(/'(\d+)"/);
+  const hours = hourMatch ? parseInt(hourMatch[1], 10) : 0;
+  const minutes = minMatch ? parseInt(minMatch[1], 10) : 0;
+  const seconds = secMatch ? parseInt(secMatch[1], 10) : 0;
+  return hours * 3600 + minutes * 60 + seconds;
+};
+
 export default function AddEditMovelapModal({
   isOpen,
   onClose,
@@ -95,6 +125,10 @@ export default function AddEditMovelapModal({
 }: AddEditMovelapModalProps) {
   const sport = moveframe.sport || 'SWIM';
   const config = SPORT_CONFIGS[sport as keyof typeof SPORT_CONFIGS] || SPORT_CONFIGS.SWIM;
+  const sportConfig = getSportConfig(sport);
+  const repsType = moveframe.repsType || 'Reps';
+  const sportRestTypes = getSportRestTypes(sport, repsType);
+  const showRestTypeSection = Boolean(sportConfig && 'restTypes' in sportConfig && sportRestTypes.length > 0);
   
   // Check if this is a manual moveframe
   const isManualMoveframe = moveframe.manualMode === true;
@@ -134,7 +168,7 @@ export default function AddEditMovelapModal({
   const [weight, setWeight] = useState('');
   const [muscularSector, setMuscularSector] = useState('');
   const [exercise, setExercise] = useState('');
-  const [restType, setRestType] = useState('');
+  const [restType, setRestType] = useState('Set time');
   
   // OTHER SPORTS (Gymnastic, Stretching, Pilates, Yoga, etc.)
   const [tools, setTools] = useState('');
@@ -285,6 +319,129 @@ export default function AddEditMovelapModal({
     }
   };
 
+  const handleRestTypeChange = (next: string) => {
+    setRestType(next);
+    const pauseOptions = getPauseOptions(sport, next);
+    if (isSetMetersRestType(next)) {
+      setPause('');
+    } else if (Array.isArray(pauseOptions) && pauseOptions.length > 0) {
+      setPause(pauseOptions[0]);
+    } else {
+      setPause('');
+    }
+  };
+
+  const validateRestartTime = (pauseValue: string) => {
+    const timeSeconds = timeToSeconds(time);
+    const pauseSeconds = timeToSeconds(pauseValue);
+    if (pauseSeconds > 0 && timeSeconds > 0 && pauseSeconds <= timeSeconds) {
+      alert('Restart time must be greater than Time.\n\nPlease enter a restart time that is longer than the workout time.');
+      setPause('');
+      return false;
+    }
+    return true;
+  };
+
+  const pauseFieldLabel =
+    restType === REST_TYPES.SET_TIME ? 'Pause:' :
+    isSetMetersRestType(restType) ? 'Set meters:' :
+    restType === REST_TYPES.RESTART_TIME ? 'Restart to..:' :
+    restType === REST_TYPES.RESTART_PULSE ? 'Restart to pulse..:' :
+    'Pause:';
+
+  const renderPauseControl = () => {
+    const pauseOptions = getPauseOptions(sport, restType);
+
+    if (pauseOptions === 'input') {
+      if (isSetMetersRestType(restType)) {
+        return (
+          <input
+            type="text"
+            inputMode="numeric"
+            value={pause}
+            onChange={(e) => setPause(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            onBlur={(e) => setPause(formatPauseMetersDigits(e.target.value))}
+            className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 font-mono text-center"
+            placeholder="0000-9999"
+            maxLength={4}
+          />
+        );
+      }
+      if (restType === REST_TYPES.RESTART_TIME) {
+        return (
+          <input
+            type="text"
+            value={pause}
+            onChange={(e) => setPause(e.target.value)}
+            onBlur={(e) => {
+              const input = e.target.value.trim();
+              if (!input) {
+                setPause('');
+                return;
+              }
+              const digits = input.replace(/\D/g, '');
+              if (!digits) {
+                setPause('');
+                return;
+              }
+              const formatted = formatRestartTimePauseDigits(digits);
+              setPause(formatted);
+              setTimeout(() => validateRestartTime(formatted), 100);
+            }}
+            className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 font-mono"
+            placeholder="Type digits e.g. 105"
+          />
+        );
+      }
+      if (restType === REST_TYPES.RESTART_PULSE) {
+        return (
+          <input
+            type="text"
+            inputMode="numeric"
+            value={pause}
+            onChange={(e) => setPause(e.target.value.replace(/\D/g, '').slice(0, 3))}
+            onBlur={(e) => setPause(formatRestartPulseBpm(e.target.value))}
+            className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+            placeholder="60-200"
+          />
+        );
+      }
+    }
+
+    if (restType === REST_TYPES.SET_TIME || !restType) {
+      return (
+        <SetTimePauseSelect
+          sport={sport}
+          value={pause}
+          onChange={setPause}
+        />
+      );
+    }
+
+    return (
+      <select
+        value={pause}
+        onChange={(e) => setPause(e.target.value)}
+        className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+      >
+        <option value="">Select...</option>
+        {(Array.isArray(pauseOptions) ? pauseOptions : []).map((p: string) => (
+          <option key={p} value={p}>
+            {p}
+          </option>
+        ))}
+      </select>
+    );
+  };
+
+  const pauseFieldHint =
+    isSetMetersRestType(restType) ? 'Range: 0000–9999 meters' :
+    restType === REST_TYPES.RESTART_TIME
+      ? `Must be greater than Time (${time || "0h00'00\"0"})`
+      : restType === REST_TYPES.RESTART_PULSE
+        ? 'Pulse rate range: 60-200 bpm'
+        : null;
+
   // Initialize form
   useEffect(() => {
     if (mode === 'edit' && existingMovelap) {
@@ -293,7 +450,7 @@ export default function AddEditMovelapModal({
       setDistance(existingMovelap.distance?.toString() || '');
       setSpeed(existingMovelap.speed || '');
       setStyle(existingMovelap.style || '');
-      setPause(existingMovelap.pause || '');
+      setPause(resolveFormPause(existingMovelap, moveframe, sport));
       setPace(existingMovelap.pace || '');
       setTime(existingMovelap.time || '');
       setNotes(existingMovelap.notes || '');
@@ -305,7 +462,7 @@ export default function AddEditMovelapModal({
       setTools(existingMovelap.tools || '');
       setMuscularSector(existingMovelap.muscularSector || '');
       setExercise(existingMovelap.exercise || '');
-      setRestType(existingMovelap.restType || '');
+      setRestType(resolveFormRestType(existingMovelap, moveframe));
       setR1(existingMovelap.r1 || '');
       setR2(existingMovelap.r2 || '');
     } else if (mode === 'add' && sourceMovelapForAdd && movelapInsertIndex != null) {
@@ -316,7 +473,11 @@ export default function AddEditMovelapModal({
       setDistance(src.distance?.toString() || '');
       setSpeed(src.speed || src._fastPlannerRipTime || '');
       setStyle(src.style || '');
-      setPause(typeof src.pause === 'string' ? src.pause : (src._fastPlannerBreak || src.pause?.toString() || ''));
+      setPause(
+        typeof src.pause === 'string' && src.pause.trim() !== ''
+          ? src.pause
+          : resolveFormPause(src, moveframe, sport)
+      );
       setPace(src.pace || '');
       setTime(src.time || '');
       setNotes('');
@@ -328,7 +489,7 @@ export default function AddEditMovelapModal({
       setTools(src.tools || '');
       setMuscularSector(src.muscularSector || '');
       setExercise(src.exercise || '');
-      setRestType(src.restType || '');
+      setRestType(resolveFormRestType(src, moveframe));
       setR1(src.r1 || '');
       setR2(src.r2 || '');
     } else {
@@ -345,7 +506,7 @@ export default function AddEditMovelapModal({
         setDistance(sourceMovelap.distance?.toString() || '');
         setSpeed(sourceMovelap.speed || '');
         setStyle(sourceMovelap.style || '');
-        setPause(sourceMovelap.pause || (sport === 'BODY_BUILDING' ? "1'30\"" : ''));
+        setPause(resolveFormPause(sourceMovelap, moveframe, sport));
         setPace(sourceMovelapForAdd ? '' : (sourceMovelap.pace || ''));
         setTime(sourceMovelapForAdd ? '' : (sourceMovelap.time || ''));
         setNotes('');
@@ -357,7 +518,7 @@ export default function AddEditMovelapModal({
         setTools(sourceMovelap.tools || '');
         setMuscularSector(sourceMovelap.muscularSector || '');
         setExercise(sourceMovelap.exercise || '');
-        setRestType(sourceMovelap.restType || '');
+        setRestType(resolveFormRestType(sourceMovelap, moveframe));
         setR1(sourceMovelap.r1 || '');
         setR2(sourceMovelap.r2 || '');
       } else {
@@ -365,7 +526,7 @@ export default function AddEditMovelapModal({
         setDistance(moveframe.distance?.toString() || '');
         setSpeed(moveframe.speed || '');
         setStyle(moveframe.style || '');
-        setPause(moveframe.pause || (sport === 'BODY_BUILDING' ? "1'30\"" : ''));
+        setPause(resolveFormPause(null, moveframe, sport));
         setPace('');
         setTime('');
         setNotes('');
@@ -377,7 +538,7 @@ export default function AddEditMovelapModal({
         setTools('');
         setMuscularSector('');
         setExercise('');
-        setRestType('');
+        setRestType(resolveFormRestType(null, moveframe));
         setR1('');
         setR2('');
       }
@@ -455,7 +616,7 @@ export default function AddEditMovelapModal({
         weight: weight || null,
         muscularSector: muscularSector || null,
         exercise: exercise || null,
-        restType: restType || null,
+        restType: restTypeDisplayToDb(restType || 'Set time'),
         // OTHER SPORTS specific
         tools: tools || null,
         // BIKE specific
@@ -943,46 +1104,47 @@ export default function AddEditMovelapModal({
               </>
             )}
             
-            {/* Rest Type - Only for BODY_BUILDING */}
-            {sport === 'BODY_BUILDING' && 'restTypes' in config && (
+            {/* Rest Type + Pause — matches moveframe REST\PAUSE logic */}
+            {showRestTypeSection && (
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Rest Type:</label>
                 <div className="flex items-center">
                   <select
                     value={restType}
-                    onChange={(e) => setRestType(e.target.value)}
+                    onChange={(e) => handleRestTypeChange(e.target.value)}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">Select...</option>
-                    {config.restTypes.map((rt: string) => (
+                    {sportRestTypes.map((rt: string) => (
                       <option key={rt} value={rt}>
-                        {rt.replace(/_/g, ' ')}
+                        {rt === REST_TYPES.RESTART_TIME && repsType === 'Time'
+                          ? 'Restart time (it must be > Minutes typed)'
+                          : rt}
                       </option>
                     ))}
                   </select>
                   <CopyButton fieldName="restType" fieldValue={restType} />
                 </div>
+                <p className="mt-0.5 text-[10px] text-gray-500">
+                  {restType === REST_TYPES.SET_TIME && 'Select from predefined pause values'}
+                  {isSetMetersRestType(restType) && 'Enter distance 0000–9999 m'}
+                  {restType === REST_TYPES.RESTART_TIME && 'Enter time greater than workout Time'}
+                  {restType === REST_TYPES.RESTART_PULSE && 'Enter pulse rate (60-200)'}
+                </p>
               </div>
             )}
-            
-            {/* Pause */}
+
+            {/* Pause / Restart to / Set meters */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Pause:</label>
-              <div className="flex items-center">
-                <select
-                  value={pause}
-                  onChange={(e) => setPause(e.target.value)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select...</option>
-                  {config.pauses.map((p: string) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
+              <label className="block text-xs font-medium text-gray-700 mb-1">{pauseFieldLabel}</label>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">{renderPauseControl()}</div>
                 <CopyButton fieldName="pause" fieldValue={pause} />
               </div>
+              {pauseFieldHint && (
+                <p className={`mt-0.5 text-[10px] ${restType === REST_TYPES.RESTART_TIME ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
+                  {pauseFieldHint}
+                </p>
+              )}
             </div>
             
             {/* Macro Final */}
