@@ -56,7 +56,7 @@ export default function ClubAccessOutcomeSettingsPanel({
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
-  const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
+  const playerRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const qs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
@@ -156,6 +156,27 @@ export default function ClubAccessOutcomeSettingsPanel({
     return () => window.clearTimeout(t);
   }, [toast]);
 
+  useEffect(() => {
+    return () => {
+      playerRef.current?.pause();
+      playerRef.current = null;
+    };
+  }, []);
+
+  function getPlayer(): HTMLAudioElement {
+    if (!playerRef.current) {
+      playerRef.current = new Audio();
+    }
+    return playerRef.current;
+  }
+
+  function showPlaybackError(item: OutcomeSettingItem) {
+    setToast(
+      `Unable to play audio (${item.audioFile ?? 'file'}). Re-upload on this server or check storage.`
+    );
+    setPlayingId(null);
+  }
+
   const saveItem = useCallback(
     async (item: OutcomeSettingItem) => {
       if (!data?.editable) return;
@@ -223,28 +244,28 @@ export default function ClubAccessOutcomeSettingsPanel({
 
   function toggleAudio(item: OutcomeSettingItem) {
     if (!item.audioUrl) return;
-    const el = audioRefs.current[item.typeId];
-    if (!el) return;
+    const player = getPlayer();
 
-    if (!el.paused && playingId === item.typeId) {
-      el.pause();
+    if (!player.paused && playingId === item.typeId) {
+      player.pause();
       setPlayingId(null);
       return;
     }
 
-    Object.values(audioRefs.current).forEach((audio) => {
-      if (audio) {
-        audio.pause();
-        audio.currentTime = 0;
-      }
-    });
+    player.pause();
+    player.onended = null;
+    player.onerror = null;
+    player.src = item.audioUrl;
+    player.load();
 
-    void el.play().catch(() => {
-      setToast('Unable to play audio. Re-upload the file or check server storage.');
-      setPlayingId(null);
+    player.onended = () => setPlayingId(null);
+    player.onerror = () => showPlaybackError(item);
+
+    void player.play().then(() => {
+      setPlayingId(item.typeId);
+    }).catch(() => {
+      showPlaybackError(item);
     });
-    setPlayingId(item.typeId);
-    el.onended = () => setPlayingId(null);
   }
 
   function openUploadPicker(item: OutcomeSettingItem) {
@@ -533,30 +554,19 @@ export default function ClubAccessOutcomeSettingsPanel({
                               title="Audio message"
                             >
                               {item.audioUrl && (
-                                <>
-                                  <audio
-                                    key={item.audioUrl}
-                                    ref={(el) => {
-                                      audioRefs.current[item.typeId] = el;
-                                    }}
-                                    src={item.audioUrl}
-                                    preload="none"
-                                    className="hidden"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleAudio(item)}
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-                                    title={playingId === item.typeId ? 'Pause audio' : 'Play audio'}
-                                    aria-label={playingId === item.typeId ? 'Pause audio' : 'Play audio'}
-                                  >
-                                    {playingId === item.typeId ? (
-                                      <Pause className="h-4 w-4" />
-                                    ) : (
-                                      <Volume2 className="h-4 w-4" />
-                                    )}
-                                  </button>
-                                </>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAudio(item)}
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                                  title={playingId === item.typeId ? 'Pause audio' : 'Play audio'}
+                                  aria-label={playingId === item.typeId ? 'Pause audio' : 'Play audio'}
+                                >
+                                  {playingId === item.typeId ? (
+                                    <Pause className="h-4 w-4" />
+                                  ) : (
+                                    <Volume2 className="h-4 w-4" />
+                                  )}
+                                </button>
                               )}
 
                               {data?.editable && (

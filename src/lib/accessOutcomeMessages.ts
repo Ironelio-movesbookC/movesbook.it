@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { ClubOutcomeMode } from '@prisma/client';
-import { outcomeService } from '@/lib/outcomes';
-import { findExistingTable, getTableColumns, text, audioPublicPath } from '@/lib/outcomeSettingsDb';
+import { audioPublicPath, clubAudioPublicPath, outcomeService } from '@/lib/outcomes';
+import { findExistingTable, getTableColumns, text } from '@/lib/outcomeSettingsDb';
 
 const LANGUAGE_TABLE_CANDIDATES = ['language_values', 'language_value'];
 const TYPE_TABLE_CANDIDATES = ['audio_setting_types', 'audio_setting_type'];
@@ -297,7 +297,7 @@ export async function fetchAccessOutcomeMessage(params: {
 
   const audioUrl = audioFile
     ? params.source === 'club_custom'
-      ? `/outcome_messages/club/${clubStorageId}/${audioFile}`
+      ? clubAudioPublicPath(clubStorageId, audioFile)
       : audioPublicPath(params.languageId, audioFile)
     : null;
 

@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { findExistingTable } from '@/lib/club/legacyTableLookup';
-import { fetchClubMemberOptions } from './clubMembers';
+import { fetchProcedureCustomerOptions } from './clubMembers';
 import { fetchClubOperatorOptions } from './clubOperators';
 
 const SERVICE_TABLE_CANDIDATES = ['club_setting_services', 'club_setting_service'];
@@ -62,7 +62,7 @@ export async function fetchServiceSaleFormOptions(
     }
   }
 
-  const members = await fetchClubMemberOptions(clubId);
+  const members = await fetchProcedureCustomerOptions(clubId);
   const operators = await fetchClubOperatorOptions(clubId);
 
   return { sectors, services, members, operators, currentOperatorId: currentUserId ?? null };
