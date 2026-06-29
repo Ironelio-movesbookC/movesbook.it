@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Eye, Settings, Trash2 } from 'lucide-react';
+import { Check, Eye, Settings, Trash2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
   CLUB_WEBSITE_LANGUAGE_TABS,
@@ -46,7 +46,9 @@ export default function ClubWebsiteFriendItemEditor({
   const { t } = useLanguage();
   const [activeLang, setActiveLang] = useState<ClubWebsiteLanguageCode>('en');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [saveAck, setSaveAck] = useState(false);
   const contentPanelRef = useRef<HTMLDivElement>(null);
+  const saveAckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const patch = useCallback((p: Partial<ClubWebsiteFriendItem>) => onUpdate(p), [onUpdate]);
 
@@ -54,6 +56,18 @@ export default function ClubWebsiteFriendItemEditor({
     if (!focusContentToken) return;
     contentPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [focusContentToken, item.id]);
+
+  useEffect(() => {
+    return () => {
+      if (saveAckTimerRef.current) clearTimeout(saveAckTimerRef.current);
+    };
+  }, []);
+
+  const acknowledgeSave = () => {
+    setSaveAck(true);
+    if (saveAckTimerRef.current) clearTimeout(saveAckTimerRef.current);
+    saveAckTimerRef.current = setTimeout(() => setSaveAck(false), 2000);
+  };
 
   const openContentEditor = () => {
     if (item.contentDisplayMode === 'link') {
@@ -224,6 +238,22 @@ export default function ClubWebsiteFriendItemEditor({
             className={`${LEGACY_FIELD_CLASS} w-full`}
             placeholder={t('club_website_search_keywords_placeholder')}
           />
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={acknowledgeSave}
+              className="inline-flex items-center gap-2 rounded-none border border-zinc-500 bg-zinc-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700"
+            >
+              {saveAck ? (
+                <>
+                  <Check className="h-4 w-4" />
+                  {t('club_website_save_document_done')}
+                </>
+              ) : (
+                t('club_website_save_document')
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

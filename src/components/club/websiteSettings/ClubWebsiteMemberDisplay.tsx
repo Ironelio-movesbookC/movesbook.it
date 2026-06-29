@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
@@ -103,17 +103,10 @@ export default function ClubWebsiteMemberDisplay({
     setSelectedTopicLabel(initial.label);
   }, [clubId, queryTopicId]);
 
-  const memberTopics = useMemo(
-    () => filterClubWebsiteTopicsForMembers(customTopics),
-    [customTopics]
-  );
-
   const handleSelectTopic = useCallback((id: string, label: string) => {
     setSelectedTopicId(id);
     setSelectedTopicLabel(label);
   }, []);
-
-  const noop = useCallback(() => {}, []);
 
   if (!clubId) {
     return (
@@ -124,9 +117,10 @@ export default function ClubWebsiteMemberDisplay({
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-252px)] w-full flex-1 gap-0 border-y border-zinc-400 bg-zinc-200 shadow-sm">
+    <div className="flex min-h-0 flex-1 w-full gap-0 border-y border-zinc-400 bg-zinc-200 shadow-sm">
       <ClubWebsiteSettingsSidebar
         displayMode
+        clubId={clubId}
         adminDisplayName={adminDisplayName}
         clubDisplayName={clubDisplayName}
         clubType={clubType}
@@ -134,21 +128,7 @@ export default function ClubWebsiteMemberDisplay({
         adminLocality={adminLocality}
         logoImageUrl={logoImageUrl}
         selectedTopicId={selectedTopicId}
-        customTopics={memberTopics}
-        friendListItems={friendItems}
-        friendListAdminMode={false}
         onSelectTopic={handleSelectTopic}
-        onSelectCustomTopic={(id) => {
-          const topic = memberTopics.find((tpc) => tpc.id === id);
-          handleSelectTopic(id, topic?.name ?? id);
-        }}
-        onToggleCustomTopicActivated={noop}
-        onFriendToggleActivated={noop}
-        onFriendDelete={noop}
-        onFriendMove={noop}
-        onFriendUpdateItem={noop}
-        onFriendEditContent={handleSelectTopic}
-        onFriendAddSubtopic={noop}
       />
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -158,6 +138,7 @@ export default function ClubWebsiteMemberDisplay({
           friendItems={friendItems}
           customTopics={customTopics}
           clubDisplayName={clubDisplayName}
+          clubId={clubId}
           displayMode
           showExampleNote
         />

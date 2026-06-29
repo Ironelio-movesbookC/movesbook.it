@@ -21,6 +21,8 @@ import {
   MOVEBOOK_TOPIC_ROWS,
   SOCIAL_SITE_ROWS,
 } from '@/components/club/websiteSettings/clubWebsiteSettingsSidebarData';
+import { prepareRichHtmlForDisplay } from '@/lib/richHtmlDisplay';
+import ClubBachecaMemberPanel from '@/components/club/websiteSettings/ClubBachecaMemberPanel';
 
 const PLACEHOLDER_IDS = new Set([
   ...MOVEBOOK_TOPIC_ROWS.map((r) => r.id),
@@ -82,6 +84,7 @@ export default function ClubWebsiteMemberContentPanel({
   friendItems,
   customTopics,
   clubDisplayName,
+  clubId,
   lang = 'en',
   displayMode = false,
   showExampleNote = false,
@@ -91,6 +94,7 @@ export default function ClubWebsiteMemberContentPanel({
   friendItems: ClubWebsiteFriendItem[];
   customTopics: ClubWebsiteTopic[];
   clubDisplayName: string;
+  clubId?: string | null;
   lang?: ClubWebsiteLanguageCode;
   displayMode?: boolean;
   showExampleNote?: boolean;
@@ -137,10 +141,10 @@ export default function ClubWebsiteMemberContentPanel({
   }
 
   if (selectedTopicId === 'bacheca') {
-    if (displayMode && displayEmbed) {
+    if (clubId) {
       return (
-        <ContentShell showExampleNote={showEmbedNote}>
-          <SiteEmbedFrame url={displayEmbed.url} title={displayEmbed.title} />
+        <ContentShell showExampleNote={showExampleNote}>
+          <ClubBachecaMemberPanel clubId={clubId} />
         </ContentShell>
       );
     }
@@ -365,6 +369,7 @@ function HtmlContent({
   keywords: string;
 }) {
   const { t } = useLanguage();
+  const displayHtml = useMemo(() => prepareRichHtmlForDisplay(html || '<p></p>'), [html]);
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[#ececec]">
       <div
@@ -381,7 +386,7 @@ function HtmlContent({
         </p>
         <div
           className="prose prose-sm mt-4 max-w-none text-zinc-800"
-          dangerouslySetInnerHTML={{ __html: html || '<p></p>' }}
+          dangerouslySetInnerHTML={{ __html: displayHtml }}
         />
         {keywords.trim() ? (
           <p className="mt-6 border-t border-zinc-200 pt-4 text-xs text-zinc-500">

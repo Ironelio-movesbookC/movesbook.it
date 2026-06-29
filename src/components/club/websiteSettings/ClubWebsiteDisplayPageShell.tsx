@@ -2,10 +2,10 @@
 
 import type { ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
+import AdvertisementCarousel from '@/components/AdvertisementCarousel';
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import { useClubWebsiteSettingsPage } from '@/hooks/useClubWebsiteSettingsPage';
 import ClubWebsiteDisplayBanner from '@/components/club/websiteSettings/ClubWebsiteDisplayBanner';
-import ClubWebsiteDisplayToolbar from '@/components/club/websiteSettings/ClubWebsiteDisplayToolbar';
 
 export default function ClubWebsiteDisplayPageShell({
   children,
@@ -13,7 +13,7 @@ export default function ClubWebsiteDisplayPageShell({
   children: (ctx: ReturnType<typeof useClubWebsiteSettingsPage>) => ReactNode;
 }) {
   const ctx = useClubWebsiteSettingsPage();
-  const { user, loading, clubsLoading, activeClub, bannerProfile, clubDisplayName } = ctx;
+  const { user, loading, clubsLoading, bannerProfile, clubDisplayName } = ctx;
 
   if (loading || !user) {
     return (
@@ -25,6 +25,9 @@ export default function ClubWebsiteDisplayPageShell({
 
   return (
     <div className="flex min-h-screen flex-col bg-[#ececec]">
+      <div className="shrink-0 px-2 pt-2">
+        <AdvertisementCarousel />
+      </div>
       <ClubWebsiteDisplayBanner
         clubName={clubDisplayName}
         coverImageUrl={getHeroBannerDisplayUrl(bannerProfile)}
@@ -32,7 +35,6 @@ export default function ClubWebsiteDisplayPageShell({
           bannerProfile?.profileBannerAlignment === 'center' ? 'center' : 'default'
         }
       />
-      <ClubWebsiteDisplayToolbar clubId={activeClub?.id} />
 
       <main className="flex min-h-0 flex-1 flex-col">
         {clubsLoading ? (

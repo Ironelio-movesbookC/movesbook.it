@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthorizedContext } from '@/lib/clubCardReadersApi';
+import { getBachecaReadAccess } from '@/lib/clubBachecaReadAccess';
 import {
   loadClubBachecaLabels,
   upsertClubBachecaLabel,
 } from '@/lib/clubBachecaPersistence';
-import type { BachecaLabel } from '@/lib/clubBachecaLabels';
+import {
+  filterBachecaLabelsForMembers,
+  type BachecaLabel,
+} from '@/lib/clubBachecaLabels';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,14 +28,28 @@ function parseLabelBody(body: unknown): Pick<BachecaLabel, 'id' | 'name' | 'acti
 }
 
 export async function GET(request: NextRequest) {
-  const context = await getAuthorizedContext(request);
-  if ('error' in context) return context.error;
-
-  if (!context.club?.id) {
-    return NextResponse.json({ error: 'No club found for this account' }, { status: 404 });
-  }
+  const memberView = request.nextUrl.searchParams.get('memberView') === '1';
+  const requestedClubId = request.nextUrl.searchParams.get('clubId');
 
   try {
+    if (memberView) {
+      const access = await getBachecaReadAccess(request, requestedClubId);
+      if (!access.ok) return access.error;
+
+      const labels = await loadClubBachecaLabels(access.clubId);
+      return NextResponse.json({
+        labels: filterBachecaLabelsForMembers(labels),
+        clubId: access.clubId,
+      });
+    }
+
+    const context = await getAuthorizedContext(request);
+    if ('error' in context) return context.error;
+
+    if (!context.club?.id) {
+      return NextResponse.json({ error: 'No club found for this account' }, { status: 404 });
+    }
+
     const labels = await loadClubBachecaLabels(context.club.id);
     return NextResponse.json({ labels, clubId: context.club.id });
   } catch (error) {

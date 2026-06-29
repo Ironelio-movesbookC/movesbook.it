@@ -1,17 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ChevronDown, MessagesSquare, Settings } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import ClubDashboardTopicsList from '@/components/club/ClubDashboardTopicsList';
 import { getClubDashboardFriendTopics } from '@/lib/clubWebsiteFriendList';
 import { CLUB_WEBSITE_SETTINGS_CHANGED_EVENT } from '@/lib/clubWebsiteSettingsEvents';
-import { CLUB_WEBSITE_SETTINGS_INDEX_PATH } from '@/lib/clubWebsiteSettingsPaths';
+import {
+  CLUB_WEBSITE_SETTINGS_INDEX_PATH,
+  clubTopicDashboardUrl,
+} from '@/lib/clubWebsiteSettingsPaths';
 import { filterClubWebsiteTopicsForMembers } from '@/lib/clubWebsiteTopics';
 import {
   PERSONAL_WEBSITE_TOPICS_PATH,
   personalWebsiteTopicDisplayUrl,
 } from '@/lib/personalWebsiteSettingsPaths';
+import { writeClubWorkspaceTab } from '@/lib/club/clubWorkspaceTab';
 import { useClubWebsiteFriendList } from '@/hooks/useClubWebsiteFriendList';
 import { useClubWebsiteTopics } from '@/hooks/useClubWebsiteTopics';
 import { usePersonalWebsiteFriendList } from '@/hooks/usePersonalWebsiteFriendList';
@@ -28,32 +33,20 @@ export default function PersonalMyTopicsSidebarBlock({
   canManage?: boolean;
 }) {
   const { t } = useLanguage();
+  const router = useRouter();
   const [displayOpen, setDisplayOpen] = useState(true);
   const isClubMode = Boolean(clubId);
 
   const {
     items: clubFriendItems,
-    updateItem: updateClubFriendItem,
-    toggleActivated: toggleClubFriendActivated,
-    removeItem: removeClubFriendItem,
-    moveItem: moveClubFriendItem,
-    addSubtopicUnder: addClubFriendSubtopic,
     reload: reloadClubFriendItems,
   } = useClubWebsiteFriendList(clubId);
   const {
     topics: clubTopics,
-    updateTopic: updateClubTopic,
-    toggleActivated: toggleClubTopicActivated,
-    removeTopic: removeClubTopic,
     reload: reloadClubTopics,
   } = useClubWebsiteTopics(clubId);
   const {
     items: personalFriendItems,
-    updateItem: updatePersonalFriendItem,
-    toggleActivated: togglePersonalFriendActivated,
-    removeItem: removePersonalFriendItem,
-    moveItem: movePersonalFriendItem,
-    addSubtopicUnder: addPersonalFriendSubtopic,
     reload: reloadPersonalFriendItems,
   } = usePersonalWebsiteFriendList(canManage && !isClubMode ? userId : undefined);
 
@@ -134,6 +127,18 @@ export default function PersonalMyTopicsSidebarBlock({
     ? t('sidebar_club_topics_settings_aria')
     : t('sidebar_my_topics_settings_aria');
 
+  const openClubTopicPanel = useCallback(
+    (topicId: string) => {
+      if (!clubId) return;
+      writeClubWorkspaceTab('my-entity');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('selectedClub', clubId);
+      }
+      router.push(clubTopicDashboardUrl(clubId, topicId));
+    },
+    [clubId, router],
+  );
+
   return (
     <div className="flex min-h-[44px] w-full flex-col border-b border-black/25">
       <div className="flex w-full items-stretch">
@@ -173,30 +178,13 @@ export default function PersonalMyTopicsSidebarBlock({
             clubId={clubId}
             friendTopics={clubFriendTopics}
             customTopics={clubCustomTopics}
-            friendItems={clubFriendItems}
-            adminMode={canManage}
-            onToggleFriendActivated={toggleClubFriendActivated}
-            onDeleteFriend={removeClubFriendItem}
-            onMoveFriend={moveClubFriendItem}
-            onUpdateFriendItem={updateClubFriendItem}
-            onAddFriendSubtopic={addClubFriendSubtopic}
-            onToggleCustomTopicActivated={toggleClubTopicActivated}
-            onDeleteCustomTopic={removeClubTopic}
-            onUpdateCustomTopic={updateClubTopic}
+            onViewTopicContent={openClubTopicPanel}
           />
         ) : (
           <ClubDashboardTopicsList
             friendTopics={personalTopics}
             customTopics={[]}
-            friendItems={personalFriendItems}
-            adminMode={canManage}
             topicHrefBuilder={personalWebsiteTopicDisplayUrl}
-            friendEditorHrefBuilder={() => PERSONAL_WEBSITE_TOPICS_PATH}
-            onToggleFriendActivated={togglePersonalFriendActivated}
-            onDeleteFriend={removePersonalFriendItem}
-            onMoveFriend={movePersonalFriendItem}
-            onUpdateFriendItem={updatePersonalFriendItem}
-            onAddFriendSubtopic={addPersonalFriendSubtopic}
           />
         )
       ) : displayOpen && !hasTopics ? (

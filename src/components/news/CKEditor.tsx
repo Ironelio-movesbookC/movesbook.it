@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { rewriteUploadUrlsInHtml } from '@/lib/uploadMediaUrl';
 import { CKEditor } from '@ckeditor/ckeditor5-react';
 import ClassicEditor from '@ckeditor/ckeditor5-build-classic';
 
@@ -81,11 +82,12 @@ export default function CKEditorComponent({
   onChangeRef.current = onChange;
 
   const mountKey = `${instanceId ?? id ?? 'ckeditor'}-${localeKey ?? 'default'}`;
+  const displayValue = useMemo(() => rewriteUploadUrlsInHtml(value || ''), [value]);
 
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    const next = value || '';
+    const next = displayValue;
     if (editor.getData() !== next) {
       suppressOnChangeRef.current = true;
       editor.setData(next);
@@ -93,7 +95,7 @@ export default function CKEditorComponent({
         suppressOnChangeRef.current = false;
       });
     }
-  }, [value]);
+  }, [displayValue]);
 
   useEffect(() => {
     const style = document.createElement('style');
@@ -161,9 +163,12 @@ export default function CKEditorComponent({
       <CKEditor
         key={mountKey}
         editor={ClassicEditor as any}
-        data={value || ''}
+        data={displayValue}
         config={{
           placeholder,
+          mediaEmbed: {
+            previewsInData: true,
+          },
           extraPlugins: readOnly ? [] : [NewsImageUploadAdapterPlugin],
           toolbar: readOnly
             ? ([

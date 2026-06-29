@@ -121,9 +121,19 @@ export function friendItemsToRows(items: ClubWebsiteFriendItem[]): FriendListRow
   const root = items.find((i) => i.id === 'friends-root');
   if (!root) return FRIEND_LIST_ROWS;
   const rest = items.filter((i) => i.id !== 'friends-root');
-  const order = rest.map((i) => i.id);
   const byId = Object.fromEntries(items.map((i) => [i.id, i]));
-  return [friendItemToListRow(root), ...order.map((id) => friendItemToListRow(byId[id]))];
+  const orderedRest = rest
+    .map((item) => byId[item.id])
+    .filter((item): item is ClubWebsiteFriendItem => Boolean(item));
+  return [friendItemToListRow(root), ...orderedRest.map(friendItemToListRow)];
+}
+
+function syncFriendItemParentIds(items: ClubWebsiteFriendItem[]): ClubWebsiteFriendItem[] {
+  const parentMap = inferParentIdsFromLayout(items);
+  return items.map((item) => ({
+    ...item,
+    parentId: parentMap.get(item.id) ?? item.parentId ?? null,
+  }));
 }
 
 export function getFriendItemDescendantIds(
@@ -371,9 +381,13 @@ export function saveWebsiteFriendItems(
   items: ClubWebsiteFriendItem[]
 ): void {
   if (typeof window === 'undefined' || !ownerId) return;
-  localStorage.setItem(storageKey(scope, ownerId), JSON.stringify(items));
-  if (scope === 'club') {
-    dispatchClubWebsiteSettingsChanged(ownerId);
+  try {
+    localStorage.setItem(storageKey(scope, ownerId), JSON.stringify(items));
+    if (scope === 'club') {
+      dispatchClubWebsiteSettingsChanged(ownerId);
+    }
+  } catch (error) {
+    console.error('Failed to save website friend list:', error);
   }
 }
 
@@ -448,7 +462,25 @@ function flatIdsToFriendItems(
   ids: string[],
   byId: Record<string, ClubWebsiteFriendItem>
 ): ClubWebsiteFriendItem[] {
-  return ids.map((id) => byId[id]).filter(Boolean) as ClubWebsiteFriendItem[];
+  const seen = new Set<string>();
+  const ordered: ClubWebsiteFriendItem[] = [];
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    const item = byId[id];
+    if (!item) continue;
+    seen.add(id);
+    ordered.push(item);
+  }
+  return ordered;
+}
+
+function mergeReorderedFriendItems(
+  reordered: ClubWebsiteFriendItem[],
+  previous: ClubWebsiteFriendItem[]
+): ClubWebsiteFriendItem[] {
+  const reorderedIds = new Set(reordered.map((item) => item.id));
+  const orphans = previous.filter((item) => !reorderedIds.has(item.id));
+  return syncFriendItemParentIds([...reordered, ...orphans]);
 }
 
 /** Whether an item can move up/down within its sibling group (topics or subtopics). */
@@ -497,7 +529,11 @@ export function reorderFriendItems(
     if (swapIdx < 0 || swapIdx >= layout.rootNested.length) return items;
     const rootNested = [...layout.rootNested];
     [rootNested[rootIdx], rootNested[swapIdx]] = [rootNested[swapIdx], rootNested[rootIdx]];
-    return flatIdsToFriendItems(friendListLayoutToFlatIds({ ...layout, rootNested }), byId);
+    const reordered = flatIdsToFriendItems(
+      friendListLayoutToFlatIds({ ...layout, rootNested }),
+      byId
+    );
+    return mergeReorderedFriendItems(reordered, items);
   }
 
   const peerIdx = layout.segments.findIndex((s) => s.peer.id === id);
@@ -506,7 +542,11 @@ export function reorderFriendItems(
     if (swapIdx < 0 || swapIdx >= layout.segments.length) return items;
     const segments = [...layout.segments];
     [segments[peerIdx], segments[swapIdx]] = [segments[swapIdx], segments[peerIdx]];
-    return flatIdsToFriendItems(friendListLayoutToFlatIds({ ...layout, segments }), byId);
+    const reordered = flatIdsToFriendItems(
+      friendListLayoutToFlatIds({ ...layout, segments }),
+      byId
+    );
+    return mergeReorderedFriendItems(reordered, items);
   }
 
   for (let si = 0; si < layout.segments.length; si += 1) {
@@ -518,7 +558,11 @@ export function reorderFriendItems(
     const nested = [...seg.nested];
     [nested[nestedIdx], nested[swapIdx]] = [nested[swapIdx], nested[nestedIdx]];
     const segments = layout.segments.map((s, i) => (i === si ? { ...s, nested } : s));
-    return flatIdsToFriendItems(friendListLayoutToFlatIds({ ...layout, segments }), byId);
+    const reordered = flatIdsToFriendItems(
+      friendListLayoutToFlatIds({ ...layout, segments }),
+      byId
+    );
+    return mergeReorderedFriendItems(reordered, items);
   }
 
   return items;
