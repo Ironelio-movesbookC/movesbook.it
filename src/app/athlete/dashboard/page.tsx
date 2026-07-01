@@ -601,7 +601,7 @@ function AthleteDashboardContent() {
                 }}
               ></div>
               
-              <div className="flex items-center justify-between px-4 text-sm h-full relative z-10 gap-3">
+              <div className="flex items-center justify-between px-4 text-sm h-full relative">
                 {/* Legacy-style strip (static controls; logic wired later) */}
                 <div className="flex items-center gap-4 min-w-0 overflow-x-hidden">
                   <button

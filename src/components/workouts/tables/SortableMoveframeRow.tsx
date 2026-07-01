@@ -16,6 +16,11 @@ import {
   computeMoveframeAvePauseSeconds,
   formatAvePauseFromSeconds
 } from '@/utils/moveframeAvePause';
+import { computeCircuitRipSetsCount } from '@/utils/circuitMovelapPause';
+import {
+  isAerobicFastPlannerContext,
+  resolveAerobicMoveframeDistanceDescription
+} from '@/utils/aerobicFastPlannerDescription';
 
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
@@ -158,8 +163,9 @@ export default function SortableMoveframeRow({
   const isFastPlanMoveframeMemo =
     moveframe.type === 'BATTERY' &&
     !moveframe.isCircuitBased &&
-    ((typeof moveframe.description === 'string' &&
-      moveframe.description.toLowerCase().startsWith('fast planner')) ||
+    (fastPlannerPayloadMemo != null ||
+      (typeof moveframe.description === 'string' &&
+        moveframe.description.toLowerCase().startsWith('fast planner')) ||
       (typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]')));
 
   const anaerobicFastPlannerStats = React.useMemo(() => {
@@ -528,22 +534,15 @@ export default function SortableMoveframeRow({
         const hasHtmlContent = manualContent && (manualContent.includes('<') || manualContent.includes('\n'));
 
         const fastPlannerPayload = extractFastPlannerDataFromNotes(moveframe.notes) ?? moveframe.fastPlannerData ?? null;
-        const isAerobicFastPlan = fastPlannerPayload?.plannerType === 'aerobic';
+        const isAerobicFastPlan = isAerobicFastPlannerContext(fastPlannerPayload, moveframe.movelaps);
         const isFastPlanMoveframe = moveframe.type === 'BATTERY' && !moveframe.isCircuitBased &&
-          (typeof moveframe.description === 'string' && moveframe.description.toLowerCase().startsWith('fast planner') ||
+          (fastPlannerPayload != null ||
+            (typeof moveframe.description === 'string' && moveframe.description.toLowerCase().startsWith('fast planner')) ||
             (typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]')));
         /** Aerobic only: distance\\style or fallback movelap line. Anaerobic shows Tot. reps / Tot. series / Reps\\serie instead of raw reps\\pace. */
         const fastPlanDistancesLine = isFastPlanMoveframe
-          ? isAerobicFastPlan && Array.isArray(fastPlannerPayload?.rows)
-            ? fastPlannerPayload.rows
-                .map((r: any) => {
-                  const d = typeof r?.distance === 'string' ? r.distance.trim() : '';
-                  if (!d) return '';
-                  const style = typeof r?.style === 'string' ? r.style.trim() : '';
-                  return style ? `${d}\\${style}` : d;
-                })
-                .filter(Boolean)
-                .join('+')
+          ? isAerobicFastPlan
+            ? resolveAerobicMoveframeDistanceDescription(fastPlannerPayload, moveframe.movelaps)
             : Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0
             ? moveframe.movelaps
                 .map((lap: any) => {
@@ -669,6 +668,39 @@ export default function SortableMoveframeRow({
                     return displayText;
                   }
                   const displayText = manualContent || moveframe.annotationText || 'No description';
+                  // Aerobic movelaps: rebuild grouped distance line (e.g. 80 Track x 11) instead of stored per-lap string
+                  if (
+                    DISTANCE_BASED_SPORTS.includes(moveframe.sport || '') &&
+                    Array.isArray(moveframe.movelaps) &&
+                    moveframe.movelaps.length > 0
+                  ) {
+                    const groupedLine = resolveAerobicMoveframeDistanceDescription(
+                      fastPlannerPayload,
+                      moveframe.movelaps
+                    );
+                    if (groupedLine) {
+                      const brIndex = displayText.indexOf('<br');
+                      const nlIndex = displayText.indexOf('\n');
+                      const splitAt =
+                        brIndex >= 0 ? brIndex : nlIndex >= 0 ? nlIndex : -1;
+                      const noteLine =
+                        splitAt >= 0
+                          ? displayText
+                              .slice(splitAt)
+                              .replace(/<br\s*\/?>/gi, '\n')
+                              .replace(/<[^>]+>/g, '')
+                              .trim()
+                          : '';
+                      return (
+                        <div className="text-left space-y-0.5">
+                          <div className="font-medium">{groupedLine}</div>
+                          {noteLine ? (
+                            <div className="text-gray-600 text-xs">{noteLine}</div>
+                          ) : null}
+                        </div>
+                      );
+                    }
+                  }
                   // Fast Plan: row 1 = distances only, row 2 = typed description (format "dist\\speed+...\nuserDesc")
                   const isFastPlan = typeof moveframe.notes === 'string' && moveframe.notes.includes('[FAST_PLANNER_DATA]');
                   if (isFastPlan && displayText.includes('\n')) {
@@ -839,30 +871,11 @@ export default function SortableMoveframeRow({
         if (moveframe.type === 'ANNOTATION') {
           ripDisplay = '—';
         } else if (moveframe.isCircuitBased) {
-          const totalFromField = Number(moveframe.totalReps);
-          const totalR =
-            Number.isFinite(totalFromField) && totalFromField > 0
-              ? Math.round(totalFromField)
-              : (moveframe.movelaps || []).reduce((s: number, lap: any) => {
-                  const n = parseInt(String(lap?.reps ?? '').replace(/[^\d]/g, ''), 10);
-                  return s + (Number.isFinite(n) ? n : 0);
-                }, 0);
-          let seriesN = Math.max(0, parseInt(String(moveframe.repetitions ?? '0'), 10) || 0);
-          if (seriesN <= 0 && Array.isArray(moveframe.movelaps) && moveframe.movelaps.length > 0) {
-            const keys = new Set<string>();
-            for (const lap of moveframe.movelaps) {
-              const letter = String(lap?.circuitLetter || '').trim().toUpperCase();
-              if (!letter) continue;
-              const sn = lap?.localSeriesNumber ?? lap?.seriesNumber ?? 1;
-              keys.add(`${letter}:${sn}`);
-            }
-            seriesN = keys.size;
-          }
-          if (seriesN > 0 && totalR > 0) {
-            ripDisplay = String(Math.round(totalR / seriesN));
-          } else {
-            ripDisplay = '—';
-          }
+          const ripSets = computeCircuitRipSetsCount({
+            notes: moveframe.notes,
+            movelaps: moveframe.movelaps,
+          });
+          ripDisplay = ripSets != null && ripSets > 0 ? String(ripSets) : '—';
         } else if (anaerobicFastPlannerStats) {
           ripDisplay = String(anaerobicFastPlannerStats.totalRepVolume);
         } else if (isManualModeRip && !isAerobicSport) {

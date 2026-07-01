@@ -4,8 +4,22 @@ import type { CreateProcedureRecordInput } from '../types';
 const taxDocumentSchema = z
   .object({
     documentType: z.string().optional().nullable(),
+    heading: z.string().optional().nullable(),
+    documentDate: z.string().optional().nullable(),
     documentNumber: z.string().optional().nullable(),
     causal: z.string().optional().nullable(),
+    total: z.number().optional().nullable(),
+    residualTotal: z.number().optional().nullable(),
+    methodPayment: z.string().optional().nullable(),
+    vatPercentage: z.number().optional().nullable(),
+    vatAmount: z.number().optional().nullable(),
+    net: z.number().optional().nullable(),
+    memberDisplayName: z.string().optional().nullable(),
+    originalMemberName: z.string().optional().nullable(),
+    memberAlias: z.string().optional().nullable(),
+    memberNameEditable: z.boolean().optional().nullable(),
+    formCausal: z.string().optional().nullable(),
+    counterKey: z.string().optional().nullable(),
   })
   .optional()
   .nullable();
@@ -72,7 +86,7 @@ export function mapExpenseCreateToInput(
     createReceipt: data.createReceipt,
     receiptDocumentType: data.receiptDocumentType,
     receiptNumber: data.receiptNumber,
-    receiptAnnotations: data.receiptAnnotations ?? notes,
+    receiptAnnotations: data.receiptAnnotations ?? data.taxDocument?.causal ?? null,
     serviceName: expenseName,
     taxDocument: data.taxDocument,
   };

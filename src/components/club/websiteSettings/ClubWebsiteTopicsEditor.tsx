@@ -9,16 +9,14 @@ import {
   type ClubWebsiteLanguageCode,
 } from '@/lib/clubWebsiteLanguages';
 import type { ClubWebsiteTopic } from '@/lib/clubWebsiteTopics';
-import { useClubWebsiteTopics } from '@/hooks/useClubWebsiteTopics';
-import { useClubWebsiteFriendList } from '@/hooks/useClubWebsiteFriendList';
 import {
-  clubWebsiteFriendEditorUrl,
   CLUB_WEBSITE_TOPICS_PATH,
   clubWebsiteTopicDisplayUrl,
   clubWebsiteTopicEditorUrl,
 } from '@/lib/clubWebsiteSettingsPaths';
 import ClubWebsiteAddTopicModal from '@/components/club/websiteSettings/ClubWebsiteAddTopicModal';
 import ClubWebsiteSettingsSidebar from '@/components/club/websiteSettings/ClubWebsiteSettingsSidebar';
+import { useClubWebsiteSettingsSidebar } from '@/components/club/websiteSettings/ClubWebsiteSettingsSidebarContext';
 import ClubWebsiteLastUpdatePicker, {
   LEGACY_FIELD_CLASS,
 } from '@/components/club/websiteSettings/ClubWebsiteLastUpdatePicker';
@@ -47,16 +45,8 @@ export default function ClubWebsiteTopicsEditor({
   initialTopicId?: string | null;
 }) {
   const { t } = useLanguage();
-  const { topics, hydrated, addTopic, updateTopic, toggleActivated, removeTopic } =
-    useClubWebsiteTopics(clubId);
-  const {
-    items: friendItems,
-    updateItem: updateFriendItem,
-    toggleActivated: toggleFriendActivated,
-    removeItem: removeFriendItem,
-    moveItem: moveFriendItem,
-    addSubtopicUnder,
-  } = useClubWebsiteFriendList(clubId);
+  const { topics: topicsApi } = useClubWebsiteSettingsSidebar();
+  const { topics, hydrated, addTopic, updateTopic, removeTopic } = topicsApi;
 
   const [selectedId, setSelectedId] = useState<string | null>(initialTopicId ?? null);
   const [activeLang, setActiveLang] = useState<ClubWebsiteLanguageCode>('en');
@@ -128,20 +118,8 @@ export default function ClubWebsiteTopicsEditor({
         adminLocality={adminLocality}
         logoImageUrl={logoImageUrl}
         selectedTopicId={selectedId ?? ''}
-        customTopics={topics}
         onAddTopic={handleAddTopic}
         onSelectCustomTopic={(id) => openTopic(id)}
-        onToggleCustomTopicActivated={toggleActivated}
-        friendListItems={friendItems}
-        friendListAdminMode
-        onFriendToggleActivated={toggleFriendActivated}
-        onFriendDelete={removeFriendItem}
-        onFriendMove={moveFriendItem}
-        onFriendUpdateItem={updateFriendItem}
-        onFriendEditContent={(id) => {
-          window.open(clubWebsiteFriendEditorUrl(id), '_blank', 'noopener,noreferrer');
-        }}
-        onFriendAddSubtopic={(parentId, name) => addSubtopicUnder(parentId, name)}
         highlightTopicsSection
         onSelectTopic={() => {}}
       />

@@ -57,6 +57,19 @@ function metaString(metadata: Record<string, unknown> | null | undefined, key: s
   return value != null ? String(value).trim() : '';
 }
 
+function receiptMemberName(
+  memberId: string,
+  metadata: Record<string, unknown> | null | undefined,
+  nameById: Map<string, string>
+): string {
+  const taxDocument = metadata?.taxDocument;
+  if (taxDocument && typeof taxDocument === 'object' && !Array.isArray(taxDocument)) {
+    const displayName = metaString(taxDocument as Record<string, unknown>, 'memberDisplayName');
+    if (displayName) return displayName;
+  }
+  return nameById.get(memberId) ?? memberId;
+}
+
 async function loadUserNames(ids: string[]): Promise<Map<string, string>> {
   const unique = Array.from(new Set(ids.filter(Boolean) as string[]));
   if (unique.length === 0) return new Map();
@@ -92,7 +105,17 @@ function mergeMetadata(
 
 export class ProcedureService {
   async getProcedureTypeByCode(code: string) {
-    return prisma.procedureType.findFirst({ where: { code, isActive: true } });
+    const existing = await prisma.procedureType.findFirst({ where: { code, isActive: true } });
+    if (existing) return existing;
+
+    const def = getProcedureDefinition(code);
+    if (!def) return null;
+
+    return prisma.procedureType.upsert({
+      where: { code },
+      update: { name: def.name, description: def.form.subtitle, isActive: true },
+      create: { code, name: def.name, description: def.form.subtitle, isActive: true },
+    });
   }
 
   async createRecord(
@@ -183,7 +206,8 @@ export class ProcedureService {
         initialPayment,
         paymentDate.toISOString().slice(0, 10),
         dueDate?.toISOString().slice(0, 10) ?? null,
-        input.notes ?? null
+        input.notes ?? null,
+        tx
       );
 
       if (initialPayment > 0 && input.payMode === 'card') {
@@ -434,6 +458,9 @@ export class ProcedureService {
         orderBy: { receiptDate: 'desc' },
         skip,
         take: pageSize,
+        include: {
+          procedureRecord: { select: { metadata: true } },
+        },
       }),
     ]);
 
@@ -445,7 +472,11 @@ export class ProcedureService {
       id: row.id,
       procedureRecordId: row.procedureRecordId,
       procedurePaymentId: row.procedurePaymentId,
-      memberName: nameById.get(row.memberId) ?? row.memberId,
+      memberName: receiptMemberName(
+        row.memberId,
+        (row.procedureRecord.metadata as Record<string, unknown> | null) ?? null,
+        nameById
+      ),
       documentType: row.documentType,
       documentNumber: row.documentNumber,
       amount: decimalToNumber(row.amount),

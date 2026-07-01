@@ -10,6 +10,9 @@ const moveframeInclude = {
   movelaps: {
     orderBy: { repetitionNumber: 'asc' as const },
   },
+  section: {
+    select: { name: true, color: true },
+  },
   workoutSession: {
     select: {
       name: true,

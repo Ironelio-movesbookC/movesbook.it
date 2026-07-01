@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFile, stat } from 'fs/promises';
-import { normalize } from 'path';
-import { resolvePublicPath } from '@/lib/serverPublicDir';
+import { readFile } from 'fs/promises';
+import { resolveOutcomeAudioDiskPath } from '@/lib/serverPublicDir';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +17,39 @@ function mimeForFilename(filename: string): string | null {
 
 function isSafeSegment(segment: string): boolean {
   return segment.length > 0 && !segment.includes('..') && !segment.includes('/') && !segment.includes('\\');
+}
+
+async function fetchLegacyOutcomeAudio(
+  segments: string[]
+): Promise<{ body: Buffer; mime: string } | null> {
+  const legacyOrigin = process.env.MOVESBOOK_LEGACY_ORIGIN?.trim();
+  if (!legacyOrigin) return null;
+
+  const url = `${legacyOrigin.replace(/\/$/, '')}/outcome_messages/${segments.join('/')}`;
+  try {
+    const response = await fetch(url, { next: { revalidate: 0 } });
+    if (!response.ok) return null;
+
+    const body = Buffer.from(await response.arrayBuffer());
+    if (body.length === 0) return null;
+
+    const filename = segments[segments.length - 1] ?? '';
+    const mime = response.headers.get('content-type') || mimeForFilename(filename) || 'audio/mpeg';
+    return { body, mime };
+  } catch {
+    return null;
+  }
+}
+
+function audioResponse(body: Buffer, mime: string): NextResponse {
+  return new NextResponse(body, {
+    status: 200,
+    headers: {
+      'Content-Type': mime,
+      'Content-Length': String(body.length),
+      'Cache-Control': 'public, max-age=86400, immutable',
+    },
+  });
 }
 
 /** Serve uploaded outcome audio from the same public dir used by upload routes. */
@@ -43,31 +75,19 @@ export async function GET(
       return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 });
     }
 
-    const diskPath = normalize(resolvePublicPath('outcome_messages', ...segments));
-    const root = normalize(resolvePublicPath('outcome_messages'));
-    if (!diskPath.startsWith(root)) {
-      return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
+    const diskPath = await resolveOutcomeAudioDiskPath(...segments);
+    if (diskPath) {
+      const buffer = await readFile(diskPath);
+      return audioResponse(buffer, mime);
     }
 
-    const info = await stat(diskPath);
-    if (!info.isFile() || info.size === 0) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const legacy = await fetchLegacyOutcomeAudio(segments);
+    if (legacy) {
+      return audioResponse(legacy.body, legacy.mime);
     }
 
-    const buffer = await readFile(diskPath);
-    return new NextResponse(buffer, {
-      status: 200,
-      headers: {
-        'Content-Type': mime,
-        'Content-Length': String(info.size),
-        'Cache-Control': 'public, max-age=86400, immutable',
-      },
-    });
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException)?.code;
-    if (code === 'ENOENT') {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    }
     console.error('GET /api/outcome-messages:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

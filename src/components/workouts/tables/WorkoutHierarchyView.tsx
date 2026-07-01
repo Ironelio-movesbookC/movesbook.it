@@ -51,7 +51,11 @@ interface WorkoutHierarchyViewProps {
   onAddMovelapAfter?: (movelap: any, index: number, moveframe: any, workout: any, day: any) => void;
   onDeleteWorkout?: (workout: any, day: any) => void;
   onSaveFavoriteWorkout?: (workout: any, day: any) => void;
+  onSaveTemplateWorkout?: (workout: any, day: any) => void;
   onShareWorkout?: (workout: any, day: any) => void;
+  onShareWorkoutLink?: (workout: any, day: any) => void;
+  findSharedWorkoutEntry?: (workoutId: string) => { id: string; title: string } | null;
+  onUnshareWorkout?: (workout: any, day: any) => void;
   onExportPdfWorkout?: (workout: any, day: any) => void;
   onExportWorkoutToArchive?: (workout: any, day: any) => void;
   onExportWorkoutToDone?: (workout: any, day: any) => void;
@@ -62,11 +66,13 @@ interface WorkoutHierarchyViewProps {
   onCopyWorkoutToClipboard?: (workout: any) => void;
   hasWorkoutClipboard?: boolean;
   onCopyWorkout?: (workout: any, day: any) => void;
+  onImportWorkout?: (workout: any, day: any) => void;
   onPasteWorkout?: (day: any) => void;
   onMoveWorkout?: (workout: any, day: any) => void;
   onCopyMoveframeToClipboard?: (moveframe: any) => void;
   hasMoveframeClipboard?: boolean;
   onPasteMoveframe?: (workout: any) => void;
+  onImportMoveframe?: (workout: any, day: any) => void;
   onCopyMoveframe?: (moveframe: any, workout: any, day: any, workoutDisplayNumber?: number) => void;
   onMoveMoveframe?: (moveframe: any, workout: any, day: any, workoutDisplayNumber?: number) => void;
   hasMovelapClipboard?: boolean;
@@ -100,7 +106,11 @@ export default function WorkoutHierarchyView({
   onAddMovelapAfter,
   onDeleteWorkout,
   onSaveFavoriteWorkout,
+  onSaveTemplateWorkout,
   onShareWorkout,
+  onShareWorkoutLink,
+  findSharedWorkoutEntry,
+  onUnshareWorkout,
   onExportPdfWorkout,
   onExportWorkoutToArchive,
   onExportWorkoutToDone,
@@ -111,11 +121,13 @@ export default function WorkoutHierarchyView({
   onCopyWorkoutToClipboard,
   hasWorkoutClipboard,
   onCopyWorkout,
+  onImportWorkout,
   onPasteWorkout,
   onMoveWorkout,
   onCopyMoveframeToClipboard,
   hasMoveframeClipboard,
   onPasteMoveframe,
+  onImportMoveframe,
   onCopyMoveframe,
   onMoveMoveframe,
   hasMovelapClipboard,
@@ -232,7 +244,17 @@ export default function WorkoutHierarchyView({
               onEdit={() => onEditWorkout?.(workout, day)}
               onDelete={() => onDeleteWorkout?.(workout, day)}
               onSaveFavorite={() => onSaveFavoriteWorkout?.(workout, day)}
+              onSaveWorkout={
+                activeSection === 'A' && onSaveTemplateWorkout
+                  ? () => onSaveTemplateWorkout(workout, day)
+                  : undefined
+              }
               onShareWorkout={(workout, day) => onShareWorkout?.(workout, day)}
+              onShareWorkoutLink={(workout, day) =>
+                onShareWorkoutLink?.(workout, day) ?? onShareWorkout?.(workout, day)
+              }
+              sharedGlobalEntry={findSharedWorkoutEntry?.(workout.id) ?? null}
+              onUnshareWorkout={(workout, day) => onUnshareWorkout?.(workout, day)}
               onExportPdfWorkout={(workout, day) => onExportPdfWorkout?.(workout, day)}
               onExportWorkoutToArchive={(workout, day) => onExportWorkoutToArchive?.(workout, day)}
               onExportWorkoutToDone={(workout, day) => onExportWorkoutToDone?.(workout, day)}
@@ -251,11 +273,13 @@ export default function WorkoutHierarchyView({
               onCopyWorkoutToClipboard={() => onCopyWorkoutToClipboard?.(workout)}
               hasWorkoutClipboard={hasWorkoutClipboard}
               onCopyWorkout={() => onCopyWorkout?.(workout, day)}
+              onImportWorkout={() => onImportWorkout?.(workout, day)}
               onPasteWorkout={() => onPasteWorkout?.(day)}
               onMoveWorkout={() => onMoveWorkout?.(workout, day)}
               onCopyMoveframeToClipboard={onCopyMoveframeToClipboard}
               hasMoveframeClipboard={hasMoveframeClipboard}
               onPasteMoveframe={onPasteMoveframe}
+              onImportMoveframe={() => onImportMoveframe?.(workout, day)}
               onCopyMoveframe={(moveframe) =>
                 onCopyMoveframe?.(moveframe, workout, day, workoutIndex)
               }

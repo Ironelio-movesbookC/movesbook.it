@@ -34,6 +34,7 @@ export type ServicePaymentSubmitValues = {
   taxDocument?: TaxDocumentFormValues;
   createReceipt: boolean;
   receiptNumber?: string;
+  receiptAnnotations?: string;
 };
 
 type Props = {
@@ -235,6 +236,7 @@ export default function ServicePaymentForm({
       taxDocument: taxDocument ?? undefined,
       createReceipt: taxDoc,
       receiptNumber: taxDocument?.documentNumber || undefined,
+      receiptAnnotations: taxDocument?.causal || undefined,
     });
   }
 
@@ -509,6 +511,7 @@ export default function ServicePaymentForm({
       <TaxDocumentModal
         open={taxModalOpen}
         memberName={purchase.memberName}
+        defaultCausal={description}
         defaultTotal={purchase.value}
         defaultResidual={newRest}
         initial={taxDocument ?? undefined}

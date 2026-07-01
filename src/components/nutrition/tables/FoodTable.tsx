@@ -13,6 +13,11 @@ import {
   computeNutritionFoodAvePauseSeconds,
   formatAvePauseFromSeconds
 } from '@/utils/nutrition-moveframeAvePause';
+import { computeCircuitRipSetsCount } from '@/utils/circuitMovelapPause';
+import {
+  isAerobicFastPlannerContext,
+  resolveAerobicMoveframeDistanceDescription
+} from '@/utils/aerobicFastPlannerDescription';
 
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
@@ -168,17 +173,15 @@ export default function NutritionFoodTable({
           ((typeof nutritionFood.notes === 'string' && nutritionFood.notes.includes('[FAST_PLANNER_DATA]')) ||
             !!fastPlannerPayload);
         if (isFastPlanNutritionFood) {
-          const isAerobic = fastPlannerPayload?.plannerType === 'aerobic';
-          const line1 = isAerobic && Array.isArray(fastPlannerPayload?.rows)
-            ? fastPlannerPayload.rows
-                .map((r: any) => {
-                  const distance = typeof r?.distance === 'string' ? r.distance.trim() : '';
-                  if (!distance) return '';
-                  const style = typeof r?.style === 'string' ? r.style.trim() : '';
-                  return style ? `${distance}\\${style}` : distance;
-                })
-                .filter(Boolean)
-                .join('+')
+          const isAerobic = isAerobicFastPlannerContext(
+            fastPlannerPayload,
+            nutritionFood.nutritionComponents
+          );
+          const line1 = isAerobic
+            ? resolveAerobicMoveframeDistanceDescription(
+                fastPlannerPayload,
+                nutritionFood.nutritionComponents
+              )
             : (nutritionFood.nutritionComponents || [])
                 .map((lap: any) => {
                   const val = lap.reps ?? lap.distance ?? lap.weight ?? '';
@@ -219,6 +222,29 @@ export default function NutritionFoodTable({
         const content = stripCircuitTags(rawContent);
         const displayContent =
           nutritionFood.isCircuitBased ? stripCircuitCompactExerciseTrail(content) : content;
+        const groupedAerobicLine = resolveAerobicMoveframeDistanceDescription(
+          fastPlannerPayload,
+          nutritionFood.nutritionComponents
+        );
+        if (groupedAerobicLine) {
+          const brIndex = displayContent.indexOf('<br');
+          const nlIndex = displayContent.indexOf('\n');
+          const splitAt = brIndex >= 0 ? brIndex : nlIndex >= 0 ? nlIndex : -1;
+          const noteLine =
+            splitAt >= 0
+              ? displayContent
+                  .slice(splitAt)
+                  .replace(/<br\s*\/?>/gi, '\n')
+                  .replace(/<[^>]+>/g, '')
+                  .trim()
+              : '';
+          return (
+            <div className="text-left text-sm">
+              <div className="font-medium">{groupedAerobicLine}</div>
+              {noteLine ? <div className="text-gray-600">{noteLine}</div> : null}
+            </div>
+          );
+        }
         console.log('📝 Description column:', {
           nutritionFoodId: nutritionFood.id,
           manualMode: nutritionFood.manualMode,
@@ -239,28 +265,11 @@ export default function NutritionFoodTable({
           return nutritionFood.repetitions || '0';
         }
         if (nutritionFood.isCircuitBased) {
-          const totalFromField = Number(nutritionFood.totalReps);
-          const totalR =
-            Number.isFinite(totalFromField) && totalFromField > 0
-              ? Math.round(totalFromField)
-              : (nutritionFood.nutritionComponents || []).reduce((s: number, lap: any) => {
-                  const n = parseInt(String(lap?.reps ?? '').replace(/[^\d]/g, ''), 10);
-                  return s + (Number.isFinite(n) ? n : 0);
-                }, 0);
-          let seriesN = Math.max(0, parseInt(String(nutritionFood.repetitions ?? '0'), 10) || 0);
-          if (seriesN <= 0 && Array.isArray(nutritionFood.nutritionComponents) && nutritionFood.nutritionComponents.length > 0) {
-            const keys = new Set<string>();
-            for (const lap of nutritionFood.nutritionComponents) {
-              const letter = String(lap?.circuitLetter || '').trim().toUpperCase();
-              if (!letter) continue;
-              const sn = lap?.localSeriesNumber ?? lap?.seriesNumber ?? 1;
-              keys.add(`${letter}:${sn}`);
-            }
-            seriesN = keys.size;
-          }
-          if (seriesN > 0 && totalR > 0) {
-            return String(Math.round(totalR / seriesN));
-          }
+          const ripSets = computeCircuitRipSetsCount({
+            notes: nutritionFood.notes,
+            movelaps: nutritionFood.nutritionComponents,
+          });
+          if (ripSets != null && ripSets > 0) return String(ripSets);
           return '—';
         }
         return nutritionFood.nutritionComponents?.length || '0';

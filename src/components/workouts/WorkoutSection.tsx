@@ -41,6 +41,7 @@ import { movelapApi } from '@/utils/api.utils';
 // Helper Functions
 import { sectionHelpers } from '@/utils/workout.helpers';
 import { restTypeDisplayToDb } from '@/utils/restTypeDb';
+import { isSportSectionB, AEROBIC_SPORTS } from '@/constants/moveframe.constants';
 import { getWorkoutDisplayNumber } from '@/lib/workoutDisplayOrder';
 
 // Custom Hooks
@@ -85,6 +86,12 @@ import BulkAddMovelapModal from '@/components/workouts/BulkAddMovelapModal';
 import CreateYearlyPlanModal from '@/components/workouts/modals/CreateYearlyPlanModal';
 import InsertActionsModal from '@/components/workouts/modals/InsertActionsModal';
 import ImportFromPlanModal from '@/components/workouts/modals/ImportFromPlanModal';
+import ImportWorkoutModal, {
+  type ImportWorkoutPayload,
+} from '@/components/workouts/modals/ImportWorkoutModal';
+import ImportMoveframeModal, {
+  type ImportMoveframePayload,
+} from '@/components/workouts/modals/ImportMoveframeModal';
 import CopyFromTemplateModal from '@/components/workouts/modals/CopyFromTemplateModal';
 import DayPrintModal from '@/components/workouts/modals/DayPrintModal';
 import WorkoutPrintModal from '@/components/workouts/modals/WorkoutPrintModal';
@@ -96,6 +103,7 @@ import CopyWeekModal from '@/components/workouts/modals/CopyWeekModal';
 import ExportWorkoutToArchiveModal from '@/components/workouts/modals/ExportWorkoutToArchiveModal';
 import ExportWorkoutToDoneModal from '@/components/workouts/modals/ExportWorkoutToDoneModal';
 import ExportWorkoutToYearlyModal from '@/components/workouts/modals/ExportWorkoutToYearlyModal';
+import SaveTemplateWorkoutModal from '@/components/workouts/modals/SaveTemplateWorkoutModal';
 import PlanGymWeekModal, {
   type PlanGymWeekAnswers,
   type GoalId,
@@ -106,19 +114,25 @@ import PlanGymWeekManualModal, {
   type PlanGymWeekRescanParams
 } from '@/components/workouts/modals/PlanGymWeekManualModal';
 import PlanGymWeekFastPlanModal from '@/components/workouts/modals/PlanGymWeekFastPlanModal';
-import SelectGymPlanWeeksModal, { type GymPlanWeekOption } from '@/components/workouts/modals/SelectGymPlanWeeksModal';
+import SelectGymPlanWeeksModal, {
+  type GymPlanWeekSelectResult,
+  type GymPlanWeekOption,
+} from '@/components/workouts/modals/SelectGymPlanWeeksModal';
+import SaveGymWeekToArchiveModal from '@/components/workouts/modals/SaveGymWeekToArchiveModal';
+import type { GymWeekArchiveSaveMetadata } from '@/types/gymWeekArchive';
 import PlanGymWeekAssignModal from '@/components/workouts/modals/PlanGymWeekAssignModal';
 import PlanGymWeekWeekActionsMenu, {
   type PlanGymWeekWeekAction,
 } from '@/components/workouts/modals/PlanGymWeekWeekActionsMenu';
 import { type LastWorkoutBySector } from '@/components/workouts/PlanGymWeekWizard';
 import { buildHelpedRoutines } from '@/utils/planGymWeekLogic';
-import type { GymWeekPlanLaunchContext } from '@/types/gymWeekAssignment';
+import type { GymWeekPlanLaunchContext, GymWeekPlanSourceSection } from '@/types/gymWeekAssignment';
 import {
   deleteGymWeekAssignment,
   getGymWeekAssignment,
   weekHasGymPlan,
 } from '@/utils/gymWeekAssignmentStorage';
+import { saveGymWeekPlanToArchive } from '@/utils/gymWeekArchivePlan';
 import DayOverviewModal from '@/components/workouts/DayOverviewModal';
 import WorkoutOverviewModal from '@/components/workouts/WorkoutOverviewModal';
 import ExportSharePrint from '@/components/workouts/ExportSharePrint';
@@ -349,6 +363,16 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [dayForCopyMoveModal, setDayForCopyMoveModal] = useState<any>(null);
   const [workoutClipboard, setWorkoutClipboard] = useState<any>(null);
   const [workoutForCopyMoveModal, setWorkoutForCopyMoveModal] = useState<any>(null);
+  const [showImportWorkoutModal, setShowImportWorkoutModal] = useState(false);
+  const [workoutImportTarget, setWorkoutImportTarget] = useState<{
+    workout: any;
+    day: any;
+  } | null>(null);
+  const [showImportMoveframeModal, setShowImportMoveframeModal] = useState(false);
+  const [moveframeImportTarget, setMoveframeImportTarget] = useState<{
+    workout: any;
+    day: any;
+  } | null>(null);
   const [moveframeClipboard, setMoveframeClipboard] = useState<any>(null);
   const [moveframeForCopyMoveModal, setMoveframeForCopyMoveModal] = useState<any>(null);
   const [sourceWorkoutDisplayNumber, setSourceWorkoutDisplayNumber] = useState<number | null>(null);
@@ -391,27 +415,39 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [planGymWeekRescanParams, setPlanGymWeekRescanParams] = useState<PlanGymWeekRescanParams | null>(null);
   const [planGymWeekTrainingLevel, setPlanGymWeekTrainingLevel] = useState<TrainingLevel | null>(null);
   const [planGymWeekWizardInitialStep, setPlanGymWeekWizardInitialStep] = useState<1 | 2>(1);
-  const [gymWeekLaunch, setGymWeekLaunch] = useState<GymWeekPlanLaunchContext>({ mode: 'ggw' });
+  const [gymWeekLaunch, setGymWeekLaunch] = useState<GymWeekPlanLaunchContext>({
+    mode: 'ggw',
+    sourceSection: 'A',
+    templateKey: 'A',
+  });
   const [showSelectGymPlanWeeksModal, setShowSelectGymPlanWeeksModal] = useState(false);
   const [showPlanGymWeekAssignModal, setShowPlanGymWeekAssignModal] = useState(false);
   const [planPendingAssign, setPlanPendingAssign] = useState<PlanGymWeekManualResult | null>(null);
   const [assignTargetWeeks, setAssignTargetWeeks] = useState<{ id: string; weekNumber: number }[]>([]);
+  const [assignTargetDays, setAssignTargetDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
+  const [assignTargetWeekOptions, setAssignTargetWeekOptions] = useState<GymPlanWeekOption[]>([]);
+  const [showSaveGymWeekToArchiveModal, setShowSaveGymWeekToArchiveModal] = useState(false);
+  const [planPendingArchiveSave, setPlanPendingArchiveSave] = useState<PlanGymWeekManualResult | null>(null);
+  const [gymPlanLockedWeeks, setGymPlanLockedWeeks] = useState<{ id: string; weekNumber: number }[] | undefined>(
+    undefined
+  );
   const [editGymWeekAssignment, setEditGymWeekAssignment] = useState<ReturnType<typeof getGymWeekAssignment>>(null);
   const [gymWeekMenuOpen, setGymWeekMenuOpen] = useState(false);
   const [gymWeekMenuAnchor, setGymWeekMenuAnchor] = useState<DOMRect | null>(null);
   const [gymWeekMenuWeekId, setGymWeekMenuWeekId] = useState<string | null>(null);
 
-  const gymPlanWeekOptions: GymPlanWeekOption[] = useMemo(() => {
-    const weeks = workoutPlan?.weeks ?? [];
-    return weeks.map((w) => ({
-      id: w.id,
-      weekNumber: w.weekNumber,
-      periodName: w.period?.name,
-      startDateLabel: w.days?.[0]?.date
-        ? new Date(w.days[0].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-        : undefined,
-    }));
-  }, [workoutPlan?.weeks]);
+  const launchContextForSection = useCallback(
+    (section: SectionId, subSection: 'A' | 'B' | 'C'): GymWeekPlanLaunchContext => {
+      if (section === 'D') {
+        return { mode: 'ggw', sourceSection: 'D' };
+      }
+      if (section === 'B') {
+        return { mode: 'ggw', sourceSection: 'B' };
+      }
+      return { mode: 'ggw', sourceSection: 'A', templateKey: subSection };
+    },
+    [],
+  );
 
   const beginGymWeekWizard = useCallback((launch: GymWeekPlanLaunchContext) => {
     setGymWeekLaunch(launch);
@@ -423,8 +459,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   }, []);
 
   const openPlanGymWeekFromHeader = useCallback(() => {
-    beginGymWeekWizard({ mode: 'ggw' });
-  }, [beginGymWeekWizard]);
+    beginGymWeekWizard(launchContextForSection(activeSection, activeSubSection));
+  }, [beginGymWeekWizard, launchContextForSection, activeSection, activeSubSection]);
 
   const openPlanGymWeekForWeek = useCallback(
     (week: { id: string; weekNumber: number }, anchorEl?: HTMLElement | null) => {
@@ -435,13 +471,16 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
         setGymWeekMenuOpen(true);
         return;
       }
+      const sourceSection: GymWeekPlanSourceSection = activeSection === 'A' ? 'A' : 'B';
       beginGymWeekWizard({
         mode: 'sgw',
+        sourceSection,
         targetWeekId: week.id,
         targetWeekNumber: week.weekNumber,
+        ...(sourceSection === 'A' ? { templateKey: activeSubSection } : {}),
       });
     },
-    [beginGymWeekWizard]
+    [beginGymWeekWizard, activeSection, activeSubSection]
   );
 
   const handleGymWeekMenuAction = useCallback(
@@ -473,6 +512,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
         }
         beginGymWeekWizard({
           mode: 'sgw',
+          sourceSection: 'B',
           targetWeekId: weekId,
           targetWeekNumber: weekMeta?.weekNumber,
         });
@@ -482,14 +522,19 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       if (action === 'edit_current' && existing) {
         setGymWeekLaunch({
           mode: 'sgw',
+          sourceSection: existing.sourceSection ?? 'B',
           targetWeekId: weekId,
           targetWeekNumber: weekMeta?.weekNumber,
+          templateKey: existing.templateKey,
         });
         setPlanGymWeekGoals(
           existing.plan.days.map((_, i) => planGymWeekGoals[i] ?? ('hypertrophy' as GoalId))
         );
         setPlanGymWeekInitialPlan(existing.plan);
         setPlanGymWeekManualDaysCount(existing.plan.daysCount);
+        if (existing.plan.trainingLevel != null) {
+          setPlanGymWeekTrainingLevel(existing.plan.trainingLevel);
+        }
         setEditGymWeekAssignment(existing);
         setShowPlanGymWeekManualForm(true);
       }
@@ -498,25 +543,53 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   );
 
   const afterGymPlanBuilt = useCallback(
-    (plan: PlanGymWeekManualResult) => {
+    async (plan: PlanGymWeekManualResult) => {
       setPlanGymWeekCreatedPlan(null);
+
+      if (gymWeekLaunch.sourceSection === 'D') {
+        setPlanPendingArchiveSave(plan);
+        setShowSaveGymWeekToArchiveModal(true);
+        return;
+      }
+
       setPlanPendingAssign(plan);
 
       if (gymWeekLaunch.mode === 'sgw' && gymWeekLaunch.targetWeekId) {
         const w = workoutPlan?.weeks?.find((wk: { id: string }) => wk.id === gymWeekLaunch.targetWeekId);
-        setAssignTargetWeeks([
-          {
-            id: gymWeekLaunch.targetWeekId,
-            weekNumber: w?.weekNumber ?? gymWeekLaunch.targetWeekNumber ?? 0,
-          },
-        ]);
-        setShowPlanGymWeekAssignModal(true);
+        const weekMeta = {
+          id: gymWeekLaunch.targetWeekId,
+          weekNumber: w?.weekNumber ?? gymWeekLaunch.targetWeekNumber ?? 0,
+        };
+        setGymPlanLockedWeeks([weekMeta]);
+        setShowSelectGymPlanWeeksModal(true);
         return;
       }
 
+      setGymPlanLockedWeeks(undefined);
       setShowSelectGymPlanWeeksModal(true);
     },
     [gymWeekLaunch, workoutPlan?.weeks]
+  );
+
+  const handleSaveGymWeekToArchive = useCallback(
+    async (metadata: GymWeekArchiveSaveMetadata) => {
+      if (!planPendingArchiveSave) return;
+      const { weekNumber } = await saveGymWeekPlanToArchive(
+        planPendingArchiveSave,
+        planGymWeekGoals,
+        metadata,
+      );
+      showMessage(
+        'success',
+        `"${metadata.title}" saved to Archive as Week ${weekNumber} (Day 1, Day 2, …).`,
+      );
+      setPlanGymWeekTrainingLevel(null);
+      setPlanPendingArchiveSave(null);
+      if (activeSection === 'D') {
+        await loadWorkoutData('D');
+      }
+    },
+    [planPendingArchiveSave, planGymWeekGoals, showMessage, activeSection, loadWorkoutData],
   );
 
   // ==================== EXPANSION STATE (Using Custom Hook) ====================
@@ -695,6 +768,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [showShareWorkoutModal, setShowShareWorkoutModal] = useState(false);
   const [workoutToShare, setWorkoutToShare] = useState<any>(null);
   const [dayForWorkoutShare, setDayForWorkoutShare] = useState<any>(null);
+  const [workoutGlobalSharedTick, setWorkoutGlobalSharedTick] = useState(0);
   const [showShareDayModal, setShowShareDayModal] = useState(false);
   const [dayToShare, setDayToShare] = useState<any>(null);
   const [showExportDayToTemplateModal, setShowExportDayToTemplateModal] = useState(false);
@@ -705,6 +779,9 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   const [workoutForExportToDone, setWorkoutForExportToDone] = useState<any>(null);
   const [showExportWorkoutToYearlyModal, setShowExportWorkoutToYearlyModal] = useState(false);
   const [workoutForExportToYearly, setWorkoutForExportToYearly] = useState<any>(null);
+  const [showSaveTemplateWorkoutModal, setShowSaveTemplateWorkoutModal] = useState(false);
+  const [workoutToSaveTemplate, setWorkoutToSaveTemplate] = useState<any>(null);
+  const [dayForSaveTemplateWorkout, setDayForSaveTemplateWorkout] = useState<any>(null);
   const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
   const [showMoveWeekModal, setShowMoveWeekModal] = useState(false);
   const [showWeekTotalsModal, setShowWeekTotalsModal] = useState(false);
@@ -823,14 +900,15 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
     }
     
     const baseReps = parseInt(moveframeData.repetitions) || 1;
-    const AEROBIC_SPORTS = ['SWIM', 'BIKE', 'MTB', 'SPINNING', 'RUN', 'ROWING', 'CANOEING', 'KAYAKING', 'SKATE', 'SKI', 'SNOWBOARD', 'WALKING', 'HIKING'];
-    const seriesMultiplier = AEROBIC_SPORTS.includes(moveframeData.sport) ? (parseInt(moveframeData.aerobicSeries) || 1) : 1;
-    const repsCount = baseReps * seriesMultiplier;
+    const aerobicSeriesNum = AEROBIC_SPORTS.includes(moveframeData.sport as any)
+      ? parseInt(moveframeData.aerobicSeries) || 1
+      : 1;
+    const repsCount = baseReps * aerobicSeriesNum;
     
     console.log('🔧 [generateMovelaps] Starting generation:', {
       baseReps,
       aerobicSeries: moveframeData.aerobicSeries,
-      seriesMultiplier,
+      aerobicSeriesNum,
       repsCount,
       planningMode: moveframeData.planningMode,
       hasIndividualPlans: moveframeData.planningMode === 'individual',
@@ -844,16 +922,21 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
     
     console.log('🔧 [generateMovelaps] hasIndividualPlans:', hasIndividualPlans);
     
+    const isSectionB = isSportSectionB(moveframeData.sport);
+    const isAerobic = AEROBIC_SPORTS.includes(moveframeData.sport as any);
+
     for (let i = 0; i < repsCount; i++) {
       // If using individual plans, get values from the specific plan
       const plan = hasIndividualPlans ? moveframeData.individualPlans[i] : null;
-      
+      const isLastSerieOfExercise = i === repsCount - 1;
+      const isLastRepInAerobicGroup = isAerobic && (i + 1) % baseReps === 0;
+
       console.log(`🔧 [generateMovelaps] Iteration ${i + 1}:`, {
         hasIndividualPlans,
         planExists: !!plan,
-        planData: plan ? { reps: plan.reps, weight: plan.weight, tools: plan.tools } : null
+        planData: plan ? { reps: plan.reps, weight: plan.weight, tools: plan.tools, pause: plan.pause } : null
       });
-      
+
       const lapPace =
         hasIndividualPlans && plan
           ? plan.workPace != null && String(plan.workPace).trim() !== ''
@@ -869,6 +952,55 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       const lapRestTypeRaw =
         hasIndividualPlans && plan?.restType ? plan.restType : moveframeData.restType;
 
+      const lapPause =
+        hasIndividualPlans && plan?.pause != null && String(plan.pause).trim() !== ''
+          ? plan.pause
+          : moveframeData.pause ?? null;
+
+      const lapStrokesRaw =
+        hasIndividualPlans && plan?.strokes != null && String(plan.strokes).trim() !== ''
+          ? String(plan.strokes).trim()
+          : moveframeData.strokes != null && String(moveframeData.strokes).trim() !== ''
+            ? String(moveframeData.strokes).trim()
+            : '';
+      const lapWattsRaw =
+        hasIndividualPlans && plan?.watts != null && String(plan.watts).trim() !== ''
+          ? String(plan.watts).trim()
+          : moveframeData.watts != null && String(moveframeData.watts).trim() !== ''
+            ? String(moveframeData.watts).trim()
+            : '';
+      const isRowingSport = ['ROWING', 'CANOEING'].includes(moveframeData.sport);
+      const lapRowPerMin = isAerobic
+        ? isRowingSport
+          ? moveframeData.rowPerMin
+            ? parseInt(String(moveframeData.rowPerMin), 10)
+            : null
+          : lapStrokesRaw
+            ? parseInt(lapStrokesRaw, 10) || null
+            : null
+        : null;
+      const lapWeight = isAerobic
+        ? isRowingSport
+          ? lapStrokesRaw || null
+          : lapWattsRaw || null
+        : plan?.weight ?? moveframeData.weight ?? null;
+      const lapTools = isAerobic
+        ? isRowingSport
+          ? lapWattsRaw || plan?.tools || moveframeData.tools || null
+          : plan?.tools || moveframeData.tools || null
+        : plan?.tools || moveframeData.tools || null;
+
+      const globalMacro = moveframeData.macroFinal ?? null;
+      const lapMacro = isSectionB
+        ? isLastSerieOfExercise
+          ? (plan?.macroFinal ?? globalMacro ?? null)
+          : null
+        : isAerobic
+          ? isLastRepInAerobicGroup
+            ? (plan?.macroFinal ?? globalMacro ?? null)
+            : null
+          : (plan?.macroFinal ?? globalMacro ?? null);
+
       movelaps.push({
         repetitionNumber: i + 1,
         distance: moveframeData.distance?.toString() || null,
@@ -876,17 +1008,17 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
         style: moveframeData.style || null,
         pace: lapPace,
         time: lapTime,
+        rowPerMin: lapRowPerMin,
         reps: plan?.reps || moveframeData.reps || null,
-        weight: plan?.weight || null,
-        tools: plan?.tools || null,
+        weight: lapWeight,
+        tools: lapTools,
         r1: moveframeData.r1 || null,
         r2: moveframeData.r2 || null,
         muscularSector: moveframeData.muscularSector || null,
         exercise: moveframeData.exercise || null,
-        // Convert display value to enum value
         restType: convertRestTypeToEnum(lapRestTypeRaw),
-        pause: plan?.pause || moveframeData.pause || null,
-        macroFinal: plan?.macroFinal || moveframeData.macroFinal || null,
+        pause: lapPause,
+        macroFinal: lapMacro,
         alarm: moveframeData.alarm || null,
         sound: moveframeData.sound || null,
         notes: moveframeData.notes || null,
@@ -1125,6 +1257,123 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
     }
   };
 
+  const handleImportWorkoutSlot = async (payload: ImportWorkoutPayload) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      showMessage('error', 'Please log in first');
+      return;
+    }
+
+    const apiSource =
+      payload.source.type === 'session'
+        ? { type: 'session', sourceWorkoutId: payload.source.sourceWorkoutId }
+        : payload.source.type === 'favorite'
+          ? { type: 'favorite', favoriteId: payload.source.favoriteId }
+          : payload.source.type === 'weekly_structure'
+            ? {
+                type: 'weekly_structure',
+                planData: payload.source.planData,
+                structureDayOfWeek: payload.source.structureDayOfWeek,
+                structureSessionNumber: payload.source.structureSessionNumber,
+              }
+            : payload.source.type === 'coach_annual'
+              ? {
+                  type: 'coach_annual',
+                  globalEntryId: payload.source.globalEntryId,
+                  coachWeekNumber: payload.source.coachWeekNumber,
+                  coachDayOfWeek: payload.source.coachDayOfWeek,
+                  coachSessionNumber: payload.source.coachSessionNumber,
+                  anchorWeekNumber: payload.source.anchorWeekNumber,
+                  maxWeekNumber: payload.source.maxWeekNumber,
+                }
+              : { type: 'global_archive', globalEntryId: payload.source.globalEntryId };
+
+    const response = await fetch('/api/workouts/sessions/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+      },
+      body: JSON.stringify({
+        targetDayId: payload.targetDayId,
+        sessionNumber: payload.sessionNumber,
+        replaceExisting: payload.overwrite,
+        source: apiSource,
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || 'Import failed');
+    }
+
+    showMessage('success', 'Workout imported successfully');
+    setShowImportWorkoutModal(false);
+    setWorkoutImportTarget(null);
+    await loadWorkoutData(activeSection);
+  };
+
+  const handleImportMoveframe = async (payload: ImportMoveframePayload) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      showMessage('error', 'Please log in first');
+      return;
+    }
+
+    if (payload.source.type === 'moveframe') {
+      const response = await fetch('/api/workouts/moveframes/copy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          sourceMoveframeId: payload.source.sourceMoveframeId,
+          targetWorkoutId: payload.targetWorkoutId,
+          position: 'after',
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Import failed');
+      }
+    } else {
+      const apiSource =
+        payload.source.type === 'global_archive'
+          ? {
+              type: 'global_archive',
+              globalEntryId: payload.source.globalEntryId,
+              moveframeLetter: payload.source.moveframeLetter,
+              moveframeIndex: payload.source.moveframeIndex,
+            }
+          : {
+              type: 'snapshot',
+              moveframe: payload.source.moveframe,
+            };
+
+      const response = await fetch('/api/workouts/moveframes/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          targetWorkoutId: payload.targetWorkoutId,
+          source: apiSource,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Import failed');
+      }
+    }
+
+    showMessage('success', 'Moveframe imported successfully');
+    setShowImportMoveframeModal(false);
+    setMoveframeImportTarget(null);
+    await loadWorkoutData(activeSection);
+  };
+
   /**
    * COPY WEEK - Handler for copying a week to another week (Section A to Section B)
    */
@@ -1229,8 +1478,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           await loadWorkoutData('B');
         }
       } else {
-        console.error('❌ Failed:', data.error);
-        showMessage('error', data.error || 'Failed to create yearly plan');
+        console.error('❌ Failed:', data.error, data.details);
+        showMessage('error', data.details || data.error || 'Failed to create yearly plan');
       }
     } catch (error) {
       console.error('Error creating yearly plan:', error);
@@ -2491,6 +2740,14 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   setActiveDay(day);
                   modalActions.openCopyWorkoutModal();
                 }}
+                onImportWorkout={(workout, day) => {
+                  setWorkoutImportTarget({ workout, day });
+                  setShowImportWorkoutModal(true);
+                }}
+                onImportMoveframe={(workout, day) => {
+                  setMoveframeImportTarget({ workout, day });
+                  setShowImportMoveframeModal(true);
+                }}
                 onPasteWorkout={async (day) => {
                   if (!workoutClipboard) {
                     showMessage('error', 'No workout in clipboard. Use “Copy workout in clipboard” first.');
@@ -2766,6 +3023,11 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                     showMessage('error', 'Error saving workout to favorites');
                   }
                 }}
+                onSaveTemplateWorkout={(workout, day) => {
+                  setWorkoutToSaveTemplate(workout);
+                  setDayForSaveTemplateWorkout(day);
+                  setShowSaveTemplateWorkoutModal(true);
+                }}
                 onShareWorkout={(workout, day) => {
                   setWorkoutToShare(workout);
                   setDayForWorkoutShare(day);
@@ -2922,6 +3184,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                  reloadWorkouts={async () => {
                    await loadWorkoutData(activeSection);
                  }}
+                 workoutGlobalSharedTick={workoutGlobalSharedTick}
                  onDeleteMoveframe={async (moveframe, workout, day) => {
                    if (confirm(`Are you sure you want to delete moveframe ${moveframe.letter || moveframe.code}?`)) {
                      try {
@@ -3715,6 +3978,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       <PlanGymWeekModal
         isOpen={showPlanGymWeekModal}
         initialStepOnOpen={planGymWeekWizardInitialStep}
+        initialTrainingLevel={planGymWeekTrainingLevel}
         onClose={() => {
           setShowPlanGymWeekModal(false);
           setPlanGymWeekWizardInitialStep(1);
@@ -3781,6 +4045,9 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setShowPlanGymWeekManualForm(false);
             setPlanGymWeekInitialPlan(null);
             setPlanGymWeekRescanParams(null);
+            if (result.trainingLevel != null) {
+              setPlanGymWeekTrainingLevel(result.trainingLevel);
+            }
             setPlanGymWeekCreatedPlan(result);
           }}
         />
@@ -3796,6 +4063,9 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setPlanGymWeekCreatedPlan(null);
             setPlanGymWeekManualDaysCount(updatedPlan.daysCount);
             setPlanGymWeekInitialPlan(updatedPlan);
+            if (updatedPlan.trainingLevel != null) {
+              setPlanGymWeekTrainingLevel(updatedPlan.trainingLevel);
+            }
             setShowPlanGymWeekManualForm(true);
           }}
           onClose={() => {
@@ -3808,29 +4078,62 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             const totalSeries = plan.days.reduce(
               (sum, d) => sum + d.sectors.reduce((s, sec) => s + (sec.series ?? 0), 0), 0
             );
+            const destLabel =
+              gymWeekLaunch.sourceSection === 'A'
+                ? `Weekly Plan ${gymWeekLaunch.templateKey ?? activeSubSection}`
+                : gymWeekLaunch.sourceSection === 'B'
+                  ? 'Yearly Plan'
+                  : 'Archive';
             showMessage(
               'success',
-              `Gym weekly plan ready: ${plan.daysCount} day(s), ${totalSeries} total series. Assign routines to calendar days next.`
+              `Gym weekly plan ready (${destLabel}): ${plan.daysCount} day(s), ${totalSeries} total series.`,
             );
-            afterGymPlanBuilt(plan);
+            void afterGymPlanBuilt(plan);
           }}
         />
       )}
 
+      <SaveGymWeekToArchiveModal
+        isOpen={showSaveGymWeekToArchiveModal}
+        plan={planPendingArchiveSave}
+        goals={planGymWeekGoals}
+        trainingLevel={planGymWeekTrainingLevel ?? planPendingArchiveSave?.trainingLevel}
+        periods={(Array.isArray(periods) ? periods : []).map((p) => ({
+          id: p.id,
+          name: p.name,
+          color: p.color,
+        }))}
+        onClose={() => {
+          setShowSaveGymWeekToArchiveModal(false);
+          setPlanPendingArchiveSave(null);
+        }}
+        onConfirm={handleSaveGymWeekToArchive}
+      />
+
       <SelectGymPlanWeeksModal
         isOpen={showSelectGymPlanWeeksModal}
-        weeks={gymPlanWeekOptions}
+        sourceSection={gymWeekLaunch.sourceSection === 'B' ? 'B' : 'A'}
+        initialTemplateKey={gymWeekLaunch.templateKey ?? activeSubSection}
+        planDaysCount={planPendingAssign?.daysCount ?? planGymWeekManualDaysCount ?? 3}
+        lockedWeekMetas={gymPlanLockedWeeks}
         onClose={() => {
           setShowSelectGymPlanWeeksModal(false);
           setPlanPendingAssign(null);
+          setGymPlanLockedWeeks(undefined);
         }}
-        onConfirm={(weekIds) => {
-          const meta = weekIds
-            .map((id) => gymPlanWeekOptions.find((w) => w.id === id))
-            .filter(Boolean)
-            .map((w) => ({ id: w!.id, weekNumber: w!.weekNumber }));
-          setAssignTargetWeeks(meta);
+        onNeedYearlyPlan={() => {
           setShowSelectGymPlanWeeksModal(false);
+          setShowCreateYearlyPlanModal(true);
+        }}
+        onConfirm={(result: GymPlanWeekSelectResult) => {
+          setAssignTargetWeeks(result.weekMetas);
+          setAssignTargetDays(result.targetDayNumbers);
+          setAssignTargetWeekOptions(result.weekOptions ?? []);
+          if (result.templateKey && gymWeekLaunch.sourceSection === 'A') {
+            setGymWeekLaunch((prev) => ({ ...prev, templateKey: result.templateKey }));
+          }
+          setShowSelectGymPlanWeeksModal(false);
+          setGymPlanLockedWeeks(undefined);
           setShowPlanGymWeekAssignModal(true);
         }}
       />
@@ -3841,6 +4144,10 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           plan={planPendingAssign}
           goals={planGymWeekGoals}
           targetWeeks={assignTargetWeeks}
+          allowedDays={assignTargetDays}
+          targetWeekDetails={assignTargetWeekOptions}
+          sourceSection={gymWeekLaunch.sourceSection}
+          templateKey={gymWeekLaunch.templateKey}
           initialAssignment={
             gymWeekLaunch.mode === 'sgw' && gymWeekLaunch.targetWeekId
               ? getGymWeekAssignment(gymWeekLaunch.targetWeekId)
@@ -3850,14 +4157,22 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setShowPlanGymWeekAssignModal(false);
             setPlanPendingAssign(null);
             setAssignTargetWeeks([]);
+            setAssignTargetDays([1, 2, 3, 4, 5, 6, 7]);
+            setAssignTargetWeekOptions([]);
           }}
           onDone={() => {
             setPlanPendingAssign(null);
             setAssignTargetWeeks([]);
+            setAssignTargetDays([1, 2, 3, 4, 5, 6, 7]);
+            setAssignTargetWeekOptions([]);
             setEditGymWeekAssignment(null);
             setPlanGymWeekTrainingLevel(null);
+            const sectionLabel =
+              gymWeekLaunch.sourceSection === 'A'
+                ? `Weekly Plan ${gymWeekLaunch.templateKey ?? 'A'}`
+                : 'Yearly Plan';
             setViewMode('table');
-            showMessage('success', 'Gym week routines assigned to your calendar week(s).');
+            showMessage('success', `Gym week routines assigned to your ${sectionLabel} week(s).`);
           }}
         />
       )}
@@ -4548,6 +4863,34 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       )}
 
       {/* ==================== COPY WORKOUT MODAL ==================== */}
+      {showImportWorkoutModal && workoutImportTarget && (
+        <ImportWorkoutModal
+          isOpen={showImportWorkoutModal}
+          onClose={() => {
+            setShowImportWorkoutModal(false);
+            setWorkoutImportTarget(null);
+          }}
+          targetDay={workoutImportTarget.day}
+          targetWorkout={workoutImportTarget.workout}
+          activeSection={activeSectionForModals}
+          onConfirm={handleImportWorkoutSlot}
+        />
+      )}
+
+      {showImportMoveframeModal && moveframeImportTarget && (
+        <ImportMoveframeModal
+          isOpen={showImportMoveframeModal}
+          onClose={() => {
+            setShowImportMoveframeModal(false);
+            setMoveframeImportTarget(null);
+          }}
+          targetDay={moveframeImportTarget.day}
+          targetWorkout={moveframeImportTarget.workout}
+          activeSection={activeSectionForModals}
+          onConfirm={handleImportMoveframe}
+        />
+      )}
+
       {modals.showCopyWorkoutModal && workoutForCopyMoveModal && workoutPlan && (
         <CopyWorkoutModal
           isOpen={modals.showCopyWorkoutModal}
@@ -4877,6 +5220,11 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           }}
           workout={workoutToShare}
           day={dayForWorkoutShare}
+          activeSection={activeSectionForModals}
+          onArchiveExported={() => {
+            void loadWorkoutData(activeSection);
+          }}
+          onGlobalShared={() => setWorkoutGlobalSharedTick((t) => t + 1)}
         />
       )}
 
@@ -5152,6 +5500,27 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
               showMessage('error', error.message || 'Failed to export workout to Yearly Plan');
               throw error;
             }
+          }}
+        />
+      )}
+
+      {showSaveTemplateWorkoutModal && workoutToSaveTemplate && (
+        <SaveTemplateWorkoutModal
+          isOpen={showSaveTemplateWorkoutModal}
+          sourceWorkout={workoutToSaveTemplate}
+          sourceDay={dayForSaveTemplateWorkout}
+          activeSubSection={activeSubSection}
+          periods={(Array.isArray(periods) ? periods : []).map((p) => ({
+            id: p.id,
+            name: p.name,
+          }))}
+          onClose={() => {
+            setShowSaveTemplateWorkoutModal(false);
+            setWorkoutToSaveTemplate(null);
+            setDayForSaveTemplateWorkout(null);
+          }}
+          onSaved={() => {
+            void loadWorkoutData(activeSection);
           }}
         />
       )}

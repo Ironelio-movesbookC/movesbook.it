@@ -24,7 +24,18 @@ export async function clubApiFetch<T>(url: string, init?: RequestInit): Promise<
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || `Request failed (${res.status})`);
+    let message = typeof data.error === 'string' ? data.error : `Request failed (${res.status})`;
+    const details = data.details as { fieldErrors?: Record<string, string[]>; formErrors?: string[] } | undefined;
+    if (details?.fieldErrors) {
+      const fieldMessages = Object.entries(details.fieldErrors)
+        .flatMap(([field, errors]) => (errors ?? []).map((err) => `${field}: ${err}`));
+      if (fieldMessages.length > 0) {
+        message = `${message} — ${fieldMessages.join('; ')}`;
+      }
+    } else if (details?.formErrors?.length) {
+      message = `${message} — ${details.formErrors.join('; ')}`;
+    }
+    throw new Error(message);
   }
   return data as T;
 }

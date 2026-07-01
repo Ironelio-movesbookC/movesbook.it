@@ -6,6 +6,12 @@ import {
   getFavoriteWeeklyPlanDedupeKey,
   parseFavoriteWeeklyPlanData,
 } from '@/lib/favoriteWeeklyPlanKeys';
+import { computeWeeklyPlanMetrics } from '@/lib/workoutArchiveMetrics';
+import { resolveAuthorCountryFields } from '@/lib/shareAuthorCountry';
+import {
+  WEEKLY_PLAN_SAVE_META_KEY,
+  type WeeklyPlanSaveMetaInput,
+} from '@/lib/weeklyPlanSaveMeta';
 
 function planTypeToStorageZone(type: string): 'A' | 'B' | 'C' | 'D' {
   if (type === 'TEMPLATE_WEEKS') return 'A';
@@ -152,7 +158,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 401 });
     }
 
-    const { weekId, name, description } = await req.json();
+    const { weekId, name, description, saveMeta, sourceTemplate } = await req.json();
 
     if (!weekId) {
       return NextResponse.json({ error: 'Week ID is required' }, { status: 400 });
@@ -202,8 +208,54 @@ export async function POST(req: NextRequest) {
       totalWorkouts += day.workouts.length;
     });
 
-    const displayName = name || `Week ${week.weekNumber}`;
-    const planDataObject = buildPlanDataSnapshot(week, days, displayName);
+    const metrics = computeWeeklyPlanMetrics({
+      weeks: [{ days: days.map((day) => ({ workouts: day.workouts })) }],
+    });
+
+    const user = await prisma.user.findUnique({
+      where: { id: dbUserId },
+      select: {
+        username: true,
+        name: true,
+        firstName: true,
+        surname: true,
+        image: true,
+        country: true,
+      },
+    });
+
+    const countryFields = resolveAuthorCountryFields(user?.country);
+    const savedAt = new Date().toISOString();
+
+    let displayName = name || `Week ${week.weekNumber}`;
+    const planDataObject = buildPlanDataSnapshot(week, days, displayName) as Record<
+      string,
+      unknown
+    >;
+
+    if (saveMeta && typeof saveMeta === 'object') {
+      const meta = saveMeta as WeeklyPlanSaveMetaInput;
+      if (meta.title?.trim()) {
+        displayName = meta.title.trim();
+        planDataObject.name = displayName;
+      }
+      planDataObject[WEEKLY_PLAN_SAVE_META_KEY] = {
+        ...meta,
+        authorUsername: user?.username?.trim() || user?.name?.trim() || 'User',
+        authorAvatarUrl: user?.image ?? null,
+        authorCountryName: countryFields.authorCountryName ?? user?.country?.trim() ?? null,
+        authorCountryFlag: countryFields.authorCountryFlag ?? null,
+        workoutCount: metrics.workoutCount,
+        totalMeters: metrics.totalMeters,
+        totalTimeSeconds: metrics.totalTimeSeconds,
+        totalSeries: metrics.totalSeries,
+        createdAt: week.createdAt?.toISOString?.() ?? savedAt,
+        savedAt,
+        sharedAt: null,
+        sourceTemplate: sourceTemplate ?? null,
+      };
+    }
+
     const planDataJson = JSON.stringify(planDataObject);
 
     // Replace any existing favourite for the same plan week (prevents duplicate saves).
@@ -251,7 +303,10 @@ export async function POST(req: NextRequest) {
         data: {
           userId: dbUserId,
           name: displayName,
-          description: description || `Saved from ${new Date().toLocaleDateString()}`,
+          description:
+            (saveMeta as WeeklyPlanSaveMetaInput | undefined)?.shortDescription?.trim() ||
+            description ||
+            `Saved from ${new Date().toLocaleDateString()}`,
           planData: planDataJson,
           weeksCount: 1,
           daysCount: days.length,

@@ -9,6 +9,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
 import ClubIdentificationDevicesPanel from './components/ClubIdentificationDevicesPanel';
 import ClubAccessOutcomeSettingsPanel from './components/ClubAccessOutcomeSettingsPanel';
+import ClubBachecaMemberPanel from '@/components/club/websiteSettings/ClubBachecaMemberPanel';
+import ClubTopicMemberPanel from '@/components/club/websiteSettings/ClubTopicMemberPanel';
 import NotificationByPromocodeDashboardView from '@/components/promocodes/NotificationByPromocodeDashboard';
 import {
   getClubMyPageDisplayName,
@@ -35,8 +37,9 @@ function ClubDashboardContent() {
   const [clubAddSongsOgpOpen, setClubAddSongsOgpOpen] = useState(false);
   const [clubAddSongsOgpExpanded, setClubAddSongsOgpExpanded] = useState(false);
   const [clubMainPanel, setClubMainPanel] = useState<
-    'default' | 'identification-devices' | 'outcome-settings' | 'suggest-movesbook'
+    'default' | 'identification-devices' | 'outcome-settings' | 'suggest-movesbook' | 'bacheca' | 'topic'
   >('default');
+  const [clubTopicId, setClubTopicId] = useState<string | null>(null);
 
   useEffect(() => {
     if (contextClubId) setSelectedClubId(contextClubId);
@@ -121,13 +124,34 @@ function ClubDashboardContent() {
       setClubMainPanel('suggest-movesbook');
       router.replace('/club/dashboard', { scroll: false });
     }
-    if (panel === 'suggest-movesbook') {
+    if (panel === 'bacheca') {
+      const queryClubId = searchParams?.get('clubId');
+      if (queryClubId) {
+        setSelectedClubId(queryClubId);
+        localStorage.setItem('selectedClub', queryClubId);
+      }
       writeClubWorkspaceTab('my-entity');
       setShowWorkoutSection(false);
       setClubAddSongsOgpOpen(false);
       setClubAddSongsOgpExpanded(false);
-      setClubMainPanel('suggest-movesbook');
-      router.replace('/club/dashboard', { scroll: false });
+      setClubMainPanel('bacheca');
+      setClubTopicId(null);
+    }
+    if (panel === 'topic') {
+      const queryClubId = searchParams?.get('clubId');
+      const queryTopicId = searchParams?.get('topicId');
+      if (queryClubId) {
+        setSelectedClubId(queryClubId);
+        localStorage.setItem('selectedClub', queryClubId);
+      }
+      if (queryTopicId) {
+        setClubTopicId(queryTopicId);
+      }
+      writeClubWorkspaceTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('topic');
     }
   }, [searchParams, router]);
 
@@ -167,6 +191,36 @@ function ClubDashboardContent() {
         <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col min-h-0">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Suggest Movesbook to friends</h2>
           <NotificationByPromocodeDashboardView />
+        </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'bacheca' ? (
+        <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-4 shadow-sm">
+          {selectedClubId ?? activeClub?.id ? (
+            <ClubBachecaMemberPanel
+              clubId={(selectedClubId ?? activeClub?.id)!}
+              compact
+            />
+          ) : (
+            <p className="py-12 text-center text-sm text-gray-600">
+              Select a club in the sidebar to view its bacheca.
+            </p>
+          )}
+        </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'topic' && clubTopicId ? (
+        <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-4 shadow-sm">
+          {selectedClubId ?? activeClub?.id ? (
+            <ClubTopicMemberPanel
+              clubId={(selectedClubId ?? activeClub?.id)!}
+              topicId={clubTopicId}
+              clubDisplayName={
+                activeClub ? getClubMyPageDisplayName(activeClub) : ''
+              }
+              compact
+            />
+          ) : (
+            <p className="py-12 text-center text-sm text-gray-600">
+              Select a club in the sidebar to view this topic.
+            </p>
+          )}
         </div>
       ) : !clubAddSongsOgpOpen && !showWorkoutSection ? (
         <div className="bg-white rounded-lg shadow-sm border p-6 flex-1 flex flex-col">

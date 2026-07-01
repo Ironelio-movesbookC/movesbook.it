@@ -1,3 +1,5 @@
+import { toMediaApiPath } from '@/lib/uploadMediaUrl';
+
 /**
  * Normalize stored upload paths for browser <img> (handles Windows paths, /public prefix, etc.).
  */
@@ -22,6 +24,10 @@ export function normalizePublicMediaPath(
   }
 
   if (/^(https?:|blob:|data:)/i.test(s)) return s;
+
+  const mediaApiPath = toMediaApiPath(s.startsWith('/') ? s : `/${s}`);
+  if (mediaApiPath) return mediaApiPath;
+
   return s.startsWith('/') ? s : `/${s}`;
 }
 

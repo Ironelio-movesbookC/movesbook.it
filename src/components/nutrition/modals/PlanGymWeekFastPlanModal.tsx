@@ -3,22 +3,47 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import { X, Settings, RefreshCw, CheckCircle, Clock, ChevronUp, ChevronDown, GripVertical, ChevronLeft } from 'lucide-react';
-import type { PlanGymWeekManualResult, ManualDaySector, ManualDayPlan } from './PlanGymWeekManualModal';
+import type { PlanGymWeekManualResult, ManualDaySector, ManualDayPlan, PlanGymWeekYearlyPeriodSettings } from './PlanGymWeekManualModal';
 import {
   ensureManualSectorShape,
   getSectorColor,
   SeriesDistDialog,
+  defaultPlanGymWeekYearlyPeriodSettings,
   type SeriesDistDialogProps,
 } from './PlanGymWeekManualModal';
 import { getGoalLabel, type GoalId, type TrainingLevel } from './PlanGymWeekModal';
 import {
   getSeriesDistribution,
   trainingLevelToCategory,
+  exerciseCountForArea,
   type SeriesLevelCategory,
 } from '@/utils/seriesDistribution';
 import { GYM_WEEK_MUSCLE_GROUPS, type GymWeekMuscleGroup } from '@/constants/gymWeekMuscleGroups';
 import { GYM_WEEK_CATALOG_EXERCISES, pickRandomCatalogExerciseNamesForMuscleGroup } from '@/data/gymWeekExerciseCatalog';
 import { useFreeMoveExercises } from '@/hooks/useFreeMoveExercises';
+import {
+  DndContext,
+  closestCenter,
+  type DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
+  computePlanGymWeekScalarDefaults,
+  readGoalParamsFromNutritionSettings,
+} from '@/utils/nutrition-planGymWeekGoalScalars';
+import {
+  PLAN_YEAR_TOTAL_PERIODS_MAX,
+  PLAN_YEAR_TOTAL_PERIODS_MIN,
+  clampPlanYearPeriodPair,
+} from '@/utils/nutrition-planPeriodInterpolation';
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 const GYM_PLAN_STORAGE_KEY = 'gym_weekly_plan_saved_v1';
@@ -103,9 +128,7 @@ function initPlanDay(day: ManualDayPlan, levelCat: SeriesLevelCategory = 'mid'):
     routineName: day.routineName,
     sectors: day.sectors.map((rawSec) => {
       const sec   = ensureManualSectorShape(rawSec);
-      // Use the lookup table to determine exercise count from series total
-      const dist  = getSeriesDistribution(sec.series, levelCat);
-      const count = dist.length;
+      const count = exerciseCountForArea(sec.series, levelCat, sec.exercises);
       const exercises: PlanExercise[] = Array.from({ length: count }, (_, i) => ({
         id:         `${sec.sectorId}-${i}-${Date.now()}`,
         name:       '',
@@ -170,6 +193,39 @@ function planDaysToManual(days: PlanDay[]): ManualDayPlan[] {
   }));
 }
 
+type SectorSortableBag = {
+  setSortableRef: (el: HTMLElement | null) => void;
+  style:          React.CSSProperties;
+  dragHandleProps: React.HTMLAttributes<HTMLButtonElement>;
+};
+
+function sectorSortableId(dayIdx: number, secIdx: number): string {
+  return `fast-plan-day-${dayIdx}-sec-${secIdx}`;
+}
+
+function SortableSectorShell({
+  id,
+  children,
+}: {
+  id: string;
+  children: (bag: SectorSortableBag) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.88 : 1,
+    zIndex: isDragging ? 20 : undefined,
+    position: 'relative',
+  };
+  const bag: SectorSortableBag = {
+    setSortableRef: setNodeRef,
+    style,
+    dragHandleProps: { ...attributes, ...listeners },
+  };
+  return <div style={style}>{children(bag)}</div>;
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface PlanGymWeekFastPlanModalProps {
   isOpen:          boolean;
@@ -184,9 +240,11 @@ interface PlanGymWeekFastPlanModalProps {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function PlanGymWeekFastPlanModal({
-  isOpen, plan, goals = [], trainingLevel, onBack, onClose, onSave,
+  isOpen, plan, goals = [], trainingLevel: trainingLevelProp, onBack, onClose, onSave,
 }: PlanGymWeekFastPlanModalProps) {
 
+  const trainingLevel =
+    trainingLevelProp ?? plan.trainingLevel ?? null;
   const levelCat = trainingLevelToCategory(trainingLevel);
 
   const [activeDayIdx,      setActiveDayIdx]      = useState(0);
@@ -198,8 +256,6 @@ export default function PlanGymWeekFastPlanModal({
   const [fullPage,          setFullPage]           = useState(false);
   const [showAutoWarn,      setShowAutoWarn]      = useState(false);
   const [openShuffleMenuFor, setOpenShuffleMenuFor] = useState<string | null>(null);
-  /** Summary metrics, muscle chips, toolbar, Execution tabs, muscle picker & table header row */
-  const [planDetailsExpanded, setPlanDetailsExpanded] = useState(true);
   /** Mirrors legacy UI: naming rows vs distribution-led series display */
   const [fastPlanMode, setFastPlanMode] = useState<'select-exercises' | 'plan-series'>('plan-series');
   /** Short-lived feedback when filtering / adding muscles (strip looks “dead” otherwise) */
@@ -209,6 +265,18 @@ export default function PlanGymWeekFastPlanModal({
   const [fastPlanCatalogSearch, setFastPlanCatalogSearch] = useState('');
   /** Row targeted when tapping a catalog exercise (secIdx / exIdx in active day). */
   const [fastPlanExercisePick, setFastPlanExercisePick] = useState<{ secIdx: number; exIdx: number } | null>(null);
+  const [yearlyPeriodSettings, setYearlyPeriodSettings] = useState<PlanGymWeekYearlyPeriodSettings>(() =>
+    plan.yearlyPeriodSettings
+      ? {
+          ...defaultPlanGymWeekYearlyPeriodSettings(),
+          ...plan.yearlyPeriodSettings,
+          ...clampPlanYearPeriodPair(
+            plan.yearlyPeriodSettings.totalPeriods,
+            plan.yearlyPeriodSettings.currentPeriod,
+          ),
+        }
+      : defaultPlanGymWeekYearlyPeriodSettings()
+  );
   const prevFastPlanModeRef = useRef<'select-exercises' | 'plan-series'>('plan-series');
 
   const { exercises: freeMoveExerciseList } = useFreeMoveExercises();
@@ -216,15 +284,28 @@ export default function PlanGymWeekFastPlanModal({
   useEffect(() => {
     if (isOpen) {
       setFullPage(false);
-      setPlanDetailsExpanded(true);
       setFastPlanMode('plan-series');
       setFastPlanToolbarNotice(null);
       setFastPlanCatalogFilterId('all');
       setFastPlanCatalogSearch('');
       setFastPlanExercisePick(null);
       prevFastPlanModeRef.current = 'plan-series';
+      setYearlyPeriodSettings(
+        plan.yearlyPeriodSettings
+          ? {
+              ...defaultPlanGymWeekYearlyPeriodSettings(),
+              ...plan.yearlyPeriodSettings,
+              ...clampPlanYearPeriodPair(
+                plan.yearlyPeriodSettings.totalPeriods,
+                plan.yearlyPeriodSettings.currentPeriod,
+              ),
+            }
+          : defaultPlanGymWeekYearlyPeriodSettings()
+      );
+      setPlanDays(plan.days.map((d) => initPlanDay(d, trainingLevelToCategory(trainingLevel))));
+      setActiveDayIdx(0);
     }
-  }, [isOpen]);
+  }, [isOpen, plan, trainingLevel]);
 
   useEffect(() => {
     if (!isOpen) setOpenShuffleMenuFor(null);
@@ -261,6 +342,47 @@ export default function PlanGymWeekFastPlanModal({
     const id = window.setTimeout(() => setFastPlanToolbarNotice(null), 7000);
     return () => window.clearTimeout(id);
   }, [fastPlanToolbarNotice]);
+
+  const clampedPeriod = useMemo(
+    () => clampPlanYearPeriodPair(yearlyPeriodSettings.totalPeriods, yearlyPeriodSettings.currentPeriod),
+    [yearlyPeriodSettings.totalPeriods, yearlyPeriodSettings.currentPeriod],
+  );
+
+  const scalarsForDay = useCallback(
+    (dayIdx: number) => {
+      const goalId = goals[dayIdx] ?? goals[0];
+      return computePlanGymWeekScalarDefaults({
+        goalSettings: readGoalParamsFromNutritionSettings(goalId),
+        trainingLevel,
+        currentPeriod: clampedPeriod.currentPeriod,
+        totalPeriods: clampedPeriod.totalPeriods,
+      });
+    },
+    [goals, trainingLevel, clampedPeriod],
+  );
+
+  const syncSectorScalarsFromPeriod = useCallback(() => {
+    setPlanDays((prev) =>
+      prev.map((d, di) => {
+        const scalars = scalarsForDay(di);
+        return {
+          ...d,
+          sectors: d.sectors.map((s) => ({
+            ...s,
+            reps: scalars.defaultReps,
+            pause: scalars.defaultPauseLabel,
+            macroExercise: scalars.defaultMacroExerciseLabel,
+            macroEndOfSector: scalars.defaultMacroEndSectorLabel,
+          })),
+        };
+      }),
+    );
+  }, [scalarsForDay]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    syncSectorScalarsFromPeriod();
+  }, [isOpen, clampedPeriod.totalPeriods, clampedPeriod.currentPeriod, syncSectorScalarsFromPeriod]);
 
   // ── Updaters ───────────────────────────────────────────────────────────────
   const updateExercise = useCallback((secIdx: number, exIdx: number, field: keyof PlanExercise, value: string) => {
@@ -313,8 +435,7 @@ export default function PlanGymWeekFastPlanModal({
         }
         // When "Keep fix" is OFF, recalculate exercise count from lookup table
         if (!s.keepSeriesFixed) {
-          const newDist  = getSeriesDistribution(val, levelCat);
-          const newCount = newDist.length;
+          const newCount = exerciseCountForArea(val, levelCat, s.defaultExerciseCount);
           // Resize exercises array
           let exercises = [...s.exercises];
           if (newCount > exercises.length) {
@@ -430,6 +551,21 @@ export default function PlanGymWeekFastPlanModal({
     }));
   }, [activeDayIdx]);
 
+  const requestRemoveExerciseAt = useCallback((secIdx: number, exIdx: number) => {
+    const sec = planDays[activeDayIdx]?.sectors[secIdx];
+    if (!sec || sec.exercises.length <= 1) return;
+    const ex = sec.exercises[exIdx];
+    const label = ex?.name?.trim() || `${sec.sectorLabel} Exercise ${exIdx + 1}`;
+    if (
+      !window.confirm(
+        `Remove "${label}" from ${sec.sectorLabel}?\n\nThis exercise row will be deleted from the routine.`,
+      )
+    ) {
+      return;
+    }
+    removeExerciseAt(secIdx, exIdx);
+  }, [activeDayIdx, planDays, removeExerciseAt]);
+
   const removeSectorAt = useCallback((secIdx: number) => {
     setPlanDays(prev => prev.map((d, di) => {
       if (di !== activeDayIdx) return d;
@@ -437,6 +573,63 @@ export default function PlanGymWeekFastPlanModal({
       return { ...d, sectors: d.sectors.filter((_, si) => si !== secIdx) };
     }));
   }, [activeDayIdx]);
+
+  const requestRemoveSectorAt = useCallback((secIdx: number) => {
+    const day = planDays[activeDayIdx];
+    if (!day) return;
+    if (day.sectors.length <= 1) {
+      window.alert('At least one muscular area must remain on this day.');
+      return;
+    }
+    const sec = day.sectors[secIdx];
+    if (!sec) return;
+    if (
+      !window.confirm(
+        `Remove the "${sec.sectorLabel}" area from this routine?\n\nAll exercises in this sector will be deleted.`,
+      )
+    ) {
+      return;
+    }
+    removeSectorAt(secIdx);
+  }, [activeDayIdx, planDays, removeSectorAt]);
+
+  const reorderSectorsAt = useCallback((fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    setPlanDays(prev => prev.map((d, di) => {
+      if (di !== activeDayIdx) return d;
+      const sectors = [...d.sectors];
+      if (
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= sectors.length ||
+        toIndex >= sectors.length
+      ) {
+        return d;
+      }
+      const [removed] = sectors.splice(fromIndex, 1);
+      sectors.splice(toIndex, 0, removed);
+      return { ...d, sectors };
+    }));
+  }, [activeDayIdx]);
+
+  const sectorDragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  const handleSectorDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const day = planDays[activeDayIdx];
+      if (!day) return;
+      const ids = day.sectors.map((_, i) => sectorSortableId(activeDayIdx, i));
+      const fromIndex = ids.indexOf(String(active.id));
+      const toIndex = ids.indexOf(String(over.id));
+      if (fromIndex < 0 || toIndex < 0) return;
+      reorderSectorsAt(fromIndex, toIndex);
+    },
+    [activeDayIdx, planDays, reorderSectorsAt],
+  );
 
   const updateMacro = useCallback((secIdx: number, field: 'macroExercise' | 'macroEndOfSector', val: string) => {
     setPlanDays(prev => prev.map((d, di) => {
@@ -502,14 +695,13 @@ export default function PlanGymWeekFastPlanModal({
     setShowAutoWarn(true);
   };
 
-  const applyAutoProcess = () => {
-    setShowAutoWarn(false);
+  const applyCalculatedWorkoutParamsToDay = useCallback(() => {
+    const scalars = scalarsForDay(activeDayIdx);
     setPlanDays(prev => prev.map((d, di) => {
       if (di !== activeDayIdx) return d;
       const sectors = d.sectors.map(s => {
         const maskTotal = s.defaultTotalSeries;
-        const dist      = getSeriesDistribution(maskTotal, levelCat);
-        const tableLen  = dist.length;
+        const tableLen  = exerciseCountForArea(maskTotal, levelCat, s.defaultExerciseCount);
         let exercises   = s.exercises;
 
         if (!s.keepSeriesFixed) {
@@ -517,8 +709,8 @@ export default function PlanGymWeekFastPlanModal({
             const add = Array.from({ length: tableLen - exercises.length }, (_, i) => ({
               id: `${s.sectorId}-auto-${exercises.length + i}-${Date.now()}`,
               name: '', speed: 'Normal',
-              ripsTime: String(s.reps ?? 12), weight: '',
-              breakTime: s.pause || "1'30\"", mode: 'Stopped', userEdited: false,
+              ripsTime: String(scalars.defaultReps), weight: '',
+              breakTime: scalars.defaultPauseLabel, mode: 'Stopped', userEdited: false,
             }));
             exercises = [...exercises, ...add];
           } else if (tableLen < exercises.length) {
@@ -529,14 +721,18 @@ export default function PlanGymWeekFastPlanModal({
         exercises = clearExerciseDistributedSeries(exercises).map(ex => ({
           ...ex,
           speed:      'Normal',
-          ripsTime:   String(s.reps ?? 12),
-          breakTime:  s.pause || "1'30\"",
+          ripsTime:   String(scalars.defaultReps),
+          breakTime:  scalars.defaultPauseLabel,
           mode:       'Stopped',
           userEdited: false,
         }));
 
         return {
           ...s,
+          reps: scalars.defaultReps,
+          pause: scalars.defaultPauseLabel,
+          macroExercise: scalars.defaultMacroExerciseLabel,
+          macroEndOfSector: scalars.defaultMacroEndSectorLabel,
           totalSeries: maskTotal,
           exercises,
           ...(!s.keepSeriesFixed ? { defaultExerciseCount: tableLen } : {}),
@@ -544,6 +740,11 @@ export default function PlanGymWeekFastPlanModal({
       });
       return { ...d, sectors };
     }));
+  }, [activeDayIdx, levelCat, scalarsForDay]);
+
+  const applyAutoProcess = () => {
+    setShowAutoWarn(false);
+    applyCalculatedWorkoutParamsToDay();
   };
 
   // ── Series distribution dialog save ───────────────────────────────────────
@@ -566,8 +767,7 @@ export default function PlanGymWeekFastPlanModal({
             })),
           };
         }
-        const dist     = getSeriesDistribution(newTotal, levelCat);
-        const newCount = dist.length;
+        const newCount = exerciseCountForArea(newTotal, levelCat, s.defaultExerciseCount);
         let exercises  = [...s.exercises];
         if (newCount > exercises.length) {
           exercises = exercises.concat(Array.from({ length: newCount - exercises.length }, (_, i) => ({
@@ -596,6 +796,8 @@ export default function PlanGymWeekFastPlanModal({
     const result: PlanGymWeekManualResult = {
       daysCount: plan.daysCount,
       days:      planDaysToManual(planDays),
+      trainingLevel,
+      yearlyPeriodSettings: { ...yearlyPeriodSettings },
     };
     savePlanToStorage(result);
     onSave?.(result);
@@ -607,9 +809,10 @@ export default function PlanGymWeekFastPlanModal({
     onBack({
       daysCount: plan.daysCount,
       days: planDaysToManual(planDays),
-      yearlyPeriodSettings: plan.yearlyPeriodSettings ? { ...plan.yearlyPeriodSettings } : undefined,
+      trainingLevel,
+      yearlyPeriodSettings: { ...yearlyPeriodSettings },
     });
-  }, [onBack, plan.daysCount, plan.yearlyPeriodSettings, planDays]);
+  }, [onBack, plan.daysCount, yearlyPeriodSettings, planDays, trainingLevel]);
 
   const manualDaysForSeriesDist = useMemo(() => planDaysToManual(planDays), [planDays]);
 
@@ -645,6 +848,12 @@ export default function PlanGymWeekFastPlanModal({
     return Math.round(all.reduce((a, b) => a + b, 0) / all.length);
   })();
   const breakAvgStr   = `${Math.floor(breakAvgSec / 60)}'${String(breakAvgSec % 60).padStart(2, '0')}"`;
+  const totalExercises = activeDay.sectors.reduce((sum, s) => sum + s.exercises.length, 0);
+  const avgSeriesPerArea =
+    activeDay.sectors.length > 0
+      ? Math.round((totalSeries / activeDay.sectors.length) * 10) / 10
+      : 0;
+  const activeGoalLabel = getGoalLabel(goals[activeDayIdx]);
 
   const onMuscleStripAll = () => {
     setFilterSector(null);
@@ -711,17 +920,63 @@ export default function PlanGymWeekFastPlanModal({
   }
 
   const routineNameEl = (
-    <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 bg-white border-b border-gray-100">
-      <span className="text-xs text-gray-500">Routine name</span>
-      <input
-        type="text"
-        value={activeDay.routineName || ''}
-        onChange={e => setPlanDays(prev => prev.map((d, di) =>
-          di === activeDayIdx ? { ...d, routineName: e.target.value } : d
-        ))}
-        placeholder="Unnamed"
-        className="border border-gray-300 rounded px-2 py-0.5 text-sm font-medium text-gray-900 bg-white outline-none focus:border-blue-400 w-48 max-w-full"
-      />
+    <div className="flex-shrink-0 flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-1.5 bg-white border-b border-gray-100">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-500">Routine name</span>
+        <input
+          type="text"
+          value={activeDay.routineName || ''}
+          onChange={e => setPlanDays(prev => prev.map((d, di) =>
+            di === activeDayIdx ? { ...d, routineName: e.target.value } : d
+          ))}
+          placeholder="Unnamed"
+          className="border border-gray-300 rounded px-2 py-0.5 text-sm font-medium text-gray-900 bg-white outline-none focus:border-blue-400 w-48 max-w-full"
+        />
+      </div>
+      <div className="flex flex-wrap items-end gap-3 text-xs">
+        <label className="flex flex-col gap-0.5 text-gray-700">
+          <span className="font-medium">Total periods</span>
+          <select
+            className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+            value={yearlyPeriodSettings.totalPeriods}
+            onChange={(e) => {
+              const tp = parseInt(e.target.value, 10);
+              setYearlyPeriodSettings((prev) => ({
+                ...prev,
+                ...clampPlanYearPeriodPair(tp, prev.currentPeriod),
+              }));
+            }}
+          >
+            {Array.from(
+              { length: PLAN_YEAR_TOTAL_PERIODS_MAX - PLAN_YEAR_TOTAL_PERIODS_MIN + 1 },
+              (_, i) => PLAN_YEAR_TOTAL_PERIODS_MIN + i,
+            ).map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-0.5 text-gray-700">
+          <span className="font-medium">Current period</span>
+          <select
+            className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+            value={yearlyPeriodSettings.currentPeriod}
+            onChange={(e) => {
+              const cp = parseInt(e.target.value, 10);
+              setYearlyPeriodSettings((prev) => ({
+                ...prev,
+                ...clampPlanYearPeriodPair(prev.totalPeriods, cp),
+              }));
+            }}
+          >
+            {Array.from({ length: yearlyPeriodSettings.totalPeriods }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+        <p className="max-w-xs text-[10px] leading-snug text-gray-500 pb-0.5">
+          Period {clampedPeriod.currentPeriod} of {clampedPeriod.totalPeriods} — series, reps and pauses interpolate from your workout parameters (From → To).
+        </p>
+      </div>
     </div>
   );
 
@@ -758,12 +1013,6 @@ export default function PlanGymWeekFastPlanModal({
     </div>
   );
 
-  type SectorSortableBag = {
-    setSortableRef: (el: HTMLElement | null) => void;
-    style:          React.CSSProperties;
-    dragHandleProps: React.HTMLAttributes<HTMLButtonElement>;
-  };
-
   const renderSectorBlock = (sec: PlanSector, secIdx: number, sortable: SectorSortableBag | null) => {
     const seriesDist = computeExerciseDist(sec.totalSeries, sec.exercises.length, levelCat);
     const maxEx      = fastPlanMode === 'select-exercises' ? 20 : sec.defaultExerciseCount * 2;
@@ -777,7 +1026,7 @@ export default function PlanGymWeekFastPlanModal({
         >
           <button
             type="button"
-            onClick={() => removeSectorAt(secIdx)}
+            onClick={() => requestRemoveSectorAt(secIdx)}
             className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 hover:bg-red-50"
             title="Remove this muscular area"
           >
@@ -914,7 +1163,7 @@ export default function PlanGymWeekFastPlanModal({
           return (
             <div
               key={ex.id}
-              className={`grid grid-cols-[40px_1fr_88px_64px_72px_76px_76px_88px_56px] border-b border-gray-200 text-xs ${
+              className={`grid grid-cols-[44px_minmax(140px,1fr)_96px_72px_80px_84px_84px_96px_64px] border-b border-gray-200 text-xs ${
                 exIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
               }${rowPicked ? ' ring-2 ring-inset ring-blue-400' : ''}`}
             >
@@ -1010,7 +1259,7 @@ export default function PlanGymWeekFastPlanModal({
               <div className="flex items-center justify-center gap-1.5 px-1 py-2">
                 <button
                   type="button"
-                  onClick={() => removeExerciseAt(secIdx, exIdx)}
+                  onClick={() => requestRemoveExerciseAt(secIdx, exIdx)}
                   disabled={sec.exercises.length <= 1}
                   className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-35"
                   title="Remove exercise"
@@ -1032,49 +1281,131 @@ export default function PlanGymWeekFastPlanModal({
     );
   };
 
-  const fullPlanScrollBody = (
-    <>
-      <div className="mx-3 mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 rounded border border-gray-300 bg-white px-4 py-2 text-sm">
-        <span>Total series <strong className="ml-1 text-red-600">{totalSeries}</strong></span>
-        <span>Average repetitions <strong className="ml-1 text-gray-900">{avgReps}</strong></span>
-        <span>Total weights <strong className="ml-1 text-gray-900">
-          {totalWeights > 0 ? totalWeights.toFixed(1) : '0000.0'}
-        </strong></span>
-        <span>Total time planned <strong className="ml-1 text-gray-900">0h00&apos;00&quot;</strong></span>
-        <span>Break average. <strong className="ml-1 text-blue-600">{breakAvgStr}</strong></span>
-      </div>
-      <div className="mx-3 mt-0.5 px-1 text-xs text-gray-500">
-        Total time estimated <strong>0h00&apos;00&quot;</strong>
+  const fixedPlanTopBar = (
+    <div className="flex-shrink-0 border-b border-gray-300 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 sm:px-4">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={handleBackToManual}
+            className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-800 hover:bg-gray-100"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden />
+            Back
+          </button>
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-bold text-gray-900 sm:text-base">Plan gym week</h2>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-red-600 sm:text-xs">
+            Creation of fast plan for not aerobic sports
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSave}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 sm:px-4 sm:py-2 sm:text-sm"
+          >
+            Create routines and movelaps
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-gray-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800 sm:px-4 sm:py-2 sm:text-sm"
+          >
+            Reset all &amp; close
+          </button>
+          {!fullPage ? (
+            <button
+              type="button"
+              onClick={() => setFullPage(true)}
+              className="text-xs font-semibold text-red-600 underline underline-offset-2 hover:text-red-700"
+            >
+              Show full page
+            </button>
+          ) : null}
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-200" aria-label="Close">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
-      <div className="mx-3 mt-2">
-        <p className="mb-1.5 text-xs text-gray-600">Sector – Muscular areas for this day ({activeDay.sectors.length} selected)</p>
+      <p className="px-4 pt-2 text-xs font-semibold text-red-600">Current day selected</p>
+
+      <div className="mx-3 my-2 flex flex-wrap overflow-hidden rounded border border-gray-400 bg-gray-200/90 text-xs sm:text-sm">
+        {[
+          { label: 'Total exercises', value: totalExercises, cls: 'bg-white' },
+          { label: 'Total series', value: totalSeries, cls: 'bg-sky-100 font-bold text-sky-950' },
+          { label: 'Average for area', value: avgSeriesPerArea, cls: 'bg-white' },
+          { label: 'Average repetitions', value: avgReps, cls: 'bg-white' },
+          { label: 'Break average', value: breakAvgStr, cls: 'bg-white text-blue-700 font-semibold' },
+          { label: 'Total weights', value: totalWeights > 0 ? totalWeights.toFixed(1) : '0000.0', cls: 'bg-white' },
+          { label: 'Total time planned', value: "0h00'00\"", cls: 'bg-white' },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className={`flex min-w-[7.5rem] flex-1 flex-col justify-center border-r border-gray-300 px-3 py-2 last:border-r-0 ${stat.cls}`}
+          >
+            <span className="text-[10px] font-medium text-gray-600 sm:text-xs">{stat.label}</span>
+            <strong className="text-sm tabular-nums text-gray-900">{stat.value}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="px-3 pb-3">
+        <p className="mb-1.5 text-xs text-gray-700">
+          Sector – Muscular areas for this day ({activeDay.sectors.length} selected)
+        </p>
         <div className="flex flex-wrap gap-2">
           {activeDay.sectors.map((s, si) => (
-            <div key={s.sectorId}
-              className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs"
-              style={{ borderLeftColor: getSectorColor(s.sectorId, si), borderLeftWidth: 3 }}>
-              <div className="relative h-7 w-7 flex-shrink-0">
+            <div
+              key={s.sectorId}
+              className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs shadow-sm"
+              style={{ borderLeftColor: getSectorColor(s.sectorId, si), borderLeftWidth: 4 }}
+            >
+              <div className="relative h-8 w-8 flex-shrink-0">
                 <Image src={s.image} alt={s.sectorLabel} fill className="object-contain" unoptimized />
               </div>
               <div className="min-w-0 flex flex-col leading-tight">
-                <span className="font-medium text-gray-900">{s.sectorLabel}</span>
-                <span className="font-bold text-amber-700">{s.totalSeries} series</span>
+                <span className="font-semibold text-gray-900">{s.sectorLabel}</span>
+                <span className="font-bold text-amber-800">{s.totalSeries} series</span>
               </div>
             </div>
           ))}
         </div>
       </div>
+    </div>
+  );
 
-      <div className="mx-3 mt-3 flex flex-wrap items-center gap-2">
-        <button type="button" onClick={handleAutoProcess}
-          className="flex items-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-600">
-          <Settings className="h-4 w-4" />
-          Automatic processing procedure
+  const scrollablePlanMain = (
+    <>
+      {renderDayTabsRow('none')}
+
+      <div className="border-b border-gray-200 bg-white px-3 py-2">
+        {activeGoalLabel ? (
+          <p className="text-xs text-gray-800">
+            Goal <strong className="text-gray-900">{activeGoalLabel}</strong>
+          </p>
+        ) : null}
+        {routineNameEl}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 bg-gray-50/80 px-3 py-2">
+        <button
+          type="button"
+          onClick={applyCalculatedWorkoutParamsToDay}
+          className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+        >
+          Apply calculated workout parameters to this day
         </button>
         <button type="button" onClick={() => setShowSeriesDist(true)}
           className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900">
-          New settings
+          Distribution settings
+        </button>
+        <button type="button" onClick={handleAutoProcess}
+          className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
+          <Settings className="h-4 w-4" />
+          Automatic processing procedure
         </button>
         <button type="button"
           className="flex items-center gap-1.5 rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-amber-500">
@@ -1087,44 +1418,68 @@ export default function PlanGymWeekFastPlanModal({
           <button key={tab} type="button" onClick={() => setSectionTab(tab)}
             className={`flex-1 border py-2 text-xs font-semibold transition-colors ${
               sectionTab === tab
-                ? 'rounded-t-lg border-amber-300 border-b-amber-50 bg-amber-50 text-amber-900'
-                : 'rounded-t-lg border-gray-200 bg-gray-100 text-gray-600 hover:bg-gray-200'
+                ? tab === 'execution'
+                  ? 'rounded-t-lg border-amber-400 border-b-amber-50 bg-amber-50 text-amber-950'
+                  : tab === 'intensity'
+                    ? 'rounded-t-lg border-sky-400 border-b-sky-50 bg-sky-50 text-sky-950'
+                    : 'rounded-t-lg border-gray-400 border-b-gray-100 bg-gray-100 text-gray-900'
+                : 'rounded-t-lg border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'
             }`}>
             {tab === 'execution' ? 'Execution' : tab === 'intensity' ? 'Intensity of work' : 'Break between series'}
           </button>
         ))}
       </div>
 
-      <div className="mx-3">
-        <div className="grid grid-cols-[40px_1fr_88px_64px_72px_76px_76px_88px_56px] border border-gray-300 border-t-0 bg-gray-50 text-xs font-semibold text-gray-700">
+      <div className="mx-3 min-w-[52rem]">
+        <div className="grid grid-cols-[44px_minmax(140px,1fr)_96px_72px_80px_84px_84px_96px_64px] rounded-t-lg border border-b-0 border-gray-300 bg-gray-50 text-xs font-semibold text-gray-700">
           <div className="border-r border-gray-300 px-2 py-2 text-center">#</div>
           <div className="flex items-center gap-1.5 border-r border-gray-300 px-2 py-2">
             <span>Exercise</span>
             <RefreshCw className="h-3 w-3 text-gray-400" />
           </div>
-          <div className="border-r border-gray-300 px-2 py-2 text-center">Speed</div>
-          <div className="border-r border-gray-300 px-2 py-2 text-center">Series</div>
-          <div className="border-r border-gray-300 px-2 py-2 text-center">Rip/Time</div>
-          <div className="border-r border-gray-300 px-2 py-2 text-center">Weight</div>
-          <div className="border-r border-gray-300 px-2 py-2 text-center">Break</div>
-          <div className="border-r border-gray-300 px-2 py-2 text-center">Mode</div>
+          <div className={`border-r border-gray-300 px-2 py-2 text-center${toneCell(sectionTab, 'speed')}`}>Speed</div>
+          <div className={`border-r border-gray-300 px-2 py-2 text-center${toneCell(sectionTab, 'series')}`}>Series</div>
+          <div className={`border-r border-gray-300 px-2 py-2 text-center${toneCell(sectionTab, 'rips')}`}>Rip/Time</div>
+          <div className={`border-r border-gray-300 px-2 py-2 text-center${toneCell(sectionTab, 'weight')}`}>Weight</div>
+          <div className={`border-r border-gray-300 px-2 py-2 text-center${toneCell(sectionTab, 'brk')}`}>Break</div>
+          <div className={`border-r border-gray-300 px-2 py-2 text-center${toneCell(sectionTab, 'mode')}`}>Mode</div>
           <div className="px-2 py-2 text-center">Options</div>
         </div>
         <div className="flex items-center gap-4 border border-gray-300 border-t-0 bg-white px-3 py-1.5 text-xs">
           <label className="flex cursor-pointer items-center gap-1.5 text-gray-600">
-            <input type="radio" name={`planMode-${activeDayIdx}`} className="h-3 w-3" />
+            <input
+              type="radio"
+              name={`planMode-${activeDayIdx}`}
+              className="h-3 w-3"
+              checked={fastPlanMode === 'select-exercises'}
+              onChange={() => {
+                setFastPlanMode('select-exercises');
+                setFastPlanCatalogFilterId('all');
+              }}
+            />
             Select exercises
           </label>
           <label className="flex cursor-pointer items-center gap-1.5 font-medium text-gray-700">
-            <input type="radio" name={`planMode-${activeDayIdx}`} defaultChecked className="h-3 w-3" />
+            <input
+              type="radio"
+              name={`planMode-${activeDayIdx}`}
+              className="h-3 w-3"
+              checked={fastPlanMode === 'plan-series'}
+              onChange={() => setFastPlanMode('plan-series')}
+            />
             Plan series/exercise
           </label>
         </div>
+        <p className="rounded-b-lg border border-t-0 border-gray-300 bg-gray-50/90 px-3 py-2 text-[11px] leading-snug text-gray-700">
+          {fastPlanMode === 'plan-series'
+            ? 'Series column shows how sets are split across exercises (from your training level). Adjust totals with Series distribution settings or each sector’s Series/area.'
+            : 'Use the catalog below: tap a muscle to filter cards, focus a table row (# or Exercise), then tap a card or pick from your library. You can still type names and edit series per row.'}
+        </p>
       </div>
 
       <div className="mx-3 rounded-xl border border-[#050a14] bg-[#0a1628] px-3 py-3 shadow-inner">
         <div className="flex items-stretch gap-2 sm:gap-3">
-          <button type="button" onClick={() => setFilterSector(null)}
+          <button type="button" onClick={onMuscleStripAll}
             title="Show all sectors"
             className="flex flex-shrink-0 flex-col items-center justify-center gap-1 self-center">
             <div className={`relative flex h-12 w-12 items-center justify-center rounded-full border-2 bg-[#fefdf8] transition-colors ${
@@ -1142,10 +1497,7 @@ export default function PlanGymWeekFastPlanModal({
                 return (
                   <button key={mg.id} type="button"
                     title={inCurrentDay ? `Filter: ${mg.label}` : `Add ${mg.label} to this day`}
-                    onClick={() => {
-                      if (inCurrentDay) setFilterSector(isFilter ? null : mg.id);
-                      else handleAddSector(templateFromMuscleGroup(mg));
-                    }}
+                    onClick={() => onMuscleStripPick(mg)}
                     className={`flex w-[72px] flex-shrink-0 flex-col items-center gap-1 rounded-lg border bg-white px-1.5 py-1.5 transition-shadow ${
                       isFilter
                         ? 'border-2 border-blue-500 shadow-md'
@@ -1165,19 +1517,123 @@ export default function PlanGymWeekFastPlanModal({
         </div>
       </div>
 
+      {fastPlanToolbarNotice ? (
+        <p className="mx-3 mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {fastPlanToolbarNotice}
+        </p>
+      ) : null}
+
+      {fastPlanMode === 'select-exercises' ? (
+        <div className="mx-3 mt-2 rounded-lg border border-yellow-200 bg-yellow-50/95 px-2 py-2 text-black shadow-inner">
+          <div className="mb-2 flex flex-wrap items-end gap-2">
+            <label className="flex min-w-[140px] max-w-md flex-1 flex-col gap-0.5 text-[10px] font-semibold text-gray-800">
+              Search catalog
+              <input
+                type="search"
+                value={fastPlanCatalogSearch}
+                onChange={e => setFastPlanCatalogSearch(e.target.value)}
+                placeholder="Filter by name…"
+                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900"
+              />
+            </label>
+            <label className="flex min-w-[180px] flex-col gap-0.5 text-[10px] font-semibold text-gray-800">
+              Your library
+              <select
+                className="rounded border border-gray-300 bg-white px-1 py-1 text-xs text-gray-900"
+                defaultValue=""
+                onChange={e => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  if (!fastPlanExercisePick) {
+                    setFastPlanToolbarNotice('Tap a table row first (# or Exercise cell), then pick an exercise.');
+                    e.target.selectedIndex = 0;
+                    return;
+                  }
+                  updateExercise(fastPlanExercisePick.secIdx, fastPlanExercisePick.exIdx, 'name', v);
+                  e.target.selectedIndex = 0;
+                }}
+              >
+                <option value="">Free moves…</option>
+                {freeMoveExerciseList.map(fe => (
+                  <option key={fe.id} value={fe.name}>
+                    {fe.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="w-full text-[10px] leading-snug text-gray-700 sm:w-auto sm:flex-1">
+              {fastPlanExercisePick
+                ? `Applying to row ${fastPlanExercisePick.exIdx + 1} of ${activeDay.sectors[fastPlanExercisePick.secIdx]?.sectorLabel ?? '—'}.`
+                : 'Focus a row (# or Exercise) below, then tap a card or choose from your library.'}
+            </p>
+          </div>
+          <div
+            className="overflow-x-auto pb-1"
+            onWheel={e => {
+              if (e.shiftKey) return;
+              const el = e.currentTarget;
+              if (el.scrollWidth <= el.clientWidth) return;
+              e.preventDefault();
+              el.scrollLeft += e.deltaY;
+            }}
+          >
+            <div className="flex w-max gap-2">
+              {fastPlanCatalogFiltered.map(ex => (
+                <button
+                  key={ex.id}
+                  type="button"
+                  title={ex.name}
+                  onClick={() => {
+                    if (!fastPlanExercisePick) {
+                      setFastPlanToolbarNotice('Tap a table row first (# or Exercise cell), then pick an exercise.');
+                      return;
+                    }
+                    updateExercise(fastPlanExercisePick.secIdx, fastPlanExercisePick.exIdx, 'name', ex.name);
+                  }}
+                  className="flex w-28 flex-shrink-0 flex-col items-stretch rounded-lg border-2 border-gray-300 bg-white p-1 text-left hover:border-blue-500 hover:shadow-md"
+                >
+                  <div className="relative mb-1 aspect-square w-full overflow-hidden rounded bg-gray-100">
+                    <Image src={ex.image} alt="" fill className="object-contain" sizes="112px" unoptimized />
+                  </div>
+                  <span className="line-clamp-3 text-center text-[10px] font-medium text-gray-900">{ex.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mx-3 mb-4 overflow-hidden rounded-b-lg border border-gray-300 border-t-0">
-        {visibleSectors.map((sec) => {
-          const secIdx     = activeDay.sectors.findIndex(s => s.sectorId === sec.sectorId);
+        {(() => {
+          const renderSectorArea = (sec: PlanSector, secIdx: number, sortable: SectorSortableBag | null) => {
           const seriesDist = computeExerciseDist(sec.totalSeries, sec.exercises.length, levelCat);
           const maxEx      = sec.defaultExerciseCount * 2;
           const secColor   = getSectorColor(sec.sectorId, secIdx);
 
           return (
-            <React.Fragment key={sec.sectorId}>
+            <React.Fragment key={sectorSortableId(activeDayIdx, secIdx)}>
               <div
                 className="flex flex-wrap items-center gap-2 border-b border-t border-cyan-200/90 bg-cyan-50 px-3 py-2.5"
                 style={{ borderLeftWidth: 3, borderLeftColor: secColor }}
               >
+                <button
+                  type="button"
+                  onClick={() => requestRemoveSectorAt(secIdx)}
+                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 hover:bg-red-50"
+                  title="Remove this muscular area"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+                {sortable ? (
+                  <button
+                    type="button"
+                    {...sortable.dragHandleProps}
+                    className="touch-manipulation flex h-8 w-8 flex-shrink-0 cursor-grab items-center justify-center rounded-full border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 active:cursor-grabbing"
+                    aria-label="Drag to reorder area"
+                  >
+                    <GripVertical className="h-4 w-4" />
+                  </button>
+                ) : null}
                 <div className="relative h-9 w-9 flex-shrink-0">
                   <Image src={sec.image} alt={sec.sectorLabel} fill className="object-contain" unoptimized />
                 </div>
@@ -1267,133 +1723,6 @@ export default function PlanGymWeekFastPlanModal({
                 </div>
               </div>
 
-          {fastPlanMode === 'select-exercises' ? (
-            <div className="mx-3 mt-2 rounded-lg border border-yellow-200 bg-yellow-50/95 px-2 py-2 text-black shadow-inner">
-              <div className="mb-2 flex flex-wrap items-end gap-2">
-                <label className="flex min-w-[140px] max-w-md flex-1 flex-col gap-0.5 text-[10px] font-semibold text-gray-800">
-                  Search catalog
-                  <input
-                    type="search"
-                    value={fastPlanCatalogSearch}
-                    onChange={e => setFastPlanCatalogSearch(e.target.value)}
-                    placeholder="Filter by name…"
-                    className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900"
-                  />
-                </label>
-                <label className="flex min-w-[180px] flex-col gap-0.5 text-[10px] font-semibold text-gray-800">
-                  Your library
-                  <select
-                    className="rounded border border-gray-300 bg-white px-1 py-1 text-xs text-gray-900"
-                    defaultValue=""
-                    onChange={e => {
-                      const v = e.target.value;
-                      if (!v) return;
-                      if (!fastPlanExercisePick) {
-                        setFastPlanToolbarNotice('Tap a table row first (# or Exercise cell), then pick an exercise.');
-                        e.target.selectedIndex = 0;
-                        return;
-                      }
-                      updateExercise(fastPlanExercisePick.secIdx, fastPlanExercisePick.exIdx, 'name', v);
-                      e.target.selectedIndex = 0;
-                    }}
-                  >
-                    <option value="">Free moves…</option>
-                    {freeMoveExerciseList.map(fe => (
-                      <option key={fe.id} value={fe.name}>
-                        {fe.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <p className="w-full text-[10px] leading-snug text-gray-700 sm:w-auto sm:flex-1">
-                  {fastPlanExercisePick
-                    ? `Applying to row ${fastPlanExercisePick.exIdx + 1} of ${activeDay.sectors[fastPlanExercisePick.secIdx]?.sectorLabel ?? '—'}.`
-                    : 'Focus a row (# or Exercise) below, then tap a card or choose from your library.'}
-                </p>
-              </div>
-              <div
-                className="overflow-x-auto pb-1"
-                onWheel={e => {
-                  if (e.shiftKey) return;
-                  const el = e.currentTarget;
-                  if (el.scrollWidth <= el.clientWidth) return;
-                  e.preventDefault();
-                  el.scrollLeft += e.deltaY;
-                }}
-              >
-                <div className="flex w-max gap-2">
-                  {fastPlanCatalogFiltered.map(ex => (
-                    <button
-                      key={ex.id}
-                      type="button"
-                      title={ex.name}
-                      onClick={() => {
-                        if (!fastPlanExercisePick) {
-                          setFastPlanToolbarNotice('Tap a table row first (# or Exercise cell), then pick an exercise.');
-                          return;
-                        }
-                        updateExercise(fastPlanExercisePick.secIdx, fastPlanExercisePick.exIdx, 'name', ex.name);
-                      }}
-                      className="flex w-28 flex-shrink-0 flex-col items-stretch rounded-lg border-2 border-gray-300 bg-white p-1 text-left hover:border-blue-500 hover:shadow-md"
-                    >
-                      <div className="relative mb-1 aspect-square w-full overflow-hidden rounded bg-gray-100">
-                        <Image src={ex.image} alt="" fill className="object-contain" sizes="112px" unoptimized />
-                      </div>
-                      <span className="line-clamp-3 text-center text-[10px] font-medium text-gray-900">{ex.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {/* Column labels sit directly above the exercise rows (below muscle picker), not above the sector strip */}
-          <div className="mx-3 mt-3">
-            <div className="grid grid-cols-[40px_1fr_88px_64px_72px_76px_76px_88px_56px] rounded-t-lg border border-b-0 border-gray-300 bg-gray-50 text-xs font-semibold text-gray-700">
-              <div className="border-r border-gray-300 px-2 py-2 text-center">#</div>
-              <div className="flex items-center gap-1.5 border-r border-gray-300 px-2 py-2">
-                <span>Exercise</span>
-                <RefreshCw className="h-3 w-3 text-gray-400" />
-              </div>
-              <div className={`border-r border-gray-300 px-2 py-2 text-center${toneCell(sectionTab, 'speed')}`}>Speed</div>
-              <div className={`border-r border-gray-300 px-2 py-2 text-center${toneCell(sectionTab, 'series')}`}>Series</div>
-              <div className={`border-r border-gray-300 px-2 py-2 text-center${toneCell(sectionTab, 'rips')}`}>Rip/Time</div>
-              <div className={`border-r border-gray-300 px-2 py-2 text-center${toneCell(sectionTab, 'weight')}`}>Weight</div>
-              <div className={`border-r border-gray-300 px-2 py-2 text-center${toneCell(sectionTab, 'brk')}`}>Break</div>
-              <div className={`border-r border-gray-300 px-2 py-2 text-center${toneCell(sectionTab, 'mode')}`}>Mode</div>
-              <div className="px-2 py-2 text-center">Options</div>
-            </div>
-            <div className="flex items-center gap-4 border border-gray-300 border-t-0 bg-white px-3 py-1.5 text-xs">
-              <label className="flex cursor-pointer items-center gap-1.5 text-gray-600">
-                <input
-                  type="radio"
-                  name={`planMode-${activeDayIdx}`}
-                  className="h-3 w-3"
-                  checked={fastPlanMode === 'select-exercises'}
-                  onChange={() => {
-                    setFastPlanMode('select-exercises');
-                    setFastPlanCatalogFilterId('all');
-                  }}
-                />
-                Select exercises
-              </label>
-              <label className="flex cursor-pointer items-center gap-1.5 font-medium text-gray-700">
-                <input
-                  type="radio"
-                  name={`planMode-${activeDayIdx}`}
-                  className="h-3 w-3"
-                  checked={fastPlanMode === 'plan-series'}
-                  onChange={() => setFastPlanMode('plan-series')}
-                />
-                Plan series/exercise
-              </label>
-            </div>
-            <p className="rounded-b-lg border border-t-0 border-gray-300 bg-gray-50/90 px-3 py-2 text-[11px] leading-snug text-gray-700">
-              {fastPlanMode === 'plan-series'
-                ? 'Series column shows how sets are split across exercises (from your training level). Adjust totals with Series distribution settings or each sector’s Series/area.'
-                : 'Use the catalog above (same layout as the nutritionFood fast planner): tap a muscle to filter cards, focus a table row (# or Exercise), then tap a card or pick from your library. You can still type names and edit series per row.'}
-            </p>
-          </div>
         {sec.exercises.map((ex, exIdx) => {
           const seriesCount = ex.distributedSeries ?? seriesDist[exIdx] ?? 1;
           const rowPicked =
@@ -1403,7 +1732,7 @@ export default function PlanGymWeekFastPlanModal({
           return (
             <div
               key={ex.id}
-              className={`grid grid-cols-[40px_1fr_88px_64px_72px_76px_76px_88px_56px] border-b border-gray-200 text-xs ${
+              className={`grid grid-cols-[44px_minmax(140px,1fr)_96px_72px_80px_84px_84px_96px_64px] border-b border-gray-200 text-xs ${
                 exIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
               }${rowPicked ? ' ring-2 ring-inset ring-blue-400' : ''}`}
             >
@@ -1499,7 +1828,7 @@ export default function PlanGymWeekFastPlanModal({
               <div className="flex items-center justify-center gap-1.5 px-1 py-2">
                 <button
                   type="button"
-                  onClick={() => removeExerciseAt(secIdx, exIdx)}
+                  onClick={() => requestRemoveExerciseAt(secIdx, exIdx)}
                   disabled={sec.exercises.length <= 1}
                   className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-35"
                   title="Remove exercise"
@@ -1519,34 +1848,52 @@ export default function PlanGymWeekFastPlanModal({
         })}
             </React.Fragment>
           );
-        })}
+          };
+          if (filterSector) {
+            return visibleSectors.map((sec) => {
+              const secIdx = activeDay.sectors.findIndex((s) => s.sectorId === sec.sectorId);
+              return renderSectorArea(sec, secIdx, null);
+            });
+          }
+          const sectorSortIds = activeDay.sectors.map((_, i) => sectorSortableId(activeDayIdx, i));
+          return (
+            <DndContext
+              sensors={sectorDragSensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleSectorDragEnd}
+            >
+              <SortableContext items={sectorSortIds} strategy={verticalListSortingStrategy}>
+                {activeDay.sectors.map((sec, secIdx) => (
+                  <SortableSectorShell key={sectorSortIds[secIdx]} id={sectorSortIds[secIdx]}>
+                    {(sortable) => renderSectorArea(sec, secIdx, sortable)}
+                  </SortableSectorShell>
+                ))}
+              </SortableContext>
+            </DndContext>
+          );
+        })()}
       </div>
+
+      <p className="mx-3 mb-4 rounded border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] leading-snug text-sky-900">
+        Scroll to view all repetitions. Each can have unique speed, time, and pause values.
+        To add specific exercises, use Add NutritionFood for each day in your workout plan.
+      </p>
     </>
   );
 
   const planFooterBar = (
-    <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-t border-gray-200 bg-gray-50 px-4 py-2.5">
-      <p className="max-w-[min(100%,28rem)] text-[11px] leading-snug text-blue-700">
-        <span className="rounded border border-blue-200 bg-blue-50 px-3 py-1.5 inline-block">
-          Scroll to view all repetitions. Each can have unique speed, time, and pause values.
-          {!fullPage ? ' To add specific exercises, use Add NutritionFood for each day in your workout plan.' : ''}
-        </span>
-      </p>
+    <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2 border-t-2 border-gray-300 bg-gray-100 px-4 py-3 shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
       <div className="flex flex-wrap items-center gap-2">
         {onBack ? (
           <button
             type="button"
             onClick={handleBackToManual}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-400 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
           >
             <ChevronLeft className="h-4 w-4 shrink-0" aria-hidden />
             Back to manual editor
           </button>
         ) : null}
-        <button type="button" onClick={onClose}
-          className="rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">
-          Cancel
-        </button>
         <button type="button" onClick={handleSave}
           className="rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700">
           Save nutritionFood and its nutrition_components
@@ -1555,46 +1902,37 @@ export default function PlanGymWeekFastPlanModal({
           className="flex items-center gap-1.5 rounded-lg bg-amber-400 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-amber-500">
           <span>≡</span> Preferences
         </button>
+        <button type="button" onClick={onClose}
+          className="rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">
+          Cancel
+        </button>
       </div>
     </div>
   );
 
   // ── Main form ─────────────────────────────────────────────────────────────
+  const fastPlanShell = (
+    <>
+      {fixedPlanTopBar}
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-white">
+        {scrollablePlanMain}
+      </div>
+      {planFooterBar}
+    </>
+  );
+
   return (
     <>
       {!fullPage ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
-          <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-200">
-            <div className="flex-shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 border-b border-gray-200 bg-gray-50">
-              <h2 className="text-[10px] sm:text-xs font-bold text-gray-900 uppercase tracking-wide flex-1 min-w-[160px] leading-snug">
-                Same page of the creation of fast plan for not aerobic sports
-              </h2>
-              <button type="button" onClick={() => setFullPage(true)}
-                className="text-xs sm:text-sm font-semibold text-red-600 hover:text-red-700 underline underline-offset-2 shrink-0">
-                Show full page
-              </button>
-              <button type="button" onClick={onClose} className="shrink-0 p-1 rounded-lg hover:bg-gray-200 text-gray-500">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            {renderDayTabsRow('none')}
-            {routineNameEl}
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {fullPlanScrollBody}
-            </div>
-            {planFooterBar}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4">
+          <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-gray-300 bg-white shadow-2xl">
+            {fastPlanShell}
           </div>
         </div>
       ) : (
-      <div className="fixed inset-0 z-50 flex flex-col bg-white">
-        {renderDayTabsRow('back-to-compact')}
-        {routineNameEl}
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {fullPlanScrollBody}
+        <div className="fixed inset-0 z-50 flex flex-col bg-white">
+          {fastPlanShell}
         </div>
-        {planFooterBar}
-      </div>
       )}
 
       {/* ── Auto-process warning dialog ── */}

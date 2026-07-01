@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { findExistingTable } from '@/lib/club/legacyTableLookup';
-import { fetchClubMemberOptions } from './clubMembers';
+import { fetchProcedureCustomerOptions } from './clubMembers';
 import { fetchClubOperatorOptions } from './clubOperators';
 import { listCompanies } from '@/lib/club/archives/clubArchiveService';
 import type { ClubAuthContext } from './types';
@@ -44,7 +44,7 @@ export async function fetchProductSaleFormOptions(
   }
 
   const [members, operators, companies] = await Promise.all([
-    fetchClubMemberOptions(ctx.club.id),
+    fetchProcedureCustomerOptions(ctx.club.id),
     fetchClubOperatorOptions(ctx.club.id),
     listCompanies(ctx),
   ]);

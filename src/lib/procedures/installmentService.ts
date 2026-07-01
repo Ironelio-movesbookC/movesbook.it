@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 import { decimalToNumber } from './types';
 
 export type InstallmentDto = {
@@ -43,15 +44,19 @@ export async function listInstallments(recordId: string): Promise<InstallmentDto
   return rows.map(mapRow);
 }
 
-export async function createInstallment(input: {
-  procedureRecordId: string;
-  balance: number;
-  paid?: number;
-  paymentDate: string;
-  expireDate?: string | null;
-  description?: string | null;
-}): Promise<InstallmentDto> {
-  const row = await prisma.procedureInstallment.create({
+export async function createInstallment(
+  input: {
+    procedureRecordId: string;
+    balance: number;
+    paid?: number;
+    paymentDate: string;
+    expireDate?: string | null;
+    description?: string | null;
+  },
+  tx?: Prisma.TransactionClient
+): Promise<InstallmentDto> {
+  const client = tx ?? prisma;
+  const row = await client.procedureInstallment.create({
     data: {
       procedureRecordId: input.procedureRecordId,
       balance: input.balance,
@@ -109,9 +114,11 @@ export async function ensureDefaultInstallment(
   paid: number,
   paymentDate: string,
   expireDate?: string | null,
-  description?: string | null
+  description?: string | null,
+  tx?: Prisma.TransactionClient
 ): Promise<void> {
-  const count = await prisma.procedureInstallment.count({ where: { procedureRecordId: recordId } });
+  const client = tx ?? prisma;
+  const count = await client.procedureInstallment.count({ where: { procedureRecordId: recordId } });
   if (count > 0) return;
   await createInstallment({
     procedureRecordId: recordId,
@@ -120,5 +127,5 @@ export async function ensureDefaultInstallment(
     paymentDate,
     expireDate: expireDate ?? paymentDate,
     description,
-  });
+  }, tx);
 }

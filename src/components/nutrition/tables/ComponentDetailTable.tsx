@@ -5,11 +5,17 @@ import { GripVertical, Volume2, VolumeX, Bell, BellOff, MoreVertical } from 'luc
 import { DndContext, closestCenter, DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { MACRO_FINAL_OPTIONS, getSportConfig, REST_TYPES, circuitLoadOfWorkToMacroFinal } from '@/constants/nutrition-food.constants';
+import { MACRO_FINAL_OPTIONS, getSportConfig, REST_TYPES, circuitLoadOfWorkToMacroFinal, getCircuitStationModalPauseOptions, withCircuitPauseOptionFallback } from '@/constants/nutrition-food.constants';
 import { getExercisesBySector, getExerciseMedia, getMockExerciseThumbnail } from '@/data/mockExercises';
 import ExerciseGalleryModal from '@/components/nutrition/ExerciseGalleryModal';
 import { stripInternalWorkoutTags } from '@/utils/sanitizeNutritionHtml';
-import { computeAnaerobicFastPlannerRowStats, formatAvePauseFromSeconds } from '@/utils/nutrition-moveframeAvePause';
+import { computeAnaerobicFastPlannerRowStats, formatAvePauseFromSeconds, avgBreakSecondsFromFastPlannerDisplayRows } from '@/utils/nutrition-moveframeAvePause';
+import {
+  buildCircuitPauseContextFromConfig,
+  resolveCircuitStationPauseSecondsForModal,
+  type CircuitPauseContext,
+} from '@/utils/circuitMovelapPause';
+import { formatCircuitMovelapLabel, sortMovelapsForDisplay, shouldShowCircuitGroupSeparatorAfter } from '@/utils/circuitMovelapLabel';
 import '../../../styles/sticky-table.css';
 
 type AerobicRestChoice = 'rest_time' | 'restart_to' | 'reset_pulse';
@@ -469,57 +475,6 @@ function SortableNutritionComponentRow({
     hasCircuitIdentity &&
     isLogicalEndOfSerie &&
     (seriesCount > 0 ? localSeriesNum === seriesCount : !sameCircuitNext);
-  /** Next lap same circuit and strictly later local serie — works for sparse grids where serie 1 only fills station 1. */
-  const listDetectsVerticalSeriesEnd =
-    execMode === 'vertical' &&
-    sameCircuitNext &&
-    !!nextLayout &&
-    nextLayout.localSeries > localSeriesNum &&
-    localSeriesNum > 0 &&
-    (seriesCount <= 0 || localSeriesNum < seriesCount);
-  const listDetectsHorizontalSeriesEnd =
-    execMode === 'horizontal' &&
-    sameCircuitNext &&
-    !!nextLayout &&
-    nextLayout.station === stationNum &&
-    nextLayout.localSeries > localSeriesNum &&
-    localSeriesNum > 0 &&
-    (seriesCount <= 0 || localSeriesNum < seriesCount);
-  /** Vertical: after last station of a serie, except the last serie of the circuit. Horizontal: after last serie at a station, except the last station of the circuit. */
-  const classicVerticalSerieEnd =
-    execMode === 'vertical' &&
-    seriesCount > 0 &&
-    stationsPerSeries > 0 &&
-    stationNum === stationsPerSeries &&
-    localSeriesNum < seriesCount;
-  const classicHorizontalSerieEnd =
-    execMode === 'horizontal' &&
-    seriesCount > 0 &&
-    stationsPerSeries > 0 &&
-    localSeriesNum === seriesCount &&
-    stationNum < stationsPerSeries;
-  /**
-   * List-order truth: next lap is same circuit and starts local serie N+1 — works for vertical listing (C-1-4 → C-2-1)
-   * even when saved executionMode is "horizontal". Does NOT fire after last serie (guarded by localSeriesNum < seriesCount)
-   * nor after C-2-4 when the next row is another nutritionFood / circuit.
-   */
-  const listShowsNextSerieSameCircuit =
-    !!normalizedCircuitLetter &&
-    !!nextLayout &&
-    sameCircuitNext &&
-    localSeriesNum >= 1 &&
-    Number.isFinite(nextLayout.localSeries) &&
-    nextLayout.localSeries === localSeriesNum + 1 &&
-    (seriesCount <= 0 || localSeriesNum < seriesCount);
-  const showThickSerieEndSeparator =
-    !!hasCircuitIdentity &&
-    localSeriesNum > 0 &&
-    stationNum > 0 &&
-    (listShowsNextSerieSameCircuit ||
-      classicVerticalSerieEnd ||
-      classicHorizontalSerieEnd ||
-      listDetectsVerticalSeriesEnd ||
-      listDetectsHorizontalSeriesEnd);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -528,7 +483,6 @@ function SortableNutritionComponentRow({
     zIndex: isDragging ? 9999 : 1,
     position: 'relative' as const,
     cursor: isDragging ? 'grabbing' : 'auto',
-    ...(showThickSerieEndSeparator ? { borderBottom: '4px solid #171717' } : {}),
   };
 
   const formatPause = (pauseSeconds: number) => {
@@ -556,8 +510,6 @@ function SortableNutritionComponentRow({
     !!normalizedCircuitLetter &&
     normalizedCircuitLetter === lastCircuitLetter;
   const isWorkoutFinalRestRow = isLogicalEndOfCircuit && isLastCircuitInWorkout;
-  const isIntermediateSeriesEndRow =
-    hasCircuitIdentity && isLogicalEndOfSerie && !isLogicalEndOfCircuit;
   const finalRestSeconds =
     isWorkoutFinalRestRow && (circuitPauseFromCircuit ?? pauseCircuitsSeconds) != null
       ? (circuitPauseFromCircuit ?? pauseCircuitsSeconds)!
@@ -569,13 +521,13 @@ function SortableNutritionComponentRow({
     !nutritionComponent.macroFinal &&
     storedPauseSeconds + 2 < finalRestSeconds;
 
-  // Same pause→macro mapping as non-final rows: after last serie of a circuit use pause-after-circuit; else end-of-serie uses pause-between-series.
-  const macroFromCircuitPauses = !hasCircuitIdentity
-    ? null
-    : isLogicalEndOfCircuit && (circuitPauseFromCircuit ?? pauseCircuitsSeconds) != null
-      ? formatPause((circuitPauseFromCircuit ?? pauseCircuitsSeconds) as number)
-      : isLogicalEndOfSerie && (seriesPauseFromCircuit ?? pauseSeriesSeconds) != null
-        ? formatPause((seriesPauseFromCircuit ?? pauseSeriesSeconds) as number)
+  // Between-series and between-circuits pauses belong in the Pause column (circuit planner → component mapping).
+  // Macro fallback from circuit config applies only to the final workout rest row.
+  const macroFromCircuitPauses =
+    !hasCircuitIdentity || !isWorkoutFinalRestRow
+      ? null
+      : (circuitPauseFromCircuit ?? pauseCircuitsSeconds) != null
+        ? formatPause((circuitPauseFromCircuit ?? pauseCircuitsSeconds) as number)
         : null;
 
   const lapMacroSeconds = macroFromLap ? parseNutritionComponentPauseToSeconds(macroFromLap) : 0;
@@ -676,12 +628,7 @@ function SortableNutritionComponentRow({
     <>
     <tr 
       ref={setNodeRef} 
-      style={{
-        ...style,
-        ...(isIntermediateSeriesEndRow
-          ? { boxShadow: 'inset 0 -3px 0 0 rgba(31,41,55,0.95)' }
-          : {}),
-      }} 
+      style={style} 
       className="hover:bg-gray-100 transition-colors duration-150 isolate relative z-0"
     >
       {/* Move (Drag Handle) Column */}
@@ -706,12 +653,9 @@ function SortableNutritionComponentRow({
         {nutritionComponent.circuitLetter ? nutritionComponent.circuitLetter : nutritionFoodLetter}
       </td>
       
-      {/* # (Repetition Number) / Circuit Info Column - 2026-01-22 10:30 UTC */}
-      {/* 2026-01-24 - Updated to show format like "B-2-3" (circuit-series-station) */}
+      {/* # (Repetition Number) / Circuit Info Column - Circuit-Station-Serie e.g. B-2-3 */}
       <td className="border border-gray-300 px-1 py-1 text-center font-bold text-xs">
-        {nutritionComponent.circuitLetter 
-          ? `${nutritionComponent.circuitLetter}-${nutritionComponent.localSeriesNumber || nutritionComponent.seriesNumber}-${nutritionComponent.stationNumber}` 
-          : sequenceNumber}
+        {formatCircuitMovelapLabel(nutritionComponent) ?? sequenceNumber}
       </td>
       
       {/* NutritionMeal Section Column - Combined color and name */}
@@ -824,7 +768,13 @@ function SortableNutritionComponentRow({
              {nutritionComponent._fastPlannerMode || '—'}
            </td>
            <td className={`border border-gray-300 px-1 py-1 text-center text-xs ${isNewlyAdded ? 'text-red-600' : ''}`}>
-             {macroValue != null && parseNutritionComponentPauseToSeconds(macroValue) === 0 ? '0' : macroValue || '—'}
+             {(() => {
+               const raw = nutritionComponent._fastPlannerMacro ?? nutritionComponent.macroFinal;
+               if (raw == null || String(raw).trim() === '' || String(raw).trim() === '—') return '—';
+               const norm = String(raw).trim();
+               if (norm === "0'") return '—';
+               return norm;
+             })()}
            </td>
          </>
        )}
@@ -1421,7 +1371,7 @@ export default function NutritionComponentDetailTable({
     muscularSector: '',
     exercise: '',
     reps: '',
-    pause: '',
+    pause: 15,
     macroFinal: '',
     notes: '',
     seriesNumber: 1
@@ -1654,6 +1604,20 @@ export default function NutritionComponentDetailTable({
     }
   }
 
+  const circuitPauseDisplayCtx: CircuitPauseContext | null = circuitConfig
+    ? (() => {
+        const lw = String(circuitConfig.loadOfWork ?? '').trim();
+        let finalMacroSec = 0;
+        if (/^(?:[1-9]|10)$/.test(lw)) finalMacroSec = parseInt(lw, 10) * 60;
+        else if (/^[0-9]$/.test(lw)) finalMacroSec = parseInt(lw, 10) * 60;
+        else {
+          const sec = parseInt(lw, 10);
+          if (Number.isFinite(sec) && sec >= 60 && sec <= 600) finalMacroSec = sec;
+        }
+        return buildCircuitPauseContextFromConfig(circuitConfig, finalMacroSec);
+      })()
+    : null;
+
   const fastPlannerData = extractFastPlannerDataFromNotes(nutritionFood.notes) ?? nutritionFood.fastPlannerData ?? null;
   const hasFastPlannerDescription =
     typeof nutritionFood?.description === 'string' && nutritionFood.description.toLowerCase().startsWith('fast planner');
@@ -1869,8 +1833,9 @@ export default function NutritionComponentDetailTable({
   React.useEffect(() => {
     // Sort nutrition_components by repetitionNumber to maintain order after reload
     const unsortedNutritionComponents = nutritionFood.nutritionComponents || [];    
-    const newNutritionComponents = [...unsortedNutritionComponents].sort((a: any, b: any) => 
-      (a.repetitionNumber || 0) - (b.repetitionNumber || 0)
+    const newNutritionComponents = sortMovelapsForDisplay(
+      unsortedNutritionComponents,
+      nutritionFood.isCircuitBased
     );
     
     setNutritionComponents(newNutritionComponents);
@@ -2185,13 +2150,14 @@ export default function NutritionComponentDetailTable({
 
     // Default Pause to circuit config "between stations" (pauseStations) - reference nutritionComponent may have macro
     const pauseStationsSeconds = circuitConfig?.pauses?.stations ?? 20;
-    const defaultPause = formatSecondsToPauseInput(typeof pauseStationsSeconds === 'number' ? pauseStationsSeconds : 20);
+    const defaultPauseSec =
+      typeof pauseStationsSeconds === 'number' ? pauseStationsSeconds : 20;
 
     setAddStationDraft({
       muscularSector: nutritionComponent?.muscularSector || nutritionComponent?.style || '',
       exercise: nutritionComponent?.exercise || '',
       reps: typeof nutritionComponent?.reps === 'number' ? String(nutritionComponent.reps) : (nutritionComponent?.reps ? String(nutritionComponent.reps) : ''),
-      pause: defaultPause,
+      pause: defaultPauseSec,
       macroFinal: nutritionComponent?.macroFinal || '',
       notes: cleanedNotes,
       seriesNumber: localSeriesNumber
@@ -2229,14 +2195,23 @@ export default function NutritionComponentDetailTable({
     const sectorInit = (nutritionComponent?.muscularSector || nutritionComponent?.style || '').trim();
     const exerciseInitRaw = (nutritionComponent?.exercise || '').trim();
     const exerciseInit = isPlaceholderEmptyExercise(exerciseInitRaw) ? '' : exerciseInitRaw;
+    const defaultPauseSec =
+      typeof circuitConfig?.pauseStations === 'number'
+        ? circuitConfig.pauseStations
+        : typeof circuitConfig?.pauses?.stations === 'number'
+          ? circuitConfig.pauses.stations
+          : 15;
+    const pauseSeconds = resolveCircuitStationPauseSecondsForModal({
+      movelap: nutritionComponent,
+      circuits: circuitRows,
+      ctx: circuitPauseDisplayCtx,
+      defaultPauseSeconds: defaultPauseSec,
+    });
     setAddStationDraft({
       muscularSector: nutritionComponent?.muscularSector || nutritionComponent?.style || '',
       exercise: nutritionComponent?.exercise || '',
       reps: typeof nutritionComponent?.reps === 'number' ? String(nutritionComponent.reps) : (nutritionComponent?.reps ? String(nutritionComponent.reps) : ''),
-      pause:
-        nutritionComponent?.pause != null && String(nutritionComponent.pause).trim() !== ''
-          ? formatSecondsToPauseInput(parsePauseToSeconds(nutritionComponent.pause))
-          : '',
+      pause: pauseSeconds,
       macroFinal: nutritionComponent?.macroFinal || '',
       notes: cleanedNotes,
       seriesNumber: localSeriesNumber
@@ -2391,6 +2366,12 @@ export default function NutritionComponentDetailTable({
     return `${m}'${s.toString().padStart(2, '0')}"`;
   };
 
+  const draftPauseToApiValue = (pause: unknown): string | null => {
+    const sec = parsePauseToSeconds(pause);
+    if (sec <= 0 && (pause === '' || pause == null)) return null;
+    return formatSecondsToPauseInput(sec);
+  };
+
   const handleAddStation = async () => {
     if (!addStationTarget) return;
     if (isAddingStation) return;
@@ -2428,7 +2409,7 @@ export default function NutritionComponentDetailTable({
           muscularSector: addStationDraft.muscularSector,
           exercise: addStationDraft.exercise,
           reps: addStationDraft.reps,
-          pause: addStationDraft.pause,
+          pause: draftPauseToApiValue(addStationDraft.pause),
           macroFinal: addStationDraft.macroFinal,
           notes: addStationDraft.notes,
           status: 'PENDING'
@@ -2551,7 +2532,7 @@ export default function NutritionComponentDetailTable({
           muscularSector: addStationDraft.muscularSector || null,
           exercise: addStationDraft.exercise || null,
           reps: addStationDraft.reps || null,
-          pause: addStationDraft.pause || null,
+          pause: draftPauseToApiValue(addStationDraft.pause),
           macroFinal: addStationDraft.macroFinal || null,
           notes: nextNotes || null
         })
@@ -3432,11 +3413,25 @@ export default function NutritionComponentDetailTable({
       exerciseOrder.push(ex);
     }
 
+    const lastExerciseInMoveframe = exerciseOrder[exerciseOrder.length - 1] ?? '';
+    const lastExerciseBySector = new Map<string, string>();
+    for (const ex of exerciseOrder) {
+      const laps = lapsByExercise.get(ex) || [];
+      const sectorKey = (laps[0]?.muscularSector || laps[0]?.sector || 'Other').trim() || 'Other';
+      lastExerciseBySector.set(sectorKey, ex);
+    }
+
+    const endMacroRaw =
+      (typeof fastPlannerData?.endMacro === 'string' && fastPlannerData.endMacro.trim()) ||
+      (nutritionFood?.macroFinal != null && String(nutritionFood.macroFinal).trim()) ||
+      '';
+
     const displayNutritionComponents = exerciseOrder
       .map((exercise) => {
         const list = lapsByExercise.get(exercise) || [];
         if (list.length === 0) return null;
         const rep = list[0];
+        const lastLapInExercise = list[list.length - 1];
         const row = fpByExercise.get(exercise);
         const extracted = extractFastPlannerModeFromNotes(rep?.notes);
         const modeFromRow = typeof row?.mode === 'string' ? row.mode.trim() : '';
@@ -3444,6 +3439,29 @@ export default function NutritionComponentDetailTable({
         const seriesFromRow = typeof row?.series === 'string' && row.series.trim() !== '' ? row.series.trim() : String(list.length);
         const ripTimeFromRow = typeof row?.ripTime === 'string' && row.ripTime.trim() !== '' ? row.ripTime.trim() : '';
         const breakFromRow = typeof row?.break === 'string' && row.break.trim() !== '' ? row.break.trim() : '';
+
+        const sectorKey = (rep?.muscularSector || rep?.sector || 'Other').trim() || 'Other';
+        const isLastInSector = lastExerciseBySector.get(sectorKey) === exercise;
+        const isLastInMoveframe = lastExerciseInMoveframe === exercise;
+
+        let macroDisplay: string | null = null;
+        const lapMacro =
+          lastLapInExercise?.macroFinal != null && String(lastLapInExercise.macroFinal).trim() !== ''
+            ? String(lastLapInExercise.macroFinal).trim()
+            : '';
+        if (lapMacro && lapMacro !== "0'") {
+          macroDisplay = lapMacro;
+        } else if (isLastInMoveframe && endMacroRaw && endMacroRaw !== "0'") {
+          macroDisplay = endMacroRaw;
+        } else if (
+          isLastInSector &&
+          !isLastInMoveframe &&
+          typeof row?.macro === 'string' &&
+          row.macro.trim() !== '' &&
+          row.macro.trim() !== "0'"
+        ) {
+          macroDisplay = row.macro.trim();
+        }
 
         const isNewExercise = newlyAddedFastPlannerExercises.has(exercise);
         return {
@@ -3456,13 +3474,15 @@ export default function NutritionComponentDetailTable({
           _fastPlannerSeries: seriesFromRow,
           _fastPlannerRipTime: ripTimeFromRow || (rep?.reps != null ? String(rep.reps) : (rep?.time ? String(rep.time) : '')),
           _fastPlannerBreak: breakFromRow || rep?.pause || '',
+          _fastPlannerMacro: macroDisplay,
+          macroFinal: macroDisplay,
           _fastPlannerIsNewRow: isNewExercise
         };
       })
       .filter((v): v is any => !!v);
 
     return { displayNutritionComponents };
-  }, [isAnaerobicFastPlanner, fastPlannerData, nutritionComponents, newlyAddedFastPlannerExercises]);
+  }, [isAnaerobicFastPlanner, fastPlannerData, nutritionComponents, nutritionFood.macroFinal, newlyAddedFastPlannerExercises]);
 
   const aerobicFastPlannerView = React.useMemo(() => {
     if (!isAerobicFastPlanner) return null;
@@ -4540,14 +4560,34 @@ export default function NutritionComponentDetailTable({
                       })()}
                       nextNutritionComponentInTable={displayNutritionComponents[index + 1] ?? null}
                     />
+                    {isCircuitBased &&
+                      shouldShowCircuitGroupSeparatorAfter(
+                        nutritionComponent,
+                        displayNutritionComponents[index + 1]
+                      ) && (
+                        <tr key={`${nutritionComponent.id}-station-group-sep`} aria-hidden="true">
+                          <td
+                            colSpan={totalColumns}
+                            className="p-0 border-0 leading-none"
+                            style={{ height: 4, padding: 0, lineHeight: 0, backgroundColor: '#dc2626' }}
+                          />
+                        </tr>
+                      )}
                   </React.Fragment>
                 );
               })}
             </tbody>
             {isAnaerobicFastPlanner && displayNutritionComponents.length > 0 && (() => {
               const stats = computeAnaerobicFastPlannerRowStats(fastPlannerData, nutritionFood.nutritionComponents);
+              const fromDisplay = avgBreakSecondsFromFastPlannerDisplayRows(displayNutritionComponents);
               const avgSec =
-                stats.totalRepVolume > 0 ? stats.totalPauseSec / stats.totalRepVolume : 0;
+                fromDisplay > 0
+                  ? fromDisplay
+                  : stats.avgBreakSec > 0
+                    ? stats.avgBreakSec
+                    : stats.avgMacroSec > 0
+                      ? stats.avgMacroSec
+                      : 0;
               const avgPause = avgSec > 0 ? formatAvePauseFromSeconds(avgSec) : '—';
               return (
                 <tfoot className="bg-gray-100">
@@ -4730,25 +4770,82 @@ export default function NutritionComponentDetailTable({
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-800 mb-1">Repetitions</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={addStationDraft.reps}
+                      <select
+                        value={addStationDraft.reps != null && addStationDraft.reps !== '' ? String(addStationDraft.reps) : ''}
                         onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, reps: e.target.value }))}
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                         disabled={isAddingStation}
-                      />
+                      >
+                        <option value="">—</option>
+                        {Array.from({ length: 99 }, (_, i) => i + 1).map((num) => (
+                          <option key={num} value={String(num)}>{num}</option>
+                        ))}
+                        <option value="nc">nc</option>
+                      </select>
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-800 mb-1">Pause</label>
-                      <input
-                        type="text"
-                        value={addStationDraft.pause}
-                        onChange={(e) => setAddStationDraft((prev: any) => ({ ...prev, pause: formatPauseInput(e.target.value) }))}
-                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                        disabled={isAddingStation}
-                      />
+                      {(() => {
+                        const targetCircuit = Array.isArray(circuitRows)
+                          ? (circuitRows as any[]).find((c) => c?.letter === addStationTarget.circuitLetter)
+                          : null;
+                        const seriesIdx = Math.max(0, (addStationDraft.seriesNumber || 1) - 1);
+                        const seriesCount =
+                          (targetCircuit?.stationsBySeries?.length as number | undefined) ??
+                          circuitInfoByLetter.get(addStationTarget.circuitLetter)?.seriesCount ??
+                          defaultSeriesPerCircuit ??
+                          1;
+                        const stationsInSeries =
+                          (targetCircuit?.stationsBySeries?.[seriesIdx]?.length as number | undefined) ??
+                          circuitInfoByLetter.get(addStationTarget.circuitLetter)?.stationsPerSeries ??
+                          defaultStationsPerCircuit ??
+                          0;
+                        const stationNumber = addStationTarget.stationNumber;
+                        const isLastCircuitInWorkout =
+                          !!lastCircuitLetter &&
+                          addStationTarget.circuitLetter.trim().toUpperCase() === lastCircuitLetter;
+                        const seriesMode =
+                          circuitConfig?.seriesMode === 'time' ? 'time' : 'count';
+                        const pauseSec =
+                          typeof addStationDraft.pause === 'number'
+                            ? addStationDraft.pause
+                            : parsePauseToSeconds(addStationDraft.pause);
+                        const pauseOptions = withCircuitPauseOptionFallback(
+                          getCircuitStationModalPauseOptions({
+                            seriesIdx,
+                            stationNumber,
+                            stationsInSeries,
+                            seriesCount,
+                            isLastCircuitInWorkout,
+                            seriesMode,
+                          }),
+                          pauseSec
+                        );
+                        const selectedPauseSec = pauseOptions.some((o) => o.value === pauseSec)
+                          ? pauseSec
+                          : pauseOptions[0]?.value ?? pauseSec;
+                        return (
+                          <select
+                            value={selectedPauseSec}
+                            onChange={(e) =>
+                              setAddStationDraft((prev: any) => ({
+                                ...prev,
+                                pause: parseInt(e.target.value, 10),
+                              }))
+                            }
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            disabled={isAddingStation}
+                            title="Pause between stations (same options as circuit planner)"
+                          >
+                            {pauseOptions.map((opt) => (
+                              <option key={`${opt.label}-${opt.value}`} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        );
+                      })()}
                     </div>
 
                     <div className="col-span-2">
