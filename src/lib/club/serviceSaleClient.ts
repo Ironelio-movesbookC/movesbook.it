@@ -38,6 +38,7 @@ export type ServiceSalePayment = {
   paid: number;
   balance: number;
   description: string;
+  operatorId: string | null;
   operatorName: string;
 };
 
@@ -100,6 +101,7 @@ export function mapPayment(payment: ProcedurePaymentDto): ServiceSalePayment {
     paid: payment.amount,
     balance: payment.balanceAfter ?? 0,
     description: payment.notes ?? '',
+    operatorId: payment.operatorId,
     operatorName: payment.operatorName,
   };
 }
@@ -271,6 +273,16 @@ export async function deletePurchase(id: string): Promise<void> {
   await clubApiFetch(`${BASE}/records?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
+export async function updatePurchase(
+  id: string,
+  input: { recordDate?: string; notes?: string; operatorId?: string }
+): Promise<void> {
+  await clubApiFetch(`${BASE}/records/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
 export type AddPaymentInput = {
   amountPaid: number;
   paymentDate: string;
@@ -337,6 +349,20 @@ export async function fetchPaymentsForRecord(
   return fetchPayments({ ...params, recordId });
 }
 
+export async function updatePayment(
+  id: string,
+  input: { paymentDate?: string; notes?: string; operatorId?: string }
+): Promise<void> {
+  await clubApiFetch(`${BASE}/payments/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deletePayment(id: string): Promise<void> {
+  await clubApiFetch(`${BASE}/payments/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
 export async function fetchReceipts(
   params?: ListParams
 ): Promise<PaginatedResult<ServiceSaleReceipt>> {
@@ -349,4 +375,18 @@ export async function fetchReceipts(
     page: res.page,
     pageSize: res.pageSize,
   };
+}
+
+export async function updateReceipt(
+  id: string,
+  input: { documentType?: string; documentNumber?: string; annotations?: string }
+): Promise<void> {
+  await clubApiFetch(`${BASE}/receipts/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteReceipt(id: string): Promise<void> {
+  await clubApiFetch(`${BASE}/receipts/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

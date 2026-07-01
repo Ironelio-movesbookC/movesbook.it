@@ -55,6 +55,8 @@ export type Member = {
 
   service?: string;
   options?: React.ReactNode;
+  edit?: React.ReactNode;
+  delete?: React.ReactNode;
 
   // extended archive fields (legacy tables)
   outcome?: string;

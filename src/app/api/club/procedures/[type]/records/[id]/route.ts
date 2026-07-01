@@ -28,6 +28,26 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
   }
 }
 
+export async function PATCH(request: NextRequest, { params }: RouteContext) {
+  try {
+    const auth = await getClubAuthContext(request);
+    if ('error' in auth) return auth.error;
+
+    const body = await request.json() as { recordDate?: string; notes?: string; operatorId?: string };
+
+    await procedureService.updateRecord(auth.ctx, params.type, params.id, {
+      recordDate: body.recordDate,
+      notes: body.notes,
+      operatorId: body.operatorId,
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    return NextResponse.json({ error: message }, { status: message === 'Record not found' ? 404 : 500 });
+  }
+}
+
 export async function POST(request: NextRequest, { params }: RouteContext) {
   try {
     const auth = await getClubAuthContext(request);

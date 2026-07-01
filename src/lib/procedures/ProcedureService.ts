@@ -328,6 +328,132 @@ export class ProcedureService {
     if (result.count === 0) throw new Error('Record not found');
   }
 
+  async updateRecord(
+    ctx: ClubAuthContext,
+    procedureTypeCode: string,
+    recordId: string,
+    input: { recordDate?: string; notes?: string; operatorId?: string }
+  ) {
+    const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
+    if (!procedureType) throw new Error('Unknown procedure type');
+
+    const record = await prisma.procedureRecord.findFirst({
+      where: {
+        id: recordId,
+        clubId: ctx.club.id,
+        procedureTypeId: procedureType.id,
+        status: ProcedureRecordStatus.ACTIVE,
+      },
+    });
+    if (!record) throw new Error('Record not found');
+
+    const data: Record<string, unknown> = {};
+    if (input.recordDate) data.recordDate = toDateOnly(input.recordDate);
+    if (input.notes !== undefined) data.notes = input.notes;
+    if (input.operatorId) data.operatorId = input.operatorId;
+
+    await prisma.procedureRecord.update({
+      where: { id: recordId },
+      data: data as Prisma.ProcedureRecordUpdateInput,
+    });
+
+    return { success: true };
+  }
+
+  async updatePayment(
+    ctx: ClubAuthContext,
+    procedureTypeCode: string,
+    paymentId: string,
+    input: { paymentDate?: string; notes?: string; operatorId?: string }
+  ) {
+    const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
+    if (!procedureType) throw new Error('Unknown procedure type');
+
+    const payment = await prisma.procedurePayment.findFirst({
+      where: { id: paymentId },
+      include: { procedureRecord: { select: { procedureTypeId: true, clubId: true } } },
+    });
+    if (!payment || payment.procedureRecord.clubId !== ctx.club.id || payment.procedureRecord.procedureTypeId !== procedureType.id) {
+      throw new Error('Payment not found');
+    }
+
+    const data: Record<string, unknown> = {};
+    if (input.paymentDate) data.paymentDate = toDateOnly(input.paymentDate);
+    if (input.notes !== undefined) data.notes = input.notes;
+    if (input.operatorId) data.operatorId = input.operatorId;
+
+    await prisma.procedurePayment.update({
+      where: { id: paymentId },
+      data: data as Prisma.ProcedurePaymentUpdateInput,
+    });
+
+    return { success: true };
+  }
+
+  async deletePayment(ctx: ClubAuthContext, procedureTypeCode: string, paymentId: string) {
+    const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
+    if (!procedureType) throw new Error('Unknown procedure type');
+
+    const payment = await prisma.procedurePayment.findFirst({
+      where: { id: paymentId },
+      include: { procedureRecord: { select: { procedureTypeId: true, clubId: true } } },
+    });
+    if (!payment || payment.procedureRecord.clubId !== ctx.club.id || payment.procedureRecord.procedureTypeId !== procedureType.id) {
+      throw new Error('Payment not found');
+    }
+
+    await prisma.procedurePayment.delete({ where: { id: paymentId } });
+
+    return { success: true };
+  }
+
+  async updateReceipt(
+    ctx: ClubAuthContext,
+    procedureTypeCode: string,
+    receiptId: string,
+    input: { documentType?: string; documentNumber?: string; annotations?: string }
+  ) {
+    const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
+    if (!procedureType) throw new Error('Unknown procedure type');
+
+    const receipt = await prisma.procedureReceipt.findFirst({
+      where: { id: receiptId },
+      include: { procedureRecord: { select: { procedureTypeId: true, clubId: true } } },
+    });
+    if (!receipt || receipt.procedureRecord.clubId !== ctx.club.id || receipt.procedureRecord.procedureTypeId !== procedureType.id) {
+      throw new Error('Receipt not found');
+    }
+
+    const data: Record<string, unknown> = {};
+    if (input.documentType !== undefined) data.documentType = input.documentType;
+    if (input.documentNumber !== undefined) data.documentNumber = input.documentNumber;
+    if (input.annotations !== undefined) data.annotations = input.annotations;
+
+    await prisma.procedureReceipt.update({
+      where: { id: receiptId },
+      data: data as Prisma.ProcedureReceiptUpdateInput,
+    });
+
+    return { success: true };
+  }
+
+  async deleteReceipt(ctx: ClubAuthContext, procedureTypeCode: string, receiptId: string) {
+    const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
+    if (!procedureType) throw new Error('Unknown procedure type');
+
+    const receipt = await prisma.procedureReceipt.findFirst({
+      where: { id: receiptId },
+      include: { procedureRecord: { select: { procedureTypeId: true, clubId: true } } },
+    });
+    if (!receipt || receipt.procedureRecord.clubId !== ctx.club.id || receipt.procedureRecord.procedureTypeId !== procedureType.id) {
+      throw new Error('Receipt not found');
+    }
+
+    await prisma.procedureReceipt.delete({ where: { id: receiptId } });
+
+    return { success: true };
+  }
+
   async listRecords(
     ctx: ClubAuthContext,
     procedureTypeCode: string,

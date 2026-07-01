@@ -59,6 +59,7 @@ export default function ExpensePaymentDetailPage() {
         paid: p.paid,
         balance: p.balance,
         description: p.description,
+        operatorId: p.operatorId,
         operatorName: p.operatorName,
       }))
     );

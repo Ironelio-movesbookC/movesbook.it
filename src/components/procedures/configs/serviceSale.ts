@@ -34,10 +34,12 @@ export const serviceSaleRecordColumns: Column[] = [
   { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
   { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
   { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
+  { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
   { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
   { key: 'casual', header: 'Notes' },
   { key: 'operator', header: 'Operator' },
-  { key: 'options', header: 'Delete' },
+  { key: 'edit', header: 'Edit' },
+  { key: 'delete', header: 'Delete' },
 ];
 
 export const serviceSaleDeadlineColumns: Column[] = [
@@ -62,6 +64,8 @@ export const serviceSalePaymentColumns: Column[] = [
   { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
   { key: 'casual', header: 'Notes' },
   { key: 'operator', header: 'Operator' },
+  { key: 'edit', header: 'Edit' },
+  { key: 'delete', header: 'Delete' },
 ];
 
 export const serviceSalePaymentDetailColumns: Column[] = [
@@ -86,6 +90,8 @@ export const serviceSaleReceiptColumns: Column[] = [
   { key: 'paid', header: 'Payment IN', render: (v) => formatEuro(v) },
   { key: 'casual', header: 'Annotations' },
   { key: 'operator', header: 'Operator' },
+  { key: 'edit', header: 'Edit' },
+  { key: 'delete', header: 'Delete' },
 ];
 
 export const serviceSaleMovementColumns: Column[] = [

@@ -71,7 +71,7 @@ export default function ServicePaymentForm({
   const [selectedInstallmentId, setSelectedInstallmentId] = useState<string | null>(null);
   const [installmentError, setInstallmentError] = useState('');
   const [paymentType, setPaymentType] = useState<'D' | 'B'>('D');
-  const [debtTotal, setDebtTotal] = useState(String(purchase.value));
+  const [debtTotal, setDebtTotal] = useState(String(purchase.rest));
   const [debtExpire, setDebtExpire] = useState(purchase.paydate ?? new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState(purchase.notes);
   const [amountPaid, setAmountPaid] = useState('0');
@@ -100,6 +100,8 @@ export default function ServicePaymentForm({
       .then(setInstallments)
       .catch(() => setInstallments([]));
   }, [procedureType, purchase.id]);
+
+  console.log("purchase", purchase);
 
   const paidAmount = Number(amountPaid) || 0;
   const payWithAmount = Number(payWith) || 0;
@@ -546,6 +548,7 @@ export default function ServicePaymentForm({
                 type="number"
                 step="0.01"
                 className={`mt-1 ${procedureInputClass}`}
+                disabled
                 value={modifyForm.paid}
                 onChange={(e) => setModifyForm((f) => ({ ...f, paid: e.target.value }))}
               />
