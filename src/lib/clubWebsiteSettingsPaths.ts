@@ -21,6 +21,16 @@ export function clubWebsiteDisplayTopicUrl(
 /** Club bacheca (bulletin board) label editor — 14 themes. */
 export const CLUB_WEBSITE_BACHECA_PATH = '/WebsiteSettings/bacheca';
 
+/** My Club dashboard — show activated bacheca sections in the main panel. */
+export function clubBachecaDashboardUrl(clubId: string): string {
+  return `/club/dashboard?panel=bacheca&clubId=${encodeURIComponent(clubId)}`;
+}
+
+/** My Club dashboard — show read-only topic HTML in the main panel. */
+export function clubTopicDashboardUrl(clubId: string, topicId: string): string {
+  return `/club/dashboard?panel=topic&clubId=${encodeURIComponent(clubId)}&topicId=${encodeURIComponent(topicId)}`;
+}
+
 /** Custom topics editor (admin/staff). */
 export const CLUB_WEBSITE_TOPICS_PATH = '/WebsiteSettings/topics';
 

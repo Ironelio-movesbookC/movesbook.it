@@ -80,6 +80,22 @@ export function useClubWebsiteTopics(clubId: string | undefined) {
     [clubId]
   );
 
+  const moveTopic = useCallback(
+    (id: string, direction: 'up' | 'down') => {
+      setTopics((prev) => {
+        const idx = prev.findIndex((t) => t.id === id);
+        if (idx < 0) return prev;
+        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+        if (swapIdx < 0 || swapIdx >= prev.length) return prev;
+        const next = [...prev];
+        [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
+        if (clubId) saveClubWebsiteTopics(clubId, next);
+        return next;
+      });
+    },
+    [clubId]
+  );
+
   const reload = useCallback(() => {
     if (!clubId) {
       setTopics([]);
@@ -95,6 +111,7 @@ export function useClubWebsiteTopics(clubId: string | undefined) {
     updateTopic,
     toggleActivated,
     removeTopic,
+    moveTopic,
     persist,
     reload,
   };
