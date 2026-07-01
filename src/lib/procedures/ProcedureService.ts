@@ -206,7 +206,8 @@ export class ProcedureService {
         initialPayment,
         paymentDate.toISOString().slice(0, 10),
         dueDate?.toISOString().slice(0, 10) ?? null,
-        input.notes ?? null
+        input.notes ?? null,
+        tx
       );
 
       if (initialPayment > 0 && input.payMode === 'card') {
