@@ -1,5 +1,5 @@
-import SendInviteClubChrome from '@/components/promocodes/SendInviteClubChrome';
+import SendInvitePageChrome from '@/components/promocodes/SendInvitePageChrome';
 
 export default function SendInviteLayout({ children }: { children: React.ReactNode }) {
-  return <SendInviteClubChrome>{children}</SendInviteClubChrome>;
+  return <SendInvitePageChrome>{children}</SendInvitePageChrome>;
 }

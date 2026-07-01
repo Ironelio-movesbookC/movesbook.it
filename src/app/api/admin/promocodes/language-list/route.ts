@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/adminAuth';
+import { requirePromocodeAccess } from '@/lib/promocodes/promocodeAccess';
 import { getLanguageListForHelpPage } from '@/lib/promocodes/promocodeService';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requirePromocodeAccess(request);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   try {

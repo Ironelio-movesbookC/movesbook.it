@@ -1,7 +1,14 @@
 import { serialize, unserialize } from 'php-serialize';
+import {
+  PROMOCODE_FORM_LANGUAGES,
+  formatPromocodeLanguageLabel,
+} from './promocodeLanguages';
+import { getLanguageListForHelpPage } from './promocodeInviteLanguage';
+export { getLanguageListForHelpPage };
 import { prisma } from '@/lib/prisma';
 import {
   ensurePromocodeMetaTables,
+  getDefaultPromocodeMeta,
   loadHelpHtmlPagesFromTable,
   loadLanguagesFromTable,
   loadSubscriptionsFromTable,
@@ -21,6 +28,12 @@ import {
   getSubscriptionSettingsTable,
   legacyUserExistsByEmail,
 } from './legacyDb';
+import {
+  buildPromocodeSettingsSelectSql,
+  sanitizeLegacyDateString,
+} from './promocodeSettingsQuery';
+import { fetchModernUserCountries, findModernUserCountry } from './modernUserCountry';
+import { userExistedAtApplyTime } from './promocodeApplyDisplay';
 import type {
   LegacyUserSnippet,
   PaginatedResult,
@@ -32,10 +45,7 @@ import type {
 } from './types';
 
 function formatDate(value: unknown): string | null {
-  if (value == null) return null;
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  const s = String(value);
-  return s.length >= 10 ? s.slice(0, 10) : s;
+  return sanitizeLegacyDateString(value);
 }
 
 function formatDateTime(value: unknown): string | null {
@@ -59,6 +69,7 @@ async function resolveSecondarySender(
   registeredUser: LegacyUserSnippet | null,
   appliesTable: string
 ): Promise<{ apply: Record<string, unknown>; secondarySender: LegacyUserSnippet | null }> {
+  const applyCreated = apply.created != null ? String(apply.created) : null;
   let secondarySenderUsername =
     apply.secondary_sender_username != null ? String(apply.secondary_sender_username) : '';
   let secondarySenderCredit = apply.secondary_sender_credit;
@@ -68,7 +79,10 @@ async function resolveSecondarySender(
     apply.secondary_sender_id != null ? Number(apply.secondary_sender_id) : 0;
   if (secondarySenderId > 0) {
     const users = await fetchLegacyUsersByIds([secondarySenderId]);
-    secondarySender = users.get(secondarySenderId) ?? null;
+    const candidate = users.get(secondarySenderId) ?? null;
+    if (userExistedAtApplyTime(candidate, applyCreated)) {
+      secondarySender = candidate;
+    }
   }
 
   const senderId = apply.sender_id != null ? Number(apply.sender_id) : senderUser?.id ?? 0;
@@ -85,7 +99,9 @@ async function resolveSecondarySender(
     }
   }
 
-  if (!secondarySender && (senderId > 0 || senderEmail || senderUsername)) {
+  const senderValid = userExistedAtApplyTime(senderUser, applyCreated);
+
+  if (!secondarySender && senderValid && (senderId > 0 || senderEmail || senderUsername)) {
     const orParts: string[] = [];
     const params: unknown[] = [];
     if (senderId > 0) {
@@ -113,9 +129,15 @@ async function resolveSecondarySender(
         const secSenderId = sec.sender_id != null ? Number(sec.sender_id) : 0;
         if (secSenderId > 0) {
           const users = await fetchLegacyUsersByIds([secSenderId]);
-          secondarySender = users.get(secSenderId) ?? null;
+          const candidate = users.get(secSenderId) ?? null;
+          if (userExistedAtApplyTime(candidate, applyCreated)) {
+            secondarySender = candidate;
+          }
         } else if (sec.sender_email) {
-          secondarySender = await fetchLegacyUserByEmail(String(sec.sender_email));
+          const candidate = await fetchLegacyUserByEmail(String(sec.sender_email));
+          if (userExistedAtApplyTime(candidate, applyCreated)) {
+            secondarySender = candidate;
+          }
         }
       }
     }
@@ -150,14 +172,32 @@ async function buildApplyRows(
 ): Promise<PromocodeApplyRow[]> {
   const userIds: number[] = [];
   const promocodeIds: number[] = [];
+  const receiverEmails: string[] = [];
 
   for (const row of applyRecords) {
     if (row.sender_id) userIds.push(Number(row.sender_id));
     if (row.receiver_id) userIds.push(Number(row.receiver_id));
     if (row.promocode_id) promocodeIds.push(Number(row.promocode_id));
+    if (row.receiver_email) {
+      const email = String(row.receiver_email).trim().toLowerCase();
+      if (email.includes('@')) receiverEmails.push(email);
+    }
   }
 
   const users = await fetchLegacyUsersByIds(userIds);
+  const modernReceiverCountryCodeByEmail = new Map<string, string>();
+  const uniqueReceiverEmails = Array.from(new Set(receiverEmails));
+  if (uniqueReceiverEmails.length > 0) {
+    const receiverCountries = await fetchModernUserCountries(
+      uniqueReceiverEmails.map((email) => ({ email }))
+    );
+    for (const email of uniqueReceiverEmails) {
+      const country = findModernUserCountry(receiverCountries, { email });
+      if (country?.countryCode) {
+        modernReceiverCountryCodeByEmail.set(email, country.countryCode);
+      }
+    }
+  }
   const promocodeCodeMap = new Map<number, string>();
   const promocodeValidToMap = new Map<number, string>();
 
@@ -167,7 +207,7 @@ async function buildApplyRows(
       const uniquePromocodeIds = Array.from(new Set(promocodeIds));
       const placeholders = uniquePromocodeIds.map(() => '?').join(',');
       const settings = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-        `SELECT id, code, valid_to FROM \`${settingsTable}\` WHERE id IN (${placeholders})`,
+        `SELECT id, code, CAST(valid_to AS CHAR) AS valid_to FROM \`${settingsTable}\` WHERE id IN (${placeholders})`,
         ...uniquePromocodeIds
       );
       for (const s of settings) {
@@ -194,7 +234,10 @@ async function buildApplyRows(
     const resolved = await resolveSecondarySender(raw, sender, receiver, appliesTable);
     const apply = resolved.apply;
     const promocodeId = apply.promocode_id != null ? Number(apply.promocode_id) : null;
-    const flagImage = await fetchFlagImageByCountryId(receiver?.countryId ?? null);
+    const modernReceiverCountryCode = modernReceiverCountryCodeByEmail.get(receiverEmail.toLowerCase()) ?? null;
+    const flagCountryId = receiver?.countryId ?? null;
+    const flagImage = flagCountryId ? await fetchFlagImageByCountryId(flagCountryId) : null;
+    const receiverCountryCode = modernReceiverCountryCode ?? await fetchCountryCodeById(flagCountryId);
 
     results.push({
       id: Number(apply.id),
@@ -203,6 +246,10 @@ async function buildApplyRows(
       receiverEmail: receiverEmail || null,
       receiverId: apply.receiver_id != null ? Number(apply.receiver_id) : null,
       senderId: apply.sender_id != null ? Number(apply.sender_id) : null,
+      senderEmail: apply.sender_email != null ? String(apply.sender_email).trim() : null,
+      registrationDate:
+        apply.registration_date != null ? formatDateTime(apply.registration_date) : null,
+      isRegistered: apply.is_registered != null ? (apply.is_registered as string | number) : null,
       senderCredit: apply.sender_credit != null ? String(apply.sender_credit) : null,
       receiverCredit: apply.receiver_credit != null ? String(apply.receiver_credit) : null,
       receiverVersion: apply.receiver_version != null ? String(apply.receiver_version) : null,
@@ -218,6 +265,7 @@ async function buildApplyRows(
       promocodeCode: promocodeId != null ? promocodeCodeMap.get(promocodeId) ?? '' : '',
       promocodeValidTo: promocodeId != null ? promocodeValidToMap.get(promocodeId) ?? '' : '',
       flagImage,
+      receiverCountryCode,
     });
   }
 
@@ -361,8 +409,9 @@ export async function listPromocodeSettings(
   );
   const total = Number(countRows[0]?.total ?? 0);
 
+  const selectSql = await buildPromocodeSettingsSelectSql(settingsTable);
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT * FROM \`${settingsTable}\` ${whereSql}
+    `SELECT ${selectSql} FROM \`${settingsTable}\` ${whereSql}
      ORDER BY \`${field}\` ${dir}
      LIMIT ? OFFSET ?`,
     ...params,
@@ -374,25 +423,65 @@ export async function listPromocodeSettings(
     .map((r) => Number(r.creater_id ?? r.creator_id ?? 0))
     .filter((id) => id > 0);
   const creators = await fetchLegacyUsersByIds(creatorIds);
+  const modernCreatorCountries = await fetchModernUserCountries(
+    Array.from(creators.values()).map((creator) => ({
+      legacyId: creator.id,
+      email: creator.email,
+      username: creator.username,
+    }))
+  );
+  const settingEmailCountries = await fetchModernUserCountries(
+    rows.map((row) => ({
+      email: row.email != null ? String(row.email) : null,
+    }))
+  );
 
   const items: PromocodeSettingRow[] = [];
   for (const row of rows) {
     const id = Number(row.id);
     const creatorId = Number(row.creater_id ?? row.creator_id ?? 0);
     const creator = creatorId > 0 ? creators.get(creatorId) ?? null : null;
-    const creatorFlagImage = await fetchFlagImageByCountryId(creator?.countryId ?? null);
-    const creatorCountryCode = await fetchCountryCodeById(creator?.countryId ?? null);
+    let creatorFlagImage: string | null = null;
+    let creatorCountryCode: string | null = null;
+    try {
+      creatorFlagImage = await fetchFlagImageByCountryId(creator?.countryId ?? null);
+      creatorCountryCode = await fetchCountryCodeById(creator?.countryId ?? null);
+      const modernCountry = findModernUserCountry(modernCreatorCountries, {
+        legacyId: creator?.id,
+        email: creator?.email,
+        username: creator?.username,
+      });
+      if (modernCountry) {
+        creatorCountryCode = modernCountry.countryCode;
+      }
+    } catch (err) {
+      console.warn('promocode list creator flag/country lookup failed:', err);
+    }
 
     let inviteEmails: string[] = [];
+    let inviteFlagImage: string | null = null;
+    let inviteCountryCode: string | null = null;
+    const settingEmailCountry = findModernUserCountry(settingEmailCountries, {
+      email: row.email != null ? String(row.email) : null,
+    });
+    if (settingEmailCountry) {
+      inviteCountryCode = settingEmailCountry.countryCode;
+    }
     if (appliesTable) {
-      const applyList = await prisma.$queryRawUnsafe<{ receiver_email: string | null }[]>(
-        `SELECT receiver_email FROM \`${appliesTable}\`
-         WHERE promocode_id = ? AND delete_status = 2`,
+      const applyList = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+        `SELECT * FROM \`${appliesTable}\`
+         WHERE promocode_id = ? AND delete_status = 2
+         ORDER BY id DESC`,
         id
       );
       inviteEmails = applyList
         .map((a) => (a.receiver_email ? String(a.receiver_email).trim() : ''))
         .filter(Boolean);
+
+      const applyRows = await buildApplyRows(applyList, false);
+      const inviteFlagRow = applyRows.find((a) => a.receiverCountryCode || a.flagImage);
+      inviteFlagImage = inviteFlagRow?.flagImage ?? inviteFlagImage;
+      inviteCountryCode = inviteCountryCode ?? inviteFlagRow?.receiverCountryCode ?? null;
     }
 
     const versionId = row.version_id != null ? String(row.version_id) : '';
@@ -427,6 +516,8 @@ export async function listPromocodeSettings(
       creator,
       creatorFlagImage,
       creatorCountryCode,
+      inviteFlagImage,
+      inviteCountryCode,
       versionCount,
     });
   }
@@ -438,8 +529,9 @@ export async function getPromocodeSettingById(id: number): Promise<PromocodeSett
   const settingsTable = await getPromocodeSettingsTable();
   if (!settingsTable) return null;
 
+  const selectSql = await buildPromocodeSettingsSelectSql(settingsTable);
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT * FROM \`${settingsTable}\` WHERE id = ? AND delete_status = 2 LIMIT 1`,
+    `SELECT ${selectSql} FROM \`${settingsTable}\` WHERE id = ? AND delete_status = 2 LIMIT 1`,
     id
   );
   if (!rows[0]) return null;
@@ -448,6 +540,26 @@ export async function getPromocodeSettingById(id: number): Promise<PromocodeSett
   const creatorId = Number(row.creater_id ?? row.creator_id ?? 0);
   const creators = await fetchLegacyUsersByIds(creatorId > 0 ? [creatorId] : []);
   const creator = creatorId > 0 ? creators.get(creatorId) ?? null : null;
+  const modernCreatorCountries = await fetchModernUserCountries(
+    creator ? [{ legacyId: creator.id, email: creator.email, username: creator.username }] : []
+  );
+
+  let creatorFlagImage: string | null = null;
+  let creatorCountryCode: string | null = null;
+  try {
+    creatorFlagImage = await fetchFlagImageByCountryId(creator?.countryId ?? null);
+    creatorCountryCode = await fetchCountryCodeById(creator?.countryId ?? null);
+    const modernCountry = findModernUserCountry(modernCreatorCountries, {
+      legacyId: creator?.id,
+      email: creator?.email,
+      username: creator?.username,
+    });
+    if (modernCountry) {
+      creatorCountryCode = modernCountry.countryCode;
+    }
+  } catch (err) {
+    console.warn('promocode creator flag/country lookup failed:', err);
+  }
 
   return {
     id: Number(row.id),
@@ -476,14 +588,18 @@ export async function getPromocodeSettingById(id: number): Promise<PromocodeSett
     inviteCount: 0,
     inviteEmails: [],
     creator,
-    creatorFlagImage: await fetchFlagImageByCountryId(creator?.countryId ?? null),
-    creatorCountryCode: await fetchCountryCodeById(creator?.countryId ?? null),
+    creatorFlagImage,
+    creatorCountryCode,
     versionCount: row.version_id ? String(row.version_id).split(',').filter(Boolean).length : 0,
   };
 }
 
 export async function getPromocodeMeta(): Promise<PromocodeMeta> {
-  await ensurePromocodeMetaTables();
+  try {
+    await ensurePromocodeMetaTables();
+  } catch (err) {
+    console.warn('promocode meta bootstrap skipped:', err);
+  }
 
   const legacyMeta = await withLegacyConnection(async (connection) => {
     const query = async <T>(sql: string, params: unknown[] = []): Promise<T> => {
@@ -491,30 +607,79 @@ export async function getPromocodeMeta(): Promise<PromocodeMeta> {
       return rows as T;
     };
 
-    const subscriptions = await query<{ id: number | bigint; subscription_name: string | null }[]>(
-      `SELECT id, subscription_name FROM subscription_settings
-       WHERE subscription_name IS NOT NULL AND subscription_name != ''
-       ORDER BY id ASC`
-    ).catch(() => [] as { id: number | bigint; subscription_name: string | null }[]);
+    const tableExists = async (tableName: string): Promise<boolean> => {
+      const rows = await query<{ TABLE_NAME: string }[]>(
+        `SELECT TABLE_NAME FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1`,
+        [tableName]
+      );
+      return rows.length > 0;
+    };
 
-    const helpHtmlPages = await query<{ id: number | bigint; page_title: string | null }[]>(
-      `SELECT id, page_title FROM help_html_pages
-       WHERE lang_id = 1 AND page_title IS NOT NULL AND page_title != ''
-       ORDER BY id DESC`
-    ).catch(() => [] as { id: number | bigint; page_title: string | null }[]);
+    const tableColumns = async (tableName: string): Promise<Set<string>> => {
+      const rows = await query<{ COLUMN_NAME: string }[]>(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+        [tableName]
+      );
+      return new Set(rows.map((row) => row.COLUMN_NAME));
+    };
 
-    const helpFallback =
-      helpHtmlPages.length > 0
-        ? helpHtmlPages
-        : await query<{ id: number | bigint; page_title: string | null }[]>(
-            `SELECT id, page_title FROM help_html_pages
-             WHERE page_title IS NOT NULL AND page_title != ''
-             ORDER BY id DESC`
-          ).catch(() => [] as { id: number | bigint; page_title: string | null }[]);
+    const pickColumn = (columns: Set<string>, candidates: string[]): string | null =>
+      candidates.find((column) => columns.has(column)) ?? null;
 
-    const languages = await query<{ id: number | bigint; lang_name: string | null }[]>(
-      `SELECT id, lang_name FROM language_values ORDER BY id ASC`
-    ).catch(() => [] as { id: number | bigint; lang_name: string | null }[]);
+    const subscriptions = await (async () => {
+      if (!(await tableExists('subscription_settings'))) return [];
+      const columns = await tableColumns('subscription_settings');
+      const idCol = pickColumn(columns, ['id']);
+      const nameCol = pickColumn(columns, ['subscription_name', 'name']);
+      if (!idCol || !nameCol) return [];
+      return query<{ id: number | bigint; subscription_name: string | null }[]>(
+        `SELECT \`${idCol}\` AS id, \`${nameCol}\` AS subscription_name
+         FROM subscription_settings
+         WHERE \`${nameCol}\` IS NOT NULL AND \`${nameCol}\` != ''
+         ORDER BY \`${idCol}\` ASC`
+      );
+    })().catch(() => [] as { id: number | bigint; subscription_name: string | null }[]);
+
+    const helpFallback = await (async () => {
+      if (!(await tableExists('help_html_pages'))) return [];
+      const columns = await tableColumns('help_html_pages');
+      const idCol = pickColumn(columns, ['id']);
+      const titleCol = pickColumn(columns, ['page_title', 'title']);
+      const langCol = pickColumn(columns, ['lang_id', 'language_id']);
+      if (!idCol || !titleCol) return [];
+
+      if (langCol) {
+        const rows = await query<{ id: number | bigint; page_title: string | null }[]>(
+          `SELECT \`${idCol}\` AS id, \`${titleCol}\` AS page_title
+           FROM help_html_pages
+           WHERE \`${langCol}\` = 1 AND \`${titleCol}\` IS NOT NULL AND \`${titleCol}\` != ''
+           ORDER BY \`${idCol}\` DESC`
+        );
+        if (rows.length > 0) return rows;
+      }
+
+      return query<{ id: number | bigint; page_title: string | null }[]>(
+        `SELECT \`${idCol}\` AS id, \`${titleCol}\` AS page_title
+         FROM help_html_pages
+         WHERE \`${titleCol}\` IS NOT NULL AND \`${titleCol}\` != ''
+         ORDER BY \`${idCol}\` DESC`
+      );
+    })().catch(() => [] as { id: number | bigint; page_title: string | null }[]);
+
+    const languages = await (async () => {
+      if (!(await tableExists('language_values'))) return [];
+      const columns = await tableColumns('language_values');
+      const idCol = pickColumn(columns, ['id']);
+      const nameCol = pickColumn(columns, ['lang_name', 'name', 'lang_value']);
+      if (!idCol || !nameCol) return [];
+      return query<{ id: number | bigint; lang_name: string | null }[]>(
+        `SELECT \`${idCol}\` AS id, \`${nameCol}\` AS lang_name
+         FROM language_values
+         ORDER BY \`${idCol}\` ASC`
+      );
+    })().catch(() => [] as { id: number | bigint; lang_name: string | null }[]);
 
     return {
       subscriptions: subscriptions.map((row) => ({
@@ -539,28 +704,53 @@ export async function getPromocodeMeta(): Promise<PromocodeMeta> {
   const prismaQuery = async <T>(sql: string, params: unknown[] = []): Promise<T> =>
     prisma.$queryRawUnsafe<T>(sql, ...params);
 
-  return {
-    subscriptions: await loadSubscriptionsFromTable(prismaQuery),
-    helpHtmlPages: await loadHelpHtmlPagesFromTable(prismaQuery),
-    languages: await loadLanguagesFromTable(prismaQuery),
-  };
+  let meta: PromocodeMeta;
+  try {
+    meta = {
+      subscriptions: await loadSubscriptionsFromTable(prismaQuery),
+      helpHtmlPages: await loadHelpHtmlPagesFromTable(prismaQuery),
+      languages: await loadLanguagesFromTable(prismaQuery),
+    };
+  } catch (err) {
+    console.error('promocode meta prisma load failed:', err);
+    meta = { subscriptions: [], helpHtmlPages: [], languages: [] };
+  }
+
+  if (
+    meta.subscriptions.length === 0 &&
+    meta.helpHtmlPages.length === 0 &&
+    meta.languages.length === 0
+  ) {
+    return getDefaultPromocodeMeta();
+  }
+
+  return meta;
 }
 
-export function generatePromocode(): string {
-  const rand = Math.random().toString(36).slice(2);
-  const hash = Buffer.from(`${Date.now()}-${rand}`).toString('base64').replace(/[^a-z0-9]/gi, '');
-  return hash.slice(0, 9).toLowerCase();
-}
+export { generatePromocode } from '@/lib/promocodes/generatePromocode';
 
 function buildValidTo(form: PromocodeSettingFormData): string {
-  return `${form.toYear}-${form.toMonth}-${form.toDay}`;
+  const year = parseInt(String(form.toYear), 10);
+  const month = parseInt(String(form.toMonth), 10);
+  let day = parseInt(String(form.toDay), 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  const lastDay = new Date(year, month, 0).getDate();
+  if (!Number.isFinite(day) || day < 1) day = 1;
+  if (day > lastDay) day = lastDay;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 export async function createPromocodeSetting(
   form: PromocodeSettingFormData,
   creatorId: number
 ): Promise<number | null> {
-  await ensurePromocodeMetaTables();
+  try {
+    await ensurePromocodeMetaTables();
+  } catch (err) {
+    console.warn('promocode create bootstrap skipped:', err);
+  }
 
   const settingsTable = await getPromocodeSettingsTable();
   if (!settingsTable) return null;
@@ -628,7 +818,11 @@ export async function createPromocodeSetting(
 }
 
 export async function updatePromocodeSetting(id: number, form: PromocodeSettingFormData): Promise<boolean> {
-  await ensurePromocodeMetaTables();
+  try {
+    await ensurePromocodeMetaTables();
+  } catch (err) {
+    console.warn('promocode update bootstrap skipped:', err);
+  }
 
   const settingsTable = await getPromocodeSettingsTable();
   if (!settingsTable) return false;
@@ -636,6 +830,14 @@ export async function updatePromocodeSetting(id: number, form: PromocodeSettingF
   const columns = await getSettingsColumns();
   const sets: string[] = [];
   const values: unknown[] = [];
+  const discountNum = parseInt(String(form.discount ?? '0'), 10);
+  const subscriptionExtendsRaw = String(form.subscriptionExtends ?? '').trim();
+  const subscriptionExtendsParsed =
+    subscriptionExtendsRaw === '' ? null : parseInt(subscriptionExtendsRaw, 10);
+  const subscriptionExtendsNum =
+    subscriptionExtendsParsed != null && Number.isFinite(subscriptionExtendsParsed)
+      ? subscriptionExtendsParsed
+      : null;
 
   const addSet = (col: string, value: unknown) => {
     if (!columns.has(col)) return;
@@ -646,22 +848,23 @@ export async function updatePromocodeSetting(id: number, form: PromocodeSettingF
   addSet('valid_to', buildValidTo(form));
   addSet('enable', form.enable ? 'Enable' : 'Disable');
   addSet('usable_by', form.usableBy);
-  addSet('discount', form.discount);
-  addSet('enable_extension', form.enableExtension ? '1' : '0');
-  addSet('subscription_extends', form.subscriptionExtends);
+  addSet('discount', Number.isFinite(discountNum) ? discountNum : 0);
+  addSet('enable_extension', form.enableExtension ? 1 : 0);
+  addSet('subscription_extends', subscriptionExtendsNum);
   addSet('management_section', form.managementSection);
   addSet(
     'social_options',
     serialize(Array.isArray(form.socialOptions) ? form.socialOptions : [])
   );
-  addSet('enable_free_accounts', form.enableFreeAccounts ? '1' : '0');
+  addSet('enable_free_accounts', form.enableFreeAccounts ? 1 : 0);
   addSet('basic_version', form.basicVersion);
   addSet('premium_version', form.premiumVersion);
   addSet('professional_version', form.professionalVersion);
-  addSet('help_html_pages_id', form.helpHtmlPagesId);
-  addSet('language_id', form.languageId);
+  addSet('help_html_pages_id', form.helpHtmlPagesId != null ? String(form.helpHtmlPagesId) : null);
+  addSet('language_id', form.languageId != null ? String(form.languageId) : null);
   addSet('email', form.email);
   addSet('recipient', form.recipient);
+  addSet('modified', new Date());
 
   if (sets.length === 0) return false;
 
@@ -715,8 +918,9 @@ export async function checkPromocodeByUser(input: {
   }
 
   const today = new Date().toISOString().slice(0, 10);
+  const selectSql = await buildPromocodeSettingsSelectSql(settingsTable);
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT * FROM \`${settingsTable}\`
+    `SELECT ${selectSql} FROM \`${settingsTable}\`
      WHERE code = ? AND valid_from <= ? AND valid_to >= ? AND enable = 'Enable' AND delete_status = 2
      LIMIT 1`,
     input.code,
@@ -765,34 +969,4 @@ export function parseSocialOptions(raw: string | null | undefined): Record<strin
       return {};
     }
   }
-}
-
-export async function getLanguageListForHelpPage(pageTitle: string): Promise<{ id: number; value: string }[]> {
-  const helpTable = await getHelpHtmlPagesTable();
-  const langTable = await getLanguageValuesTable();
-  if (!helpTable || !langTable || !pageTitle.trim()) return [];
-
-  const pages = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT id, page_title, lang_id, uniqueid FROM \`${helpTable}\``
-  );
-  const languageDetl = await prisma.$queryRawUnsafe<{ id: number | bigint; lang_name: string | null }[]>(
-    `SELECT id, lang_name FROM \`${langTable}\``
-  );
-  const langMap = new Map(languageDetl.map((l) => [Number(l.id), l.lang_name ? String(l.lang_name) : '']));
-
-  const matchingPages = pages.filter((p) => String(p.page_title ?? '') === pageTitle);
-  const langIds = new Set<number>();
-
-  for (const page of matchingPages) {
-    if (page.lang_id != null) langIds.add(Number(page.lang_id));
-    const uniqueid = page.uniqueid;
-    if (uniqueid) {
-      const bound = pages.filter((p) => String(p.uniqueid ?? '') === String(uniqueid));
-      for (const b of bound) {
-        if (b.lang_id != null) langIds.add(Number(b.lang_id));
-      }
-    }
-  }
-
-  return Array.from(langIds).map((id) => ({ id, value: langMap.get(id) ?? `Lang ${id}` }));
 }

@@ -3,7 +3,13 @@ import { prisma } from '@/lib/prisma';
 import { findExistingTable, getTableColumns } from '@/lib/outcomeSettingsDb';
 import { clearPromocodeTableCache, ensureLegacyPromocodeUserTables } from './legacyDb';
 import { resetQuickRegisterSubscriptionSeedCache } from '../users/quickRegisterSubscriptionSeed';
+import { repairInvalidPromocodeSettingDates } from './promocodeSettingsQuery';
 import legacyHelpHtmlPages from './helpHtmlPagesLegacySeed.json';
+import {
+  DEFAULT_INVITE_PARAGRAPH_IT,
+  ensurePromocodeInviteLocalizedContent,
+  OTD_HELP_UNIQUE_ID,
+} from './promocodeInviteLocale';
 
 export type LegacyDbConfig = {
   host: string;
@@ -66,20 +72,27 @@ export async function withLegacyConnection<T>(
   const config = getLegacyDbConfig();
   if (!config) return null;
 
-  const connection = await mysql.createConnection({
-    host: config.host,
-    port: config.port,
-    user: config.user,
-    password: config.password,
-    database: config.database,
-  });
-
+  let connection: mysql.Connection | undefined;
   try {
+    connection = await mysql.createConnection({
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      password: config.password,
+      database: config.database,
+    });
     return await fn(connection);
+  } catch (err) {
+    console.warn('Legacy DB unavailable for promocodes:', err);
+    return null;
   } finally {
-    await connection.end();
+    if (connection) {
+      await connection.end().catch(() => undefined);
+    }
   }
 }
+
+let promocodeMetaTablesEnsured = false;
 
 const SUBSCRIPTION_TABLE_CANDIDATES = ['subscription_settings'];
 const HELP_PAGES_TABLE_CANDIDATES = ['help_html_pages'];
@@ -112,6 +125,21 @@ const DEFAULT_LANGUAGES: { id: number; name: string }[] = [
   { id: 4, name: 'it' },
 ];
 
+export function getDefaultPromocodeMeta(): {
+  subscriptions: { id: number; name: string }[];
+  helpHtmlPages: { id: number; title: string }[];
+  languages: { id: number; name: string }[];
+} {
+  return {
+    subscriptions: DEFAULT_SUBSCRIPTIONS.map((row) => ({ id: row.id, name: row.name })),
+    helpHtmlPages: LEGACY_HELP_HTML_PAGES.filter((row) => row.langId === 1).map((row) => ({
+      id: row.id,
+      title: row.title,
+    })),
+    languages: DEFAULT_LANGUAGES.map((row) => ({ id: row.id, name: row.name })),
+  };
+}
+
 const DEFAULT_INVITE_PARAGRAPH_EN = `<p>Dear user,&nbsp;<br />
 we are happy to send you the promotional code with which you can register on the Movesbook platform and which will allow you to access exclusive services for athletes, technicians and managers of clubs and sports centers, taking advantage of discounts and benefits.</p>
 <p>Registering with the code received allows you to immediately have credits that can be used as a discount for purchases of services available on Movesbook.<br />
@@ -122,20 +150,56 @@ The same code can be used by you to invite other potential users who, once regis
 
 async function seedHelpHtmlPagesFromLegacy(): Promise<void> {
   if (!(await tableExists('help_html_pages'))) return;
+  if ((await countRows('help_html_pages')) > 0) return;
+
+  const columns = await getTableColumns('help_html_pages');
+  const titleCol = pickColumn(columns, ['page_title', 'title']);
+  if (!titleCol) return;
+
+  const langCol = pickColumn(columns, ['lang_id', 'language_id']);
+  const contentCol = pickColumn(columns, ['content']);
+  const createdCol = pickColumn(columns, ['created']);
 
   for (const row of LEGACY_HELP_HTML_PAGES) {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO help_html_pages (id, page_title, lang_id, content, created)
-       VALUES (?, ?, ?, ?, NOW())
-       ON DUPLICATE KEY UPDATE
-         page_title = VALUES(page_title),
-         lang_id = VALUES(lang_id),
-         content = VALUES(content)`,
-      row.id,
-      row.title,
-      row.langId,
-      row.content
-    );
+    try {
+      const fields = ['id', titleCol];
+      const placeholders = ['?', '?'];
+      const values: unknown[] = [row.id, row.title];
+      const updates = [`\`${titleCol}\` = VALUES(\`${titleCol}\`)`];
+
+      if (langCol) {
+        fields.push(langCol);
+        placeholders.push('?');
+        values.push(row.langId);
+        updates.push(`\`${langCol}\` = VALUES(\`${langCol}\`)`);
+      }
+      if (contentCol) {
+        fields.push(contentCol);
+        placeholders.push('?');
+        values.push(row.content);
+        updates.push(`\`${contentCol}\` = VALUES(\`${contentCol}\`)`);
+      }
+      if (createdCol) {
+        fields.push(createdCol);
+        placeholders.push('NOW()');
+      }
+      const uniqueCol = pickColumn(columns, ['uniqueid']);
+      if (uniqueCol && row.id === 2 && row.title === 'OTD') {
+        fields.push(uniqueCol);
+        placeholders.push('?');
+        values.push(OTD_HELP_UNIQUE_ID);
+        updates.push(`\`${uniqueCol}\` = VALUES(\`${uniqueCol}\`)`);
+      }
+
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO help_html_pages (${fields.map((f) => `\`${f}\``).join(', ')})
+         VALUES (${placeholders.join(', ')})
+         ON DUPLICATE KEY UPDATE ${updates.join(', ')}`,
+        ...values
+      );
+    } catch (err) {
+      console.warn(`help_html_pages seed skipped for id=${row.id}:`, err);
+    }
   }
 }
 
@@ -159,6 +223,7 @@ async function countRows(tableName: string): Promise<number> {
 /** Create minimal legacy meta tables in the app DB when missing (local/dev bootstrap). */
 export async function ensurePromocodeMetaTables(): Promise<void> {
   if (!(process.env.DATABASE_URL || '').startsWith('mysql')) return;
+  if (promocodeMetaTablesEnsured) return;
 
   if (!(await tableExists('subscription_settings'))) {
     await prisma.$executeRawUnsafe(`
@@ -316,8 +381,17 @@ export async function ensurePromocodeMetaTables(): Promise<void> {
     }
   }
 
-  await seedHelpHtmlPagesFromLegacy();
-  await ensureLegacyPromocodeUserTables();
+  try {
+    await seedHelpHtmlPagesFromLegacy();
+  } catch (err) {
+    console.warn('help_html_pages bootstrap skipped:', err);
+  }
+
+  try {
+    await ensureLegacyPromocodeUserTables();
+  } catch (err) {
+    console.warn('legacy user tables bootstrap skipped:', err);
+  }
 
   if ((await countRows('language_values')) === 0) {
     for (const row of DEFAULT_LANGUAGES) {
@@ -340,30 +414,45 @@ export async function ensurePromocodeMetaTables(): Promise<void> {
     await prisma.$executeRawUnsafe(
       `INSERT INTO language_paragraphs (
          id, en, fr, it, de, es, por, rus, ind, chin, arab, variable_name, created, modified
-       ) VALUES (?, ?, '', '', '', '', '', '', '', '', '', 'dim', ?, ?)`,
+       ) VALUES (?, ?, '', ?, '', '', '', '', '', '', '', 'dim', ?, ?)`,
       3,
       DEFAULT_INVITE_PARAGRAPH_EN,
+      DEFAULT_INVITE_PARAGRAPH_IT,
       String(Math.floor(Date.now() / 1000)),
       String(Math.floor(Date.now() / 1000))
     );
   }
 
+  try {
+    await ensurePromocodeInviteLocalizedContent();
+  } catch (err) {
+    console.warn('promocode invite localized content bootstrap skipped:', err);
+  }
+
   if (await tableExists('promocode_applies')) {
-    const applyColumns = await getTableColumns('promocode_applies');
-    if (!applyColumns.has('other_info')) {
-      await prisma.$executeRawUnsafe(
-        `ALTER TABLE promocode_applies ADD COLUMN other_info VARCHAR(512) NULL DEFAULT NULL`
-      );
-    }
-    if (!applyColumns.has('adv_page')) {
-      await prisma.$executeRawUnsafe(
-        `ALTER TABLE promocode_applies ADD COLUMN adv_page VARCHAR(512) NULL DEFAULT NULL`
-      );
+    try {
+      const applyColumns = await getTableColumns('promocode_applies');
+      if (!applyColumns.has('other_info')) {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE promocode_applies ADD COLUMN other_info VARCHAR(512) NULL DEFAULT NULL`
+        );
+      }
+      if (!applyColumns.has('adv_page')) {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE promocode_applies ADD COLUMN adv_page VARCHAR(512) NULL DEFAULT NULL`
+        );
+      }
+    } catch (err) {
+      console.warn('promocode_applies column migration skipped:', err);
     }
   }
 
   clearPromocodeTableCache();
   resetQuickRegisterSubscriptionSeedCache();
+  if (await tableExists('promocode_settings')) {
+    await repairInvalidPromocodeSettingDates('promocode_settings');
+  }
+  promocodeMetaTablesEnsured = true;
 }
 
 function pickColumn(columns: Set<string>, candidates: string[]): string | null {
@@ -373,16 +462,14 @@ function pickColumn(columns: Set<string>, candidates: string[]): string | null {
 export async function loadSubscriptionsFromTable(
   query: <T>(sql: string, params?: unknown[]) => Promise<T>
 ): Promise<{ id: number; name: string }[]> {
-  const table =
-    (await findExistingTable(SUBSCRIPTION_TABLE_CANDIDATES)) ?? 'subscription_settings';
+  const table = await findExistingTable(SUBSCRIPTION_TABLE_CANDIDATES);
+  if (!table) return [];
   const columns = await getTableColumns(table);
   const idCol = pickColumn(columns, ['id']) ?? 'id';
   const nameCol = pickColumn(columns, ['subscription_name', 'name']) ?? 'subscription_name';
-  const deleteCol = pickColumn(columns, ['delete_status']);
 
   let sql = `SELECT \`${idCol}\` AS id, \`${nameCol}\` AS subscription_name
              FROM \`${table}\``;
-  if (deleteCol) sql += ` WHERE \`${deleteCol}\` = 2 OR \`${deleteCol}\` IS NULL`;
   sql += ` ORDER BY \`${idCol}\` ASC`;
 
   const rows = await query<{ id: number | bigint; subscription_name: string | null }[]>(sql);
@@ -397,7 +484,8 @@ export async function loadSubscriptionsFromTable(
 export async function loadHelpHtmlPagesFromTable(
   query: <T>(sql: string, params?: unknown[]) => Promise<T>
 ): Promise<{ id: number; title: string }[]> {
-  const table = (await findExistingTable(HELP_PAGES_TABLE_CANDIDATES)) ?? 'help_html_pages';
+  const table = await findExistingTable(HELP_PAGES_TABLE_CANDIDATES);
+  if (!table) return [];
   const columns = await getTableColumns(table);
   const idCol = pickColumn(columns, ['id']) ?? 'id';
   const titleCol = pickColumn(columns, ['page_title', 'title']) ?? 'page_title';
@@ -430,7 +518,8 @@ export async function loadHelpHtmlPagesFromTable(
 export async function loadLanguagesFromTable(
   query: <T>(sql: string, params?: unknown[]) => Promise<T>
 ): Promise<{ id: number; name: string }[]> {
-  const table = (await findExistingTable(LANGUAGE_TABLE_CANDIDATES)) ?? 'language_values';
+  const table = await findExistingTable(LANGUAGE_TABLE_CANDIDATES);
+  if (!table) return [];
   const columns = await getTableColumns(table);
   const idCol = pickColumn(columns, ['id']) ?? 'id';
   const nameCol = pickColumn(columns, ['lang_name', 'name']) ?? 'lang_name';

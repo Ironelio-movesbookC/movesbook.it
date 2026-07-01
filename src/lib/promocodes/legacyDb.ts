@@ -182,6 +182,27 @@ const LANGUAGE_TABLE_CANDIDATES = ['language_values'];
 
 const LEGACY_USER_SELECT = `id, username, email, country_id, image, subscription_start_date, subscription_end_date, subscription_setting_id, firstname`;
 
+const LEGACY_USER_SELECT_CANDIDATES = [
+  'id',
+  'username',
+  'email',
+  'created',
+  'country_id',
+  'image',
+  'subscription_start_date',
+  'subscription_end_date',
+  'subscription_setting_id',
+  'firstname',
+];
+
+async function legacyUserSelectClause(tableName: string): Promise<string> {
+  const columns = await getTableColumns(tableName);
+  const selected = LEGACY_USER_SELECT_CANDIDATES.filter((column) => columns.has(column));
+  if (selected.length === 0) return 'id';
+  if (!selected.includes('id')) selected.unshift('id');
+  return selected.map((column) => `\`${column}\``).join(', ');
+}
+
 let cachedTables: Partial<Record<string, string | null>> = {};
 
 export function clearPromocodeTableCache(): void {
@@ -245,6 +266,8 @@ export function mapLegacyUser(row: Record<string, unknown> | null | undefined): 
     id,
     username: rowVal(row, 'username', 'Username') != null ? String(rowVal(row, 'username', 'Username')) : null,
     email: rowVal(row, 'email', 'Email') != null ? String(rowVal(row, 'email', 'Email')) : null,
+    created:
+      rowVal(row, 'created', 'Created') != null ? String(rowVal(row, 'created', 'Created')) : null,
     countryId:
       rowVal(row, 'country_id', 'countryId') != null
         ? Number(rowVal(row, 'country_id', 'countryId'))
@@ -279,13 +302,17 @@ export async function fetchLegacyUsersByIds(ids: number[]): Promise<Map<number, 
   const usersTable = await getLegacyUsersTable();
   if (!usersTable) return map;
 
+  const selectClause = await legacyUserSelectClause(usersTable);
   const placeholders = unique.map(() => '?').join(',');
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT ${LEGACY_USER_SELECT}
+    `SELECT ${selectClause}
      FROM \`${usersTable}\`
      WHERE id IN (${placeholders})`,
     ...unique
-  );
+  ).catch((err) => {
+    console.warn('fetchLegacyUsersByIds query failed:', err);
+    return [] as Record<string, unknown>[];
+  });
 
   for (const row of rows) {
     const user = mapLegacyUser(row);
@@ -300,13 +327,14 @@ export async function fetchLegacyUserByEmail(email: string): Promise<LegacyUserS
   const usersTable = await getLegacyUsersTable();
   if (!usersTable || !email.trim()) return null;
 
+  const selectClause = await legacyUserSelectClause(usersTable);
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT ${LEGACY_USER_SELECT}
+    `SELECT ${selectClause}
      FROM \`${usersTable}\`
      WHERE LOWER(email) = ? AND delete_status = 'N'
      LIMIT 1`,
     email.trim().toLowerCase()
-  );
+  ).catch(() => [] as Record<string, unknown>[]);
   return mapLegacyUser(rows[0]);
 }
 
@@ -345,12 +373,25 @@ export async function fetchFlagImageByCountryId(countryId: number | null): Promi
 
   const countriesTable = await getCountriesTable();
   const flagsTable = await getFlagsTable();
-  if (!countriesTable || !flagsTable) return null;
+  if (!countriesTable) return null;
+
+  const countryColumns = await getTableColumns(countriesTable);
+  const countrySelect = [
+    countryColumns.has('flag_id') ? 'flag_id' : null,
+    countryColumns.has('country_pic') ? 'country_pic' : null,
+  ].filter(Boolean).join(', ');
+  if (!countrySelect) return null;
 
   const countryRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT flag_id FROM \`${countriesTable}\` WHERE id = ? LIMIT 1`,
+    `SELECT ${countrySelect} FROM \`${countriesTable}\` WHERE id = ? LIMIT 1`,
     countryId
   );
+  const countryPic = countryRows[0]?.country_pic ?? countryRows[0]?.countryPic;
+  if (countryPic != null && String(countryPic).trim()) {
+    return String(countryPic);
+  }
+
+  if (!flagsTable) return null;
   const flagId = countryRows[0]?.flag_id ?? countryRows[0]?.flagId;
   if (flagId == null) return null;
 

@@ -20,6 +20,11 @@ function readerLabel(row: CardReaderListItem): string {
     .join(' - ');
 }
 
+/** Box-drawing branch: ├ middle child, └ last child */
+function treeBranchChar(index: number, total: number): string {
+  return index === total - 1 ? '\u2514' : '\u251C';
+}
+
 export default function ClubActiveReadersPage() {
   const [items, setItems] = useState<CardReaderListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -235,13 +240,24 @@ export default function ClubActiveReadersPage() {
                       {isExpanded && (
                         <ul className="border-t border-gray-100 bg-gray-50 py-1 pl-14 pr-3">
                           {activities.length === 0 ? (
-                            <li className="py-1 text-xs text-gray-500">No activities assigned.</li>
+                            <li className="flex items-center gap-2 py-1 text-xs text-gray-500">
+                              <span className="shrink-0 font-mono text-base leading-none text-gray-500" aria-hidden="true">
+                                {'\u2514'}
+                              </span>
+                              No activities assigned.
+                            </li>
                           ) : (
-                            activities.map((activity) => (
+                            activities.map((activity, index) => (
                               <li
                                 key={activity.id}
                                 className="flex items-center gap-2 py-1 text-sm text-gray-700"
                               >
+                                <span
+                                  className="shrink-0 font-mono text-base leading-none text-gray-500"
+                                  aria-hidden="true"
+                                >
+                                  {treeBranchChar(index, activities.length)}
+                                </span>
                                 <ExternalLink className="h-3.5 w-3.5 shrink-0 text-gray-500" />
                                 {activity.label}
                               </li>

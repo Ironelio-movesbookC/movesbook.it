@@ -62,7 +62,7 @@ export function legacyLanguageCodeFromId(languageId: string | number): string {
   return 'en';
 }
 
-/** Flag filenames in `public/img/flags/` (legacy PHP naming). */
+/** Flag filenames in legacy PHP `img/flags/` (language_values.lang_name + `.png`). */
 export function legacyFlagFilename(langCode: string): string {
   const code = normalizeLegacyLanguageCode(langCode);
   const filenameByCode: Record<string, string> = {

@@ -16,6 +16,8 @@ interface ClubDashboardMyPageBannerProps {
   coverBannerAlignment: 'center' | 'default';
   /** Opens Change banner modal (same as athlete cover camera). */
   onCoverCameraClick: () => void;
+  /** Header strip — opens promocode invite flow (PHP: users/notification_by_promocode). */
+  onSuggestMovesbookClick?: () => void;
   /** When false, hides the right-hand SPONSORED column (e.g. My Club tab). */
   showSponsored?: boolean;
 }
@@ -27,6 +29,7 @@ export default function ClubDashboardMyPageBanner({
   coverImageUrl,
   coverBannerAlignment,
   onCoverCameraClick,
+  onSuggestMovesbookClick,
   showSponsored = true,
 }: ClubDashboardMyPageBannerProps) {
   const { t } = useLanguage();
@@ -174,6 +177,7 @@ export default function ClubDashboardMyPageBanner({
               </button>
               <button
                 type="button"
+                onClick={onSuggestMovesbookClick}
                 className="bg-transparent border-0 text-sm font-sans text-yellow-400 hover:text-yellow-300 whitespace-nowrap shrink-0 font-medium cursor-pointer rounded px-1 py-0.5 -mx-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-800"
               >
                 Suggest Movesbook

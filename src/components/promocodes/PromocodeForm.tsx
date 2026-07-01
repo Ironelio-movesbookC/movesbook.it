@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { PromocodeMeta, PromocodeSettingFormData, PromocodeSettingRow } from '@/lib/promocodes/types';
 import { promocodesFetch } from './usePromocodesAdminAuth';
+import { mergePromocodeLanguageOptions, PROMOCODE_FORM_LANGUAGES } from '@/lib/promocodes/promocodeLanguages';
+import { fetchGeneratedPromocode } from '@/lib/promocodes/generatePromocode';
 
 const MONTHS = [
   { value: '01', label: 'January' },
@@ -83,7 +85,9 @@ export default function PromocodeForm({
   );
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [languageOptions, setLanguageOptions] = useState<{ id: number; value: string }[]>([]);
+  const [languageOptions, setLanguageOptions] = useState<{ id: number; value: string }[]>(
+    PROMOCODE_FORM_LANGUAGES
+  );
 
   useEffect(() => {
     promocodesFetch('/api/admin/promocodes/meta')
@@ -94,17 +98,19 @@ export default function PromocodeForm({
 
   useEffect(() => {
     if (mode === 'add' && !form.code) {
-      promocodesFetch('/api/admin/promocodes/change-code')
-        .then((r) => r.json())
-        .then((data) => setForm((f) => ({ ...f, code: data.code ?? f.code })))
+      fetchGeneratedPromocode()
+        .then((code) => setForm((f) => ({ ...f, code })))
         .catch(console.error);
     }
   }, [mode, form.code]);
 
   const refreshCode = async () => {
-    const res = await promocodesFetch('/api/admin/promocodes/change-code');
-    const data = await res.json();
-    setForm((f) => ({ ...f, code: data.code ?? f.code }));
+    try {
+      const code = await fetchGeneratedPromocode();
+      setForm((f) => ({ ...f, code }));
+    } catch (err) {
+      console.error('refreshCode:', err);
+    }
   };
 
   const loadLanguagesForPage = async (pageId: number | null) => {
@@ -116,7 +122,9 @@ export default function PromocodeForm({
       body: JSON.stringify({ pageTitle: page.title }),
     });
     const langs = await res.json();
-    if (Array.isArray(langs)) setLanguageOptions(langs);
+    if (Array.isArray(langs)) {
+      setLanguageOptions(mergePromocodeLanguageOptions(langs));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

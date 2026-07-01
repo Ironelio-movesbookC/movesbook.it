@@ -27,6 +27,7 @@ const DEFAULT_SETTINGS: AccessSettings = {
   accessAllowedToMembersBlocked: true,
   accessAllowedMembersCardSuspended: false,
   debtorsStatus: 'yes_with_alert',
+  maxDebtExpiredEnabled: false,
   maxDebtValue: '',
   includeDebtsOnPurchases: false,
   includeDebtsOnServices: false,
@@ -363,7 +364,8 @@ const NUMERIC_FIELDS: Array<{
     key: 'maxDebtValue',
     label: 'Value',
     min: 0,
-    isRequired: (settings) => settings.debtorsStatus === 'max_debt'
+    isRequired: (settings) =>
+      settings.debtorsStatus === 'yes' && Boolean(settings.maxDebtExpiredEnabled)
   },
   {
     key: 'medNoToleranceValue',
@@ -612,6 +614,26 @@ function toBooleanFlag(value: unknown): boolean {
     || value === 'true';
 }
 
+function normalizeDebtorsSettings(settings: AccessSettings): AccessSettings {
+  const next = { ...settings };
+
+  if (next.debtorsStatus === 'max_debt') {
+    next.debtorsStatus = 'yes';
+    next.maxDebtExpiredEnabled = true;
+  } else if (String(next.maxDebtValue ?? '').trim()) {
+    next.maxDebtExpiredEnabled = true;
+  }
+
+  if (next.debtorsStatus !== 'yes') {
+    next.maxDebtExpiredEnabled = false;
+    next.maxDebtValue = '';
+  } else if (!next.maxDebtExpiredEnabled) {
+    next.maxDebtValue = '';
+  }
+
+  return next;
+}
+
 function normalizeColumnSettings(row?: Record<string, unknown> | null): AccessSettings {
   const settings = { ...DEFAULT_SETTINGS };
   if (!row) return settings;
@@ -629,7 +651,7 @@ function normalizeColumnSettings(row?: Record<string, unknown> | null): AccessSe
     settings[key] = value || defaultValue;
   }
 
-  return settings;
+  return normalizeDebtorsSettings(settings);
 }
 
 function parseSettingsBody(body: unknown): AccessSettings {
@@ -647,7 +669,7 @@ function parseSettingsBody(body: unknown): AccessSettings {
         : String(raw);
   }
 
-  return settings;
+  return normalizeDebtorsSettings(settings);
 }
 
 function validateSettings(settings: AccessSettings): FieldErrors {
@@ -878,9 +900,11 @@ function toColumnValue(key: string, value: string | boolean): string {
 }
 
 function buildColumnValues(settings: AccessSettings): Record<string, string> {
+  const normalized = normalizeDebtorsSettings(settings);
   const values: Record<string, string> = {};
   for (const [key, column] of Object.entries(SETTING_COLUMNS)) {
-    values[column] = toColumnValue(key, settings[key]);
+    if (key === 'maxDebtExpiredEnabled') continue;
+    values[column] = toColumnValue(key, normalized[key]);
   }
   return values;
 }

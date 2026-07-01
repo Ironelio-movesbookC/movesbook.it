@@ -26,6 +26,11 @@ export const TIMETABLE_DAY_FULL_NAMES: Record<TimetableDayKey, string> = {
 export const MAX_SLOTS_PER_DAY = 6;
 export const TIMETABLE_MINUTES_MAX = 1440;
 export const TIMETABLE_STEP = 30;
+/** CakePHP: gap before a newly added slot after the previous slot end */
+export const MIN_SLOT_GAP_MINUTES = 50;
+/** CakePHP: cannot add another slot when the last one ends at or beyond this minute */
+export const MAX_LAST_SLOT_END_FOR_ADD = 1350;
+export const NEW_SLOT_DURATION_MINUTES = 100;
 
 export const PERMIT_MINUTE_OPTIONS = ['10', '20', '30', '40', '50', '60', '70', '80', '90'];
 
@@ -231,28 +236,97 @@ export function syncSlotTimes(slot: TimetableSlot): TimetableSlot {
   };
 }
 
+export function slotsOverlap(
+  a: Pick<TimetableSlot, 'rangeStart' | 'rangeEnd'>,
+  b: Pick<TimetableSlot, 'rangeStart' | 'rangeEnd'>
+): boolean {
+  return a.rangeStart < b.rangeEnd && b.rangeStart < a.rangeEnd;
+}
+
+export function dayHasOverlappingSlots(slots: TimetableSlot[]): boolean {
+  for (let i = 0; i < slots.length; i += 1) {
+    for (let j = i + 1; j < slots.length; j += 1) {
+      if (slotsOverlap(slots[i], slots[j])) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Keep a slot inside the day bounds and away from its neighbours (CakePHP overlap:false). */
+export function constrainSlotRange(
+  slots: TimetableSlot[],
+  index: number,
+  rangeStart: number,
+  rangeEnd: number
+): { rangeStart: number; rangeEnd: number } {
+  const prev = index > 0 ? slots[index - 1] : null;
+  const next = index < slots.length - 1 ? slots[index + 1] : null;
+  const minStart = prev ? prev.rangeEnd : 0;
+  const maxEnd = next ? next.rangeStart : TIMETABLE_MINUTES_MAX;
+
+  let start = Math.max(0, Math.min(TIMETABLE_MINUTES_MAX, rangeStart));
+  let end = Math.max(0, Math.min(TIMETABLE_MINUTES_MAX, rangeEnd));
+
+  start = Math.max(minStart, Math.min(start, maxEnd - TIMETABLE_STEP));
+  end = Math.max(start + TIMETABLE_STEP, Math.min(end, maxEnd));
+
+  if (end <= start) {
+    end = Math.min(maxEnd, start + TIMETABLE_STEP);
+    start = Math.max(minStart, end - TIMETABLE_STEP);
+  }
+
+  return { rangeStart: start, rangeEnd: end };
+}
+
+export function canAddSlotToDay(day: TimetableDaySchedule): boolean {
+  if (!day.enabled || day.slots.length >= MAX_SLOTS_PER_DAY) {
+    return false;
+  }
+
+  const last = day.slots[day.slots.length - 1];
+  if (!last || last.rangeEnd <= last.rangeStart) {
+    return day.slots.length < MAX_SLOTS_PER_DAY;
+  }
+
+  if (last.rangeEnd >= MAX_LAST_SLOT_END_FOR_ADD) {
+    return false;
+  }
+
+  const newStart = last.rangeEnd + MIN_SLOT_GAP_MINUTES;
+  return newStart + TIMETABLE_STEP <= TIMETABLE_MINUTES_MAX;
+}
+
 export function addSlotToDay(day: TimetableDaySchedule): TimetableDaySchedule {
   if (day.slots.length >= MAX_SLOTS_PER_DAY) {
     throw new Error('You cannot reserve more than 6 per day');
   }
 
   const last = day.slots[day.slots.length - 1] ?? createDefaultSlot();
-  if (last.rangeEnd >= 1350) {
+  if (last.rangeEnd >= MAX_LAST_SLOT_END_FOR_ADD) {
     throw new Error('Delete last slider and create new again');
   }
 
-  let newStart = last.rangeEnd + 50;
-  let newEnd = newStart + 100;
-  if (newEnd >= TIMETABLE_MINUTES_MAX) {
+  let newStart = last.rangeEnd + MIN_SLOT_GAP_MINUTES;
+  let newEnd = newStart + NEW_SLOT_DURATION_MINUTES;
+  if (newEnd > TIMETABLE_MINUTES_MAX) {
     newEnd = TIMETABLE_MINUTES_MAX;
+  }
+
+  if (newEnd <= newStart) {
+    throw new Error('No room left to add another time slot on this day');
+  }
+
+  const newSlot = createDefaultSlot(newStart, newEnd);
+  const nextSlots = [...day.slots, newSlot];
+  if (dayHasOverlappingSlots(nextSlots)) {
+    throw new Error('No room left to add another time slot on this day');
   }
 
   return {
     ...day,
-    slots: [
-      ...day.slots,
-      createDefaultSlot(newStart, newEnd)
-    ]
+    slots: nextSlots
   };
 }
 
@@ -468,8 +542,19 @@ export function resetAllDays(form: CardTimetableForm): CardTimetableForm {
 export function validateTimetableForm(form: CardTimetableForm): string | null {
   for (const key of TIMETABLE_DAY_KEYS) {
     const day = form.days[key];
-    if (day.enabled && day.slots.length > MAX_SLOTS_PER_DAY) {
+    if (!day.enabled) {
+      continue;
+    }
+    if (day.slots.length > MAX_SLOTS_PER_DAY) {
       return 'You cannot reserve more than 6 per day';
+    }
+    for (const slot of day.slots) {
+      if (slot.rangeEnd <= slot.rangeStart) {
+        return `${TIMETABLE_DAY_LABELS[key]}: each time slot must have a valid start and end time.`;
+      }
+    }
+    if (dayHasOverlappingSlots(day.slots)) {
+      return `${TIMETABLE_DAY_LABELS[key]}: time slots cannot overlap. Adjust or remove overlapping slots.`;
     }
   }
   return null;

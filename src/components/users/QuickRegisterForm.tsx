@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { COUNTRY_SELECT_OPTIONS } from '@/constants/countries.constants';
 import type { RegistrationStatus } from '@/lib/users/quickRegisterService';
@@ -14,6 +14,12 @@ function fmtYmd(d: Date): string {
   const m = d.getMonth() + 1;
   const day = d.getDate();
   return `${d.getFullYear()}-${m < 10 ? '0' : ''}${m}-${day < 10 ? '0' : ''}${day}`;
+}
+
+/** Width in `ch` units sized to displayed digits (min/max caps). */
+function compactInputWidth(value: string, minCh = 3, maxCh = 10): CSSProperties {
+  const len = Math.max(minCh, String(value ?? '').length + 1);
+  return { width: `${Math.min(maxCh, len)}ch` };
 }
 
 export default function QuickRegisterForm() {
@@ -551,7 +557,22 @@ export default function QuickRegisterForm() {
           disccount_hidden: discountHidden,
         }),
       });
-      const data = await res.json();
+      const raw = await res.text();
+      let data: { success?: boolean; message?: string; error?: string } | null = null;
+      if (raw.trim()) {
+        try {
+          data = JSON.parse(raw) as { success?: boolean; message?: string; error?: string };
+        } catch {
+          throw new Error('Registration failed: invalid server response.');
+        }
+      }
+      if (!data) {
+        throw new Error(
+          res.ok
+            ? 'Registration failed: empty server response.'
+            : `Registration failed (${res.status}). Please try again.`
+        );
+      }
       if (!res.ok || !data.success) {
         throw new Error(data.message || data.error || 'Registration failed');
       }
@@ -705,10 +726,10 @@ export default function QuickRegisterForm() {
               <span className="span-label-title">Type here your data</span>
             </div>
 
-            <div className="quickfield-row">
-              <span className="span-title">Country*</span>
-              <div className="span-content">
-                <div className="custom-select">
+            <div className="qr-data-section">
+              <div className="qr-field-row">
+                <span className="qr-label">Country*</span>
+                <div className="qr-control">
                   <select id="sltCountry" name="country" value={country} onChange={(e) => setCountry(e.target.value)}>
                     <option value="">Select country</option>
                     {COUNTRY_SELECT_OPTIONS.map((c) => (
@@ -718,40 +739,33 @@ export default function QuickRegisterForm() {
                     ))}
                   </select>
                 </div>
+                <span className="qr-hint">Together with the country selected, pricing is calculated in your currency.</span>
               </div>
-            </div>
 
-            <div className="quickfield-row">
-              <div className="col-45">
-                <span className="span-title">User type*</span>
-                <div className="span-content" style={{ width: 241, marginLeft: 91 }}>
-                  <div className="custom-select select-highlight" style={{ marginLeft: -10 }}>
-                    <select
-                      id="sltUsertype"
-                      name="usertype"
-                      value={userType}
-                      onChange={(e) => handleUserTypeChange(e.target.value)}
-                    >
-                      <option value="">Select user type</option>
-                      <option value="5">Single User</option>
-                      <option value="8">Club</option>
-                    </select>
-                  </div>
+              <div className="qr-field-row qr-field-row-plan">
+                <span className="qr-label">User type*</span>
+                <div className="qr-control">
+                  <select
+                    id="sltUsertype"
+                    name="usertype"
+                    value={userType}
+                    onChange={(e) => handleUserTypeChange(e.target.value)}
+                  >
+                    <option value="">Select user type</option>
+                    <option value="5">Single User</option>
+                    <option value="8">Club</option>
+                  </select>
                 </div>
-              </div>
-              <div className="col-25">
-                <div className="custom-select select-highlight" style={{ minWidth: 160 }}>
+                <span className="qr-hint">User type will affect the versions available.</span>
+                <div className="qr-control qr-control-version">
                   <select
                     id="version"
                     name="version_id"
                     value={versionId}
                     onChange={(e) => handleVersionChange(e.target.value)}
                     disabled={loadingVersions || !userType}
-                    style={{ minWidth: 150 }}
                   >
-                    <option value="">
-                      {loadingVersions ? 'Loading...' : 'Select version'}
-                    </option>
+                    <option value="">{loadingVersions ? 'Loading...' : 'Select version'}</option>
                     {versions.map((v) => (
                       <option key={v.id} value={v.id}>
                         {v.name}
@@ -759,56 +773,35 @@ export default function QuickRegisterForm() {
                     ))}
                   </select>
                 </div>
+                <span className="qr-hint">The version chosen will affect the cost.</span>
+                <span className="qr-label-inline">Cost</span>
+                <input
+                  type="text"
+                  className="qr-input-numeric"
+                  id="price"
+                  readOnly
+                  value={price}
+                  style={compactInputWidth(price, 3, 8)}
+                />
                 {!loadingVersions && userType && versions.length === 0 ? (
-                  <span style={{ display: 'block', fontSize: 12, color: '#a61b1b', marginTop: 4 }}>
-                    No versions available for this user type.
-                  </span>
+                  <span className="qr-hint qr-hint-block">No versions available for this user type.</span>
                 ) : null}
               </div>
-              <div className="col-25" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div>
-                  <span>Cost</span>
-                </div>
-                <div style={{ border: '1px solid', marginLeft: 10, height: 32 }}>
-                  <input
-                    type="text"
-                    className="price"
-                    id="price"
-                    readOnly
-                    value={price}
-                    style={{ border: 'none', height: 30 }}
-                  />
-                </div>
-              </div>
-              <div className="clear" />
-            </div>
 
-            <div className="quickfield-row">
-              <div className="col-45">
-                <span className="span-title">Gender*</span>
-                <div className="span-content">
-                  <div className="custom-select">
-                    <select id="sltGender" name="gender" value={gender} onChange={(e) => setGender(e.target.value)}>
-                      <option value="">Select gender</option>
-                      <option value="M">Male</option>
-                      <option value="F">Female</option>
-                    </select>
-                  </div>
+              <div className="qr-field-row">
+                <span className="qr-label">Gender*</span>
+                <div className="qr-control">
+                  <select id="sltGender" name="gender" value={gender} onChange={(e) => setGender(e.target.value)}>
+                    <option value="">Select gender</option>
+                    <option value="M">Male</option>
+                    <option value="F">Female</option>
+                  </select>
                 </div>
               </div>
-              <div className="col-55">
-                <span style={{ fontWeight: 'bold', color: '#6e1a27', fontSize: 13 }}>
-                  User type will affect the versions available and the version chosed will affect the cost ( together to
-                  the countyr selected )
-                </span>
-              </div>
-              <div className="clear" />
-            </div>
 
-            <div className="quickfield-row">
-              <span className="span-title">Sport*</span>
-              <div className="span-content">
-                <div className="custom-select">
+              <div className="qr-field-row">
+                <span className="qr-label">Sport*</span>
+                <div className="qr-control">
                   <select id="sltSport" name="sport" value={sport} onChange={(e) => setSport(e.target.value)}>
                     <option value="">Select sport</option>
                     {(sports.length > 0
@@ -828,232 +821,184 @@ export default function QuickRegisterForm() {
               </div>
             </div>
 
-            <div className="div-row">
-              <p style={{ fontWeight: 'bold', color: '#6e1a27', fontSize: 18 }}>
-                Have you a promocode ? If yes type it here to have a discount and some benefits for you
-              </p>
-              <p style={{ fontWeight: 'bold', color: '#610d1c', fontSize: 18 }}>
-                You earn and benefit when you register yourself and when also will do it someone who received your
-                invite to register
-              </p>
-
-              <div>
-                <div style={{ color: '#fff', background: '#7291bd', fontSize: 20, padding: 10 }}>
-                  Discount, number of members assigned, and credits earned using your promocode
-                </div>
-                <div style={{ display: 'flex', gap: 5, marginTop: 10, justifyContent: 'space-around' }}>
-                  <div className="left-div" style={{ width: '100%' }}>
-                    <span style={{ fontWeight: 'bold', color: '#610d1c', fontSize: 18 }}>
-                      Discount with promocode
-                    </span>
-                    <input
-                      type="text"
-                      style={{ marginLeft: 20, width: '8%', border: '1px solid', color: '#000', fontWeight: 'bold' }}
-                      id="discount_with_promocode"
-                      value={discount}
-                      readOnly
-                    />
-                  </div>
-                </div>
-
+            <div className="qr-promo-section">
+              <div className="qr-promo-intro-row">
+                <span className="qr-promo-intro-label">
+                  Have you a promocode ? If yes type it here to have a discount and some benefits for you
+                </span>
+                <input
+                  type="text"
+                  className="qr-row-input qr-promo-intro-input input-highlight-promocode"
+                  name="promocode"
+                  value={promocode}
+                  id="promocode"
+                  onChange={(e) => setPromocode(e.target.value)}
+                  onBlur={() => void validatePromocode(promocode)}
+                  style={compactInputWidth(promocode || 'promocode', 12, 24)}
+                />
+                <span className="qr-hint qr-promo-intro-aside">
+                  You earn and benefit when you register yourself and when also will do it someone who received your
+                  invite to register
+                </span>
+              </div>
+              {promoFeedback.text ? (
                 <div
-                  style={{
-                    display: 'flex',
-                    gap: 5,
-                    justifyContent: 'space-around',
-                    marginTop: 10,
-                    background: '#effafc',
-                    border: '1px solid grey',
-                    flexWrap: 'wrap',
-                    padding: 10,
-                  }}
+                  id="promocode-feedback"
+                  className={`promocode-feedback ${promoFeedback.kind === 'success' ? 'promo-success' : 'promo-error'}`}
                 >
-                  <div
-                    className="col-10"
-                    style={{
-                      marginLeft: 20,
-                      fontSize: 30,
-                      color: '#610d1c',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    Credits
-                  </div>
-                  <div
-                    className="left-div col-30"
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-                  >
-                    <p style={{ fontWeight: 'bold', color: 'red', fontSize: 18 }}>
-                      For the club that receive the invitation and decides to register itself
-                    </p>
-                    <input
-                      type="text"
-                      style={{ border: '1px solid', color: '#000', fontWeight: 'bold', width: '20%' }}
-                      className="credit"
-                      id="credit"
-                      readOnly
-                      value={credit}
-                    />
-                  </div>
-                  <div
-                    className="right-div col-30"
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-                  >
-                    <p style={{ fontWeight: 'bold', color: 'red', fontSize: 18 }}>
-                      For the sender club each time a club suggested will register itself
-                    </p>
-                    <input
-                      type="text"
-                      style={{ border: '1px solid', color: '#000', fontWeight: 'bold', width: '20%' }}
-                      className="credit2"
-                      id="credit2"
-                      readOnly
-                      value={credit2}
-                    />
-                  </div>
-                  <div className="right-div col-30" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <p style={{ fontWeight: 'bold', color: 'red', fontSize: 18 }}>
-                      Number of members available or that will be added to the existing ones
-                    </p>
-                    <input
-                      type="text"
-                      style={{ width: '30%', border: '1px solid', color: '#000', fontWeight: 'bold' }}
-                      id="members_number"
-                      readOnly
-                      value={membersNumber}
-                    />
-                  </div>
-                  <div className="clear" />
+                  {promoFeedback.text}
                 </div>
+              ) : null}
 
-                <div style={{ marginLeft: 200, color: 'black' }}>
-                  <div className="inline-row">
-                    {inviteByMovesbook ? (
-                      <>
-                        <span style={{ fontWeight: 'bold', fontSize: 18 }}>Official invitation email (Movesbook)</span>
-                        <input
-                          type="text"
-                          className="inline-input input-highlight"
-                          style={{ border: '1px solid', color: '#000', background: '#eee' }}
-                          value={movesbookOfficialEmail}
-                          id="sender_email"
-                          readOnly
-                        />
-                        <span style={{ fontWeight: 'bold', fontSize: 18 }}>Retype here</span>
-                        <input
-                          type="text"
-                          className="inline-input input-highlight"
-                          style={{ border: '1px solid', background: '#eee' }}
-                          value={movesbookOfficialEmail}
-                          id="confirm_sender_email"
-                          readOnly
-                        />
-                        <span style={{ fontWeight: 'bold', color: '#0d47a1', fontSize: 14 }}>
-                          (Invitation from Movesbook – official address)
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span style={{ fontWeight: 'bold', fontSize: 18 }}>Username of who invited you *</span>
-                        <input
-                          type="text"
-                          name="inviter_username"
-                          className="inline-input input-highlight"
-                          style={{
-                            border: '1px solid',
-                            color: '#000',
-                            background: inviterReadonly ? '#eee' : undefined,
-                          }}
-                          value={inviterUsername}
-                          id="inviter_username"
-                          readOnly={inviterReadonly}
-                          onChange={(e) => setInviterUsername(e.target.value)}
-                        />
-                        <span style={{ fontWeight: 'bold', fontSize: 18 }}>Retype username *</span>
-                        <input
-                          type="text"
-                          name="confirm_inviter_username"
-                          className="inline-input input-highlight"
-                          style={{
-                            border: '1px solid',
-                            background: inviterReadonly ? '#eee' : undefined,
-                          }}
-                          value={confirmInviterUsername}
-                          id="confirm_inviter_username"
-                          readOnly={inviterReadonly}
-                          onChange={(e) => setConfirmInviterUsername(e.target.value)}
-                        />
-                        {inviterReadonly ? (
-                          <span style={{ fontWeight: 'bold', color: '#0d47a1', fontSize: 14 }}>
-                            (Filled from your invite link — cannot be edited)
-                          </span>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
+              <div className="qr-promo-banner">
+                Discount, number of members assigned, and credits earned using your promocode
+              </div>
 
-                  <div className="inline-row">
-                    <span style={{ fontWeight: 'bold', fontSize: 18 }}>Type or paste here the promocode received</span>
-                    <input
-                      type="text"
-                      className="inline-input input-highlight-promocode"
-                      style={{ marginTop: 10, border: '1px solid', color: '#000' }}
-                      name="promocode"
-                      value={promocode}
-                      id="promocode"
-                      onChange={(e) => setPromocode(e.target.value)}
-                      onBlur={() => void validatePromocode(promocode)}
-                    />
-                  </div>
-                  {promoFeedback.text ? (
-                    <div
-                      id="promocode-feedback"
-                      className={`promocode-feedback ${promoFeedback.kind === 'success' ? 'promo-success' : 'promo-error'}`}
-                      style={{ display: 'block' }}
-                    >
-                      {promoFeedback.text}
+              <div className="qr-promo-discount-row">
+                <span className="qr-promo-label">Discount with promocode</span>
+                <input
+                  type="text"
+                  className="qr-input-numeric"
+                  id="discount_with_promocode"
+                  value={discount}
+                  readOnly
+                  style={compactInputWidth(discount, 3, 6)}
+                />
+              </div>
+
+              <div className="qr-promo-credits">
+                <div className="qr-promo-credits-title">Credits</div>
+                <div className="qr-promo-credit-row">
+                  <span className="qr-hint">
+                    For the club that receive the invitation and decides to register itself
+                  </span>
+                  <input
+                    type="text"
+                    className="qr-input-numeric credit"
+                    id="credit"
+                    readOnly
+                    value={credit}
+                    style={compactInputWidth(credit, 3, 8)}
+                  />
+                </div>
+                <div className="qr-promo-credit-row">
+                  <span className="qr-hint">
+                    For the sender club each time a club suggested will register itself
+                  </span>
+                  <input
+                    type="text"
+                    className="qr-input-numeric credit2"
+                    id="credit2"
+                    readOnly
+                    value={credit2}
+                    style={compactInputWidth(credit2, 3, 8)}
+                  />
+                </div>
+                <div className="qr-promo-credit-row">
+                  <span className="qr-hint">
+                    Number of members available or that will be added to the existing ones
+                  </span>
+                  <input
+                    type="text"
+                    className="qr-input-numeric"
+                    id="members_number"
+                    readOnly
+                    value={membersNumber}
+                    style={compactInputWidth(membersNumber, 3, 10)}
+                  />
+                </div>
+              </div>
+
+              <div className="qr-invite-fields">
+                {inviteByMovesbook ? (
+                  <>
+                    <div className="qr-aligned-row">
+                      <span className="qr-row-label">Official invitation email (Movesbook)</span>
+                      <input
+                        type="text"
+                        className="qr-row-input input-highlight"
+                        value={movesbookOfficialEmail}
+                        id="sender_email"
+                        readOnly
+                      />
+                      <span className="qr-row-label">Retype here</span>
+                      <input
+                        type="text"
+                        className="qr-row-input input-highlight"
+                        value={movesbookOfficialEmail}
+                        id="confirm_sender_email"
+                        readOnly
+                      />
                     </div>
-                  ) : null}
-                  <div className="clear" />
-                </div>
+                    <p className="qr-note">(Invitation from Movesbook – official address)</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="qr-aligned-row">
+                      <span className="qr-row-label">Username of who invited you *</span>
+                      <input
+                        type="text"
+                        name="inviter_username"
+                        className="qr-row-input input-highlight"
+                        style={{ background: inviterReadonly ? '#eee' : undefined }}
+                        value={inviterUsername}
+                        id="inviter_username"
+                        readOnly={inviterReadonly}
+                        onChange={(e) => setInviterUsername(e.target.value)}
+                      />
+                      <span className="qr-row-label">Retype username *</span>
+                      <input
+                        type="text"
+                        name="confirm_inviter_username"
+                        className="qr-row-input input-highlight"
+                        style={{ background: inviterReadonly ? '#eee' : undefined }}
+                        value={confirmInviterUsername}
+                        id="confirm_inviter_username"
+                        readOnly={inviterReadonly}
+                        onChange={(e) => setConfirmInviterUsername(e.target.value)}
+                      />
+                    </div>
+                    {inviterReadonly ? (
+                      <p className="qr-note">(Filled from your invite link — cannot be edited)</p>
+                    ) : null}
+                  </>
+                )}
 
-                <div className="clear" />
-                <div className="div-row" id="total-payment-row">
-                  <div className="payment-row-item">
-                    <span style={{ fontWeight: 'bold', fontSize: 18 }}>Total payment</span>
-                    <input
-                      type="text"
-                      className="payment-total-input"
-                      id="total_payment"
-                      value={totalPayment}
-                      readOnly
-                    />
-                  </div>
-                  <div className="payment-row-item payment-logos">
-                    <Image src="/img/payment_logo/logo_visa.svg" alt="Visa" width={45} height={28} />
-                    <Image src="/img/payment_logo/logo_mc.svg" alt="Mastercard" width={45} height={28} />
-                    <Image src="/img/payment_logo/logo_discover.svg" alt="Discover" width={45} height={28} />
-                    <Image src="/img/payment_logo/logo_paypal.svg" alt="PayPal" width={45} height={28} />
-                    <Image src="/img/payment_logo/logo_amex.svg" alt="Amex" width={45} height={28} />
-                  </div>
-                  <div className="payment-row-item">
-                    <input
-                      className="btnRed"
-                      type="button"
-                      value={loading ? 'Registering…' : 'Register'}
-                      disabled={loading}
-                      onClick={() => void handleRegister()}
-                    />
-                    <input
-                      className="button-black-promocode"
-                      style={{ marginLeft: 10, padding: 8 }}
-                      type="button"
-                      value="Cancel"
-                      onClick={() => router.push('/')}
-                    />
-                  </div>
+              </div>
+
+              <div className="div-row" id="total-payment-row">
+                <div className="payment-row-item">
+                  <span className="qr-payment-label">Total payment</span>
+                  <input
+                    type="text"
+                    className="payment-total-input qr-input-numeric"
+                    id="total_payment"
+                    value={totalPayment}
+                    readOnly
+                    style={compactInputWidth(totalPayment, 5, 12)}
+                  />
+                </div>
+                <div className="payment-row-item payment-logos">
+                  <Image src="/img/payment_logo/logo_visa.svg" alt="Visa" width={45} height={28} />
+                  <Image src="/img/payment_logo/logo_mc.svg" alt="Mastercard" width={45} height={28} />
+                  <Image src="/img/payment_logo/logo_discover.svg" alt="Discover" width={45} height={28} />
+                  <Image src="/img/payment_logo/logo_paypal.svg" alt="PayPal" width={45} height={28} />
+                  <Image src="/img/payment_logo/logo_amex.svg" alt="Amex" width={45} height={28} />
+                </div>
+                <div className="payment-row-item payment-actions">
+                  <input
+                    className="btnRed btn-register-lg"
+                    type="button"
+                    value={loading ? 'Registering…' : 'Register'}
+                    disabled={loading}
+                    onClick={() => void handleRegister()}
+                  />
+                  <input
+                    className="button-black-promocode btn-register-lg"
+                    type="button"
+                    value="Cancel"
+                    onClick={() => router.push('/')}
+                  />
                 </div>
               </div>
             </div>

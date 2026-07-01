@@ -18,6 +18,8 @@ import {
   buildInviteEmailHtml,
   buildRegisterUrl,
 } from '@/lib/promocodes/sendInviteService';
+import { buildPromocodeSettingsSelectSql } from '@/lib/promocodes/promocodeSettingsQuery';
+import { loadPromocodeInviteLanguageParagraph } from '@/lib/promocodes/promocodeInviteLanguage';
 
 const ROLE_NAMES: Record<number, string> = {
   1: 'Super Admin',
@@ -77,6 +79,7 @@ export type CreditRecordRow = {
   creditsThanksTo: string;
   secondarySenderUsername: string;
   secondarySenderFlagImg: string | null;
+  secondarySenderCountryCode: string | null;
   receiverUsername: string;
   subscriptionStartDate: string;
   subscriptionEndDate: string;
@@ -197,15 +200,6 @@ function versionFromIds(versionId: string, codeMap: Record<number, string>): str
   return ids.map((id) => codeMap[id] ?? String(id)).join(',');
 }
 
-async function loadFirstLanguageParagraph(langColumn: string): Promise<string> {
-  const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT * FROM language_paragraphs ORDER BY id ASC LIMIT 1`
-  ).catch(() => [] as Record<string, unknown>[]);
-  if (rows.length === 0) return '';
-  const text = rows[0][langColumn];
-  return text != null ? String(text) : '';
-}
-
 async function resolveHelpHtmlContent(htmlPageId: string): Promise<string> {
   const table = await getHelpHtmlPagesTable();
   if (!table || !htmlPageId) return '';
@@ -272,7 +266,7 @@ export async function getNotificationByPromocodeDashboard(params: {
     if (promoIds.length > 0) {
       const placeholders = promoIds.map(() => '?').join(',');
       const promoRows = await prisma.$queryRawUnsafe<PromoRow[]>(
-        `SELECT id, code, valid_to FROM \`${settingsTable}\` WHERE id IN (${placeholders})`,
+        `SELECT id, code, CAST(valid_to AS CHAR) AS valid_to FROM \`${settingsTable}\` WHERE id IN (${placeholders})`,
         ...promoIds
       );
       for (const p of promoRows) {
@@ -332,12 +326,14 @@ export async function getNotificationByPromocodeDashboard(params: {
       legacyUserId
     );
 
+    const promoSelectSql = await buildPromocodeSettingsSelectSql(settingsTable);
+
     for (const applyRecord of receivedInvitations) {
       const promocodeId = rowNum(applyRecord, 'promocode_id');
       if (promocodeId <= 0) continue;
 
       const promoRows = await prisma.$queryRawUnsafe<PromoRow[]>(
-        `SELECT * FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,
+        `SELECT ${promoSelectSql} FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,
         promocodeId
       );
       const promocodeData = promoRows[0];
@@ -385,6 +381,7 @@ export async function getNotificationByPromocodeDashboard(params: {
 
   const registeredUsers: RegisteredUserRow[] = [];
   if (appliesTable && settingsTable && usersTable) {
+    const promoSelectSql = await buildPromocodeSettingsSelectSql(settingsTable);
     const friendRows = await prisma.$queryRawUnsafe<{ receiver_id: number | null }[]>(
       `SELECT receiver_id FROM \`${appliesTable}\`
        WHERE sender_id = ? AND delete_status = 2`,
@@ -410,7 +407,7 @@ export async function getNotificationByPromocodeDashboard(params: {
       if (promocodeId <= 0) continue;
 
       const promoRows = await prisma.$queryRawUnsafe<PromoRow[]>(
-        `SELECT * FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,
+        `SELECT ${promoSelectSql} FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,
         promocodeId
       );
       const promocodeData = promoRows[0];
@@ -532,13 +529,17 @@ export async function getNotificationByPromocodeDashboard(params: {
       let creditsThanksTo = '-';
       let secondarySenderUsername = '';
       let secondarySenderFlagImg: string | null = null;
+      let secondarySenderCountryCode: string | null = null;
 
       if (secondarySenderId > 0) {
         const ssu = (await fetchLegacyUsersByIds([secondarySenderId])).get(secondarySenderId);
         if (ssu?.username) {
           secondarySenderUsername = ssu.username;
           creditsThanksTo = ssu.username;
-          if (ssu.countryId) secondarySenderFlagImg = await fetchFlagImageByCountryId(ssu.countryId);
+          if (ssu.countryId) {
+            secondarySenderFlagImg = await fetchFlagImageByCountryId(ssu.countryId);
+            secondarySenderCountryCode = await fetchCountryCodeById(ssu.countryId);
+          }
         }
       } else {
         const secondaryEmail = rowStr(applyData, 'secondary_sender_email');
@@ -547,7 +548,10 @@ export async function getNotificationByPromocodeDashboard(params: {
           if (ssu?.username) {
             secondarySenderUsername = ssu.username;
             creditsThanksTo = ssu.username;
-            if (ssu.countryId) secondarySenderFlagImg = await fetchFlagImageByCountryId(ssu.countryId);
+            if (ssu.countryId) {
+              secondarySenderFlagImg = await fetchFlagImageByCountryId(ssu.countryId);
+              secondarySenderCountryCode = await fetchCountryCodeById(ssu.countryId);
+            }
           }
         }
       }
@@ -583,6 +587,7 @@ export async function getNotificationByPromocodeDashboard(params: {
         creditsThanksTo,
         secondarySenderUsername,
         secondarySenderFlagImg,
+        secondarySenderCountryCode,
         receiverUsername,
         subscriptionStartDate,
         subscriptionEndDate,
@@ -788,8 +793,9 @@ export async function sendNotificationByPromocodeInvite(params: {
     };
   }
 
+  const promoSelectSql = await buildPromocodeSettingsSelectSql(settingsTable);
   const promoRows = await prisma.$queryRawUnsafe<PromoRow[]>(
-    `SELECT * FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,
+    `SELECT ${promoSelectSql} FROM \`${settingsTable}\` WHERE id = ? LIMIT 1`,
     params.promocodeId
   );
   const promocode = promoRows[0];
@@ -829,7 +835,7 @@ export async function sendNotificationByPromocodeInvite(params: {
 
   const languageId = rowNum(promocode, 'language_id') || 1;
   const langColumn = await resolveLanguageColumn(languageId);
-  const inviteMessageParagraph = await loadFirstLanguageParagraph(langColumn);
+  const inviteMessageParagraph = await loadPromocodeInviteLanguageParagraph(String(languageId));
   const helpHtmlPageId = rowStr(promocode, 'help_html_page_id');
   const helpContent = await resolveHelpHtmlContent(helpHtmlPageId);
   const message = `${inviteMessageParagraph}${helpContent}`;

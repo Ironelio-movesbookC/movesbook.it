@@ -5,6 +5,9 @@ export type PromocodeApplyRow = {
   receiverEmail: string | null;
   receiverId: number | null;
   senderId: number | null;
+  senderEmail: string | null;
+  registrationDate: string | null;
+  isRegistered: string | number | null;
   senderCredit: string | null;
   receiverCredit: string | null;
   receiverVersion: string | null;
@@ -18,12 +21,14 @@ export type PromocodeApplyRow = {
   promocodeCode?: string | null;
   promocodeValidTo?: string | null;
   flagImage?: string | null;
+  receiverCountryCode?: string | null;
 };
 
 export type LegacyUserSnippet = {
   id: number;
   username: string | null;
   email: string | null;
+  created: string | null;
   countryId: number | null;
   image: string | null;
   subscriptionStartDate: string | null;
@@ -61,6 +66,8 @@ export type PromocodeSettingRow = {
   creator: LegacyUserSnippet | null;
   creatorFlagImage: string | null;
   creatorCountryCode: string | null;
+  inviteFlagImage?: string | null;
+  inviteCountryCode?: string | null;
   versionCount: number;
 };
 

@@ -14,8 +14,10 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
 import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import { canManageClubWebsite } from '@/lib/club/clubWebsitePermissions';
 import { parseClubDescriptionMeta } from '@/lib/club/clubSidebarLabel';
 import { resolveManagedEntityDisplayImageUrl } from '@/lib/entity/resolveManagedEntityDisplayImage';
+import { useAuth } from '@/hooks/useAuth';
 
 type ClubEntity = {
   id?: string;
@@ -24,6 +26,8 @@ type ClubEntity = {
   location?: string | null;
   imageUrl?: string | null;
   youtubeChannelUrl?: string | null;
+  adminId?: string | null;
+  admin?: { id?: string } | null;
 };
 
 function parseLocalityAndCountry(location: string | null | undefined): {
@@ -73,6 +77,8 @@ export default function SidebarClubMyEntityTop({
   onChangeLogo?: () => void;
 }) {
   const { t } = useLanguage();
+  const { user } = useAuth();
+  const canManageClub = canManageClubWebsite(user?.id, userType, club);
   const { locality, country: fallbackCountry } = parseLocalityAndCountry(club?.location);
   const clubMeta = parseClubDescriptionMeta(club?.description);
   const clubType =
@@ -164,7 +170,7 @@ export default function SidebarClubMyEntityTop({
         <ClubMembersDashboardSection
           clubId={club?.id}
           youtubeChannelUrl={club?.youtubeChannelUrl}
-          canManageClub={isClubAccountUserType(userType)}
+          canManageClub={canManageClub}
           onYoutubeChannelUrlSaved={onClubYoutubeSaved}
           onClubBootstrapped={onClubBootstrapped}
         />

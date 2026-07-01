@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Resend } from 'resend';
+import { sendIonosEmail } from '@/lib/ionosEmail';
 import { sendNotificationByPromocodeInvite } from '@/lib/promocodes/notificationByPromocodeService';
 import { resolvePromocodeSessionUser } from '@/lib/promocodes/promocodeSessionAuth';
+import { resolvePublicOrigin } from '@/lib/siteUrl';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,17 +34,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  if (!apiKey) {
-    return NextResponse.json(
-      { status: 'error', message: 'Email service is not configured. Cannot send invitation.' },
-      { status: 503 }
-    );
-  }
-
-  const resend = new Resend(apiKey);
-  const from = process.env.RESEND_FROM_EMAIL?.trim() || 'Movesbook <onboarding@resend.dev>';
-
   try {
     const result = await sendNotificationByPromocodeInvite({
       legacyUserId: session.user.legacyUserId,
@@ -51,19 +41,14 @@ export async function POST(request: NextRequest) {
       senderUsername: session.user.username,
       receiverEmail,
       promocodeId,
-      origin: request.nextUrl.origin,
+      origin: resolvePublicOrigin(request),
       sendEmail: async ({ to, subject, html, replyTo }) => {
-        const payload: Parameters<typeof resend.emails.send>[0] = {
-          from,
+        await sendIonosEmail({
           to,
           subject,
           html,
-        };
-        if (replyTo) payload.replyTo = replyTo;
-        const sendResult = await resend.emails.send(payload);
-        if (sendResult.error) {
-          throw new Error(sendResult.error.message || 'Failed to send email');
-        }
+          replyTo,
+        });
       },
     });
 
@@ -71,9 +56,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result, { status });
   } catch (err) {
     console.error('notification-by-promocode send-invite POST:', err);
-    return NextResponse.json(
-      { status: 'error', message: 'Unable to send the invitation email. Please try again later.' },
-      { status: 500 }
-    );
+    const message = err instanceof Error ? err.message : 'Unable to send the invitation email. Please try again later.';
+    return NextResponse.json({ status: 'error', message }, { status: 500 });
   }
 }

@@ -8,6 +8,8 @@ import PromocodeInviteCKEditor4 from '@/components/promocodes/PromocodeInviteCKE
 import { notifyPromocodeInviteSentOpener } from '@/lib/promocodes/promocodeInviteEvents';
 import { getCke4Window } from '@/lib/ckeditor4Legacy';
 import type { SendInvitePreview } from '@/lib/promocodes/sendInviteService';
+import { promocodeLanguageFlagUrl, PROMOCODE_NO_FLAG_IMAGE } from '@/components/promocodes/promocodeImageUrls';
+import PromocodeAssetImage from '@/components/promocodes/PromocodeAssetImage';
 import './send-invite.css';
 
 export default function PromocodeSendInviteForm() {
@@ -89,7 +91,9 @@ export default function PromocodeSendInviteForm() {
     }
   };
 
-  if (!ready) return null;
+  if (!ready) {
+    return <div className="send-invite-loading">Loading…</div>;
+  }
 
   if (loading) {
     return <div className="send-invite-loading">Loading invitation preview…</div>;
@@ -103,14 +107,24 @@ export default function PromocodeSendInviteForm() {
     preview.registerUrl ||
     `/users/quickRegister?user_email=${encodeURIComponent(preview.emailAddress)}&promocode=${encodeURIComponent(preview.promocode)}&lang=${encodeURIComponent(preview.languageName)}`;
 
-  const flagSrc = preview.flagImageUrl || `/img/flags/${preview.languageName}.png`;
+  const flagSrc = preview.flagImageUrl || promocodeLanguageFlagUrl(preview.languageName);
+
+  const promocodeInputWidth = (value: string) => {
+    const len = Math.max(12, String(value ?? '').length + 3);
+    return { width: `${len}ch`, minWidth: `${len}ch` } as const;
+  };
 
   return (
     <>
       <div>
         <div className="sd-legend-content">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="al_left" src={flagSrc} alt="" />
+          <PromocodeAssetImage
+            className="al_left"
+            src={flagSrc}
+            fallbackSrc={PROMOCODE_NO_FLAG_IMAGE}
+            alt=""
+          />
           <div className="lang_input_container">
             <label htmlFor="email_content">Content</label>
             <PromocodeInviteCKEditor4
@@ -123,66 +137,63 @@ export default function PromocodeSendInviteForm() {
           <div className="clear" />
         </div>
 
-        <div className="name-information">
-          <div>
-            <label>Promocode</label>
+        <div className="si-fields-block">
+          <div className="si-field-row si-field-row-promo">
+            <label className="si-label" htmlFor="url_1">
+              Promocode
+            </label>
             <input
               type="text"
               name="url_1"
               id="url_1"
-              className="input-form-text"
-              style={{ width: '25%', marginLeft: 23 }}
-              placeholder=""
+              className="si-input si-input-compact"
               value={preview.promocode}
               readOnly
+              style={promocodeInputWidth(preview.promocode)}
             />
-          </div>
-          <div style={{ textAlign: 'center' }}>
             <a
               href={registerUrl}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: 'red', textDecoration: 'underline' }}
+              className="si-register-link"
             >
               Click here to register
             </a>
           </div>
+
+          <div className="si-field-row">
+            <label className="si-label" htmlFor="other_info">
+              Other info
+            </label>
+            <input
+              type="text"
+              name="other_info"
+              id="other_info"
+              className="si-input si-input-url"
+              value={otherInfo}
+              onChange={(e) => setOtherInfo(e.target.value)}
+            />
+          </div>
+
+          <div className="si-field-row si-field-row-last">
+            <label className="si-label" htmlFor="visit_also">
+              Visit also
+            </label>
+            <input
+              type="text"
+              name="visit_also"
+              id="visit_also"
+              className="si-input si-input-url"
+              value={advPage}
+              onChange={(e) => setAdvPage(e.target.value)}
+            />
+          </div>
         </div>
 
-        <div className="name-information">
-          <div>
-            <label>Other info</label>
-            <div style={{ display: 'inline-grid', width: '50%' }}>
-              <input
-                type="text"
-                name="other_info"
-                id="other_info"
-                className="input-click-url"
-                value={otherInfo}
-                onChange={(e) => setOtherInfo(e.target.value)}
-              />
-            </div>
-          </div>
-          <div style={{ paddingLeft: '0.8%' }}>
-            <label>Visit also</label>
-            <div style={{ display: 'inline-grid', width: '50.5%' }}>
-              <input
-                type="text"
-                name="visit_also"
-                id="visit_also"
-                className="input-click-url"
-                value={advPage}
-                onChange={(e) => setAdvPage(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div style={{ padding: 30, textAlign: 'center' }}>
+        <div className="si-actions">
           <a
             href="#"
-            className="btn-red"
-            style={{ backgroundColor: 'red', marginRight: 10, width: '15%', padding: '10px 12px' }}
+            className="btn-red btn-send-invite-lg"
             onClick={(e) => {
               e.preventDefault();
               if (!sending) void sendMail();
@@ -192,8 +203,7 @@ export default function PromocodeSendInviteForm() {
           </a>
           <a
             href="#"
-            className="btn-gray"
-            style={{ marginLeft: 10, width: '15%', padding: '10px 12px' }}
+            className="btn-gray btn-send-invite-lg"
             onClick={(e) => {
               e.preventDefault();
               window.close();

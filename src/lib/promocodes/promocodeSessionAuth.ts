@@ -4,13 +4,14 @@ import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/adminAuth';
 import { resolveLegacyUserForPromocodeSession } from '@/lib/promocodes/legacyDb';
 
-export type PromocodeSessionUser = {
+export type PromocodeSessionUser = {
   email: string;
   username: string;
   legacyUserId: number;
   roleId: number | null;
   isAdmin: boolean;
-};
+};
+
 
 export function getBearerToken(request: NextRequest): string | null {
   const authHeader = request.headers.get('authorization');
@@ -19,7 +20,7 @@ export function getBearerToken(request: NextRequest): string | null {
 }
 
 /** Resolve logged-in user (JWT) to legacy users row used by promocode tables. */
-export async function resolvePromocodeSessionUser(
+export async function resolvePromocodeSessionUser(
   request: NextRequest
 ): Promise<{ ok: true; user: PromocodeSessionUser } | { ok: false; status: number; error: string }> {
   const token = getBearerToken(request);
@@ -73,4 +74,4 @@ export async function resolvePromocodeSessionUser(
       isAdmin,
     },
   };
-}
+}

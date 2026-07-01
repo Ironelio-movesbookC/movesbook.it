@@ -1,27 +1,55 @@
 'use client';
 
+import type { CSSProperties } from 'react';
+import { promocodeFlagCdnFallback } from '@/components/promocodes/promocodeImageUrls';
+
 type PromocodeAssetImageProps = {
   src: string;
   fallbackSrc: string;
+  countryCode?: string | null;
   alt?: string;
   className?: string;
+  style?: CSSProperties;
 };
 
 export default function PromocodeAssetImage({
   src,
   fallbackSrc,
+  countryCode,
   alt = '',
   className,
+  style,
 }: PromocodeAssetImageProps) {
+  const hideMissingFlag = fallbackSrc.includes('no_flag');
+
+  if (hideMissingFlag && src === fallbackSrc) {
+    return null;
+  }
+
   return (
     <img
       src={src}
       alt={alt}
       className={className}
+      style={style}
       onError={(e) => {
         const img = e.currentTarget;
-        if (img.src.endsWith(fallbackSrc) || img.dataset.fallbackApplied === '1') return;
-        img.dataset.fallbackApplied = '1';
+        if (img.dataset.fallbackApplied === '2') return;
+        if (img.dataset.fallbackApplied !== '1') {
+          const cdn = promocodeFlagCdnFallback(countryCode);
+          if (cdn && img.src !== cdn) {
+            img.dataset.fallbackApplied = '1';
+            img.src = cdn;
+            return;
+          }
+        }
+        if (img.src.endsWith(fallbackSrc)) return;
+        if (hideMissingFlag) {
+          img.dataset.fallbackApplied = '2';
+          img.style.display = 'none';
+          return;
+        }
+        img.dataset.fallbackApplied = '2';
         img.src = fallbackSrc;
       }}
     />
