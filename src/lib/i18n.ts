@@ -531,6 +531,17 @@ export interface LanguageStrings {
         'club_bacheca_title': "Club's bacheca",
         'club_bacheca_intro':
           "The club's operators can enter here documents and information using 14 different type of customizable themes.",
+        'club_bacheca_apply_hint':
+          'Each label is saved separately — click Apply after uploading photos or editing content so members can see it.',
+        'club_bacheca_unsaved_banner':
+          'Unsaved changes on this label — click Apply to publish photos and content to members.',
+        'club_bacheca_unsaved_dot_title': 'Unsaved changes on this label',
+        'club_bacheca_unsaved_switch_title': 'Unsaved changes',
+        'club_bacheca_unsaved_switch_message':
+          'This label has changes that are not saved yet. Members will not see them until you click Apply.',
+        'club_bacheca_unsaved_save_switch': 'Save and switch',
+        'club_bacheca_unsaved_discard_switch': 'Discard and switch',
+        'club_bacheca_unsaved_stay': 'Keep editing',
         'club_bacheca_open_editor_aria': 'Open website editor (bacheca settings)',
         'club_bacheca_activate': 'Activate',
         'club_bacheca_rename_label': 'Rename the label',
@@ -1655,6 +1666,17 @@ export interface LanguageStrings {
         'club_bacheca_title': 'Bacheca del club',
         'club_bacheca_intro':
           'Los operadores del club pueden introducir aquí documentos e información con 14 temas personalizables.',
+        'club_bacheca_apply_hint':
+          'Cada etiqueta se guarda por separado — haz clic en Aplicar después de subir fotos o editar el contenido para que los miembros lo vean.',
+        'club_bacheca_unsaved_banner':
+          'Cambios sin guardar en esta etiqueta — haz clic en Aplicar para publicar fotos y contenido a los miembros.',
+        'club_bacheca_unsaved_dot_title': 'Cambios sin guardar en esta etiqueta',
+        'club_bacheca_unsaved_switch_title': 'Cambios sin guardar',
+        'club_bacheca_unsaved_switch_message':
+          'Esta etiqueta tiene cambios que aún no se han guardado. Los miembros no los verán hasta que hagas clic en Aplicar.',
+        'club_bacheca_unsaved_save_switch': 'Guardar y cambiar',
+        'club_bacheca_unsaved_discard_switch': 'Descartar y cambiar',
+        'club_bacheca_unsaved_stay': 'Seguir editando',
         'club_bacheca_open_editor_aria': 'Abrir editor del sitio web (ajustes de bacheca)',
         'club_bacheca_activate': 'Activar',
         'club_bacheca_rename_label': 'Renombrar la etiqueta',
