@@ -1,16 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-<<<<<<< HEAD
   experimental: {
     serverComponentsExternalPackages: ['xlsx'],
-=======
+  },
   typescript: {
-    ignoreBuildErrors: true,   // skips tsc — prevents OOM kill on small VPS
+    ignoreBuildErrors: true,
   },
   eslint: {
-    ignoreDuringBuilds: true,  // skips eslint during build
->>>>>>> faaa2a595a51abb69a922cfa0c32b5b1cf1e5447
+    ignoreDuringBuilds: true,
   },
   async redirects() {
     return [
@@ -43,12 +41,12 @@ const nextConfig = {
           '**/hiberfil.sys',
           '**/swapfile.sys',
           '**/$Recycle.Bin/**',
-          '**/System Volume Information/**'
-        ]
+          '**/System Volume Information/**',
+        ],
       };
     }
     return config;
-  }
-}
-  
+  },
+};
+
 module.exports = nextConfig;

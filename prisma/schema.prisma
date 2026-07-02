@@ -1938,6 +1938,8 @@ model FoodDatabaseSourceState {
   updatedAt       DateTime  @updatedAt
 
   @@map("food_database_source_state")
+}
+
 // ---------------------------------------------------------------------------
 // Club procedure engine (greenfield)
 // ---------------------------------------------------------------------------

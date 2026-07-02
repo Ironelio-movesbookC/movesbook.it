@@ -173,7 +173,6 @@ form select {
   color: #111827;
 }
 
-<<<<<<< HEAD
 /* Admin food database — keep list table headers below modals */
 .admin-food-db-panel table thead th {
   z-index: 1;
@@ -182,7 +181,8 @@ form select {
 .admin-food-db-panel table thead th.sticky,
 .admin-food-db-panel table tbody td.sticky {
   z-index: 2;
-=======
+}
+
 /* Staff messages panel — beat Tailwind preflight input { color: inherit } */
 @layer utilities {
   .staff-messages-composer,
@@ -209,7 +209,6 @@ form select {
   .staff-messages-panel textarea:-webkit-autofill {
     -webkit-text-fill-color: #000000 !important;
   }
->>>>>>> faaa2a595a51abb69a922cfa0c32b5b1cf1e5447
 }
 
 /* Workout Elements with Custom Borders */
