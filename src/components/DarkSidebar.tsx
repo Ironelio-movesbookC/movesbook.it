@@ -180,7 +180,6 @@ const CLUB_ADMIN_INSERT_NEW_ITEM_GROUPS: ClubAdminInsertItem[][] = [
   ],
   [
     { kind: 'icon', Icon: ShoppingCart, label: 'Sell products' },
-    { kind: 'icon', Icon: ShoppingBasket, label: 'Insert a movement/Sell service' },
     { kind: 'icon', Icon: Hourglass, label: 'Payment other deadlines' },
   ],
   [
