@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import ServicePaymentForm, {
   type ServicePaymentSubmitValues,
@@ -18,6 +18,7 @@ import {
   type ServiceSalePurchase,
 } from '@/lib/club/serviceSaleClient';
 import { updateInstallment } from '@/lib/club/archives/clubArchiveClient';
+import { fetchOtherSettings } from '@/lib/club/otherSettingsClient';
 
 export default function PaymentDetailPage() {
   const params = useParams();
@@ -30,17 +31,39 @@ export default function PaymentDetailPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [otherSettings, setOtherSettings] = useState<{ operatorPassStatus: string; calTaxStatus: boolean } | null>(null);
+  const autoPaid = useRef(false);
 
   const load = useCallback(async () => {
     try {
-      const [purchaseRes, paymentsRes, formOptions] = await Promise.all([
+      const [purchaseRes, paymentsRes, formOptions, settings] = await Promise.all([
         fetchPurchase(id),
         fetchPaymentsForRecord(id, { pageSize: 50 }),
         fetchFormOptions(),
+        fetchOtherSettings().catch(() => ({ formPayDeadlineStatus: 'Yes', operatorPassStatus: 'Yes', calTaxStatus: false })),
       ]);
       setPurchase(purchaseRes.purchase);
       setPayments(paymentsRes.items);
       setOptions(formOptions);
+      setOtherSettings({ operatorPassStatus: settings.operatorPassStatus, calTaxStatus: settings.calTaxStatus });
+
+      if (settings.formPayDeadlineStatus === 'No' && purchaseRes.purchase.rest > 0 && !autoPaid.current) {
+        autoPaid.current = true;
+        const defaultOperatorId = formOptions.currentOperatorId ?? formOptions.operators[0]?.id;
+        if (defaultOperatorId) {
+          await addPayment(id, {
+            amountPaid: purchaseRes.purchase.rest,
+            paymentDate: new Date().toISOString().slice(0, 10),
+            description: 'Auto-payment (deadline form disabled)',
+            payMode: 'cash',
+            operatorId: defaultOperatorId,
+            createReceipt: false,
+          });
+          const reloaded = await fetchPurchase(id);
+          setPurchase(reloaded.purchase);
+          setSuccess(`Payment fully auto-settled (€${purchaseRes.purchase.rest.toFixed(2)}). Debt set to €0.`);
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     }
@@ -127,6 +150,7 @@ export default function PaymentDetailPage() {
               onSubmit={handleSubmit}
               onCancel={() => router.push('/clubs/dead_line')}
               onAddToRecordTotal={handleAddToRecordTotal}
+              operatorPassStatus={otherSettings?.operatorPassStatus ?? 'Yes'}
             />
 
             {success && (

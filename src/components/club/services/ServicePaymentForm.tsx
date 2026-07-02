@@ -57,6 +57,7 @@ type Props = {
   onSubmit: (values: ServicePaymentSubmitValues) => Promise<void>;
   onCancel?: () => void;
   onAddToRecordTotal?: (amount: number) => Promise<void>;
+  operatorPassStatus?: string;
 };
 
 function formatDisplayDate(iso: string | null | undefined): string {
@@ -76,6 +77,7 @@ export default function ServicePaymentForm({
   onSubmit,
   onCancel,
   onAddToRecordTotal,
+  operatorPassStatus = 'Yes',
 }: Props) {
   const sectionLabel = `${purchase.sectorName}-${purchase.serviceName}`;
   const [installments, setInstallments] = useState<InstallmentRow[]>([]);
@@ -91,7 +93,7 @@ export default function ServicePaymentForm({
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [operatorId, setOperatorId] = useState(options.currentOperatorId ?? options.operators[0]?.id ?? '');
   const [operatorPassword, setOperatorPassword] = useState('');
-  const [passwordRequired, setPasswordRequired] = useState(false);
+  const [passwordRequired, setPasswordRequired] = useState(operatorPassStatus === 'Yes');
   const [showPassword, setShowPassword] = useState(false);
   const [payWith, setPayWith] = useState('0');
   const [taxModalOpen, setTaxModalOpen] = useState(false);
@@ -514,6 +516,7 @@ export default function ServicePaymentForm({
               <input
                 type="checkbox"
                 checked={passwordRequired}
+                disabled={operatorPassStatus === 'Yes'}
                 onChange={(e) => setPasswordRequired(e.target.checked)}
               />
               <span>Password</span>

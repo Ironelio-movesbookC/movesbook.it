@@ -393,41 +393,43 @@ export default function TaxDocumentModal({
               </label>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <label className="block">
-                <span className="text-sm text-gray-600">VAT %</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  readOnly
-                  className={`mt-1 ${procedureReadonlyInputClass}`}
-                  value={form.vatPercentage}
-                />
-              </label>
-              <label className="block">
-                <span className="text-sm text-gray-600">VAT amount (€)</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  readOnly
-                  className={`mt-1 ${procedureReadonlyInputClass}`}
-                  value={form.vatAmount}
-                />
-              </label>
-              <label className="block">
-                <span className="text-sm text-gray-600">Net (€)</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  readOnly
-                  className={`mt-1 ${procedureReadonlyInputClass}`}
-                  value={form.net}
-                />
-              </label>
-            </div>
+            {settings?.calTaxStatus && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <label className="block">
+                  <span className="text-sm text-gray-600">VAT %</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    readOnly
+                    className={`mt-1 ${procedureReadonlyInputClass}`}
+                    value={form.vatPercentage}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm text-gray-600">VAT amount (€)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    readOnly
+                    className={`mt-1 ${procedureReadonlyInputClass}`}
+                    value={form.vatAmount}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm text-gray-600">Net (€)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    readOnly
+                    className={`mt-1 ${procedureReadonlyInputClass}`}
+                    value={form.net}
+                  />
+                </label>
+              </div>
+            )}
 
             {error && (
               <div className="text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 text-sm">
