@@ -260,7 +260,7 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: CreditCard, label: 'Accesses', path: '/clubs/access_list' },
   ],
   [
-    { kind: 'icon', Icon: Hourglass, label: 'Deadlines of payment', path: '/users/deadline' },
+    { kind: 'icon', Icon: Hourglass, label: 'Deadlines of payment', path: '/clubs/dead_line' },
     { kind: 'icon', Icon: Award, label: 'Credit voucher', path: '/clubSettings/creditCustomer' },
     { kind: 'icon', Icon: Hourglass, label: 'Other debts', path: '/clubs/other_debts' },
     { kind: 'icon', Icon: Hourglass, label: 'Planned expenses', path: '/clubs/arc_expenses' },
