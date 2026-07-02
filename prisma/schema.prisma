@@ -59,6 +59,8 @@ model User {
   conversationsStarted    ChatConversation[] @relation("ConversationStarter")
   conversationsReceived   ChatConversation[] @relation("ConversationReceiver")
   chatMessagesSent         ChatMessage[]     @relation("MessageSender")
+  userMessageThreads      UserMessageThread[]
+  userThreadMessagesSent  UserThreadMessage[] @relation("UserThreadMessageSender")
   newsTopics               UserNewsTopic[]
   ogpArticles              OgpArticle[]
   ogpArticlesDeleted       OgpArticle[]       @relation("OgpDeletedBy")
@@ -76,6 +78,11 @@ model User {
   favoriteNutritionWeeklyPlans FavoriteNutritionWeeklyPlan[]
   nutritionTemplates           NutritionTemplate[]
   nutritionDayPlannedActions   NutritionDayPlannedAction[]
+  procedureRecordsAsMember     ProcedureRecord[]  @relation("ProcedureMember")
+  procedureRecordsAsOperator   ProcedureRecord[]  @relation("ProcedureOperator")
+  procedurePaymentsAsOperator  ProcedurePayment[] @relation("ProcedurePaymentOperator")
+  procedureReceiptsAsMember    ProcedureReceipt[] @relation("ProcedureReceiptMember")
+  procedureReceiptsAsOperator  ProcedureReceipt[] @relation("ProcedureReceiptOperator")
 
   @@map("users_new")
 }
@@ -218,18 +225,66 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
+/// User-owned threads: REVIEW (private) and SUPPORT (community feed)
+model UserMessageThread {
+  id              String                @id @default(cuid())
+  userId          String
+  kind            UserMessageThreadKind
+  subject         String                @default("")
+  languageCode    String?               @db.VarChar(32)
+  pathStaff       String?               @db.VarChar(2048)
+  realPath        String?               @db.VarChar(2048)
+  errorMessage    String?               @db.VarChar(1000)
+  supportCategory String?               @db.VarChar(32)
+  isPublic        Boolean               @default(false)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages        UserThreadMessage[]
+
+  @@index([userId])
+  @@index([userId, kind])
+  @@index([supportCategory])
+  @@index([languageCode])
+  @@index([isPublic, kind])
+  @@map("user_message_threads")
+}
+
+model UserThreadMessage {
+  id        String            @id @default(cuid())
+  threadId  String
+  senderId  String?
+  isStaff   Boolean           @default(false)
+  body      String            @db.Text
+  createdAt DateTime          @default(now())
+  thread    UserMessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender    User?             @relation("UserThreadMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([threadId])
+  @@map("user_thread_messages")
+}
+
+enum UserMessageThreadKind {
+  REVIEW
+  SUPPORT
+}
+
 model Language {
   id        String   @id @default(cuid())
   code      String   @unique
   name      String
   isActive  Boolean  @default(true)
   isDefault Boolean  @default(false)
+  /// Maps legacy language_values.id / audio_settings.language (1–12).
+  legacyLangId Int?  @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   news                                    News[]                 @relation("NewsOriginalLanguage")
   newsLanguageTitles                      NewsLanguageTitle[]
   newsSettingLanguages                   NewsSettingLanguage[]
+  systemOutcomes                          SystemOutcome[]
+  outcomeCountries                        OutcomeCountry[]       @relation("CountryDefaultLanguage")
 
   @@map("languages_new")
 }
@@ -1082,6 +1137,10 @@ model Club {
   updatedAt          DateTime     @updatedAt
   members            ClubMember[]
   websiteTopics      ClubWebsiteTopic[]
+  procedureRecords   ProcedureRecord[]
+  procedureReceipts  ProcedureReceipt[]
+  outcomeSetting     ClubOutcomeSetting?
+  customOutcomes     ClubCustomOutcome[]
   admin              User         @relation("ClubOwner", fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId], map: "clubs_new_adminId_fkey")
@@ -1101,6 +1160,7 @@ model ClubWebsiteTopic {
   lastUpdate     String   @default("")
   contentsByLang String   @db.Text
   keywordsByLang String   @db.Text
+  settingsJson   String   @db.Text
   sortOrder      Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -1108,6 +1168,23 @@ model ClubWebsiteTopic {
 
   @@index([clubId])
   @@map("club_website_topics")
+}
+
+/// Bulletin board label slots (14 themes) in the club website bacheca editor.
+model ClubBachecaLabel {
+  id        String   @id @default(cuid())
+  clubId    String   @map("club_id")
+  labelKey  String   @map("label_key")
+  slotIndex Int      @map("slot_index")
+  name      String
+  activated Boolean  @default(false)
+  content   String   @db.LongText
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([clubId, labelKey])
+  @@index([clubId])
+  @@map("bacheca_settings")
 }
 
 model ClubMember {
@@ -1861,4 +1938,329 @@ model FoodDatabaseSourceState {
   updatedAt       DateTime  @updatedAt
 
   @@map("food_database_source_state")
+// ---------------------------------------------------------------------------
+// Club procedure engine (greenfield)
+// ---------------------------------------------------------------------------
+
+enum ProcedureRecordStatus {
+  ACTIVE
+  DELETED
+}
+
+enum ClubOutcomeMode {
+  EN
+  COUNTRY_STANDARD
+  CUSTOM
+}
+
+model ProcedureType {
+  id          String            @id @default(cuid())
+  code        String            @unique
+  name        String
+  description String?           @db.Text
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  records     ProcedureRecord[]
+
+  @@map("procedure_types")
+}
+
+model ProcedureRecord {
+  id              String                @id @default(cuid())
+  procedureTypeId String
+  clubId          String
+  memberId        String
+  operatorId      String?
+  totalAmount     Decimal               @db.Decimal(12, 2)
+  paidAmount      Decimal               @default(0) @db.Decimal(12, 2)
+  balanceAmount   Decimal               @db.Decimal(12, 2)
+  recordDate      DateTime              @db.Date
+  dueDate         DateTime?             @db.Date
+  notes           String?               @db.Text
+  metadata        Json?
+  status          ProcedureRecordStatus @default(ACTIVE)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  procedureType ProcedureType    @relation(fields: [procedureTypeId], references: [id], onDelete: Restrict)
+  club          Club             @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  member        User             @relation("ProcedureMember", fields: [memberId], references: [id], onDelete: Restrict)
+  operator      User?            @relation("ProcedureOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+  payments      ProcedurePayment[]
+  receipts      ProcedureReceipt[]
+  installments  ProcedureInstallment[]
+
+  @@index([clubId, procedureTypeId, status])
+  @@index([clubId, balanceAmount])
+  @@index([memberId])
+  @@index([recordDate])
+  @@map("procedure_records")
+}
+
+model ProcedurePayment {
+  id                String   @id @default(cuid())
+  procedureRecordId String
+  amount            Decimal  @db.Decimal(12, 2)
+  balanceAfter      Decimal? @db.Decimal(12, 2)
+  paymentDate       DateTime @db.Date
+  operatorId        String?
+  payMode           String?
+  notes             String?  @db.Text
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  procedureRecord ProcedureRecord  @relation(fields: [procedureRecordId], references: [id], onDelete: Cascade)
+  operator        User?            @relation("ProcedurePaymentOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+  receipts        ProcedureReceipt[]
+
+  @@index([procedureRecordId, paymentDate])
+  @@map("procedure_payments")
+}
+
+model ProcedureReceipt {
+  id                 String   @id @default(cuid())
+  procedureRecordId  String
+  procedurePaymentId String?
+  clubId             String
+  memberId           String
+  operatorId         String?
+  documentType       String?
+  documentNumber     String?
+  amount             Decimal  @db.Decimal(12, 2)
+  paymentAmount      Decimal  @default(0) @db.Decimal(12, 2)
+  annotations        String?  @db.Text
+  serviceName        String?
+  receiptDate        DateTime @db.Date
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  procedureRecord  ProcedureRecord   @relation(fields: [procedureRecordId], references: [id], onDelete: Cascade)
+  procedurePayment ProcedurePayment? @relation(fields: [procedurePaymentId], references: [id], onDelete: SetNull)
+  club             Club              @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  member           User              @relation("ProcedureReceiptMember", fields: [memberId], references: [id], onDelete: Restrict)
+  operator         User?             @relation("ProcedureReceiptOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+
+  @@index([clubId, procedureRecordId])
+  @@map("procedure_receipts")
+}
+
+model ProcedureInstallment {
+  id                String    @id @default(cuid())
+  procedureRecordId String
+  paid              Decimal   @default(0) @db.Decimal(12, 2)
+  balance           Decimal   @db.Decimal(12, 2)
+  paymentDate       DateTime  @db.Date
+  expireDate        DateTime? @db.Date
+  description       String?   @db.Text
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  procedureRecord ProcedureRecord @relation(fields: [procedureRecordId], references: [id], onDelete: Cascade)
+
+  @@index([procedureRecordId, paymentDate])
+  @@map("procedure_installments")
+}
+
+// ---------------------------------------------------------------------------
+// Access control outcomes (greenfield)
+// ---------------------------------------------------------------------------
+
+model OutcomeCountry {
+  id                String   @id @default(cuid())
+  code              String   @unique
+  name              String
+  legacyCountryId   Int?     @unique
+  defaultLanguageId String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  defaultLanguage Language @relation("CountryDefaultLanguage", fields: [defaultLanguageId], references: [id], onDelete: Restrict)
+
+  @@index([defaultLanguageId])
+  @@map("outcome_countries")
+}
+
+model OutcomeType {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  description  String?  @db.Text
+  defaultCode  String   @default("")
+  sortOrder    Int      @default(0)
+  isActive     Boolean  @default(true)
+  legacyTypeId Int?     @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  systemOutcomes   SystemOutcome[]
+  clubCustomOutcomes ClubCustomOutcome[]
+
+  @@map("outcome_types")
+}
+
+model SystemOutcome {
+  id            String   @id @default(cuid())
+  outcomeTypeId String
+  languageId    String
+  code          String   @default("")
+  message       String   @db.Text
+  audioFile     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  outcomeType OutcomeType @relation(fields: [outcomeTypeId], references: [id], onDelete: Cascade)
+  language    Language    @relation(fields: [languageId], references: [id], onDelete: Cascade)
+
+  @@unique([outcomeTypeId, languageId])
+  @@index([languageId])
+  @@map("system_outcomes")
+}
+
+model ClubOutcomeSetting {
+  id        String          @id @default(cuid())
+  clubId    String          @unique
+  mode      ClubOutcomeMode @default(COUNTRY_STANDARD)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@map("club_outcome_settings")
+}
+
+model ClubCustomOutcome {
+  id            String   @id @default(cuid())
+  clubId        String
+  outcomeTypeId String
+  code          String   @default("")
+  message       String   @db.Text
+  audioFile     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  outcomeType OutcomeType @relation(fields: [outcomeTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, outcomeTypeId])
+  @@index([clubId])
+  @@map("club_custom_outcomes")
+}
+
+// Legacy promocode tables (PHP movesbook-new compatibility)
+// Run: npm run db:push  OR  npx prisma migrate deploy
+// ---------------------------------------------------------------------------
+
+model PromocodeSetting {
+  id                  Int       @id @default(autoincrement())
+  code                String    @db.VarChar(100)
+  validFrom           DateTime  @map("valid_from") @db.Date
+  validTo             DateTime  @map("valid_to") @db.Date
+  usableBy            String    @default("Once") @map("usable_by") @db.VarChar(16)
+  used                Int       @default(0)
+  versionId           String    @default("") @map("version_id") @db.VarChar(100)
+  discount            Int       @default(0)
+  enable              String    @default("Disable") @db.VarChar(16)
+  enableExtension     Int?      @default(0) @map("enable_extension")
+  subscriptionExtends Int?      @map("subscription_extends")
+  socialOptions       String?   @map("social_options") @db.VarChar(500)
+  managementSection   String?   @map("management_section") @db.VarChar(50)
+  enableFreeAccounts  Int?      @default(0) @map("enable_free_accounts")
+  basicVersion        String?   @map("basic_version") @db.VarChar(100)
+  premiumVersion      String?   @map("premium_version") @db.VarChar(100)
+  professionalVersion String?   @map("professional_version") @db.VarChar(100)
+  deleteStatus        Int       @default(2) @map("delete_status")
+  deleteDate          DateTime? @map("delete_date") @db.Date
+  created             DateTime  @default(now())
+  modified              DateTime  @default(now()) @updatedAt
+  email               String?   @db.VarChar(255)
+  recipient           String?   @db.VarChar(50)
+  helpHtmlPagesId     String?   @map("help_html_pages_id") @db.VarChar(20)
+  createrId           String?   @map("creater_id") @db.VarChar(50)
+  creatorId           Int?      @map("creator_id")
+  languageId          String?   @map("language_id") @db.VarChar(10)
+
+  @@index([code])
+  @@index([deleteStatus])
+  @@map("promocode_settings")
+}
+
+model PromocodeApply {
+  id                      Int       @id @default(autoincrement())
+  userId                  Int       @default(0) @map("user_id")
+  promocodeId             Int       @default(0) @map("promocode_id")
+  deleteStatus            Int       @default(2) @map("delete_status")
+  deleteDate              DateTime? @map("delete_date") @db.Date
+  created                 DateTime  @default(now())
+  modified                DateTime  @default(now()) @updatedAt
+  senderEmail             String?   @map("sender_email") @db.VarChar(255)
+  receiverEmail           String?   @map("receiver_email") @db.VarChar(255)
+  senderId                Int?      @default(0) @map("sender_id")
+  receiverId              Int?      @default(0) @map("receiver_id")
+  senderCredit            String?   @map("sender_credit") @db.VarChar(32)
+  receiverCredit          String?   @map("receiver_credit") @db.VarChar(32)
+  receiverVersion         String?   @map("receiver_version") @db.VarChar(32)
+  secondarySenderId       Int?      @map("secondary_sender_id")
+  secondarySenderUsername String?   @map("secondary_sender_username") @db.VarChar(255)
+  secondarySenderCredit   String?   @map("secondary_sender_credit") @db.VarChar(32)
+  newReceiver             String?   @map("new_receiver") @db.VarChar(8)
+  level                   String?   @db.VarChar(20)
+  otherInfo               String?   @map("other_info") @db.VarChar(512)
+  advPage                 String?   @map("adv_page") @db.VarChar(512)
+
+  @@index([promocodeId])
+  @@index([userId])
+  @@index([deleteStatus])
+  @@map("promocode_applies")
+}
+
+model SubscriptionSetting {
+  id               Int      @id @default(autoincrement())
+  subscriptionName String   @map("subscription_name") @db.VarChar(255)
+  shortName        String?  @map("short_name") @db.VarChar(64)
+  roleId           Int?     @map("role_id")
+  price            Decimal? @db.Decimal(10, 2)
+  credit1          String?  @db.VarChar(32)
+  deleteStatus     Int?     @default(2) @map("delete_status")
+
+  @@map("subscription_settings")
+}
+
+model HelpHtmlPage {
+  id        Int       @id @default(autoincrement())
+  pageTitle String    @map("page_title") @db.VarChar(255)
+  langId    Int       @default(1) @map("lang_id")
+  uniqueid  String?   @db.VarChar(64)
+  userId    Int?      @map("user_id")
+  content   String?   @db.MediumText
+  created   DateTime? @default(now())
+
+  @@index([langId])
+  @@map("help_html_pages")
+}
+
+model LanguageValue {
+  id       Int    @id @default(autoincrement())
+  langName String @map("lang_name") @db.VarChar(64)
+
+  @@map("language_values")
+}
+
+model LanguageParagraph {
+  id           Int    @id @default(autoincrement())
+  en           String @db.MediumText
+  fr           String @db.MediumText
+  it           String @db.MediumText
+  de           String @db.MediumText
+  es           String @db.MediumText
+  por          String @db.MediumText
+  rus          String @db.MediumText
+  ind          String @db.MediumText
+  chin         String @db.MediumText
+  arab         String @db.MediumText
+  variableName String @default("") @map("variable_name") @db.VarChar(255)
+  created      String @default("")
+  modified     String @default("")
+
+  @@map("language_paragraphs")
 }

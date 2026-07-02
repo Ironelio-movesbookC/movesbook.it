@@ -83,7 +83,7 @@ echo ""
 echo -e "${BLUE}🏗️  Step 7/8: Building application...${NC}"
 rm -rf .next
 # Cap Node heap so the type-check phase doesn't trigger the Linux OOM killer on small VPS
-export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=2048}"
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=3072}"
 npm run build
 echo -e "${GREEN}✅ Application built${NC}"
 echo ""

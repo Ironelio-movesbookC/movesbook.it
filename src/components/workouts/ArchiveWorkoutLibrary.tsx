@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Copy, Eye, Globe, Plus, Star } from 'lucide-react';
+import { Copy, Eye, Globe, Plus, Share2, Star, Unlink } from 'lucide-react';
 import { useFavoriteSports } from '@/hooks/useFavoriteSports';
 import { saveWeekToFavorites } from '@/lib/saveFavoriteWeek';
 import { mapPersonalArchiveToGridRecords } from '@/lib/personalArchiveGridMapper';
@@ -15,6 +15,8 @@ import CloneArchiveWeekModal from './modals/CloneArchiveWeekModal';
 import ExportWeekToPlanModal from './modals/ExportWeekToPlanModal';
 import WeekTotalsModal from './modals/WeekTotalsModal';
 import PersonalWorkoutArchiveOfficialShell from './archive/PersonalWorkoutArchiveOfficialShell';
+import ShareWeeklyPlanModal from './modals/ShareWeeklyPlanModal';
+import UnshareWeeklyPlanModal from './modals/UnshareWeeklyPlanModal';
 import type { WorkoutArchiveGridRecord, WorkoutArchiveRecordType } from '@/types/workoutArchiveGrid';
 
 export interface ArchiveWorkoutLibraryProps {
@@ -60,11 +62,58 @@ export default function ArchiveWorkoutLibrary({
   const [overviewWeek, setOverviewWeek] = useState<any>(null);
   const [showWeekTotals, setShowWeekTotals] = useState(false);
   const [creatingWeek, setCreatingWeek] = useState(false);
+  const [shareWeekSource, setShareWeekSource] = useState<any>(null);
+  const [unshareTarget, setUnshareTarget] = useState<{ id: string; title: string } | null>(null);
+  const [mySharedGlobalEntries, setMySharedGlobalEntries] = useState<
+    Array<{ id: string; title: string; shareMeta?: { sourceWeekId: string } | null }>
+  >([]);
 
   const workoutWeeklyRecords = useMemo(
     () => mapPersonalArchiveToGridRecords(workoutPlan),
     [workoutPlan]
   );
+
+  const archivePeriods = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    for (const week of workoutPlan?.weeks ?? []) {
+      if (week.period?.id && week.period?.name) {
+        map.set(week.period.id, { id: week.period.id, name: week.period.name });
+      }
+    }
+    return Array.from(map.values());
+  }, [workoutPlan]);
+
+  const loadMySharedGlobalEntries = useCallback(async () => {
+    const token = getToken();
+    if (!token) {
+      setMySharedGlobalEntries([]);
+      return;
+    }
+    try {
+      const res = await fetch('/api/workouts/my-shared-global?recordType=WEEKLY_PLAN', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (!res.ok) {
+        setMySharedGlobalEntries([]);
+        return;
+      }
+      const data = await res.json();
+      setMySharedGlobalEntries(data.records ?? []);
+    } catch {
+      setMySharedGlobalEntries([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadMySharedGlobalEntries();
+  }, [loadMySharedGlobalEntries]);
+
+  const findSharedEntryForWeek = (week: any) => {
+    if (!week?.id) return null;
+    return (
+      mySharedGlobalEntries.find((entry) => entry.shareMeta?.sourceWeekId === week.id) ?? null
+    );
+  };
 
   const loadPersonalExtras = useCallback(async () => {
     setPersonalExtrasLoading(true);
@@ -296,6 +345,7 @@ export default function ArchiveWorkoutLibrary({
     }
     if (record.recordType === 'WEEKLY_PLAN') {
       const week = record._raw;
+      const sharedEntry = findSharedEntryForWeek(week);
       return (
         <div className="flex flex-wrap gap-1">
           <button
@@ -314,6 +364,27 @@ export default function ArchiveWorkoutLibrary({
           >
             <Globe className="h-3.5 w-3.5" />
           </button>
+          {sharedEntry ? (
+            <button
+              type="button"
+              title="Unshare from Global archive"
+              onClick={() =>
+                setUnshareTarget({ id: sharedEntry.id, title: sharedEntry.title })
+              }
+              className="rounded bg-red-600 p-1 text-white hover:bg-red-700"
+            >
+              <Unlink className="h-3.5 w-3.5" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              title="Share with Movesbook users"
+              onClick={() => setShareWeekSource(week)}
+              className="rounded bg-slate-600 p-1 text-white hover:bg-slate-700"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+            </button>
+          )}
           <button
             type="button"
             title="Save to Favourites"
@@ -480,6 +551,26 @@ export default function ArchiveWorkoutLibrary({
           activeSection="D"
         />
       )}
+
+      <ShareWeeklyPlanModal
+        isOpen={Boolean(shareWeekSource)}
+        sourceWeek={shareWeekSource}
+        sourcePlanType="ARCHIVE"
+        periods={archivePeriods}
+        onClose={() => setShareWeekSource(null)}
+        onArchiveExported={() => {
+          if (reloadWorkouts) void reloadWorkouts();
+        }}
+        onShared={() => void loadMySharedGlobalEntries()}
+      />
+
+      <UnshareWeeklyPlanModal
+        isOpen={Boolean(unshareTarget)}
+        globalEntryId={unshareTarget?.id ?? ''}
+        planTitle={unshareTarget?.title ?? 'Weekly plan'}
+        onClose={() => setUnshareTarget(null)}
+        onUnshared={() => void loadMySharedGlobalEntries()}
+      />
     </>
   );
 }

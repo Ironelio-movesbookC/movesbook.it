@@ -247,9 +247,9 @@ export default function WorkoutSectionHeader({
 
       {/* Sub-Header: Title + Actions */}
       <div className="bg-white px-4 py-3 border-b border-gray-200">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold">
+        <div className="flex flex-nowrap justify-between items-center gap-3 overflow-x-auto">
+          <div className="flex flex-nowrap items-center gap-3 min-w-0 shrink-0">
+            <h2 className="text-xl font-bold whitespace-nowrap shrink-0">
               {activeSection === 'A'
                 ? `Weekly Plan ${activeSubSection}`
                 : activeSection === 'W'
@@ -376,89 +376,73 @@ export default function WorkoutSectionHeader({
               </div>
             )}
             
-            {/* Buttons for Section B (Yearly Plan) - Right of Title */}
+            {/* Buttons for Section B (Yearly Plan) - next to title */}
             {activeSection === 'B' && (
               <>
-                <button
-                  onClick={() => onSectionChange('A')}
-                  className="px-3 py-1.5 bg-gray-100 text-gray-800 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
-                  title="Open template plans"
-                >
-                  Create Template Plans
-                </button>
-                <button
-                  onClick={() => onSectionChange('W')}
-                  className="px-3 py-1.5 bg-gray-100 text-gray-800 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
-                  title="Open weekly workouts structures"
-                >
-                  Weekly workouts structures
-                </button>
                 {onCreatePlan && (
                   <button
                     onClick={onCreatePlan}
-                    className="px-3 py-1.5 bg-blue-600 text-white hover:bg-blue-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
+                    className="px-3 py-1.5 bg-blue-600 text-white hover:bg-blue-700 rounded text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap shrink-0"
                     title="Set starting date and create yearly plan"
                   >
-                    <Calendar className="w-4 h-4" />
+                    <Calendar className="w-4 h-4 shrink-0" />
                     Set Start Date
                   </button>
                 )}
                 {onImportClick && (
                   <button
                     onClick={onImportClick}
-                    className="px-3 py-1.5 bg-purple-600 text-white hover:bg-purple-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
+                    className="px-3 py-1.5 bg-purple-600 text-white hover:bg-purple-700 rounded text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap shrink-0"
                     title="Copy weeks from template plans"
                   >
-                    <Download className="w-4 h-4" />
+                    <Download className="w-4 h-4 shrink-0" />
                     Copy from Templates
                   </button>
                 )}
                 <button
                   onClick={onImportClick}
-                  className="px-3 py-1.5 bg-purple-600 text-white hover:bg-purple-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
+                  className="px-3 py-1.5 bg-purple-600 text-white hover:bg-purple-700 rounded text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap shrink-0"
                   title="Import from your coach"
                 >
-                  <Download className="w-4 h-4" />
+                  <Download className="w-4 h-4 shrink-0" />
                   Import from your coach
                 </button>
               </>
             )}
           </div>
           
-          <div className="flex gap-2 items-center">
+          <div className="flex flex-nowrap gap-2 items-center shrink-0">
+            {activeSection === 'D' && onPlanGymWeek && (
+              <button
+                type="button"
+                onClick={onPlanGymWeek}
+                className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                title="Build a gym week plan — saved to archive as Day 1, Day 2, … (no calendar assignment)"
+              >
+                <ClipboardList className="w-4 h-4" />
+                Plan gym week
+              </button>
+            )}
             {activeSection === 'B' && (
               <>
                 {onPlanGymWeek && (
                   <button
+                    type="button"
                     onClick={onPlanGymWeek}
-                    className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-amber-500 text-white hover:bg-amber-600"
-                    title="Plan a routine (Q1–Q4, save to Archive or Yearly Plan)"
+                    className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-amber-500 text-white hover:bg-amber-600 whitespace-nowrap shrink-0"
+                    title="Plan a gym week and assign routines to calendar weeks"
                   >
-                    <ClipboardList className="w-4 h-4" />
+                    <ClipboardList className="w-4 h-4 shrink-0" />
                     Plan gym week
                   </button>
                 )}
-                <button
-                  onClick={() => onSectionChange('A')}
-                  className="px-3 py-1.5 bg-gray-100 text-gray-800 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
-                  title="Open template plans"
-                >
-                  Create Template Plans
-                </button>
-                <button
-                  onClick={() => onSectionChange('W')}
-                  className="px-3 py-1.5 bg-gray-100 text-gray-800 hover:bg-gray-200 rounded text-sm font-medium transition-colors"
-                  title="Open weekly workouts structures"
-                >
-                  Weekly workouts structures
-                </button>
               </>
             )}
             {(activeSection === 'B' || activeSection === 'C') && onInsertActions && (
               <button
                 type="button"
                 onClick={onInsertActions}
-                className="px-3 py-1.5 bg-indigo-600 text-white hover:bg-indigo-700 rounded text-sm font-medium transition-colors"
+                className="px-3 py-1.5 bg-indigo-600 text-white hover:bg-indigo-700 rounded text-sm font-medium transition-colors whitespace-nowrap shrink-0"
                 title="Plan actions on days (not moveframes)"
               >
                 Insert actions
@@ -511,9 +495,9 @@ export default function WorkoutSectionHeader({
       {/* Section B - Second Row: Controls and Navigation */}
       {activeSection === 'B' && (
         <div className="bg-white px-4 py-3 border-b border-gray-200" style={{ position: 'relative', zIndex: 0 }}>
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-nowrap items-center justify-between gap-4 overflow-x-auto">
               {/* Left - Display dropdown and navigation */}
-              <div className="flex items-center gap-4">
+              <div className="flex flex-nowrap items-center gap-4 shrink-0">
                 <div className="flex items-center gap-3">
                   {viewMode !== 'calendar' && onWeeksPerPageChange && (
                     <div className="flex items-center gap-2" style={{ position: 'relative', zIndex: 0 }}>
@@ -544,21 +528,21 @@ export default function WorkoutSectionHeader({
                       <button
                         onClick={onPrevPage}
                         disabled={currentPageStart === 1}
-                        className="px-3 py-1.5 rounded text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+                        className="px-3 py-1.5 rounded text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
                       >
-                        <ChevronLeft className="w-4 h-4" />
+                        <ChevronLeft className="w-4 h-4 shrink-0" />
                         Previous
                       </button>
-                      <span className="text-sm font-medium text-gray-700">
+                      <span className="text-sm font-medium text-gray-700 whitespace-nowrap shrink-0">
                         Weeks {currentPageStart} - {Math.min(currentPageStart + weeksPerPage - 1, totalWeeks)} of {totalWeeks}
                       </span>
                       <button
                         onClick={onNextPage}
                         disabled={currentPageStart + weeksPerPage > totalWeeks}
-                        className="px-3 py-1.5 rounded text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+                        className="px-3 py-1.5 rounded text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
                       >
                         Next
-                        <ChevronRight className="w-4 h-4" />
+                        <ChevronRight className="w-4 h-4 shrink-0" />
                       </button>
                     </>
                   )}
@@ -566,48 +550,47 @@ export default function WorkoutSectionHeader({
              </div>
             
             {/* Right - View Toggle Buttons */}
-            <div className="flex items-center gap-2">
-              {/* Icon Type Toggle Button */}
-              {onIconTypeToggle && (
-                <button
-                  onClick={onIconTypeToggle}
-                  className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-green-500 text-white hover:bg-green-600"
-                  title={`Switch to ${iconType === 'emoji' ? 'image' : 'emoji'} icons`}
-                >
-                  {iconType === 'emoji' ? '🎨 Images' : '😀 Emojis'}
-                </button>
-              )}
-              
-              {/* View Toggle Buttons */}
-            <button
+            <div className="flex flex-nowrap items-center gap-2 shrink-0">
+              <button
               onClick={() => onViewModeChange('tree')}
-              className={`px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors whitespace-nowrap shrink-0 ${
                 viewMode === 'tree' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              <List className="w-4 h-4" />
+              <List className="w-4 h-4 shrink-0" />
               Tree
             </button>
             
             <button
               onClick={() => onViewModeChange('table')}
-              className={`px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors whitespace-nowrap shrink-0 ${
                 viewMode === 'table' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              <Table className="w-4 h-4" />
+              <Table className="w-4 h-4 shrink-0" />
               Table
             </button>
             
               <button
                 onClick={() => onViewModeChange('calendar')}
-                className={`px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
+                className={`px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors whitespace-nowrap shrink-0 ${
                   viewMode === 'calendar' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                 }`}
               >
-                <Calendar className="w-4 h-4" />
+                <Calendar className="w-4 h-4 shrink-0" />
                 Calendar
               </button>
+
+              {onIconTypeToggle && (
+                <button
+                  onClick={onIconTypeToggle}
+                  className="px-3 py-1.5 rounded flex items-center gap-2 text-sm font-medium transition-colors bg-green-500 text-white hover:bg-green-600 whitespace-nowrap shrink-0"
+                  title={`Switch to ${iconType === 'emoji' ? 'image' : 'emoji'} icons`}
+                >
+                  {iconType === 'emoji' ? '🎨 Images' : '😀 Emojis'}
+                </button>
+              )}
+
               {/* Save/Reset Buttons for Section B - second controls row */}
               {activeSection === 'B' && (
                 <>
@@ -625,10 +608,10 @@ export default function WorkoutSectionHeader({
                         alert('❌ Failed to save grid settings');
                       }
                     }}
-                    className="px-3 py-1.5 bg-green-600 text-white hover:bg-green-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
+                    className="px-3 py-1.5 bg-green-600 text-white hover:bg-green-700 rounded text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap shrink-0"
                     title="Save current grid settings"
                   >
-                    <Download className="w-4 h-4" />
+                    <Download className="w-4 h-4 shrink-0" />
                     Save Grid Settings
                   </button>
                   <button
@@ -644,10 +627,10 @@ export default function WorkoutSectionHeader({
                         }
                       }
                     }}
-                    className="px-3 py-1.5 bg-gray-600 text-white hover:bg-gray-700 rounded text-sm font-medium flex items-center gap-2 transition-colors"
+                    className="px-3 py-1.5 bg-gray-600 text-white hover:bg-gray-700 rounded text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap shrink-0"
                     title="Reset grid settings to default"
                   >
-                    <Calendar className="w-4 h-4" />
+                    <Calendar className="w-4 h-4 shrink-0" />
                     Reset to Default
                   </button>
                 </>

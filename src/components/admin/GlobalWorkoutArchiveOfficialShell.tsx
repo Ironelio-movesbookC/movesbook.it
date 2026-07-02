@@ -38,6 +38,7 @@ import {
   type ArchivePrimaryTab,
   type ArchiveSearchField,
   type ArchiveSortKey,
+  type ArchiveTrainingFilter,
 } from '@/lib/workoutArchiveOfficialShared';
 import {
   ArchiveOfficialSortableHeader,
@@ -98,6 +99,8 @@ export default function GlobalWorkoutArchiveOfficialShell({
   const [appliedSearch, setAppliedSearch] = useState('');
   const [searchField, setSearchField] = useState<SearchField>('all');
   const [durationFilter, setDurationFilter] = useState<DurationFilter>('all');
+  const [trainingCategoryFilter, setTrainingCategoryFilter] =
+    useState<ArchiveTrainingFilter>('all');
   const [authorFilter, setAuthorFilter] = useState('all');
   const [countryFilter, setCountryFilter] = useState('all');
   const [displayLanguage, setDisplayLanguage] = useState('en');
@@ -161,6 +164,7 @@ export default function GlobalWorkoutArchiveOfficialShell({
         authorFilter,
         countryFilter,
         durationFilter,
+        trainingCategoryFilter,
         appliedSearch,
         searchField,
         sortKey,
@@ -176,6 +180,7 @@ export default function GlobalWorkoutArchiveOfficialShell({
       authorFilter,
       countryFilter,
       durationFilter,
+      trainingCategoryFilter,
       appliedSearch,
       searchField,
       sortKey,
@@ -258,11 +263,11 @@ export default function GlobalWorkoutArchiveOfficialShell({
           <div className="min-w-0 flex-1">
             <h2 className="flex items-center gap-2 text-xl font-bold text-gray-900">
               <Archive className="h-7 w-7 shrink-0 text-sky-700" aria-hidden />
-              Global archive of workouts and plans of workouts.
+              Global archive of workouts and weekly plans
             </h2>
             <p className="mt-1 max-w-3xl text-sm text-gray-600">
-              Super Admin catalog — workouts and weekly plans shared by Movesbook users. Filter by sport,
-              author, and country; manage visibility and review metadata.
+              Grid of shared workouts and weekly plans with picture, training type, class, duration,
+              metadata, and author. Use the options at the top to filter, search, and manage entries.
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-end justify-end gap-2 sm:gap-3">
@@ -370,7 +375,7 @@ export default function GlobalWorkoutArchiveOfficialShell({
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-3">
         {onRecordTypeFilterChange && primaryTab === 'WORKOUT_WEEKLY' && (
           <label className="text-sm">
-            <span className="block text-xs font-semibold text-gray-500 mb-1">Type of workout</span>
+            <span className="block text-xs font-semibold text-gray-500 mb-1">Class</span>
             <select
               value={recordTypeFilter}
               onChange={(e) => {
@@ -379,12 +384,28 @@ export default function GlobalWorkoutArchiveOfficialShell({
               }}
               className="rounded border border-gray-300 px-2 py-1.5 text-sm min-w-[10rem]"
             >
-              <option value="ALL">All types</option>
-              <option value="WORKOUT">Workouts</option>
-              <option value="WEEKLY_PLAN">Weekly plans</option>
+              <option value="ALL">All classes</option>
+              <option value="WORKOUT">Workout</option>
+              <option value="WEEKLY_PLAN">Weekly plan</option>
             </select>
           </label>
         )}
+        <label className="text-sm">
+          <span className="block text-xs font-semibold text-gray-500 mb-1">Type of training</span>
+          <select
+            value={trainingCategoryFilter}
+            onChange={(e) => {
+              setTrainingCategoryFilter(e.target.value as ArchiveTrainingFilter);
+              setPage(1);
+            }}
+            className="rounded border border-gray-300 px-2 py-1.5 text-sm min-w-[10rem]"
+          >
+            <option value="all">All training types</option>
+            <option value="aerobic">Aerobic</option>
+            <option value="non-aerobic">Non-aerobic</option>
+            <option value="weight training">Weight training</option>
+          </select>
+        </label>
         <label className="text-sm">
           <span className="block text-xs font-semibold text-gray-500 mb-1">Duration</span>
           <select
@@ -659,7 +680,7 @@ export default function GlobalWorkoutArchiveOfficialShell({
               ))}
             </div>
           ) : (
-            <table className="w-full text-xs sm:text-sm min-w-[1100px]">
+            <table className="w-full text-xs sm:text-sm min-w-[1800px]">
               <ArchiveOfficialSortableHeader
                 columnOrder={columnOrder}
                 sensors={sensors}

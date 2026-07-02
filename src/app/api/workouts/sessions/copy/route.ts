@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { sourceWorkoutId, targetDayId, sessionNumber } = body;
+    const { sourceWorkoutId, targetDayId, sessionNumber, replaceWorkoutId } = body;
 
     console.log('📋 Copying workout:', { sourceWorkoutId, targetDayId, sessionNumber });
 
@@ -51,21 +51,42 @@ export async function POST(request: NextRequest) {
     // Check existing workouts for the target day
     const existingWorkouts = await prisma.workoutSession.findMany({
       where: { workoutDayId: targetDayId },
-      select: { sessionNumber: true }
+      select: { id: true, sessionNumber: true }
     });
 
-    // Validate: max 3 workouts per day
-    if (existingWorkouts.length >= 3) {
-      return NextResponse.json(
-        { error: 'Cannot copy workout: Maximum 3 workouts per day allowed' },
-        { status: 400 }
-      );
-    }
-
-    // Determine session number if not provided
     let newSessionNumber = sessionNumber;
-    if (!newSessionNumber) {
-      newSessionNumber = Math.max(0, ...existingWorkouts.map(w => w.sessionNumber)) + 1;
+
+    if (replaceWorkoutId) {
+      const toReplace = existingWorkouts.find((w) => w.id === replaceWorkoutId);
+      if (!toReplace) {
+        return NextResponse.json(
+          { error: 'Workout to replace was not found on the target day' },
+          { status: 404 }
+        );
+      }
+
+      newSessionNumber = toReplace.sessionNumber;
+
+      for (const mf of await prisma.moveframe.findMany({
+        where: { workoutSessionId: replaceWorkoutId },
+        select: { id: true },
+      })) {
+        await prisma.movelap.deleteMany({ where: { moveframeId: mf.id } });
+      }
+      await prisma.moveframe.deleteMany({ where: { workoutSessionId: replaceWorkoutId } });
+      await prisma.workoutSession.delete({ where: { id: replaceWorkoutId } });
+    } else {
+      // Validate: max 3 workouts per day
+      if (existingWorkouts.length >= 3) {
+        return NextResponse.json(
+          { error: 'Cannot copy workout: Maximum 3 workouts per day allowed. Select a workout to overwrite.' },
+          { status: 400 }
+        );
+      }
+
+      if (!newSessionNumber) {
+        newSessionNumber = Math.max(0, ...existingWorkouts.map(w => w.sessionNumber)) + 1;
+      }
     }
 
     // Create new workout with copied data
@@ -84,8 +105,12 @@ export async function POST(request: NextRequest) {
         heartRateAvg: sourceWorkout.heartRateAvg,
         calories: sourceWorkout.calories,
         feelingStatus: sourceWorkout.feelingStatus,
-        notes: `${sourceWorkout.notes || ''} (Copied)`,
-        status: 'NOT_PLANNED', // Reset status for copied workout
+        notes: sourceWorkout.notes || null,
+        status: 'NOT_PLANNED',
+        mainSport: sourceWorkout.mainSport,
+        mainGoal: sourceWorkout.mainGoal,
+        intensity: sourceWorkout.intensity,
+        tags: sourceWorkout.tags,
         // Copy sports
         sports: {
           create: sourceWorkout.sports.map((sport: any) => ({

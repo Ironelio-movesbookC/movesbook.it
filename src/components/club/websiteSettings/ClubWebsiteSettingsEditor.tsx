@@ -4,16 +4,13 @@ import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { CLUB_WEBSITE_LANGUAGE_TABS } from '@/lib/clubWebsiteLanguages';
-import { clubWebsiteTopicEditorUrl } from '@/lib/clubWebsiteSettingsPaths';
-import { useClubWebsiteTopics } from '@/hooks/useClubWebsiteTopics';
-import { useClubWebsiteFriendList } from '@/hooks/useClubWebsiteFriendList';
-import { getFriendItemDeleteConfirmKey, getFriendItemIdsForRemoval } from '@/lib/clubWebsiteFriendList';
+import { getFriendItemDeleteConfirmKey } from '@/lib/clubWebsiteFriendList';
 import ClubWebsiteLastUpdatePicker, {
   LEGACY_FIELD_CLASS,
 } from '@/components/club/websiteSettings/ClubWebsiteLastUpdatePicker';
-import ClubWebsiteAddTopicModal from '@/components/club/websiteSettings/ClubWebsiteAddTopicModal';
 import ClubWebsiteFriendItemEditor from '@/components/club/websiteSettings/ClubWebsiteFriendItemEditor';
 import ClubWebsiteSettingsSidebar from '@/components/club/websiteSettings/ClubWebsiteSettingsSidebar';
+import { useClubWebsiteSettingsSidebar } from '@/components/club/websiteSettings/ClubWebsiteSettingsSidebarContext';
 
 const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), { ssr: false });
 
@@ -35,15 +32,13 @@ export default function ClubWebsiteSettingsEditor({
   logoImageUrl?: string | null;
 }) {
   const { t } = useLanguage();
-  const { topics, addTopic, toggleActivated } = useClubWebsiteTopics(clubId);
+  const { friends } = useClubWebsiteSettingsSidebar();
   const {
     items: friendItems,
     updateItem,
-    toggleActivated: toggleFriendActivated,
     removeItem: removeFriendItem,
     addSubtopicUnder,
-    moveItem: moveFriendItem,
-  } = useClubWebsiteFriendList(clubId);
+  } = friends;
 
   const [activeLang, setActiveLang] = useState<(typeof CLUB_WEBSITE_LANGUAGE_TABS)[number]['code']>('en');
   const [title, setTitle] = useState('');
@@ -53,15 +48,20 @@ export default function ClubWebsiteSettingsEditor({
   const [contents, setContents] = useState<Record<string, string>>({});
   const [selectedTopicId, setSelectedTopicId] = useState('friends-root');
   const [selectedTopicLabel, setSelectedTopicLabel] = useState('');
-  const [addTopicOpen, setAddTopicOpen] = useState(false);
   const [contentFocusToken, setContentFocusToken] = useState(0);
 
   const selectedFriend = friendItems.find((i) => i.id === selectedTopicId) ?? null;
   const contentValue = contents[activeLang] ?? '';
 
   const handleFriendDelete = (id: string) => {
-    const removedIds = getFriendItemIdsForRemoval(friendItems, id);
     removeFriendItem(id);
+    if (id === selectedTopicId) {
+      setSelectedTopicId('friends-root');
+      setSelectedTopicLabel(t('club_website_list_of_friends'));
+    }
+  };
+
+  const handleFriendDeleted = (removedIds: string[]) => {
     if (removedIds.includes(selectedTopicId)) {
       setSelectedTopicId('friends-root');
       setSelectedTopicLabel(t('club_website_list_of_friends'));
@@ -78,24 +78,12 @@ export default function ClubWebsiteSettingsEditor({
         adminLocality={adminLocality}
         logoImageUrl={logoImageUrl}
         selectedTopicId={selectedTopicId}
-        customTopics={topics}
-        onAddTopic={() => setAddTopicOpen(true)}
-        onSelectCustomTopic={(id) => {
-          window.open(clubWebsiteTopicEditorUrl(id), '_blank', 'noopener,noreferrer');
-        }}
-        onToggleCustomTopicActivated={toggleActivated}
-        friendListItems={friendItems}
-        friendListAdminMode
-        onFriendToggleActivated={toggleFriendActivated}
-        onFriendDelete={handleFriendDelete}
-        onFriendMove={moveFriendItem}
-        onFriendUpdateItem={updateItem}
         onFriendEditContent={(id, label) => {
           setSelectedTopicId(id);
           setSelectedTopicLabel(label);
           setContentFocusToken((n) => n + 1);
         }}
-        onFriendAddSubtopic={(parentId, name) => addSubtopicUnder(parentId, name)}
+        onFriendDeleted={handleFriendDeleted}
         onSelectTopic={(id, label) => {
           setSelectedTopicId(id);
           setSelectedTopicLabel(label);
@@ -193,18 +181,6 @@ export default function ClubWebsiteSettingsEditor({
           </>
         )}
       </div>
-
-      <ClubWebsiteAddTopicModal
-        open={addTopicOpen}
-        onClose={() => setAddTopicOpen(false)}
-        onCreate={(name) => {
-          if (!clubId) return;
-          const created = addTopic(name);
-          if (created) {
-            window.open(clubWebsiteTopicEditorUrl(created.id), '_blank', 'noopener,noreferrer');
-          }
-        }}
-      />
     </div>
   );
 }

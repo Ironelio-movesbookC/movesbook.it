@@ -103,17 +103,20 @@ import {
   CornerDownRight,
   Repeat2,
   FileStack,
+  Receipt,
   Info,
   MessagesSquare,
   Youtube
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
+import MyPageTopicsEntryRow from '@/components/club/MyPageTopicsEntryRow';
+import SelectClubForTopicsModal from '@/components/club/SelectClubForTopicsModal';
 import { useRouter } from 'next/navigation';
-import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSidebarBlock';
 import {
   isClubAccountUserType,
   isGroupAccountUserType,
+  isManagedEntityAdminUserType,
   isTeamAccountUserType,
 } from '@/utils/dashboardRouting';
 import {
@@ -122,6 +125,7 @@ import {
   isClubCreatedFromForm,
   userHasClubProfile,
 } from '@/lib/club/clubSidebarLabel';
+import { canManageClubWebsite } from '@/lib/club/clubWebsitePermissions';
 import {
   formatEntitySidebarLabel,
   getFormCreatedEntitiesSortedByCreatedAt,
@@ -133,9 +137,15 @@ import {
 import SidebarClubMyEntityTop from '@/components/SidebarClubMyEntityTop';
 import ClubMyClubInfoSubmenu from '@/components/club/ClubMyClubInfoSubmenu';
 import ClubMembersDashboardSection from '@/components/club/ClubMembersDashboardSection';
+import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSidebarBlock';
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH, clubWebsiteDisplayUrl } from '@/lib/clubWebsiteSettingsPaths';
+import {
+  readSelectedClubHint,
+  writeClubWorkspaceTab,
+} from '@/lib/club/clubWorkspaceTab';
+import { requestOpenClubTopicsSection } from '@/lib/club/clubTopicsNavigation';
 
 function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
   return (
@@ -239,50 +249,53 @@ type ClubAdminArchiveItem =
   | { kind: 'overview'; label: string };
 
 const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
-  [{ kind: 'overview', label: '» Overview' }],
+  [{ kind: 'icon', Icon: Server, label: '» Overview', path: '/clubs/archive_overview' }],
   [
     { kind: 'icon', Icon: Users, label: 'Members', path: '/clubMembers/memberList'},
     { kind: 'icon', Icon: UserCog, label: 'Operators', path: '/clubs/club_operatorlist' },
-    { kind: 'icon', Icon: User, label: 'Employees', path: '' },
+    { kind: 'icon', Icon: User, label: 'Employees', path: '/clubs/archive_employees' },
   ],
   [
     { kind: 'affiliate', label: 'Affiliations', path: '/clubMembers/membership' },
     { kind: 'icon', Icon: Contact2, label: 'Subscriptions to the club', path: '/clubs/subscription' },
-    { kind: 'icon', Icon: CreditCard, label: 'Accesses', path: '' },
+    { kind: 'icon', Icon: CreditCard, label: 'Accesses', path: '/clubs/access_list' },
   ],
   [
-    { kind: 'icon', Icon: Hourglass, label: 'Deadlines of payment', path: '/users/deadLine' },
+    { kind: 'icon', Icon: Hourglass, label: 'Deadlines of payment', path: '/users/deadline' },
     { kind: 'icon', Icon: Award, label: 'Credit voucher', path: '/clubSettings/creditCustomer' },
-    { kind: 'icon', Icon: Hourglass, label: 'Other debts', path: '' },
-    { kind: 'icon', Icon: Hourglass, label: 'Planned expenses', path: '' },
+    { kind: 'icon', Icon: Hourglass, label: 'Other debts', path: '/clubs/other_debts' },
+    { kind: 'icon', Icon: Hourglass, label: 'Planned expenses', path: '/clubs/arc_expenses' },
   ],
   [
     { kind: 'icon', Icon: ShoppingCart, label: 'Shop/Selling of products', path: '/ArchiveSeles/product_sale_list' },
-    { kind: 'icon', Icon: ShoppingBasket, label: 'Services for the customers', path: '' },
+    { kind: 'icon', Icon: ShoppingBasket, label: 'Services for the customers', path: '/clubs/new_moment_cash' },
+    { kind: 'icon', Icon: FileText, label: 'Archive of Services', path: '/clubs/archive_service_list' },
+    { kind: 'icon', Icon: Receipt, label: 'Member expenses', path: '/clubs/new_expense' },
+    { kind: 'icon', Icon: FileStack, label: 'Archive of Expenses', path: '/clubs/archive_expense_list' },
   ],
   [
     { kind: 'icon', Icon: CornerDownLeft, label: 'Cash In', path: '/clubs/movement_cash_details/IN' },
     { kind: 'icon', Icon: CornerDownRight, label: 'Cash Out', path: '/clubs/movement_cash_details/OUT' },
     { kind: 'icon', Icon: Repeat2, label: 'Cash (all movements)', path: '/clubs/movement_cash_details' },
   ],
-  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubMembers/movement_cash' }],
+  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubs/service_receipts' }],
   [
-    { kind: 'icon', Icon: FileStack, label: 'Cards assignments', path: '' },
-    { kind: 'icon', Icon: FileWarning, label: 'Alert assigned', path: '' },
+    { kind: 'icon', Icon: FileStack, label: 'Cards assignments', path: '/clubs/cards_assignments' },
+    { kind: 'icon', Icon: FileWarning, label: 'Alert assigned', path: '/clubs/alerts_assigned' },
   ],
   [
-    { kind: 'icon', Icon: Paperclip, label: 'Reservations', path: '' },
-    { kind: 'icon', Icon: Phone, label: 'Contacts of marketing', path: '' },
-    { kind: 'icon', Icon: Calendar, label: 'Events', path: '' },
+    { kind: 'icon', Icon: Paperclip, label: 'Reservations', path: '/clubs/archive_reservations' },
+    { kind: 'icon', Icon: Phone, label: 'Contacts of marketing', path: '/clubs/marketing_contacts' },
+    { kind: 'icon', Icon: Calendar, label: 'Events', path: '/clubs/archive_events' },
   ],
   [
-    { kind: 'icon', Icon: Presentation, label: 'Polls', path: '' },
-    { kind: 'icon', Icon: Megaphone, label: 'Advertising campaigns', path: '' },
+    { kind: 'icon', Icon: Presentation, label: 'Polls', path: '/clubs/archive_polls' },
+    { kind: 'icon', Icon: Megaphone, label: 'Advertising campaigns', path: '/clubs/advertising_campaigns' },
     {
       kind: 'icon',
       Icon: HelpCircle,
       label: 'Queries to the staff ...',
-      path: ''
+      path: '/clubs/staff_queries'
     },
   ],
 ];
@@ -325,6 +338,8 @@ interface DarkSidebarProps {
   onIdentificationDevicesClick?: () => void;
   /** General settings → Access of outcome settings (dashboard panel) */
   onAccessOutcomeSettingsClick?: () => void;
+  /** Communities → Suggest Movesbook (promocode invite dashboard) */
+  onSuggestMovesbookClick?: () => void;
   activeTab?: 'my-page' | 'my-entity';
   onTabChange?: (tab: 'my-page' | 'my-entity') => void;
   /** Fresh `users_new.image` from API (e.g. GET /api/user/profile); overrides stale localStorage. */
@@ -346,6 +361,8 @@ interface DarkSidebarProps {
    * only while that workspace is open from the sidebar — hidden on My Page.
    */
   clubMyClubTabVisible?: boolean;
+  /** Club workspace: clubs list has finished loading from the API. */
+  clubProfileLoaded?: boolean;
 }
 
 export default function DarkSidebar({
@@ -362,6 +379,7 @@ export default function DarkSidebar({
   onClubAddSongsPlaylistsClick,
   onIdentificationDevicesClick,
   onAccessOutcomeSettingsClick,
+  onSuggestMovesbookClick,
   activeTab = 'my-page',
   onTabChange,
   profileImageFromDb,
@@ -372,6 +390,7 @@ export default function DarkSidebar({
   onCreateTeamClick,
   onCreateGroupClick,
   clubMyClubTabVisible = false,
+  clubProfileLoaded = true,
 }: DarkSidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
@@ -384,6 +403,10 @@ export default function DarkSidebar({
   useEffect(() => {
     setInternalActiveTab(activeTab);
   }, [activeTab]);
+
+  const currentTab = onTabChange ? activeTab : internalActiveTab;
+  const setCurrentTab = onTabChange ? onTabChange : setInternalActiveTab;
+
   const [communitiesOpen, setCommunitiesOpen] = useState(false);
   const [currentClubMembersOpen, setCurrentClubMembersOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
@@ -396,6 +419,15 @@ export default function DarkSidebar({
     () => getFormCreatedClubsSortedByCreatedAt(entities),
     [entities]
   );
+  const clubsForTopicsPicker = useMemo(() => {
+    if (isClubAccountUserType(userType)) {
+      return formCreatedClubs as { id: string; name: string; description?: string | null }[];
+    }
+    if (userType === 'ATHLETE') {
+      return entities as { id: string; name: string; description?: string | null }[];
+    }
+    return [];
+  }, [userType, formCreatedClubs, entities]);
   const formCreatedEntities = useMemo(
     () => getFormCreatedEntitiesSortedByCreatedAt(entities),
     [entities]
@@ -412,8 +444,12 @@ export default function DarkSidebar({
     isTeamManagerUser ||
     isGroupAdminUser ||
     isCoachUser;
+  const clubHasSelectedEntity =
+    Boolean(selectedEntityId) || readSelectedClubHint();
   const showMyClubTab = isManagedEntityWorkspaceUser
-    ? clubMyClubTabVisible === true
+    ? isClubAccountUserType(userType)
+      ? clubHasSelectedEntity && currentTab === 'my-entity'
+      : clubMyClubTabVisible === true
     : isAthleteUser
       ? athleteHasClubMembership
       : clubUserHasProfile;
@@ -435,6 +471,7 @@ export default function DarkSidebar({
   /** Personal "My channel on YouTube" — persisted on `User.youtubeChannelUrl` (API merges legacy social JSON). */
   const [userYoutubeChannelUrl, setUserYoutubeChannelUrl] = useState('');
   const [youtubeModalOpen, setYoutubeModalOpen] = useState(false);
+  const [clubTopicsPickerOpen, setClubTopicsPickerOpen] = useState(false);
   const [youtubeUrlDraft, setYoutubeUrlDraft] = useState('');
   const [youtubeSaveLoading, setYoutubeSaveLoading] = useState(false);
   const [clubYoutubeOverride, setClubYoutubeOverride] = useState<
@@ -617,15 +654,12 @@ export default function DarkSidebar({
   const messagesCount = 0;
   const onlineCount = 0;
 
-  // Sync internal state with prop
-  const currentTab = onTabChange ? activeTab : internalActiveTab;
-  const setCurrentTab = onTabChange ? onTabChange : setInternalActiveTab;
-
   useEffect(() => {
-    if (!showMyClubTab && currentTab === 'my-entity') {
+    if (clubProfileLoaded && !clubHasSelectedEntity && currentTab === 'my-entity') {
+      writeClubWorkspaceTab('my-page');
       setCurrentTab('my-page');
     }
-  }, [showMyClubTab, currentTab, setCurrentTab]);
+  }, [clubProfileLoaded, clubHasSelectedEntity, currentTab, setCurrentTab]);
 
   const savedYoutubeUrl = userYoutubeChannelUrl;
 
@@ -704,7 +738,11 @@ export default function DarkSidebar({
         }
       : null;
 
-  const clubWebsiteManage = isClubAccountUserType(userType);
+  const clubWebsiteManage = canManageClubWebsite(
+    user?.id,
+    userType,
+    displaySelectedClub as { id?: string; adminId?: string; admin?: { id?: string } } | null,
+  );
   const movesbookWebsiteHref = clubWebsiteDisplayUrl(
     displaySelectedClub ? (displaySelectedClub as { id: string }).id : null
   );
@@ -760,7 +798,9 @@ export default function DarkSidebar({
   const showClubMyEntityTop =
     currentTab === 'my-entity' &&
     (userType === 'ATHLETE' ||
-      (isClubAccountUserType(userType) && formCreatedClubs.length > 0));
+      (isClubAccountUserType(userType) &&
+        formCreatedClubs.length > 0 &&
+        clubHasSelectedEntity));
 
   const handleMyPage = () => {
     router.push('/privacy');
@@ -807,12 +847,21 @@ export default function DarkSidebar({
   };
 
   const handleMyPageTab = () => {
+    writeClubWorkspaceTab('my-page');
     setCurrentTab('my-page');
     if (onMyPageClick) {
       onMyPageClick();
     } else {
       router.push('/my-page');
     }
+  };
+
+  const handleSuggestMovesbookClick = () => {
+    if (onSuggestMovesbookClick) {
+      onSuggestMovesbookClick();
+      return;
+    }
+    router.push('/users/notification_by_promocode');
   };
 
   const handleMyEntityTab = () => {
@@ -827,6 +876,7 @@ export default function DarkSidebar({
       return;
     }
 
+    writeClubWorkspaceTab('my-entity');
     setCurrentTab('my-entity');
 
     if (isClubAccountUserType(userType)) {
@@ -847,6 +897,38 @@ export default function DarkSidebar({
       // The tab change is already handled by setCurrentTab above
     }
   };
+
+  const handleMyPageClubSelect = useCallback(
+    (clubId: string) => {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('selectedClub', clubId);
+        writeClubWorkspaceTab('my-entity');
+      }
+      onEntitySelect?.(clubId);
+      setCurrentTab('my-entity');
+      if (isClubAccountUserType(userType) || isAthleteUser) {
+        onMyClubClick?.();
+      }
+    },
+    [onEntitySelect, setCurrentTab, userType, isAthleteUser, onMyClubClick]
+  );
+
+  const handleClubSelectedForTopics = useCallback(
+    (clubId: string) => {
+      setClubTopicsPickerOpen(false);
+      requestOpenClubTopicsSection();
+      handleMyPageClubSelect(clubId);
+    },
+    [handleMyPageClubSelect]
+  );
+
+  const openMyTopicsClubPicker = useCallback(() => {
+    if (clubsForTopicsPicker.length === 1) {
+      handleClubSelectedForTopics(clubsForTopicsPicker[0]!.id);
+      return;
+    }
+    setClubTopicsPickerOpen(true);
+  }, [clubsForTopicsPicker, handleClubSelectedForTopics]);
 
   const getEntityLabel = () => {
     if (isClubAccountUserType(userType)) return t('sidebar_my_club');
@@ -1092,6 +1174,7 @@ export default function DarkSidebar({
             <div className="py-3 bg-gray-850 border-t border-gray-700">
               <button
                 type="button"
+                onClick={handleSuggestMovesbookClick}
                 className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
               >
                 Suggest Movesbook to your friends
@@ -1152,7 +1235,7 @@ export default function DarkSidebar({
   return (
     <>
     <div className="w-full h-full bg-gray-900 text-white flex flex-col overflow-hidden" style={{ width: '320px' }}>
-      {/* Tab Navigation — club accounts: My Club tab appears when a sidebar club is opened */}
+      {/* Tab Navigation — club accounts: My Club tab only while a sidebar club workspace is open */}
       <div className="flex flex-shrink-0 border-b border-gray-700 bg-gray-900">
         <button
           onClick={handleMyPageTab}
@@ -1389,10 +1472,7 @@ export default function DarkSidebar({
                             <li key={club.id}>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  onEntitySelect?.(club.id);
-                                  setCurrentTab('my-entity');
-                                }}
+                                onClick={() => handleMyPageClubSelect(club.id)}
                                 className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
                                   isSelected ? 'bg-zinc-700/60' : ''
                                 }`}
@@ -1409,6 +1489,9 @@ export default function DarkSidebar({
                       </ul>
                     </>
                   )}
+                  <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15 pt-3">
+                    <MyPageTopicsEntryRow onOpenClubPicker={openMyTopicsClubPicker} />
+                  </div>
                 </div>
               )}
               {myClubsOpen && isAthleteUser && (
@@ -1430,7 +1513,7 @@ export default function DarkSidebar({
                             <li key={club.id}>
                               <button
                                 type="button"
-                                onClick={() => onEntitySelect?.(club.id)}
+                                onClick={() => handleMyPageClubSelect(club.id)}
                                 className={`flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm text-white transition-colors hover:bg-zinc-700/80 ${
                                   isSelected ? 'bg-zinc-700/60' : ''
                                 }`}
@@ -1449,6 +1532,9 @@ export default function DarkSidebar({
                       </ul>
                     </>
                   )}
+                  <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15 pt-3">
+                    <MyPageTopicsEntryRow onOpenClubPicker={openMyTopicsClubPicker} />
+                  </div>
                 </div>
               )}
               {myClubsOpen && isCoachUser && (
@@ -1732,15 +1818,8 @@ export default function DarkSidebar({
                       <Settings className="w-4 h-4" />
                     </button>
                   </div>
-                  {user?.id ? (
-                    <PersonalMyTopicsSidebarBlock
-                      userId={user.id}
-                      clubId={
-                        clubWebsiteManage && displaySelectedClub
-                          ? (displaySelectedClub as { id: string }).id
-                          : undefined
-                      }
-                    />
+                  {isManagedEntityAdminUserType(userType) ? (
+                    <PersonalMyTopicsSidebarBlock userId={user?.id} canManage />
                   ) : null}
                   <div className="flex w-full items-stretch min-h-[44px]">
                     {myPageYoutubeOpenHref ? (
@@ -2101,6 +2180,7 @@ export default function DarkSidebar({
                   <div className="py-3 bg-gray-850 border-t border-gray-700">
                     <button
                       type="button"
+                      onClick={handleSuggestMovesbookClick}
                       className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors"
                     >
                       Suggest Movesbook to your friends
@@ -2176,7 +2256,7 @@ export default function DarkSidebar({
                         (displaySelectedClub as { youtubeChannelUrl?: string | null })
                           ?.youtubeChannelUrl ?? null
                       }
-                      canManageClub={isClubAccountUserType(userType)}
+                      canManageClub={clubWebsiteManage}
                       onYoutubeChannelUrlSaved={handleClubYoutubeSaved}
                     />
                   </>
@@ -2446,45 +2526,46 @@ export default function DarkSidebar({
                 </button>
 
                 <div className="w-full border-b border-teal-700">
-                  <button
-                    type="button"
-                    onClick={() => setClubInternetLinksOpen((v) => !v)}
-                    aria-expanded={clubInternetLinksOpen}
-                    className="flex w-full items-center justify-between bg-teal-800 py-2.5 px-3 text-white transition-colors hover:bg-teal-700"
-                  >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <Globe className="h-5 w-5 shrink-0" />
-                      <span className="truncate font-semibold tracking-wide">
-                        {t('sidebar_internet_links')}
-                      </span>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex w-full items-stretch bg-teal-800 text-white">
+                    <button
+                      type="button"
+                      onClick={() => setClubInternetLinksOpen((v) => !v)}
+                      aria-expanded={clubInternetLinksOpen}
+                      className="flex min-w-0 flex-1 items-center justify-between py-2.5 pl-3 pr-2 text-left transition-colors hover:bg-teal-700"
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <Globe className="h-5 w-5 shrink-0" />
+                        <span className="truncate font-semibold tracking-wide">
+                          {t('sidebar_internet_links')}
+                        </span>
+                      </div>
                       <ChevronDown
-                        className={`h-4 w-4 opacity-90 transition-transform duration-200 ${
+                        className={`h-4 w-4 shrink-0 opacity-90 transition-transform duration-200 ${
                           clubInternetLinksOpen ? 'rotate-180' : ''
                         }`}
                       />
-                      {clubWebsiteManage ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            window.open(
-                              CLUB_WEBSITE_SETTINGS_INDEX_PATH,
-                              '_blank',
-                              'noopener,noreferrer'
-                            );
-                          }}
-                          className="flex h-7 w-7 items-center justify-center text-gray-300 transition-colors hover:text-white"
-                          aria-label={t('sidebar_club_website_editor_aria')}
-                        >
-                          <Settings className="h-4 w-4 opacity-90" />
-                        </button>
-                      ) : (
+                    </button>
+                    {clubWebsiteManage ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.open(
+                            CLUB_WEBSITE_SETTINGS_INDEX_PATH,
+                            '_blank',
+                            'noopener,noreferrer'
+                          );
+                        }}
+                        className="flex shrink-0 items-center border-l border-teal-700/40 px-3 text-gray-300 transition-colors hover:bg-teal-700 hover:text-white"
+                        aria-label={t('sidebar_club_website_editor_aria')}
+                      >
+                        <Settings className="h-4 w-4 opacity-90" />
+                      </button>
+                    ) : (
+                      <span className="flex shrink-0 items-center border-l border-teal-700/40 px-3 text-gray-300">
                         <Settings className="h-4 w-4 opacity-90" aria-hidden />
-                      )}
-                    </div>
-                  </button>
+                      </span>
+                    )}
+                  </div>
                   {clubInternetLinksOpen && (
                     <div className="bg-[#4a4a4a] text-white">
                       <div className="border-b border-gray-500/60">
@@ -3502,6 +3583,10 @@ export default function DarkSidebar({
                                         type="button"
                                         onClick={() => {
                                           if ('path' in item && item.path) {
+                                            if (isClubAccountUserType(userType)) {
+                                              writeClubWorkspaceTab('my-entity');
+                                              setCurrentTab('my-entity');
+                                            }
                                             router.push(item.path);
                                           }
                                           // Handle click event
@@ -3635,7 +3720,7 @@ export default function DarkSidebar({
                                     {
                                       Icon: Volume2,
                                       label: 'Access of outcome settings',
-                                      panel: 'outcome-settings' as const,
+                                      path: '/club/settings/outcome_settings',
                                     },
                                     { Icon: Mic, label: 'Audio messages' },
                                     {
@@ -3663,12 +3748,17 @@ export default function DarkSidebar({
                                           onIdentificationDevicesClick?.();
                                           return;
                                         }
-                                        if (panel === 'outcome-settings') {
-                                          onAccessOutcomeSettingsClick?.();
-                                          return;
-                                        }
                                         if (path) {
-                                          router.push(path);
+                                          if (isClubAccountUserType(userType)) {
+                                            writeClubWorkspaceTab('my-entity');
+                                            setCurrentTab('my-entity');
+                                          }
+                                          const href: string =
+                                            path === '/club/settings/outcome_settings' &&
+                                            selectedEntityId
+                                              ? `${path}?clubId=${encodeURIComponent(selectedEntityId)}`
+                                              : path;
+                                          router.push(href);
                                         }
                                       }}
                                       className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333] ${
@@ -4047,6 +4137,12 @@ export default function DarkSidebar({
         )}
       </div>
     </div>
+    <SelectClubForTopicsModal
+      isOpen={clubTopicsPickerOpen}
+      onClose={() => setClubTopicsPickerOpen(false)}
+      clubs={clubsForTopicsPicker}
+      onSelectClub={handleClubSelectedForTopics}
+    />
     {youtubeModalOpen
       ? createPortal(
           <div

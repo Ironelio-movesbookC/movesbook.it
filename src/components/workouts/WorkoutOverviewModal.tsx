@@ -6,6 +6,7 @@ import { shouldShowDistance, getDistanceUnit, AEROBIC_SPORTS } from '@/constants
 import { useSportIconType } from '@/hooks/useSportIconType';
 import { isImageIcon } from '@/utils/sportIcons';
 import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
+import { formatCircuitMovelapLabel } from '@/utils/circuitMovelapLabel';
 
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
@@ -229,7 +230,7 @@ export default function WorkoutOverviewModal({ workout, onClose, onQuickTraining
                         <tbody>
                           {mf.movelaps.map((ml: any, mlIdx: number) => (
                             <tr key={ml.id || mlIdx} className="hover:bg-blue-50">
-                              <td className="border border-gray-300 px-2 py-1 text-center">{isCircuit && ml.circuitLetter ? `${ml.circuitLetter}-${ml.localSeriesNumber || ml.seriesNumber || 1}-${ml.stationNumber || mlIdx + 1}` : (mlIdx + 1)}</td>
+                              <td className="border border-gray-300 px-2 py-1 text-center">{isCircuit && ml.circuitLetter ? (formatCircuitMovelapLabel(ml) ?? mlIdx + 1) : (mlIdx + 1)}</td>
                               {isBodyBuilding && !isCircuit && (<><td className="border border-gray-300 px-2 py-1">{ml.muscularSector || ml.sector || '-'}</td><td className="border border-gray-300 px-2 py-1">{ml.exercise || '-'}</td><td className="border border-gray-300 px-2 py-1 text-center">{ml.reps || '-'}</td><td className="border border-gray-300 px-2 py-1 text-center">{ml.weight || '-'}</td><td className="border border-gray-300 px-2 py-1 text-center">{ml.tempo || ml.r1 || '-'}</td></>)}
                               {isCircuit && (<><td className="border border-gray-300 px-2 py-1">{ml.muscularSector || ml.sector || '-'}</td><td className="border border-gray-300 px-2 py-1">{ml.exercise || '-'}</td><td className="border border-gray-300 px-2 py-1 text-center">{ml.reps || '-'}</td></>)}
                               {isDistanceBased && !isCircuit && (<><td className="border border-gray-300 px-2 py-1 text-center">{ml.distance ? `${ml.distance}${getDistanceUnit(sport)}` : '-'}</td><td className="border border-gray-300 px-2 py-1 text-center">{ml.time || '-'}</td><td className="border border-gray-300 px-2 py-1 text-center">{ml.speed || ml.pace || '-'}</td>{sport === 'SWIM' && <td className="border border-gray-300 px-2 py-1 text-center">{ml.style || '-'}</td>}{(sport === 'ROWING' || sport === 'CANOEING') && <td className="border border-gray-300 px-2 py-1 text-center">{ml.rowPerMin || '-'}</td>}</>)}

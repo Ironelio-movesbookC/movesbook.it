@@ -259,7 +259,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
             
             {openSections.promo && (
               <div className="bg-[#2b2b2b] mt-1 space-y-1">
-                <Link href="/admin/promocode/subscription" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
+                <Link href="/promocodes" className="flex items-center gap-3 px-3 py-2 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white">
                   <Gift className="w-4 h-4 text-white" />
                   <span>Subscriptions with Promocode</span>
                 </Link>
@@ -1035,9 +1035,9 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
               Dashboard settings
             </div>
           </Link>
-          <Link href="/settings?section=globalWorkoutArchive" className="mt-1 flex items-center gap-3 bg-[#4f4f4f] px-3 py-2 text-sm font-bold text-white transition hover:bg-[#3d3d3d] border border-[#aeaeae]">
-            <ClipboardList className="h-5 w-5 text-lime-200" />
-            <span>Global archive of workouts & weekly plans</span>
+          <Link href="/settings" className="mt-1 flex items-center gap-3 bg-[#4f4f4f] px-3 py-2 text-sm font-bold text-white transition hover:bg-[#3d3d3d] border border-[#aeaeae]">
+            <Settings className="h-5 w-5 text-lime-200" />
+            <span>Sport settings</span>
           </Link>
           
           {/* Admins & Operators Sub-section */}

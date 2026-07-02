@@ -31,6 +31,7 @@ export function formatFavoriteMoveframe(mf: {
     notes: string | null;
     weight?: string | null;
   }>;
+  section?: { name: string; color: string | null } | null;
   workoutSession: {
     id?: string;
     name: string;
@@ -61,6 +62,9 @@ export function formatFavoriteMoveframe(mf: {
     workoutNumber: mf.workoutSession.sessionNumber,
     lastUsed: mf.workoutSession.workoutDay?.date || mf.createdAt,
     createdAt: mf.createdAt,
+    section: mf.section
+      ? { name: mf.section.name, color: mf.section.color }
+      : null,
     moveframeData: {
       letter: mf.letter,
       sport: mf.sport,
@@ -70,6 +74,9 @@ export function formatFavoriteMoveframe(mf: {
       macroFinal: mf.macroFinal,
       alarm: mf.alarm,
       workType: mf.workType,
+      section: mf.section
+        ? { name: mf.section.name, color: mf.section.color }
+        : null,
       movelaps: mf.movelaps.map((ml) => ({
         repetitionNumber: ml.repetitionNumber,
         distance: ml.distance,

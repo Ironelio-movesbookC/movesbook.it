@@ -1,151 +1,125 @@
 'use client';
 
-import { useState } from 'react';
-import MembersTable from '@/components/club/ui/table';
-import { Member, Column } from '@/types/clubTable';
-import { View, Edit, CalendarClock, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Trash2 } from 'lucide-react';
+import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
+import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
+import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import {
+  getServiceSaleTabs,
+  SERVICE_SALE_PAGE_SIZE,
+  serviceSaleRecordColumns,
+} from '@/components/procedures/configs/serviceSale';
+import { Member } from '@/types/clubTable';
+import {
+  deletePurchase,
+  fetchPurchases,
+  type ServiceSalePurchase,
+} from '@/lib/club/serviceSaleClient';
 
-/* ------------------ ICON HELPER ------------------ */
-const icons = (...Icons: any[]) => {
-  return (
-    <div className="flex gap-2 justify-center">
-      {Icons.map((Icon, i) => (
-        <Icon key={i} className="w-4 h-4 cursor-pointer hover:text-blue-500" />
-      ))}
-    </div>
-  );
-};
-
-/* ------------------ INITIAL DATA ------------------ */
-const initialData: Member[] = [
-{
-    image: "https://randomuser.me/api/portraits/men/1.jpg",
-    name: "John Carter",
-    insertDate: "2024-01-12",
-    course: "Beauty",
-    service: "bathroom",
-    value: 200,
-    typology: "Service",
-    options: icons(Trash2)
-  },
-  {
-    image: "https://randomuser.me/api/portraits/men/2.jpg",
-    name: "Jony Parter",
-    insertDate: "2024-07-10",
-    service: "bathroom",
-    course: "Beauty",
-    value: 213,
-    typology: "Service",
-  },
-  {
-    image: "https://randomuser.me/api/portraits/men/3.jpg",
-    name: "Alex Pin",
-    insertDate: "2021-01-10",
-    course: "Beauty",
-    service: "bathroom",
-    value: 170,
-    typology: "Service",
-    options: icons(Trash2)
-  },
-  {
-    image: "https://randomuser.me/api/portraits/men/4.jpg",
-    name: "Kyle Best",
-    insertDate: "2024-09-10",
-    service: "Kholo 1",
-    course: "Beauty",
-    value: 123,
-    typology: "Service",
-    options: icons(Trash2)
-  },
-  {
-    image: "https://randomuser.me/api/portraits/men/5.jpg",
-    name: "Tom Smith",
-    insertDate: "2023-05-10",
-    service: "bathroom",
-    course: "Beauty",
-    value: 431,
-    typology: "Service",
-    options: icons(Trash2)
-  },
-  {
-    image: "https://randomuser.me/api/portraits/men/6.jpg",
-    name: "Tim Cres",
-    insertDate: "2024-01-20",
-    service: "bathroom",
-    course: "Beauty",
-    value: 24,
-    typology: "Service",
-    options: icons(Trash2)
-  },
-  {
-    image: "https://randomuser.me/api/portraits/women/7.jpg",
-    name: "Helen Ana",
-    insertDate: "2024-01-10",
-    service: "bathroom",
-    course: "Beauty",
-    value: 16,
-    typology: "Service",
-    options: icons(Trash2)
-  },
-
-];;
-
-const columns: Column[] = [
-  {
-    key: "image",
-    header: "Image",
-    render: (value) => (
-      <img
-        src={value}
-        alt="profile"
-        className="w-10 h-10 rounded-full mx-auto object-cover"
-      />
+function mapPurchase(p: ServiceSalePurchase, i: number, onDelete: (id: string) => void): Member {
+  return {
+    id: p.id,
+    number: i + 1,
+    name: p.memberName,
+    typology: p.typology,
+    course: p.sectorName,
+    service: p.serviceName,
+    insertDate: p.paydate ?? undefined,
+    value: p.value,
+    paid: p.pay,
+    rest: p.rest,
+    casual: p.notes,
+    operator: p.operatorName,
+    dateEnd: p.lastPaymentDate ?? undefined,
+    options: (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete(p.id);
+        }}
+        className="text-red-500 hover:text-red-700"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
     ),
-  },
-  { key: "number", header: "N" },
-  {
-    key: "insertDate",
-    header: "Date Start",
-    render: (value) =>
-      value ? new Date(value).toLocaleDateString() : "-",
-  },
-  {
-    key: "name",
-    header: "Full Name",
-  },
-  {
-    key: "typology",
-    header: "Typology"
-  },
-  {
-    key: "service",
-    header: "Service",
-  },
-  {
-    key: "casual",
-    header: "Casual/Section"
-  },
+  };
+}
 
-   {
-    key: "value",
-    header: "Cost",
-    render: (value) => `$${value ?? 0}`,
-  },
-  {
-    key: "casual",
-    header: "Casual"
-  },
-  {
-    key: "options",
-    header: "Delete"
-  }
-];
-/* ------------------ COMPONENT ------------------ */
-export default function ClubDashboard() {
-  const [data, setData] = useState<Member[]>(initialData);
+export default function ArchiveServiceListPage() {
+  const router = useRouter();
+  const [data, setData] = useState<Member[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetchPurchases({ page, pageSize: SERVICE_SALE_PAGE_SIZE });
+      setTotal(res.total);
+      setData(
+        res.items.map((p, i) =>
+          mapPurchase(p, (page - 1) * SERVICE_SALE_PAGE_SIZE + i, async (id) => {
+            if (!confirm('Delete this service record?')) return;
+            try {
+              await deletePurchase(id);
+              load();
+            } catch (e) {
+              alert(e instanceof Error ? e.message : 'Delete failed');
+            }
+          })
+        )
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load');
+    } finally {
+      setLoading(false);
+    }
+  }, [page]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
   return (
-    <div className="w-full h-full text-white flex flex-col p-4 gap-4">
-      <MembersTable columns={columns} tableData={data} />
-    </div>
+    <ProcedureArchiveShell
+      title="Archive of Services"
+      activeTab="historical"
+      tabs={getServiceSaleTabs('historical', selectedId)}
+      headerAction={
+        <button
+          type="button"
+          onClick={() => router.push('/clubs/new_moment_cash')}
+          className="text-sm bg-white text-teal-800 px-3 py-1 rounded hover:bg-teal-50"
+        >
+          + New service
+        </button>
+      }
+      error={error}
+      footerHint="Click to select · Double-click to open payment form for partial payments"
+      pagination={
+        <ProcedurePagination
+          page={page}
+          pageSize={SERVICE_SALE_PAGE_SIZE}
+          total={total}
+          onPageChange={setPage}
+        />
+      }
+    >
+      <ProcedureArchiveTable
+        columns={serviceSaleRecordColumns}
+        rows={data}
+        selectedId={selectedId}
+        loading={loading}
+        onRowClick={(row) => row.id && setSelectedId(row.id)}
+        onRowDoubleClick={(row) => row.id && router.push(`/clubs/payment_detail/${row.id}`)}
+      />
+    </ProcedureArchiveShell>
   );
 }

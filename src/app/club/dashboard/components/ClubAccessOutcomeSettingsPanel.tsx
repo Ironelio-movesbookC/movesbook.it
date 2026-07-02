@@ -52,15 +52,65 @@ export default function ClubAccessOutcomeSettingsPanel({
   const [toast, setToast] = useState<string | null>(null);
   const [data, setData] = useState<OutcomeSettingsResponse | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { code: string; message: string }>>({});
-  const [defaultLang, setDefaultLang] = useState<'custom' | 'default'>('default');
+  const [outcomeMode, setOutcomeMode] = useState<'EN' | 'COUNTRY_STANDARD' | 'CUSTOM'>('COUNTRY_STANDARD');
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
-  const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
+  const playerRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const qs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
   const apiQs = clubId ? `clubId=${encodeURIComponent(clubId)}` : '';
+
+  const getLatestItem = useCallback(
+    (typeId: string, fallback: OutcomeSettingItem): OutcomeSettingItem =>
+      data?.items.find((row) => row.typeId === typeId) ?? fallback,
+    [data?.items]
+  );
+
+  const persistItem = useCallback(
+    async (item: OutcomeSettingItem): Promise<string | null> => {
+      const draft = drafts[item.typeId];
+      if (!draft || !data?.editable) {
+        return getLatestItem(item.typeId, item).settingId;
+      }
+
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/club/settings/outcome-settings${qs}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          action: 'save',
+          clubId: clubId ?? undefined,
+          typeId: item.typeId,
+          settingId: getLatestItem(item.typeId, item).settingId,
+          code: draft.code,
+          message: draft.message,
+        }),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(json?.error || 'Failed to save.');
+      }
+      const savedId = json?.id ? String(json.id) : getLatestItem(item.typeId, item).settingId;
+      if (savedId) {
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            items: prev.items.map((row) =>
+              row.typeId === item.typeId ? { ...row, settingId: savedId } : row
+            ),
+          };
+        });
+      }
+      return savedId;
+    },
+    [clubId, data?.editable, drafts, getLatestItem, qs]
+  );
 
   const load = useCallback(async (activeTab: OutcomeSettingsTab) => {
     setLoading(true);
@@ -78,7 +128,11 @@ export default function ClubAccessOutcomeSettingsPanel({
       }
       const payload = json as OutcomeSettingsResponse;
       setData(payload);
-      setDefaultLang(payload.defaultOutcomeLanguage);
+      if (payload.outcomeMode) {
+        setOutcomeMode(payload.outcomeMode);
+      } else {
+        setOutcomeMode(payload.defaultOutcomeLanguage === 'custom' ? 'CUSTOM' : 'COUNTRY_STANDARD');
+      }
       const nextDrafts: Record<string, { code: string; message: string }> = {};
       for (const item of payload.items) {
         nextDrafts[item.typeId] = { code: item.code, message: item.message };
@@ -102,43 +156,36 @@ export default function ClubAccessOutcomeSettingsPanel({
     return () => window.clearTimeout(t);
   }, [toast]);
 
+  useEffect(() => {
+    return () => {
+      playerRef.current?.pause();
+      playerRef.current = null;
+    };
+  }, []);
+
+  function getPlayer(): HTMLAudioElement {
+    if (!playerRef.current) {
+      playerRef.current = new Audio();
+    }
+    return playerRef.current;
+  }
+
+  function showPlaybackError(item: OutcomeSettingItem) {
+    setToast(
+      `Unable to play audio (${item.audioFile ?? 'file'}). Re-upload on this server or check storage.`
+    );
+    setPlayingId(null);
+  }
+
   const saveItem = useCallback(
     async (item: OutcomeSettingItem) => {
-      const draft = drafts[item.typeId];
-      if (!draft || !data?.editable) return;
+      if (!data?.editable) return;
 
       setSavingId(item.typeId);
       try {
-        const token = localStorage.getItem('token');
-        const response = await fetch(`/api/club/settings/outcome-settings${qs}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
-            action: 'save',
-            typeId: item.typeId,
-            settingId: item.settingId,
-            code: draft.code,
-            message: draft.message,
-          }),
-        });
-        const json = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(json?.error || 'Failed to save.');
-        }
-        setToast(json?.message ?? 'Saved.');
-        if (json?.id && !item.settingId) {
-          setData((prev) => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              items: prev.items.map((row) =>
-                row.typeId === item.typeId ? { ...row, settingId: String(json.id) } : row
-              ),
-            };
-          });
+        const savedId = await persistItem(item);
+        if (savedId) {
+          setToast('Saved.');
         }
       } catch (err) {
         setToast(err instanceof Error ? err.message : 'Failed to save.');
@@ -146,7 +193,7 @@ export default function ClubAccessOutcomeSettingsPanel({
         setSavingId(null);
       }
     },
-    [data?.editable, drafts, qs]
+    [data?.editable, persistItem]
   );
 
   const debouncedSave = useDebouncedCallback((item: OutcomeSettingItem) => {
@@ -164,28 +211,30 @@ export default function ClubAccessOutcomeSettingsPanel({
     if (data?.editable) debouncedSave(item);
   }
 
-  function handleDefaultLangChange(value: string) {
-    if (value !== 'custom' && value !== 'default') return;
+  function handleOutcomeModeChange(value: string) {
+    if (value !== 'EN' && value !== 'COUNTRY_STANDARD' && value !== 'CUSTOM') return;
     setConfirm({
-      title: 'Change default outcome language?',
-      message: "You're about to change the default outcome language.",
+      title: 'Change outcome language mode?',
+      message: "You're about to change how access outcome messages are resolved for this club.",
       confirmLabel: 'Yes, change',
       onConfirm: async () => {
         setConfirm(null);
         try {
           const token = localStorage.getItem('token');
-          const response = await fetch(`/api/club/settings/outcome-settings${qs}`, {
-            method: 'PATCH',
+          const prefQs = clubId ? `?clubId=${encodeURIComponent(clubId)}` : '';
+          const response = await fetch(`/api/club/settings/outcome-preferences${prefQs}`, {
+            method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
-            body: JSON.stringify({ action: 'default-language', lang: value }),
+            body: JSON.stringify({ mode: value, clubId }),
           });
           const json = await response.json().catch(() => null);
           if (!response.ok) throw new Error(json?.error || 'Failed to update.');
-          setDefaultLang(value);
-          setToast(json?.message ?? 'Default language updated.');
+          setOutcomeMode(value);
+          setToast(json?.message ?? 'Outcome mode updated.');
+          await load(tab);
         } catch (err) {
           setToast(err instanceof Error ? err.message : 'Failed to update.');
         }
@@ -195,52 +244,63 @@ export default function ClubAccessOutcomeSettingsPanel({
 
   function toggleAudio(item: OutcomeSettingItem) {
     if (!item.audioUrl) return;
-    const el = audioRefs.current[item.typeId];
-    if (!el) return;
+    const player = getPlayer();
 
-    if (!el.paused && playingId === item.typeId) {
-      el.pause();
+    if (!player.paused && playingId === item.typeId) {
+      player.pause();
       setPlayingId(null);
       return;
     }
 
-    Object.values(audioRefs.current).forEach((audio) => {
-      if (audio) {
-        audio.pause();
-        audio.currentTime = 0;
-      }
-    });
+    player.pause();
+    player.onended = null;
+    player.onerror = null;
+    player.src = item.audioUrl;
+    player.load();
 
-    void el.play();
-    setPlayingId(item.typeId);
-    el.onended = () => setPlayingId(null);
+    player.onended = () => setPlayingId(null);
+    player.onerror = () => showPlaybackError(item);
+
+    void player.play().then(() => {
+      setPlayingId(item.typeId);
+    }).catch(() => {
+      showPlaybackError(item);
+    });
   }
 
   function openUploadPicker(item: OutcomeSettingItem) {
     if (!data?.editable) return;
-    if (!item.settingId) {
-      setToast('Please save a message before uploading an audio file.');
+    const latest = getLatestItem(item.typeId, item);
+    if (latest.audioFile) {
+      setToast('Please remove the existing audio before uploading a new file.');
       return;
     }
-    if (item.audioFile) {
-      setToast('Please remove the existing audio before uploading a new file.');
+    const draft = drafts[item.typeId];
+    if (!latest.settingId && !draft?.message?.trim()) {
+      setToast('Enter a message first, then upload audio.');
       return;
     }
     fileInputRefs.current[item.typeId]?.click();
   }
 
   async function uploadAudio(item: OutcomeSettingItem, file: File) {
-    if (!item.settingId) {
-      setToast('Please save a message before uploading an audio file.');
-      return;
-    }
-    if (item.audioFile) {
+    const latest = getLatestItem(item.typeId, item);
+    if (latest.audioFile) {
       setToast('Please remove the existing audio before uploading a new file.');
       return;
     }
 
     setUploadingId(item.typeId);
     try {
+      let settingId = latest.settingId;
+      if (!settingId) {
+        settingId = await persistItem(item);
+      }
+      if (!settingId) {
+        setToast('Save the message first, then upload audio.');
+        return;
+      }
+
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result));
@@ -255,12 +315,37 @@ export default function ClubAccessOutcomeSettingsPanel({
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ settingId: item.settingId, file: base64 }),
+        body: JSON.stringify({
+          settingId,
+          typeId: item.typeId,
+          clubId: clubId ?? undefined,
+          fileName: file.name,
+          file: base64,
+        }),
       });
       const json = await response.json().catch(() => null);
       if (!response.ok) throw new Error(json?.error || 'Upload failed.');
+
+      const filename = json?.filename ? String(json.filename) : null;
+      const audioUrl = json?.audioUrl ? String(json.audioUrl) : null;
+      const savedSettingId = json?.id ? String(json.id) : settingId;
+
+      setData((prev) => {
+        if (!prev || !filename || !audioUrl) return prev;
+        return {
+          ...prev,
+          items: prev.items.map((row) =>
+            row.typeId === item.typeId
+              ? { ...row, settingId: savedSettingId, audioFile: filename, audioUrl }
+              : row
+          ),
+        };
+      });
+
       setToast(json?.message ?? 'Audio saved.');
-      await load(tab);
+      if (!filename || !audioUrl) {
+        await load(tab);
+      }
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Upload failed.');
     } finally {
@@ -301,7 +386,7 @@ export default function ClubAccessOutcomeSettingsPanel({
     'px-3 py-2 text-sm font-semibold rounded border border-gray-300 bg-gray-100 text-gray-950 hover:bg-gray-200 disabled:opacity-50';
 
   return (
-    <div className="space-y-4">
+    <div className="w-full space-y-4">
       {onBack && (
         <button type="button" onClick={onBack} className={`${btnClass} inline-flex items-center gap-2`}>
           <ArrowLeft className="h-4 w-4" />
@@ -322,16 +407,17 @@ export default function ClubAccessOutcomeSettingsPanel({
           </div>
           <div className="flex items-center gap-2">
             <label htmlFor="default-outcome-lang" className="text-xs font-medium text-slate-300">
-              Language for outcome
+              Outcome mode
             </label>
             <select
               id="default-outcome-lang"
-              value={defaultLang}
-              onChange={(e) => handleDefaultLangChange(e.target.value)}
+              value={outcomeMode}
+              onChange={(e) => handleOutcomeModeChange(e.target.value)}
               className="rounded border border-slate-500 bg-slate-900 px-2 py-1.5 text-sm text-white"
             >
-              <option value="custom">Custom</option>
-              <option value="default">Default</option>
+              <option value="EN">English (system)</option>
+              <option value="COUNTRY_STANDARD">Country standard</option>
+              <option value="CUSTOM">Custom</option>
             </select>
           </div>
         </div>
@@ -347,6 +433,7 @@ export default function ClubAccessOutcomeSettingsPanel({
             }`}
           >
             Fixed settings in your primary language
+            {data?.primaryLanguageName ? ` (${data.primaryLanguageName})` : ''}
           </button>
           <button
             type="button"
@@ -381,6 +468,20 @@ export default function ClubAccessOutcomeSettingsPanel({
                 {data?.introParagraph}
               </div>
 
+              {tab === 'custom' && !data?.editable && (
+                <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Outcome mode is{' '}
+                  <strong>
+                    {outcomeMode === 'EN'
+                      ? 'English (system)'
+                      : outcomeMode === 'CUSTOM'
+                        ? 'Custom'
+                        : 'Country standard'}
+                  </strong>
+                  . Choose <strong>Custom</strong> in the dropdown above to edit messages on this tab.
+                </div>
+              )}
+
               {data?.items.length === 0 ? (
                 <p className="py-12 text-center text-sm text-gray-500">
                   No outcome message types found. Import legacy audio_setting_types data to populate this
@@ -399,7 +500,7 @@ export default function ClubAccessOutcomeSettingsPanel({
                         className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 shadow-sm"
                       >
                         <p className="mb-3 text-sm font-semibold text-gray-900">{item.description}</p>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center">
                           <div className="flex items-center gap-2 sm:w-36 shrink-0">
                             <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
                               Code
@@ -420,52 +521,52 @@ export default function ClubAccessOutcomeSettingsPanel({
                           </div>
 
                           <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <input
-                              type="text"
-                              readOnly={!data?.editable}
-                              placeholder="Message"
-                              className={`h-9 min-w-0 flex-1 rounded border border-gray-300 bg-blue-50/50 px-3 text-sm text-gray-900 placeholder:text-gray-500 ${
-                                data?.editable
-                                  ? ''
-                                  : 'cursor-default bg-blue-50/40 read-only:text-gray-800'
-                              }`}
-                              value={draft.message}
-                              onChange={
-                                data?.editable
-                                  ? (e) =>
-                                      updateDraft(item.typeId, { message: e.target.value }, item)
-                                  : undefined
-                              }
-                            />
+                            <div className={`min-w-0 flex-1 ${item.audioFile ? 'grid grid-cols-2 gap-2' : ''}`}>
+                              <input
+                                type="text"
+                                readOnly={!data?.editable}
+                                placeholder="Message"
+                                className={`h-9 w-full rounded border border-gray-300 bg-blue-50/50 px-3 text-sm text-gray-900 placeholder:text-gray-500 ${
+                                  data?.editable
+                                    ? ''
+                                    : 'cursor-default bg-blue-50/40 read-only:text-gray-800'
+                                }`}
+                                value={draft.message}
+                                onChange={
+                                  data?.editable
+                                    ? (e) =>
+                                        updateDraft(item.typeId, { message: e.target.value }, item)
+                                    : undefined
+                                }
+                              />
+                              {item.audioFile && (
+                                <div
+                                  className="flex h-9 min-w-0 items-center rounded border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700"
+                                  title={item.audioFile}
+                                >
+                                  <span className="truncate">{item.audioFile}</span>
+                                </div>
+                              )}
+                            </div>
 
                             <div
                               className="flex shrink-0 items-center gap-1 border-l border-gray-300 pl-2"
                               title="Audio message"
                             >
                               {item.audioUrl && (
-                                <>
-                                  <audio
-                                    ref={(el) => {
-                                      audioRefs.current[item.typeId] = el;
-                                    }}
-                                    src={item.audioUrl}
-                                    preload="none"
-                                    className="hidden"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleAudio(item)}
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-                                    title={playingId === item.typeId ? 'Pause audio' : 'Play audio'}
-                                    aria-label={playingId === item.typeId ? 'Pause audio' : 'Play audio'}
-                                  >
-                                    {playingId === item.typeId ? (
-                                      <Pause className="h-4 w-4" />
-                                    ) : (
-                                      <Volume2 className="h-4 w-4" />
-                                    )}
-                                  </button>
-                                </>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAudio(item)}
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                                  title={playingId === item.typeId ? 'Pause audio' : 'Play audio'}
+                                  aria-label={playingId === item.typeId ? 'Pause audio' : 'Play audio'}
+                                >
+                                  {playingId === item.typeId ? (
+                                    <Pause className="h-4 w-4" />
+                                  ) : (
+                                    <Volume2 className="h-4 w-4" />
+                                  )}
+                                </button>
                               )}
 
                               {data?.editable && (

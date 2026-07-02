@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
@@ -15,17 +15,22 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { normalizeYoutubeUrlForOpen } from '@/utils/youtubeChannelUrl';
 import {
   getClubDashboardFriendTopics,
-  loadClubWebsiteFriendItems,
 } from '@/lib/clubWebsiteFriendList';
 import {
   filterClubWebsiteTopicsForMembers,
-  loadClubWebsiteTopics,
 } from '@/lib/clubWebsiteTopics';
 import {
   CLUB_WEBSITE_SETTINGS_INDEX_PATH,
+  CLUB_WEBSITE_BACHECA_PATH,
+  clubBachecaDashboardUrl,
+  clubTopicDashboardUrl,
 } from '@/lib/clubWebsiteSettingsPaths';
+import { writeClubWorkspaceTab } from '@/lib/club/clubWorkspaceTab';
 import { CLUB_WEBSITE_SETTINGS_CHANGED_EVENT } from '@/lib/clubWebsiteSettingsEvents';
 import ClubDashboardTopicsList from '@/components/club/ClubDashboardTopicsList';
+import { consumeOpenClubTopicsSection } from '@/lib/club/clubTopicsNavigation';
+import { useClubWebsiteFriendList } from '@/hooks/useClubWebsiteFriendList';
+import { useClubWebsiteTopics } from '@/hooks/useClubWebsiteTopics';
 
 type BootstrappedClub = {
   id: string;
@@ -51,8 +56,8 @@ export default function ClubMembersDashboardSection({
 }) {
   const { t } = useLanguage();
   const router = useRouter();
-  const [open, setOpen] = useState(true);
-  const [topicsOpen, setTopicsOpen] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [topicsOpen, setTopicsOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [savedUrl, setSavedUrl] = useState('');
@@ -63,6 +68,13 @@ export default function ClubMembersDashboardSection({
 
   useEffect(() => {
     setResolvedClubId(clubId || undefined);
+  }, [clubId]);
+
+  useEffect(() => {
+    if (consumeOpenClubTopicsSection()) {
+      setOpen(true);
+      setTopicsOpen(true);
+    }
   }, [clubId]);
 
   useEffect(() => {
@@ -144,36 +156,52 @@ export default function ClubMembersDashboardSection({
   const deskHref = effectiveClubId
     ? `/my-club?clubId=${encodeURIComponent(effectiveClubId)}`
     : undefined;
-
-  const [friendDashboardTopics, setFriendDashboardTopics] = useState<
-    ReturnType<typeof getClubDashboardFriendTopics>
-  >([]);
-  const [customDashboardTopics, setCustomDashboardTopics] = useState<
-    ReturnType<typeof filterClubWebsiteTopicsForMembers>
-  >([]);
-
-  const refreshDashboardTopics = useCallback(() => {
-    if (!effectiveClubId) {
-      setFriendDashboardTopics([]);
-      setCustomDashboardTopics([]);
-      return;
+  const openBachecaPanel = () => {
+    if (!effectiveClubId) return;
+    writeClubWorkspaceTab('my-entity');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('selectedClub', effectiveClubId);
     }
-    const friendItems = loadClubWebsiteFriendItems(effectiveClubId);
-    setFriendDashboardTopics(getClubDashboardFriendTopics(friendItems));
-    setCustomDashboardTopics(
-      filterClubWebsiteTopicsForMembers(loadClubWebsiteTopics(effectiveClubId))
-    );
-  }, [effectiveClubId]);
+    router.push(clubBachecaDashboardUrl(effectiveClubId));
+  };
+
+  const openTopicPanel = (topicId: string, _label: string) => {
+    if (!effectiveClubId) return;
+    writeClubWorkspaceTab('my-entity');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('selectedClub', effectiveClubId);
+    }
+    router.push(clubTopicDashboardUrl(effectiveClubId, topicId));
+  };
+
+  const {
+    items: friendItems,
+    reload: reloadFriendItems,
+  } = useClubWebsiteFriendList(effectiveClubId);
+  const {
+    topics: clubTopics,
+    reload: reloadClubTopics,
+  } = useClubWebsiteTopics(effectiveClubId);
+
+  const friendDashboardTopics = useMemo(
+    () => getClubDashboardFriendTopics(friendItems),
+    [friendItems]
+  );
+  const customDashboardTopics = useMemo(
+    () => filterClubWebsiteTopicsForMembers(clubTopics),
+    [clubTopics]
+  );
+
+  const reloadDashboardTopics = useCallback(() => {
+    reloadFriendItems();
+    reloadClubTopics();
+  }, [reloadFriendItems, reloadClubTopics]);
 
   useEffect(() => {
-    refreshDashboardTopics();
-  }, [refreshDashboardTopics]);
-
-  useEffect(() => {
-    const onFocus = () => refreshDashboardTopics();
+    const onFocus = () => reloadDashboardTopics();
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [refreshDashboardTopics]);
+  }, [reloadDashboardTopics]);
 
   useEffect(() => {
     if (!effectiveClubId) return;
@@ -182,13 +210,13 @@ export default function ClubMembersDashboardSection({
         e.key?.startsWith('club-website-friend-list:') ||
         e.key?.startsWith('club-website-topics:')
       ) {
-        refreshDashboardTopics();
+        reloadDashboardTopics();
       }
     };
     const onSettingsChanged = (e: Event) => {
       const detail = (e as CustomEvent<{ clubId?: string }>).detail;
       if (!detail?.clubId || detail.clubId === effectiveClubId) {
-        refreshDashboardTopics();
+        reloadDashboardTopics();
       }
     };
     window.addEventListener('storage', onStorage);
@@ -197,7 +225,7 @@ export default function ClubMembersDashboardSection({
       window.removeEventListener('storage', onStorage);
       window.removeEventListener(CLUB_WEBSITE_SETTINGS_CHANGED_EVENT, onSettingsChanged);
     };
-  }, [effectiveClubId, refreshDashboardTopics]);
+  }, [effectiveClubId, reloadDashboardTopics]);
 
   const hasDashboardTopics =
     friendDashboardTopics.length > 0 || customDashboardTopics.length > 0;
@@ -277,6 +305,32 @@ export default function ClubMembersDashboardSection({
             <div className="flex min-h-[44px] w-full items-stretch border-b border-black/25">
               <button
                 type="button"
+                disabled={!effectiveClubId}
+                onClick={openBachecaPanel}
+                className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-700/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Mail className="h-4 w-4 shrink-0 opacity-90" />
+                <span className="truncate">{t('club_website_bacheca')}</span>
+              </button>
+              {canManageClub && (
+                <button
+                  type="button"
+                  title={t('club_bacheca_open_editor_aria')}
+                  aria-label={t('club_bacheca_open_editor_aria')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(CLUB_WEBSITE_BACHECA_PATH, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex min-h-[44px] w-full items-stretch border-b border-black/25">
+              <button
+                type="button"
                 disabled={!deskHref}
                 onClick={() => deskHref && router.push(deskHref)}
                 className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-700/90 disabled:cursor-not-allowed disabled:opacity-50"
@@ -301,30 +355,29 @@ export default function ClubMembersDashboardSection({
             </div>
 
             <div className="flex min-h-[44px] w-full items-stretch border-b border-black/25">
-              <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5">
+              <button
+                type="button"
+                onClick={() => setTopicsOpen((v) => !v)}
+                aria-expanded={topicsOpen}
+                className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-700/90"
+              >
+                <Mail className="h-4 w-4 shrink-0 opacity-90" />
+                <span className="truncate">{t('sidebar_club_topics')}</span>
+              </button>
+              {canManageClub ? (
                 <button
                   type="button"
-                  onClick={() => setTopicsOpen((v) => !v)}
-                  aria-expanded={topicsOpen}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-white/90"
+                  title={t('sidebar_club_topics_settings_aria')}
+                  aria-label={t('sidebar_club_topics_settings_aria')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(CLUB_WEBSITE_SETTINGS_INDEX_PATH, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90"
                 >
-                  <Mail className="h-4 w-4 shrink-0 opacity-90" />
-                  <span className="truncate">{t('sidebar_club_topics')}</span>
+                  <Settings className="h-4 w-4" />
                 </button>
-                {canManageClub ? (
-                  <button
-                    type="button"
-                    title={t('sidebar_club_topics_settings_aria')}
-                    aria-label={t('sidebar_club_topics_settings_aria')}
-                    onClick={() => {
-                      window.open(CLUB_WEBSITE_SETTINGS_INDEX_PATH, '_blank', 'noopener,noreferrer');
-                    }}
-                    className="shrink-0 text-gray-300 transition-colors hover:text-white"
-                  >
-                    <Settings className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
-              </div>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setTopicsOpen((v) => !v)}
@@ -341,6 +394,7 @@ export default function ClubMembersDashboardSection({
                 clubId={effectiveClubId}
                 friendTopics={friendDashboardTopics}
                 customTopics={customDashboardTopics}
+                onViewTopicContent={openTopicPanel}
               />
             ) : topicsOpen && !hasDashboardTopics ? (
               <p className="border-t border-black/25 bg-[#252525] px-3 py-2.5 text-[11px] leading-snug text-white/60">

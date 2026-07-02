@@ -19,12 +19,11 @@ interface TreeMovelapListProps {
   colors: MovelapColors;
 }
 
+import { formatCircuitMovelapLabel } from '@/utils/circuitMovelapLabel';
+
 function movelapIndexLabel(movelap: any, index: number): string {
-  if (movelap.circuitLetter != null && movelap.circuitLetter !== '') {
-    const series = movelap.localSeriesNumber ?? movelap.seriesNumber ?? 1;
-    const station = movelap.stationNumber ?? index + 1;
-    return `${movelap.circuitLetter}-${series}-${station}`;
-  }
+  const circuitLabel = formatCircuitMovelapLabel(movelap);
+  if (circuitLabel) return circuitLabel;
   return String(movelap.repetitionNumber ?? index + 1);
 }
 

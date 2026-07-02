@@ -1,0 +1,612 @@
+/* PHP: basic_layout + su_package.css + quick_register.ctp */
+
+.quick-register-body {
+  margin: 0;
+  font-family: Calibri, Arial, Helvetica, sans-serif;
+  color: #707070;
+  background: url('/img/bg_grad.jpg') repeat-x top #f5f5f5;
+  min-height: 100vh;
+}
+
+.quick-register-body .main.martp-minus20 {
+  margin-top: -20px;
+}
+
+.quick-register-body .clear {
+  clear: both;
+}
+
+.quick-register-top-header {
+  margin: 0 auto;
+  position: relative;
+  padding: 0 20px;
+}
+
+.quick-register-header-inner {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.quick-register-body header .logo {
+  float: left;
+  padding-top: 20px;
+}
+
+.quick-register-body header .logo a {
+  display: block;
+}
+
+.quick-register-content-area {
+  width: 100%;
+  padding: 0 20px 40px;
+  box-sizing: border-box;
+}
+
+.quick-register-body .quickregistration {
+  border: 1px solid #bbb;
+  padding: 30px 40px;
+  width: 100%;
+  max-width: none;
+  margin: 20px auto 0;
+  box-sizing: border-box;
+  background: #fff;
+}
+
+.quick-register-body .quickregi-title {
+  color: #880015;
+  font-size: 38px;
+  text-align: center;
+  font-weight: normal;
+  margin: 0;
+}
+
+.quick-register-body .quickregi-subtitle {
+  color: #555;
+  font-size: 16px;
+  text-align: center;
+  padding: 10px 0;
+}
+
+.quick-register-body .quickregi-subtitle a {
+  color: #880015;
+}
+
+.quick-register-body .quickregi-form {
+  width: 100%;
+  display: table;
+  padding: 20px 0;
+}
+
+.quick-register-body .quickregi-left {
+  width: 100%;
+  display: block;
+  border-right: none;
+  padding-right: 0;
+  --qr-label-w: 280px;
+  --qr-control-w: 220px;
+  --qr-col-gap: 12px;
+}
+
+.quick-register-body .div-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.quick-register-body .div-row .span-label-title {
+  font-weight: bold;
+  color: #000;
+  margin-bottom: 10px;
+}
+
+.quick-register-body .div-row input {
+  border: 1px solid #ccc !important;
+  padding: 5px;
+  border-radius: 0 !important;
+  width: 100% !important;
+  max-width: 500px;
+  color: #000;
+  box-sizing: border-box;
+}
+
+.quick-register-body .div-line {
+  border-bottom: 1px solid #ccc;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  max-width: 510px;
+}
+
+.quick-register-body .input-highlight {
+  background-color: #fffdcd !important;
+}
+
+.quick-register-body .password-highlight,
+.quick-register-body .input-highlight-promocode {
+  background-color: #e2f5a6 !important;
+}
+
+.quick-register-body .quickfield-row {
+  padding: 15px 5px 8px;
+  border-bottom: 1px solid #ccc;
+  position: relative;
+  margin-top: 4px;
+}
+
+/* Aligned data fields — shared label / control columns */
+.quick-register-body .qr-data-section {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.quick-register-body .qr-field-row {
+  display: grid;
+  grid-template-columns: var(--qr-label-w) var(--qr-control-w) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--qr-col-gap);
+  row-gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid #ccc;
+}
+
+.quick-register-body .qr-field-row-plan {
+  display: grid;
+  grid-template-columns:
+    var(--qr-label-w)
+    var(--qr-control-w)
+    minmax(100px, 1fr)
+    var(--qr-control-w)
+    minmax(100px, 1fr)
+    auto
+    auto;
+  align-items: center;
+  column-gap: var(--qr-col-gap);
+  row-gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid #ccc;
+}
+
+.quick-register-body .qr-field-row-plan .qr-hint-block {
+  grid-column: 2 / -1;
+}
+
+.quick-register-body .qr-label {
+  color: #777;
+  font-weight: normal;
+}
+
+.quick-register-body .qr-label-inline {
+  color: #777;
+  font-weight: normal;
+  white-space: nowrap;
+}
+
+.quick-register-body .qr-control {
+  width: var(--qr-control-w);
+  max-width: var(--qr-control-w);
+}
+
+.quick-register-body .qr-control select {
+  width: 100%;
+  border: 1px solid #ccc;
+  padding: 6px 8px;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+  box-sizing: border-box;
+}
+
+.quick-register-body .qr-field-row-plan .qr-control:first-of-type select {
+  background-color: #e7f4fa;
+}
+
+.quick-register-body .qr-field-row-plan .qr-control-version select {
+  background-color: #e7f4fa;
+}
+
+.quick-register-body .qr-hint {
+  color: #cc0000;
+  font-weight: normal;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.quick-register-body .qr-hint-block {
+  grid-column: 2 / -1;
+}
+
+.quick-register-body .qr-input-numeric {
+  border: 1px solid #ccc;
+  padding: 4px 6px;
+  text-align: center;
+  color: #000;
+  font-weight: normal;
+  box-sizing: content-box;
+  min-width: 2.5ch;
+}
+
+.quick-register-body .qr-promo-credits {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  background: #effafc;
+  border: 1px solid grey;
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+
+.quick-register-body .qr-promo-credits-title {
+  font-size: 22px;
+  color: #610d1c;
+  font-weight: bold;
+}
+
+.quick-register-body .qr-promo-credit-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+
+.quick-register-body .qr-promo-credit-row .qr-hint {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+
+.quick-register-body .qr-promo-section {
+  margin-top: 16px;
+  width: 100%;
+}
+
+.quick-register-body .qr-promo-intro-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(160px, 1.2fr);
+  align-items: center;
+  column-gap: var(--qr-col-gap);
+  row-gap: 8px;
+  margin-bottom: 8px;
+}
+
+.quick-register-body .qr-promo-intro-label {
+  font-weight: normal;
+  color: #6e1a27;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.quick-register-body .qr-promo-intro-input {
+  width: auto;
+  min-width: 10ch;
+  max-width: 240px;
+}
+
+.quick-register-body .qr-promo-intro-aside {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.quick-register-body .qr-promo-section .promocode-feedback {
+  margin-left: 0;
+  margin-bottom: 8px;
+}
+
+.quick-register-body .qr-promo-banner {
+  color: #fff;
+  background: #7291bd;
+  font-size: 18px;
+  font-weight: normal;
+  padding: 10px 12px;
+  margin-top: 8px;
+}
+
+.quick-register-body .qr-promo-discount-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  flex-wrap: nowrap;
+}
+
+.quick-register-body .qr-promo-label {
+  font-weight: normal;
+  color: #610d1c;
+  font-size: 16px;
+  white-space: nowrap;
+}
+
+.quick-register-body .qr-invite-fields {
+  margin-top: 16px;
+}
+
+.quick-register-body .qr-aligned-row {
+  display: grid;
+  grid-template-columns: var(--qr-label-w) var(--qr-control-w) var(--qr-label-w) var(--qr-control-w);
+  align-items: center;
+  column-gap: var(--qr-col-gap);
+  row-gap: 10px;
+  margin-bottom: 10px;
+}
+
+.quick-register-body .qr-row-label {
+  font-weight: normal;
+  font-size: 16px;
+  color: #333;
+  white-space: nowrap;
+}
+
+.quick-register-body .qr-row-input {
+  width: 100%;
+  max-width: var(--qr-control-w);
+  border: 1px solid #ccc;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  color: #000;
+}
+
+.quick-register-body .qr-note {
+  font-weight: normal;
+  color: #0d47a1;
+  font-size: 14px;
+  margin: 0 0 12px 0;
+  padding-left: calc(var(--qr-label-w) + var(--qr-col-gap));
+}
+
+.quick-register-body .qr-payment-label {
+  font-weight: normal;
+  font-size: 18px;
+  color: #333;
+  white-space: nowrap;
+}
+
+.quick-register-body .payment-actions {
+  gap: 14px !important;
+}
+
+.quick-register-body .btn-register-lg {
+  font-size: 18px !important;
+  font-weight: bold;
+  padding: 14px 32px !important;
+  min-width: 140px;
+  min-height: 48px;
+  line-height: 1.2 !important;
+}
+
+@media (max-width: 1100px) {
+  .quick-register-body .quickregi-left {
+    --qr-label-w: 200px;
+    --qr-control-w: 200px;
+  }
+
+  .quick-register-body .qr-field-row-plan {
+    grid-template-columns: var(--qr-label-w) var(--qr-control-w) 1fr;
+  }
+
+  .quick-register-body .qr-field-row-plan .qr-control-version,
+  .quick-register-body .qr-field-row-plan .qr-hint,
+  .quick-register-body .qr-field-row-plan .qr-label-inline,
+  .quick-register-body .qr-field-row-plan .qr-input-numeric {
+    grid-column: 2;
+  }
+
+  .quick-register-body .qr-field-row .qr-hint {
+    grid-column: 2;
+  }
+
+  .quick-register-body .qr-aligned-row {
+    grid-template-columns: var(--qr-label-w) var(--qr-control-w);
+  }
+
+  .quick-register-body .qr-aligned-row .qr-row-label:nth-child(3),
+  .quick-register-body .qr-aligned-row .qr-row-input:nth-of-type(2) {
+    grid-column: auto;
+  }
+
+  .quick-register-body .qr-promo-intro-row {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-register-body .qr-note {
+    padding-left: 0;
+  }
+
+  .quick-register-body .qr-promo-credit-row .qr-hint {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 900px) {
+  .quick-register-body .qr-field-row {
+    grid-template-columns: var(--qr-label-w) 1fr;
+  }
+
+  .quick-register-body .qr-field-row-plan .qr-label {
+    grid-column: 1;
+  }
+
+  .quick-register-body .qr-field-row-plan .qr-hint-block {
+    margin-left: 0;
+  }
+
+  .quick-register-body .qr-promo-credit-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+}
+
+.quick-register-body .quickfield-row .span-title {
+  position: absolute;
+  left: 6px;
+  top: 17px;
+  color: #777 !important;
+}
+
+.quick-register-body .quickfield-row .span-content {
+  margin-left: 100px;
+  width: 250px;
+}
+
+.quick-register-body .custom-select select {
+  width: 100%;
+  border: 1px solid #ccc;
+  padding: 6px 8px;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+}
+
+.quick-register-body .custom-select.select-highlight select {
+  background-color: #e7f4fa;
+}
+
+.quick-register-body .col-45 {
+  float: left;
+  width: 45%;
+}
+
+.quick-register-body .col-55 {
+  float: left;
+  width: 55%;
+}
+
+.quick-register-body .col-25 {
+  float: left;
+  width: 25%;
+}
+
+.quick-register-body .col-30 {
+  float: left;
+  width: 30%;
+}
+
+.quick-register-body .col-10 {
+  float: left;
+  width: 10%;
+}
+
+.quick-register-body .red {
+  color: #ff0000;
+  display: block;
+}
+
+.quick-register-body .inline-row {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.quick-register-body .inline-row span {
+  white-space: nowrap;
+}
+
+.quick-register-body .inline-row .inline-input {
+  max-width: 250px;
+  width: 100%;
+  border: 1px solid #ccc;
+  padding: 5px 8px;
+  color: #000;
+}
+
+.quick-register-body .promocode-feedback {
+  margin-top: 6px;
+  font-weight: normal;
+  display: block;
+}
+
+.quick-register-body .promocode-feedback.promo-success {
+  color: #2a6a1f;
+}
+
+.quick-register-body .promocode-feedback.promo-error {
+  color: #ff0000;
+}
+
+.quick-register-body #total-payment-row {
+  padding: 20px;
+  border: 1px solid #000;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 16px;
+}
+
+.quick-register-body #total-payment-row .payment-row-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.quick-register-body #total-payment-row .payment-total-input {
+  border: 1px solid #000;
+  margin-left: 10px;
+  padding: 4px 6px;
+  font-weight: normal;
+  color: #000;
+}
+
+.quick-register-body #total-payment-row .payment-logos img {
+  width: 45px;
+  height: auto;
+}
+
+.quick-register-body .btnRed {
+  line-height: 22px;
+  background: linear-gradient(to bottom, #fb7272 0%, #e03734 100%) repeat scroll 0 0 rgba(0, 0, 0, 0) !important;
+  border: 1px solid #9c0606;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+  padding: 10px 24px;
+  box-sizing: border-box;
+}
+
+.quick-register-body .button-black-promocode {
+  background: linear-gradient(to bottom, #444444 1%, #222222 100%);
+  color: #fff;
+  font-size: 16px;
+  font-weight: bold;
+  border-radius: 4px;
+  border: 1px solid #333;
+  cursor: pointer;
+  padding: 10px 24px;
+}
+
+.quick-register-body .registration-status-message {
+  margin-top: 8px;
+  font-weight: bold;
+  display: none;
+}
+
+.quick-register-body .registration-status-message.status-new {
+  color: #2a6a1f;
+}
+
+.quick-register-body .registration-status-message.status-renewal {
+  color: #9c6500;
+}
+
+.quick-register-body .registration-status-message.status-renewal-active {
+  color: #0d47a1;
+}
+
+@media (min-width: 1200px) {
+  .quick-register-content-area {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+}

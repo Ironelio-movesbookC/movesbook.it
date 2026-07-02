@@ -62,9 +62,68 @@ export const CIRCUIT_SERIES_PAUSE_OPTIONS: { label: string; value: number }[] = 
   { label: "10'", value: 600 }
 ];
 
-/** Sports that use the official indoor / structured tools layout (extend when wiring sport configs). */
-export function isOfficialIndoorToolsLayoutSport(_sport: string): boolean {
-  return false;
+/** Between-circuits pause in circuit planner yellow row (1′…10′ as seconds). */
+export const CIRCUIT_BETWEEN_CIRCUITS_PAUSE_OPTIONS: { label: string; value: number }[] = Array.from(
+  { length: 10 },
+  (_, i) => ({ label: `${i + 1}'`, value: (i + 1) * 60 })
+);
+
+export type CircuitPauseOption = { label: string; value: number };
+
+/** Pause dropdown set for Add/Edit station modal — matches circuit planner grid rules. */
+export function getCircuitStationModalPauseOptions(params: {
+  seriesIdx: number;
+  stationNumber: number;
+  stationsInSeries: number;
+  seriesCount: number;
+  isLastCircuitInWorkout: boolean;
+  seriesMode?: 'count' | 'time';
+}): CircuitPauseOption[] {
+  const {
+    seriesIdx,
+    stationNumber,
+    stationsInSeries,
+    seriesCount,
+    isLastCircuitInWorkout,
+    seriesMode = 'count',
+  } = params;
+  const isLastStationSlot = stationsInSeries > 0 && stationNumber === stationsInSeries;
+  const isLastSeries = seriesCount > 0 && seriesIdx === seriesCount - 1;
+  const isFirstStationSlot = stationNumber === 1;
+
+  if (isLastStationSlot && isLastSeries && !isLastCircuitInWorkout) {
+    return CIRCUIT_BETWEEN_CIRCUITS_PAUSE_OPTIONS;
+  }
+  if (seriesIdx > 0 && isFirstStationSlot) {
+    return CIRCUIT_SERIES_PAUSE_OPTIONS;
+  }
+  if (seriesMode === 'time' && isLastStationSlot && isLastSeries && isLastCircuitInWorkout) {
+    return CIRCUIT_BETWEEN_CIRCUITS_PAUSE_OPTIONS;
+  }
+  return CIRCUIT_STATION_PAUSE_OPTIONS;
+}
+
+/** Keep legacy/custom pause values selectable when not in the standard list. */
+export function withCircuitPauseOptionFallback(
+  options: CircuitPauseOption[],
+  currentSeconds: number
+): CircuitPauseOption[] {
+  if (!Number.isFinite(currentSeconds) || currentSeconds < 0) return options;
+  if (options.some((o) => o.value === currentSeconds)) return options;
+  const minutes = Math.floor(currentSeconds / 60);
+  const seconds = currentSeconds % 60;
+  const label =
+    minutes > 0
+      ? seconds > 0
+        ? `${minutes}'${String(seconds).padStart(2, '0')}"`
+        : `${minutes}'`
+      : `${seconds}"`;
+  return [...options, { label, value: currentSeconds }];
+}
+
+/** @deprecated Use {@link isSportSectionB} — kept for existing imports. */
+export function isOfficialIndoorToolsLayoutSport(sport: string): boolean {
+  return isSportSectionB(sport);
 }
 
 /** Optional map of pause UI mode → whether pace fields apply (placeholder for sport-specific tools). */
@@ -119,6 +178,7 @@ export const MUSCULAR_SECTORS = [
 export const REST_TYPES = {
   SET_TIME: 'Set time',
   RESTART_TIME: 'Restart time',
+  SET_METERS: 'Set meters',
   RESTART_PULSE: 'Restart pulse'
 } as const;
 
@@ -922,6 +982,18 @@ export const isSportSectionB = (sport: string): boolean => {
   return SPORT_SECTION_B_NON_AEROBIC_CATALOG.includes(sport as any);
 };
 
+/** Section C — technical non-aerobic sports (manual Style / drill entry, no exercise catalog). */
+export const isSportSectionC = (sport: string): boolean => {
+  return SPORT_SECTION_C_TECHNICAL.includes(sport as any);
+};
+
+/** Standard moveframe form section heading (non-aerobic vs aerobic). */
+export function getStandardMoveframeSectionTitle(sport: string): string {
+  if (isSportSectionB(sport)) return 'EXERCISE AND REPETITIONS';
+  if (isSportSectionC(sport)) return 'EXERCISE & STYLE/TECHNIQUE';
+  return 'DISTANCE & REPETITIONS';
+};
+
 export const ALLOWED_CIRCUIT_SPORTS = [
   'BODY_BUILDING',
   'STRETCHING',
@@ -1287,7 +1359,63 @@ export function sportNeedsExerciseName(sport: string): boolean {
 }
 
 // Helper function to get pause options based on rest type
+export function isSetMetersRestType(restType: string | undefined | null): boolean {
+  return restType === REST_TYPES.SET_METERS;
+}
+
+export function sportSupportsPauseWattsMode(sport: string): boolean {
+  return ['SWIM', 'BIKE', 'MTB', 'ROWING'].includes(sport);
+}
+
+/** Rest types for Rest Type selector (Set meters only for aerobic distance + Reps execution). */
+export function getSportRestTypes(sport: string, repsType: string): readonly string[] {
+  const config = getSportConfig(sport);
+  const fromConfig = 'restTypes' in config && Array.isArray(config.restTypes)
+    ? [...config.restTypes]
+    : [REST_TYPES.SET_TIME, REST_TYPES.RESTART_TIME, REST_TYPES.RESTART_PULSE];
+  const base = fromConfig;
+  if (repsType === 'Time') {
+    return base.filter((t) => t !== REST_TYPES.SET_METERS);
+  }
+  const distanceAerobic =
+    DISTANCE_BASED_SPORTS.includes(sport as any) && AEROBIC_SPORTS.includes(sport as any);
+  if (distanceAerobic && !base.includes(REST_TYPES.SET_METERS)) {
+    const i = base.indexOf(REST_TYPES.SET_TIME);
+    if (i >= 0) base.splice(i + 1, 0, REST_TYPES.SET_METERS);
+    else base.push(REST_TYPES.SET_METERS);
+  }
+  return base;
+}
+
+/** Pause Mode options — Set meters: Speed + Watts only (no Stopped). */
+export function getPauseModeOptions(sport: string, restType: string): readonly string[] {
+  if (isSetMetersRestType(restType)) {
+    const opts: string[] = ['speed'];
+    if (sportSupportsPauseWattsMode(sport)) opts.push('watts');
+    return opts;
+  }
+  const opts: string[] = ['stopped', 'speed'];
+  if (sportSupportsPauseWattsMode(sport)) opts.push('watts');
+  return opts;
+}
+
+export function getDefaultPauseMode(sport: string, restType: string): string {
+  if (isSetMetersRestType(restType)) return 'speed';
+  return 'stopped';
+}
+
+export function coercePauseModeForRestType(
+  sport: string,
+  restType: string,
+  mode: string | undefined | null
+): string {
+  const opts = getPauseModeOptions(sport, restType);
+  if (mode && opts.includes(mode)) return mode;
+  return getDefaultPauseMode(sport, restType);
+}
+
 export function getPauseOptions(sport: string, restType: string): readonly string[] | 'input' {
+  if (isSetMetersRestType(restType)) return 'input';
   const config = getSportConfig(sport);
   if ('pauses' in config) {
     if (typeof config.pauses === 'object' && !Array.isArray(config.pauses)) {
@@ -1300,6 +1428,79 @@ export function getPauseOptions(sport: string, restType: string): readonly strin
     return Array.isArray(top) ? top : [];
   }
   return [];
+}
+
+/** Pause dropdown values for Set time rest (Section B catalog + aerobic sports). */
+export function getSectionBPauseOptions(sport: string): readonly string[] {
+  const pauseOptions = getPauseOptions(sport, REST_TYPES.SET_TIME);
+  if (Array.isArray(pauseOptions) && pauseOptions.length > 0) return pauseOptions;
+  return FAST_PLANNER_REST_PAUSE_OPTIONS;
+}
+
+/** @alias {@link getSectionBPauseOptions} */
+export const getSetTimePauseOptions = getSectionBPauseOptions;
+
+/** Map stored pause to a valid Set-time dropdown value (handles legacy hour-formatted strings). */
+export function coerceSetTimePauseValue(sport: string, raw: string | undefined | null): string {
+  const opts = getSetTimePauseOptions(sport);
+  const v = (raw ?? '').trim();
+  if (v && opts.includes(v)) return v;
+  if (/h\d{2}'\d{2}"\d/.test(v) || /^\d+h/.test(v)) {
+    return opts.includes('20"') ? '20"' : (opts[0] ?? '20"');
+  }
+  return opts.includes('20"') ? '20"' : (opts[0] ?? '20"');
+}
+
+/**
+ * Format numeric input to Section B time: M'SS"D (minutes, seconds, tenths).
+ * Range: 0'01"0 – 9'59"9. Examples: 184 → 0'18"4, 1234 → 1'23"4
+ */
+export function formatSectionBTime(value: string): string {
+  if (!value) return '';
+  if (/^\d+'\d{1,2}"\d$/.test(value)) return value;
+
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return '';
+
+  const len = digits.length;
+  let minutes: string;
+  let seconds: string;
+  let deciseconds: string;
+
+  if (len === 1) {
+    minutes = '0';
+    seconds = '00';
+    deciseconds = digits;
+  } else if (len === 2) {
+    minutes = '0';
+    seconds = digits[0].padStart(2, '0');
+    deciseconds = digits[1];
+  } else if (len === 3) {
+    minutes = '0';
+    seconds = digits.slice(0, 2);
+    deciseconds = digits[2];
+  } else if (len === 4) {
+    minutes = digits[0];
+    seconds = digits.slice(1, 3);
+    deciseconds = digits[3];
+  } else if (len === 5) {
+    minutes = digits.slice(0, 2);
+    seconds = digits.slice(2, 4);
+    deciseconds = digits[4];
+  } else {
+    minutes = digits.slice(-5, -3);
+    seconds = digits.slice(-3, -1);
+    deciseconds = digits.slice(-1);
+  }
+
+  const m = parseInt(minutes, 10);
+  const s = parseInt(seconds, 10);
+
+  if (m > 9) return "9'59\"9";
+  if (m === 0 && s === 0) return "0'01\"0";
+  if (s > 59) return `${Math.min(m, 9)}'59"${deciseconds}`;
+
+  return `${m}'${seconds.padStart(2, '0')}"${deciseconds}`;
 }
 
 // Helper function to get distance unit based on sport

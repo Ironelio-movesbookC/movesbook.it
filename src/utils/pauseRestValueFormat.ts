@@ -1,9 +1,26 @@
 /**
  * Pause value formats by Rest type (see PAUSE SETTINGS mock).
+ * — Set time / Pause Min.: digits → M'SS''T (e.g. 184 → 0'18''4)
  * — Restart time: digits → M'SS"t (e.g. 3456 → 3'45"6); ≤3 digits → pad to MM'SS"T with implicit tenth 0
  * — Set meters: 0000–9999
  * — Restart pulse: BPM 60–200
  */
+
+/** Set time Pause Min.: compact digit entry → M'SS''T (e.g. 184 → 0'18''4) */
+export function formatPauseMinDigits(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return '';
+
+  const len = digits.length;
+  if (len === 1) return `0'0${digits}''0`;
+  if (len === 2) return `0'${digits}''0`;
+  if (len === 3) return `0'${digits.slice(0, 2)}''${digits.slice(2)}`;
+
+  const hour = digits.slice(0, -3) || '0';
+  const mins = digits.slice(-3, -1) || '00';
+  const tenth = digits.slice(-1) || '0';
+  return `${hour}'${mins}''${tenth}`;
+}
 
 /** Restart time: compact digit entry → M'SS"t */
 export function formatRestartTimePauseDigits(raw: string): string {

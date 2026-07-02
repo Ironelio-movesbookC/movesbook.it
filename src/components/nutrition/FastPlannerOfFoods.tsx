@@ -4,6 +4,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import CircuitPreferencesModal from './CircuitPreferencesModal';
 import { GOAL_OPTIONS, type GoalId } from './modals/PlanGymWeekModal';
+import {
+  exerciseCountFromDist,
+  getSeriesDistribution,
+  suggestedSeriesForExerciseSlot,
+  type SeriesLevelCategory,
+} from '@/utils/nutrition-seriesDistribution';
 
 function parseStoredNutritionFoodGoal(v: unknown): GoalId {
   if (typeof v === 'string' && GOAL_OPTIONS.some((o) => o.value === v)) return v as GoalId;
@@ -37,12 +43,15 @@ interface FastPlannerProps {
   fullView?: boolean;
 }
 
+export const FAST_PLANNER_DEFAULT_END_MACRO = "5'";
+
 export type FastPlannerHandle = {
   saveNutritionFood: () => void;
   saveNutritionFoodAndNutritionComponents: () => void;
   openPreferences: () => void;
-  /** Anaerobic only: apply rest/macro to the last filled exercise row; default **5'** when selection empty. */
+  /** Anaerobic only: end-of-moveframe macro (minutes); default **5'** when selection empty. */
   applyEndMacro?: (selectedMacro?: string) => void;
+  getEndMacro?: () => string;
 };
 
 const parseFastPlannerDataFromNotes = (notes: unknown): any | null => {
@@ -115,14 +124,32 @@ function resolveSeriesPlanningTableKey(totalSeries: number): number {
   return best;
 }
 
-function suggestedExeFromSeriesAndLevel(totalSeries: number, level: PlanTargetLevelBand): number {
-  const key = resolveSeriesPlanningTableKey(totalSeries);
-  const row = SERIES_TO_EXE_BY_LEVEL[key];
-  if (!row) return 1;
-  const idx = level === 'lev12' ? 0 : level === 'lev34' ? 1 : 2;
-  const v = row[idx];
-  return v >= 1 ? v : 1;
+function planTargetLevelToCategory(level: PlanTargetLevelBand): SeriesLevelCategory {
+  if (level === 'lev12') return 'low';
+  if (level === 'lev34') return 'mid';
+  return 'high';
 }
+
+function suggestedExeFromSeriesAndLevel(totalSeries: number, level: PlanTargetLevelBand): number {
+  const category = planTargetLevelToCategory(level);
+  return exerciseCountFromDist(getSeriesDistribution(totalSeries, category));
+}
+
+function computeSuggestedPlanSeries(
+  targetTotalSeries: string,
+  level: PlanTargetLevelBand,
+  exerciseIndex: number,
+  plannedSoFar: number,
+): string {
+  const t = parseInt(targetTotalSeries, 10);
+  const target = Number.isNaN(t) || t < 1 ? 1 : t;
+  const category = planTargetLevelToCategory(level);
+  return String(
+    suggestedSeriesForExerciseSlot(target, category, exerciseIndex, plannedSoFar),
+  );
+}
+
+const PLAN_SERIES_DROPDOWN_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20] as const;
 
 function parsePauseToSecondsOrNull(p: string): number | null {
   if (!p || p === '0') return 0;
@@ -246,6 +273,7 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
   const [planTargetPause, setPlanTargetPause] = useState<string>("2'");
   const [planExerciseDetailTab, setPlanExerciseDetailTab] = useState<'execution' | 'points' | 'video' | 'other'>('execution');
   const [userDescription, setUserDescription] = useState<string>('');
+  const [endMacro, setEndMacro] = useState(FAST_PLANNER_DEFAULT_END_MACRO);
   const loadedNutritionFoodIdRef = React.useRef<string | null>(null);
   const planListRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -586,39 +614,98 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
     return { seriesSum, exerciseCount, avgReps, avgPauseSec, lastRow };
   }, [rows, planSectorId, getSectorForExercise]);
 
-  const buildNutritionComponentsFromRows = (filledRows: FastPlannerRow[]) => {
-    return filledRows.map((row, index) => {
-      const sector = row.exercise ? getSectorForExercise(row.exercise) : null;
-      const repsValue = ripTimeMode === 'reps' ? (parseInt(row.ripTime || '', 10) || null) : null;
-      const timeValue = ripTimeMode === 'time' ? (row.ripTime || null) : null;
+  const suggestedPlanSeries = React.useMemo(() => {
+    if (!showSeriesPlanModal || !planSectorId) return null;
+    const t = parseInt(planTargetTotalSeries, 10);
+    const target = Number.isNaN(t) || t < 1 ? 1 : t;
+    const category = planTargetLevelToCategory(planTargetLevel);
+    return suggestedSeriesForExerciseSlot(
+      target,
+      category,
+      planSectorPlanningStats.exerciseCount,
+      planSectorPlanningStats.seriesSum,
+    );
+  }, [
+    showSeriesPlanModal,
+    planSectorId,
+    planTargetTotalSeries,
+    planTargetLevel,
+    planSectorPlanningStats.exerciseCount,
+    planSectorPlanningStats.seriesSum,
+  ]);
 
-      const isLast = index === filledRows.length - 1;
+  React.useEffect(() => {
+    if (suggestedPlanSeries == null) return;
+    setPlanSeries(String(suggestedPlanSeries));
+  }, [suggestedPlanSeries]);
+
+  const planSeriesDropdownOptions = React.useMemo(() => {
+    const selected = parseInt(planSeries, 10);
+    if (Number.isFinite(selected) && !(PLAN_SERIES_DROPDOWN_OPTIONS as readonly number[]).includes(selected)) {
+      return [...PLAN_SERIES_DROPDOWN_OPTIONS, selected].sort((a, b) => a - b);
+    }
+    return [...PLAN_SERIES_DROPDOWN_OPTIONS];
+  }, [planSeries]);
+
+  const buildNutritionComponentsFromRows = (filledRows: FastPlannerRow[]) => {
+    const out: any[] = [];
+    const macroTrimmed = endMacro.trim();
+    const lastRowIndex = filledRows.length - 1;
+
+    filledRows.forEach((row, rowIndex) => {
+      const sector = row.exercise ? getSectorForExercise(row.exercise) : null;
+      const seriesCount = clampSeriesCount(row) || 1;
       const pauseVal = row.break && String(row.break).trim() !== '' ? String(row.break).trim() : null;
-      return {
-        repetitionNumber: index + 1,
-        distance: null,
-        speed: row.speed || null,
-        style: null,
-        pace: null,
-        time: timeValue,
-        reps: repsValue,
-        weight: row.weight && row.weight.trim() !== '' && row.weight.trim().toLowerCase() !== 'nc' ? row.weight : null,
-        tools: null,
-        r1: null,
-        r2: null,
-        muscularSector: sector,
-        exercise: row.exercise || null,
-        restType: null,
-        pause: pauseVal,
-        macroFinal: isLast && pauseVal ? pauseVal : null,
-        alarm: null,
-        sound: null,
-        notes: row.mode || null,
-        status: 'PENDING',
-        isSkipped: false,
-        isDisabled: false
-      };
+      const seriesReps = resolveFastPlannerRowSeriesReps(row);
+      const defaultReps = ripTimeMode === 'reps' ? parseInt(row.ripTime || '', 10) || null : null;
+      const defaultTime = ripTimeMode === 'time' ? row.ripTime || null : null;
+
+      for (let s = 0; s < seriesCount; s++) {
+        const isLastOverall = rowIndex === lastRowIndex && s === seriesCount - 1;
+        const repsValue =
+          ripTimeMode === 'reps'
+            ? seriesReps.length > 0
+              ? parseInt(seriesReps[s] ?? seriesReps[seriesReps.length - 1] ?? '', 10) || defaultReps
+              : defaultReps
+            : null;
+        const timeValue =
+          ripTimeMode === 'time'
+            ? seriesReps.length > 0
+              ? seriesReps[s] ?? seriesReps[seriesReps.length - 1] ?? defaultTime
+              : defaultTime
+            : null;
+
+        out.push({
+          repetitionNumber: out.length + 1,
+          distance: null,
+          speed: row.speed || null,
+          style: null,
+          pace: null,
+          time: timeValue,
+          reps: repsValue,
+          weight:
+            row.weight && row.weight.trim() !== '' && row.weight.trim().toLowerCase() !== 'nc'
+              ? row.weight
+              : null,
+          tools: null,
+          r1: null,
+          r2: null,
+          muscularSector: sector,
+          exercise: row.exercise || null,
+          restType: null,
+          pause: pauseVal,
+          macroFinal: isLastOverall && macroTrimmed ? macroTrimmed : null,
+          alarm: null,
+          sound: null,
+          notes: row.mode || null,
+          status: 'PENDING',
+          isSkipped: false,
+          isDisabled: false,
+        });
+      }
     });
+
+    return out;
   };
 
   /** Build distances-only line (e.g. 10\\A1+8\\B2+12\\A2) for nutritionFood description row 1 */
@@ -722,6 +809,23 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
       if (parsed.ripTimeMode === 'reps' || parsed.ripTimeMode === 'time') setRipTimeMode(parsed.ripTimeMode);
       if (Array.isArray(parsed.rows) && parsed.rows.length > 0) setRows(parsed.rows);
       if (parsed.preferences != null) setPreferences(parsed.preferences);
+      if (typeof parsed.endMacro === 'string' && parsed.endMacro.trim()) {
+        setEndMacro(parsed.endMacro.trim());
+      } else if (
+        existingNutritionFood?.macroFinal != null &&
+        String(existingNutritionFood.macroFinal).trim() !== ''
+      ) {
+        setEndMacro(String(existingNutritionFood.macroFinal).trim());
+      } else if (
+        Array.isArray(existingNutritionFood?.nutritionComponents) &&
+        existingNutritionFood.nutritionComponents.length > 0
+      ) {
+        const lastLap =
+          existingNutritionFood.nutritionComponents[existingNutritionFood.nutritionComponents.length - 1];
+        if (lastLap?.macroFinal != null && String(lastLap.macroFinal).trim() !== '') {
+          setEndMacro(String(lastLap.macroFinal).trim());
+        }
+      }
       setSelectedCell(null);
       lastSelectedRowIdRef.current = null;
       setShowSubExercises(false);
@@ -1188,7 +1292,8 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
       execMode,
       ripTimeMode,
       rows: filledRows,
-      preferences
+      preferences,
+      endMacro,
     };
     const notes = upsertFastPlannerDataInNotes(userDescription, payload);
     const nutritionComponents = buildNutritionComponentsFromRows(filledRows);
@@ -1203,6 +1308,7 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
       notes,
       fastPlannerData: payload,
       nutritionComponents,
+      macroFinal: endMacro.trim() || null,
       isFastPlannerBased: true,
       goal: nutritionFoodGoal
     };
@@ -1233,7 +1339,8 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
       execMode,
       ripTimeMode,
       rows: filledRows,
-      preferences
+      preferences,
+      endMacro,
     };
     const notes = upsertFastPlannerDataInNotes(userDescription, payload);
     const nutritionComponents = buildNutritionComponentsFromRows(filledRows);
@@ -1248,37 +1355,35 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
       notes,
       fastPlannerData: payload,
       nutritionComponents,
+      macroFinal: endMacro.trim() || null,
       isFastPlannerBased: true,
       goal: nutritionFoodGoal
     };
     onSave(nutritionFoodData);
   };
 
-  const DEFAULT_END_MACRO = "5'";
-  const applyEndMacro = React.useCallback((selectedMacro?: string) => {
-    const trimmed = typeof selectedMacro === 'string' ? selectedMacro.trim() : '';
-    const value = trimmed || DEFAULT_END_MACRO;
-    setRows((prev) => {
-      let lastFilledId: number | null = null;
-      for (let i = prev.length - 1; i >= 0; i--) {
-        if ((prev[i].exercise || '').trim() !== '') {
-          lastFilledId = prev[i].id;
-          break;
+  const applyEndMacro = React.useCallback(
+    (selectedMacro?: string) => {
+      const trimmed = typeof selectedMacro === 'string' ? selectedMacro.trim() : '';
+      const value = trimmed || FAST_PLANNER_DEFAULT_END_MACRO;
+      const hasExercise = rows.some((r) => (r.exercise || '').trim() !== '');
+      if (!hasExercise) {
+        if (typeof window !== 'undefined') {
+          window.alert('Add at least one exercise before applying Macro.');
         }
+        return;
       }
-      if (lastFilledId == null) {
-        if (typeof window !== 'undefined') window.alert('Add at least one exercise before applying Macro.');
-        return prev;
-      }
-      return prev.map((row) => (row.id === lastFilledId ? { ...row, break: value } : row));
-    });
-  }, []);
+      setEndMacro(value);
+    },
+    [rows]
+  );
 
   React.useImperativeHandle(ref, () => ({
     saveNutritionFood: handleSaveNutritionFood,
     saveNutritionFoodAndNutritionComponents: handleSaveNutritionFoodAndNutritionComponents,
     openPreferences: () => setShowPreferencesModal(true),
-    applyEndMacro
+    applyEndMacro,
+    getEndMacro: () => endMacro,
   }));
   const openSeriesPlan = (sectorId: string) => {
     setPlanSectorId(sectorId);
@@ -1286,10 +1391,24 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
     setPlanTargetLevel('lev34');
     setPlanTargetReps('15');
     setPlanTargetPause("2'");
-    setPlanSeries('3');
-    setPlanReps('15');
-    setPlanPause("2'");
-    setPlanPyramidal('flat');
+
+    const sectorLabel = MUSCLE_GROUPS.find(g => g.id === sectorId)?.sector ?? null;
+    const sectorRows = sectorLabel
+      ? rows.filter(r => {
+          const name = r.exercise?.trim();
+          if (!name) return false;
+          return getSectorForExercise(name) === sectorLabel;
+        })
+      : [];
+    const lastRow = sectorRows.length ? sectorRows[sectorRows.length - 1] : null;
+    const lastRepsToken = (lastRow?.ripTime || '').split(/\s*\/\s*/)[0]?.trim() ?? '';
+    const seriesSum = sectorRows.reduce((s, r) => s + (parseInt(String(r.series), 10) || 0), 0);
+    setPlanSeries(
+      computeSuggestedPlanSeries('12', 'lev34', sectorRows.length, seriesSum),
+    );
+    setPlanReps(/^\d+$/.test(lastRepsToken) ? lastRepsToken : '15');
+    setPlanPause(lastRow?.break?.trim() || "2'");
+    setPlanPyramidal(parsePyramidalMode(lastRow?.pyramidal));
     setPlanExerciseDetailTab('execution');
     setPlanCandidate(null);
     setPlanExerciseSearch('');
@@ -2054,7 +2173,6 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
                       ref={exerciseListScrollRef}
                       className="overflow-x-auto overflow-y-hidden flex-1 min-w-0 scroll-smooth"
                       style={{ scrollbarGutter: 'stable' }}
-                      title="Scroll horizontally: use arrows, mouse wheel (Shift+wheel), or drag the scrollbar"
                       onWheel={(e) => {
                         if (e.shiftKey) {
                           e.preventDefault();
@@ -2132,7 +2250,8 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
       {/* Exercise Table – action buttons + headers sticky, only the list scrolls */}
       <div className={`bg-white border border-gray-300 rounded-lg overflow-hidden relative z-0 flex-1 min-h-[220px] flex flex-col ${!fullView ? 'border-t-0 rounded-t-none' : ''}`}>
         <div
-          className={`overflow-auto flex-1 ${fullView ? 'min-h-[min(52vh,420px)]' : 'min-h-[252px]'}`}
+          className={`overflow-auto flex-1 pb-2 ${fullView ? 'min-h-[min(52vh,420px)]' : 'min-h-[252px]'}`}
+          style={{ scrollPaddingBottom: '4.5rem' }}
         >
           {/* Control buttons – always visible; sticky in both modes; centered in fullView */}
           <div className={`sticky top-0 z-30 flex-shrink-0 px-2 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2 flex-wrap shadow-[0_1px_3px_0_rgba(0,0,0,0.08)] ${fullView ? 'justify-center' : ''}`}>
@@ -2491,31 +2610,32 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
               ))}
             </tbody>
           </table>
-        </div>
 
-        {/* Scroll to view all repetitions note — modal mode only (full page shows this in summary panel) */}
-        {!fullView && (
-          <div className="border-t border-blue-200 bg-blue-50 px-4 py-2">
-            <p className="text-xs text-blue-800">
-              ℹ️ Scroll to view all repetitions. Each can have unique speed, time, and pause values.
-            </p>
+          <div className="min-h-[4.5rem] shrink-0" aria-hidden="true" />
+
+          {!fullView && (
+            <div className="border-t border-blue-200 bg-blue-50 px-4 py-2">
+              <p className="text-xs text-blue-800">
+                ℹ️ Scroll to view all repetitions. Each can have unique speed, time, and pause values.
+              </p>
+            </div>
+          )}
+
+          <div
+            className={`mt-1.5 rounded-lg bg-green-50 p-2 ${
+              fullView ? 'border-2 border-green-600' : 'border border-green-300'
+            }`}
+          >
+            <textarea
+              value={userDescription}
+              onChange={(e) => setUserDescription(e.target.value)}
+              className="w-full resize-y rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              rows={2}
+              placeholder="Add descriptions or instructions here..."
+              aria-label="Descriptions and instructions"
+            />
           </div>
-        )}
-      </div>
-
-      <div
-        className={`mt-1.5 flex-shrink-0 rounded-lg bg-green-50 p-2 ${
-          fullView ? 'border-2 border-green-600' : 'border border-green-300'
-        }`}
-      >
-        <textarea
-          value={userDescription}
-          onChange={(e) => setUserDescription(e.target.value)}
-          className="w-full resize-y rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-          rows={2}
-          placeholder="Add descriptions or instructions here..."
-          aria-label="Descriptions and instructions"
-        />
+        </div>
       </div>
 
       {/* Exercise Selection Popup */}
@@ -2833,8 +2953,13 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
                           value={planSeries}
                           onChange={(e) => setPlanSeries(e.target.value)}
                           className="rounded border border-violet-300 bg-white px-2 py-1 text-sm"
+                          title={
+                            suggestedPlanSeries != null
+                              ? `Table suggests ${suggestedPlanSeries} series for exercise ${planSectorPlanningStats.exerciseCount + 1} (${planTargetTotalSeries} target − ${planSectorPlanningStats.seriesSum} planned)`
+                              : undefined
+                          }
                         >
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20].map(n => (
+                          {planSeriesDropdownOptions.map(n => (
                             <option key={n} value={n.toString()}>{n}</option>
                           ))}
                         </select>

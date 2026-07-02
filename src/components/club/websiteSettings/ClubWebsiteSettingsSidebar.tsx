@@ -1,11 +1,26 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, Globe, Home, Settings, User } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { CLUB_WEBSITE_BACHECA_PATH } from '@/lib/clubWebsiteSettingsPaths';
-import type { ClubWebsiteTopic } from '@/lib/clubWebsiteTopics';
-import type { ClubWebsiteFriendItem } from '@/lib/clubWebsiteFriendList';
+import {
+  CLUB_WEBSITE_BACHECA_PATH,
+  clubWebsiteFriendEditorUrl,
+  clubWebsiteTopicEditorUrl,
+} from '@/lib/clubWebsiteSettingsPaths';
+import {
+  getFriendItemDeleteConfirmKey,
+  getFriendItemIdsForRemoval,
+  loadClubWebsiteFriendItems,
+  type ClubWebsiteFriendItem,
+} from '@/lib/clubWebsiteFriendList';
+import {
+  filterClubWebsiteTopicsForMembers,
+  loadClubWebsiteTopics,
+  type ClubWebsiteTopic,
+} from '@/lib/clubWebsiteTopics';
+import { loadTopicsSectionOrder } from '@/lib/clubWebsiteTopicsSectionOrder';
+import type { TopicsSectionRowRef } from '@/lib/clubWebsiteTopicsSectionOrder';
 import ClubWebsiteFriendListSection from '@/components/club/websiteSettings/ClubWebsiteFriendListSection';
 import {
   LEGACY_SIDEBAR_BLUE,
@@ -17,6 +32,7 @@ import {
   SOCIAL_SITE_ROWS,
   type SidebarTopicStatus,
 } from '@/components/club/websiteSettings/clubWebsiteSettingsSidebarData';
+import { useClubWebsiteSettingsSidebar } from '@/components/club/websiteSettings/ClubWebsiteSettingsSidebarContext';
 
 /** Legacy visibility toggle — equal sides (regular quadrilateral / square). */
 function StatusSquare({ status }: { status: SidebarTopicStatus }) {
@@ -99,32 +115,7 @@ function MenuRow({
   );
 }
 
-export default function ClubWebsiteSettingsSidebar({
-  adminDisplayName,
-  clubDisplayName,
-  clubType,
-  adminCountry,
-  adminLocality,
-  logoImageUrl,
-  selectedTopicId,
-  onSelectTopic,
-  highlightBacheca = false,
-  highlightTopicsSection = false,
-  /** Read-only member view — no admin controls. */
-  displayMode = false,
-  customTopics = [],
-  onAddTopic,
-  onSelectCustomTopic,
-  onToggleCustomTopicActivated,
-  friendListItems = [],
-  friendListAdminMode = true,
-  onFriendToggleActivated,
-  onFriendDelete,
-  onFriendMove,
-  onFriendUpdateItem,
-  onFriendEditContent,
-  onFriendAddSubtopic,
-}: {
+export type ClubWebsiteSettingsSidebarProps = {
   adminDisplayName: string;
   clubDisplayName: string;
   clubType?: string | null;
@@ -135,20 +126,72 @@ export default function ClubWebsiteSettingsSidebar({
   onSelectTopic: (id: string, label: string) => void;
   highlightBacheca?: boolean;
   highlightTopicsSection?: boolean;
+  /** Read-only member view — no admin controls; loads topics/friends from storage. */
   displayMode?: boolean;
-  customTopics?: ClubWebsiteTopic[];
+  clubId?: string | null;
+  /** Replaces provider add-topic modal (topics editor page). */
   onAddTopic?: () => void;
+  /** Replaces default: open topic editor in new tab. */
   onSelectCustomTopic?: (id: string) => void;
-  onToggleCustomTopicActivated?: (id: string) => void;
-  friendListItems?: ClubWebsiteFriendItem[];
-  friendListAdminMode?: boolean;
-  onFriendToggleActivated?: (id: string) => void;
-  onFriendDelete?: (id: string) => void;
-  onFriendMove?: (id: string, direction: 'up' | 'down') => void;
-  onFriendUpdateItem?: (id: string, patch: Partial<ClubWebsiteFriendItem>) => void;
+  /** Replaces default: open friend editor in new tab (index uses inline editor). */
   onFriendEditContent?: (id: string, label: string) => void;
-  onFriendAddSubtopic?: (parentId: string, name: string) => void;
-}) {
+  /** Notified after a friend row is removed (index page resets selection). */
+  onFriendDeleted?: (removedIds: string[]) => void;
+};
+
+type ClubWebsiteSettingsSidebarPanelProps = Omit<
+  ClubWebsiteSettingsSidebarProps,
+  'onAddTopic' | 'onSelectCustomTopic' | 'displayMode' | 'clubId'
+> & {
+  displayMode?: boolean;
+  customTopics: ClubWebsiteTopic[];
+  friendListItems: ClubWebsiteFriendItem[];
+  friendListAdminMode: boolean;
+  onAddTopic: () => void;
+  onSelectCustomTopic: (id: string) => void;
+  onToggleCustomTopicActivated: (id: string) => void;
+  onMoveCustomTopic?: (id: string, direction: 'up' | 'down') => void;
+  onDeleteCustomTopic?: (id: string) => void;
+  onUpdateCustomTopic?: (id: string, patch: Partial<ClubWebsiteTopic>) => void;
+  sectionOrder?: TopicsSectionRowRef[];
+  onMoveSectionEntry?: (id: string, kind: TopicsSectionRowRef['kind'], direction: 'up' | 'down') => void;
+  onFriendToggleActivated: (id: string) => void;
+  onFriendDelete: (id: string) => void;
+  onFriendMove: (id: string, direction: 'up' | 'down') => void;
+  onFriendUpdateItem: (id: string, patch: Partial<ClubWebsiteFriendItem>) => void;
+  onFriendAddSubtopic: (parentId: string, name: string) => void;
+};
+
+function ClubWebsiteSettingsSidebarPanel({
+  adminDisplayName,
+  clubDisplayName,
+  clubType,
+  adminCountry,
+  adminLocality,
+  logoImageUrl,
+  selectedTopicId,
+  onSelectTopic,
+  highlightBacheca = false,
+  highlightTopicsSection = false,
+  displayMode = false,
+  customTopics,
+  onAddTopic,
+  onSelectCustomTopic,
+  onToggleCustomTopicActivated,
+  onMoveCustomTopic,
+  onDeleteCustomTopic,
+  onUpdateCustomTopic,
+  sectionOrder,
+  onMoveSectionEntry,
+  friendListItems,
+  friendListAdminMode,
+  onFriendToggleActivated,
+  onFriendDelete,
+  onFriendMove,
+  onFriendUpdateItem,
+  onFriendEditContent,
+  onFriendAddSubtopic,
+}: ClubWebsiteSettingsSidebarPanelProps) {
   const { t } = useLanguage();
   const [socialSitesOpen, setSocialSitesOpen] = useState(false);
   const [topicStatuses, setTopicStatuses] = useState<Record<string, SidebarTopicStatus>>(() =>
@@ -289,7 +332,7 @@ export default function ClubWebsiteSettingsSidebar({
           {!displayMode ? (
             <button
               type="button"
-              onClick={() => onAddTopic?.()}
+              onClick={() => onAddTopic()}
               className="text-white hover:underline"
             >
               + {t('club_website_add_topic')}
@@ -297,46 +340,26 @@ export default function ClubWebsiteSettingsSidebar({
           ) : null}
         </MenuRow>
 
-        {customTopics.map((topic) => (
-          <MenuRow
-            key={topic.id}
-            className="justify-between font-medium"
-            onClick={() =>
-              displayMode
-                ? onSelectTopic(topic.id, topic.name)
-                : onSelectCustomTopic?.(topic.id)
-            }
-          >
-            <span
-              className={`min-w-0 truncate ${selectedTopicId === topic.id ? 'font-bold underline' : ''}`}
-            >
-              {topic.name}
-            </span>
-            {displayMode ? (
-              <MenuRowStatusCell>
-                <StatusSquare status={topic.activated ? 'on' : 'off'} />
-              </MenuRowStatusCell>
-            ) : (
-              <StatusToggleButton
-                status={topic.activated ? 'on' : 'off'}
-                onToggle={() => onToggleCustomTopicActivated?.(topic.id)}
-                ariaLabel={t('club_website_toggle_visibility')}
-              />
-            )}
-          </MenuRow>
-        ))}
-
         <ClubWebsiteFriendListSection
           selectedTopicId={selectedTopicId}
           onSelectTopic={onSelectTopic}
           items={friendListItems}
+          customTopics={customTopics}
           adminMode={displayMode ? false : friendListAdminMode}
-          onToggleActivated={(id) => onFriendToggleActivated?.(id)}
-          onDelete={(id) => onFriendDelete?.(id)}
-          onMove={(id, dir) => onFriendMove?.(id, dir)}
-          onUpdateItem={(id, patch) => onFriendUpdateItem?.(id, patch)}
+          sectionOrder={sectionOrder}
+          onMoveSectionEntry={onMoveSectionEntry}
+          onSelectCustomTopic={onSelectCustomTopic}
+          onToggleCustomTopicActivated={onToggleCustomTopicActivated}
+          onMoveCustomTopic={onMoveCustomTopic}
+          onDeleteCustomTopic={onDeleteCustomTopic}
+          onUpdateCustomTopic={onUpdateCustomTopic}
+          onCustomTopicEditContent={onSelectCustomTopic}
+          onToggleActivated={(id) => onFriendToggleActivated(id)}
+          onDelete={(id) => onFriendDelete(id)}
+          onMove={(id, dir) => onFriendMove(id, dir)}
+          onUpdateItem={(id, patch) => onFriendUpdateItem(id, patch)}
           onEditContent={(id, label) => onFriendEditContent?.(id, label)}
-          onAddSubtopic={(parentId, name) => onFriendAddSubtopic?.(parentId, name)}
+          onAddSubtopic={(parentId, name) => onFriendAddSubtopic(parentId, name)}
         />
 
         <MenuRow
@@ -400,4 +423,102 @@ export default function ClubWebsiteSettingsSidebar({
       </div>
     </aside>
   );
+}
+
+function ClubWebsiteSettingsSidebarDisplay(props: ClubWebsiteSettingsSidebarProps) {
+  const { clubId, onSelectTopic } = props;
+  const [friendItems, setFriendItems] = useState<ClubWebsiteFriendItem[]>([]);
+  const [allTopics, setAllTopics] = useState<ClubWebsiteTopic[]>([]);
+
+  useEffect(() => {
+    if (!clubId) return;
+    setFriendItems(loadClubWebsiteFriendItems(clubId));
+    setAllTopics(loadClubWebsiteTopics(clubId));
+  }, [clubId]);
+
+  const memberTopics = useMemo(
+    () => filterClubWebsiteTopicsForMembers(allTopics),
+    [allTopics],
+  );
+
+  const displaySectionOrder = useMemo(
+    () => loadTopicsSectionOrder(clubId ?? undefined, memberTopics, friendItems),
+    [clubId, memberTopics, friendItems],
+  );
+
+  const noop = () => {};
+
+  return (
+    <ClubWebsiteSettingsSidebarPanel
+      {...props}
+      displayMode
+      customTopics={memberTopics}
+      friendListItems={friendItems}
+      friendListAdminMode={false}
+      sectionOrder={displaySectionOrder}
+      onAddTopic={noop}
+      onSelectCustomTopic={(id) => {
+        const topic = memberTopics.find((tpc) => tpc.id === id);
+        onSelectTopic(id, topic?.name ?? id);
+      }}
+      onToggleCustomTopicActivated={noop}
+      onFriendToggleActivated={noop}
+      onFriendDelete={noop}
+      onFriendMove={noop}
+      onFriendUpdateItem={noop}
+      onFriendEditContent={onSelectTopic}
+      onFriendAddSubtopic={noop}
+    />
+  );
+}
+
+function ClubWebsiteSettingsSidebarAdmin(props: ClubWebsiteSettingsSidebarProps) {
+  const ctx = useClubWebsiteSettingsSidebar();
+  const { t } = useLanguage();
+
+  const handleFriendDelete = (id: string) => {
+    const confirmKey = getFriendItemDeleteConfirmKey(ctx.friends.items, id);
+    if (!window.confirm(t(confirmKey))) return;
+    const removedIds = getFriendItemIdsForRemoval(ctx.friends.items, id);
+    ctx.friends.removeItem(id);
+    props.onFriendDeleted?.(removedIds);
+  };
+
+  const defaultFriendEdit = (id: string) => {
+    window.open(clubWebsiteFriendEditorUrl(id), '_blank', 'noopener,noreferrer');
+  };
+
+  const defaultSelectCustomTopic = (id: string) => {
+    window.open(clubWebsiteTopicEditorUrl(id), '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <ClubWebsiteSettingsSidebarPanel
+      {...props}
+      customTopics={ctx.topics.topics}
+      friendListItems={ctx.friends.items}
+      friendListAdminMode
+      sectionOrder={ctx.sectionOrder}
+      onMoveSectionEntry={ctx.moveSectionEntry}
+      onAddTopic={props.onAddTopic ?? (() => ctx.setAddTopicOpen(true))}
+      onSelectCustomTopic={props.onSelectCustomTopic ?? defaultSelectCustomTopic}
+      onToggleCustomTopicActivated={ctx.topics.toggleActivated}
+      onMoveCustomTopic={ctx.topics.moveTopic}
+      onDeleteCustomTopic={ctx.topics.removeTopic}
+      onUpdateCustomTopic={ctx.topics.updateTopic}
+      onFriendToggleActivated={ctx.friends.toggleActivated}
+      onFriendDelete={handleFriendDelete}
+      onFriendMove={ctx.friends.moveItem}
+      onFriendUpdateItem={ctx.friends.updateItem}
+      onFriendEditContent={props.onFriendEditContent ?? defaultFriendEdit}
+      onFriendAddSubtopic={ctx.friends.addSubtopicUnder}
+    />
+  );
+}
+
+export default function ClubWebsiteSettingsSidebar(props: ClubWebsiteSettingsSidebarProps) {
+  if (props.displayMode) {
+    return <ClubWebsiteSettingsSidebarDisplay {...props} />;
+  }
+  return <ClubWebsiteSettingsSidebarAdmin {...props} />;
 }

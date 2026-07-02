@@ -36,6 +36,16 @@ export function isGroupAccountUserType(userType: string): boolean {
   return userType === 'GROUP' || userType === 'GROUP_ADMIN';
 }
 
+/** Coach, team, group, or club account — may administer an entity workspace. */
+export function isManagedEntityAdminUserType(userType: string): boolean {
+  return (
+    isClubAccountUserType(userType) ||
+    userType === 'COACH' ||
+    isTeamAccountUserType(userType) ||
+    isGroupAccountUserType(userType)
+  );
+}
+
 /** True when this user type has a dedicated dashboard (not legacy `/my-page`). */
 export function hasDedicatedDashboard(userType: string): boolean {
   return getDashboardPathForUserType(userType) !== '/my-page';

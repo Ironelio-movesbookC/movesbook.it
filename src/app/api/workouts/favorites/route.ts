@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { computeWorkoutArchiveMetrics } from '@/lib/workoutArchiveMetrics';
+import { resolveAuthorCountryFields } from '@/lib/shareAuthorCountry';
+import {
+  WORKOUT_SAVE_META_KEY,
+  type WorkoutSaveMetaInput,
+} from '@/lib/workoutSaveMeta';
 
 // GET - List all favorite workouts for the user
 export async function GET(req: NextRequest) {
@@ -72,6 +78,9 @@ export async function POST(req: NextRequest) {
       name: customName,
       description: customDescription,
       duplicateFromFavoriteId,
+      saveMeta,
+      sourceTemplate,
+      sourceWeekNumber,
     } = await req.json();
 
     if (duplicateFromFavoriteId) {
@@ -212,7 +221,7 @@ export async function POST(req: NextRequest) {
     });
     
     // Prepare workout data JSON
-    const workoutDataObj = {
+    const workoutDataObj: Record<string, unknown> = {
       workoutId: workout.id, // Store the original workout ID for duplicate checking
       workout: {
         name: workout.name,
@@ -263,6 +272,40 @@ export async function POST(req: NextRequest) {
         }))
       }))
     };
+
+    const archiveMetrics = computeWorkoutArchiveMetrics(workout);
+    const savedAt = new Date().toISOString();
+
+    if (saveMeta && typeof saveMeta === 'object') {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          username: true,
+          name: true,
+          image: true,
+          country: true,
+        },
+      });
+      const countryFields = resolveAuthorCountryFields(user?.country);
+      const meta = saveMeta as WorkoutSaveMetaInput;
+      workoutDataObj[WORKOUT_SAVE_META_KEY] = {
+        ...meta,
+        authorUsername: user?.username?.trim() || user?.name?.trim() || 'User',
+        authorAvatarUrl: user?.image ?? null,
+        authorCountryName: countryFields.authorCountryName ?? user?.country?.trim() ?? null,
+        authorCountryFlag: countryFields.authorCountryFlag ?? null,
+        workoutCount: 1,
+        moveframeCount: workout.moveframes.length,
+        totalMeters: archiveMetrics.totalMeters,
+        totalTimeSeconds: archiveMetrics.totalTimeSeconds,
+        totalSeries: archiveMetrics.totalSeries,
+        createdAt: workout.createdAt?.toISOString?.() ?? savedAt,
+        savedAt,
+        sharedAt: null,
+        sourceTemplate: sourceTemplate ?? null,
+        sourceWeekNumber: sourceWeekNumber ?? null,
+      };
+    }
     
     // Test that the JSON can be properly stringified and parsed
     let workoutDataStr: string;
@@ -280,11 +323,21 @@ export async function POST(req: NextRequest) {
     }
     
     // Create favorite workout
+    const displayName =
+      (saveMeta as WorkoutSaveMetaInput | undefined)?.title?.trim() ||
+      customName?.trim() ||
+      workout.name;
+    const displayDescription =
+      (saveMeta as WorkoutSaveMetaInput | undefined)?.shortDescription?.trim() ||
+      customDescription ||
+      workout.notes ||
+      `Saved from ${new Date().toLocaleDateString()}`;
+
     const favorite = await prisma.favoriteWorkout.create({
       data: {
         userId,
-        name: workout.name,
-        description: workout.notes || `Saved from ${new Date().toLocaleDateString()}`,
+        name: displayName,
+        description: displayDescription,
         workoutData: workoutDataStr,
         sports: Array.from(sportsSet).join(','),
         totalDistance,

@@ -173,6 +173,7 @@ form select {
   color: #111827;
 }
 
+<<<<<<< HEAD
 /* Admin food database — keep list table headers below modals */
 .admin-food-db-panel table thead th {
   z-index: 1;
@@ -181,6 +182,34 @@ form select {
 .admin-food-db-panel table thead th.sticky,
 .admin-food-db-panel table tbody td.sticky {
   z-index: 2;
+=======
+/* Staff messages panel — beat Tailwind preflight input { color: inherit } */
+@layer utilities {
+  .staff-messages-composer,
+  .staff-messages-composer label {
+    color: #000000 !important;
+  }
+
+  .staff-messages-panel input:not([type='radio']):not([type='checkbox']):not([type='hidden']),
+  .staff-messages-panel textarea,
+  .staff-messages-panel select {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
+    caret-color: #000000;
+  }
+
+  .staff-messages-panel input:not([type='radio']):not([type='checkbox']):not([type='hidden'])::placeholder,
+  .staff-messages-panel textarea::placeholder {
+    color: #64748b !important;
+    -webkit-text-fill-color: #64748b !important;
+    opacity: 1;
+  }
+
+  .staff-messages-panel input:-webkit-autofill,
+  .staff-messages-panel textarea:-webkit-autofill {
+    -webkit-text-fill-color: #000000 !important;
+  }
+>>>>>>> faaa2a595a51abb69a922cfa0c32b5b1cf1e5447
 }
 
 /* Workout Elements with Custom Borders */

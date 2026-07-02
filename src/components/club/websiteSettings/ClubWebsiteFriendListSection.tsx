@@ -1,13 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import {
-  ChevronDown,
-  ChevronUp,
-  FileText,
-  Settings,
-  Trash2,
-} from 'lucide-react';
+import { ChevronDown, FileText } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import type { ClubWebsiteFriendItem } from '@/lib/clubWebsiteFriendList';
 import {
@@ -21,35 +15,69 @@ import {
   getFriendItemMoveAvailability,
   getFriendItemSettingsVariant,
 } from '@/lib/clubWebsiteFriendList';
+import {
+  clearClubWebsiteTopicContent,
+  topicToSettingsFormItem,
+  type ClubWebsiteTopic,
+} from '@/lib/clubWebsiteTopics';
 import ClubWebsiteTopicSettingsFormModal from '@/components/club/websiteSettings/ClubWebsiteTopicSettingsFormModal';
 import {
   buildFriendListLayout,
   LEGACY_SIDEBAR_ROW,
-  LEGACY_STATUS_OFF,
-  LEGACY_STATUS_ON,
   type FriendListRow,
   type SidebarTopicStatus,
 } from '@/components/club/websiteSettings/clubWebsiteSettingsSidebarData';
+import {
+  FriendListActionToolbar,
+  FriendListStatusSquare,
+  FriendRowStatusZone,
+} from '@/components/club/websiteSettings/ClubWebsiteFriendListToolbar';
+import { topicHasEmbedUrl, topicHasHtmlContent } from '@/lib/clubWebsiteDisplayContent';
+import {
+  buildDefaultTopicsSectionOrder,
+  findFriendParentIdInSectionOrder,
+  getNestedFriendIdsInSectionOrder,
+  type TopicsSectionRowRef,
+} from '@/lib/clubWebsiteTopicsSectionOrder';
 
 function StatusSquare({ status }: { status: SidebarTopicStatus }) {
-  return (
-    <span
-      className="inline-block shrink-0 rounded-none border border-zinc-300/90"
-      style={{
-        width: 11,
-        height: 11,
-        minWidth: 11,
-        minHeight: 11,
-        backgroundColor: status === 'on' ? LEGACY_STATUS_ON : LEGACY_STATUS_OFF,
-      }}
-      aria-hidden
-    />
-  );
+  return <FriendListStatusSquare status={status} />;
 }
 
 /** Groups nested rows; full width so status buttons stay on the same right rail. */
 function FriendListNestedGroup({ children }: { children: React.ReactNode }) {
   return <div className="friends-list-nested w-full space-y-0">{children}</div>;
+}
+
+function DisplayDocumentButton({
+  onOpen,
+  compact = false,
+}: {
+  onOpen: () => void;
+  compact?: boolean;
+}) {
+  const { t } = useLanguage();
+  return (
+    <button
+      type="button"
+      className={`flex shrink-0 items-center justify-center text-white/95 hover:bg-white/15 ${compact ? 'h-5 w-5' : 'h-7 w-7'}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      aria-label={t('club_dashboard_open_topic_aria')}
+    >
+      <FileText className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+    </button>
+  );
+}
+
+function topicItemHasDisplayContent(item: {
+  contentDisplayMode: string;
+  externalUrl: string;
+  contentsByLang: Record<string, string>;
+}): boolean {
+  return topicHasEmbedUrl(item) || topicHasHtmlContent(item);
 }
 
 function FriendListExpandChevron({
@@ -141,126 +169,20 @@ function FriendListRowShell({
   );
 }
 
-function FriendListActionToolbar({
-  onDelete,
-  onEdit,
-  onMoveUp,
-  onMoveDown,
-  canMoveUp = true,
-  canMoveDown = true,
-  onSettings,
-  showDelete = true,
-  showReorder = true,
-  showDocument = true,
-  showSettings = true,
-  compact = false,
-}: {
-  onDelete: () => void;
-  onEdit: () => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
-  onSettings: () => void;
-  showDelete?: boolean;
-  showReorder?: boolean;
-  showDocument?: boolean;
-  showSettings?: boolean;
-  compact?: boolean;
-}) {
-  const { t } = useLanguage();
-  const iconBtn = compact
-    ? 'flex h-5 w-5 shrink-0 items-center justify-center text-white/95 hover:bg-white/15'
-    : 'flex h-6 w-6 shrink-0 items-center justify-center text-white/95 hover:bg-white/15';
-  const iconSize = compact ? 'h-3 w-3' : 'h-3.5 w-3.5';
-  const chevronSize = compact ? 'h-2 w-2' : 'h-2.5 w-2.5';
-  const reorderBtn = compact
-    ? 'flex h-2.5 w-5 shrink-0 items-center justify-center text-amber-400 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-30'
-    : 'flex h-3 w-6 shrink-0 items-center justify-center text-amber-400 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-30';
-
-  return (
-    <div
-      className="flex shrink-0 items-center gap-px"
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => e.stopPropagation()}
-      role="toolbar"
-      aria-label={t('club_friends_list_toolbar_aria')}
-    >
-      {showDelete ? (
-        <button type="button" className={iconBtn} onClick={onDelete} aria-label={t('btn_delete')}>
-          <Trash2 className={iconSize} />
-        </button>
-      ) : null}
-      {showReorder ? (
-        <div
-          className="flex shrink-0 flex-col items-center justify-center"
-          role="group"
-          aria-label={t('club_friends_reorder_aria')}
-        >
-          <button
-            type="button"
-            className={reorderBtn}
-            onClick={onMoveUp}
-            disabled={!canMoveUp}
-            aria-label={t('club_friends_move_up_aria')}
-          >
-            <ChevronUp className={chevronSize} strokeWidth={3} />
-          </button>
-          <button
-            type="button"
-            className={reorderBtn}
-            onClick={onMoveDown}
-            disabled={!canMoveDown}
-            aria-label={t('club_friends_move_down_aria')}
-          >
-            <ChevronDown className={chevronSize} strokeWidth={3} />
-          </button>
-        </div>
-      ) : null}
-      {showDocument ? (
-        <button type="button" className={iconBtn} onClick={onEdit} aria-label={t('club_friends_edit_content_aria')}>
-          <FileText className={iconSize} />
-        </button>
-      ) : null}
-      {showSettings ? (
-        <button
-          type="button"
-          className={iconBtn}
-          onClick={onSettings}
-          aria-label={t('sidebar_options')}
-        >
-          <Settings className={iconSize} />
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function FriendRowStatusZone({
-  rowId,
-  onActivate,
-  children,
-}: {
-  rowId: string;
-  onActivate: (rowId: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="flex w-[10.5rem] shrink-0 items-center justify-end gap-0.5 py-0.5"
-      onMouseEnter={() => onActivate(rowId)}
-      onFocus={() => onActivate(rowId)}
-    >
-      {children}
-    </div>
-  );
-}
-
 export default function ClubWebsiteFriendListSection({
   selectedTopicId,
   onSelectTopic,
   items,
   adminMode = true,
+  customTopics = [],
+  onSelectCustomTopic,
+  onToggleCustomTopicActivated,
+  onDeleteCustomTopic,
+  onUpdateCustomTopic,
+  onCustomTopicEditContent,
+  onMoveCustomTopic,
+  sectionOrder: sectionOrderProp,
+  onMoveSectionEntry,
   onToggleActivated,
   onDelete,
   onMove,
@@ -273,6 +195,19 @@ export default function ClubWebsiteFriendListSection({
   items: ClubWebsiteFriendItem[];
   /** Admin/staff only — hover toolbars hidden for members. */
   adminMode?: boolean;
+  customTopics?: ClubWebsiteTopic[];
+  onSelectCustomTopic?: (id: string) => void;
+  onToggleCustomTopicActivated?: (id: string) => void;
+  onDeleteCustomTopic?: (id: string) => void;
+  onUpdateCustomTopic?: (id: string, patch: Partial<ClubWebsiteTopic>) => void;
+  onCustomTopicEditContent?: (id: string) => void;
+  onMoveCustomTopic?: (id: string, direction: 'up' | 'down') => void;
+  sectionOrder?: TopicsSectionRowRef[];
+  onMoveSectionEntry?: (
+    id: string,
+    kind: TopicsSectionRowRef['kind'],
+    direction: 'up' | 'down',
+  ) => void;
   onToggleActivated: (id: string) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, direction: 'up' | 'down') => void;
@@ -293,6 +228,7 @@ export default function ClubWebsiteFriendListSection({
   );
   const [activeToolbarRowId, setActiveToolbarRowId] = useState<string | null>(null);
   const [settingsItemId, setSettingsItemId] = useState<string | null>(null);
+  const [settingsCustomTopicId, setSettingsCustomTopicId] = useState<string | null>(null);
 
   const hasFriendListRoot = rows.some((row) => row.id === 'friends-root');
   const layout = useMemo(
@@ -320,11 +256,98 @@ export default function ClubWebsiteFriendListSection({
     [rowsWithStatus]
   );
 
+  const sectionOrder = useMemo(() => {
+    if (sectionOrderProp?.length) return sectionOrderProp;
+    return buildDefaultTopicsSectionOrder(customTopics, items);
+  }, [sectionOrderProp, customTopics, items]);
+
+  const customTopicById = useMemo(
+    () => Object.fromEntries(customTopics.map((topic) => [topic.id, topic])),
+    [customTopics],
+  );
+
+  const useUnifiedSectionOrder = Boolean(onMoveSectionEntry || sectionOrderProp?.length);
+
   const activateToolbar = (rowId: string) => {
     if (adminMode) setActiveToolbarRowId(rowId);
   };
 
   const settingsItem = settingsItemId ? itemById[settingsItemId] : null;
+  const settingsCustomTopic = settingsCustomTopicId
+    ? customTopics.find((topic) => topic.id === settingsCustomTopicId)
+    : null;
+
+  const renderCustomTopicStatusOrToolbar = (
+    topic: ClubWebsiteTopic,
+    orderIndex: number,
+  ) => {
+    const status: SidebarTopicStatus = topic.activated ? 'on' : 'off';
+    const isActive = adminMode && activeToolbarRowId === topic.id;
+    const canMoveUp = orderIndex > 0;
+    const canMoveDown = orderIndex < sectionOrder.length - 1;
+    const moveUp = () => {
+      if (onMoveSectionEntry) {
+        onMoveSectionEntry(topic.id, 'custom', 'up');
+        return;
+      }
+      onMoveCustomTopic?.(topic.id, 'up');
+    };
+    const moveDown = () => {
+      if (onMoveSectionEntry) {
+        onMoveSectionEntry(topic.id, 'custom', 'down');
+        return;
+      }
+      onMoveCustomTopic?.(topic.id, 'down');
+    };
+
+    if (isActive) {
+      return (
+        <FriendListActionToolbar
+          showDelete
+          showReorder={Boolean(onMoveSectionEntry || onMoveCustomTopic)}
+          showDocument
+          showSettings
+          canMoveUp={canMoveUp}
+          canMoveDown={canMoveDown}
+          onDelete={() => {
+            if (!window.confirm(t('club_topic_delete_confirm'))) return;
+            onDeleteCustomTopic?.(topic.id);
+            if (settingsCustomTopicId === topic.id) setSettingsCustomTopicId(null);
+            setActiveToolbarRowId(null);
+          }}
+          onEdit={() => {
+            setActiveToolbarRowId(null);
+            onCustomTopicEditContent?.(topic.id);
+          }}
+          onMoveUp={moveUp}
+          onMoveDown={moveDown}
+          onSettings={() => setSettingsCustomTopicId(topic.id)}
+        />
+      );
+    }
+
+    return adminMode ? (
+      <button
+        type="button"
+        className="flex h-7 w-7 items-center justify-center"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (activeToolbarRowId === topic.id) {
+            onToggleCustomTopicActivated?.(topic.id);
+          } else {
+            setActiveToolbarRowId(topic.id);
+          }
+        }}
+        aria-label={t('club_website_toggle_visibility')}
+      >
+        <StatusSquare status={status} />
+      </button>
+    ) : (
+      <span className="flex h-7 w-7 items-center justify-center">
+        <StatusSquare status={status} />
+      </span>
+    );
+  };
 
   const selectRowContent = (row: FriendListRow) => {
     const label = row.id === 'friends-root' ? t('club_website_list_of_friends') : row.label;
@@ -342,16 +365,38 @@ export default function ClubWebsiteFriendListSection({
     row: FriendListRow & { status: SidebarTopicStatus },
     variant: 'root' | 'sub',
     compact = false,
-    options?: { showDelete?: boolean; showDocument?: boolean }
+    options?: { showDelete?: boolean; showDocument?: boolean; orderIndex?: number },
   ) => {
     const isActive = adminMode && activeToolbarRowId === row.id;
+    const orderIndex = options?.orderIndex;
+    const useSectionMove = useUnifiedSectionOrder && orderIndex != null;
+    const moveAvailability = useSectionMove
+      ? {
+          up: orderIndex > 0,
+          down: orderIndex < sectionOrder.length - 1,
+        }
+      : getFriendItemMoveAvailability(items, row.id);
+    const moveUp = () => {
+      if (useSectionMove && onMoveSectionEntry) {
+        onMoveSectionEntry(row.id, 'friend', 'up');
+        return;
+      }
+      onMove(row.id, 'up');
+    };
+    const moveDown = () => {
+      if (useSectionMove && onMoveSectionEntry) {
+        onMoveSectionEntry(row.id, 'friend', 'down');
+        return;
+      }
+      onMove(row.id, 'down');
+    };
+
     if (isActive) {
-      const moveAvailability = getFriendItemMoveAvailability(items, row.id);
       return (
         <FriendListActionToolbar
           compact={compact}
           showDelete={options?.showDelete ?? row.id !== 'friends-root'}
-          showReorder={variant === 'sub'}
+          showReorder={useSectionMove ? true : variant === 'sub'}
           showDocument={options?.showDocument ?? (variant === 'sub' || row.id === 'friends-root')}
           showSettings
           canMoveUp={moveAvailability.up}
@@ -367,8 +412,8 @@ export default function ClubWebsiteFriendListSection({
             }
           }}
           onEdit={() => selectRowContent(row)}
-          onMoveUp={() => onMove(row.id, 'up')}
-          onMoveDown={() => onMove(row.id, 'down')}
+          onMoveUp={moveUp}
+          onMoveDown={moveDown}
           onSettings={() => setSettingsItemId(row.id)}
         />
       );
@@ -397,13 +442,19 @@ export default function ClubWebsiteFriendListSection({
   const renderFriendRow = (
     row: FriendListRow,
     variant: 'root' | 'sub',
-    options?: { expandControl?: { open: boolean; onToggle: () => void } }
+    options?: {
+      expandControl?: { open: boolean; onToggle: () => void };
+      orderIndex?: number;
+    },
   ) => {
     const withStatus = rowById[row.id];
     if (!withStatus) return null;
     const isActive = activeToolbarRowId === row.id;
     const nested = row.indent;
     const expandControl = options?.expandControl;
+    const item = itemById[row.id];
+    const showDisplayDoc =
+      !adminMode && item && row.label.trim() && topicItemHasDisplayContent(item);
 
     return (
       <FriendListRowShell
@@ -422,7 +473,7 @@ export default function ClubWebsiteFriendListSection({
           </span>
         }
         trailing={
-          <FriendRowStatusZone rowId={row.id} onActivate={activateToolbar}>
+          <FriendRowStatusZone rowId={row.id} onActivate={activateToolbar} className="w-[10.5rem] py-0.5">
             {expandControl && isActive ? (
               <FriendListExpandChevron
                 open={expandControl.open}
@@ -430,7 +481,15 @@ export default function ClubWebsiteFriendListSection({
                 compact={nested}
               />
             ) : null}
-            {renderStatusOrToolbar(withStatus, variant, nested)}
+            {showDisplayDoc ? (
+              <DisplayDocumentButton
+                onOpen={() => onSelectTopic(row.id, row.label)}
+                compact={nested}
+              />
+            ) : null}
+            {renderStatusOrToolbar(withStatus, variant, nested, {
+              orderIndex: options?.orderIndex,
+            })}
           </FriendRowStatusZone>
         }
       />
@@ -438,14 +497,149 @@ export default function ClubWebsiteFriendListSection({
   };
 
   const root = rowById['friends-root'];
+  const renderOrderedSectionBody = () =>
+    sectionOrder.map((entry, orderIndex) => {
+      if (entry.kind === 'custom') {
+        const topic = customTopicById[entry.id];
+        if (!topic) return null;
+        return (
+          <FriendListRowShell
+            key={`custom-${topic.id}`}
+            className="font-medium"
+            active={activeToolbarRowId === topic.id}
+            onClick={() => onSelectCustomTopic?.(topic.id)}
+            label={
+              <span
+                className={`block min-w-0 truncate ${selectedTopicId === topic.id ? 'font-bold underline' : ''}`}
+              >
+                {topic.name}
+              </span>
+            }
+            trailing={
+              <FriendRowStatusZone rowId={topic.id} onActivate={activateToolbar} className="w-[10.5rem] py-0.5">
+                {!adminMode && topicItemHasDisplayContent(topic) ? (
+                  <DisplayDocumentButton onOpen={() => onSelectCustomTopic?.(topic.id)} />
+                ) : null}
+                {renderCustomTopicStatusOrToolbar(topic, orderIndex)}
+              </FriendRowStatusZone>
+            }
+          />
+        );
+      }
 
-  if (!hasFriendListRoot || !layout) return null;
+      const row = rowById[entry.id];
+      if (!row) return null;
+
+      if (row.indent) {
+        const parentId = findFriendParentIdInSectionOrder(sectionOrder, orderIndex, true);
+        if (parentId === 'friends-root' && !childrenOpen) return null;
+        if (parentId && parentId !== 'friends-root' && !(segmentOpen[parentId] ?? true)) {
+          return null;
+        }
+      }
+
+      const nestedIds = getNestedFriendIdsInSectionOrder(sectionOrder, orderIndex, rowById);
+      const hasNested = nestedIds.length > 0;
+      const isFriendsRoot = row.id === 'friends-root';
+      const peerOpen = segmentOpen[row.id] ?? true;
+      const rowLabel = isFriendsRoot ? t('club_website_list_of_friends') : row.label;
+
+      return (
+        <FriendListRowShell
+          key={`friend-${row.id}`}
+          size={row.indent ? 'nested' : 'default'}
+          active={activeToolbarRowId === row.id}
+          className={isFriendsRoot ? 'font-semibold' : ''}
+          onClick={() => {
+            if (isFriendsRoot) {
+              onSelectTopic('friends-root', t('club_website_list_of_friends'));
+              if (adminMode) {
+                onEditContent('friends-root', t('club_website_list_of_friends'));
+              }
+              return;
+            }
+            if (row.label.trim()) {
+              onSelectTopic(row.id, row.label);
+            }
+          }}
+          label={
+            <span
+              className={`block min-w-0 truncate ${selectedTopicId === row.id ? 'font-semibold underline' : ''}`}
+            >
+              {rowLabel || '\u00A0'}
+            </span>
+          }
+          trailing={
+            <FriendRowStatusZone rowId={row.id} onActivate={activateToolbar} className="w-[10.5rem] py-0.5">
+              {hasNested && activeToolbarRowId === row.id ? (
+                <FriendListExpandChevron
+                  open={isFriendsRoot ? childrenOpen : peerOpen}
+                  onToggle={() => {
+                    if (isFriendsRoot) {
+                      setChildrenOpen((open) => !open);
+                      return;
+                    }
+                    toggleSegmentOpen(row.id);
+                  }}
+                  compact={row.indent}
+                />
+              ) : null}
+              {!adminMode && itemById[row.id] && topicItemHasDisplayContent(itemById[row.id]) ? (
+                <DisplayDocumentButton
+                  onOpen={() => onSelectTopic(row.id, rowLabel)}
+                  compact={row.indent}
+                />
+              ) : null}
+              {renderStatusOrToolbar(row, row.indent ? 'sub' : 'root', row.indent, {
+                showDelete: !isFriendsRoot,
+                showDocument: row.indent || isFriendsRoot,
+                orderIndex,
+              })}
+            </FriendRowStatusZone>
+          }
+        />
+      );
+    });
+
+  const hasTopics = customTopics.length > 0 || (hasFriendListRoot && layout);
+
+  if (!hasTopics) return null;
 
   return (
     <div
       className="friends-list-block flex w-full flex-col"
       onMouseLeave={() => setActiveToolbarRowId(null)}
     >
+      {useUnifiedSectionOrder ? (
+        renderOrderedSectionBody()
+      ) : (
+        <>
+      {customTopics.map((topic, topicIndex) => (
+        <FriendListRowShell
+          key={topic.id}
+          className="font-medium"
+          active={activeToolbarRowId === topic.id}
+          onClick={() => onSelectCustomTopic?.(topic.id)}
+          label={
+            <span
+              className={`block min-w-0 truncate ${selectedTopicId === topic.id ? 'font-bold underline' : ''}`}
+            >
+              {topic.name}
+            </span>
+          }
+          trailing={
+            <FriendRowStatusZone rowId={topic.id} onActivate={activateToolbar} className="w-[10.5rem] py-0.5">
+              {!adminMode && topicItemHasDisplayContent(topic) ? (
+                <DisplayDocumentButton onOpen={() => onSelectCustomTopic?.(topic.id)} />
+              ) : null}
+              {renderCustomTopicStatusOrToolbar(topic, topicIndex)}
+            </FriendRowStatusZone>
+          }
+        />
+      ))}
+
+      {hasFriendListRoot && layout ? (
+        <>
       <FriendListRowShell
         className="font-semibold"
         active={activeToolbarRowId === 'friends-root'}
@@ -461,7 +655,7 @@ export default function ClubWebsiteFriendListSection({
           </span>
         }
         trailing={
-          <FriendRowStatusZone rowId="friends-root" onActivate={activateToolbar}>
+          <FriendRowStatusZone rowId="friends-root" onActivate={activateToolbar} className="w-[10.5rem] py-0.5">
             {layout.rootNested.length > 0 && activeToolbarRowId === 'friends-root' ? (
               <FriendListExpandChevron
                 open={childrenOpen}
@@ -507,6 +701,10 @@ export default function ClubWebsiteFriendListSection({
           </div>
         );
       })}
+        </>
+      ) : null}
+        </>
+      )}
       {settingsItem ? (
         <ClubWebsiteTopicSettingsFormModal
           item={friendItemToSettingsFormItem(settingsItem)}
@@ -529,6 +727,20 @@ export default function ClubWebsiteFriendListSection({
               onUpdateItem(settingsItem.id, clearClubWebsiteFriendItemContent());
               setSettingsItemId(null);
             }
+          }}
+        />
+      ) : null}
+      {settingsCustomTopic ? (
+        <ClubWebsiteTopicSettingsFormModal
+          item={topicToSettingsFormItem(settingsCustomTopic)}
+          open
+          variant="topic"
+          onClose={() => setSettingsCustomTopicId(null)}
+          onSave={(patch) => onUpdateCustomTopic?.(settingsCustomTopic.id, patch)}
+          onDeleteContent={() => {
+            if (!window.confirm(t('club_topic_delete_content_confirm'))) return;
+            onUpdateCustomTopic?.(settingsCustomTopic.id, clearClubWebsiteTopicContent());
+            setSettingsCustomTopicId(null);
           }}
         />
       ) : null}

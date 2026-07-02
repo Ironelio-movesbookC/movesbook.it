@@ -9,6 +9,8 @@ import {
   TimetableDaySchedule,
   TimetableSlot,
   addSlotToDay,
+  canAddSlotToDay,
+  constrainSlotRange,
   minutesToDisplayTime,
   removeSlotFromDay,
   slotColor,
@@ -28,6 +30,16 @@ function updateSlot(slots: TimetableSlot[], index: number, patch: Partial<Timeta
   return slots.map((slot, slotIndex) =>
     slotIndex === index ? syncSlotTimes({ ...slot, ...patch }) : slot
   );
+}
+
+function applySlotRangeChange(
+  slots: TimetableSlot[],
+  index: number,
+  rangeStart: number,
+  rangeEnd: number
+): TimetableSlot[] {
+  const constrained = constrainSlotRange(slots, index, rangeStart, rangeEnd);
+  return updateSlot(slots, index, constrained);
 }
 
 export default function TimetableDayRow({
@@ -70,7 +82,7 @@ export default function TimetableDayRow({
   const handleSlotRangeChange = (slotIndex: number, rangeStart: number, rangeEnd: number) => {
     onChange({
       ...day,
-      slots: updateSlot(day.slots, slotIndex, { rangeStart, rangeEnd })
+      slots: applySlotRangeChange(day.slots, slotIndex, rangeStart, rangeEnd)
     });
   };
 
@@ -116,9 +128,15 @@ export default function TimetableDayRow({
         <button
           type="button"
           onClick={handleAdd}
-          disabled={!day.enabled || day.slots.length >= MAX_SLOTS_PER_DAY}
+          disabled={!canAddSlotToDay(day)}
           className="rounded border border-gray-300 p-1 text-gray-700 hover:bg-gray-100 disabled:opacity-40"
-          title="Add time slot"
+          title={
+            canAddSlotToDay(day)
+              ? 'Add time slot'
+              : day.slots.length >= MAX_SLOTS_PER_DAY
+                ? 'Maximum 6 slots per day'
+                : 'No room for another slot — shorten or remove the last slot first'
+          }
         >
           <Plus className="h-4 w-4" />
         </button>

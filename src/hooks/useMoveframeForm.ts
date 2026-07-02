@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { getSportConfig, sportNeedsExerciseName, DISTANCE_BASED_SPORTS, AEROBIC_SPORTS, isSeriesBasedSport, isAerobicSport, getRepsLabel, isOfficialIndoorToolsLayoutSport } from '@/constants/moveframe.constants';
+import { getSportConfig, sportNeedsExerciseName, DISTANCE_BASED_SPORTS, AEROBIC_SPORTS, isSeriesBasedSport, isAerobicSport, getRepsLabel, isOfficialIndoorToolsLayoutSport, isSportSectionB, isSportSectionC, coerceSetTimePauseValue, isSetMetersRestType, coercePauseModeForRestType, getDefaultPauseMode } from '@/constants/moveframe.constants';
 import { computePyramidalRepsSeries, type PyramidalMode } from '@/utils/pyramidalReps';
 import { averageIndividualPlanPauseDisplay } from '@/utils/averagePauseDisplay';
 import { restTypeDbToDisplay } from '@/utils/restTypeDb';
@@ -246,6 +246,42 @@ export function useMoveframeForm({
     }
   }, [sport, planningMode]);
 
+  /** Section B: Set time + stopped mode only (no aerobic restart / speed-watts pause). */
+  useEffect(() => {
+    if (!isSportSectionB(sport)) return;
+    setRestType('Set time');
+    setPauseMode('stopped');
+    setPausePace('0');
+  }, [sport]);
+
+  /** Section C: Set time rest only; default to individual planning when series count is set. */
+  useEffect(() => {
+    if (!isSportSectionC(sport)) return;
+    setRestType('Set time');
+    if ((parseInt(repetitions, 10) || 0) > 0 && planningMode !== 'individual') {
+      setPlanningMode('individual');
+    }
+  }, [sport, repetitions, planningMode]);
+
+  /** Aerobic sports: official WORK/PAUSE grid is the only planning UI (≤12 reps). */
+  useEffect(() => {
+    if (!AEROBIC_SPORTS.includes(sport as any)) return;
+    const reps = parseInt(repetitions, 10) || 0;
+    if (reps > 0 && reps <= 12 && planningMode !== 'individual') {
+      setPlanningMode('individual');
+    }
+  }, [sport, repetitions, planningMode]);
+
+  /** Set meters: Mode must be Speed or Watts only (never Stopped). */
+  useEffect(() => {
+    if (!isSetMetersRestType(restType)) return;
+    const coerced = coercePauseModeForRestType(sport, restType, pauseMode);
+    if (pauseMode !== coerced) {
+      setPauseMode(coerced);
+      if (coerced !== 'stopped') setPausePace((p) => (p === '0' ? '' : p));
+    }
+  }, [sport, restType, pauseMode]);
+
   /** Align execution type with Reps | Time toggle (avoid legacy "Minutes" label from old dropdowns). */
   useEffect(() => {
     if (!isOfficialIndoorToolsLayoutSport(sport)) return;
@@ -351,22 +387,26 @@ export function useMoveframeForm({
    */
   const initializeIndividualPlans = useCallback((repsCount: number) => {
     const plans: IndividualRepetitionPlan[] = [];
-    const distanceBasedSports = ['SWIM', 'BIKE', 'RUN', 'ROWING', 'SKATE', 'SKI', 'SNOWBOARD'];
+    const isDistanceBased = DISTANCE_BASED_SPORTS.includes(sport as any);
     const isBodyBuilding = sport === 'BODY_BUILDING';
-    const isToolsBased = !distanceBasedSports.includes(sport) && !isBodyBuilding;
+    const isToolsBased = !isDistanceBased && !isBodyBuilding;
     
     for (let i = 0; i < repsCount; i++) {
       const plan: IndividualRepetitionPlan = {
         index: i + 1,
-        pause: pause || '20"',
+        pause: coerceSetTimePauseValue(sport, pause || '20"'),
         macroFinal: macroFinal || "0'",
         // Initialize new fields
         strokes: strokes || '',
         watts: watts || '',
         restType: restType || 'Set time',
         pauseMin: pauseMin || '',
-        pauseMode: pauseMode || '',
-        pausePace: pausePace || ''
+        pauseMode: coercePauseModeForRestType(sport, restType || 'Set time', pauseMode),
+        pausePace: isSetMetersRestType(restType) && pauseMode === 'stopped'
+          ? ''
+          : (pauseMode || 'stopped') === 'stopped'
+            ? '0'
+            : (pausePace || '')
       };
       
       if (isBodyBuilding) {
@@ -374,8 +414,8 @@ export function useMoveframeForm({
         plan.reps = reps || '12';
         plan.weight = ''; // Start blank, user can enter 0-9999
       } else if (isToolsBased) {
-        // TOOLS-BASED: reps per series + tools column (series count is repetitions, not plan.reps)
-        plan.reps = reps || '12';
+        // TOOLS-BASED (Section C): reps or time per series + tools column
+        plan.reps = repsType === 'Time' ? (time || '') : (reps || '12');
         plan.tools = '';
       } else {
         // DISTANCE-BASED: speed + duration (time) + optional work pace per lap
@@ -402,27 +442,59 @@ export function useMoveframeForm({
     setIndividualPlans(prev => {
       const updated = [...prev];
 
-      const bbRepsPyramid =
-        sport === 'BODY_BUILDING' &&
-        repsType === 'Reps' &&
-        field === 'reps' &&
-        pyramidalMode !== 'flat';
-
-      if (bbRepsPyramid && index === 0 && updated.length > 0) {
-        const base = parseInt(value, 10);
-        const baseNorm = Number.isNaN(base) ? 1 : base;
-        const series = computePyramidalRepsSeries(baseNorm, updated.length, pyramidalMode);
-        for (let i = 0; i < updated.length; i++) {
-          updated[i] = { ...updated[i], reps: String(series[i]) };
+      let nextValue = value;
+      if (field === 'pause') {
+        const rowRestType =
+          isSportSectionB(sport) || isSportSectionC(sport)
+            ? 'Set time'
+            : updated[index]?.restType || restType || 'Set time';
+        if (rowRestType === 'Set time') {
+          nextValue = coerceSetTimePauseValue(sport, value);
         }
-        return [...updated];
       }
 
       // Update the specified row - create a new object reference to force re-render
       if (updated[index]) {
+        const rowRestType =
+          field === 'restType'
+            ? value
+            : updated[index]?.restType || restType || 'Set time';
+
+        let patch: Partial<IndividualRepetitionPlan> = { [field]: nextValue };
+
+        if (field === 'restType') {
+          if (isSetMetersRestType(value)) {
+            patch = {
+              ...patch,
+              pause: '',
+              pauseMode: 'speed',
+              pausePace: '',
+            };
+          } else if (value === 'Set time') {
+            patch = {
+              ...patch,
+              pause: coerceSetTimePauseValue(sport, updated[index]?.pause),
+              pauseMode: 'stopped',
+              pausePace: '0',
+            };
+          } else {
+            patch = {
+              ...patch,
+              pauseMode: coercePauseModeForRestType(sport, value, updated[index]?.pauseMode),
+            };
+          }
+        }
+
+        if (field === 'pauseMode' && isSetMetersRestType(rowRestType)) {
+          patch.pauseMode = coercePauseModeForRestType(sport, rowRestType, value);
+          if (patch.pauseMode === 'speed') {
+            patch.pausePace = updated[index]?.pausePace === '0' ? '' : updated[index]?.pausePace;
+          }
+        }
+
         updated[index] = {
           ...updated[index],
-          [field]: value
+          ...patch,
         };
       }
 
@@ -430,11 +502,11 @@ export function useMoveframeForm({
       const copyFirstToRest =
         index === 0 &&
         updated.length > 1 &&
-        !(sport === 'BODY_BUILDING' && repsType === 'Reps' && field === 'reps' && pyramidalMode !== 'flat');
+        !(sport === 'BODY_BUILDING' && repsType === 'Reps' && field === 'reps');
 
       if (copyFirstToRest) {
         for (let i = 1; i < updated.length; i++) {
-          updated[i] = { ...updated[i], [field]: value };
+          updated[i] = { ...updated[i], [field]: nextValue };
         }
       }
 
@@ -443,16 +515,92 @@ export function useMoveframeForm({
     });
   };
 
+  /** Append one series row (max 12) for individual planning tables. */
+  const addIndividualPlanningRow = useCallback(() => {
+    const isDistanceBased = DISTANCE_BASED_SPORTS.includes(sport as any);
+    const isBodyBuilding = sport === 'BODY_BUILDING';
+    const isToolsBased = !isDistanceBased && !isBodyBuilding;
+
+    setIndividualPlans((prev) => {
+      if (prev.length >= 12) return prev;
+
+      const newIndex = prev.length + 1;
+      const newPlan: IndividualRepetitionPlan = {
+        index: newIndex,
+        pause: coerceSetTimePauseValue(sport, pause || '20"'),
+        macroFinal: macroFinal || "0'",
+        strokes: strokes || '',
+        watts: watts || '',
+        restType: restType || 'Set time',
+        pauseMin: pauseMin || '',
+        pauseMode: coercePauseModeForRestType(sport, restType || 'Set time', pauseMode),
+        pausePace: isSetMetersRestType(restType) && pauseMode === 'stopped'
+          ? ''
+          : (pauseMode || 'stopped') === 'stopped'
+            ? '0'
+            : (pausePace || ''),
+      };
+
+      if (isBodyBuilding) {
+        newPlan.reps = reps || '12';
+        newPlan.weight = '';
+      } else if (isToolsBased) {
+        newPlan.reps = repsType === 'Time' ? (time || '') : (reps || '12');
+        newPlan.tools = '';
+      } else {
+        newPlan.speed = speed || 'A2';
+        newPlan.workPace = pace || '';
+        newPlan.time = repsType === 'Time' ? (time || '') : (time || pace || '0h05\'30"');
+      }
+
+      setRepetitions(String(newIndex));
+      return [...prev, newPlan];
+    });
+  }, [
+    sport,
+    pause,
+    macroFinal,
+    strokes,
+    watts,
+    restType,
+    pauseMin,
+    pauseMode,
+    pausePace,
+    reps,
+    repsType,
+    time,
+    speed,
+    pace,
+  ]);
+
   const applyGlobalRepsBodyBuildingIndividualPlans = (repsStr: string) => {
     if (sport !== 'BODY_BUILDING') return;
     setIndividualPlans(prev => {
       if (prev.length === 0) return prev;
       const parsed = parseInt(repsStr, 10);
-      const base = Number.isNaN(parsed) ? 12 : parsed;
-      const series = computePyramidalRepsSeries(base, prev.length, pyramidalMode);
-      return prev.map((p, i) => ({ ...p, reps: String(series[i]) }));
+      const v = Number.isNaN(parsed) ? repsStr : String(parsed);
+      return prev.map((p) => ({ ...p, reps: v }));
     });
   };
+
+  /** Apply pyramidal formula across series — only call when the Pyramidal dropdown changes. */
+  const applyPyramidalFromDropdown = useCallback(
+    (nextMode: PyramidalMode) => {
+      setPyramidalMode(nextMode);
+      if (sport !== 'BODY_BUILDING' || planningMode !== 'individual' || repsType !== 'Reps') return;
+      setIndividualPlans((prev) => {
+        if (prev.length === 0) return prev;
+        let base = parseInt(prev[0]?.reps ?? '', 10);
+        if (Number.isNaN(base)) {
+          const fromGlobal = parseInt(reps ?? '', 10);
+          base = Number.isNaN(fromGlobal) ? 12 : fromGlobal;
+        }
+        const series = computePyramidalRepsSeries(base, prev.length, nextMode);
+        return prev.map((p, i) => ({ ...p, reps: String(series[i]) }));
+      });
+    },
+    [sport, planningMode, repsType, reps]
+  );
 
   /**
    * Validate form fields
@@ -479,23 +627,32 @@ export function useMoveframeForm({
     }
 
     if (type === 'STANDARD' && !manualMode) {
-      if (sport === 'BODY_BUILDING') {
+      if (isSportSectionB(sport)) {
         if (!muscularSector) newErrors.muscularSector = 'Muscular sector is required';
         if (!exercise) newErrors.exercise = 'Exercise is required';
-        // Reps is only required when execution type is "Reps", not when it's "Time/Minutes"
         if (repsType !== 'Time' && repsType !== 'Minutes' && !reps) {
           newErrors.reps = 'Reps is required';
         }
-        // For Body Building, repetitions = number of series (1-99)
-        if (!repetitions || parseInt(repetitions) < 1 || parseInt(repetitions) > 99) {
-          newErrors.repetitions = 'Number of series must be between 1 and 99';
+        const maxSeries = sport === 'BODY_BUILDING' ? 99 : 12;
+        const n = parseInt(repetitions, 10);
+        if (!repetitions || Number.isNaN(n) || n < 1 || n > maxSeries) {
+          newErrors.repetitions =
+            sport === 'BODY_BUILDING'
+              ? 'Number of series must be between 1 and 99'
+              : 'Number of series must be between 1 and 12';
         }
-      } else if (isOfficialIndoorToolsLayoutSport(sport)) {
-        if (!muscularSector) newErrors.muscularSector = 'Muscular sector is required';
-        if (!exercise) newErrors.exercise = 'Exercise is required';
+      } else if (isSportSectionC(sport)) {
+        if (!style) newErrors.style = 'Style is required';
+        if (!exercise) newErrors.exercise = 'Exercise/Drill name is required';
         const n = parseInt(repetitions, 10);
         if (!repetitions || Number.isNaN(n) || n < 1 || n > 12) {
           newErrors.repetitions = 'Number of series must be between 1 and 12';
+        }
+        if (repsType === 'Reps' && !reps) {
+          newErrors.reps = 'Reps per series is required';
+        }
+        if (repsType === 'Time' && !time) {
+          newErrors.time = 'Time is required';
         }
       } else if (sport === 'FREE_MOVES') {
         // FREE_MOVES validation
@@ -555,16 +712,39 @@ export function useMoveframeForm({
 
     const macroNorm = normalizeAsciiQuotes(macroFinal);
 
-    if (sport === 'BODY_BUILDING') {
-      const macroFinalText =
-        macroNorm && macroNorm !== "0'" ? ` M${macroFinal.trim()}` : '';
+    if (isSportSectionB(sport)) {
+      const macroFinalText = ` M${(macroFinal || "0'").trim()}`;
       const sectorText = muscularSector ? `${muscularSector} - ` : '';
       const exerciseText = exercise || 'Exercise';
       const setsCount = parseInt(repetitions) || 1;
-      const repsPerSet = repsType === 'Time' ? (time || '0\'') : (parseInt(reps) || 0);
-      const repsLabel = repsType === 'Time' ? time || '0\'' : getRepsLabel(sport);
-      const tempoText = speed ? ` ${speed}` : ''; // Speed of execution
-      // Format pause text based on rest type
+      const tempoText = speed ? ` ${speed}` : '';
+
+      let repsPerSetDisplay: string;
+      let unitSuffix: string;
+      if (repsType === 'Time') {
+        repsPerSetDisplay =
+          time ||
+          (planningMode === 'individual' && individualPlans.length > 0
+            ? individualPlans[0].reps
+            : '') ||
+          "0'";
+        unitSuffix = '';
+      } else {
+        const fromGlobal = parseInt(reps, 10);
+        const fromTable =
+          planningMode === 'individual' && individualPlans.length > 0
+            ? parseInt(individualPlans[0]?.reps ?? '', 10)
+            : NaN;
+        const n =
+          !Number.isNaN(fromGlobal) && fromGlobal > 0
+            ? fromGlobal
+            : !Number.isNaN(fromTable)
+              ? fromTable
+              : 0;
+        repsPerSetDisplay = String(n);
+        unitSuffix = ' reps';
+      }
+
       let pauseText = '';
       if (effectivePause) {
         if (restType === 'Set time') {
@@ -579,8 +759,7 @@ export function useMoveframeForm({
           pauseText = ` Pause ${effectivePause}`;
         }
       }
-      // Format: "Shoulders - Bench Press: 3 sets x 10 series Very slow Pause 30" M0'"
-      return `${sectorText}${exerciseText}: ${setsCount} sets x ${repsPerSet} ${repsLabel}${tempoText}${pauseText}${macroFinalText}`;
+      return `${sectorText}${exerciseText}: ${setsCount} sets x ${repsPerSetDisplay}${unitSuffix}${tempoText}${pauseText}${macroFinalText}`;
     }
 
     // Check if this is a distance-based sport
@@ -841,7 +1020,7 @@ export function useMoveframeForm({
       macroFinal,
       alarm: parseInt(alarm),
       sound,
-      reps: effectiveSport === 'BODY_BUILDING' ? parseInt(reps) : null,
+      reps: isSportSectionB(effectiveSport) ? parseInt(reps) : null,
       r1: effectiveSport === 'BIKE' ? r1 : null,
       r2: effectiveSport === 'BIKE' ? r2 : null,
       strokes: strokes || null,
@@ -849,10 +1028,7 @@ export function useMoveframeForm({
       pauseMin: pauseMin || null,
       pauseMode: pauseMode || null,
       pausePace: pausePace || null,
-      muscularSector:
-        effectiveSport === 'BODY_BUILDING' || isOfficialIndoorToolsLayoutSport(effectiveSport)
-          ? muscularSector
-          : null,
+      muscularSector: isSportSectionB(effectiveSport) ? muscularSector : null,
       exercise: sportNeedsExerciseName(effectiveSport) ? exercise : null,
       appliedTechnique: appliedTechnique || null, // Save technique for ANY sport (not just BODY_BUILDING)
       aerobicSeries: parseInt(aerobicSeries) || 1, // Series/Batteries/Groups for aerobic sports
@@ -1059,7 +1235,10 @@ export function useMoveframeForm({
               speed: lap.speed || '',
               time: lap.time || '',
               workPace: lap.pace || '',
-              pause: lap.pause || '20"',
+              pause: coerceSetTimePauseValue(
+                existingMoveframe.sport || 'SWIM',
+                lap.pause || loadedPause || '20"'
+              ),
               reps: lap.reps?.toString() || '',
               weight: lap.weight || '',
               tools: lap.tools || '',
@@ -1197,6 +1376,28 @@ export function useMoveframeForm({
     }
   }, [planningMode, repetitions, aerobicSeries, sport, canShowIndividualPlanning, initializeIndividualPlans, individualPlans.length]);
 
+  /** Section B/C + aerobic: coerce legacy text pauses (e.g. 0h00'00"3) to preset dropdown values. */
+  useEffect(() => {
+    if (planningMode !== 'individual' || individualPlans.length === 0) return;
+    const isSectionBC = isSportSectionB(sport) || isSportSectionC(sport);
+    const isDistanceBased = DISTANCE_BASED_SPORTS.includes(sport as any);
+    if (!isSectionBC && !isDistanceBased) return;
+    setIndividualPlans((prev) => {
+      let changed = false;
+      const next = prev.map((p) => {
+        const rowRestType = p.restType || 'Set time';
+        if (rowRestType !== 'Set time') return p;
+        const coerced = coerceSetTimePauseValue(sport, p.pause);
+        if ((p.pause ?? '') !== coerced) {
+          changed = true;
+          return { ...p, pause: coerced };
+        }
+        return p;
+      });
+      return changed ? next : prev;
+    });
+  }, [sport, planningMode, individualPlans.length]);
+
   /** Aerobic + distance: when switching execution Reps ↔ Time, re-seed row defaults from globals without resizing */
   const prevDistExecutionTypeRef = useRef<string | null>(null);
   useEffect(() => {
@@ -1222,23 +1423,6 @@ export function useMoveframeForm({
     canShowIndividualPlanning,
     initializeIndividualPlans
   ]);
-
-  /**
-   * Body-building: when pyramidal mode or series count changes, redistribute reps from series 1.
-   */
-  useEffect(() => {
-    if (sport !== 'BODY_BUILDING' || planningMode !== 'individual' || repsType !== 'Reps') return;
-    if (individualPlans.length === 0) return;
-    setIndividualPlans(prev => {
-      if (prev.length === 0) return prev;
-      let base = parseInt(prev[0]?.reps ?? '', 10);
-      if (Number.isNaN(base)) base = 12;
-      const series = computePyramidalRepsSeries(base, prev.length, pyramidalMode);
-      const next = prev.map((p, i) => ({ ...p, reps: String(series[i]) }));
-      if (next.every((p, i) => p.reps === prev[i].reps)) return prev;
-      return next;
-    });
-  }, [pyramidalMode, individualPlans.length, sport, planningMode, repsType]);
 
   /**
    * Reset distance field when manual input type changes
@@ -1379,6 +1563,8 @@ export function useMoveframeForm({
     generateDescription,
     initializeIndividualPlans,
     updateIndividualPlan,
-    applyGlobalRepsBodyBuildingIndividualPlans
+    applyGlobalRepsBodyBuildingIndividualPlans,
+    applyPyramidalFromDropdown,
+    addIndividualPlanningRow
   };
 }
