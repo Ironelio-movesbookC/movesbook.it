@@ -4,6 +4,8 @@ import { ensureBundledFoodDatabaseSeeded, ensureMissingFoodSections } from '@/li
 import { dbRowToNutrients } from '@/lib/foodDatabase.types';
 import { recipeTotalsToPer100 } from '@/lib/dietBuilderCatalog';
 import { normalizeToolsLanguage } from '@/utils/toolsProfileLanguage';
+import { getFoodDatabaseSource, isLiveFoodDatabaseSource } from '@/constants/foodDatabaseSources';
+import { getFoodDatabaseSourceState } from '@/lib/foodDatabaseSourceState';
 import type { FoodCatalogItem, FoodGroupId, FoodSectionId } from '@/data/nutritionFoodCatalog';
 
 function mapSectionToCatalogId(sectionName: string): FoodSectionId {
@@ -40,19 +42,38 @@ export async function GET(request: NextRequest) {
     await ensureBundledFoodDatabaseSeeded();
     await ensureMissingFoodSections();
 
+    const state = await getFoodDatabaseSourceState();
+    const sourceId = state.activeSourceId;
+    const source = getFoodDatabaseSource(sourceId);
+
+    if (source && isLiveFoodDatabaseSource(sourceId)) {
+      return NextResponse.json({
+        catalog: [],
+        sections: [],
+        language,
+        source: 'live',
+        activeSourceId: sourceId,
+        accessMode: 'live',
+        activeSourceLabel: source.label,
+        hint: 'Type at least 2 characters to search this live database.',
+      });
+    }
+
+    const localSourceId = source?.accessMode === 'import' ? sourceId : 'movesbook_bundled';
+
     const [items, recipes, sections] = await Promise.all([
       prisma.foodDatabaseItem.findMany({
-        where: { isActive: true },
+        where: { isActive: true, sourceId: localSourceId },
         include: { section: { select: { name: true, nameTranslations: true } } },
         orderBy: [{ section: { displayOrder: 'asc' } }, { name: 'asc' }],
       }),
       prisma.foodDatabaseRecipe.findMany({
-        where: { isActive: true },
+        where: { isActive: true, sourceId: localSourceId },
         include: { section: { select: { name: true, nameTranslations: true } } },
         orderBy: [{ section: { displayOrder: 'asc' } }, { name: 'asc' }],
       }),
       prisma.foodDatabaseSection.findMany({
-        where: { isActive: true },
+        where: { isActive: true, sourceId: localSourceId },
         orderBy: { displayOrder: 'asc' },
         select: { name: true, nameTranslations: true },
       }),
@@ -96,6 +117,9 @@ export async function GET(request: NextRequest) {
       })),
       language,
       source: 'database',
+      activeSourceId: localSourceId,
+      accessMode: 'import',
+      activeSourceLabel: source?.label ?? localSourceId,
     });
   } catch (e) {
     console.error('food-database catalog GET:', e);

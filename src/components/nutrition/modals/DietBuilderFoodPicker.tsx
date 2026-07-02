@@ -73,6 +73,9 @@ export default function DietBuilderFoodPicker({
 
   const [foodCatalog, setFoodCatalog] = useState<FoodCatalogItem[]>(FOOD_CATALOG);
   const [sectionMeta, setSectionMeta] = useState<{ name: string; nameTranslations?: string | null }[]>([]);
+  const [catalogAccessMode, setCatalogAccessMode] = useState<'import' | 'live'>('import');
+  const [liveResults, setLiveResults] = useState<FoodCatalogItem[]>([]);
+  const [liveSearching, setLiveSearching] = useState(false);
   const [section, setSection] = useState<string>(ALL_FOODS_RECIPES_SECTION);
   const [search, setSearch] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -89,11 +92,14 @@ export default function DietBuilderFoodPicker({
     fetch(`/api/food-database/catalog?lang=${encodeURIComponent(displayLanguage)}`)
       .then((r) => r.json())
       .then((data) => {
+        setCatalogAccessMode(data.accessMode === 'live' ? 'live' : 'import');
         if (Array.isArray(data.catalog) && data.catalog.length > 0) {
           setFoodCatalog(localizeCatalog(data.catalog, displayLanguage));
           setSectionMeta(Array.isArray(data.sections) ? data.sections : []);
         } else {
-          setFoodCatalog(localizeCatalog(FOOD_CATALOG, displayLanguage));
+          setFoodCatalog(
+            data.accessMode === 'live' ? [] : localizeCatalog(FOOD_CATALOG, displayLanguage)
+          );
           setSectionMeta([]);
         }
       })
@@ -103,15 +109,42 @@ export default function DietBuilderFoodPicker({
       });
   }, [displayLanguage]);
 
+  useEffect(() => {
+    if (catalogAccessMode !== 'live') {
+      setLiveResults([]);
+      return;
+    }
+    const q = search.trim();
+    if (q.length < 2) {
+      setLiveResults([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setLiveSearching(true);
+      fetch(`/api/food-database/search?q=${encodeURIComponent(q)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data.items)) {
+            setLiveResults(localizeCatalog(data.items, displayLanguage));
+          } else {
+            setLiveResults([]);
+          }
+        })
+        .catch(() => setLiveResults([]))
+        .finally(() => setLiveSearching(false));
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [catalogAccessMode, search, displayLanguage]);
+
   const catalogForPicker = useMemo(() => {
-    let items = foodCatalog;
+    let items = catalogAccessMode === 'live' ? liveResults : foodCatalog;
     if (foodsOnly) items = items.filter((item) => item.kind !== 'recipe');
     if (excludeIds.length > 0) {
       const excluded = new Set(excludeIds);
       items = items.filter((item) => !excluded.has(item.id));
     }
     return items;
-  }, [foodCatalog, foodsOnly, excludeIds]);
+  }, [foodCatalog, liveResults, catalogAccessMode, foodsOnly, excludeIds]);
 
   const sectionOptions = useMemo(
     () => buildSectionOptions(catalogForPicker, displayLanguage, sectionMeta),

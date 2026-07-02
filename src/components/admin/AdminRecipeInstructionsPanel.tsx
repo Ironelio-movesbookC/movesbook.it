@@ -35,6 +35,8 @@ interface AdminRecipeInstructionsPanelProps {
   onMessage?: (type: 'ok' | 'err', text: string) => void;
   /** When set, open the rich-text editor for this recipe once loaded. */
   openRecipeId?: string | null;
+  /** Bumped to re-open the editor for the same recipe (e.g. from Edit Recipe modal). */
+  openNonce?: number;
   onOpenRecipeHandled?: () => void;
 }
 
@@ -52,6 +54,7 @@ export default function AdminRecipeInstructionsPanel({
   displayLanguage = 'en',
   onMessage,
   openRecipeId = null,
+  openNonce = 0,
   onOpenRecipeHandled,
 }: AdminRecipeInstructionsPanelProps) {
   const [recipes, setRecipes] = useState<RecipeInstructionRow[]>([]);
@@ -133,7 +136,7 @@ export default function AdminRecipeInstructionsPanel({
     const index = recipes.findIndex((r) => r.id === openRecipeId);
     openEditor(recipe, index >= 0 ? index : 0);
     onOpenRecipeHandled?.();
-  }, [openRecipeId, loading, recipes, onOpenRecipeHandled, openEditor]);
+  }, [openRecipeId, openNonce, loading, recipes, onOpenRecipeHandled, openEditor]);
 
   const handleAutoTranslate = async () => {
     if (!hasRichTextContent(englishText)) {

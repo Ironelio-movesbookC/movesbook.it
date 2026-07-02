@@ -58,6 +58,8 @@ export interface FoodDatabaseImportPayload {
   foods?: FoodDatabaseImportFood[];
   recipes?: FoodDatabaseImportRecipe[];
   replaceExisting?: boolean;
+  /** Tag imported rows so multiple catalogs can coexist locally. */
+  sourceId?: string;
 }
 
 export function nutrientsToDb(data: FoodDatabaseNutrients) {

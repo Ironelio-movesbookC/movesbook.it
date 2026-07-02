@@ -32,6 +32,13 @@ import {
 } from '@/lib/foodDatabaseTranslations';
 import { dbRowToNutrients, resolveFoodImageUrl } from '@/lib/foodDatabase.types';
 import { NUTRIENT_DISPLAY_COLUMNS, formatNutrient, getNutrientColumnBgClass } from '@/utils/nutritionMealTotals';
+import {
+  getFoodDatabaseSource,
+  type FoodDatabaseSourceId,
+} from '@/constants/foodDatabaseSources';
+import AdminFoodDatabaseSourceMenu from '@/components/admin/AdminFoodDatabaseSourceMenu';
+import AdminFoodDatabaseSettings from '@/components/admin/AdminFoodDatabaseSettings';
+import AdminFoodDatabasePagination from '@/components/admin/AdminFoodDatabasePagination';
 
 interface FoodSection {
   id: string;
@@ -73,7 +80,14 @@ interface FoodRecipe {
   fats: number;
 }
 
-type TabId = 'foods' | 'recipes' | 'instructions';
+type TabId = 'foods' | 'recipes' | 'instructions' | 'settings';
+
+type SourceLoadOpts = {
+  sourceId?: FoodDatabaseSourceId;
+  accessMode?: 'import' | 'live';
+  page?: number;
+  pageSize?: number;
+};
 
 function fmt(n: number) {
   return n % 1 === 0 ? n.toFixed(0) : n.toFixed(2);
@@ -96,6 +110,38 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
   const [showImages, setShowImages] = useState(false);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [importingSourceId, setImportingSourceId] = useState<FoodDatabaseSourceId | null>(null);
+  const [selectingSource, setSelectingSource] = useState(false);
+  const [activeSourceId, setActiveSourceId] = useState<FoodDatabaseSourceId>('movesbook_bundled');
+  const [activeSourceLabel, setActiveSourceLabel] = useState<string | null>(null);
+  const [activeAccessMode, setActiveAccessMode] = useState<'import' | 'live'>('import');
+  const [catalogSources, setCatalogSources] = useState<
+    {
+      id: FoodDatabaseSourceId;
+      label: string;
+      description: string;
+      accessMode: 'import' | 'live';
+      configured?: boolean;
+      missingEnv?: string[];
+      importStatus?: {
+        imported: boolean;
+        importedAt: string | null;
+        foodCount: number;
+        recipeCount: number;
+        summary: string | null;
+      };
+    }[]
+  >([]);
+  const [sourceStatuses, setSourceStatuses] = useState<
+    Record<string, { configured: boolean; missingEnv?: string[]; importStatus?: { imported: boolean; foodCount: number; recipeCount: number } }>
+  >({});
+  const [liveSearchQuery, setLiveSearchQuery] = useState('');
+  const [foodsPage, setFoodsPage] = useState(1);
+  const [foodsPageSize, setFoodsPageSize] = useState(50);
+  const [foodsTotal, setFoodsTotal] = useState(0);
+  const [recipesPage, setRecipesPage] = useState(1);
+  const [recipesPageSize, setRecipesPageSize] = useState(25);
+  const [recipesTotal, setRecipesTotal] = useState(0);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [viewItem, setViewItem] = useState<FoodItem | null>(null);
   const [editItem, setEditItem] = useState<FoodEditItem | null>(null);
@@ -105,53 +151,123 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
   const [foodLangTarget, setFoodLangTarget] = useState<FoodItem | null>(null);
   const [savingLang, setSavingLang] = useState(false);
   const [pendingInstructionsRecipeId, setPendingInstructionsRecipeId] = useState<string | null>(null);
+  const [instructionsOpenNonce, setInstructionsOpenNonce] = useState(0);
   const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(null);
   const [expandedRecipeTab, setExpandedRecipeTab] = useState<'ingredients' | 'preparation'>('ingredients');
+  const [expandedRecipeCombined, setExpandedRecipeCombined] = useState(false);
   const [allFoodItems, setAllFoodItems] = useState<FoodItem[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const loadSections = useCallback(async () => {
-    const res = await fetch('/api/admin/food-database/sections', { headers: getAuthHeaders() });
+  const loadSections = useCallback(async (opts?: SourceLoadOpts) => {
+    const sid = opts?.sourceId ?? activeSourceId;
+    const mode = opts?.accessMode ?? activeAccessMode;
+    const params = new URLSearchParams();
+    if (mode !== 'live') params.set('sourceId', sid);
+    const res = await fetch(`/api/admin/food-database/sections?${params}`, { headers: getAuthHeaders() });
     const data = await res.json();
     if (res.ok) setSections(data.sections || []);
-  }, []);
+  }, [activeSourceId, activeAccessMode]);
 
-  const loadItems = useCallback(async () => {
+  const loadItems = useCallback(async (opts?: SourceLoadOpts) => {
+    const sid = opts?.sourceId ?? activeSourceId;
+    const mode = opts?.accessMode ?? activeAccessMode;
+    const page = opts?.page ?? foodsPage;
+    const pageSize = opts?.pageSize ?? foodsPageSize;
     const params = new URLSearchParams();
     if (activeSectionFilter !== 'all') params.set('sectionId', activeSectionFilter);
+    params.set('sourceId', sid);
+    params.set('page', String(page));
+    params.set('pageSize', String(pageSize));
+    if (mode === 'live' && liveSearchQuery.trim().length >= 2) {
+      params.set('q', liveSearchQuery.trim());
+    }
     const res = await fetch(`/api/admin/food-database/items?${params}`, { headers: getAuthHeaders() });
     const data = await res.json();
-    if (res.ok) setItems(data.items || []);
-  }, [activeSectionFilter]);
+    if (res.ok) {
+      setItems(data.items || []);
+      setFoodsTotal(data.total ?? 0);
+    }
+  }, [activeSectionFilter, activeSourceId, activeAccessMode, liveSearchQuery, foodsPage, foodsPageSize]);
 
-  const loadRecipes = useCallback(async () => {
+  const loadRecipes = useCallback(async (opts?: SourceLoadOpts) => {
+    const sid = opts?.sourceId ?? activeSourceId;
+    const page = opts?.page ?? recipesPage;
+    const pageSize = opts?.pageSize ?? recipesPageSize;
     const params = new URLSearchParams();
     if (activeSectionFilter !== 'all') params.set('sectionId', activeSectionFilter);
+    params.set('sourceId', sid);
+    params.set('page', String(page));
+    params.set('pageSize', String(pageSize));
     const res = await fetch(`/api/admin/food-database/recipes?${params}`, { headers: getAuthHeaders() });
     const data = await res.json();
-    if (res.ok) setRecipes(data.recipes || []);
-  }, [activeSectionFilter]);
+    if (res.ok) {
+      setRecipes(data.recipes || []);
+      setRecipesTotal(data.total ?? 0);
+    }
+  }, [activeSectionFilter, activeSourceId, recipesPage, recipesPageSize]);
 
-  const loadAllFoodItems = useCallback(async () => {
-    const res = await fetch('/api/admin/food-database/items', { headers: getAuthHeaders() });
+  const loadAllFoodItems = useCallback(async (opts?: SourceLoadOpts) => {
+    const sid = opts?.sourceId ?? activeSourceId;
+    const params = new URLSearchParams();
+    params.set('sourceId', sid);
+    params.set('all', '1');
+    const res = await fetch(`/api/admin/food-database/items?${params}`, { headers: getAuthHeaders() });
     const data = await res.json();
     if (res.ok) setAllFoodItems(data.items || []);
-  }, []);
+  }, [activeSourceId]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (opts?: SourceLoadOpts) => {
     setLoading(true);
     try {
-      await loadSections();
-      await loadItems();
-      await loadRecipes();
+      await loadSections(opts);
+      await loadItems(opts);
+      await loadRecipes(opts);
     } finally {
       setLoading(false);
     }
   }, [loadSections, loadItems, loadRecipes]);
 
+  const loadSourceCatalog = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/food-database/sources', { headers: getAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok) return null;
+      setActiveSourceId(data.activeSourceId || 'movesbook_bundled');
+      setActiveSourceLabel(data.activeSourceLabel || null);
+      setActiveAccessMode(data.activeSource?.accessMode || 'import');
+      setCatalogSources(data.sources || []);
+      const map: Record<string, { configured: boolean; missingEnv?: string[]; importStatus?: { imported: boolean; foodCount: number; recipeCount: number } }> = {};
+      for (const source of data.sources || []) {
+        map[source.id] = {
+          configured: source.configured,
+          missingEnv: source.missingEnv,
+          importStatus: source.importStatus,
+        };
+      }
+      setSourceStatuses(map);
+      return data as {
+        activeSourceId: FoodDatabaseSourceId;
+        activeSource?: { accessMode?: 'import' | 'live' };
+        activeSourceLabel?: string;
+      };
+    } catch {
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let cancelled = false;
+    (async () => {
+      const catalog = await loadSourceCatalog();
+      if (cancelled) return;
+      const sid = (catalog?.activeSourceId || 'movesbook_bundled') as FoodDatabaseSourceId;
+      const mode = catalog?.activeSource?.accessMode || 'import';
+      await refresh({ sourceId: sid, accessMode: mode });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadSourceCatalog, refresh]);
 
   useEffect(() => {
     if (tab === 'foods') loadItems();
@@ -159,7 +275,36 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
       loadRecipes();
       loadAllFoodItems();
     }
-  }, [tab, activeSectionFilter, loadItems, loadRecipes, loadAllFoodItems]);
+  }, [
+    tab,
+    activeSectionFilter,
+    activeSourceId,
+    activeAccessMode,
+    liveSearchQuery,
+    foodsPage,
+    foodsPageSize,
+    recipesPage,
+    recipesPageSize,
+    loadItems,
+    loadRecipes,
+    loadAllFoodItems,
+  ]);
+
+  useEffect(() => {
+    setFoodsPage(1);
+    setRecipesPage(1);
+  }, [activeSourceId, activeAccessMode, activeSectionFilter]);
+
+  useEffect(() => {
+    setFoodsPage(1);
+  }, [liveSearchQuery]);
+
+  useEffect(() => {
+    if (activeAccessMode === 'live' && tab === 'foods') {
+      const timer = window.setTimeout(() => loadItems(), 300);
+      return () => window.clearTimeout(timer);
+    }
+  }, [liveSearchQuery, activeAccessMode, tab, loadItems]);
 
   const foodLanguages = useMemo(() => getSupportedFoodLanguages(), []);
 
@@ -188,29 +333,96 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
   const handleProceed = () => {
     setActiveSectionFilter(sectionFilter);
     setDisplayLanguage(language);
+    setFoodsPage(1);
+    setRecipesPage(1);
+  };
+
+  const handleSelectSource = async (sourceId: FoodDatabaseSourceId) => {
+    setSelectingSource(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/admin/food-database/sources', {
+        method: 'PUT',
+        headers: getJsonAuthHeaders(),
+        body: JSON.stringify({ sourceId }),
+      });
+      const data = await res.json();
+      if (res.status === 409) {
+        setMessage({ type: 'err', text: data.details || data.error });
+        setTab('settings');
+        return;
+      }
+      if (!res.ok) throw new Error(data.details || data.error || 'Select failed');
+
+      setActiveSourceId(data.activeSourceId);
+      setActiveSourceLabel(data.activeSourceLabel);
+      setActiveAccessMode(data.activeSource?.accessMode || 'import');
+      setLiveSearchQuery('');
+      setMessage({
+        type: 'ok',
+        text:
+          data.activeSource?.accessMode === 'live'
+            ? `Now reading ${data.activeSourceLabel} live — use search to find foods.`
+            : `Now viewing ${data.activeSourceLabel} from local storage.`,
+      });
+      await refresh({
+        sourceId: data.activeSourceId,
+        accessMode: data.activeSource?.accessMode || 'import',
+      });
+    } catch (e: unknown) {
+      setMessage({ type: 'err', text: e instanceof Error ? e.message : 'Select failed' });
+    } finally {
+      setSelectingSource(false);
+    }
+  };
+
+  const handleImportSource = async (sourceId: FoodDatabaseSourceId, replaceExisting: boolean) => {
+    if (replaceExisting && !confirm('Replace all foods/recipes previously imported from this source?')) {
+      return;
+    }
+
+    setImporting(true);
+    setImportingSourceId(sourceId);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/admin/food-database/sources', {
+        method: 'POST',
+        headers: getJsonAuthHeaders(),
+        body: JSON.stringify({ sourceId, replaceExisting }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.details || data.error || 'Import failed');
+
+      const importedId = (data.activeSourceId || data.sourceId) as FoodDatabaseSourceId;
+      const importedSource = data.activeSource ?? getFoodDatabaseSource(importedId);
+
+      setActiveSourceId(importedId);
+      setActiveSourceLabel(data.activeSourceLabel ?? importedSource?.label ?? importedId);
+      setActiveAccessMode(importedSource?.accessMode ?? 'import');
+      setActiveSectionFilter('all');
+      setSectionFilter('all');
+      setFoodsPage(1);
+      setTab('foods');
+
+      setMessage({
+        type: 'ok',
+        text:
+          data.message +
+          (data.warnings?.length ? ` (${data.warnings.join(' ')})` : '') +
+          ' — now viewing this database.',
+      });
+      await loadSourceCatalog();
+      await refresh({ sourceId: importedId, accessMode: importedSource?.accessMode ?? 'import' });
+    } catch (e: unknown) {
+      setMessage({ type: 'err', text: e instanceof Error ? e.message : 'Import failed' });
+    } finally {
+      setImporting(false);
+      setImportingSourceId(null);
+    }
   };
 
   const handleImportBundled = async (replace = false) => {
-    setImporting(true);
-    setMessage(null);
-    try {
-      const res = await fetch('/api/admin/food-database/import', {
-        method: 'POST',
-        headers: getJsonAuthHeaders(),
-        body: JSON.stringify({ source: 'bundled', replaceExisting: replace }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Import failed');
-      setMessage({
-        type: 'ok',
-        text: `Imported: ${data.result.foodsCreated} foods, ${data.result.recipesCreated} recipes, ${data.result.sectionsCreated} sections.`,
-      });
-      await refresh();
-    } catch (e: any) {
-      setMessage({ type: 'err', text: e.message || 'Import failed' });
-    } finally {
-      setImporting(false);
-    }
+    await handleImportSource('movesbook_bundled', replace);
   };
 
   const handleFileImport = async (file: File) => {
@@ -365,23 +577,68 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
     }
   };
 
-  const openPreparationEditor = useCallback((recipeId: string) => {
-    setEditRecipe(null);
-    setPendingInstructionsRecipeId(recipeId);
-    setTab('instructions');
-  }, []);
+  const openPreparationEditor = useCallback(
+    async (recipeId: string) => {
+      if (editRecipe?.id === recipeId) {
+        const payload = recipeToSavePayload(editRecipe);
+        try {
+          await fetch(`/api/admin/food-database/recipes/${recipeId}`, {
+            method: 'PUT',
+            headers: getJsonAuthHeaders(),
+            body: JSON.stringify(payload),
+          });
+          await loadRecipes();
+        } catch {
+          // Open editor even if sync fails — user can still edit saved content
+        }
+      }
+
+      setEditRecipe(null);
+      setExpandedRecipeId(null);
+      setTab('instructions');
+      setPendingInstructionsRecipeId(null);
+      setInstructionsOpenNonce((n) => n + 1);
+      window.setTimeout(() => {
+        setPendingInstructionsRecipeId(recipeId);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }, 0);
+    },
+    [editRecipe, loadRecipes]
+  );
 
   const toggleRecipeDetails = useCallback(
-    (recipeId: string, tab: 'ingredients' | 'preparation') => {
-      if (expandedRecipeId === recipeId && expandedRecipeTab === tab) {
+    (recipeId: string, mode: 'title' | 'preparation') => {
+      if (mode === 'title') {
+        if (expandedRecipeId === recipeId && expandedRecipeCombined) {
+          setExpandedRecipeId(null);
+          setExpandedRecipeCombined(false);
+          return;
+        }
+        setExpandedRecipeId(recipeId);
+        setExpandedRecipeTab('ingredients');
+        setExpandedRecipeCombined(true);
+        return;
+      }
+
+      if (
+        expandedRecipeId === recipeId &&
+        expandedRecipeTab === 'preparation' &&
+        !expandedRecipeCombined
+      ) {
         setExpandedRecipeId(null);
         return;
       }
       setExpandedRecipeId(recipeId);
-      setExpandedRecipeTab(tab);
+      setExpandedRecipeTab('preparation');
+      setExpandedRecipeCombined(false);
     },
-    [expandedRecipeId, expandedRecipeTab]
+    [expandedRecipeId, expandedRecipeTab, expandedRecipeCombined]
   );
+
+  const handleExpandedTabChange = useCallback((tab: 'ingredients' | 'preparation') => {
+    setExpandedRecipeTab(tab);
+    setExpandedRecipeCombined(false);
+  }, []);
 
   const handleSaveRecipe = async () => {
     if (!editRecipe) return;
@@ -431,27 +688,55 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
       )}
 
       <div className="flex-1 bg-white p-4 sm:p-6 overflow-auto w-full min-w-0">
+        <AdminFoodDatabaseSourceMenu
+          activeSourceId={activeSourceId}
+          sourceStatuses={sourceStatuses}
+          selecting={selectingSource}
+          importingId={importingSourceId}
+          onSelect={handleSelectSource}
+          onImport={(sourceId) => handleImportSource(sourceId, false)}
+        />
+
+        {activeSourceLabel && (
+          <p className="mb-4 text-sm text-slate-600">
+            Active database: <span className="font-semibold text-indigo-800">{activeSourceLabel}</span>
+            {activeAccessMode === 'live' && (
+              <span className="ml-2 text-xs rounded bg-emerald-100 text-emerald-800 px-2 py-0.5 font-medium">
+                Live read
+              </span>
+            )}
+          </p>
+        )}
+
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-semibold text-gray-800">
-              {tab === 'foods' ? 'Food Items' : tab === 'recipes' ? 'Recipes' : 'Recipe Instructions'}
+              {tab === 'foods'
+                ? 'Food Items'
+                : tab === 'recipes'
+                  ? 'Recipes'
+                  : tab === 'instructions'
+                    ? 'Recipe Instructions'
+                    : 'Food & Recipes Settings'}
             </span>
 
-            <div className="relative">
-              <select
-                value={sectionFilter}
-                onChange={(e) => setSectionFilter(e.target.value)}
-                className="appearance-none border border-gray-300 bg-white px-3 py-1.5 pr-8 text-sm rounded-sm min-w-[160px]"
-              >
-                <option value="all">Select Food Section</option>
-                {sections.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-gray-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
+            {activeAccessMode !== 'live' && (
+              <div className="relative">
+                <select
+                  value={sectionFilter}
+                  onChange={(e) => setSectionFilter(e.target.value)}
+                  className="appearance-none border border-gray-300 bg-white px-3 py-1.5 pr-8 text-sm rounded-sm min-w-[160px]"
+                >
+                  <option value="all">Select Food Section</option>
+                  {sections.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-gray-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+            )}
 
             <div className="relative">
               <select
@@ -520,7 +805,7 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
             />
           </div>
 
-          {tab !== 'instructions' && (
+          {tab !== 'instructions' && tab !== 'settings' && activeAccessMode !== 'live' && (
             <button
               type="button"
               className="bg-black text-white px-4 py-1.5 text-sm font-semibold rounded-sm flex items-center gap-1"
@@ -549,7 +834,7 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
         </div>
 
         <div className="flex gap-2 mb-4 border-b">
-            {(['foods', 'recipes', 'instructions'] as TabId[]).map((t) => (
+            {(['foods', 'recipes', 'instructions', 'settings'] as TabId[]).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -558,7 +843,13 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
                   tab === t ? 'border-purple-600 text-purple-700' : 'border-transparent text-gray-500'
                 }`}
               >
-                {t === 'foods' ? 'Food Items' : t === 'recipes' ? 'Recipes' : 'Recipe Instructions'}
+                {t === 'foods'
+                  ? 'Food Items'
+                  : t === 'recipes'
+                    ? 'Recipes'
+                    : t === 'instructions'
+                      ? 'Recipe Instructions'
+                      : 'Settings'}
               </button>
             ))}
         </div>
@@ -590,33 +881,78 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
           )}
         </p>
 
-        {loading && tab !== 'instructions' ? (
+        {loading && tab !== 'instructions' && tab !== 'settings' ? (
           <p className="text-gray-500 text-sm">Loading…</p>
+        ) : tab === 'settings' ? (
+          <AdminFoodDatabaseSettings
+            sources={catalogSources}
+            importingId={importingSourceId}
+            onImport={handleImportSource}
+            onImportBundled={handleImportBundled}
+          />
         ) : tab === 'instructions' ? (
           <AdminRecipeInstructionsPanel
             sections={sections}
             displayLanguage={displayLanguage}
             onMessage={(type, text) => setMessage({ type, text })}
             openRecipeId={pendingInstructionsRecipeId}
+            openNonce={instructionsOpenNonce}
             onOpenRecipeHandled={() => setPendingInstructionsRecipeId(null)}
           />
         ) : tab === 'foods' ? (
-          filteredItems.length === 0 ? (
+          <div>
+            {activeAccessMode === 'live' && (
+              <div className="mb-4 flex flex-wrap items-center gap-3">
+                <label className="flex flex-1 min-w-[240px] flex-col gap-1 text-xs font-medium text-gray-600">
+                  Search live database
+                  <input
+                    type="search"
+                    value={liveSearchQuery}
+                    onChange={(e) => setLiveSearchQuery(e.target.value)}
+                    placeholder="Type at least 2 characters…"
+                    className="border border-gray-300 rounded-sm px-3 py-2 text-sm"
+                  />
+                </label>
+                <p className="text-xs text-emerald-700 self-end pb-2">
+                  Results are read directly from {activeSourceLabel} — not stored locally.
+                </p>
+              </div>
+            )}
+            {filteredItems.length === 0 ? (
             <div className="text-center py-16 border border-dashed border-gray-300 rounded-lg">
-              <p className="text-gray-600 mb-4">No food items in the database yet.</p>
-              <button
-                type="button"
-                disabled={importing}
-                onClick={() => handleImportBundled(true)}
-                className="bg-purple-600 text-white px-5 py-2 rounded text-sm font-semibold hover:bg-purple-700"
-              >
-                Import bundled database
-              </button>
+              <p className="text-gray-600 mb-4">
+                {activeAccessMode === 'live'
+                  ? liveSearchQuery.trim().length < 2
+                    ? 'Enter a search term to query this live database.'
+                    : 'No foods matched your search.'
+                  : 'No food items for this database yet.'}
+              </p>
+              {activeAccessMode !== 'live' && (
+                <button
+                  type="button"
+                  disabled={importing}
+                  onClick={() => handleImportSource(activeSourceId, false)}
+                  className="bg-purple-600 text-white px-5 py-2 rounded text-sm font-semibold hover:bg-purple-700 disabled:opacity-50"
+                >
+                  {importingSourceId === activeSourceId ? 'Importing…' : 'Import this database'}
+                </button>
+              )}
             </div>
           ) : (
-            <div className="w-full min-w-0 overflow-x-auto border border-gray-300">
+            <div className="w-full min-w-0 border border-gray-300 flex flex-col">
+              <AdminFoodDatabasePagination
+                page={foodsPage}
+                pageSize={foodsPageSize}
+                total={foodsTotal}
+                onPageChange={setFoodsPage}
+                onPageSizeChange={(size) => {
+                  setFoodsPageSize(size);
+                  setFoodsPage(1);
+                }}
+              />
+              <div className="w-full min-w-0 overflow-auto max-h-[min(65vh,720px)]">
               <table className="text-sm border-collapse w-max">
-                <thead>
+                <thead className="sticky top-0 z-[3]">
                   <tr className="border-b border-gray-300">
                     <th className="border border-gray-300 px-2 py-2 text-left font-bold bg-white sticky left-0 z-[2]">Id</th>
                     {showImages && (
@@ -678,10 +1014,16 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
                       <td className="border border-gray-300 px-2 py-1.5 bg-white sticky right-0 z-[1] shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.08)]">
                         <div className="flex flex-wrap justify-center gap-1">
                           <ActionBtn label="View" icon={Eye} onClick={() => setViewItem(item)} />
-                          <ActionBtn label="Edit" icon={Edit2} onClick={() => openEdit(item)} />
-                          <ActionBtn label="Delete" icon={Trash2} onClick={() => handleDelete(item)} danger />
-                          <ActionBtn label="Languages" icon={Languages} onClick={() => openFoodLanguages(item)} />
-                          <ActionBtn label="Nutrients" icon={List} onClick={() => setViewItem(item)} />
+                          {item.isLive ? (
+                            <span className="text-[10px] text-emerald-700 font-medium px-1">Read-only</span>
+                          ) : (
+                            <>
+                              <ActionBtn label="Edit" icon={Edit2} onClick={() => openEdit(item)} />
+                              <ActionBtn label="Delete" icon={Trash2} onClick={() => handleDelete(item)} danger />
+                              <ActionBtn label="Languages" icon={Languages} onClick={() => openFoodLanguages(item)} />
+                              <ActionBtn label="Nutrients" icon={List} onClick={() => setViewItem(item)} />
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -689,8 +1031,20 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
                   })}
                 </tbody>
               </table>
+              </div>
+              <AdminFoodDatabasePagination
+                page={foodsPage}
+                pageSize={foodsPageSize}
+                total={foodsTotal}
+                onPageChange={setFoodsPage}
+                onPageSizeChange={(size) => {
+                  setFoodsPageSize(size);
+                  setFoodsPage(1);
+                }}
+              />
             </div>
-          )
+          )}
+          </div>
         ) : filteredRecipes.length === 0 ? (
           <div className="text-center py-12 text-gray-500 border border-dashed rounded-lg space-y-3">
             <p>No recipes yet. Import the bundled database or add a new recipe.</p>
@@ -703,9 +1057,20 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto border border-gray-300">
+          <div className="border border-gray-300 flex flex-col">
+            <AdminFoodDatabasePagination
+              page={recipesPage}
+              pageSize={recipesPageSize}
+              total={recipesTotal}
+              onPageChange={setRecipesPage}
+              onPageSizeChange={(size) => {
+                setRecipesPageSize(size);
+                setRecipesPage(1);
+              }}
+            />
+          <div className="overflow-x-auto overflow-y-auto max-h-[min(65vh,720px)]">
             <table className="w-full text-sm border-collapse min-w-[800px]">
-              <thead>
+              <thead className="sticky top-0 z-[2] bg-gray-100">
                 <tr className="bg-gray-100">
                   <th className="border px-2 py-2 text-left">Id</th>
                   <th className="border px-2 py-2 text-left">Section</th>
@@ -727,7 +1092,7 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
                         <td className="border px-2 py-1.5" title={r.name}>
                           <button
                             type="button"
-                            onClick={() => toggleRecipeDetails(r.id, 'ingredients')}
+                            onClick={() => toggleRecipeDetails(r.id, 'title')}
                             className={`font-medium text-left w-full ${
                               isExpanded
                                 ? 'text-[#0066cc] underline'
@@ -763,7 +1128,8 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
                               description={r.description}
                               displayLanguage={displayLanguage}
                               activeTab={expandedRecipeTab}
-                              onTabChange={setExpandedRecipeTab}
+                              onTabChange={handleExpandedTabChange}
+                              showCombined={expandedRecipeCombined}
                               onOpenPreparation={() => openPreparationEditor(r.id)}
                             />
                           </td>
@@ -774,6 +1140,17 @@ export default function AdminFoodDatabasePanel({ embedded = false }: AdminFoodDa
                 })}
               </tbody>
             </table>
+          </div>
+            <AdminFoodDatabasePagination
+              page={recipesPage}
+              pageSize={recipesPageSize}
+              total={recipesTotal}
+              onPageChange={setRecipesPage}
+              onPageSizeChange={(size) => {
+                setRecipesPageSize(size);
+                setRecipesPage(1);
+              }}
+            />
           </div>
         )}
       </div>
