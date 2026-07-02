@@ -12,10 +12,12 @@ import {
   fetchFormOptions,
   fetchPaymentsForRecord,
   fetchPurchase,
+  updatePurchase,
   type ServiceSaleFormOptions,
   type ServiceSalePayment,
   type ServiceSalePurchase,
 } from '@/lib/club/serviceSaleClient';
+import { updateInstallment } from '@/lib/club/archives/clubArchiveClient';
 
 export default function PaymentDetailPage() {
   const params = useParams();
@@ -48,39 +50,51 @@ export default function PaymentDetailPage() {
     load();
   }, [load]);
 
+  async function handleAddToRecordTotal(additionalAmount: number): Promise<void> {
+    if (!purchase) return;
+    const newTotal = purchase.value + additionalAmount;
+    await updatePurchase(id, { totalAmount: newTotal });
+    setPurchase((prev) => prev ? { ...prev, value: newTotal, rest: prev.rest + additionalAmount } : prev);
+  }
+
   async function handleSubmit(values: ServicePaymentSubmitValues) {
     setError('');
     setSuccess('');
 
-    if (purchase && values.amountPaid > purchase.rest) {
-      setError('Payment exceeds remaining balance.');
-      return;
-    }
-
     setSaving(true);
     try {
-      await addPayment(id, {
-        amountPaid: values.amountPaid,
-        paymentDate: values.paymentDate,
-        description: values.description,
-        payMode: values.payMode,
-        paymentType: values.paymentType,
-        taxDoc: values.taxDoc,
-        operatorId: values.operatorId,
-        operatorPassword: values.operatorPassword,
-        debtTotal: values.debtTotal,
-        debtExpire: values.debtExpire,
-        payWith: values.payWith,
-        taxDocument: values.taxDocument,
-        createReceipt: values.createReceipt,
-        receiptNumber: values.receiptNumber,
-        receiptAnnotations: values.description,
-      });
+      const totalDistributed = values.distributions.reduce((s, d) => s + d.amount, 0);
+      if (totalDistributed <= 0) {
+        setError('No amount to distribute.');
+        return;
+      }
+
+      for (const dist of values.distributions) {
+        if (dist.amount <= 0) continue;
+        await addPayment(id, {
+          amountPaid: dist.amount,
+          paymentDate: values.paymentDate,
+          description: values.description,
+          payMode: values.payMode,
+          paymentType: values.paymentType,
+          taxDoc: values.taxDoc,
+          operatorId: values.operatorId,
+          operatorPassword: values.operatorPassword,
+          debtTotal: values.debtTotal,
+          debtExpire: values.debtExpire,
+          payWith: values.payWith,
+          taxDocument: values.taxDocument,
+          createReceipt: values.createReceipt,
+          receiptNumber: values.receiptNumber,
+          receiptAnnotations: values.description,
+        });
+        await updateInstallment('service_sale', id, dist.installmentId, {
+          paid: dist.newPaid,
+          balance: dist.newBalance,
+        });
+      }
       setSuccess('Payment saved successfully.');
       await load();
-      if (purchase && values.amountPaid >= purchase.rest) {
-        setTimeout(() => router.push('/clubs/archive_service_list'), 1200);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
     } finally {
@@ -112,6 +126,7 @@ export default function PaymentDetailPage() {
               success={success}
               onSubmit={handleSubmit}
               onCancel={() => router.push('/clubs/dead_line')}
+              onAddToRecordTotal={handleAddToRecordTotal}
             />
 
             {success && (

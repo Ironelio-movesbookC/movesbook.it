@@ -332,7 +332,7 @@ export class ProcedureService {
     ctx: ClubAuthContext,
     procedureTypeCode: string,
     recordId: string,
-    input: { recordDate?: string; notes?: string; operatorId?: string }
+    input: { recordDate?: string; notes?: string; operatorId?: string; totalAmount?: number }
   ) {
     const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
     if (!procedureType) throw new Error('Unknown procedure type');
@@ -351,6 +351,11 @@ export class ProcedureService {
     if (input.recordDate) data.recordDate = toDateOnly(input.recordDate);
     if (input.notes !== undefined) data.notes = input.notes;
     if (input.operatorId) data.operatorId = input.operatorId;
+    if (input.totalAmount !== undefined) {
+      const diff = input.totalAmount - decimalToNumber(record.totalAmount);
+      data.totalAmount = input.totalAmount;
+      data.balanceAmount = decimalToNumber(record.balanceAmount) + diff;
+    }
 
     await prisma.procedureRecord.update({
       where: { id: recordId },
@@ -532,7 +537,7 @@ export class ProcedureService {
         orderBy: { paymentDate: 'desc' },
         skip,
         take: pageSize,
-        include: { procedureRecord: { select: { memberId: true, metadata: true } } },
+        include: { procedureRecord: { select: { memberId: true, metadata: true, totalAmount: true, balanceAmount: true } } },
       }),
     ]);
 
@@ -557,6 +562,8 @@ export class ProcedureService {
         serviceName: metaString(metadata, primaryKey) || null,
         typology: getProcedureTypology(procedureTypeCode),
         balanceAfter: readBalanceAfter(row),
+        originalDebt: decimalToNumber(row.procedureRecord.totalAmount),
+        residualDebt: decimalToNumber(row.procedureRecord.balanceAmount),
       };
     });
 

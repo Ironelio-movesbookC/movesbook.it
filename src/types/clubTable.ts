@@ -50,6 +50,8 @@ export type Member = {
   // movement
   payMod?: string;
   casual?: string;
+  originalDebt?: number;
+  residualDebt?: number;
   number?: number;
   category?: string;
 

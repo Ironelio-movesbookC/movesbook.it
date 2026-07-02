@@ -58,6 +58,8 @@ export default function ExpensePaymentDetailPage() {
         paymentDate: p.paymentDate,
         paid: p.paid,
         balance: p.balance,
+        originalDebt: p.originalDebt ?? 0,
+        residualDebt: p.residualDebt ?? 0,
         description: p.description,
         operatorId: p.operatorId,
         operatorName: p.operatorName,

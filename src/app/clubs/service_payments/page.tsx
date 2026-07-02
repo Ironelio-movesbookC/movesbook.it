@@ -31,6 +31,8 @@ function mapPayment(
     service: p.serviceName,
     insertDate: p.paymentDate ?? undefined,
     paid: p.paid,
+    originalDebt: p.originalDebt,
+    residualDebt: p.residualDebt,
     rest: p.balance,
     casual: p.description,
     operator: p.operatorName,

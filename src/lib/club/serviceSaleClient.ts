@@ -37,6 +37,8 @@ export type ServiceSalePayment = {
   paymentDate: string | null;
   paid: number;
   balance: number;
+  originalDebt: number;
+  residualDebt: number;
   description: string;
   operatorId: string | null;
   operatorName: string;
@@ -100,6 +102,8 @@ export function mapPayment(payment: ProcedurePaymentDto): ServiceSalePayment {
     paymentDate: payment.paymentDate,
     paid: payment.amount,
     balance: payment.balanceAfter ?? 0,
+    originalDebt: payment.originalDebt,
+    residualDebt: payment.residualDebt,
     description: payment.notes ?? '',
     operatorId: payment.operatorId,
     operatorName: payment.operatorName,
@@ -275,7 +279,7 @@ export async function deletePurchase(id: string): Promise<void> {
 
 export async function updatePurchase(
   id: string,
-  input: { recordDate?: string; notes?: string; operatorId?: string }
+  input: { recordDate?: string; notes?: string; operatorId?: string; totalAmount?: number }
 ): Promise<void> {
   await clubApiFetch(`${BASE}/records/${encodeURIComponent(id)}`, {
     method: 'PATCH',

@@ -61,6 +61,7 @@ export const serviceSalePaymentColumns: Column[] = [
   { key: 'service', header: 'Service slot' },
   { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
   { key: 'paid', header: 'Payment IN', render: (v) => formatEuro(v) },
+  { key: 'originalDebt', header: 'OF..', render: (_, row) => `${row.paid?.toFixed(2) ?? '0.00'} / ${row.originalDebt?.toFixed(2) ?? '0.00'}` },
   { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
   { key: 'casual', header: 'Notes' },
   { key: 'operator', header: 'Operator' },
