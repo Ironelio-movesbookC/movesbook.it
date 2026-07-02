@@ -91,7 +91,7 @@ export default function ServicePaymentForm({
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [operatorId, setOperatorId] = useState(options.currentOperatorId ?? options.operators[0]?.id ?? '');
   const [operatorPassword, setOperatorPassword] = useState('');
-  const [passwordRequired, setPasswordRequired] = useState(true);
+  const [passwordRequired, setPasswordRequired] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [payWith, setPayWith] = useState('0');
   const [taxModalOpen, setTaxModalOpen] = useState(false);
