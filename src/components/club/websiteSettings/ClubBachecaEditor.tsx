@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Loader2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
   isDefaultBachecaLabelName,
+  isBachecaLabelDraftDirty,
 } from '@/lib/clubBachecaLabels';
 import { useClubBachecaLabels } from '@/hooks/useClubBachecaLabels';
 import ClubWebsiteSettingsSidebar from '@/components/club/websiteSettings/ClubWebsiteSettingsSidebar';
@@ -37,14 +38,45 @@ export default function ClubBachecaEditor({
   logoImageUrl?: string | null;
 }) {
   const { t } = useLanguage();
-  const { labels, setLabels, loading, saving, error, hydrated, applyLabel } =
+  const { labels, savedLabels, setLabels, loading, saving, error, hydrated, applyLabel } =
     useClubBachecaLabels(clubId);
   const [selectedId, setSelectedId] = useState('bacheca-label-1');
   const [renameDraft, setRenameDraft] = useState('Tracking Workout');
   const [activateDraft, setActivateDraft] = useState(true);
   const [contentDraft, setContentDraft] = useState('');
+  const [pendingSwitchId, setPendingSwitchId] = useState<string | null>(null);
 
   const selected = labels.find((l) => l.id === selectedId) ?? labels[0];
+  const savedSelected = savedLabels.find((l) => l.id === selectedId);
+
+  const currentDraft = useMemo(
+    () => ({
+      name: renameDraft,
+      activated: activateDraft,
+      content: contentDraft,
+    }),
+    [renameDraft, activateDraft, contentDraft],
+  );
+
+  const isCurrentLabelDirty = isBachecaLabelDraftDirty(savedSelected, currentDraft);
+
+  const dirtyLabelIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const label of labels) {
+      const saved = savedLabels.find((item) => item.id === label.id);
+      if (label.id === selectedId) {
+        if (isBachecaLabelDraftDirty(saved, currentDraft)) ids.add(label.id);
+      } else if (
+        saved &&
+        (saved.name !== label.name ||
+          saved.activated !== label.activated ||
+          saved.content !== label.content)
+      ) {
+        ids.add(label.id);
+      }
+    }
+    return ids;
+  }, [labels, savedLabels, selectedId, currentDraft]);
 
   useEffect(() => {
     setSelectedId('bacheca-label-1');
@@ -81,10 +113,44 @@ export default function ClubBachecaEditor({
     setSelectedId(id);
   };
 
-  const applyLabelSettings = async () => {
-    if (!selectedId) return;
+  const requestSelectLabel = (id: string) => {
+    if (id === selectedId) return;
+    if (isCurrentLabelDirty) {
+      setPendingSwitchId(id);
+      return;
+    }
+    selectLabel(id);
+  };
+
+  const discardCurrentLabelDraft = () => {
+    if (!savedSelected) return;
+    setLabels((prev) =>
+      prev.map((l) => (l.id === selectedId ? savedSelected : l)),
+    );
+    setRenameDraft(savedSelected.name);
+    setActivateDraft(savedSelected.activated);
+    setContentDraft(savedSelected.content);
+  };
+
+  const handleDiscardAndSwitch = () => {
+    if (!pendingSwitchId) return;
+    discardCurrentLabelDraft();
+    selectLabel(pendingSwitchId);
+    setPendingSwitchId(null);
+  };
+
+  const handleSaveAndSwitch = async () => {
+    if (!pendingSwitchId) return;
+    const saved = await applyLabelSettings();
+    if (!saved) return;
+    selectLabel(pendingSwitchId);
+    setPendingSwitchId(null);
+  };
+
+  const applyLabelSettings = async (): Promise<boolean> => {
+    if (!selectedId) return false;
     const trimmed = renameDraft.trim();
-    if (!trimmed) return;
+    if (!trimmed) return false;
 
     const payload = {
       id: selectedId,
@@ -96,8 +162,18 @@ export default function ClubBachecaEditor({
     setLabels((prev) =>
       prev.map((l) => (l.id === selectedId ? { ...l, ...payload, name: trimmed } : l)),
     );
-    await applyLabel(payload);
+    return applyLabel(payload);
   };
+
+  useEffect(() => {
+    if (!isCurrentLabelDirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isCurrentLabelDirty]);
 
   const clearRenameDraft = () => {
     setRenameDraft('');
@@ -137,6 +213,7 @@ export default function ClubBachecaEditor({
           <div className="border-b border-zinc-400 bg-white px-4 py-3">
             <h1 className="text-lg font-bold text-zinc-900">{t('club_bacheca_title')}</h1>
             <p className="mt-1 text-xs leading-snug text-zinc-600">{t('club_bacheca_intro')}</p>
+            <p className="mt-1 text-xs leading-snug text-zinc-500">{t('club_bacheca_apply_hint')}</p>
             {error ? (
               <p className="mt-2 text-xs font-medium text-red-700" role="alert">
                 {error}
@@ -149,24 +226,33 @@ export default function ClubBachecaEditor({
               {labels.map((label) => {
                 const isSelected = label.id === selectedId;
                 const isDefault = isDefaultBachecaLabelName(label.name);
+                const isDirty = dirtyLabelIds.has(label.id);
                 return (
                   <button
                     key={label.id}
                     type="button"
-                    onClick={() => selectLabel(label.id)}
-                    className={`min-h-[52px] rounded-none border px-1.5 py-2 text-center text-[11px] font-semibold leading-tight text-zinc-800 shadow-sm transition-colors ${
+                    onClick={() => requestSelectLabel(label.id)}
+                    className={`relative min-h-[52px] rounded-none border px-1.5 py-2 text-center text-[11px] font-semibold leading-tight text-zinc-800 shadow-sm transition-colors ${
                       isSelected
                         ? 'border-sky-600 bg-gradient-to-b from-white to-[#c5d4e8] ring-2 ring-sky-500'
                         : 'border-zinc-500 bg-gradient-to-b from-[#f8f8f8] to-[#d4d4d4] hover:from-white hover:to-[#e0e0e0]'
                     } ${!label.activated ? 'opacity-75' : ''}`}
                     title={
-                      isDefault
-                        ? t('club_bacheca_default_label_hint')
-                        : label.activated
-                          ? t('club_bacheca_active_label_hint')
-                          : t('club_bacheca_inactive_label_hint')
+                      isDirty
+                        ? t('club_bacheca_unsaved_dot_title')
+                        : isDefault
+                          ? t('club_bacheca_default_label_hint')
+                          : label.activated
+                            ? t('club_bacheca_active_label_hint')
+                            : t('club_bacheca_inactive_label_hint')
                     }
                   >
+                    {isDirty ? (
+                      <span
+                        className="absolute right-1 top-1 h-2 w-2 rounded-full bg-amber-500 ring-1 ring-white"
+                        aria-hidden
+                      />
+                    ) : null}
                     <span className="line-clamp-3">{label.name}</span>
                   </button>
                 );
@@ -175,6 +261,14 @@ export default function ClubBachecaEditor({
           </div>
 
           <div className="flex flex-wrap items-center gap-3 border-b border-zinc-400 bg-[#ddd] px-3 py-2">
+            {isCurrentLabelDirty ? (
+              <p
+                className="w-full rounded-sm border border-amber-400 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-900"
+                role="status"
+              >
+                {t('club_bacheca_unsaved_banner')}
+              </p>
+            ) : null}
             <label className="flex items-center gap-2 text-sm font-medium text-zinc-800">
               <input
                 type="checkbox"
@@ -195,7 +289,11 @@ export default function ClubBachecaEditor({
               type="button"
               onClick={() => void applyLabelSettings()}
               disabled={saving || !renameDraft.trim()}
-              className="rounded-none border border-zinc-500 bg-zinc-500 px-4 py-1 text-sm font-medium text-white hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-60"
+              className={`rounded-none border px-4 py-1 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60 ${
+                isCurrentLabelDirty
+                  ? 'border-amber-600 bg-amber-600 ring-2 ring-amber-300 hover:bg-amber-700'
+                  : 'border-zinc-500 bg-zinc-500 hover:bg-zinc-600'
+              }`}
             >
               {saving ? (
                 <span className="inline-flex items-center gap-2">
@@ -253,6 +351,55 @@ export default function ClubBachecaEditor({
           </ul>
         </aside>
       </div>
+
+      {pendingSwitchId ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="club-bacheca-unsaved-dialog-title"
+        >
+          <div className="w-full max-w-md border border-zinc-400 bg-white p-4 shadow-lg">
+            <h2 id="club-bacheca-unsaved-dialog-title" className="text-base font-bold text-zinc-900">
+              {t('club_bacheca_unsaved_switch_title')}
+            </h2>
+            <p className="mt-2 text-sm leading-snug text-zinc-700">
+              {t('club_bacheca_unsaved_switch_message')}
+            </p>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingSwitchId(null)}
+                className="border border-zinc-400 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+              >
+                {t('club_bacheca_unsaved_stay')}
+              </button>
+              <button
+                type="button"
+                onClick={handleDiscardAndSwitch}
+                className="border border-red-700 bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-800"
+              >
+                {t('club_bacheca_unsaved_discard_switch')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSaveAndSwitch()}
+                disabled={saving || !renameDraft.trim()}
+                className="border border-amber-600 bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {saving ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t('club_bacheca_unsaved_save_switch')}
+                  </span>
+                ) : (
+                  t('club_bacheca_unsaved_save_switch')
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

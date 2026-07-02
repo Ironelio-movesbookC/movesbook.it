@@ -70,3 +70,16 @@ export function mergeBachecaLabelsWithDefaults(
     return saved ?? defaultLabel;
   });
 }
+
+export function isBachecaLabelDraftDirty(
+  saved: BachecaLabel | undefined,
+  draft: Pick<BachecaLabel, 'name' | 'activated' | 'content'>,
+): boolean {
+  if (!saved) return false;
+  const trimmedName = draft.name.trim();
+  return (
+    saved.name !== trimmedName ||
+    saved.activated !== draft.activated ||
+    saved.content !== draft.content
+  );
+}
