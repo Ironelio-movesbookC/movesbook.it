@@ -18,7 +18,9 @@ export type FoodSectionId =
   | 'meat_fish'
   | 'vegetables'
   | 'fruits'
-  | 'oils_sweets';
+  | 'oils_sweets'
+  | 'sweets'
+  | 'drinks';
 
 export const FOOD_SECTIONS: { id: FoodSectionId; label: string }[] = [
   { id: 'all', label: 'All sections' },
@@ -28,6 +30,8 @@ export const FOOD_SECTIONS: { id: FoodSectionId; label: string }[] = [
   { id: 'vegetables', label: 'Vegetables' },
   { id: 'fruits', label: 'Fruits' },
   { id: 'oils_sweets', label: 'Oils & Sweets' },
+  { id: 'sweets', label: 'Sweets' },
+  { id: 'drinks', label: 'Drinks' },
 ];
 
 export type FoodCatalogNutrients = NutrientTotals;

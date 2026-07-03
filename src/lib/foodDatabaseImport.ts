@@ -17,8 +17,35 @@ export async function ensureBundledFoodDatabaseSeeded(): Promise<boolean> {
   await importFoodDatabase({
     ...(bundledImport as FoodDatabaseImportPayload),
     replaceExisting: false,
+    sourceId: 'movesbook_bundled',
   });
   return true;
+}
+
+/** Add any sections from bundled JSON that are not yet in the Movesbook database. */
+export async function ensureMissingFoodSections(): Promise<number> {
+  const payload = bundledImport as FoodDatabaseImportPayload;
+  const sourceId = 'movesbook_bundled';
+  const existing = await prisma.foodDatabaseSection.findMany({ where: { sourceId } });
+  const existingKeys = new Set(existing.map((s) => s.name.toLowerCase()));
+  let created = 0;
+
+  for (const sec of payload.sections || []) {
+    const key = sec.name.toLowerCase();
+    if (existingKeys.has(key)) continue;
+    await prisma.foodDatabaseSection.create({
+      data: {
+        name: sec.name,
+        legacyId: sec.legacyId ?? null,
+        displayOrder: sec.displayOrder ?? 0,
+        sourceId,
+      },
+    });
+    existingKeys.add(key);
+    created++;
+  }
+
+  return created;
 }
 
 export interface FoodDatabaseImportResult {
@@ -33,6 +60,7 @@ export interface FoodDatabaseImportResult {
 export async function importFoodDatabase(
   payload: FoodDatabaseImportPayload
 ): Promise<FoodDatabaseImportResult> {
+  const sourceId = payload.sourceId || 'movesbook_bundled';
   const result: FoodDatabaseImportResult = {
     sectionsCreated: 0,
     sectionsUpdated: 0,
@@ -43,13 +71,13 @@ export async function importFoodDatabase(
   };
 
   if (payload.replaceExisting) {
-    await prisma.foodDatabaseRecipe.deleteMany({});
-    await prisma.foodDatabaseItem.deleteMany({});
-    await prisma.foodDatabaseSection.deleteMany({});
+    await prisma.foodDatabaseRecipe.deleteMany({ where: { sourceId } });
+    await prisma.foodDatabaseItem.deleteMany({ where: { sourceId } });
+    await prisma.foodDatabaseSection.deleteMany({ where: { sourceId } });
   }
 
   const sectionByName = new Map<string, string>();
-  const existingSections = await prisma.foodDatabaseSection.findMany();
+  const existingSections = await prisma.foodDatabaseSection.findMany({ where: { sourceId } });
   for (const s of existingSections) {
     sectionByName.set(s.name.toLowerCase(), s.id);
   }
@@ -57,7 +85,9 @@ export async function importFoodDatabase(
   for (const sec of payload.sections || []) {
     const key = sec.name.toLowerCase();
     const existing = existingSections.find(
-      (s) => s.name.toLowerCase() === key || (sec.legacyId && s.legacyId === sec.legacyId)
+      (s) =>
+        s.sourceId === sourceId &&
+        (s.name.toLowerCase() === key || (sec.legacyId && s.legacyId === sec.legacyId))
     );
 
     if (existing) {
@@ -77,6 +107,7 @@ export async function importFoodDatabase(
           name: sec.name,
           legacyId: sec.legacyId ?? null,
           displayOrder: sec.displayOrder ?? 0,
+          sourceId,
         },
       });
       sectionByName.set(key, created.id);
@@ -92,13 +123,14 @@ export async function importFoodDatabase(
 
     const nutrients = nutrientsToDb(food.per100);
     const existing = food.legacyId
-      ? await prisma.foodDatabaseItem.findFirst({ where: { legacyId: food.legacyId } })
+      ? await prisma.foodDatabaseItem.findFirst({ where: { sourceId, legacyId: food.legacyId } })
       : await prisma.foodDatabaseItem.findFirst({
-          where: { sectionId, name: food.name },
+          where: { sourceId, sectionId, name: food.name },
         });
 
     const data = {
       sectionId,
+      sourceId,
       name: food.name,
       isLiquid: food.isLiquid ?? false,
       ...nutrients,
@@ -142,13 +174,14 @@ export async function importFoodDatabase(
     );
 
     const existing = recipe.legacyId
-      ? await prisma.foodDatabaseRecipe.findFirst({ where: { legacyId: recipe.legacyId } })
+      ? await prisma.foodDatabaseRecipe.findFirst({ where: { sourceId, legacyId: recipe.legacyId } })
       : await prisma.foodDatabaseRecipe.findFirst({
-          where: { sectionId, name: recipe.name },
+          where: { sourceId, sectionId, name: recipe.name },
         });
 
     const data = {
       sectionId,
+      sourceId,
       name: recipe.name,
       description: recipe.description ?? null,
       componentsJson: JSON.stringify(components),
@@ -176,4 +209,36 @@ export async function importFoodDatabase(
   }
 
   return result;
+}
+
+export async function getNextFoodLegacyId(sourceId = 'movesbook_bundled'): Promise<number> {
+  const max = await prisma.foodDatabaseItem.aggregate({
+    where: { sourceId },
+    _max: { legacyId: true },
+  });
+  return (max._max.legacyId ?? 0) + 1;
+}
+
+/** Assign sequential legacy IDs to items that were created without one (per source). */
+export async function assignMissingFoodLegacyIds(): Promise<number> {
+  const missing = await prisma.foodDatabaseItem.findMany({
+    where: { legacyId: null },
+    orderBy: [{ createdAt: 'asc' }, { name: 'asc' }],
+    select: { id: true, sourceId: true },
+  });
+  if (missing.length === 0) return 0;
+
+  const nextBySource = new Map<string, number>();
+  for (const row of missing) {
+    if (!nextBySource.has(row.sourceId)) {
+      nextBySource.set(row.sourceId, await getNextFoodLegacyId(row.sourceId));
+    }
+    const nextId = nextBySource.get(row.sourceId)!;
+    await prisma.foodDatabaseItem.update({
+      where: { id: row.id },
+      data: { legacyId: nextId },
+    });
+    nextBySource.set(row.sourceId, nextId + 1);
+  }
+  return missing.length;
 }

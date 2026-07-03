@@ -33,6 +33,11 @@ interface AdminRecipeInstructionsPanelProps {
   sections: { id: string; name: string; nameTranslations?: string | null }[];
   displayLanguage?: string;
   onMessage?: (type: 'ok' | 'err', text: string) => void;
+  /** When set, open the rich-text editor for this recipe once loaded. */
+  openRecipeId?: string | null;
+  /** Bumped to re-open the editor for the same recipe (e.g. from Edit Recipe modal). */
+  openNonce?: number;
+  onOpenRecipeHandled?: () => void;
 }
 
 function stripHtml(html: string): string {
@@ -48,6 +53,9 @@ export default function AdminRecipeInstructionsPanel({
   sections,
   displayLanguage = 'en',
   onMessage,
+  openRecipeId = null,
+  openNonce = 0,
+  onOpenRecipeHandled,
 }: AdminRecipeInstructionsPanelProps) {
   const [recipes, setRecipes] = useState<RecipeInstructionRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,7 +115,7 @@ export default function AdminRecipeInstructionsPanel({
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
 
-  const openEditor = (recipe: RecipeInstructionRow, index: number) => {
+  const openEditor = useCallback((recipe: RecipeInstructionRow, index: number) => {
     const prep = parseTranslations(recipe.preparationTranslations);
     const en = prep.en || recipe.description || '';
     setSelectedRecipe(recipe);
@@ -116,7 +124,19 @@ export default function AdminRecipeInstructionsPanel({
     setTranslations({ ...prep, ...(en ? { en } : {}) });
     setTranslateReady(Object.keys(prep).filter((k) => k !== 'en' && prep[k]?.trim()).length > 0);
     setViewMode('editor');
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!openRecipeId || loading) return;
+    const recipe = recipes.find((r) => r.id === openRecipeId);
+    if (!recipe) {
+      onOpenRecipeHandled?.();
+      return;
+    }
+    const index = recipes.findIndex((r) => r.id === openRecipeId);
+    openEditor(recipe, index >= 0 ? index : 0);
+    onOpenRecipeHandled?.();
+  }, [openRecipeId, openNonce, loading, recipes, onOpenRecipeHandled, openEditor]);
 
   const handleAutoTranslate = async () => {
     if (!hasRichTextContent(englishText)) {
