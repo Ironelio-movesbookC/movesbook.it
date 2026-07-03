@@ -630,7 +630,7 @@ export default function ServicePaymentForm({
           >
             <h3 className="text-lg font-medium text-gray-900">Modify deadline</h3>
             <label className="block">
-              <span className="text-gray-600">Original cost</span>
+              <span className="text-gray-600">Deadline</span>
               <input
                 type="number"
                 step="0.01"
@@ -642,7 +642,7 @@ export default function ServicePaymentForm({
               />
             </label>
             <label className="block">
-              <span className="text-gray-600">Already paid</span>
+              <span className="text-gray-600">Paid</span>
               <input
                 type="number"
                 step="0.01"
