@@ -245,8 +245,6 @@ export default function NutritionMealTable({
   }, [workoutId, workoutStatus, workoutEnabledField, hasNutritionFoods]);
 
   const calculateSportTotals = () => {
-    console.log(`🔍 [NutritionMealTable] calculateSportTotals - workout.sports:`, workout.sports);
-    console.log(`🔍 [NutritionMealTable] workout.nutritionFoods:`, workout.nutritionFoods?.length || 0);
     
     const sportsFromNutritionFoods: string[] = [];
     (workout.nutritionFoods || []).forEach((mf: any) => {
@@ -259,8 +257,6 @@ export default function NutritionMealTable({
       ? sportsFromNutritionFoods 
       : [];
     
-    console.log(`🔍 [NutritionMealTable] Sports found in nutritionFoods:`, sportsFromNutritionFoods);
-    console.log(`🔍 [NutritionMealTable] Using sports:`, workoutSportNames);
     
     const sportMap = new Map<string, { distance: number; durationSeconds: number; series: number; repetitions: number; k: string }>();
     
@@ -374,35 +370,14 @@ export default function NutritionMealTable({
           console.warn(`⚠️ [NutritionMealTable] Same nutritionFood (${mainWork.letter}) set as both MAIN and SECONDARY - clearing secondary`);
           secondaryWork = null;
         }
-        
-        // Debug logging
-        console.log(`🔍 [NutritionMealTable] Sport ${sportName} - ${allNutritionFoodsOfSport.length} nutritionFoods:`, 
-          allNutritionFoodsOfSport.map(mf => ({
-            id: mf.id,
-            letter: mf.letter,
-            workType: mf.workType,
-            hasWorkType: mf.hasOwnProperty('workType'),
-            description: mf.description?.substring(0, 30)
-          }))
-        );
-        console.log(`   [NutritionMealTable] Main work found:`, mainWork ? `${mainWork.letter} (${mainWork.workType})` : 'None');
-        console.log(`   [NutritionMealTable] Secondary work found:`, secondaryWork ? `${secondaryWork.letter} (${secondaryWork.workType})` : 'None');
-        
-        // NOTE: Removed automatic fallback logic
-        // NutritionFoods will ONLY appear in main/secondary work columns when explicitly set via workType
-        // Users must double-click the nutritionFood letter to set workType to 'MAIN' or 'SECONDARY'
-        
-        // Get display content - for manual mode, ALWAYS use notes first (full content)
         // Prepend workout section CODE (max 5 chars) before description
         const getDisplayContent = (mf: any) => {
           if (!mf) return '';
           
-          // Get the description content
           const description = mf.manualMode 
             ? (mf.notes || mf.description || '') 
             : (mf.description || '');
           
-          // Prepend section code if it exists
           const sectionCode = mf.section?.code;
           if (sectionCode && description) {
             return `${sectionCode} - ${description}`;
@@ -424,8 +399,6 @@ export default function NutritionMealTable({
           secondaryWorkNutritionFood: secondaryWork || null
         });
       } else {
-        // Empty slot - no sport defined for this position
-        console.log(`⚠️ [NutritionMealTable] Empty sport slot at position ${i}`);
         sportsArray.push({ name: '', icon: '', isSeriesBased: false, distance: 0, duration: '', k: '', mainWork: '', secondaryWork: '', mainWorkNutritionFood: null, secondaryWorkNutritionFood: null });
       }
     }
@@ -440,18 +413,6 @@ export default function NutritionMealTable({
   const matchPercentage = workout.completionRate 
     ? `${Math.round(workout.completionRate)}% + ${Math.round(workout.bonusRate || 0)}%`
     : '85% + 20%';
-
-  // Debug: Log workout rendering and sport totals
-  console.log(`\n🏋️ ========== WORKOUT TABLE RENDERING ==========`);
-  console.log(`🏋️ NutritionMeal ID: ${workout.id}, isExpanded: ${isExpanded}`);
-  console.log(`🏋️ NutritionMeal has ${workout.nutritionFoods?.length || 0} nutrition_foods`);
-  console.log(`🏋️ Sport totals:`);
-  sports.forEach((s: any, idx: number) => {
-    console.log(`   Sport ${idx + 1}: ${s.name}`);
-    console.log(`      Main Work: ${s.mainWork || 'EMPTY'}`);
-    console.log(`      Secondary Work: ${s.secondaryWork || 'EMPTY'}`);
-  });
-  console.log(`🏋️ ========== END WORKOUT TABLE ==========\n`);
 
   return (
       <div 

@@ -173,6 +173,16 @@ form select {
   color: #111827;
 }
 
+/* Admin food database — keep list table headers below modals */
+.admin-food-db-panel table thead th {
+  z-index: 1;
+}
+
+.admin-food-db-panel table thead th.sticky,
+.admin-food-db-panel table tbody td.sticky {
+  z-index: 2;
+}
+
 /* Staff messages panel — beat Tailwind preflight input { color: inherit } */
 @layer utilities {
   .staff-messages-composer,

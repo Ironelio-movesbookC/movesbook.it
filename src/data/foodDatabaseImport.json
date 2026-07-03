@@ -6,7 +6,9 @@
     { "legacyId": 4, "name": "Meat & Fish", "displayOrder": 4 },
     { "legacyId": 5, "name": "Vegetables", "displayOrder": 5 },
     { "legacyId": 6, "name": "Fruits", "displayOrder": 6 },
-    { "legacyId": 7, "name": "Oils & Sweets", "displayOrder": 7 }
+    { "legacyId": 7, "name": "Oils & Sweets", "displayOrder": 7 },
+    { "legacyId": 8, "name": "Sweets", "displayOrder": 8 },
+    { "legacyId": 9, "name": "Drinks", "displayOrder": 9 }
   ],
   "foods": [
     {
@@ -68,14 +70,14 @@
     },
     {
       "legacyId": 101,
-      "sectionName": "Milk",
+      "sectionName": "Drinks",
       "name": "SOYA MILK",
       "isLiquid": true,
       "per100": { "calories": 32, "proteins": 3, "carbohydrates": 1.8, "fats": 1.8, "fiber": 0.4, "calcium": 120, "vitB12": 0.4 }
     },
     {
       "legacyId": 102,
-      "sectionName": "Milk",
+      "sectionName": "Drinks",
       "name": "MILK semi-skimmed",
       "isLiquid": true,
       "per100": { "calories": 46, "proteins": 3.3, "carbohydrates": 4.8, "fats": 1.6, "calcium": 120, "vitB12": 0.4, "potassium": 150 }
@@ -160,7 +162,7 @@
     },
     {
       "legacyId": 602,
-      "sectionName": "Oils & Sweets",
+      "sectionName": "Sweets",
       "name": "DARK CHOCOLATE",
       "per100": { "calories": 546, "proteins": 4.9, "carbohydrates": 61, "fats": 31, "fiber": 7, "iron": 8, "magnesium": 146 }
     }
