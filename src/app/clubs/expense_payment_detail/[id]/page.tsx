@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import ServicePaymentForm, {
   type ServicePaymentSubmitValues,
@@ -10,6 +10,7 @@ import { createProcedureClient } from '@/lib/club/procedureClient';
 import { getProcedureTabs } from '@/lib/procedures/registry';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 import type { ServiceSaleFormOptions, ServiceSalePayment, ServiceSalePurchase } from '@/lib/club/serviceSaleClient';
+import { fetchOtherSettings } from '@/lib/club/otherSettingsClient';
 
 export default function ExpensePaymentDetailPage() {
   const params = useParams();
@@ -23,15 +24,18 @@ export default function ExpensePaymentDetailPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [otherSettings, setOtherSettings] = useState<{ operatorPassStatus: string } | null>(null);
+  const autoPaid = useRef(false);
 
   const load = useCallback(async () => {
-    const [purchaseRes, paymentsRes, formOptions] = await Promise.all([
+    const [purchaseRes, paymentsRes, formOptions, settings] = await Promise.all([
       client.fetchRecord(id),
       client.fetchPayments({ recordId: id, pageSize: 50 }),
       client.fetchFormOptions<ServiceSaleFormOptions>(),
+      fetchOtherSettings().catch(() => ({ formPayDeadlineStatus: 'Yes', operatorPassStatus: 'Yes', calTaxStatus: false })),
     ]);
     const r = purchaseRes.record;
-    setPurchase({
+    const purchaseData = {
       id: r.id,
       userId: r.userId,
       memberName: r.memberName,
@@ -47,7 +51,9 @@ export default function ExpensePaymentDetailPage() {
       operatorId: r.operatorId,
       operatorName: r.operatorName,
       lastPaymentDate: r.lastPaymentDate,
-    });
+    };
+    setPurchase(purchaseData);
+    setOtherSettings({ operatorPassStatus: settings.operatorPassStatus });
     setPayments(
       paymentsRes.items.map((p) => ({
         id: p.id,
@@ -58,11 +64,37 @@ export default function ExpensePaymentDetailPage() {
         paymentDate: p.paymentDate,
         paid: p.paid,
         balance: p.balance,
+        originalDebt: p.originalDebt ?? 0,
+        residualDebt: p.residualDebt ?? 0,
         description: p.description,
+        operatorId: p.operatorId,
         operatorName: p.operatorName,
       }))
     );
     setOptions(formOptions);
+
+    if (settings.formPayDeadlineStatus === 'No' && purchaseData.rest > 0 && !autoPaid.current) {
+      autoPaid.current = true;
+      const defaultOperatorId = formOptions.currentOperatorId ?? formOptions.operators[0]?.id;
+      if (defaultOperatorId) {
+        await client.addPayment(id, {
+          amountPaid: purchaseData.rest,
+          paymentDate: new Date().toISOString().slice(0, 10),
+          description: 'Auto-payment (deadline form disabled)',
+          payMode: 'cash',
+          operatorId: defaultOperatorId,
+          createReceipt: false,
+        });
+        const reloaded = await client.fetchRecord(id);
+        setPurchase({
+          ...purchaseData,
+          rest: 0,
+          pay: reloaded.record.pay,
+          value: reloaded.record.value,
+        });
+        setSuccess(`Payment fully auto-settled (€${purchaseData.rest.toFixed(2)}). Debt set to €0.`);
+      }
+    }
   }, [client, id]);
 
   useEffect(() => {
@@ -128,6 +160,7 @@ export default function ExpensePaymentDetailPage() {
             success={success}
             onSubmit={handleSubmit}
             onCancel={() => router.push('/clubs/expense_dead_line')}
+            operatorPassStatus={otherSettings?.operatorPassStatus ?? 'Yes'}
           />
         )}
       </ProcedureArchiveShell>

@@ -52,6 +52,8 @@ export type ProcedurePaymentDto = {
   serviceName: string | null;
   typology: string;
   balanceAfter: number | null;
+  originalDebt: number;
+  residualDebt: number;
 };
 
 export type ProcedureReceiptDto = {

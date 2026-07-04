@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import ServicePaymentForm, {
   type ServicePaymentSubmitValues,
@@ -12,10 +12,13 @@ import {
   fetchFormOptions,
   fetchPaymentsForRecord,
   fetchPurchase,
+  updatePurchase,
   type ServiceSaleFormOptions,
   type ServiceSalePayment,
   type ServiceSalePurchase,
 } from '@/lib/club/serviceSaleClient';
+import { updateInstallment } from '@/lib/club/archives/clubArchiveClient';
+import { fetchOtherSettings } from '@/lib/club/otherSettingsClient';
 
 export default function PaymentDetailPage() {
   const params = useParams();
@@ -28,17 +31,39 @@ export default function PaymentDetailPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [otherSettings, setOtherSettings] = useState<{ operatorPassStatus: string; calTaxStatus: boolean } | null>(null);
+  const autoPaid = useRef(false);
 
   const load = useCallback(async () => {
     try {
-      const [purchaseRes, paymentsRes, formOptions] = await Promise.all([
+      const [purchaseRes, paymentsRes, formOptions, settings] = await Promise.all([
         fetchPurchase(id),
         fetchPaymentsForRecord(id, { pageSize: 50 }),
         fetchFormOptions(),
+        fetchOtherSettings().catch(() => ({ formPayDeadlineStatus: 'Yes', operatorPassStatus: 'Yes', calTaxStatus: false })),
       ]);
       setPurchase(purchaseRes.purchase);
       setPayments(paymentsRes.items);
       setOptions(formOptions);
+      setOtherSettings({ operatorPassStatus: settings.operatorPassStatus, calTaxStatus: settings.calTaxStatus });
+
+      if (settings.formPayDeadlineStatus === 'No' && purchaseRes.purchase.rest > 0 && !autoPaid.current) {
+        autoPaid.current = true;
+        const defaultOperatorId = formOptions.currentOperatorId ?? formOptions.operators[0]?.id;
+        if (defaultOperatorId) {
+          await addPayment(id, {
+            amountPaid: purchaseRes.purchase.rest,
+            paymentDate: new Date().toISOString().slice(0, 10),
+            description: 'Auto-payment (deadline form disabled)',
+            payMode: 'cash',
+            operatorId: defaultOperatorId,
+            createReceipt: false,
+          });
+          const reloaded = await fetchPurchase(id);
+          setPurchase(reloaded.purchase);
+          setSuccess(`Payment fully auto-settled (€${purchaseRes.purchase.rest.toFixed(2)}). Debt set to €0.`);
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     }
@@ -48,39 +73,51 @@ export default function PaymentDetailPage() {
     load();
   }, [load]);
 
+  async function handleAddToRecordTotal(additionalAmount: number): Promise<void> {
+    if (!purchase) return;
+    const newTotal = purchase.value + additionalAmount;
+    await updatePurchase(id, { totalAmount: newTotal });
+    setPurchase((prev) => prev ? { ...prev, value: newTotal, rest: prev.rest + additionalAmount } : prev);
+  }
+
   async function handleSubmit(values: ServicePaymentSubmitValues) {
     setError('');
     setSuccess('');
 
-    if (purchase && values.amountPaid > purchase.rest) {
-      setError('Payment exceeds remaining balance.');
-      return;
-    }
-
     setSaving(true);
     try {
-      await addPayment(id, {
-        amountPaid: values.amountPaid,
-        paymentDate: values.paymentDate,
-        description: values.description,
-        payMode: values.payMode,
-        paymentType: values.paymentType,
-        taxDoc: values.taxDoc,
-        operatorId: values.operatorId,
-        operatorPassword: values.operatorPassword,
-        debtTotal: values.debtTotal,
-        debtExpire: values.debtExpire,
-        payWith: values.payWith,
-        taxDocument: values.taxDocument,
-        createReceipt: values.createReceipt,
-        receiptNumber: values.receiptNumber,
-        receiptAnnotations: values.description,
-      });
+      const totalDistributed = values.distributions.reduce((s, d) => s + d.amount, 0);
+      if (totalDistributed <= 0) {
+        setError('No amount to distribute.');
+        return;
+      }
+
+      for (const dist of values.distributions) {
+        if (dist.amount <= 0) continue;
+        await addPayment(id, {
+          amountPaid: dist.amount,
+          paymentDate: values.paymentDate,
+          description: values.description,
+          payMode: values.payMode,
+          paymentType: values.paymentType,
+          taxDoc: values.taxDoc,
+          operatorId: values.operatorId,
+          operatorPassword: values.operatorPassword,
+          debtTotal: values.debtTotal,
+          debtExpire: values.debtExpire,
+          payWith: values.payWith,
+          taxDocument: values.taxDocument,
+          createReceipt: values.createReceipt,
+          receiptNumber: values.receiptNumber,
+          receiptAnnotations: values.description,
+        });
+        await updateInstallment('service_sale', id, dist.installmentId, {
+          paid: dist.newPaid,
+          balance: dist.newBalance,
+        });
+      }
       setSuccess('Payment saved successfully.');
       await load();
-      if (purchase && values.amountPaid >= purchase.rest) {
-        setTimeout(() => router.push('/clubs/archive_service_list'), 1200);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
     } finally {
@@ -112,6 +149,8 @@ export default function PaymentDetailPage() {
               success={success}
               onSubmit={handleSubmit}
               onCancel={() => router.push('/clubs/dead_line')}
+              onAddToRecordTotal={handleAddToRecordTotal}
+              operatorPassStatus={otherSettings?.operatorPassStatus ?? 'Yes'}
             />
 
             {success && (

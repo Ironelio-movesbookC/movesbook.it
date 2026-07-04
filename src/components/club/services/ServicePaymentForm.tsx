@@ -17,6 +17,14 @@ import {
 import { PAY_MODE_OPTIONS } from '@/lib/procedures/payModes';
 import { formatEuro } from '@/lib/club/servicePurchasesClient';
 import type { ServiceSaleFormOptions, ServiceSalePayment, ServiceSalePurchase } from '@/lib/club/serviceSaleClient';
+import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
+
+export type PaymentDistribution = {
+  installmentId: string;
+  amount: number;
+  newPaid: number;
+  newBalance: number;
+};
 
 export type ServicePaymentSubmitValues = {
   amountPaid: number;
@@ -35,6 +43,7 @@ export type ServicePaymentSubmitValues = {
   createReceipt: boolean;
   receiptNumber?: string;
   receiptAnnotations?: string;
+  distributions: PaymentDistribution[];
 };
 
 type Props = {
@@ -47,6 +56,8 @@ type Props = {
   success?: string;
   onSubmit: (values: ServicePaymentSubmitValues) => Promise<void>;
   onCancel?: () => void;
+  onAddToRecordTotal?: (amount: number) => Promise<void>;
+  operatorPassStatus?: string;
 };
 
 function formatDisplayDate(iso: string | null | undefined): string {
@@ -65,13 +76,15 @@ export default function ServicePaymentForm({
   success,
   onSubmit,
   onCancel,
+  onAddToRecordTotal,
+  operatorPassStatus = 'Yes',
 }: Props) {
   const sectionLabel = `${purchase.sectorName}-${purchase.serviceName}`;
   const [installments, setInstallments] = useState<InstallmentRow[]>([]);
-  const [selectedInstallmentId, setSelectedInstallmentId] = useState<string | null>(null);
+  const [selectedInstallmentIds, setSelectedInstallmentIds] = useState<Set<string>>(new Set());
   const [installmentError, setInstallmentError] = useState('');
   const [paymentType, setPaymentType] = useState<'D' | 'B'>('D');
-  const [debtTotal, setDebtTotal] = useState(String(purchase.value));
+  const [debtTotal, setDebtTotal] = useState(String(purchase.rest));
   const [debtExpire, setDebtExpire] = useState(purchase.paydate ?? new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState(purchase.notes);
   const [amountPaid, setAmountPaid] = useState('0');
@@ -80,7 +93,7 @@ export default function ServicePaymentForm({
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [operatorId, setOperatorId] = useState(options.currentOperatorId ?? options.operators[0]?.id ?? '');
   const [operatorPassword, setOperatorPassword] = useState('');
-  const [passwordRequired, setPasswordRequired] = useState(true);
+  const [passwordRequired, setPasswordRequired] = useState(operatorPassStatus === 'Yes');
   const [showPassword, setShowPassword] = useState(false);
   const [payWith, setPayWith] = useState('0');
   const [taxModalOpen, setTaxModalOpen] = useState(false);
@@ -94,6 +107,8 @@ export default function ServicePaymentForm({
     expireDate: '',
     description: '',
   });
+  const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'new' | 'delete' | null>(null);
 
   useEffect(() => {
     fetchInstallments(procedureType, purchase.id)
@@ -101,10 +116,12 @@ export default function ServicePaymentForm({
       .catch(() => setInstallments([]));
   }, [procedureType, purchase.id]);
 
+  console.log("purchase", purchase);
+
   const paidAmount = Number(amountPaid) || 0;
   const payWithAmount = Number(payWith) || 0;
   const restGive = Math.max(0, payWithAmount - paidAmount);
-  const newRest = Math.max(0, purchase.rest - paidAmount);
+  const overallNewRest = Math.max(0, purchase.rest - paidAmount);
 
   const installmentRows = useMemo(() => {
     if (installments.length > 0) {
@@ -135,34 +152,77 @@ export default function ServicePaymentForm({
     return rows;
   }, [installments, payments, purchase]);
 
+  const selectedTotalRest = useMemo(() => {
+    return installmentRows
+      .filter((r) => selectedInstallmentIds.has(r.id))
+      .reduce((sum, r) => sum + r.balance, 0);
+  }, [installmentRows, selectedInstallmentIds]);
+
+  const nextRests = useMemo(() => {
+    const sorted = [...installmentRows]
+      .filter((r) => selectedInstallmentIds.has(r.id))
+      .sort((a, b) => (a.paymentDate || '').localeCompare(b.paymentDate || ''));
+    let remaining = paidAmount;
+    return sorted.map((r) => {
+      const paidHere = Math.min(remaining, r.balance);
+      remaining = Math.max(0, remaining - paidHere);
+      return { id: r.id, label: formatDisplayDate(r.paymentDate), newRest: Math.max(0, r.balance - paidHere) };
+    });
+  }, [installmentRows, selectedInstallmentIds, paidAmount]);
+
   async function reloadInstallments() {
     const rows = await fetchInstallments(procedureType, purchase.id);
     setInstallments(rows);
   }
 
-  async function handleNewInstallment() {
+  function handleNewInstallment() {
+    setPendingAction('new');
+    setShowAdminPasswordModal(true);
+  }
+
+  async function performNewInstallment() {
     setInstallmentError('');
+    const id = firstSelectedId();
+    if (!id) {
+      setInstallmentError('Select exactly one deadline to copy.');
+      return;
+    }
     try {
-      await createInstallment(procedureType, purchase.id, {
-        balance: purchase.rest,
+      const row = installments.find((r) => r.id === id);
+      const newInstallment = await createInstallment(procedureType, purchase.id, {
+        balance: row?.balance ?? purchase.rest,
         paid: 0,
         paymentDate: new Date().toISOString().slice(0, 10),
-        expireDate: debtExpire,
-        description: description || sectionLabel,
+        expireDate: row?.expireDate ?? debtExpire,
+        description: (row?.description ?? description) || sectionLabel,
       });
+      if (onAddToRecordTotal && newInstallment.balance > 0) {
+        await onAddToRecordTotal(newInstallment.balance);
+      }
       await reloadInstallments();
     } catch (e) {
       setInstallmentError(e instanceof Error ? e.message : 'Failed to create installment');
     }
   }
 
-  async function handleDeleteInstallment() {
-    const id = selectedInstallmentId;
+  function firstSelectedId(): string | null {
+    return selectedInstallmentIds.size === 1 ? Array.from(selectedInstallmentIds)[0] : null;
+  }
+
+  function handleDeleteInstallment() {
+    const id = firstSelectedId();
+    if (!id || id === 'current') return;
+    setPendingAction('delete');
+    setShowAdminPasswordModal(true);
+  }
+
+  async function performDeleteInstallment() {
+    const id = firstSelectedId();
     if (!id || id === 'current') return;
     setInstallmentError('');
     try {
       await deleteInstallment(procedureType, purchase.id, id);
-      setSelectedInstallmentId(null);
+      setSelectedInstallmentIds(new Set());
       await reloadInstallments();
     } catch (e) {
       setInstallmentError(e instanceof Error ? e.message : 'Failed to delete installment');
@@ -170,9 +230,9 @@ export default function ServicePaymentForm({
   }
 
   function handleModifyInstallment() {
-    const id = selectedInstallmentId;
+    const id = firstSelectedId();
     if (!id || id === 'current') {
-      setInstallmentError('Select a saved installment to modify.');
+      setInstallmentError('Select exactly one saved installment to modify.');
       return;
     }
     const row = installments.find((r) => r.id === id);
@@ -190,7 +250,7 @@ export default function ServicePaymentForm({
 
   async function handleSaveModifyInstallment(e: React.FormEvent) {
     e.preventDefault();
-    const id = selectedInstallmentId;
+    const id = firstSelectedId();
     if (!id || id === 'current') return;
     setModifySaving(true);
     setInstallmentError('');
@@ -213,12 +273,23 @@ export default function ServicePaymentForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const active = selectedInstallmentId ?? (purchase.rest > 0 ? 'current' : null);
-    if (!active) return;
+    if (selectedInstallmentIds.size === 0) return;
     if (paidAmount <= 0) return;
-    if (paidAmount > purchase.rest) return;
+    if (paidAmount > selectedTotalRest) return;
     if (!operatorId) return;
     if (passwordRequired && !operatorPassword.trim()) return;
+
+    const distributions: PaymentDistribution[] = nextRests.map((r) => {
+      const row = installmentRows.find((ir) => ir.id === r.id);
+      if (!row) return { installmentId: r.id, amount: 0, newPaid: 0, newBalance: 0 };
+      const paidHere = row.balance - r.newRest;
+      return {
+        installmentId: r.id,
+        amount: paidHere,
+        newPaid: row.paid + paidHere,
+        newBalance: r.newRest,
+      };
+    });
 
     await onSubmit({
       amountPaid: paidAmount,
@@ -237,6 +308,7 @@ export default function ServicePaymentForm({
       createReceipt: taxDoc,
       receiptNumber: taxDocument?.documentNumber || undefined,
       receiptAnnotations: taxDocument?.causal || undefined,
+      distributions,
     });
   }
 
@@ -261,9 +333,14 @@ export default function ServicePaymentForm({
                     <label className="flex items-start gap-2">
                       <input
                         type="checkbox"
-                        checked={selectedInstallmentId === row.id || (!selectedInstallmentId && row.id === 'current')}
+                        checked={selectedInstallmentIds.has(row.id)}
                         disabled={row.disabled && row.id !== 'current'}
-                        onChange={() => setSelectedInstallmentId(row.id)}
+                        onChange={() => {
+                          const next = new Set(selectedInstallmentIds);
+                          if (next.has(row.id)) next.delete(row.id);
+                          else next.add(row.id);
+                          setSelectedInstallmentIds(next);
+                        }}
                         className="mt-1"
                       />
                       <span>
@@ -284,7 +361,7 @@ export default function ServicePaymentForm({
               </ul>
             </div>
             <div className="flex flex-col gap-2 md:w-28">
-              <button type="button" onClick={handleNewInstallment} className="px-3 py-1.5 text-sm bg-gray-200 rounded hover:bg-gray-300">
+              <button type="button" onClick={handleNewInstallment} disabled={!firstSelectedId()} className="px-3 py-1.5 text-sm bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-40">
                 New
               </button>
               <button type="button" onClick={handleModifyInstallment} className="px-3 py-1.5 text-sm bg-gray-200 rounded hover:bg-gray-300">
@@ -295,6 +372,12 @@ export default function ServicePaymentForm({
               </button>
             </div>
           </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Selected total:{' '}
+            <strong className={selectedTotalRest > 0 ? 'text-red-700' : ''}>
+              € {formatEuro(selectedTotalRest)}
+            </strong>
+          </p>
           {installmentError && <p className="text-red-600 text-xs mt-2">{installmentError}</p>}
         </ProcedureFormSection>
 
@@ -370,7 +453,7 @@ export default function ServicePaymentForm({
                 type="number"
                 min="0"
                 step="0.01"
-                max={purchase.rest}
+                max={selectedTotalRest || purchase.rest}
                 className={`mt-1 ${procedureHighlightInputClass}`}
                 value={amountPaid}
                 onChange={(e) => setAmountPaid(e.target.value)}
@@ -433,27 +516,30 @@ export default function ServicePaymentForm({
               <input
                 type="checkbox"
                 checked={passwordRequired}
+                disabled={operatorPassStatus === 'Yes'}
                 onChange={(e) => setPasswordRequired(e.target.checked)}
               />
               <span>Password</span>
             </div>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                className={procedureInputClass}
-                value={operatorPassword}
-                onChange={(e) => setOperatorPassword(e.target.value)}
-                placeholder="Password"
-              />
-              <button
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
-                onClick={() => setShowPassword((v) => !v)}
-                tabIndex={-1}
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
+            {passwordRequired && (
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  className={procedureInputClass}
+                  value={operatorPassword}
+                  onChange={(e) => setOperatorPassword(e.target.value)}
+                  placeholder="Password"
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+                  onClick={() => setShowPassword((v) => !v)}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
@@ -480,9 +566,16 @@ export default function ServicePaymentForm({
             </label>
           </div>
 
-          <p className="text-sm text-gray-600">
-            After payment — Rest: <strong className="text-red-600">{formatEuro(newRest)}</strong>
-          </p>
+          {nextRests.length > 0 && (
+            <div className="text-sm text-gray-600 space-y-1">
+              {nextRests.map((r) => (
+                <p key={r.id}>
+                  <span className="font-medium">{r.label}</span> — Rest:{' '}
+                  <strong className="text-red-600">{formatEuro(r.newRest)}</strong>
+                </p>
+              ))}
+            </div>
+          )}
         </div>
 
         {error && <p className="text-red-600 text-sm">{error}</p>}
@@ -513,7 +606,7 @@ export default function ServicePaymentForm({
         memberName={purchase.memberName}
         defaultCausal={description}
         defaultTotal={purchase.value}
-        defaultResidual={newRest}
+        defaultResidual={overallNewRest}
         initial={taxDocument ?? undefined}
         onClose={() => setTaxModalOpen(false)}
         onSave={(values) => {
@@ -546,6 +639,7 @@ export default function ServicePaymentForm({
                 type="number"
                 step="0.01"
                 className={`mt-1 ${procedureInputClass}`}
+                disabled
                 value={modifyForm.paid}
                 onChange={(e) => setModifyForm((f) => ({ ...f, paid: e.target.value }))}
               />
@@ -597,6 +691,17 @@ export default function ServicePaymentForm({
           </form>
         </div>
       )}
+
+      <AdminPasswordConfirmModal
+        isOpen={showAdminPasswordModal}
+        onClose={() => { setShowAdminPasswordModal(false); setPendingAction(null); }}
+        onVerified={() => {
+          setShowAdminPasswordModal(false);
+          if (pendingAction === 'new') void performNewInstallment();
+          else if (pendingAction === 'delete') void performDeleteInstallment();
+          setPendingAction(null);
+        }}
+      />
     </>
   );
 }

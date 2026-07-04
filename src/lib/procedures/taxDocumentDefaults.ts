@@ -108,7 +108,7 @@ export function buildTaxDocumentDefaults(
     documentType: resolvedType,
     heading: headingFromSettings(settings),
     documentNumber: nextDocumentNumber(counterValue),
-    vatPercentage: parseTaxPercentage(settings),
+    vatPercentage: settings.calTaxStatus ? parseTaxPercentage(settings) : 0,
     counterKey,
     counters: {
       taxReceipt: String(settings.taxReceipt ?? ''),
