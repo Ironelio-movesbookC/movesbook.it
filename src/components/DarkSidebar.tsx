@@ -146,6 +146,8 @@ import {
   writeClubWorkspaceTab,
 } from '@/lib/club/clubWorkspaceTab';
 import { requestOpenClubTopicsSection } from '@/lib/club/clubTopicsNavigation';
+import { legacyUserBugProblemUrl } from '@/lib/messages/feedbackRoutes';
+import { getAuthToken } from '@/utils/auth.utils';
 
 function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
   return (
@@ -410,9 +412,30 @@ export default function DarkSidebar({
   const [currentClubMembersOpen, setCurrentClubMembersOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [myDashboardOpen, setMyDashboardOpen] = useState(false);
+  const [messagesOpen, setMessagesOpen] = useState(false);
+  const [myFeedbackCount, setMyFeedbackCount] = useState(0);
   const [myClubsOpen, setMyClubsOpen] = useState(false);
   const [clubAdminInfoOpen, setClubAdminInfoOpen] = useState(false);
   const [memberInfoOpen, setMemberInfoOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const token = getAuthToken();
+    if (!token) return;
+    void (async () => {
+      try {
+        const res = await fetch('/api/messages/support?countOnly=1&mine=1', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (typeof data.count === 'number') setMyFeedbackCount(data.count);
+      } catch {
+        /* optional */
+      }
+    })();
+  }, [user?.id]);
 
   const formCreatedClubs = useMemo(
     () => getFormCreatedClubsSortedByCreatedAt(entities),
@@ -1884,15 +1907,47 @@ export default function DarkSidebar({
               <ChevronDown className="w-4 h-4 opacity-80" />
             </button>
 
-            <button
-              className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700"
-            >
-              <div className="flex items-center gap-3">
-                <MessageSquare className="w-5 h-5" />
-                <span>Messages</span>
+            <div className="border-b border-teal-700">
+              <div className="flex w-full items-stretch bg-teal-800 text-white">
+                <button
+                  type="button"
+                  onClick={() => setMessagesOpen((v) => !v)}
+                  aria-expanded={messagesOpen}
+                  className="flex flex-1 items-center gap-3 min-w-0 py-3 pl-4 pr-2 text-left hover:bg-teal-700 transition-colors"
+                >
+                  <MessageSquare className="w-5 h-5 shrink-0" />
+                  <span className="truncate">Messages</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMessagesOpen((v) => !v)}
+                  aria-label={messagesOpen ? t('collapse') : t('expand')}
+                  className="shrink-0 px-4 flex items-center hover:bg-teal-700 transition-colors border-l border-teal-700/40"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 opacity-80 transition-transform duration-200 ${messagesOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
               </div>
-              <ChevronDown className="w-4 h-4 opacity-80" />
-            </button>
+              {messagesOpen && (
+                <div className="bg-[#2d2d2d] text-white text-sm border-t border-teal-900/40 px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (user?.id) {
+                        router.push(legacyUserBugProblemUrl(String(user.id)));
+                      }
+                    }}
+                    className="flex w-full items-center gap-3 border border-[#aeaeae] bg-[#4f4f4f] px-3 py-2.5 text-left text-sm text-white transition-colors hover:bg-[#3d3d3d]"
+                  >
+                    <Users2 className="h-4 w-4 shrink-0 opacity-95" />
+                    <span className="leading-snug">
+                      {t('sidebar_my_feedbacks_staff')} ({myFeedbackCount})
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button
               className="w-full bg-teal-800 hover:bg-teal-700 text-white py-3 px-4 flex items-center justify-between transition-colors border-b border-teal-700"
@@ -2364,16 +2419,47 @@ export default function DarkSidebar({
                   </div>
                 </button>
 
-                <button
-                  type="button"
-                  className="w-full bg-teal-800 hover:bg-teal-700 text-white py-2.5 px-3 flex items-center justify-between transition-colors border-b border-teal-700"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <MessageSquare className="w-5 h-5 shrink-0" />
-                    <span className="font-semibold tracking-wide truncate">Messages</span>
+                <div className="border-b border-teal-700">
+                  <div className="flex w-full items-stretch bg-teal-800 text-white">
+                    <button
+                      type="button"
+                      onClick={() => setMessagesOpen((v) => !v)}
+                      aria-expanded={messagesOpen}
+                      className="flex flex-1 items-center gap-2.5 min-w-0 py-2.5 pl-3 pr-2 text-left hover:bg-teal-700 transition-colors"
+                    >
+                      <MessageSquare className="w-5 h-5 shrink-0" />
+                      <span className="font-semibold tracking-wide truncate">Messages</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMessagesOpen((v) => !v)}
+                      aria-label={messagesOpen ? t('collapse') : t('expand')}
+                      className="shrink-0 px-3 flex items-center hover:bg-teal-700 transition-colors border-l border-teal-700/40"
+                    >
+                      <ChevronDown
+                        className={`w-4 h-4 opacity-90 transition-transform duration-200 ${messagesOpen ? 'rotate-180' : ''}`}
+                      />
+                    </button>
                   </div>
-                  <ChevronDown className="w-4 h-4 opacity-90" />
-                </button>
+                  {messagesOpen && (
+                    <div className="bg-[#2d2d2d] text-white text-sm border-t border-teal-900/40 px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (user?.id) {
+                            router.push(legacyUserBugProblemUrl(String(user.id)));
+                          }
+                        }}
+                        className="flex w-full items-center gap-3 border border-[#aeaeae] bg-[#4f4f4f] px-3 py-2.5 text-left text-sm text-white transition-colors hover:bg-[#3d3d3d]"
+                      >
+                        <Users2 className="h-4 w-4 shrink-0 opacity-95" />
+                        <span className="leading-snug">
+                          {t('sidebar_my_feedbacks_staff')} ({myFeedbackCount})
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 <button
                   type="button"

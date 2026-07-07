@@ -1,5 +1,6 @@
 import { UserCircle, HelpCircle, Settings, Home, Menu, ChevronRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import MyPageFastMenu from '@/components/my-page/MyPageFastMenu';
 
 interface PersonalBannerProps {
   user: any;
@@ -74,8 +75,9 @@ export default function PersonalBanner({ user, currentTab }: PersonalBannerProps
             </button>
           </div>
 
-          {/* Right side - Search button */}
-          <div className="flex items-center">
+          {/* Right side — Fast menu + search */}
+          <div className="flex items-center gap-3">
+            {currentTab === 'my-page' ? <MyPageFastMenu /> : null}
             {currentTab == 'my-entity' ?
               <button
                 className="text-orange-300 hover:text-white transition-colors px-4 py-2"

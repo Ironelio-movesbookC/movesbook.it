@@ -12,6 +12,13 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getAuthToken } from '@/utils/auth.utils';
+import VersionHistoryPanel, {
+  type VersionHistoryPanelHandle,
+} from '@/components/messages/VersionHistoryPanel';
+import ListPageSelector from '@/components/ui/ListPageSelector';
+import type { FeedbackScope } from '@/lib/messages/feedbackRoutes';
+import { legacyUserBugProblemUrl } from '@/lib/messages/feedbackRoutes';
+import { useRouter } from 'next/navigation';
 
 export type MainTab = 'version' | 'review' | 'support';
 
@@ -52,6 +59,16 @@ type ThreadDetail = {
 type Props = {
   variant: 'drawer' | 'page';
   initialMainTab?: MainTab;
+  initialCategory?: string;
+  initialMineOnly?: boolean;
+  initialRecentOnly?: boolean;
+  initialScope?: FeedbackScope;
+  initialSearchQuery?: string;
+  initialPage?: number;
+  initialPageSize?: number;
+  hideMainTabs?: boolean;
+  legacyMode?: boolean;
+  legacyUserId?: string;
   onClose?: () => void;
 };
 
@@ -65,22 +82,46 @@ const SUPPORT_CATS = [
 export default function StaffMessagesExperience({
   variant,
   initialMainTab = 'support',
+  initialCategory = 'feedback',
+  initialMineOnly = false,
+  initialRecentOnly = false,
+  initialScope,
+  initialSearchQuery = '',
+  initialPage = 1,
+  initialPageSize = 5,
+  hideMainTabs = false,
+  legacyMode = false,
+  legacyUserId,
   onClose,
 }: Props) {
   const { t, currentLanguage } = useLanguage();
+  const router = useRouter();
   const [mainTab, setMainTab] = useState<MainTab>(initialMainTab);
-  const [versionLanguages, setVersionLanguages] = useState<LangOption[]>([]);
-  const [versionSectionList, setVersionSectionList] = useState<Array<{ id: string; title: string }>>([]);
-  const [versionSectionId, setVersionSectionId] = useState<string | null>(null);
-  const [versionContent, setVersionContent] = useState('');
-  const [versionLangId, setVersionLangId] = useState('');
+  const versionPanelRef = useRef<VersionHistoryPanelHandle>(null);
   const [loading, setLoading] = useState(false);
   const [langOptions, setLangOptions] = useState<LangOption[]>([]);
 
-  const [subPage, setSubPage] = useState<string>('feedback');
+  const [subPage, setSubPage] = useState<string>(initialCategory);
   const [filterLang, setFilterLang] = useState('');
-  const [recentOnly, setRecentOnly] = useState(false);
-  const [postByMe, setPostByMe] = useState(false);
+  const [recentOnly, setRecentOnly] = useState(initialRecentOnly);
+  const [postByMe, setPostByMe] = useState(
+    legacyMode ? false : initialMineOnly || initialScope === 'mine',
+  );
+  const [reviewScope, setReviewScope] = useState<FeedbackScope | 'own'>(
+    initialMainTab === 'review'
+      ? initialScope === 'community'
+        ? 'community'
+        : initialScope === 'mine'
+          ? 'mine'
+          : 'own'
+      : 'own',
+  );
+
+  const [searchInput, setSearchInput] = useState(initialSearchQuery);
+  const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
+  const [page, setPage] = useState(initialPage);
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [feedTotal, setFeedTotal] = useState(0);
 
   const [supportItems, setSupportItems] = useState<FeedItem[]>([]);
   const [reviewItems, setReviewItems] = useState<FeedItem[]>([]);
@@ -134,79 +175,82 @@ export default function StaffMessagesExperience({
   }, []);
 
   useEffect(() => {
+    setSubPage(initialCategory);
+    setPostByMe(legacyMode ? false : initialMineOnly || initialScope === 'mine');
+    setRecentOnly(initialRecentOnly);
+    setSearchInput(initialSearchQuery);
+    setSearchQuery(initialSearchQuery);
+    setPage(initialPage);
+    setPageSize(initialPageSize);
+  }, [
+    initialCategory,
+    initialMineOnly,
+    initialRecentOnly,
+    initialScope,
+    initialSearchQuery,
+    initialPage,
+    initialPageSize,
+    legacyMode,
+  ]);
+
+  useEffect(() => {
+    if (legacyMode) setMainTab('support');
+  }, [legacyMode]);
+
+  const loadSupportFeed = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = new URLSearchParams({
+        feed: '1',
+        category: subPage,
+        page: String(page),
+        pageSize: String(pageSize),
+      });
+      if (filterLang) qs.set('lang', filterLang);
+      if (postByMe) qs.set('mine', '1');
+      if (recentOnly) qs.set('recent', '1');
+      if (searchQuery) qs.set('q', searchQuery);
+      const data = await authFetch(`/api/messages/support?${qs}`);
+      setSupportItems(data.items || []);
+      setFeedTotal(data.total ?? 0);
+    } catch {
+      setSupportItems([]);
+      setFeedTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [authFetch, filterLang, page, pageSize, postByMe, recentOnly, searchQuery, subPage]);
+
+  const loadReviewsMine = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+      });
+      if (searchQuery) qs.set('q', searchQuery);
+      if (reviewScope === 'community') qs.set('community', '1');
+      const data = await authFetch(`/api/messages/reviews?${qs}`);
+      setReviewItems(data.items || []);
+      setFeedTotal(data.total ?? 0);
+    } catch {
+      setReviewItems([]);
+      setFeedTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [authFetch, page, pageSize, reviewScope, searchQuery]);
+
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       setComposerRealPath(window.location.pathname);
     }
   }, []);
 
-  const loadVersion = useCallback(
-    async (opts?: { langId?: string; sectionId?: string | null }) => {
-      setLoading(true);
-      try {
-        const qs = new URLSearchParams();
-        const langId = opts?.langId ?? versionLangId;
-        if (langId) qs.set('langId', langId);
-        if (opts?.sectionId) qs.set('sectionId', opts.sectionId);
-        qs.set('lang', currentLanguage);
-        const res = await fetch(`/api/messages/version-history?${qs}`);
-        if (!res.ok) throw new Error(String(res.status));
-        const data = await res.json();
-        setVersionLanguages(
-          (data.languages || []).map((l: { id: string; name: string }) => ({
-            id: l.id,
-            code: l.id,
-            name: l.name,
-          })),
-        );
-        setVersionSectionList(data.sections || []);
-        setVersionSectionId(data.selectedSectionId ?? null);
-        setVersionContent(data.content || '');
-        if (data.langId) setVersionLangId(String(data.langId));
-      } catch {
-        setVersionLanguages([]);
-        setVersionSectionList([]);
-        setVersionSectionId(null);
-        setVersionContent('');
-      } finally {
-        setLoading(false);
-      }
-    },
-    [currentLanguage, versionLangId],
-  );
-
-  const loadSupportFeed = useCallback(async () => {
-    setLoading(true);
-    try {
-      const qs = new URLSearchParams({ feed: '1', category: subPage });
-      if (filterLang) qs.set('lang', filterLang);
-      if (postByMe) qs.set('mine', '1');
-      if (recentOnly) qs.set('recent', '1');
-      const data = await authFetch(`/api/messages/support?${qs}`);
-      setSupportItems(data.items || []);
-    } catch {
-      setSupportItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [authFetch, filterLang, postByMe, recentOnly, subPage]);
-
-  const loadReviewsMine = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await authFetch('/api/messages/reviews');
-      setReviewItems(data.items || []);
-    } catch {
-      setReviewItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [authFetch]);
-
   useEffect(() => {
-    if (mainTab === 'version') void loadVersion();
     if (mainTab === 'support') void loadSupportFeed();
     if (mainTab === 'review') void loadReviewsMine();
-  }, [mainTab, loadVersion, loadSupportFeed, loadReviewsMine]);
+  }, [mainTab, loadSupportFeed, loadReviewsMine]);
 
   const openThread = useCallback(
     async (id: string) => {
@@ -215,7 +259,9 @@ export default function StaffMessagesExperience({
       setDetailLoading(true);
       setSendError(null);
       try {
-        const data = await authFetch(`/api/messages/threads/${id}`);
+        const communityQs =
+          mainTab === 'review' && reviewScope === 'community' ? '?communityReview=1' : '';
+        const data = await authFetch(`/api/messages/threads/${id}${communityQs}`);
         setThreadDetail(data);
       } catch {
         setThreadDetail(null);
@@ -224,8 +270,24 @@ export default function StaffMessagesExperience({
         setDetailLoading(false);
       }
     },
-    [authFetch, t],
+    [authFetch, mainTab, reviewScope, t],
   );
+
+  const totalPages = Math.max(1, Math.ceil(feedTotal / pageSize));
+
+  const applySearch = () => {
+    setSearchQuery(searchInput.trim());
+    setPage(1);
+  };
+
+  const navigateLegacyCategory = (categoryId: string) => {
+    if (!legacyMode || !legacyUserId) {
+      setSubPage(categoryId);
+      setPage(1);
+      return;
+    }
+    router.push(legacyUserBugProblemUrl(legacyUserId, categoryId as (typeof SUPPORT_CATS)[number]['id']));
+  };
 
   const backToList = () => {
     setLeftView('list');
@@ -375,6 +437,14 @@ export default function StaffMessagesExperience({
         </div>
 
         <div className="flex bg-slate-100 border-b border-slate-300 shrink-0">
+          {hideMainTabs ? (
+            <div className="w-full px-4 py-2.5">
+              <span className="inline-block text-sm font-semibold text-slate-900 border-b-2 border-[#c43c54] pb-1">
+                {t('staff_your_supports')}
+              </span>
+            </div>
+          ) : (
+            <>
           <MainTabBtn
             active={mainTab === 'version'}
             onClick={() => {
@@ -382,6 +452,7 @@ export default function StaffMessagesExperience({
               setLeftView('list');
               setSelectedThreadId(null);
             }}
+            onIconClick={() => versionPanelRef.current?.promptUnlock()}
             icon={<Clock className="w-4 h-4" />}
             label={t('messages_rail_version')}
           />
@@ -405,6 +476,8 @@ export default function StaffMessagesExperience({
             icon={<LifeBuoy className="w-4 h-4" />}
             label={t('messages_rail_support')}
           />
+            </>
+          )}
         </div>
 
         {sendError && (
@@ -412,60 +485,7 @@ export default function StaffMessagesExperience({
         )}
 
         {mainTab === 'version' && (
-          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-            {versionLanguages.length > 0 && (
-              <div className="px-4 py-2 border-b border-slate-200 bg-slate-50 shrink-0">
-                <select
-                  value={versionLangId}
-                  onChange={(e) => {
-                    const nextLangId = e.target.value;
-                    setVersionLangId(nextLangId);
-                    void loadVersion({ langId: nextLangId, sectionId: null });
-                  }}
-                  className="border border-slate-300 rounded px-2 py-1 text-sm bg-white !text-black max-w-[200px]"
-                >
-                  {versionLanguages.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div className="flex flex-1 min-h-0 overflow-hidden flex-col md:flex-row">
-              {versionSectionList.length > 1 && (
-                <aside className="md:w-52 shrink-0 border-b md:border-b-0 md:border-r border-slate-200 bg-white overflow-y-auto">
-                  <ul className="p-2 space-y-1 text-sm">
-                    {versionSectionList.map((section) => (
-                      <li key={section.id}>
-                        <button
-                          type="button"
-                          onClick={() => void loadVersion({ sectionId: section.id })}
-                          className={`w-full text-left px-2 py-1.5 rounded ${
-                            versionSectionId === section.id
-                              ? 'bg-[#c43c54] text-white font-medium'
-                              : 'text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          {section.title}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </aside>
-              )}
-              <div className="flex-1 overflow-y-auto p-4 bg-white">
-                {loading ? (
-                  <p className="text-slate-500">{t('messages_panel_loading')}</p>
-                ) : versionContent ? (
-                  <div
-                    className="opp-editor-content text-slate-800 prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: versionContent }}
-                  />
-                ) : null}
-              </div>
-            </div>
-          </div>
+          <VersionHistoryPanel ref={versionPanelRef} currentLanguage={currentLanguage} />
         )}
 
         {(mainTab === 'review' || mainTab === 'support') && (
@@ -473,7 +493,13 @@ export default function StaffMessagesExperience({
             <div className="flex flex-col min-h-[320px] max-h-[70vh] lg:max-h-none overflow-hidden bg-white">
               <div className="px-3 py-2 border-b border-slate-200 bg-slate-50">
                 <div className="font-semibold text-slate-800 text-base">
-                  {mainTab === 'support' ? t('staff_posted_by_users') : t('staff_my_reviews_list')}
+                  {mainTab === 'support'
+                    ? postByMe
+                      ? t('staff_my_contributions_list')
+                      : t('staff_posted_by_users')
+                    : reviewScope === 'community'
+                      ? t('staff_community_reviews_list')
+                      : t('staff_my_reviews_list')}
                 </div>
                 {mainTab === 'support' && (
                   <>
@@ -482,7 +508,7 @@ export default function StaffMessagesExperience({
                         <button
                           key={c.id}
                           type="button"
-                          onClick={() => setSubPage(c.id)}
+                          onClick={() => navigateLegacyCategory(c.id)}
                           className={`px-2.5 py-1 text-xs font-medium rounded ${
                             subPage === c.id
                               ? 'bg-[#c43c54] text-white'
@@ -526,7 +552,10 @@ export default function StaffMessagesExperience({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setPostByMe((v) => !v)}
+                        onClick={() => {
+                          setPostByMe((v) => !v);
+                          setPage(1);
+                        }}
                         className={`px-2 py-1 rounded font-medium ${
                           postByMe ? 'bg-[#c43c54] text-white' : 'bg-white border border-slate-300 text-black'
                         }`}
@@ -534,6 +563,69 @@ export default function StaffMessagesExperience({
                         {t('staff_post_by_me')}
                       </button>
                     </div>
+                    <div className="flex flex-wrap gap-2 items-center mt-3 text-xs">
+                      <span className="text-red-700 font-medium">{t('staff_search_label')}</span>
+                      <input
+                        type="search"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') applySearch();
+                        }}
+                        className="border border-slate-800 rounded px-2 py-1 text-xs bg-white flex-1 min-w-[120px] max-w-[200px]"
+                        placeholder={t('staff_search_placeholder')}
+                      />
+                      <button
+                        type="button"
+                        onClick={applySearch}
+                        className="px-2 py-1 rounded font-medium bg-[#c43c54] text-white"
+                      >
+                        {t('staff_search_proceed')}
+                      </button>
+                    </div>
+                    <ListPageSelector
+                      page={page}
+                      totalPages={totalPages}
+                      pageSize={pageSize}
+                      onPageChange={setPage}
+                      onPageSizeChange={(size) => {
+                        setPageSize(size);
+                        setPage(1);
+                      }}
+                    />
+                  </>
+                )}
+                {mainTab === 'review' && (
+                  <>
+                    <div className="flex flex-wrap gap-2 items-center mt-2 text-xs">
+                      <span className="text-red-700 font-medium">{t('staff_search_label')}</span>
+                      <input
+                        type="search"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') applySearch();
+                        }}
+                        className="border border-slate-800 rounded px-2 py-1 text-xs bg-white flex-1 min-w-[120px] max-w-[200px]"
+                      />
+                      <button
+                        type="button"
+                        onClick={applySearch}
+                        className="px-2 py-1 rounded font-medium bg-[#c43c54] text-white"
+                      >
+                        {t('staff_search_proceed')}
+                      </button>
+                    </div>
+                    <ListPageSelector
+                      page={page}
+                      totalPages={totalPages}
+                      pageSize={pageSize}
+                      onPageChange={setPage}
+                      onPageSizeChange={(size) => {
+                        setPageSize(size);
+                        setPage(1);
+                      }}
+                    />
                   </>
                 )}
               </div>
@@ -749,11 +841,13 @@ export default function StaffMessagesExperience({
 function MainTabBtn({
   active,
   onClick,
+  onIconClick,
   icon,
   label,
 }: {
   active: boolean;
   onClick: () => void;
+  onIconClick?: () => void;
   icon: ReactNode;
   label: string;
 }) {
@@ -767,7 +861,27 @@ function MainTabBtn({
           : 'border-transparent text-slate-600 hover:bg-slate-200/80'
       }`}
     >
-      {icon}
+      <span
+        className={`inline-flex ${onIconClick ? 'cursor-pointer rounded p-0.5 hover:bg-slate-200/80' : ''}`}
+        onClick={(e) => {
+          if (!onIconClick) return;
+          e.stopPropagation();
+          onIconClick();
+        }}
+        onKeyDown={(e) => {
+          if (!onIconClick) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.stopPropagation();
+            e.preventDefault();
+            onIconClick();
+          }
+        }}
+        role={onIconClick ? 'button' : undefined}
+        tabIndex={onIconClick ? 0 : undefined}
+        aria-label={onIconClick ? label : undefined}
+      >
+        {icon}
+      </span>
       <span className="hidden sm:inline">{label}</span>
     </button>
   );
