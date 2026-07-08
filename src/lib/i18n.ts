@@ -398,7 +398,7 @@ export interface LanguageStrings {
         'staff_search_placeholder': 'Title, username, content…',
         'staff_search_proceed': 'Proceed',
         'staff_your_supports': 'Your Supports',
-        'sidebar_my_feedbacks_staff': 'My feedbacks for Movesbook staff',
+        'sidebar_my_feedbacks_staff': 'My feedbacks for Staff',
         'fast_menu_community_contributions': 'Community contributions',
         'fast_menu_my_contributions': 'My contributions',
         'fast_menu_review_articles': 'Review articles',
