@@ -5,6 +5,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import ProcedureFormSection, {
   procedureHighlightInputClass,
   procedureInputClass,
+  procedureReadonlyInputClass,
 } from '@/components/procedures/ProcedureFormLayout';
 import TaxDocumentModal, { type TaxDocumentFormValues } from '@/components/procedures/TaxDocumentModal';
 import {
@@ -252,12 +253,18 @@ export default function ServicePaymentForm({
     e.preventDefault();
     const id = firstSelectedId();
     if (!id || id === 'current') return;
-    setModifySaving(true);
+    const newBalance = Number(modifyForm.balance) || 0;
+    const currentPaid = Number(modifyForm.paid) || 0;
+    if (newBalance < currentPaid) {
+      setInstallmentError('Original cost cannot be less than the amount already paid.');
+      setModifySaving(false);
+      return;
+    }
     setInstallmentError('');
     try {
       await updateInstallment(procedureType, purchase.id, id, {
-        balance: Number(modifyForm.balance) || 0,
-        paid: Number(modifyForm.paid) || 0,
+        balance: newBalance,
+        paid: currentPaid,
         paymentDate: modifyForm.paymentDate,
         expireDate: modifyForm.expireDate || null,
         description: modifyForm.description || null,
@@ -621,12 +628,13 @@ export default function ServicePaymentForm({
             onSubmit={handleSaveModifyInstallment}
             className="bg-white rounded-lg shadow-lg w-full max-w-md p-5 space-y-3 text-sm"
           >
-            <h3 className="text-lg font-medium text-gray-900">Modify installment</h3>
+            <h3 className="text-lg font-medium text-gray-900">Modify deadline</h3>
             <label className="block">
-              <span className="text-gray-600">Balance</span>
+              <span className="text-gray-600">Deadline</span>
               <input
                 type="number"
                 step="0.01"
+                min={Number(modifyForm.paid) || 0}
                 className={`mt-1 ${procedureInputClass}`}
                 value={modifyForm.balance}
                 onChange={(e) => setModifyForm((f) => ({ ...f, balance: e.target.value }))}
@@ -638,24 +646,22 @@ export default function ServicePaymentForm({
               <input
                 type="number"
                 step="0.01"
-                className={`mt-1 ${procedureInputClass}`}
+                className={`mt-1 ${procedureReadonlyInputClass}`}
                 disabled
                 value={modifyForm.paid}
-                onChange={(e) => setModifyForm((f) => ({ ...f, paid: e.target.value }))}
               />
             </label>
             <label className="block">
               <span className="text-gray-600">Payment date</span>
               <input
                 type="date"
-                className={`mt-1 ${procedureInputClass}`}
+                className={`mt-1 ${procedureReadonlyInputClass}`}
+                disabled
                 value={modifyForm.paymentDate}
-                onChange={(e) => setModifyForm((f) => ({ ...f, paymentDate: e.target.value }))}
-                required
               />
             </label>
             <label className="block">
-              <span className="text-gray-600">Expire date</span>
+              <span className="text-gray-600">Expiration date</span>
               <input
                 type="date"
                 className={`mt-1 ${procedureInputClass}`}

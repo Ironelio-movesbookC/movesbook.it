@@ -23,16 +23,18 @@ function contentTypeForPath(filePath: string): string {
   return MIME_BY_EXT[ext] ?? 'application/octet-stream';
 }
 
-function resolveUploadFilePath(segments: string[]): string | null {
+const ALLOWED_ROOTS = ['uploads', 'img'] as const;
+
+function resolveFilePath(segments: string[]): string | null {
   if (!segments.length) return null;
   if (segments.some((part) => part === '..' || part === '.' || !part)) return null;
-  if (segments[0] !== 'uploads') return null;
+  if (!ALLOWED_ROOTS.includes(segments[0] as never)) return null;
 
   const publicRoot = normalize(getServerPublicDir());
   const absolute = normalize(join(publicRoot, ...segments));
-  const uploadsRoot = normalize(join(publicRoot, 'uploads'));
+  const rootDir = normalize(join(publicRoot, segments[0]));
 
-  if (!absolute.startsWith(`${uploadsRoot}${sep}`) && absolute !== uploadsRoot) {
+  if (!absolute.startsWith(`${rootDir}${sep}`) && absolute !== rootDir) {
     return null;
   }
 
@@ -45,7 +47,7 @@ export async function GET(
 ) {
   try {
     const { path: segments } = await context.params;
-    const filePath = resolveUploadFilePath(segments);
+    const filePath = resolveFilePath(segments);
     if (!filePath) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
