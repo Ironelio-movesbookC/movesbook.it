@@ -303,16 +303,25 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
               </select>
             </ProcedureFormCell>
             <ProcedureFormCell label="Service">
-              <select
-                className={procedureInputClass}
-                value={serviceId}
-                onChange={(e) => handleServiceChange(e.target.value)}
-              >
-                <option value="">Select service</option>
-                {filteredServices.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                <select
+                  className={procedureInputClass + ' flex-1'}
+                  value={serviceId}
+                  onChange={(e) => handleServiceChange(e.target.value)}
+                >
+                  <option value="">Select service</option>
+                  {filteredServices.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+                {selectedService?.imageUrl && (
+                  <img
+                    src={selectedService.imageUrl}
+                    alt=""
+                    className="h-10 w-14 flex-shrink-0 rounded border border-gray-200 bg-gray-50 object-cover"
+                  />
+                )}
+              </div>
             </ProcedureFormCell>
             <ProcedureFormCell label="Value">
               <input
