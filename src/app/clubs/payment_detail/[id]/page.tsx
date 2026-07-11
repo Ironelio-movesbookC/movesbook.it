@@ -139,19 +139,19 @@ export default function PaymentDetailPage() {
       >
         {purchase && options && (
           <>
-            <ServicePaymentForm
-              purchase={purchase}
-              payments={payments}
-              options={options}
-              procedureType="service_sale"
-              saving={saving}
-              error={error}
-              success={success}
-              onSubmit={handleSubmit}
-              onCancel={() => router.push('/clubs/dead_line')}
-              onAddToRecordTotal={handleAddToRecordTotal}
-              operatorPassStatus={otherSettings?.operatorPassStatus ?? 'Yes'}
-            />
+      <ServicePaymentForm
+        purchase={purchase}
+        payments={payments}
+        options={options}
+        procedureType="service_sale"
+        saving={saving}
+        error={error}
+        success={success}
+        onSubmit={handleSubmit}
+        onCancel={() => router.push('/clubs/dead_line')}
+        onAddToRecordTotal={handleAddToRecordTotal}
+        operatorPassStatus={otherSettings?.operatorPassStatus ?? 'Yes'}
+      />
 
             {success && (
               <div className="mt-4 flex flex-wrap gap-3 text-sm">
