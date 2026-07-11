@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { updateReceipt } from '@/lib/club/serviceSaleClient';
+import { TAX_DOCUMENT_TYPE_OPTIONS } from '@/lib/procedures/taxDocumentDefaults';
 
 type EditServiceReceiptModalProps = {
   isOpen: boolean;
@@ -81,14 +82,18 @@ export default function EditServiceReceiptModal({
         <div className="space-y-4 p-5">
           <div>
             <label htmlFor="edit-receipt-doctype" className="mb-1 block text-sm text-gray-800">Document</label>
-            <input
+            <select
               id="edit-receipt-doctype"
-              type="text"
               value={documentType}
               onChange={(e) => setDocumentType(e.target.value)}
               disabled={saving}
               className="w-full rounded border border-gray-400 bg-white px-3 py-2 text-sm disabled:opacity-60"
-            />
+            >
+              <option value="">-- Select --</option>
+              {TAX_DOCUMENT_TYPE_OPTIONS.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
           </div>
 
           <div>
