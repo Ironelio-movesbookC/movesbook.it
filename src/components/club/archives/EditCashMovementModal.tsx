@@ -2,41 +2,38 @@
 
 import { useEffect, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
-import { updateReceipt } from '@/lib/club/serviceSaleClient';
-import { TAX_DOCUMENT_TYPE_OPTIONS } from '@/lib/procedures/taxDocumentDefaults';
+import { fetchFormOptions, type ServiceSaleFormOptions } from '@/lib/club/serviceSaleClient';
+import { updateCashMovement } from '@/lib/club/cashMovementClient';
 
-type EditServiceReceiptModalProps = {
+type Props = {
   isOpen: boolean;
   onClose: () => void;
   onSaved: () => void;
-  receipt: {
+  item: {
     id: string;
-    documentType: string;
-    documentNumber: string;
-    annotations: string;
+    insertDate: string | null | undefined;
+    casual: string;
+    operator: string;
   };
 };
 
-export default function EditServiceReceiptModal({
-  isOpen,
-  onClose,
-  onSaved,
-  receipt,
-}: EditServiceReceiptModalProps) {
-  const [documentType, setDocumentType] = useState('');
-  const [documentNumber, setDocumentNumber] = useState('');
-  const [annotations, setAnnotations] = useState('');
+export default function EditCashMovementModal({ isOpen, onClose, onSaved, item }: Props) {
+  const [paymentDate, setPaymentDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [operatorId, setOperatorId] = useState('');
+  const [options, setOptions] = useState<ServiceSaleFormOptions | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
-    setDocumentType(receipt.documentType ?? '');
-    setDocumentNumber(receipt.documentNumber ?? '');
-    setAnnotations(receipt.annotations ?? '');
+    setPaymentDate(item.insertDate ?? '');
+    setNotes(item.casual ?? '');
+    setOperatorId('');
     setError(null);
     setSaving(false);
-  }, [isOpen, receipt]);
+    fetchFormOptions().then(setOptions).catch(() => {});
+  }, [isOpen, item]);
 
   if (!isOpen) return null;
 
@@ -44,10 +41,10 @@ export default function EditServiceReceiptModal({
     setSaving(true);
     setError(null);
     try {
-      await updateReceipt(receipt.id, {
-        documentType: documentType || undefined,
-        documentNumber: documentNumber || undefined,
-        annotations: annotations || undefined,
+      await updateCashMovement(item.id, {
+        paymentDate: paymentDate || undefined,
+        notes: notes || undefined,
+        operatorId: operatorId || undefined,
       });
       onSaved();
       onClose();
@@ -76,48 +73,48 @@ export default function EditServiceReceiptModal({
         </button>
 
         <div className="bg-[#6b1020] px-4 py-2.5 pr-10 text-sm font-semibold text-white">
-          Edit Receipt
+          Edit Cash Movement
         </div>
 
         <div className="space-y-4 p-5">
           <div>
-            <label htmlFor="edit-receipt-doctype" className="mb-1 block text-sm text-gray-800">Document</label>
-            <select
-              id="edit-receipt-doctype"
-              value={documentType}
-              onChange={(e) => setDocumentType(e.target.value)}
-              disabled={saving}
-              className="w-full rounded border border-gray-400 bg-white px-3 py-2 text-sm disabled:opacity-60"
-            >
-              <option value="">-- Select --</option>
-              {TAX_DOCUMENT_TYPE_OPTIONS.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="edit-receipt-docnum" className="mb-1 block text-sm text-gray-800">No. of document</label>
+            <label htmlFor="edit-cm-date" className="mb-1 block text-sm text-gray-800">Date</label>
             <input
-              id="edit-receipt-docnum"
-              type="text"
-              value={documentNumber}
-              onChange={(e) => setDocumentNumber(e.target.value)}
+              id="edit-cm-date"
+              type="date"
+              value={paymentDate}
+              onChange={(e) => setPaymentDate(e.target.value)}
               disabled={saving}
               className="w-full rounded border border-gray-400 bg-white px-3 py-2 text-sm disabled:opacity-60"
             />
           </div>
 
           <div>
-            <label htmlFor="edit-receipt-annotations" className="mb-1 block text-sm text-gray-800">Annotation</label>
+            <label htmlFor="edit-cm-notes" className="mb-1 block text-sm text-gray-800">Notes</label>
             <textarea
-              id="edit-receipt-annotations"
-              value={annotations}
-              onChange={(e) => setAnnotations(e.target.value)}
+              id="edit-cm-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
               disabled={saving}
               rows={3}
               className="w-full rounded border border-gray-400 bg-white px-3 py-2 text-sm disabled:opacity-60"
             />
+          </div>
+
+          <div>
+            <label htmlFor="edit-cm-operator" className="mb-1 block text-sm text-gray-800">Operator</label>
+            <select
+              id="edit-cm-operator"
+              value={operatorId}
+              onChange={(e) => setOperatorId(e.target.value)}
+              disabled={saving}
+              className="w-full rounded border border-gray-400 bg-white px-3 py-2 text-sm disabled:opacity-60"
+            >
+              <option value="">Select operator</option>
+              {options?.operators.map((op) => (
+                <option key={op.id} value={op.id}>{op.name}</option>
+              ))}
+            </select>
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}

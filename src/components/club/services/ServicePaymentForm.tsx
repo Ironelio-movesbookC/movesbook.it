@@ -108,6 +108,9 @@ export default function ServicePaymentForm({
     expireDate: '',
     description: '',
   });
+  const [newFormOpen, setNewFormOpen] = useState(false);
+  const [newFormSaving, setNewFormSaving] = useState(false);
+  const [newForm, setNewForm] = useState({ balance: '', expireDate: '', description: '' });
   const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<'new' | 'delete' | null>(null);
 
@@ -116,8 +119,6 @@ export default function ServicePaymentForm({
       .then(setInstallments)
       .catch(() => setInstallments([]));
   }, [procedureType, purchase.id]);
-
-  console.log("purchase", purchase);
 
   const paidAmount = Number(amountPaid) || 0;
   const payWithAmount = Number(payWith) || 0;
@@ -159,6 +160,10 @@ export default function ServicePaymentForm({
       .reduce((sum, r) => sum + r.balance, 0);
   }, [installmentRows, selectedInstallmentIds]);
 
+  useEffect(() => {
+    setAmountPaid(String(selectedTotalRest));
+  }, [selectedTotalRest]);
+
   const nextRests = useMemo(() => {
     const sorted = [...installmentRows]
       .filter((r) => selectedInstallmentIds.has(r.id))
@@ -177,32 +182,43 @@ export default function ServicePaymentForm({
   }
 
   function handleNewInstallment() {
-    setPendingAction('new');
-    setShowAdminPasswordModal(true);
+    const totalBalances = installments.reduce((s, r) => s + r.balance, 0);
+    const available = purchase.rest - totalBalances;
+    if (available <= 0) {
+      setInstallmentError('No available balance for a new deadline.');
+      return;
+    }
+    setNewForm({ balance: String(available), expireDate: '', description: description || sectionLabel });
+    setNewFormOpen(true);
   }
 
   async function performNewInstallment() {
     setInstallmentError('');
-    const id = firstSelectedId();
-    if (!id) {
-      setInstallmentError('Select exactly one deadline to copy.');
+    const deadlineValue = Number(newForm.balance) || 0;
+    if (deadlineValue <= 0) {
+      setInstallmentError('Deadline amount must be greater than 0.');
       return;
     }
+    const totalBalances = installments.reduce((s, r) => s + r.balance, 0);
+    if (totalBalances + deadlineValue > purchase.rest) {
+      setInstallmentError(`Deadline amount (${deadlineValue.toFixed(2)}) would exceed available rest (${(purchase.rest - totalBalances).toFixed(2)}).`);
+      return;
+    }
+    setNewFormSaving(true);
     try {
-      const row = installments.find((r) => r.id === id);
-      const newInstallment = await createInstallment(procedureType, purchase.id, {
-        balance: row?.balance ?? purchase.rest,
+      await createInstallment(procedureType, purchase.id, {
+        balance: deadlineValue,
         paid: 0,
         paymentDate: new Date().toISOString().slice(0, 10),
-        expireDate: row?.expireDate ?? debtExpire,
-        description: (row?.description ?? description) || sectionLabel,
+        expireDate: newForm.expireDate || null,
+        description: newForm.description || null,
       });
-      if (onAddToRecordTotal && newInstallment.balance > 0) {
-        await onAddToRecordTotal(newInstallment.balance);
-      }
+      setNewFormOpen(false);
       await reloadInstallments();
     } catch (e) {
       setInstallmentError(e instanceof Error ? e.message : 'Failed to create installment');
+    } finally {
+      setNewFormSaving(false);
     }
   }
 
@@ -240,7 +256,7 @@ export default function ServicePaymentForm({
     if (!row) return;
     setInstallmentError('');
     setModifyForm({
-      balance: String(row.balance),
+      balance: String(row.balance + row.paid),
       paid: String(row.paid),
       paymentDate: row.paymentDate.slice(0, 10),
       expireDate: row.expireDate?.slice(0, 10) ?? '',
@@ -253,17 +269,28 @@ export default function ServicePaymentForm({
     e.preventDefault();
     const id = firstSelectedId();
     if (!id || id === 'current') return;
-    const newBalance = Number(modifyForm.balance) || 0;
+    const deadlineTotal = Number(modifyForm.balance) || 0;
     const currentPaid = Number(modifyForm.paid) || 0;
-    if (newBalance < currentPaid) {
-      setInstallmentError('Original cost cannot be less than the amount already paid.');
+    if (deadlineTotal < currentPaid) {
+      setInstallmentError('Deadline total cannot be less than the amount already paid.');
+      setModifySaving(false);
+      return;
+    }
+    const newRest = deadlineTotal - currentPaid;
+    const otherTotal = installments
+      .filter((r) => r.id !== id)
+      .reduce((sum, r) => sum + r.balance + r.paid, 0);
+    if (otherTotal + deadlineTotal > purchase.value) {
+      setInstallmentError(
+        `Total of all deadlines (${(otherTotal + deadlineTotal).toFixed(2)}) would exceed original cost (${purchase.value.toFixed(2)}).`
+      );
       setModifySaving(false);
       return;
     }
     setInstallmentError('');
     try {
       await updateInstallment(procedureType, purchase.id, id, {
-        balance: newBalance,
+        balance: newRest,
         paid: currentPaid,
         paymentDate: modifyForm.paymentDate,
         expireDate: modifyForm.expireDate || null,
@@ -698,13 +725,69 @@ export default function ServicePaymentForm({
         </div>
       )}
 
+      {newFormOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <form
+            onSubmit={(e) => { e.preventDefault(); void performNewInstallment(); }}
+            className="bg-white rounded-lg shadow-lg w-full max-w-md p-5 space-y-3 text-sm"
+          >
+            <h3 className="text-lg font-medium text-gray-900">New deadline</h3>
+            <label className="block">
+              <span className="text-gray-600">Deadline</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                className={`mt-1 ${procedureInputClass}`}
+                value={newForm.balance}
+                onChange={(e) => setNewForm((f) => ({ ...f, balance: e.target.value }))}
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="text-gray-600">Expiration date</span>
+              <input
+                type="date"
+                className={`mt-1 ${procedureInputClass}`}
+                value={newForm.expireDate}
+                onChange={(e) => setNewForm((f) => ({ ...f, expireDate: e.target.value }))}
+              />
+            </label>
+            <label className="block">
+              <span className="text-gray-600">Description</span>
+              <textarea
+                className={`mt-1 ${procedureInputClass}`}
+                rows={2}
+                value={newForm.description}
+                onChange={(e) => setNewForm((f) => ({ ...f, description: e.target.value }))}
+              />
+            </label>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setNewFormOpen(false)}
+                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={newFormSaving}
+                className="px-4 py-2 bg-red-700 text-white rounded hover:bg-red-800 disabled:opacity-50"
+              >
+                {newFormSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       <AdminPasswordConfirmModal
         isOpen={showAdminPasswordModal}
         onClose={() => { setShowAdminPasswordModal(false); setPendingAction(null); }}
         onVerified={() => {
           setShowAdminPasswordModal(false);
-          if (pendingAction === 'new') void performNewInstallment();
-          else if (pendingAction === 'delete') void performDeleteInstallment();
+          if (pendingAction === 'delete') void performDeleteInstallment();
           setPendingAction(null);
         }}
       />
