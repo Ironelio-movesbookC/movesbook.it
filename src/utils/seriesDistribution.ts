@@ -118,18 +118,15 @@ export function getSeriesDistribution(
 }
 
 /**
- * Number of exercises for a muscular area.
- * Uses manual count when set on the manual plan page; otherwise the level lookup table.
+ * Number of exercises for a muscular area (from the level × total-series table only).
  */
 export function exerciseCountForArea(
   totalSeries: number,
   category: SeriesLevelCategory = 'mid',
-  manualExerciseCount?: number | null,
+  _manualExerciseCount?: number | null,
 ): number {
   const series = Math.max(0, Math.round(totalSeries));
   if (series <= 0) return 0;
-  const manual = manualExerciseCount ?? 0;
-  if (manual > 0) return Math.max(1, Math.min(series, manual));
   return getSeriesDistribution(series, category).length;
 }
 
@@ -138,6 +135,30 @@ export function exerciseCountForArea(
  */
 export function exerciseCountFromDist(dist: number[]): number {
   return dist.length;
+}
+
+/**
+ * Rows in the pyramidal REPS & WEIGHTS table: area series ÷ exercise count, rounded up
+ * (e.g. 5 area series ÷ 2 exercises → 3 template rows per exercise).
+ */
+export function pyramidalTableRowsForArea(areaSeries: number, exerciseCount: number): number {
+  const area = Math.max(0, Math.round(areaSeries));
+  const ex = Math.max(0, Math.round(exerciseCount));
+  if (area <= 0) return 0;
+  if (ex <= 0) return area;
+  return Math.min(area, Math.ceil(area / ex));
+}
+
+/** Map a full-area series row index to its template row within one exercise block. */
+export function templateRowIndexForAreaRow(areaRowIdx: number, blocks: number[]): number {
+  let start = 0;
+  for (const blockLen of blocks) {
+    if (areaRowIdx >= start && areaRowIdx < start + blockLen) {
+      return areaRowIdx - start;
+    }
+    start += blockLen;
+  }
+  return 0;
 }
 
 /**

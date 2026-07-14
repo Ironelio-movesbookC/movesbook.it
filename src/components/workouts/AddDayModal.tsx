@@ -2,16 +2,24 @@
 
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { isWorkoutsDoneSection } from '@/config/workout.constants';
 
 interface AddDayModalProps {
   workoutPlanId: string;
+  activeSection?: 'A' | 'B' | 'C' | 'D' | 'W';
   onClose: () => void;
   onSave: () => void;
 }
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-export default function AddDayModal({ workoutPlanId, onClose, onSave }: AddDayModalProps) {
+export default function AddDayModal({
+  workoutPlanId,
+  activeSection = 'B',
+  onClose,
+  onSave,
+}: AddDayModalProps) {
+  const showWorkoutsDoneFields = isWorkoutsDoneSection(activeSection);
   const [dayData, setDayData] = useState({
     weekNumber: 1,
     dayOfWeek: 1, // Monday
@@ -93,8 +101,10 @@ export default function AddDayModal({ workoutPlanId, onClose, onSave }: AddDayMo
           weekNumber: dayData.weekNumber,
           date: dayData.date,
           periodId: dayData.periodId,
-          weather: dayData.weather,
-          feelingStatus: dayData.feeling.toString(),
+          ...(showWorkoutsDoneFields && {
+            weather: dayData.weather,
+            feelingStatus: dayData.feeling.toString(),
+          }),
           notes: dayData.notes
         })
       });
@@ -207,37 +217,41 @@ export default function AddDayModal({ workoutPlanId, onClose, onSave }: AddDayMo
             )}
           </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Weather
-            </label>
-            <input
-              type="text"
-              value={dayData.weather}
-              onChange={(e) => setDayData({ ...dayData, weather: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              placeholder="Sunny, Rainy, Indoor..."
-            />
-          </div>
+          {showWorkoutsDoneFields && (
+            <>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Weather
+                </label>
+                <input
+                  type="text"
+                  value={dayData.weather}
+                  onChange={(e) => setDayData({ ...dayData, weather: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Sunny, Rainy, Indoor..."
+                />
+              </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Feeling (1-10)
-            </label>
-            <div className="flex items-center gap-4">
-              <input
-                type="range"
-                min="1"
-                max="10"
-                value={dayData.feeling}
-                onChange={(e) => setDayData({ ...dayData, feeling: parseInt(e.target.value) })}
-                className="flex-1"
-              />
-              <span className="text-lg font-bold text-blue-600 w-12 text-center">
-                {dayData.feeling}
-              </span>
-            </div>
-          </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Feeling (1-10)
+                </label>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={dayData.feeling}
+                    onChange={(e) => setDayData({ ...dayData, feeling: parseInt(e.target.value) })}
+                    className="flex-1"
+                  />
+                  <span className="text-lg font-bold text-blue-600 w-12 text-center">
+                    {dayData.feeling}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">

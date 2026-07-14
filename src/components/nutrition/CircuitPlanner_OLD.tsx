@@ -17,10 +17,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import ReactDOM from 'react-dom';
 import { X, Settings, RotateCw, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { MUSCULAR_SECTORS, circuitLoadOfWorkToMacroFinal, MACRO_FINAL_OPTIONS } from '@/constants/nutrition-food.constants';
+import {
+  MUSCULAR_SECTORS,
+  circuitLoadOfWorkToMacroFinal,
+  MACRO_FINAL_OPTIONS,
+  CIRCUIT_STATION_PAUSE_OPTIONS,
+} from '@/constants/nutrition-food.constants';
 import { resolveVerticalMovelapPauseSeconds } from '@/utils/circuitMovelapPause';
 import { circuitStationSelectionKey } from '@/utils/circuitMovelapLabel';
-import { computeCircuitPreviewStats } from '@/utils/circuitPreviewStats';
+import {
+  computeCircuitPreviewStats,
+  resolveCircuitPreviewMacroSec,
+} from '@/utils/circuitPreviewStats';
 import CircuitPreferencesModal, { ExercisePreferences } from './CircuitPreferencesModal';
 // 2026-01-22 11:45 UTC - Import mock exercise database
 import {
@@ -187,21 +195,8 @@ const CIRCUIT_PAUSE_OPTIONS = Array.from({ length: 10 }, (_, i) => {
 });
 const CIRCUIT_PAUSE_VALUE_SET = new Set(CIRCUIT_PAUSE_OPTIONS.map((o) => o.value));
 
-// Pause options in seconds (converted from time format)
-const STATION_PAUSE_OPTIONS = [
-  { label: '0"', value: 0 },
-  { label: '5"', value: 5 },
-  { label: '10"', value: 10 },
-  { label: '15"', value: 15 },
-  { label: '20"', value: 20 },
-  { label: '25"', value: 25 },
-  { label: '30"', value: 30 },
-  { label: '40"', value: 40 },
-  { label: '50"', value: 50 },
-  { label: '1\'', value: 60 },
-  { label: '1\'30"', value: 90 },
-  { label: '2\'', value: 120 }
-];
+/** Inter-station / horizontal “after all series at station” pause — includes 2'30" … 6'00". */
+const STATION_PAUSE_OPTIONS = CIRCUIT_STATION_PAUSE_OPTIONS;
 
 /** Rip value written when applying Macro (minute count as string 1–10, or legacy digit 0–9). */
 function macroLoadToRepsString(load: unknown): string | null {
@@ -255,6 +250,37 @@ function shuffleExercisePoolNames(names: string[]): string[] {
     pool[j] = tmp;
   }
   return pool;
+}
+
+/** Horizontal twin groups: (1,2), (3,4), … — deleting any member clears the whole pair. */
+function horizontalTwinGroups(nSer: number): number[][] {
+  const groups: number[][] = [];
+  for (let s = 1; s <= nSer; s += 2) {
+    if (s + 1 <= nSer) groups.push([s, s + 1]);
+    else groups.push([s]);
+  }
+  return groups;
+}
+
+function expandHorizontalTwinnedSeries(tagged: Set<number>, nSer: number): number[] {
+  const out = new Set<number>();
+  for (const group of horizontalTwinGroups(nSer)) {
+    if (group.some((s) => tagged.has(s))) {
+      group.forEach((s) => out.add(s));
+    }
+  }
+  return Array.from(out).sort((a, b) => a - b);
+}
+
+function emptyHorizontalStation(stationNumber: number, pause = 0): Station {
+  return {
+    stationNumber,
+    sector: '',
+    exercise: '',
+    reps: '',
+    pause,
+    notes: '',
+  };
 }
 
 /** Majority vote for sector on a station column (handles sparse / mismatched rows across series). */
@@ -1163,6 +1189,9 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
   // 2026-01-22 13:10 UTC - Open sector selector for a specific station
   // 2026-01-26 - Track previous station's sector for highlighting
   const handleSectorCellClick = (circuitLetter: string, seriesIdx: number, stationNumber: number) => {
+    if (executionMode === 'horizontal' && seriesMode === 'count') {
+      setCircuits((prev) => ensureHorizontalStationSlot(prev, circuitLetter, seriesIdx, stationNumber));
+    }
     setSelectedStationForSector({circuitLetter, seriesIdx, stationNumber});
     
     // Find the previous station's sector to highlight it
@@ -1222,36 +1251,45 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       const horizCount = executionMode === 'horizontal' && seriesMode === 'count';
 
       if (horizCount) {
-        if (isDraggingFromStation && sourceCircuit === circuitLetter && srcStationNum === stationNumber) {
+        if (
+          isDraggingFromStation &&
+          sourceCircuit === circuitLetter &&
+          srcSeriesIdx === seriesIdx &&
+          srcStationNum === stationNumber
+        ) {
           return;
         }
         setCircuits((prevCircuits) =>
           prevCircuits.map((circuit) => {
-            let rows = circuit.stationsBySeries;
-            if (isDraggingFromStation && circuit.letter === sourceCircuit) {
-              rows = rows.map((seriesStations) =>
-                seriesStations.map((station) =>
+            if (circuit.letter !== circuitLetter) {
+              if (isDraggingFromStation && circuit.letter === sourceCircuit) {
+                const rows = circuit.stationsBySeries.map((seriesStations, sIdx) => {
+                  if (sIdx !== srcSeriesIdx) return seriesStations;
+                  return seriesStations.map((station) =>
+                    station.stationNumber === srcStationNum
+                      ? { ...station, sector: '', exercise: '', reps: '', notes: '' }
+                      : station
+                  );
+                });
+                return { ...circuit, stationsBySeries: rows };
+              }
+              return circuit;
+            }
+            const rows = circuit.stationsBySeries.map((seriesStations, sIdx) => {
+              if (isDraggingFromStation && sIdx === srcSeriesIdx) {
+                seriesStations = seriesStations.map((station) =>
                   station.stationNumber === srcStationNum
                     ? { ...station, sector: '', exercise: '', reps: '', notes: '' }
                     : station
-                )
+                );
+              }
+              if (sIdx !== seriesIdx) return seriesStations;
+              return seriesStations.map((station) =>
+                station.stationNumber === stationNumber
+                  ? { ...station, sector, exercise: '', notes: '' }
+                  : station
               );
-            }
-            if (circuit.letter === circuitLetter) {
-              rows = rows.map((seriesStations) =>
-                seriesStations.map((station) =>
-                  station.stationNumber === stationNumber
-                    ? {
-                        ...station,
-                        sector,
-                        // Changing sector for a station column invalidates old exercise picks.
-                        exercise: '',
-                        notes: '',
-                      }
-                    : station
-                )
-              );
-            }
+            });
             return { ...circuit, stationsBySeries: rows };
           })
         );
@@ -1490,7 +1528,12 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     let sequenceNumber = 1;
     const circuitsToUse = overrideCircuits ?? circuits;
     const lapMacroFinal = macroLoadToNutritionComponentMacroFinal(loadOfWork);
-    const finalMacroPauseSeconds = parseMacroLoadToPauseSeconds(loadOfWork);
+    const finalMacroPauseSeconds = resolveCircuitPreviewMacroSec({
+      circuits: circuitsToUse,
+      seriesMode,
+      loadOfWorkMacroSec: parseMacroLoadToPauseSeconds(loadOfWork),
+      pauseCircuitsDefault: pauseCircuits,
+    });
     const circuitPauseCtx = {
       seriesMode,
       executionMode,
@@ -2706,34 +2749,62 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     return { circuitLetter: parts[1], stationNum, seriesNum };
   };
 
-  /** Horizontal + count: remove the station column at `stationIdx0` from global series rows for local series S and its twin S-1 (when S≥2). */
-  const applyHorizontalSerieColumnRemovals = (
+  /** Horizontal + count: clear twinned serie cells (keep rows — + re-assigns muscular area). */
+  const clearHorizontalTwinnedSeriesCells = (
     prevCircuits: Circuit[],
-    ops: { circuitLetter: string; stationIdx0: number; rowIndices0: number[] }[]
+    cells: { circuitLetter: string; stationIdx0: number; seriesIdx0: number }[]
   ): Circuit[] => {
-    if (ops.length === 0) return prevCircuits;
+    if (cells.length === 0) return prevCircuits;
     const next = JSON.parse(JSON.stringify(prevCircuits)) as Circuit[];
-    const sorted = [...ops].sort((a, b) => {
-      if (a.circuitLetter !== b.circuitLetter) return a.circuitLetter.localeCompare(b.circuitLetter);
-      if (a.stationIdx0 !== b.stationIdx0) return b.stationIdx0 - a.stationIdx0;
-      return 0;
-    });
-    for (const { circuitLetter, stationIdx0, rowIndices0 } of sorted) {
+    for (const { circuitLetter, stationIdx0, seriesIdx0 } of cells) {
       const cIdx = next.findIndex((c) => c.letter === circuitLetter);
       if (cIdx < 0) continue;
       const c = next[cIdx];
       if (!Array.isArray(c.stationsBySeries)) continue;
-      const uniqRows = Array.from(new Set(rowIndices0)).sort((a, b) => b - a);
-      for (const rowIdx of uniqRows) {
-        const row = c.stationsBySeries[rowIdx];
-        if (!Array.isArray(row) || stationIdx0 < 0 || stationIdx0 >= row.length) continue;
-        row.splice(stationIdx0, 1);
-        row.forEach((st: Station, j: number) => {
-          st.stationNumber = j + 1;
-        });
+      const row = c.stationsBySeries[seriesIdx0];
+      if (!Array.isArray(row)) continue;
+      const stationNum = stationIdx0 + 1;
+      while (row.length <= stationIdx0) {
+        row.push(emptyHorizontalStation(row.length + 1));
       }
+      const prev = row[stationIdx0];
+      row[stationIdx0] = {
+        ...(prev ?? emptyHorizontalStation(stationNum)),
+        stationNumber: stationNum,
+        sector: '',
+        exercise: '',
+        reps: '',
+        notes: '',
+      };
     }
     return next;
+  };
+
+  /** Ensure one horizontal station cell exists (click on +). */
+  const ensureHorizontalStationSlot = (
+    prevCircuits: Circuit[],
+    circuitLetter: string,
+    seriesIdx: number,
+    stationNumber: number
+  ): Circuit[] => {
+    const stationIdx0 = stationNumber - 1;
+    return prevCircuits.map((circuit) => {
+      if (circuit.letter !== circuitLetter) return circuit;
+      return {
+        ...circuit,
+        stationsBySeries: circuit.stationsBySeries.map((row, sIdx) => {
+          if (sIdx !== seriesIdx) return row;
+          const next = [...row];
+          while (next.length <= stationIdx0) {
+            next.push(emptyHorizontalStation(next.length + 1));
+          }
+          if (!next[stationIdx0]) {
+            next[stationIdx0] = emptyHorizontalStation(stationNumber);
+          }
+          return next;
+        }),
+      };
+    });
   };
 
   const handleRemoveSerieAction = () => {
@@ -2751,36 +2822,47 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     const legacyKeys = seriesToRemove.filter((k) => !k.startsWith('H|'));
 
     if (executionMode === 'horizontal' && seriesMode === 'count' && horizontalKeys.length > 0) {
-      const opMap = new Map<string, { circuitLetter: string; stationIdx0: number; rows: Set<number> }>();
+      const stationOps = new Map<
+        string,
+        { circuitLetter: string; stationNum: number; tagged: Set<number> }
+      >();
       for (const { circuitLetter, stationNum, seriesNum } of horizontalKeys) {
-        const stationIdx0 = stationNum - 1;
-        const rows: number[] =
-          seriesNum >= 2
-            ? [seriesNum - 1, seriesNum - 2].filter((r) => r >= 0)
-            : [seriesNum - 1].filter((r) => r >= 0);
-        const key = `${circuitLetter}|${stationIdx0}`;
-        const cur = opMap.get(key) ?? { circuitLetter, stationIdx0, rows: new Set<number>() };
-        rows.forEach((r) => cur.rows.add(r));
-        opMap.set(key, cur);
+        const key = `${circuitLetter}|${stationNum}`;
+        if (!stationOps.has(key)) {
+          stationOps.set(key, { circuitLetter, stationNum, tagged: new Set<number>() });
+        }
+        stationOps.get(key)!.tagged.add(seriesNum);
       }
-      const ops = Array.from(opMap.values()).map((o) => ({
-        circuitLetter: o.circuitLetter,
-        stationIdx0: o.stationIdx0,
-        rowIndices0: Array.from(o.rows),
-      }));
-      const summary = horizontalKeys
+      const cells: { circuitLetter: string; stationIdx0: number; seriesIdx0: number }[] = [];
+      const clearedSummaries: string[] = [];
+      for (const op of stationOps.values()) {
+        const circuit = circuits.find((c) => c.letter === op.circuitLetter);
+        const nSer = circuit?.stationsBySeries?.length ?? 0;
+        const expanded = expandHorizontalTwinnedSeries(op.tagged, nSer);
+        clearedSummaries.push(
+          `${op.circuitLetter} st.${op.stationNum} ser.${expanded.join(',')}`
+        );
+        for (const seriesNum of expanded) {
+          cells.push({
+            circuitLetter: op.circuitLetter,
+            stationIdx0: op.stationNum - 1,
+            seriesIdx0: seriesNum - 1,
+          });
+        }
+      }
+      const taggedSummary = horizontalKeys
         .map((h) => `${h.circuitLetter} st.${h.stationNum} ser.${h.seriesNum}`)
         .join(', ');
       const legacySummary = legacyKeys.length ? `\nAlso remove global series: ${legacyKeys.join(', ')}` : '';
       if (
         !confirm(
-          `Remove selected horizontal series (and the previous local serie at the same station when the selected serie number is >= 2)?\n${summary}${legacySummary}\nHorizontal: removes those slots at this station only; other stations unchanged.`
+          `Clear selected horizontal series (twinned pairs cleared together)?\nTagged: ${taggedSummary}\nWill clear: ${clearedSummaries.join('; ')}${legacySummary}\nRows stay — use + to pick a new muscular area.`
         )
       ) {
         return;
       }
       setCircuits((prev) => {
-        let next = applyHorizontalSerieColumnRemovals(prev, ops);
+        let next = clearHorizontalTwinnedSeriesCells(prev, cells);
         if (legacyKeys.length > 0) {
           next = applyLegacyGlobalSeriesRemovals(next, legacyKeys);
         }
@@ -2788,7 +2870,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
       });
       setActionLog((prev) => [
         ...prev,
-        `Horizontal series column(s) removed: ${summary}${legacyKeys.length ? `; global: ${legacyKeys.join(', ')}` : ''}`,
+        `Horizontal twinned series cleared: ${clearedSummaries.join('; ')} (tagged: ${taggedSummary})${legacyKeys.length ? `; global: ${legacyKeys.join(', ')}` : ''}`,
       ]);
       setSelectedSeries(new Set());
       setShowRemoveMenu(false);
@@ -2923,8 +3005,12 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
   
   const generatePreview = (overrideCircuits?: Circuit[]): string => {
     const circuitsToUse = overrideCircuits ?? circuits;
-    const loadOfWorkTrimmed = String(loadOfWork ?? '').trim();
-    const macroSec = /^[0-9]$/.test(loadOfWorkTrimmed) ? parseInt(loadOfWorkTrimmed, 10) * 60 : 0;
+    const macroSec = resolveCircuitPreviewMacroSec({
+      circuits: circuitsToUse,
+      seriesMode,
+      loadOfWorkMacroSec: parseMacroLoadToPauseSeconds(String(loadOfWork ?? '').trim()),
+      pauseCircuitsDefault: pauseCircuits,
+    });
     return computeCircuitPreviewStats({
       circuits: circuitsToUse,
       seriesMode,
@@ -2952,9 +3038,12 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
     pauseAmongStationsDefault: pauseAmongStationsBase,
     pauseCircuitsDefault: pauseCircuits,
     pauseSeriesDefault: pauseSeries,
-    macroSec: /^[0-9]$/.test(String(loadOfWork ?? '').trim())
-      ? parseInt(String(loadOfWork).trim(), 10) * 60
-      : 0,
+    macroSec: resolveCircuitPreviewMacroSec({
+      circuits,
+      seriesMode,
+      loadOfWorkMacroSec: parseMacroLoadToPauseSeconds(String(loadOfWork ?? '').trim()),
+      pauseCircuitsDefault: pauseCircuits,
+    }),
     seriesTime,
     planned:
       circuits.length === 0
@@ -4816,7 +4905,7 @@ export default function CircuitPlanner({ sport, onSave, onCancel, initialConfig 
               <h3 className="text-lg font-bold">
                 {selectedStationForSector 
                   ? executionMode === 'horizontal' && seriesMode === 'count'
-                    ? `Select Muscular Area - Circuit ${selectedStationForSector.circuitLetter} / Station ${selectedStationForSector.stationNumber} (all series)`
+                    ? `Select Muscular Area - Circuit ${selectedStationForSector.circuitLetter} / Series ${selectedStationForSector.seriesIdx + 1} / Station ${selectedStationForSector.stationNumber}`
                     : `Select Muscular Area - Circuit ${selectedStationForSector.circuitLetter} / Series ${selectedStationForSector.seriesIdx + 1} / Station ${selectedStationForSector.stationNumber}`
                   : `Drag Muscular Areas to Stations - Circuit ${selectedCircuitForSector}`
                 }

@@ -32,6 +32,8 @@ interface UseWorkoutFormProps {
   day: any;
   workoutNumber: number;
   workoutSymbol: any;
+  /** Weather & feeling status are saved only when Section C (Workouts Done). */
+  isWorkoutsDone?: boolean;
   onSave: (workoutData: any) => Promise<void>;
   onClose: () => void;
 }
@@ -48,6 +50,7 @@ export function useWorkoutForm({
   day,
   workoutNumber,
   workoutSymbol,
+  isWorkoutsDone = false,
   onSave,
   onClose
 }: UseWorkoutFormProps) {
@@ -339,16 +342,18 @@ export function useWorkoutForm({
         periodId: day.periodId
       };
       
-      // Add Section C fields if they have values
-      if (formData.time) workoutData.time = formData.time;
-      if (formData.weather) workoutData.weather = formData.weather;
-      if (formData.location) workoutData.location = formData.location;
-      if (formData.surface) workoutData.surface = formData.surface;
-      if (formData.heartRateMax) workoutData.heartRateMax = formData.heartRateMax;
-      if (formData.heartRateAvg) workoutData.heartRateAvg = formData.heartRateAvg;
-      if (formData.calories) workoutData.calories = formData.calories;
-      if (formData.feelingStatus) workoutData.feelingStatus = formData.feelingStatus;
-      if (formData.notes) workoutData.notes = formData.notes;
+      // Section C (Workouts Done) — full Workout info tab fields (always send so clears persist)
+      if (isWorkoutsDone) {
+        workoutData.time = formData.time || '';
+        workoutData.weather = formData.weather || '';
+        workoutData.location = formData.location || '';
+        workoutData.surface = formData.surface || '';
+        workoutData.heartRateMax = formData.heartRateMax ?? null;
+        workoutData.heartRateAvg = formData.heartRateAvg ?? null;
+        workoutData.calories = formData.calories ?? null;
+        workoutData.feelingStatus = formData.feelingStatus || '';
+        workoutData.notes = formData.notes || '';
+      }
       
       await onSave(workoutData);
       onClose();

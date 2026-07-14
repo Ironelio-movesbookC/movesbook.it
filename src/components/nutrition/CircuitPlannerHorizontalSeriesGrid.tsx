@@ -204,6 +204,7 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                   notes: '',
                 } as Station);
               const isPlaceholderSlot = !stationRaw;
+              const canPickSector = !station.sector;
               const isFirstRowOfCircuit = rowIndex === 0;
               const isFirstRowOfStationBlock = seriesIdx === 0;
               rowIndex += 1;
@@ -361,24 +362,21 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                   </td>
 
                   <td
-                    className={`border border-gray-300 px-2 py-1 ${isPlaceholderSlot ? 'bg-gray-100' : 'bg-green-50 cursor-pointer hover:bg-green-100'}`}
-                    onDragOver={(e) => !isPlaceholderSlot && e.preventDefault()}
+                    className="border border-gray-300 px-2 py-1 bg-green-50 cursor-pointer hover:bg-green-100"
+                    onDragOver={(e) => station.sector && e.preventDefault()}
                     onDrop={
-                      !isPlaceholderSlot
+                      station.sector
                         ? (e) => handleDropOnStation(e, circuit.letter, seriesIdx, station.stationNumber)
                         : undefined
                     }
-                    onClick={() =>
-                      !isPlaceholderSlot &&
-                      !station.sector &&
-                      handleSectorCellClick(circuit.letter, 0, station.stationNumber)
-                    }
+                    onClick={() => {
+                      if (canPickSector) {
+                        handleSectorCellClick(circuit.letter, seriesIdx, stationNum);
+                      }
+                    }}
+                    title={canPickSector ? 'Click + to select a muscular area' : undefined}
                   >
-                    {isPlaceholderSlot ? (
-                      <div className="flex min-h-[50px] items-center justify-center text-xs text-gray-400">
-                        —
-                      </div>
-                    ) : station.sector && MUSCULAR_SECTOR_IMAGES[station.sector] ? (
+                    {station.sector && MUSCULAR_SECTOR_IMAGES[station.sector] ? (
                       <div className="flex items-center gap-2 group">
                         <div
                           draggable
@@ -423,7 +421,11 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                   </td>
 
                   <td
-                    className={`border border-gray-300 px-0 py-0 ${isPlaceholderSlot ? 'bg-gray-100' : 'bg-green-50 cursor-pointer'}`}
+                    className={`border border-gray-300 px-0 py-0 ${
+                      isPlaceholderSlot && !canPickSector
+                        ? 'bg-gray-100'
+                        : 'bg-green-50 cursor-pointer'
+                    }`}
                     onDragOver={!isPlaceholderSlot ? handleDragExerciseOver : undefined}
                     onDrop={
                       !isPlaceholderSlot
@@ -463,9 +465,13 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                     }}
                     title="Double-click to open Load new station"
                   >
-                    {isPlaceholderSlot ? (
+                    {isPlaceholderSlot && !canPickSector ? (
                       <div className="flex min-h-[44px] items-center justify-center text-xs text-gray-400">
                         —
+                      </div>
+                    ) : !station.sector ? (
+                      <div className="flex min-h-[44px] items-center px-2">
+                        <span className="text-sm text-gray-400 italic">Select exercise</span>
                       </div>
                     ) : (
                     <div className="flex items-center gap-1 exercise-menu-container relative z-[10000]">
@@ -561,7 +567,11 @@ export function HorizontalSeriesCircuitGrid(p: HorizontalSeriesGridProps) {
                   </td>
 
                   <td className="border border-gray-300 px-2 py-1">
-                    {isPlaceholderSlot ? (
+                    {isPlaceholderSlot && !canPickSector ? (
+                      <div className="flex min-h-[38px] items-center justify-center text-xs text-gray-400">
+                        —
+                      </div>
+                    ) : !station.sector ? (
                       <div className="flex min-h-[38px] items-center justify-center text-xs text-gray-400">
                         —
                       </div>

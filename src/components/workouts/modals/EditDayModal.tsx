@@ -43,7 +43,7 @@ export default function EditDayModal({
     }
   }, [day.id, day.notes]); // Re-initialize when day changes
   
-  // Show weather and feeling status only in section C (Workouts Done)
+  // PRODUCT RULE: Weather + Feeling Status ONLY under WORKOUTS DONE (Section C)
   const showWeatherAndFeeling = activeSection === 'C';
   
   // Debug: Log day data
@@ -117,9 +117,12 @@ export default function EditDayModal({
     try {
       const response = await dayApi.update(day.id, {
         notes: notesContent,
-        weather: formData.get('weather'),
-        feelingStatus: formData.get('feelingStatus'),
-        periodId: day.periodId // Keep existing period
+        periodId: day.periodId, // Keep existing period
+        // Weather + Feeling Status: WORKOUTS DONE (Section C) only
+        ...(showWeatherAndFeeling && {
+          weather: formData.get('weather'),
+          feelingStatus: formData.get('feelingStatus'),
+        }),
       });
 
       if (response.success) {

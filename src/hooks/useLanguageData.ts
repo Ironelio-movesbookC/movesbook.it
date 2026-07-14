@@ -7,6 +7,7 @@ import {
   createLanguageList,
   sortLanguagesByOrder
 } from '@/constants/language.constants';
+import { mergeKnownLongTexts } from '@/constants/knownLongTextRegistry';
 import { getAuthHeaders } from '@/utils/auth.utils';
 
 /**
@@ -189,8 +190,9 @@ export function useLanguageData(): UseLanguageDataReturn {
             });
             
             console.log('✅ Merged data ready:', mergedData.length, 'translations');
-            setAllKeys(mergedData);
-            setFilteredKeys(mergedData);
+            const withKnownLongTexts = mergeKnownLongTexts(mergedData);
+            setAllKeys(withKnownLongTexts);
+            setFilteredKeys(withKnownLongTexts);
             
             // Update i18n with deleted keys
             const deletedKeys = mergedData
@@ -211,8 +213,9 @@ export function useLanguageData(): UseLanguageDataReturn {
       
       // If database load failed, just use i18n
       console.log('📖 Using i18n translations only');
-      setAllKeys(i18nData);
-      setFilteredKeys(i18nData);
+      const withKnownLongTexts = mergeKnownLongTexts(i18nData);
+      setAllKeys(withKnownLongTexts);
+      setFilteredKeys(withKnownLongTexts);
     } catch (error) {
       console.error('Error loading translations:', error);
     } finally {

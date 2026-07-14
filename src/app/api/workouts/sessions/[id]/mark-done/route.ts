@@ -59,12 +59,17 @@ export async function PATCH(
       return NextResponse.json({ error: 'Workout session not found or unauthorized' }, { status: 404 });
     }
 
-    // Determine status based on completion
-    let newStatus = 'DONE_MORE_75';
+    // Same-day Done greens: <60 light, 60–80 green, >80 dark.
+    // asDifferent → shifted-day blues with the same % bands.
+    let newStatus: string;
     if (asDifferent) {
-      newStatus = 'DONE_DIFFERENTLY';
-    } else if (completionPercentage < 75) {
+      if (completionPercentage < 60) newStatus = 'DONE_SHIFTED_LESS_60';
+      else if (completionPercentage <= 80) newStatus = 'DONE_SHIFTED_50_80';
+      else newStatus = 'DONE_SHIFTED_MORE_80';
+    } else if (completionPercentage < 60) {
       newStatus = 'DONE_LESS_75';
+    } else if (completionPercentage <= 80) {
+      newStatus = 'DONE_DIFFERENTLY';
     } else {
       newStatus = 'DONE_MORE_75';
     }
