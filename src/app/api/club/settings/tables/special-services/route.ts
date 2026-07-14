@@ -163,15 +163,24 @@ function normalizeServiceImagePath(value: unknown): string | null {
   const image = text(value);
   if (!image) return null;
   if (/^https?:\/\//i.test(image)) return image;
+  if (image.startsWith('/api/media/img/special_services/')) return image;
+  if (image.startsWith('/img/special_services/')) return `/api/media${image}`;
+  if (image.startsWith('img/special_services/')) return `/api/media/${image}`;
   if (image.startsWith('/')) return image;
-  if (image.startsWith('img/special_services/')) return `/${image}`;
-  return `/img/special_services/${image.replace(/^\/+/, '')}`;
+  return `/api/media/img/special_services/${image.replace(/^\/+/, '')}`;
 }
 
 function getServiceImageDiskPath(value: unknown): string | null {
   const imagePath = normalizeServiceImagePath(value);
-  if (!imagePath || !imagePath.startsWith('/img/special_services/')) return null;
-  return join(getServerPublicDir(), ...imagePath.split('/').filter(Boolean));
+  if (!imagePath) return null;
+  let publicRelative: string | null = null;
+  if (imagePath.startsWith('/api/media/img/special_services/')) {
+    publicRelative = 'img/special_services/' + imagePath.slice('/api/media/img/special_services/'.length);
+  } else if (imagePath.startsWith('/img/special_services/')) {
+    publicRelative = imagePath.slice(1);
+  }
+  if (!publicRelative) return null;
+  return join(getServerPublicDir(), publicRelative);
 }
 
 async function findExistingTable(candidates: string[]): Promise<string | null> {

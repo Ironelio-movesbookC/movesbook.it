@@ -57,6 +57,19 @@ function metaString(metadata: Record<string, unknown> | null | undefined, key: s
   return value != null ? String(value).trim() : '';
 }
 
+function receiptMemberName(
+  memberId: string,
+  metadata: Record<string, unknown> | null | undefined,
+  nameById: Map<string, string>
+): string {
+  const taxDocument = metadata?.taxDocument;
+  if (taxDocument && typeof taxDocument === 'object' && !Array.isArray(taxDocument)) {
+    const displayName = metaString(taxDocument as Record<string, unknown>, 'memberDisplayName');
+    if (displayName) return displayName;
+  }
+  return nameById.get(memberId) ?? memberId;
+}
+
 async function loadUserNames(ids: string[]): Promise<Map<string, string>> {
   const unique = Array.from(new Set(ids.filter(Boolean) as string[]));
   if (unique.length === 0) return new Map();
@@ -92,7 +105,17 @@ function mergeMetadata(
 
 export class ProcedureService {
   async getProcedureTypeByCode(code: string) {
-    return prisma.procedureType.findFirst({ where: { code, isActive: true } });
+    const existing = await prisma.procedureType.findFirst({ where: { code, isActive: true } });
+    if (existing) return existing;
+
+    const def = getProcedureDefinition(code);
+    if (!def) return null;
+
+    return prisma.procedureType.upsert({
+      where: { code },
+      update: { name: def.name, description: def.form.subtitle, isActive: true },
+      create: { code, name: def.name, description: def.form.subtitle, isActive: true },
+    });
   }
 
   async createRecord(
@@ -183,7 +206,8 @@ export class ProcedureService {
         initialPayment,
         paymentDate.toISOString().slice(0, 10),
         dueDate?.toISOString().slice(0, 10) ?? null,
-        input.notes ?? null
+        input.notes ?? null,
+        tx
       );
 
       if (initialPayment > 0 && input.payMode === 'card') {
@@ -304,6 +328,137 @@ export class ProcedureService {
     if (result.count === 0) throw new Error('Record not found');
   }
 
+  async updateRecord(
+    ctx: ClubAuthContext,
+    procedureTypeCode: string,
+    recordId: string,
+    input: { recordDate?: string; notes?: string; operatorId?: string; totalAmount?: number }
+  ) {
+    const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
+    if (!procedureType) throw new Error('Unknown procedure type');
+
+    const record = await prisma.procedureRecord.findFirst({
+      where: {
+        id: recordId,
+        clubId: ctx.club.id,
+        procedureTypeId: procedureType.id,
+        status: ProcedureRecordStatus.ACTIVE,
+      },
+    });
+    if (!record) throw new Error('Record not found');
+
+    const data: Record<string, unknown> = {};
+    if (input.recordDate) data.recordDate = toDateOnly(input.recordDate);
+    if (input.notes !== undefined) data.notes = input.notes;
+    if (input.operatorId) data.operatorId = input.operatorId;
+    if (input.totalAmount !== undefined) {
+      const diff = input.totalAmount - decimalToNumber(record.totalAmount);
+      data.totalAmount = input.totalAmount;
+      data.balanceAmount = decimalToNumber(record.balanceAmount) + diff;
+    }
+
+    await prisma.procedureRecord.update({
+      where: { id: recordId },
+      data: data as Prisma.ProcedureRecordUpdateInput,
+    });
+
+    return { success: true };
+  }
+
+  async updatePayment(
+    ctx: ClubAuthContext,
+    procedureTypeCode: string,
+    paymentId: string,
+    input: { paymentDate?: string; notes?: string; operatorId?: string }
+  ) {
+    const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
+    if (!procedureType) throw new Error('Unknown procedure type');
+
+    const payment = await prisma.procedurePayment.findFirst({
+      where: { id: paymentId },
+      include: { procedureRecord: { select: { procedureTypeId: true, clubId: true } } },
+    });
+    if (!payment || payment.procedureRecord.clubId !== ctx.club.id || payment.procedureRecord.procedureTypeId !== procedureType.id) {
+      throw new Error('Payment not found');
+    }
+
+    const data: Record<string, unknown> = {};
+    if (input.paymentDate) data.paymentDate = toDateOnly(input.paymentDate);
+    if (input.notes !== undefined) data.notes = input.notes;
+    if (input.operatorId) data.operatorId = input.operatorId;
+
+    await prisma.procedurePayment.update({
+      where: { id: paymentId },
+      data: data as Prisma.ProcedurePaymentUpdateInput,
+    });
+
+    return { success: true };
+  }
+
+  async deletePayment(ctx: ClubAuthContext, procedureTypeCode: string, paymentId: string) {
+    const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
+    if (!procedureType) throw new Error('Unknown procedure type');
+
+    const payment = await prisma.procedurePayment.findFirst({
+      where: { id: paymentId },
+      include: { procedureRecord: { select: { procedureTypeId: true, clubId: true } } },
+    });
+    if (!payment || payment.procedureRecord.clubId !== ctx.club.id || payment.procedureRecord.procedureTypeId !== procedureType.id) {
+      throw new Error('Payment not found');
+    }
+
+    await prisma.procedurePayment.delete({ where: { id: paymentId } });
+
+    return { success: true };
+  }
+
+  async updateReceipt(
+    ctx: ClubAuthContext,
+    procedureTypeCode: string,
+    receiptId: string,
+    input: { documentType?: string; documentNumber?: string; annotations?: string }
+  ) {
+    const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
+    if (!procedureType) throw new Error('Unknown procedure type');
+
+    const receipt = await prisma.procedureReceipt.findFirst({
+      where: { id: receiptId },
+      include: { procedureRecord: { select: { procedureTypeId: true, clubId: true } } },
+    });
+    if (!receipt || receipt.procedureRecord.clubId !== ctx.club.id || receipt.procedureRecord.procedureTypeId !== procedureType.id) {
+      throw new Error('Receipt not found');
+    }
+
+    const data: Record<string, unknown> = {};
+    if (input.documentType !== undefined) data.documentType = input.documentType;
+    if (input.documentNumber !== undefined) data.documentNumber = input.documentNumber;
+    if (input.annotations !== undefined) data.annotations = input.annotations;
+
+    await prisma.procedureReceipt.update({
+      where: { id: receiptId },
+      data: data as Prisma.ProcedureReceiptUpdateInput,
+    });
+
+    return { success: true };
+  }
+
+  async deleteReceipt(ctx: ClubAuthContext, procedureTypeCode: string, receiptId: string) {
+    const procedureType = await this.getProcedureTypeByCode(procedureTypeCode);
+    if (!procedureType) throw new Error('Unknown procedure type');
+
+    const receipt = await prisma.procedureReceipt.findFirst({
+      where: { id: receiptId },
+      include: { procedureRecord: { select: { procedureTypeId: true, clubId: true } } },
+    });
+    if (!receipt || receipt.procedureRecord.clubId !== ctx.club.id || receipt.procedureRecord.procedureTypeId !== procedureType.id) {
+      throw new Error('Receipt not found');
+    }
+
+    await prisma.procedureReceipt.delete({ where: { id: receiptId } });
+
+    return { success: true };
+  }
+
   async listRecords(
     ctx: ClubAuthContext,
     procedureTypeCode: string,
@@ -382,7 +537,7 @@ export class ProcedureService {
         orderBy: { paymentDate: 'desc' },
         skip,
         take: pageSize,
-        include: { procedureRecord: { select: { memberId: true, metadata: true } } },
+        include: { procedureRecord: { select: { memberId: true, metadata: true, totalAmount: true, balanceAmount: true } } },
       }),
     ]);
 
@@ -407,6 +562,8 @@ export class ProcedureService {
         serviceName: metaString(metadata, primaryKey) || null,
         typology: getProcedureTypology(procedureTypeCode),
         balanceAfter: readBalanceAfter(row),
+        originalDebt: decimalToNumber(row.procedureRecord.totalAmount),
+        residualDebt: decimalToNumber(row.procedureRecord.balanceAmount),
       };
     });
 
@@ -434,6 +591,9 @@ export class ProcedureService {
         orderBy: { receiptDate: 'desc' },
         skip,
         take: pageSize,
+        include: {
+          procedureRecord: { select: { metadata: true } },
+        },
       }),
     ]);
 
@@ -445,7 +605,11 @@ export class ProcedureService {
       id: row.id,
       procedureRecordId: row.procedureRecordId,
       procedurePaymentId: row.procedurePaymentId,
-      memberName: nameById.get(row.memberId) ?? row.memberId,
+      memberName: receiptMemberName(
+        row.memberId,
+        (row.procedureRecord.metadata as Record<string, unknown> | null) ?? null,
+        nameById
+      ),
       documentType: row.documentType,
       documentNumber: row.documentNumber,
       amount: decimalToNumber(row.amount),

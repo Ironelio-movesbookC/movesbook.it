@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
 
     if (source === 'bundled' || !body.data) {
       payload = bundledImport as FoodDatabaseImportPayload;
+      payload.sourceId = 'movesbook_bundled';
       if (body.replaceExisting) payload.replaceExisting = true;
     } else {
       payload = body.data as FoodDatabaseImportPayload;

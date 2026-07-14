@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
@@ -17,8 +17,15 @@ import {
   fetchPurchases,
   type ServiceSalePurchase,
 } from '@/lib/club/serviceSaleClient';
+import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
+import EditServicePurchaseModal from '@/components/club/archives/EditServicePurchaseModal';
 
-function mapPurchase(p: ServiceSalePurchase, i: number, onDelete: (id: string) => void): Member {
+function mapPurchase(
+  p: ServiceSalePurchase,
+  i: number,
+  onDelete: (id: string) => void,
+  onEdit: (p: ServiceSalePurchase) => void
+): Member {
   return {
     id: p.id,
     number: i + 1,
@@ -33,7 +40,20 @@ function mapPurchase(p: ServiceSalePurchase, i: number, onDelete: (id: string) =
     casual: p.notes,
     operator: p.operatorName,
     dateEnd: p.lastPaymentDate ?? undefined,
-    options: (
+    edit: (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit(p);
+        }}
+        className="text-blue-600 hover:text-blue-800"
+        title="Edit"
+      >
+        <Pencil className="w-4 h-4" />
+      </button>
+    ),
+    delete: (
       <button
         type="button"
         onClick={(e) => {
@@ -41,6 +61,7 @@ function mapPurchase(p: ServiceSalePurchase, i: number, onDelete: (id: string) =
           onDelete(p.id);
         }}
         className="text-red-500 hover:text-red-700"
+        title="Delete"
       >
         <Trash2 className="w-4 h-4" />
       </button>
@@ -56,6 +77,11 @@ export default function ArchiveServiceListPage() {
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editTarget, setEditTarget] = useState<ServiceSalePurchase | null>(null);
+  const [showDeletePasswordModal, setShowDeletePasswordModal] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,15 +91,18 @@ export default function ArchiveServiceListPage() {
       setTotal(res.total);
       setData(
         res.items.map((p, i) =>
-          mapPurchase(p, (page - 1) * SERVICE_SALE_PAGE_SIZE + i, async (id) => {
-            if (!confirm('Delete this service record?')) return;
-            try {
-              await deletePurchase(id);
-              load();
-            } catch (e) {
-              alert(e instanceof Error ? e.message : 'Delete failed');
+          mapPurchase(
+            p,
+            (page - 1) * SERVICE_SALE_PAGE_SIZE + i,
+            (id) => {
+              setDeleteTargetId(id);
+              setShowDeletePasswordModal(true);
+            },
+            (purchase) => {
+              setEditTarget(purchase);
+              setShowPasswordModal(true);
             }
-          })
+          )
         )
       );
     } catch (e) {
@@ -82,6 +111,15 @@ export default function ArchiveServiceListPage() {
       setLoading(false);
     }
   }, [page]);
+
+  const performDelete = useCallback(async (id: string) => {
+    try {
+      await deletePurchase(id);
+      load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Delete failed');
+    }
+  }, [load]);
 
   useEffect(() => {
     load();
@@ -119,6 +157,39 @@ export default function ArchiveServiceListPage() {
         loading={loading}
         onRowClick={(row) => row.id && setSelectedId(row.id)}
         onRowDoubleClick={(row) => row.id && router.push(`/clubs/payment_detail/${row.id}`)}
+      />
+
+      <AdminPasswordConfirmModal
+        isOpen={showPasswordModal}
+        onClose={() => { setShowPasswordModal(false); setEditTarget(null); }}
+        onVerified={() => {
+          setShowPasswordModal(false);
+          setShowEditModal(true);
+        }}
+      />
+
+      {editTarget && (
+        <EditServicePurchaseModal
+          isOpen={showEditModal}
+          onClose={() => { setShowEditModal(false); setEditTarget(null); }}
+          onSaved={() => load()}
+          purchase={{
+            id: editTarget.id,
+            paydate: editTarget.paydate,
+            notes: editTarget.notes,
+            operatorId: editTarget.operatorId,
+          }}
+        />
+      )}
+
+      <AdminPasswordConfirmModal
+        isOpen={showDeletePasswordModal}
+        onClose={() => { setShowDeletePasswordModal(false); setDeleteTargetId(null); }}
+        onVerified={() => {
+          setShowDeletePasswordModal(false);
+          if (deleteTargetId) performDelete(deleteTargetId);
+          setDeleteTargetId(null);
+        }}
       />
     </ProcedureArchiveShell>
   );

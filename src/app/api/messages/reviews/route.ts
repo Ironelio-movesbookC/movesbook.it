@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireMessageAuth } from '@/lib/messages/messageAuth';
-import { createThreadWithFirstMessage, listThreadsForUser } from '@/lib/messages/userThreads';
+import { createThreadWithFirstMessage, listAllReviews } from '@/lib/messages/userThreads';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,9 +8,18 @@ export async function GET(request: NextRequest) {
   const auth = await requireMessageAuth(request);
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  const { searchParams } = new URL(request.url);
+
   try {
-    const items = await listThreadsForUser(auth.userId, 'REVIEW');
-    return NextResponse.json({ items });
+    const community = searchParams.get('community') === '1';
+    const adminAll = auth.isStaff && searchParams.get('admin') === '1';
+    const result = await listAllReviews({
+      searchQuery: searchParams.get('q') || '',
+      page: Number(searchParams.get('page') || '1'),
+      pageSize: Number(searchParams.get('pageSize') || '5'),
+      userId: community || adminAll ? undefined : auth.userId,
+    });
+    return NextResponse.json(result);
   } catch (e) {
     console.error('GET /api/messages/reviews', e);
     return NextResponse.json({ error: 'Failed to load reviews' }, { status: 500 });

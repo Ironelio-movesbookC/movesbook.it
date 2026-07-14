@@ -140,7 +140,7 @@ function GlobalSettingsPageContent() {
         System Dashboard
       </div>
 
-      <div className="flex flex-1 max-w-[1920px] mx-auto w-full min-h-0">
+      <div className="flex flex-1 w-full min-w-0 min-h-0">
         {panel === 'foods-and-dishes' ? (
           <AdminFoodDatabasePanel embedded />
         ) : (

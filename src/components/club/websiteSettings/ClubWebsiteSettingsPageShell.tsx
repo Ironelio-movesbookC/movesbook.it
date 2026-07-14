@@ -8,6 +8,7 @@ import SimpleFooter from '@/components/SimpleFooter';
 import ClubDashboardMyPageBanner from '@/app/club/dashboard/components/ClubDashboardMyPageBanner';
 import { getHeroBannerDisplayUrl } from '@/lib/profileBannerSequence';
 import { useClubWebsiteSettingsPage } from '@/hooks/useClubWebsiteSettingsPage';
+import { ClubWebsiteSettingsSidebarProvider } from '@/components/club/websiteSettings/ClubWebsiteSettingsSidebarContext';
 
 export default function ClubWebsiteSettingsPageShell({
   children,
@@ -63,7 +64,9 @@ export default function ClubWebsiteSettingsPageShell({
               <Loader2 className="h-8 w-8 animate-spin text-teal-700" />
             </div>
           ) : (
-            children(ctx)
+            <ClubWebsiteSettingsSidebarProvider clubId={ctx.clubId}>
+              {children(ctx)}
+            </ClubWebsiteSettingsSidebarProvider>
           )}
         </main>
       </div>

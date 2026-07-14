@@ -392,6 +392,51 @@ export interface LanguageStrings {
         'staff_post_button': 'Post',
         'staff_empty_feed': 'No posts yet. Be the first to share feedback.',
         'staff_empty_reviews': 'You have no reviews yet.',
+        'staff_my_contributions_list': 'My contributions',
+        'staff_community_reviews_list': 'Review articles from users',
+        'staff_search_label': 'Search',
+        'staff_search_placeholder': 'Title, username, content…',
+        'staff_search_proceed': 'Proceed',
+        'staff_your_supports': 'Your Supports',
+        'sidebar_my_feedbacks_staff': 'My feedbacks for Staff',
+        'fast_menu_community_contributions': 'Community contributions',
+        'fast_menu_my_contributions': 'My contributions',
+        'fast_menu_review_articles': 'Review articles',
+        'fast_menu_queries': 'Queries',
+        'fast_menu_suggestions': 'Suggestions',
+        'fast_menu_problems_bugs': 'Problems and bugs',
+        'fast_menu_read_feedbacks': 'Read feedbacks from users',
+        'fast_menu_suggestion': 'Suggestion',
+        'fast_menu_feedbacks': 'Feedbacks',
+
+        'version_history_search': 'Search',
+        'version_history_search_placeholder': 'Search titles and content…',
+        'version_history_language': 'Language',
+        'version_history_empty': 'No version history articles yet.',
+        'version_history_show_more': 'Show more',
+        'version_history_show_less': 'Show less',
+        'version_history_edit': 'Edit',
+        'version_history_delete': 'Delete',
+        'version_history_editor_title': 'Version history editor',
+        'version_history_source_language': 'Source language',
+        'version_history_source': 'Source',
+        'version_history_source_hint': 'Enter title and document — use Translation for other languages.',
+        'version_history_title': 'Title',
+        'version_history_translate': 'Translation',
+        'version_history_translating': 'Translating…',
+        'version_history_save': 'Save',
+        'version_history_other_languages': 'Other languages',
+        'version_history_password_title': 'Super Admin password',
+        'version_history_password_hint': 'Enter the Super Admin password to continue.',
+        'version_history_password_invalid': 'Incorrect password.',
+        'version_history_confirm': 'Confirm',
+        'version_history_cancel': 'Cancel',
+        'version_history_edit_unlocked': 'Edit mode unlocked — you can add, edit, and delete articles.',
+        'version_history_enter_source': 'Enter a title or document text in the source language first.',
+        'version_history_translate_failed': 'Translation failed. Try again.',
+        'version_history_save_failed': 'Could not save. Check your password and try again.',
+        'version_history_delete_failed': 'Could not delete this article.',
+        'version_history_load_article_failed': 'Could not load this article.',
         
         // Left Sidebar (DarkSidebar)
         'sidebar_my_page': 'My Page',
@@ -466,7 +511,7 @@ export interface LanguageStrings {
         'sidebar_club_topics': 'Club Topics',
         'sidebar_club_desk_admin_aria': 'Open club management dashboard',
         'sidebar_club_youtube_settings_aria': 'Set club YouTube channel URL',
-        'sidebar_club_topics_settings_aria': 'Manage club topics',
+        'sidebar_club_topics_settings_aria': 'Open website editor (club topics settings)',
         'sidebar_my_topics': 'My Topics',
         'sidebar_my_topics_settings_aria': 'Manage My Topics',
         'modal_select_club_for_topics_title': 'Select a club to view topics',
@@ -520,6 +565,8 @@ export interface LanguageStrings {
         'club_website_search_keywords': 'Search Keywords',
         'club_website_search_keywords_placeholder':
           'Put here your last tags to improve the search in the current language',
+        'club_website_save_document': 'Save document',
+        'club_website_save_document_done': 'Saved',
         'club_website_display_no_club': 'No club selected.',
         'club_website_display_bacheca_hint':
           'Club bulletin board content is managed in the website editor.',
@@ -529,7 +576,18 @@ export interface LanguageStrings {
         'club_bacheca_title': "Club's bacheca",
         'club_bacheca_intro':
           "The club's operators can enter here documents and information using 14 different type of customizable themes.",
-        'club_bacheca_open_editor_aria': 'Open bacheca editor in a new tab',
+        'club_bacheca_apply_hint':
+          'Each label is saved separately — click Apply after uploading photos or editing content so members can see it.',
+        'club_bacheca_unsaved_banner':
+          'Unsaved changes on this label — click Apply to publish photos and content to members.',
+        'club_bacheca_unsaved_dot_title': 'Unsaved changes on this label',
+        'club_bacheca_unsaved_switch_title': 'Unsaved changes',
+        'club_bacheca_unsaved_switch_message':
+          'This label has changes that are not saved yet. Members will not see them until you click Apply.',
+        'club_bacheca_unsaved_save_switch': 'Save and switch',
+        'club_bacheca_unsaved_discard_switch': 'Discard and switch',
+        'club_bacheca_unsaved_stay': 'Keep editing',
+        'club_bacheca_open_editor_aria': 'Open website editor (bacheca settings)',
         'club_bacheca_activate': 'Activate',
         'club_bacheca_rename_label': 'Rename the label',
         'club_bacheca_apply': 'Apply',
@@ -541,6 +599,9 @@ export interface LanguageStrings {
         'club_bacheca_active_label_hint': 'Visible to members when activated',
         'club_bacheca_inactive_label_hint': 'Not shown to members (not activated)',
         'club_bacheca_hidden_from_members': 'hidden from members',
+        'club_bacheca_member_empty':
+          'No bacheca sections are visible yet. Activate a label in the bacheca editor (gear icon in the sidebar).',
+        'club_bacheca_member_no_content': 'This section has no content yet.',
         'club_topic_prompt_name': 'Enter a name for the new topic:',
         'club_topic_add_title': 'New topic',
         'club_topic_add_hint':
@@ -567,6 +628,7 @@ export interface LanguageStrings {
         'club_topic_show_in_club_dashboard': 'Show in My Club - Dashboard - Club topics',
         'club_dashboard_topics_empty':
           'No topics in MY CLUB dashboard yet. In the website editor, enable a topic and check “Show in My Club - Dashboard - Club topics”.',
+        'club_dashboard_open_topic_aria': 'View linked document or URL',
         'club_topic_content_display_type': 'Type of content to display',
         'club_topic_open_editor': 'Open editor',
         'club_topic_open_link': 'Open directly this link',
@@ -1584,7 +1646,7 @@ export interface LanguageStrings {
         'sidebar_club_topics': 'Temas del club',
         'sidebar_club_desk_admin_aria': 'Abrir panel de gestión del club',
         'sidebar_club_youtube_settings_aria': 'Configurar URL del canal de YouTube del club',
-        'sidebar_club_topics_settings_aria': 'Gestionar temas del club',
+        'sidebar_club_topics_settings_aria': 'Abrir editor del sitio web (ajustes de temas del club)',
         'sidebar_my_topics': 'Mis temas',
         'sidebar_my_topics_settings_aria': 'Gestionar Mis temas',
         'modal_select_club_for_topics_title': 'Selecciona un club para ver los temas',
@@ -1638,6 +1700,8 @@ export interface LanguageStrings {
         'club_website_search_keywords': 'Palabras clave de búsqueda',
         'club_website_search_keywords_placeholder':
           'Introduce aquí tus etiquetas para mejorar la búsqueda en el idioma actual',
+        'club_website_save_document': 'Guardar documento',
+        'club_website_save_document_done': 'Guardado',
         'club_website_display_no_club': 'Ningún club seleccionado.',
         'club_website_display_bacheca_hint':
           'El contenido del tablón del club se gestiona en el editor del sitio web.',
@@ -1647,7 +1711,18 @@ export interface LanguageStrings {
         'club_bacheca_title': 'Bacheca del club',
         'club_bacheca_intro':
           'Los operadores del club pueden introducir aquí documentos e información con 14 temas personalizables.',
-        'club_bacheca_open_editor_aria': 'Abrir el editor de bacheca en una nueva pestaña',
+        'club_bacheca_apply_hint':
+          'Cada etiqueta se guarda por separado — haz clic en Aplicar después de subir fotos o editar el contenido para que los miembros lo vean.',
+        'club_bacheca_unsaved_banner':
+          'Cambios sin guardar en esta etiqueta — haz clic en Aplicar para publicar fotos y contenido a los miembros.',
+        'club_bacheca_unsaved_dot_title': 'Cambios sin guardar en esta etiqueta',
+        'club_bacheca_unsaved_switch_title': 'Cambios sin guardar',
+        'club_bacheca_unsaved_switch_message':
+          'Esta etiqueta tiene cambios que aún no se han guardado. Los miembros no los verán hasta que hagas clic en Aplicar.',
+        'club_bacheca_unsaved_save_switch': 'Guardar y cambiar',
+        'club_bacheca_unsaved_discard_switch': 'Descartar y cambiar',
+        'club_bacheca_unsaved_stay': 'Seguir editando',
+        'club_bacheca_open_editor_aria': 'Abrir editor del sitio web (ajustes de bacheca)',
         'club_bacheca_activate': 'Activar',
         'club_bacheca_rename_label': 'Renombrar la etiqueta',
         'club_bacheca_apply': 'Aplicar',
@@ -1659,6 +1734,9 @@ export interface LanguageStrings {
         'club_bacheca_active_label_hint': 'Visible para los miembros si está activada',
         'club_bacheca_inactive_label_hint': 'No se muestra a los miembros (no activada)',
         'club_bacheca_hidden_from_members': 'oculta para los miembros',
+        'club_bacheca_member_empty':
+          'Aún no hay secciones de bacheca visibles. Activa una etiqueta en el editor de bacheca (icono de engranaje en la barra lateral).',
+        'club_bacheca_member_no_content': 'Esta sección aún no tiene contenido.',
         'club_topic_prompt_name': 'Introduce un nombre para el nuevo tema:',
         'club_topic_add_title': 'Nuevo tema',
         'club_topic_add_hint':
@@ -1686,6 +1764,7 @@ export interface LanguageStrings {
         'club_topic_show_in_club_dashboard': 'Mostrar en My Club - Dashboard - Temas del club',
         'club_dashboard_topics_empty':
           'Aún no hay temas en el panel MY CLUB. En el editor del sitio web, activa un tema y marca «Mostrar en My Club - Dashboard - Temas del club».',
+        'club_dashboard_open_topic_aria': 'Ver documento o URL vinculado',
         'club_topic_content_display_type': 'Tipo de contenido a mostrar',
         'club_topic_open_editor': 'Abrir editor',
         'club_topic_open_link': 'Abrir directamente este enlace',

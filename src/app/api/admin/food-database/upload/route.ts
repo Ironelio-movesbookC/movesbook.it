@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      path: `/uploads/food-database/${fileName}`,
+      path: `/api/admin/food-database/uploads/${fileName}`,
       fileName,
     });
   } catch (error: unknown) {

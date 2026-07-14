@@ -84,7 +84,7 @@ export default function ExpensePurchaseForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (!memberId) return setError('Please select a member.');
+    if (!memberId) return setError('Please select a user.');
     if (!expenseName.trim()) return setError('Please select or enter an expense.');
     if (total <= 0) return setError('Amount must be greater than zero.');
     if (!operatorId) return setError('Please select an operator.');
@@ -113,7 +113,7 @@ export default function ExpensePurchaseForm() {
         companyName: selectedCompany?.name,
         createReceipt: taxDoc && paid > 0,
         receiptNumber: taxDocument?.documentNumber,
-        receiptAnnotations: taxDocument?.causal ?? causal,
+        receiptAnnotations: taxDocument?.causal || undefined,
       });
       router.push(def.routes.records);
     } catch (err) {
@@ -131,11 +131,8 @@ export default function ExpensePurchaseForm() {
         <ProcedureFormSection title="Movement data">
           <ProcedureFormGrid>
             <ProcedureFormCell label="User Selected">
-              <input readOnly className={procedureReadonlyInputClass} value={selectedMember?.name ?? ''} />
-            </ProcedureFormCell>
-            <ProcedureFormCell label="Member">
               <select className={procedureInputClass} value={memberId} onChange={(e) => setMemberId(e.target.value)}>
-                <option value="">Select member</option>
+                <option value="">Select user</option>
                 {options?.members.map((m) => (
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
@@ -238,6 +235,7 @@ export default function ExpensePurchaseForm() {
       <TaxDocumentModal
         open={taxModalOpen}
         memberName={selectedMember?.name ?? ''}
+        defaultCausal={causal}
         defaultTotal={total}
         defaultResidual={rest}
         initial={taxDocument ?? undefined}

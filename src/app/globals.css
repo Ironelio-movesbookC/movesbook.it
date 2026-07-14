@@ -173,30 +173,51 @@ form select {
   color: #111827;
 }
 
+/* Admin food database — keep list table headers below modals */
+.admin-food-db-panel table thead th {
+  z-index: 1;
+}
+
+.admin-food-db-panel table thead th.sticky,
+.admin-food-db-panel table tbody td.sticky {
+  z-index: 2;
+}
+
 /* Staff messages panel — beat Tailwind preflight input { color: inherit } */
 @layer utilities {
   .staff-messages-composer,
-  .staff-messages-composer label {
+  .staff-messages-composer label,
+  .admin-bugs-memo-panel,
+  .admin-bugs-memo-panel label,
+  .admin-bugs-memo-composer,
+  .admin-bugs-memo-composer label {
     color: #000000 !important;
   }
 
   .staff-messages-panel input:not([type='radio']):not([type='checkbox']):not([type='hidden']),
   .staff-messages-panel textarea,
-  .staff-messages-panel select {
+  .staff-messages-panel select,
+  .admin-bugs-memo-panel input:not([type='radio']):not([type='checkbox']):not([type='hidden']),
+  .admin-bugs-memo-panel textarea,
+  .admin-bugs-memo-panel select {
     color: #000000 !important;
     -webkit-text-fill-color: #000000 !important;
     caret-color: #000000;
   }
 
   .staff-messages-panel input:not([type='radio']):not([type='checkbox']):not([type='hidden'])::placeholder,
-  .staff-messages-panel textarea::placeholder {
+  .staff-messages-panel textarea::placeholder,
+  .admin-bugs-memo-panel input:not([type='radio']):not([type='checkbox']):not([type='hidden'])::placeholder,
+  .admin-bugs-memo-panel textarea::placeholder {
     color: #64748b !important;
     -webkit-text-fill-color: #64748b !important;
     opacity: 1;
   }
 
   .staff-messages-panel input:-webkit-autofill,
-  .staff-messages-panel textarea:-webkit-autofill {
+  .staff-messages-panel textarea:-webkit-autofill,
+  .admin-bugs-memo-panel input:-webkit-autofill,
+  .admin-bugs-memo-panel textarea:-webkit-autofill {
     -webkit-text-fill-color: #000000 !important;
   }
 }

@@ -2,6 +2,7 @@
 
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { toMediaApiPath } from '@/lib/uploadMediaUrl';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -114,8 +115,8 @@ const DEFAULT_SETTINGS: OtherSettings = {
   zip: '',
   areaCode: '',
   formPayDeadlineStatus: 'Yes',
-  operatorPassStatus: 'Yes',
-  calTaxStatus: false,
+  operatorPassStatus: 'No',
+  calTaxStatus: true,
   tax: '',
   printTaxDetailStatus: false,
   pathSoundName: '',
@@ -227,7 +228,13 @@ function sameSettings(a: OtherSettings, b: OtherSettings) {
 function getLogoPreviewUrl(value: string) {
   const logo = value.trim();
   if (!logo) return '';
-  if (logo.startsWith('/') || logo.startsWith('http') || logo.startsWith('data:') || logo.startsWith('blob:')) {
+  if (logo.startsWith('http') || logo.startsWith('data:') || logo.startsWith('blob:')) {
+    return logo;
+  }
+  if (logo.startsWith('/uploads/')) {
+    return toMediaApiPath(logo) || logo;
+  }
+  if (logo.startsWith('/')) {
     return logo;
   }
   return `/img/document_logo/${encodeURIComponent(logo)}`;
@@ -1236,8 +1243,8 @@ function LogoOption({
         throw new Error('The uploaded logo did not return a valid path.');
       }
 
-      const url = publicPath || `/uploads/document_logo/${encodeURIComponent(fileName)}`;
-      setPreview({ name: storedValue, url });
+      const url = toMediaApiPath(publicPath) || publicPath || `/uploads/document_logo/${encodeURIComponent(fileName)}`;
+      setPreview({ name: storedValue, url: url || '' });
       onChange(storedValue);
     } catch (error) {
       setLogoError(error instanceof Error ? error.message : 'Unable to upload logo.');

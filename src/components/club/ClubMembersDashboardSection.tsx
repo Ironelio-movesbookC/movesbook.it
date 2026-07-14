@@ -22,8 +22,10 @@ import {
 import {
   CLUB_WEBSITE_SETTINGS_INDEX_PATH,
   CLUB_WEBSITE_BACHECA_PATH,
-  clubWebsiteDisplayTopicUrl,
+  clubBachecaDashboardUrl,
+  clubTopicDashboardUrl,
 } from '@/lib/clubWebsiteSettingsPaths';
+import { writeClubWorkspaceTab } from '@/lib/club/clubWorkspaceTab';
 import { CLUB_WEBSITE_SETTINGS_CHANGED_EVENT } from '@/lib/clubWebsiteSettingsEvents';
 import ClubDashboardTopicsList from '@/components/club/ClubDashboardTopicsList';
 import { consumeOpenClubTopicsSection } from '@/lib/club/clubTopicsNavigation';
@@ -154,24 +156,30 @@ export default function ClubMembersDashboardSection({
   const deskHref = effectiveClubId
     ? `/my-club?clubId=${encodeURIComponent(effectiveClubId)}`
     : undefined;
-  const bachecaHref = effectiveClubId
-    ? clubWebsiteDisplayTopicUrl(effectiveClubId, 'bacheca')
-    : undefined;
+  const openBachecaPanel = () => {
+    if (!effectiveClubId) return;
+    writeClubWorkspaceTab('my-entity');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('selectedClub', effectiveClubId);
+    }
+    router.push(clubBachecaDashboardUrl(effectiveClubId));
+  };
+
+  const openTopicPanel = (topicId: string, _label: string) => {
+    if (!effectiveClubId) return;
+    writeClubWorkspaceTab('my-entity');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('selectedClub', effectiveClubId);
+    }
+    router.push(clubTopicDashboardUrl(effectiveClubId, topicId));
+  };
 
   const {
     items: friendItems,
-    updateItem: updateFriendItem,
-    toggleActivated: toggleFriendActivated,
-    removeItem: removeFriendItem,
-    moveItem: moveFriendItem,
-    addSubtopicUnder: addFriendSubtopic,
     reload: reloadFriendItems,
   } = useClubWebsiteFriendList(effectiveClubId);
   const {
     topics: clubTopics,
-    updateTopic: updateClubTopic,
-    toggleActivated: toggleClubTopicActivated,
-    removeTopic: removeClubTopic,
     reload: reloadClubTopics,
   } = useClubWebsiteTopics(effectiveClubId);
 
@@ -297,8 +305,8 @@ export default function ClubMembersDashboardSection({
             <div className="flex min-h-[44px] w-full items-stretch border-b border-black/25">
               <button
                 type="button"
-                disabled={!bachecaHref}
-                onClick={() => bachecaHref && router.push(bachecaHref)}
+                disabled={!effectiveClubId}
+                onClick={openBachecaPanel}
                 className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-700/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Mail className="h-4 w-4 shrink-0 opacity-90" />
@@ -347,30 +355,29 @@ export default function ClubMembersDashboardSection({
             </div>
 
             <div className="flex min-h-[44px] w-full items-stretch border-b border-black/25">
-              <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5">
+              <button
+                type="button"
+                onClick={() => setTopicsOpen((v) => !v)}
+                aria-expanded={topicsOpen}
+                className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-700/90"
+              >
+                <Mail className="h-4 w-4 shrink-0 opacity-90" />
+                <span className="truncate">{t('sidebar_club_topics')}</span>
+              </button>
+              {canManageClub ? (
                 <button
                   type="button"
-                  onClick={() => setTopicsOpen((v) => !v)}
-                  aria-expanded={topicsOpen}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-white/90"
+                  title={t('sidebar_club_topics_settings_aria')}
+                  aria-label={t('sidebar_club_topics_settings_aria')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(CLUB_WEBSITE_SETTINGS_INDEX_PATH, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90"
                 >
-                  <Mail className="h-4 w-4 shrink-0 opacity-90" />
-                  <span className="truncate">{t('sidebar_club_topics')}</span>
+                  <Settings className="h-4 w-4" />
                 </button>
-                {canManageClub ? (
-                  <button
-                    type="button"
-                    title={t('sidebar_club_topics_settings_aria')}
-                    aria-label={t('sidebar_club_topics_settings_aria')}
-                    onClick={() => {
-                      window.open(CLUB_WEBSITE_SETTINGS_INDEX_PATH, '_blank', 'noopener,noreferrer');
-                    }}
-                    className="shrink-0 text-gray-300 transition-colors hover:text-white"
-                  >
-                    <Settings className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
-              </div>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setTopicsOpen((v) => !v)}
@@ -387,16 +394,7 @@ export default function ClubMembersDashboardSection({
                 clubId={effectiveClubId}
                 friendTopics={friendDashboardTopics}
                 customTopics={customDashboardTopics}
-                friendItems={friendItems}
-                adminMode={canManageClub}
-                onToggleFriendActivated={toggleFriendActivated}
-                onDeleteFriend={removeFriendItem}
-                onMoveFriend={moveFriendItem}
-                onUpdateFriendItem={updateFriendItem}
-                onAddFriendSubtopic={addFriendSubtopic}
-                onToggleCustomTopicActivated={toggleClubTopicActivated}
-                onDeleteCustomTopic={removeClubTopic}
-                onUpdateCustomTopic={updateClubTopic}
+                onViewTopicContent={openTopicPanel}
               />
             ) : topicsOpen && !hasDashboardTopics ? (
               <p className="border-t border-black/25 bg-[#252525] px-3 py-2.5 text-[11px] leading-snug text-white/60">

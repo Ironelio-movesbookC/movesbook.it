@@ -39,7 +39,10 @@ export type ProcedurePaymentView = {
   paymentDate: string | null;
   paid: number;
   balance: number;
+  originalDebt: number;
+  residualDebt: number;
   description: string;
+  operatorId: string | null;
   operatorName: string;
 };
 
@@ -114,7 +117,10 @@ function mapPayment(def: ProcedureDefinition, payment: ProcedurePaymentDto): Pro
     paid: payment.amount,
     balance: payment.balanceAfter ?? 0,
     description: payment.notes ?? '',
+    operatorId: payment.operatorId,
     operatorName: payment.operatorName,
+    originalDebt: payment.originalDebt,
+    residualDebt: payment.residualDebt,
   };
 }
 

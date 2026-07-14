@@ -50,11 +50,15 @@ export type Member = {
   // movement
   payMod?: string;
   casual?: string;
+  originalDebt?: number;
+  residualDebt?: number;
   number?: number;
   category?: string;
 
   service?: string;
   options?: React.ReactNode;
+  edit?: React.ReactNode;
+  delete?: React.ReactNode;
 
   // extended archive fields (legacy tables)
   outcome?: string;

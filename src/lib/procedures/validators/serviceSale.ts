@@ -14,6 +14,12 @@ const taxDocumentSchema = z
     vatPercentage: z.number().optional().nullable(),
     vatAmount: z.number().optional().nullable(),
     net: z.number().optional().nullable(),
+    memberDisplayName: z.string().optional().nullable(),
+    originalMemberName: z.string().optional().nullable(),
+    memberAlias: z.string().optional().nullable(),
+    memberNameEditable: z.boolean().optional().nullable(),
+    formCausal: z.string().optional().nullable(),
+    counterKey: z.string().optional().nullable(),
   })
   .optional()
   .nullable();
@@ -89,7 +95,7 @@ export function mapServiceSaleCreateToInput(
     createReceipt: data.createReceipt,
     receiptDocumentType: data.receiptDocumentType ?? data.taxDocument?.documentType ?? 'Invoice',
     receiptNumber: data.receiptNumber ?? data.taxDocument?.documentNumber,
-    receiptAnnotations: data.receiptAnnotations ?? data.taxDocument?.causal ?? notes,
+    receiptAnnotations: data.receiptAnnotations ?? data.taxDocument?.causal ?? null,
     serviceName: data.serviceName,
     taxDocument: data.taxDocument,
   };

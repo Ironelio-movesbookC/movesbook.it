@@ -3,7 +3,8 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { verifyToken } from '@/lib/auth';
-import { getServerPublicDir } from '@/lib/serverPublicDir';
+import { getServerPublicDir, verifyPublicFile } from '@/lib/serverPublicDir';
+import { toMediaApiPath } from '@/lib/uploadMediaUrl';
 
 export async function POST(request: NextRequest) {
   try {
@@ -112,11 +113,19 @@ export async function POST(request: NextRequest) {
     const filePath = join(uploadDir, fileName);
     await writeFile(filePath, buffer);
 
+    if (!(await verifyPublicFile(filePath))) {
+      return NextResponse.json(
+        { error: 'Upload saved but file verification failed' },
+        { status: 500 },
+      );
+    }
+
     const publicPath = `/uploads/news/${fileName}`;
+    const browserPath = toMediaApiPath(publicPath) ?? publicPath;
 
     return NextResponse.json({
       success: true,
-      path: publicPath,
+      path: browserPath,
       fileName: fileName,
     });
   } catch (error: any) {
