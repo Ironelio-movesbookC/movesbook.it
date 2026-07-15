@@ -647,6 +647,16 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
     return [...PLAN_SERIES_DROPDOWN_OPTIONS];
   }, [planSeries]);
 
+  const seriesPlanMeetsTarget = React.useMemo(() => {
+    const targetSeries = parseInt(planTargetTotalSeries, 10);
+    const plannedSeries = planSectorPlanningStats.seriesSum;
+    return (
+      Number.isFinite(targetSeries) &&
+      targetSeries > 0 &&
+      plannedSeries >= targetSeries
+    );
+  }, [planTargetTotalSeries, planSectorPlanningStats.seriesSum]);
+
   const buildNutritionComponentsFromRows = (filledRows: FastPlannerRow[]) => {
     const out: any[] = [];
     const macroTrimmed = endMacro.trim();
@@ -3208,30 +3218,22 @@ const FastPlannerOfNutritionFoods = React.forwardRef<FastPlannerHandle, FastPlan
                 <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
               </button>
             </div>
-            {(() => {
-              const targetSeries = Number(planTargetTotalSeries);
-              const plannedSeries = planSectorPlanningStats.seriesSum;
-              const seriesPlanMatchesTarget =
-                Number.isFinite(targetSeries) &&
-                targetSeries > 0 &&
-                plannedSeries === targetSeries;
-              return seriesPlanMatchesTarget ? (
-                <div
-                  className="mb-3 rounded-lg border border-amber-300 bg-amber-100 px-4 py-2.5 text-center shadow-sm sm:px-5"
-                  role="status"
-                  aria-live="polite"
-                >
-                  <p className="text-sm font-semibold text-amber-950">
-                    Series of this muscular area has been set correctly
-                  </p>
-                </div>
-              ) : null;
-            })()}
             <div className="mb-1 rounded-lg border-2 border-amber-200 bg-amber-100/60 px-4 py-3 text-center sm:px-5 sm:py-4">
               <div className="mb-1 text-sm font-semibold text-amber-800">Name exercise</div>
               <div className="text-xl font-bold text-gray-900 sm:text-2xl md:text-3xl">{planCandidate?.name || 'No exercise selected'}</div>
             </div>
             </div>
+            {seriesPlanMeetsTarget && (
+              <div
+                className="flex-shrink-0 border-t border-amber-200/60 bg-amber-50 px-4 py-2.5 text-center sm:px-5"
+                role="status"
+                aria-live="polite"
+              >
+                <p className="text-sm font-semibold text-red-700">
+                  Series of this muscular area has been set correctly
+                </p>
+              </div>
+            )}
             <div className="flex flex-shrink-0 items-center justify-between gap-2 border-t border-amber-200/60 bg-amber-50 px-4 py-3 sm:px-5">
               <button type="button" onClick={addPlannedExercise} className="rounded-lg bg-gray-300 px-4 py-2.5 font-semibold text-black hover:bg-gray-400 sm:px-6">Add exercise</button>
               <button type="button" onClick={endSeriesPlan} className="rounded-lg bg-black px-4 py-2.5 font-semibold text-white hover:bg-gray-800 sm:px-6">End the plan</button>

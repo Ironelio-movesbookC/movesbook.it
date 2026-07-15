@@ -28,7 +28,15 @@ import {
   hasRichTextContent,
   plainTextToRichHtml,
   richTextToPlainText,
+  fetchLongTextTranslations,
+  paragraphsToRichHtml,
+  splitPlainTextParagraphs,
 } from '@/utils/richTextTranslation';
+import { KNOWN_LONG_TEXT_ENTRIES } from '@/constants/knownLongTextRegistry';
+
+const KNOWN_LONG_TEXT_DESCRIPTIONS = Object.fromEntries(
+  KNOWN_LONG_TEXT_ENTRIES.map((e) => [e.key, e.descriptionEn]),
+);
 
 /** Plain DB strings → HTML for RichTextEditor; leave existing HTML unchanged. */
 function toEditorHtml(text: string): string {
@@ -109,7 +117,10 @@ export default function LanguageSettings() {
   // Auto-translation state
   const [englishText, setEnglishText] = useState('');
   const [translationBannerVisible, setTranslationBannerVisible] = useState(false);
+  const [translationRevision, setTranslationRevision] = useState(0);
   const tab3OtherLanguagesRef = useRef<HTMLDivElement | null>(null);
+  /** Avoid wiping in-progress editor state when filteredKeys refreshes after save/translate. */
+  const lastLoadedEditorKeyRef = useRef<string | null>(null);
   
   // Tab 2 pagination state
   const [tab2Page, setTab2Page] = useState(1);
@@ -180,17 +191,23 @@ export default function LanguageSettings() {
     setTab3Page(1); // Reset Tab 3 to page 1 when filters change
   }, [searchQuery, searchField, allKeys, selectedCategory, activeTab, tab2SearchQuery, tab3SearchQuery, setFilteredKeys]);
 
-  // Update current key when index changes
+  // Load editor content only when the selected key changes (not on every filteredKeys refresh).
   useEffect(() => {
-    if (filteredKeys.length > 0 && currentIndex >= 0 && currentIndex < filteredKeys.length) {
-      const key = filteredKeys[currentIndex];
-      setCurrentKey(key);
-      setVariableName(key.key);
-      const normalizedValues = normalizeEditorTranslations(key.values);
-      setTranslations(normalizedValues);
-      setEnglishText(normalizedValues.en || '');
-      setTranslationBannerVisible(false);
+    if (filteredKeys.length === 0 || currentIndex < 0 || currentIndex >= filteredKeys.length) {
+      return;
     }
+    const key = filteredKeys[currentIndex];
+    setCurrentKey(key);
+    setVariableName(key.key);
+
+    if (lastLoadedEditorKeyRef.current === key.key) {
+      return;
+    }
+    lastLoadedEditorKeyRef.current = key.key;
+    const normalizedValues = normalizeEditorTranslations(key.values);
+    setTranslations(normalizedValues);
+    setEnglishText(normalizedValues.en || '');
+    setTranslationBannerVisible(false);
   }, [currentIndex, filteredKeys]);
 
   // Reset to list view when switching to Tab 3
@@ -217,11 +234,17 @@ export default function LanguageSettings() {
   };
 
   const handleSave = async () => {
+    const keyMeta = activeEditorKey();
+    if (!keyMeta) {
+      alert('⚠️ No translation key selected to save');
+      return;
+    }
+    const mergedTranslations = { ...translations, en: englishText };
     await saveTranslation(
       variableName,
-      translations,
-      currentKey?.category || 'general',
-      currentKey,
+      mergedTranslations,
+      keyMeta.category || 'general',
+      keyMeta,
       allKeys,
       searchQuery,
       (updatedKeys) => {
@@ -229,11 +252,14 @@ export default function LanguageSettings() {
         setFilteredKeys(updatedKeys.filter(k => 
           searchQuery.trim() === '' || k.key.toLowerCase().includes(searchQuery.toLowerCase())
         ));
+        const saved = updatedKeys.find((k) => k.key === variableName);
+        if (saved) {
+          lastLoadedEditorKeyRef.current = saved.key;
+          setTranslations(normalizeEditorTranslations(saved.values));
+          setEnglishText(saved.values.en || englishText);
+        }
+        setTranslationRevision((r) => r + 1);
         
-        // Reload translations from database to verify
-        loadStaticTranslations();
-        
-        // If in Tab 3 editor mode, return to list view
         if (activeTab === 'texts' && tab3ViewMode === 'editor') {
           setTab3ViewMode('list');
           setTab3SelectedKey(null);
@@ -244,11 +270,13 @@ export default function LanguageSettings() {
 
   const handleReset = () => {
     if (currentKey) {
+      lastLoadedEditorKeyRef.current = null;
       setVariableName(currentKey.key);
       const normalizedValues = normalizeEditorTranslations(currentKey.values);
       setTranslations(normalizedValues);
       setEnglishText(normalizedValues.en || '');
       setTranslationBannerVisible(false);
+      lastLoadedEditorKeyRef.current = currentKey.key;
     }
   };
 
@@ -371,11 +399,7 @@ export default function LanguageSettings() {
     setShowNewKeyModal(true);
     setNewKeyName('');
     setNewKeyCategory('system');
-    const initialTranslations: Record<string, string> = {};
-    languages.filter(l => l.isActive).forEach(lang => {
-      initialTranslations[lang.code] = '';
-    });
-    setNewKeyTranslations(initialTranslations);
+    setNewKeyTranslations(initNewKeyTranslations());
   };
 
   const handleSaveNewKey = async () => {
@@ -412,11 +436,58 @@ export default function LanguageSettings() {
     setIsLongTextModal(false);
   };
 
+  const longTextTargetLanguages = () =>
+    ALL_LANGUAGES.map((l) => l.code).filter((code) => code !== 'en');
+
+  const applyPlainTranslationsToHtml = (
+    sourceHtml: string,
+    trans: Record<string, string>,
+    targetLangs: string[],
+    existing: Record<string, string> = {},
+  ): Record<string, string> => {
+    const sourceParagraphs = splitPlainTextParagraphs(richTextToPlainText(sourceHtml));
+    const out: Record<string, string> = { en: sourceHtml, ...existing };
+    for (const lang of targetLangs) {
+      const plain = trans[lang]?.trim() ?? '';
+      if (!plain) continue;
+      const translatedParagraphs = splitPlainTextParagraphs(plain);
+      if (sourceParagraphs.length > 1 && translatedParagraphs.length === sourceParagraphs.length) {
+        out[lang] = paragraphsToRichHtml(translatedParagraphs);
+      } else {
+        out[lang] = plainTextToRichHtml(plain);
+      }
+    }
+    return out;
+  };
+
+  const activeEditorKey = (): TranslationKey | null => tab3SelectedKey || currentKey;
+
+  const initNewKeyTranslations = (): Record<string, string> =>
+    Object.fromEntries(ALL_LANGUAGES.map((lang) => [lang.code, '']));
+
+  const persistLongTextTranslations = async (
+    key: string,
+    category: string,
+    values: Record<string, string>,
+  ): Promise<boolean> => {
+    const persistRes = await fetch('/api/admin/translations/update', {
+      method: 'POST',
+      headers: getJsonAuthHeaders(),
+      body: JSON.stringify({ key, translations: values, category }),
+    });
+    if (!persistRes.ok) return false;
+    setAllKeys((prev) =>
+      prev.map((k) => (k.key === key ? { ...k, values, category } : k)),
+    );
+    setCurrentKey((prev) => (prev?.key === key ? { ...prev, values, category } : prev));
+    setTab3SelectedKey((prev) => (prev?.key === key ? { ...prev, values, category } : prev));
+    lastLoadedEditorKeyRef.current = key;
+    return true;
+  };
+
   const handleAutoTranslate = async () => {
-    const plainSource = richTextToPlainText(englishText);
-    console.log('\n🌐 ======= STARTING TRANSLATION =======');
-    console.log('📝 English text (plain):', plainSource.slice(0, 120));
-    console.log('📏 Text length:', plainSource.length);
+    const sourceHtml = englishText;
+    const plainSource = richTextToPlainText(sourceHtml);
 
     if (!plainSource.trim()) {
       alert('⚠️ Please enter English text first');
@@ -426,130 +497,84 @@ export default function LanguageSettings() {
     setIsTranslating(true);
 
     try {
-      const activeTargets = languages.filter((l) => l.code !== 'en' && l.isActive).map((l) => l.code);
-      const targetLanguages =
-        activeTargets.length > 0
-          ? activeTargets
-          : languages.filter((l) => l.code !== 'en').map((l) => l.code);
+      const targetLanguages = longTextTargetLanguages();
+      const { translations: trans, failedLanguages } = await fetchLongTextTranslations(
+        plainSource,
+        targetLanguages,
+      );
 
-      console.log('🌍 Target languages:', targetLanguages.join(', '));
-      console.log('📊 Total languages to translate:', targetLanguages.length);
+      const updatedTranslations = applyPlainTranslationsToHtml(
+        sourceHtml,
+        trans,
+        targetLanguages,
+        translations,
+      );
 
-      if (targetLanguages.length === 0) {
-        alert(
-          '⚠️ No target languages selected.\n\nPlease activate at least one language in Tab 1 ("Set Official Languages").',
+      setTranslations(updatedTranslations);
+      setTranslationBannerVisible(true);
+      setTranslationRevision((r) => r + 1);
+
+      const keyMeta = activeEditorKey();
+      const keyToSave = variableName || keyMeta?.key;
+      if (keyToSave) {
+        const saved = await persistLongTextTranslations(
+          keyToSave,
+          keyMeta?.category || 'general',
+          updatedTranslations,
         );
-        setIsTranslating(false);
-        return;
-      }
-
-      console.log('📤 Sending translation request to API...');
-      const startTime = Date.now();
-
-      const response = await fetch('/api/translate', {
-        method: 'POST',
-        cache: 'no-store',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          text: plainSource,
-          targetLanguages,
-        }),
-      });
-
-      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-      console.log(`📥 API Response received in ${duration}s - Status: ${response.status}`);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ API Error response:', errorText);
-        throw new Error(`Translation API returned ${response.status}: ${errorText.substring(0, 100)}`);
-      }
-
-      const data = await response.json();
-      console.log('📦 Translation data received:', data);
-
-      if (data.translations) {
-        const trans = data.translations as Record<string, unknown>;
-        const receivedLanguages = Object.keys(trans).filter(
-          (k) => k !== 'en' && typeof trans[k] === 'string' && (trans[k] as string).trim() !== ''
-        );
-        console.log(`✅ Received translations for ${receivedLanguages.length} languages:`, receivedLanguages.join(', '));
-        
-        // Check for incomplete translations
-        const missingLanguages = targetLanguages.filter((lang) => {
-          const v = trans[lang];
-          return typeof v !== 'string' || v.trim() === '';
-        });
-        if (missingLanguages.length > 0) {
-          console.warn('⚠️  Missing translations for:', missingLanguages.join(', '));
-        }
-        
-        const updatedTranslations: Record<string, string> = {
-          ...translations,
-          en: englishText,
-        };
-        targetLanguages.forEach((lang) => {
-          const incoming = trans[lang];
-          if (typeof incoming === 'string' && incoming.trim() !== '') {
-            updatedTranslations[lang] = plainTextToRichHtml(incoming);
-          } else if (!updatedTranslations[lang]) {
-            updatedTranslations[lang] = '';
-          }
-        });
-
-        console.log('💾 Updated translations:', updatedTranslations);
-        console.log('======= TRANSLATION COMPLETE =======\n');
-
-        setTranslations(updatedTranslations);
-        setTranslationBannerVisible(true);
-
-        // Persist immediately so translated values are not lost before manual Save.
-        if (currentKey?.key) {
-          const persistRes = await fetch('/api/admin/translations/update', {
-            method: 'POST',
-            headers: getJsonAuthHeaders(),
-            body: JSON.stringify({
-              key: variableName || currentKey.key,
-              translations: updatedTranslations,
-              category: currentKey.category || 'general',
-            }),
-          });
-          if (!persistRes.ok) {
-            console.warn('Auto-save after translation failed; user can still press Save manually.');
-          } else {
-            loadStaticTranslations();
-          }
-        }
-
-        if (missingLanguages.length > 0) {
+        if (!saved) {
           alert(
-            `⚠️ Translation completed with partial results.\n\n` +
-            `Missing languages: ${missingLanguages.join(', ')}\n` +
-            `You can fill them manually and then Save.`
+            '⚠️ Translations were generated but could not be saved automatically.\n\nClick Save to store them in the database.',
           );
+        } else if (failedLanguages.length === 0) {
+          setTranslationBannerVisible(true);
         }
-        
-        // Show brief success notification
-        console.log(`🎉 SUCCESS: Translated to ${receivedLanguages.length}/${targetLanguages.length} languages in ${duration}s`);
-      } else {
-        throw new Error('Invalid translation response - no translations field found');
+      }
+
+      if (failedLanguages.length > 0) {
+        alert(
+          `⚠️ Translation completed with partial results.\n\nMissing languages: ${failedLanguages.join(', ')}\n\nYou can press Translation again or fill them manually, then Save.`,
+        );
       }
     } catch (error) {
-      console.error('❌ TRANSLATION FAILED:', error);
-      console.error('Stack trace:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       alert(
-        `❌ TRANSLATION FAILED!\n\n` +
-        `Error: ${errorMessage}\n\n` +
-        `Options:\n` +
-        `1. Try again (sometimes APIs are temporarily busy)\n` +
-        `2. Click "Manual Edit" to enter translations manually\n` +
-        `3. Check browser console (F12) for technical details\n\n` +
-        `Text length: ${englishText.length} characters\n` +
-        `Target languages: ${languages.filter(l => l.isActive && l.code !== 'en').length}`
+        `❌ TRANSLATION FAILED!\n\nError: ${errorMessage}\n\nTry again or use Manual Edit.`,
       );
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const handleAutoTranslateNewKey = async () => {
+    const sourceHtml = newKeyTranslations.en || '';
+    const plainSource = richTextToPlainText(sourceHtml);
+    if (!plainSource.trim()) {
+      alert('⚠️ Please enter English text first');
+      return;
+    }
+    setIsTranslating(true);
+    try {
+      const targetLanguages = longTextTargetLanguages();
+      const { translations: trans, failedLanguages } = await fetchLongTextTranslations(
+        plainSource,
+        targetLanguages,
+      );
+      const htmlByLang = applyPlainTranslationsToHtml(
+        sourceHtml,
+        trans,
+        targetLanguages,
+        newKeyTranslations,
+      );
+      setNewKeyTranslations(htmlByLang);
+      setTranslationRevision((r) => r + 1);
+      if (failedLanguages.length > 0) {
+        alert(
+          `⚠️ Some languages could not be translated: ${failedLanguages.join(', ')}\n\nPress Translation again or edit manually before Create.`,
+        );
+      }
+    } catch (error) {
+      alert(`❌ Translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsTranslating(false);
     }
@@ -1381,10 +1406,6 @@ export default function LanguageSettings() {
                     justifyContent: 'center'
                   }}
                 >
-                  {/* Visual indicator */}
-                  <span className="text-white text-xs font-medium opacity-70">
-                    ← Scroll horizontally to see all 12 languages →
-                  </span>
                 </div>
               </div>
             )}
@@ -1405,11 +1426,7 @@ export default function LanguageSettings() {
                     setIsLongTextModal(true);
                     setNewKeyName('');
                     setNewKeyCategory('system');
-                    const initialTranslations: Record<string, string> = {};
-                    languages.filter(l => l.isActive).forEach(lang => {
-                      initialTranslations[lang.code] = '';
-                    });
-                    setNewKeyTranslations(initialTranslations);
+                    setNewKeyTranslations(initNewKeyTranslations());
                   }}
                   className="px-6 py-2 bg-gray-700 text-white font-semibold hover:bg-gray-800 transition"
                 >
@@ -1610,10 +1627,13 @@ export default function LanguageSettings() {
                         return paginatedKeys.map((key, paginatedIndex) => {
                           const index = startIndex + paginatedIndex; // Actual index in full list
                       const isDeleted = key.isDeleted || false;
-                      const textPreview = key.values.en || Object.values(key.values)[0] || '';
+                      const textPreview = richTextToPlainText(
+                        key.values.en || Object.values(key.values)[0] || '',
+                      );
                       const preview = textPreview.length > 150 
                         ? textPreview.substring(0, 150) + '...' 
                         : textPreview;
+                      const usageHint = KNOWN_LONG_TEXT_DESCRIPTIONS[key.key];
                       const langCount = Object.values(key.values).filter(v => v && v.trim()).length;
                       const categoryName = key.category === 'system' ? 'System' : 
                                           key.category === 'social' ? 'Social & Sport' : 'Management';
@@ -1639,6 +1659,10 @@ export default function LanguageSettings() {
                                   {key.key}
                                 </h3>
                               </div>
+
+                              {usageHint ? (
+                                <p className="text-xs text-blue-700 mb-2">{usageHint}</p>
+                              ) : null}
                               
                               {/* Text Preview */}
                               <p className={`text-sm mb-3 leading-relaxed ${
@@ -1678,6 +1702,7 @@ export default function LanguageSettings() {
                             <div className="flex flex-col gap-2">
                               <button
                                 onClick={() => {
+                                  lastLoadedEditorKeyRef.current = null;
                                   const normalizedValues = normalizeEditorTranslations(key.values);
                                   setTab3ViewMode('editor');
                                   setTab3SelectedKey(key);
@@ -1686,6 +1711,7 @@ export default function LanguageSettings() {
                                   setTranslations(normalizedValues);
                                   setEnglishText(normalizedValues.en || '');
                                   setTranslationBannerVisible(false);
+                                  lastLoadedEditorKeyRef.current = key.key;
                                   requestAnimationFrame(() => {
                                     tab3OtherLanguagesRef.current?.scrollIntoView({
                                       behavior: 'smooth',
@@ -1850,6 +1876,11 @@ export default function LanguageSettings() {
                   <div className="flex-1">
                     <div className="text-sm text-gray-600">Editing Long Text:</div>
                     <div className="text-lg font-bold text-gray-900">{tab3SelectedKey.key}</div>
+                    {tab3SelectedKey.key === 'AutoProcessInfo' ? (
+                      <p className="text-xs text-amber-800 mt-1 max-w-xl">
+                        Use blank lines between paragraphs. The <strong>last paragraph</strong> is shown in the yellow confirmation box; all preceding paragraphs appear as the main dialog text.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 
@@ -1925,14 +1956,15 @@ export default function LanguageSettings() {
                     </div>
                     
                     <RichTextEditor
-                      key={`en-${tab3SelectedKey?.key ?? variableName}`}
+                      key={`en-${tab3SelectedKey?.key ?? variableName}-${translationRevision}`}
                       value={englishText}
+                      revision={translationRevision}
                       onChange={(newValue) => {
                         setEnglishText(newValue);
                         setTranslations((prev) => ({ ...prev, en: newValue }));
                       }}
                       placeholder="Type your English text here..."
-                      minHeight="200px"
+                      minHeight="280px"
                       language="English"
                     />
 
@@ -1971,7 +2003,7 @@ export default function LanguageSettings() {
                     {translationBannerVisible && (
                       <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded">
                         <p className="text-sm text-green-900 font-semibold">
-                          ✅ Translations ready! Review and edit if needed, then click Save.
+                          ✅ Translations generated and saved. Review other languages below, then Save if you made edits.
                         </p>
                       </div>
                     )}
@@ -2006,13 +2038,14 @@ export default function LanguageSettings() {
 
                         <div className="p-4 bg-white">
                           <RichTextEditor
-                            key={`${lang.code}-${tab3SelectedKey?.key ?? variableName}`}
+                            key={`${lang.code}-${tab3SelectedKey?.key ?? variableName}-${translationRevision}`}
+                            revision={translationRevision}
                             value={translations[lang.code] || ''}
                             onChange={(newValue) =>
                               setTranslations((prev) => ({ ...prev, [lang.code]: newValue }))
                             }
                             placeholder={`${lang.name} translation...`}
-                            minHeight="150px"
+                            minHeight="220px"
                             language={lang.name}
                           />
                         </div>
@@ -2030,7 +2063,7 @@ export default function LanguageSettings() {
       {/* New Language Modal */}
       {showNewKeyModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className={`bg-white rounded-lg shadow-xl w-full max-h-[90vh] overflow-y-auto ${isLongTextModal ? 'max-w-4xl' : 'max-w-2xl'}`}>
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4">
               <h3 className="text-xl font-bold text-gray-900">
                 {isLongTextModal ? 'Add New Language Long Text' : 'Add New Translation Key'}
@@ -2070,16 +2103,30 @@ export default function LanguageSettings() {
 
               {/* Translation Fields */}
               <div className="space-y-4">
-                <h4 className="font-semibold text-gray-900">
-                  {isLongTextModal ? 'Long Text Translations' : 'Translations'}
-                </h4>
-                {languages.map((lang) => (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="font-semibold text-gray-900">
+                    {isLongTextModal ? 'Long Text Translations' : 'Translations'}
+                  </h4>
+                  {isLongTextModal ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleAutoTranslateNewKey()}
+                      disabled={isTranslating || !hasRichTextContent(newKeyTranslations.en || '')}
+                      className="rounded-md border-2 border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isTranslating ? 'Translating…' : 'Translation'}
+                    </button>
+                  ) : null}
+                </div>
+                {(isLongTextModal ? ALL_LANGUAGES : languages).map((lang) => (
                   <div key={lang.code}>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       {lang.name} ({lang.nativeName})
                     </label>
                     {isLongTextModal ? (
                       <RichTextEditor
+                        key={`new-${lang.code}-${translationRevision}`}
+                        revision={translationRevision}
                         value={newKeyTranslations[lang.code] || ''}
                         onChange={(newValue) =>
                           setNewKeyTranslations((prev) => ({
@@ -2088,7 +2135,7 @@ export default function LanguageSettings() {
                           }))
                         }
                         placeholder={`Enter ${lang.name} long text translation...`}
-                        minHeight={lang.code === 'en' ? '220px' : '160px'}
+                        minHeight={lang.code === 'en' ? '320px' : '220px'}
                         language={lang.name}
                       />
                     ) : (

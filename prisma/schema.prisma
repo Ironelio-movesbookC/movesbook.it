@@ -361,6 +361,9 @@ model WorkoutDay {
   feelingStatus      String?
   notes              String?          
   createdAt          DateTime         @default(now())
+  exportedToDoneAt   DateTime?
+  /// Original Yearly Plan date when this Done day was filled from a different planned day.
+  originalPlannedDate DateTime?
   userId             String
   assignedToUserId   String?
   creatorRole        UserType?
@@ -466,6 +469,7 @@ model WorkoutSession {
   feelingStatus     String?
   notes             String?
   status            WorkoutStatus
+  exportedToDoneAt  DateTime?
   createdAt         DateTime              @default(now())
   includeStretching Boolean               @default(true)
   mainSport         SportType?
@@ -515,6 +519,7 @@ model Moveframe {
   manualInputType     String?        @default("meters") // For aerobic sports: "meters" or "time" (123456 format)
   appliedTechnique    String?        // Body Building technique applied (for BODY_BUILDING sport only)
   aerobicSeries       Int?           @default(1) // Series/Batteries/Groups for aerobic sports (range 1-9, default 1)
+  markedDoneAt        DateTime?
   section             WorkoutSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   workoutSession      WorkoutSession @relation(fields: [workoutSessionId], references: [id], onDelete: Cascade)
   movelaps            Movelap[]
@@ -1531,7 +1536,22 @@ enum WorkoutStatus {
   DONE_DIFFERENTLY
   DONE_LESS_75
   DONE_MORE_75
+  /// Originally planned on a different day; done under 60% (light blue)
+  DONE_SHIFTED_LESS_60
+  /// Originally planned on a different day; done 50–80% (blue)
+  DONE_SHIFTED_50_80
+  /// Originally planned on a different day; done over 80% (dark blue)
+  DONE_SHIFTED_MORE_80
 }
+
+// Yearly Plan symbol color meanings (see .cursor/rules/yearly-plan-workout-symbol-colors.mdc):
+// NOT_PLANNED = white (auto)
+// PLANNED_FUTURE = yellow — future week, not done (auto)
+// PLANNED_CURRENT_WEEK = orange — this week, not done (auto)
+// PLANNED_NEXT_WEEK = red — previous week, not done (auto; legacy name)
+// DONE_LESS_75 = light green — same day done <60% (manual)
+// DONE_DIFFERENTLY = green — same day done 60–80% (manual; legacy name)
+// DONE_MORE_75 = dark green — same day done >80% (manual)
 
 enum MoveframeType {
   STANDARD

@@ -6,6 +6,8 @@
  * the Exercises Database Bank section wires real exercise records (images + metadata).
  */
 
+import { GYM_WEEK_MUSCLE_GROUPS } from '@/constants/gymWeekMuscleGroups';
+
 export interface MockExercise {
   id: string;
   name: string;
@@ -22,6 +24,69 @@ export interface MockExercise {
 export function normalizeCatalogExerciseName(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   return raw.replace(/\u00A0/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+/** User-facing muscle label (e.g. "Quadriceps") for a sector name (e.g. "Front thighs"). */
+export function getMuscleGroupLabelForSector(sector: string): string {
+  const s = normalizeCatalogExerciseName(sector);
+  if (!s) return '';
+  const match = GYM_WEEK_MUSCLE_GROUPS.find((g) => g.sector === s || g.label === s);
+  return match?.label ?? s;
+}
+
+/**
+ * Ensure the muscular area appears at the beginning of the exercise name.
+ * e.g. "Exercise #01 Calfs XXX" + sector "Calves" → "Calves Exercise #01 XXX"
+ */
+export function formatExerciseNameWithSectorFirst(exName: string, sector: string): string {
+  const muscleLabel = getMuscleGroupLabelForSector(sector);
+  const ex = normalizeCatalogExerciseName(exName);
+  if (!ex) return muscleLabel;
+  if (!muscleLabel) return ex;
+
+  const labelLower = muscleLabel.toLowerCase();
+  const exLower = ex.toLowerCase();
+  if (exLower.startsWith(`${labelLower} `) || exLower === labelLower) {
+    return ex;
+  }
+
+  const catalogMatch = ex.match(/^Exercise\s+#(\d+)\s+\S+(?:\s+(.*))?$/i);
+  if (catalogMatch) {
+    const num = catalogMatch[1];
+    const suffix = (catalogMatch[2] ?? '').trim();
+    const core = `Exercise #${num}`;
+    return suffix ? `${muscleLabel} ${core} ${suffix}` : `${muscleLabel} ${core}`;
+  }
+
+  const bankEx = MOCK_EXERCISES.find((e) => normalizeCatalogExerciseName(e.name) === ex);
+  if (bankEx) {
+    const bankMatch = bankEx.name.match(/^Exercise\s+#(\d+)\s+\S+/i);
+    if (bankMatch) {
+      return `${muscleLabel} Exercise #${bankMatch[1]}`;
+    }
+  }
+
+  const sectorNorm = normalizeCatalogExerciseName(sector);
+  const trailingCandidates = new Set<string>([muscleLabel, sectorNorm]);
+  for (const entry of MOCK_EXERCISES) {
+    if (entry.sector === sectorNorm || normalizeCatalogExerciseName(entry.sector) === sectorNorm) {
+      const tail = entry.name.split(/\s+/).pop();
+      if (tail) trailingCandidates.add(tail);
+    }
+  }
+
+  let base = ex;
+  for (const tail of trailingCandidates) {
+    if (!tail) continue;
+    const escaped = tail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`\\s+${escaped}$`, 'i');
+    if (re.test(base)) {
+      base = base.replace(re, '').trim();
+      break;
+    }
+  }
+
+  return `${muscleLabel} ${base}`.trim();
 }
 
 function hashId(id: string): number {

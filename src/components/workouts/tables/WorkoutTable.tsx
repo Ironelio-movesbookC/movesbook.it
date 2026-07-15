@@ -13,6 +13,8 @@ import { useDropdownPosition } from '@/hooks/useDropdownPosition';
 import { movelapPauseFieldLabel } from '@/utils/restTypeDb';
 import MoveframesSection from './MoveframesSection';
 import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
+import { resolveMoveframeRepVolume, resolveMoveframeSeriesCount } from '@/utils/moveframeAvePause';
+import { doneButtonClassName } from '@/utils/exportToDoneClient';
 
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
@@ -45,6 +47,8 @@ interface WorkoutTableProps {
   onExportPdfWorkout?: (workout: any, day: any) => void;
   onExportWorkoutToArchive?: (workout: any, day: any) => void;
   onExportWorkoutToDone?: (workout: any, day: any) => void;
+  onMarkWorkoutDone?: (workout: any, day: any) => void;
+  onMarkMoveframeDone?: (moveframe: any) => void;
   onExportWorkoutToYearly?: (workout: any, day: any) => void;
   onPrintWorkout?: (workout: any, day: any) => void;
   onAddMoveframe: () => void;
@@ -104,6 +108,8 @@ export default function WorkoutTable({
   onExportPdfWorkout,
   onExportWorkoutToArchive,
   onExportWorkoutToDone,
+  onMarkWorkoutDone,
+  onMarkMoveframeDone,
   onExportWorkoutToYearly,
   onPrintWorkout,
   onAddMoveframe,
@@ -300,14 +306,8 @@ export default function WorkoutTable({
           // Manual mode series-based sports don't have movelaps, so repetitions is the count
           totals.repetitions += totalSeries;
         } else {
-          // For standard mode: count movelaps as series
-          const totalSeries = mf.movelaps?.length || 0;
-          totals.series += totalSeries;
-          
-          // Sum actual reps from all movelaps
-          (mf.movelaps || []).forEach((lap: any) => {
-            totals.repetitions += parseInt(lap.reps) || 0;
-          });
+          totals.series += resolveMoveframeSeriesCount(mf);
+          totals.repetitions += resolveMoveframeRepVolume(mf);
         }
       } else {
         // For AEROBIC (distance-based) sports
@@ -545,7 +545,8 @@ export default function WorkoutTable({
                   <span className="whitespace-nowrap text-cyan-50">{new Date(day.date).toLocaleDateString('en-US', { weekday: 'long' })}</span>
                 </>
               )}
-              {day.weather && (
+              {/* Weather is Workouts Done only — see WORKOUTS_DONE_ONLY_FIELDS */}
+              {activeSection === 'C' && day.weather && (
                 <>
                   <span className="text-cyan-50">•</span>
                   <span className="whitespace-nowrap text-cyan-50">{day.weather}</span>
@@ -825,6 +826,22 @@ export default function WorkoutTable({
               )}
             </div>
             
+            {onMarkWorkoutDone && (activeSection === 'B' || activeSection === 'C') && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMarkWorkoutDone(workout, day);
+                }}
+                className={`${doneButtonClassName(Boolean(workout.exportedToDoneAt))} text-xs whitespace-nowrap flex-shrink-0`}
+                title={
+                  activeSection === 'C'
+                    ? 'Apply this Done workout to the Yearly Plan day above'
+                    : 'Copy this workout to Workouts Done'
+                }
+              >
+                Done
+              </button>
+            )}
             <button 
               onClick={(e) => {
                 e.stopPropagation();
@@ -1374,6 +1391,8 @@ export default function WorkoutTable({
             onOpenColumnSettings={onOpenColumnSettings}
             onRefreshWorkouts={onRefreshWorkouts}
             columnSettings={columnSettings}
+            activeSection={activeSection}
+            onMarkMoveframeDone={onMarkMoveframeDone}
           />
         </div>
       )}

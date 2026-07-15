@@ -15,6 +15,11 @@ import { isDistanceBasedSport } from '@/constants/moveframe.constants';
 import { stripInternalWorkoutTags } from '@/utils/sanitizeWorkoutHtml';
 import { movelapPauseFieldLabel } from '@/utils/restTypeDb';
 import { sortWorkoutsForDisplay } from '@/lib/workoutDisplayOrder';
+import YearlyPlanWorkoutSlot from '@/components/workouts/YearlyPlanWorkoutSlot';
+import MatchDoneCircle from '@/components/workouts/MatchDoneCircle';
+import { workoutForSessionSlot, type YearlyWorkoutStatus } from '@/utils/workoutSessionStatus';
+import { formatOriginalPlannedDateLabel } from '@/utils/workoutSessionStatus';
+import { ArrowLeftRight } from 'lucide-react';
 
 const stripCircuitTags = (content: string | null | undefined): string => {
   if (!content) return '';
@@ -35,6 +40,9 @@ interface DayRowTableProps {
   onExpandOnlyThisWorkout?: (workout: any, day: any) => void; // For expanding only one workout
   onExpandDayWithAllWorkouts?: (dayId: string, workouts: any[]) => void; // For row click
   onCycleWorkoutExpansion?: (workout: any, day: any) => void; // 3-state cycle for workout numbers
+  onWorkoutStatusChange?: (workoutId: string, status: YearlyWorkoutStatus, day: any) => void;
+  /** Match Done circle — only selectable from Workouts Done (Section C). */
+  onMatchDoneStatusChange?: (day: any, status: YearlyWorkoutStatus) => void;
   onEditDay?: (day: any) => void;
   onAddWorkout?: (day: any) => void;
   onShowDayInfo?: (day: any) => void;
@@ -46,9 +54,25 @@ interface DayRowTableProps {
   onPasteDay?: (day: any) => void;
   onShareDay?: (day: any) => void;
   onExportDayToTemplate?: (day: any) => void;
+  onExportDayToDone?: (day: any) => void;
+  /** Show planned panel: green ↔ to change / relocate planned day */
+  onChangePlannedDay?: () => void;
+  /** Yearly Plan: open Workouts Done for this day (different Done date flow) */
+  onShowWorkoutsDone?: (day: any) => void;
   onExportPdfDay?: (day: any) => void;
   onPrintDay?: (day: any) => void;
   onDeleteDay?: (day: any) => void;
+  /** Must match COL_WIDTHS.options in DayTableView */
+  optionsColWidth?: number;
+}
+
+const DAY_OPTIONS_BTN =
+  'px-2 py-1 text-[11px] leading-tight rounded font-medium transition-colors shrink-0 whitespace-nowrap';
+
+function doneButtonTone(isDone: boolean): string {
+  return isDone
+    ? 'bg-gray-500 text-green-400 hover:bg-gray-600'
+    : 'bg-gray-500 text-white hover:bg-gray-600';
 }
 
 export default function DayRowTable({
@@ -64,6 +88,8 @@ export default function DayRowTable({
   onExpandOnlyThisWorkout,
   onExpandDayWithAllWorkouts,
   onCycleWorkoutExpansion,
+  onWorkoutStatusChange,
+  onMatchDoneStatusChange,
   onEditDay,
   onAddWorkout,
   onShowDayInfo,
@@ -75,15 +101,18 @@ export default function DayRowTable({
   onPasteDay,
   onShareDay,
   onExportDayToTemplate,
+  onExportDayToDone,
+  onChangePlannedDay,
+  onShowWorkoutsDone,
   onExportPdfDay,
   onPrintDay,
   onDeleteDay,
-  iconType: iconTypeProp
+  iconType: iconTypeProp,
+  optionsColWidth = 320,
 }: DayRowTableProps) {
   const { colors, getBorderStyle } = useColorSettings();
   const defaultIconType = useSportIconType();
   const iconType = iconTypeProp || defaultIconType;
-  const hasWorkouts = day.workouts && day.workouts.length > 0;
   const dayWithWeek = { ...day, weekNumber: currentWeek?.weekNumber };
   const sportSummaries = calculateSportSummaries(day, iconType);
   const useImageIcons = isImageIcon(iconType);
@@ -219,18 +248,32 @@ export default function DayRowTable({
         }
       }}
     >
-      {/* Check Checkbox */}
+      {/* Check Checkbox / Change planned day */}
       <td className="border border-gray-200 px-1 py-2 text-center sticky-col-1 w-[50px] min-w-[50px]" style={{ backgroundColor: bgStyle, color: rowTextColor }} onClick={(e) => e.stopPropagation()}>
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={(e) => {
-            e.stopPropagation();
-            onToggleDaySelection?.(day.id);
-          }}
-          className="w-4 h-4 cursor-pointer"
-          title="Select this day for batch operations"
-        />
+        {onChangePlannedDay ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChangePlannedDay();
+            }}
+            className="inline-flex items-center justify-center w-8 h-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 shadow"
+            title="Change planned day (move/exchange if different from Done day)"
+          >
+            <ArrowLeftRight size={16} />
+          </button>
+        ) : (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={(e) => {
+              e.stopPropagation();
+              onToggleDaySelection?.(day.id);
+            }}
+            className="w-4 h-4 cursor-pointer"
+            title="Select this day for batch operations"
+          />
+        )}
       </td>
 
       {/* Period Color Circle */}
@@ -282,7 +325,7 @@ export default function DayRowTable({
         </td>
       )}
 
-      {/* Match Done (Workout Completion Status) - For Section B and C */}
+      {/* Match Done — day completion circle (B/C). Selectable only in Workouts Done. */}
       {(activeSection === 'B' || activeSection === 'C') && (
         <td 
           className="border border-gray-200 px-1 py-2 text-center sticky-col-7 w-[60px] min-w-[60px]"
@@ -290,14 +333,18 @@ export default function DayRowTable({
             backgroundColor: bgStyle,
             color: rowTextColor
           }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-center">
-            <div
-              className="w-6 h-6 rounded-full border border-gray-400 flex-shrink-0"
-              style={{ backgroundColor: hasWorkouts ? '#10B981' : '#D1D5DB' }}
-              title={hasWorkouts ? 'Workouts planned' : 'No workouts'}
-            />
-          </div>
+          <MatchDoneCircle
+            day={day}
+            canSelect={activeSection === 'C' && Boolean(onMatchDoneStatusChange)}
+            onSelect={
+              onMatchDoneStatusChange
+                ? (status) => onMatchDoneStatusChange(day, status)
+                : undefined
+            }
+            originalDateLabel={formatOriginalPlannedDateLabel(day.originalPlannedDate)}
+          />
         </td>
       )}
 
@@ -316,7 +363,30 @@ export default function DayRowTable({
       >
         <div className="flex items-center justify-center gap-2">
           <div className="flex items-center gap-1">
-            {[1, 2, 3].map((num) => {
+            {activeSection === 'B' || activeSection === 'C' ? (
+              ([1, 2, 3] as const).map((slotNum) => {
+                const workout = workoutForSessionSlot(day.workouts, slotNum);
+                return (
+                  <YearlyPlanWorkoutSlot
+                    key={slotNum}
+                    slotNum={slotNum}
+                    workout={workout}
+                    dayDate={day.date}
+                    onCycleExpansion={
+                      workout && onCycleWorkoutExpansion
+                        ? () => onCycleWorkoutExpansion(workout, day)
+                        : undefined
+                    }
+                    onStatusChange={
+                      onWorkoutStatusChange
+                        ? (workoutId, status) => onWorkoutStatusChange(workoutId, status, day)
+                        : undefined
+                    }
+                  />
+                );
+              })
+            ) : (
+              [1, 2, 3].map((num) => {
               const workout = sortedWorkouts[num - 1]; // Use sorted workouts
               const symbols = ['○', '□', '△'];
               const symbol = symbols[num - 1];
@@ -340,7 +410,8 @@ export default function DayRowTable({
                   {num}<span className="text-sm">{symbol}</span>
                 </span>
               );
-          })}
+          })
+            )}
           </div>
           
           {/* Day Description Text */}
@@ -586,18 +657,27 @@ export default function DayRowTable({
 
       {/* Options */}
       <td 
-        className="border border-gray-200 px-1 py-1 sticky-options-col"
-        style={{ backgroundColor: bgStyle }}
-        onClick={(e) => e.stopPropagation()} // Prevent row click when clicking on buttons
+        className="border border-gray-200 px-1 py-1 sticky-options-col align-middle overflow-hidden"
+        style={{
+          backgroundColor: bgStyle,
+          width: optionsColWidth,
+          minWidth: optionsColWidth,
+          maxWidth: optionsColWidth,
+          boxSizing: 'border-box',
+        }}
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex gap-1 justify-center items-center relative" ref={dropdownRef}>
+        <div
+          className="flex flex-nowrap gap-1 justify-center items-center relative"
+          ref={dropdownRef}
+        >
           {/* Overview Button */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               onShowDayOverview?.(dayWithWeek);
             }}
-            className="px-2 py-1 text-[11px] bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors font-medium"
+            className={`${DAY_OPTIONS_BTN} bg-indigo-500 text-white hover:bg-indigo-600`}
             title="View Day Overview"
           >
             Overview
@@ -609,25 +689,25 @@ export default function DayRowTable({
               e.stopPropagation();
               onShowDayInfo?.(dayWithWeek);
             }}
-            className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors font-medium whitespace-nowrap"
+            className={`${DAY_OPTIONS_BTN} bg-blue-500 text-white hover:bg-blue-600`}
             title="View Day Information"
           >
             Day Info
           </button>
           
           {/* Option Button with Dropdown */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               ref={buttonRef}
               onClick={(e) => {
                 e.stopPropagation();
                 toggleDropdown();
               }}
-              className="px-2 py-1 text-[11px] bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors font-medium flex items-center gap-1"
+              className={`${DAY_OPTIONS_BTN} bg-gray-600 text-white hover:bg-gray-700 inline-flex items-center gap-0.5`}
               title="More Options"
             >
               Option
-              <ChevronDown className="w-3 h-3" />
+              <ChevronDown className="w-3 h-3 shrink-0" />
             </button>
             
             {/* Dropdown Menu - Rendered via Portal */}
@@ -757,12 +837,24 @@ export default function DayRowTable({
           </div>
           
           {/* Delete Button */}
+          {onExportDayToDone && activeSection === 'B' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onExportDayToDone(dayWithWeek);
+              }}
+              className={`${DAY_OPTIONS_BTN} ${doneButtonTone(Boolean(day.exportedToDoneAt))}`}
+              title="Save to Workouts Done on the SAME calendar date. For a different Done date use Show workouts DONE."
+            >
+              Done
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
               onDeleteDay?.(dayWithWeek);
             }}
-            className="px-2 py-1 text-[11px] bg-red-500 text-white rounded hover:bg-red-600 transition-colors font-medium"
+            className={`${DAY_OPTIONS_BTN} bg-red-500 text-white hover:bg-red-600`}
             title="Delete Day"
           >
             Delete
