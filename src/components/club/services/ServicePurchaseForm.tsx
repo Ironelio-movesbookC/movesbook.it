@@ -20,6 +20,7 @@ import {
   type ServiceSaleFormOptions,
 } from '@/lib/club/serviceSaleClient';
 import { fetchCompanies } from '@/lib/club/archives/clubArchiveClient';
+import { fetchOtherSettings } from '@/lib/club/otherSettingsClient';
 
 type Props = {
   initialMemberId?: string;
@@ -94,6 +95,13 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
   const [loadingDiscount, setLoadingDiscount] = useState(false);
   const [companyId, setCompanyId] = useState('');
   const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
+  const [operatorPassStatus, setOperatorPassStatus] = useState('No');
+  const isPasswordEnabled = (() => {
+    const v = operatorPassStatus.trim().toLowerCase();
+    return v === 'yes' || v === 'y' || v === '1' || v === 'true' || v === 't';
+  })();
+  const [formPayDeadlineStatus, setFormPayDeadlineStatus] = useState('Yes');
+  const [notEnterCustData, setNotEnterCustData] = useState(false);
 
   useEffect(() => {
     fetchFormOptions()
@@ -108,6 +116,17 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
         }
         if (data.currentOperatorId) setOperatorId(data.currentOperatorId);
         else if (data.operators[0]?.id) setOperatorId(data.operators[0].id);
+        const settings = await fetchOtherSettings().catch((e) => {
+          console.error('[ServicePurchaseForm] fetchOtherSettings failed:', e);
+          return null;
+        });
+        console.log('[ServicePurchaseForm] settings:', settings);
+        if (settings) {
+          console.log('[ServicePurchaseForm] settings loaded:', settings);
+          setOperatorPassStatus(settings.operatorPassStatus);
+          setFormPayDeadlineStatus(settings.formPayDeadlineStatus);
+          setNotEnterCustData(settings.notEnterCustData);
+        }
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -185,7 +204,7 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
     if (!value || Number(value) < 0) return setError('Please enter a valid cost.');
     if (paid > total) return setError('Payment cannot exceed total cost.');
     if (!operatorId) return setError('Please select an operator.');
-    if (!operatorPassword.trim()) return setError('Operator password is required.');
+    if (isPasswordEnabled && !operatorPassword.trim()) return setError('Operator password is required.');
 
     const selectedSector = options?.sectors.find((s) => s.id === sectorId);
 
@@ -391,7 +410,8 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
                 <button
                   type="button"
                   onClick={() => setTaxModalOpen(true)}
-                  className="px-3 py-1.5 text-sm bg-gray-200 rounded hover:bg-gray-300"
+                  disabled={!taxDoc}
+                  className="px-3 py-1.5 text-sm bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Open form
                 </button>
@@ -409,25 +429,27 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
                 ))}
               </select>
             </ProcedureFormCell>
-            <ProcedureFormCell label="Password">
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  className={procedureInputClass}
-                  value={operatorPassword}
-                  onChange={(e) => setOperatorPassword(e.target.value)}
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
-                  onClick={() => setShowPassword((v) => !v)}
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </ProcedureFormCell>
+            {isPasswordEnabled && (
+              <ProcedureFormCell label="Password">
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className={procedureInputClass}
+                    value={operatorPassword}
+                    onChange={(e) => setOperatorPassword(e.target.value)}
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+                    onClick={() => setShowPassword((v) => !v)}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </ProcedureFormCell>
+            )}
           </ProcedureFormGrid>
         </ProcedureFormSection>
 
@@ -491,6 +513,7 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
         defaultTotal={total}
         defaultResidual={rest}
         initial={taxDocument ?? undefined}
+        hideMemberName={notEnterCustData}
         onClose={() => setTaxModalOpen(false)}
         onSave={(values) => {
           setTaxDocument(values);

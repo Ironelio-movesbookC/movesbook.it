@@ -3,6 +3,7 @@
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toMediaApiPath } from '@/lib/uploadMediaUrl';
+import { withSelectedClubId } from '@/lib/club/servicePurchasesClient';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -342,7 +343,7 @@ export default function OtherSettingsPage() {
         setLoading(true);
         setError(null);
         const token = localStorage.getItem('token');
-        const response = await fetch(API_PATH, {
+        const response = await fetch(withSelectedClubId(API_PATH), {
           headers: token ? { Authorization: `Bearer ${token}` } : {}
         });
 
@@ -478,7 +479,7 @@ export default function OtherSettingsPage() {
       setSuccess(null);
 
       const token = localStorage.getItem('token');
-      const response = await fetch(API_PATH, {
+      const response = await fetch(withSelectedClubId(API_PATH), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
