@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import ProcedureFormSection, {
   procedureHighlightInputClass,
@@ -59,6 +59,7 @@ type Props = {
   onCancel?: () => void;
   onAddToRecordTotal?: (amount: number) => Promise<void>;
   operatorPassStatus?: string;
+  notEnterCustData?: boolean;
 };
 
 function formatDisplayDate(iso: string | null | undefined): string {
@@ -79,6 +80,7 @@ export default function ServicePaymentForm({
   onCancel,
   onAddToRecordTotal,
   operatorPassStatus = 'Yes',
+  notEnterCustData = false,
 }: Props) {
   const sectionLabel = `${purchase.sectorName}-${purchase.serviceName}`;
   const [installments, setInstallments] = useState<InstallmentRow[]>([]);
@@ -94,8 +96,20 @@ export default function ServicePaymentForm({
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [operatorId, setOperatorId] = useState(options.currentOperatorId ?? options.operators[0]?.id ?? '');
   const [operatorPassword, setOperatorPassword] = useState('');
-  const [passwordRequired, setPasswordRequired] = useState(operatorPassStatus === 'Yes');
+  const isPasswordEnabled = (() => {
+    const v = operatorPassStatus.trim().toLowerCase();
+    return v === 'yes' || v === 'y' || v === '1' || v === 'true' || v === 't';
+  })();
+  const [passwordRequired, setPasswordRequired] = useState(isPasswordEnabled);
   const [showPassword, setShowPassword] = useState(false);
+  const prevPassStatus = useRef(operatorPassStatus);
+
+  useEffect(() => {
+    if (prevPassStatus.current !== operatorPassStatus) {
+      prevPassStatus.current = operatorPassStatus;
+      setPasswordRequired(isPasswordEnabled);
+    }
+  }, [operatorPassStatus, isPasswordEnabled]);
   const [payWith, setPayWith] = useState('0');
   const [taxModalOpen, setTaxModalOpen] = useState(false);
   const [taxDocument, setTaxDocument] = useState<TaxDocumentFormValues | null>(null);
@@ -384,7 +398,7 @@ export default function ServicePaymentForm({
                           <li>
                             Expire date of{' '}
                             <span className="text-blue-500">{formatDisplayDate(row.paymentDate)}</span>
-                            {' '}of € {formatEuro(purchase.value)} Rest{' '}
+                            {' '}of € {formatEuro(row.balance + row.paid)} Rest{' '}
                             <span className="text-red-600">€ {formatEuro(row.balance)}</span>
                           </li>
                         </ul>
@@ -409,7 +423,7 @@ export default function ServicePaymentForm({
           <p className="text-xs text-gray-500 mt-1">
             Selected total:{' '}
             <strong className={selectedTotalRest > 0 ? 'text-red-700' : ''}>
-              € {formatEuro(selectedTotalRest)}
+              {formatEuro(selectedTotalRest)}
             </strong>
           </p>
           {installmentError && <p className="text-red-600 text-xs mt-2">{installmentError}</p>}
@@ -517,7 +531,8 @@ export default function ServicePaymentForm({
             <button
               type="button"
               onClick={() => setTaxModalOpen(true)}
-              className="px-3 py-2 text-sm bg-gray-200 rounded hover:bg-gray-300 mb-0.5"
+              disabled={!taxDoc}
+              className="px-3 py-2 text-sm bg-gray-200 rounded hover:bg-gray-300 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Open form
             </button>
@@ -550,7 +565,7 @@ export default function ServicePaymentForm({
               <input
                 type="checkbox"
                 checked={passwordRequired}
-                disabled={operatorPassStatus === 'Yes'}
+                disabled={isPasswordEnabled}
                 onChange={(e) => setPasswordRequired(e.target.checked)}
               />
               <span>Password</span>
@@ -642,6 +657,7 @@ export default function ServicePaymentForm({
         defaultTotal={purchase.value}
         defaultResidual={overallNewRest}
         initial={taxDocument ?? undefined}
+        hideMemberName={notEnterCustData}
         onClose={() => setTaxModalOpen(false)}
         onSave={(values) => {
           setTaxDocument(values);

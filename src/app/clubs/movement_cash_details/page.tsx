@@ -15,6 +15,7 @@ const columns: Column[] = [
   { key: 'paid', header: 'Amount' },
   { key: 'direction', header: 'IN\\OUT' },
   { key: 'payMod', header: 'Pay mode' },
+  { key: 'casual', header: 'Notes' },
   { key: 'operator', header: 'Operator' },
   { key: 'edit', header: 'Edit' },
   { key: 'delete', header: 'Delete' },

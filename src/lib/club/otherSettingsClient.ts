@@ -6,6 +6,7 @@ export type OtherPaymentSettings = {
   formPayDeadlineStatus: string;
   operatorPassStatus: string;
   calTaxStatus: boolean;
+  notEnterCustData: boolean;
 };
 
 export async function fetchOtherSettings(): Promise<OtherPaymentSettings> {

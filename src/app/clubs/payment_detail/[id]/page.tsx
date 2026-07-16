@@ -31,7 +31,7 @@ export default function PaymentDetailPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [otherSettings, setOtherSettings] = useState<{ operatorPassStatus: string; calTaxStatus: boolean } | null>(null);
+  const [otherSettings, setOtherSettings] = useState<{ operatorPassStatus: string; calTaxStatus: boolean; notEnterCustData: boolean } | null>(null);
   const autoPaid = useRef(false);
 
   const load = useCallback(async () => {
@@ -45,7 +45,7 @@ export default function PaymentDetailPage() {
       setPurchase(purchaseRes.purchase);
       setPayments(paymentsRes.items);
       setOptions(formOptions);
-      setOtherSettings({ operatorPassStatus: settings.operatorPassStatus, calTaxStatus: settings.calTaxStatus });
+      setOtherSettings({ operatorPassStatus: settings.operatorPassStatus, calTaxStatus: settings.calTaxStatus, notEnterCustData: settings.notEnterCustData });
 
       if (settings.formPayDeadlineStatus === 'No' && purchaseRes.purchase.rest > 0 && !autoPaid.current) {
         autoPaid.current = true;
@@ -151,6 +151,7 @@ export default function PaymentDetailPage() {
         onCancel={() => router.push('/clubs/dead_line')}
         onAddToRecordTotal={handleAddToRecordTotal}
         operatorPassStatus={otherSettings?.operatorPassStatus ?? 'Yes'}
+        notEnterCustData={otherSettings?.notEnterCustData ?? false}
       />
 
             {success && (
