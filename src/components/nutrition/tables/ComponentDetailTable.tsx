@@ -15,7 +15,13 @@ import {
   resolveCircuitStationPauseSecondsForModal,
   type CircuitPauseContext,
 } from '@/utils/circuitMovelapPause';
-import { formatCircuitMovelapLabel, sortMovelapsForDisplay, shouldShowCircuitGroupSeparatorAfter } from '@/utils/circuitMovelapLabel';
+import {
+  buildCircuitRenumberUpdatesFromOrder,
+  formatCircuitMovelapLabel,
+  sortMovelapsForDisplay,
+  shouldShowCircuitGroupSeparatorAfter,
+  type CircuitRenumberConfig,
+} from '@/utils/circuitMovelapLabel';
 import '../../../styles/sticky-table.css';
 
 type AerobicRestChoice = 'rest_time' | 'restart_to' | 'reset_pulse';
@@ -1746,6 +1752,50 @@ export default function NutritionComponentDetailTable({
     return circuitInfoByLetter.get(normalizedCircuitLetter)?.seriesCount ?? defaultSeriesPerCircuit ?? 1;
   };
 
+  const buildCircuitRenumberConfig = (): CircuitRenumberConfig => {
+    const seriesPerCircuitByLetter: Record<string, number> = {};
+    const circuitIndexByLetter: Record<string, number> = {};
+    if (Array.isArray(circuitRows)) {
+      circuitRows.forEach((c: any, idx: number) => {
+        const letter = String(c?.letter || '').trim().toUpperCase();
+        if (!letter) return;
+        seriesPerCircuitByLetter[letter] = getCircuitSeriesCount(letter, idx + 1);
+        circuitIndexByLetter[letter] = idx + 1;
+      });
+    }
+    return {
+      seriesPerCircuitByLetter,
+      circuitIndexByLetter,
+      defaultSeriesPerCircuit: defaultSeriesPerCircuit ?? 1,
+    };
+  };
+
+  const persistCircuitRenumberFromOrder = async (orderedComponents: any[], token: string) => {
+    const updates = buildCircuitRenumberUpdatesFromOrder(
+      orderedComponents,
+      buildCircuitRenumberConfig()
+    );
+    if (!updates.length) return;
+    await Promise.all(
+      updates.map((update) =>
+        fetch(`/api/nutrition/nutrition_components/${update.id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ notes: update.notes }),
+        })
+      )
+    );
+  };
+
+  const isCircuitComponentTable =
+    !!nutritionFood.isCircuitBased ||
+    (nutritionFood.nutritionComponents || []).some(
+      (ml: any) => ml?.circuitLetter || extractCircuitMetaFromNotes(ml?.notes)
+    );
+
   const resolveLocalSeriesNumber = (nutritionComponent: any, meta: any, normalizedCircuitLetter: string, circuitIndex?: number): number => {
     const explicitLocal =
       toPositiveInt(meta?.localSeriesNumber) ??
@@ -1953,6 +2003,10 @@ export default function NutritionComponentDetailTable({
         return;
       }
 
+      if (isCircuitComponentTable && !isAnaerobicFastPlanner) {
+        await persistCircuitRenumberFromOrder(newOrder, token);
+      }
+
       const reorderPayload = newOrder.map((ml: any, idx: number) => ({
         id: ml.id,
         repetitionNumber: idx + 1 // repetitionNumber starts from 1
@@ -2116,6 +2170,45 @@ export default function NutritionComponentDetailTable({
       });
 
       if (response.ok) {
+        if (isCircuitComponentTable) {
+          const foodResponse = await fetch(`/api/nutrition/nutrition_foods/${nutritionFood.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (foodResponse.ok) {
+            const freshFood = await foodResponse.json();
+            let byRepOrder = [...(freshFood.nutritionComponents || [])].sort(
+              (a: any, b: any) => (a.repetitionNumber ?? 0) - (b.repetitionNumber ?? 0)
+            );
+            await persistCircuitRenumberFromOrder(byRepOrder, token);
+
+            const refetchResponse = await fetch(`/api/nutrition/nutrition_foods/${nutritionFood.id}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (refetchResponse.ok) {
+              const refetched = await refetchResponse.json();
+              byRepOrder = refetched.nutritionComponents || byRepOrder;
+            }
+
+            const updatedComponents = sortMovelapsForDisplay(
+              byRepOrder,
+              nutritionFood.isCircuitBased
+            );
+            await fetch('/api/nutrition/nutrition_components/reorder', {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                nutritionComponents: updatedComponents.map((ml: any, idx: number) => ({
+                  id: ml.id,
+                  repetitionNumber: idx + 1,
+                })),
+              }),
+            });
+          }
+        }
+
         if (onRefresh) {
           onRefresh();
         }

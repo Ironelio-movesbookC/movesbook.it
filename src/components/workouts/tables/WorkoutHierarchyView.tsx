@@ -59,6 +59,8 @@ interface WorkoutHierarchyViewProps {
   onExportPdfWorkout?: (workout: any, day: any) => void;
   onExportWorkoutToArchive?: (workout: any, day: any) => void;
   onExportWorkoutToDone?: (workout: any, day: any) => void;
+  onMarkWorkoutDone?: (workout: any, day: any) => void;
+  onMarkMoveframeDone?: (moveframe: any) => void;
   onExportWorkoutToYearly?: (workout: any, day: any) => void;
   onPrintWorkout?: (workout: any, day: any) => void;
   onDeleteMoveframe?: (moveframe: any, workout: any, day: any) => void;
@@ -114,6 +116,8 @@ export default function WorkoutHierarchyView({
   onExportPdfWorkout,
   onExportWorkoutToArchive,
   onExportWorkoutToDone,
+  onMarkWorkoutDone,
+  onMarkMoveframeDone,
   onExportWorkoutToYearly,
   onPrintWorkout,
   onDeleteMoveframe,
@@ -258,6 +262,8 @@ export default function WorkoutHierarchyView({
               onExportPdfWorkout={(workout, day) => onExportPdfWorkout?.(workout, day)}
               onExportWorkoutToArchive={(workout, day) => onExportWorkoutToArchive?.(workout, day)}
               onExportWorkoutToDone={(workout, day) => onExportWorkoutToDone?.(workout, day)}
+              onMarkWorkoutDone={(workout, day) => onMarkWorkoutDone?.(workout, day)}
+              onMarkMoveframeDone={(moveframe) => onMarkMoveframeDone?.(moveframe)}
               onExportWorkoutToYearly={(workout, day) => onExportWorkoutToYearly?.(workout, day)}
               onPrintWorkout={(workout, day) => onPrintWorkout?.(workout, day)}
               onShowOverview={() => onShowWorkoutOverview?.(workout, day)}

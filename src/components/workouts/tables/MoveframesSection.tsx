@@ -4,6 +4,7 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import SortableMoveframeRow from './SortableMoveframeRow';
 import MoveframeInfoPanel from '../MoveframeInfoPanel';
 import SetWorkTypeModal from '../SetWorkTypeModal';
+import { doneButtonClassName } from '@/utils/exportToDoneClient';
 
 interface MoveframesSectionProps {
   moveframes: any[];
@@ -34,6 +35,8 @@ interface MoveframesSectionProps {
   onOpenColumnSettings?: (tableType: 'day' | 'workout' | 'moveframe' | 'movelap') => void;
   onRefreshWorkouts?: () => Promise<void>;
   columnSettings?: any;
+  activeSection?: 'A' | 'B' | 'C' | 'D';
+  onMarkMoveframeDone?: (moveframe: any) => void;
 }
 
 export default function MoveframesSection({
@@ -64,7 +67,9 @@ export default function MoveframesSection({
   onCopyMovelapToClipboard,
   onOpenColumnSettings,
   onRefreshWorkouts,
-  columnSettings
+  columnSettings,
+  activeSection,
+  onMarkMoveframeDone,
 }: MoveframesSectionProps) {
   const [isExpanded, setIsExpanded] = React.useState(true);
   const [expandedMoveframes, setExpandedMoveframes] = React.useState<Set<string>>(() => {
@@ -469,6 +474,22 @@ export default function MoveframesSection({
           >
             ⚙ Col
           </button>
+          {activeSection === 'B' && onMarkMoveframeDone && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                for (const mf of moveframes) {
+                  if (!mf.markedDoneAt) onMarkMoveframeDone(mf);
+                }
+              }}
+              className={doneButtonClassName(
+                moveframes.length > 0 && moveframes.every((mf: any) => Boolean(mf.markedDoneAt)),
+              )}
+              title="Mark all moveframes done (local tag only)"
+            >
+              Done
+            </button>
+          )}
         </div>
 
         {/* Moveframes Table */}
@@ -533,6 +554,8 @@ export default function MoveframesSection({
                           setShowInfoPanel={setShowInfoPanel}
                           setSelectedMoveframe={setSelectedMoveframe}
                           orderedVisibleColumns={orderedVisibleColumns}
+                          activeSection={activeSection}
+                          onMarkMoveframeDone={onMarkMoveframeDone}
                         />
                       );
                     })}

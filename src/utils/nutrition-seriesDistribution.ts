@@ -118,18 +118,15 @@ export function getSeriesDistribution(
 }
 
 /**
- * Number of exercises for a muscular area.
- * Uses manual count when set on the manual plan page; otherwise the level lookup table.
+ * Number of exercises for a muscular area (from the level × total-series table only).
  */
 export function exerciseCountForArea(
   totalSeries: number,
   category: SeriesLevelCategory = 'mid',
-  manualExerciseCount?: number | null,
+  _manualExerciseCount?: number | null,
 ): number {
   const series = Math.max(0, Math.round(totalSeries));
   if (series <= 0) return 0;
-  const manual = manualExerciseCount ?? 0;
-  if (manual > 0) return Math.max(1, Math.min(series, manual));
   return getSeriesDistribution(series, category).length;
 }
 

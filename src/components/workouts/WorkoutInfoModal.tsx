@@ -16,6 +16,8 @@ interface WorkoutInfoModalProps {
   onClose: () => void;
   onEdit: () => void;
   onUpdate?: () => void;
+  /** Calendar Wide mode: read-only summary, no Edit Workout. */
+  readOnly?: boolean;
 }
 
 export default function WorkoutInfoModal({
@@ -24,7 +26,8 @@ export default function WorkoutInfoModal({
   day,
   onClose,
   onEdit,
-  onUpdate
+  onUpdate,
+  readOnly = false,
 }: WorkoutInfoModalProps) {
   const { t } = useLanguage();
   const [mainSport, setMainSport] = useState(workout?.mainSport || '');
@@ -513,7 +516,7 @@ export default function WorkoutInfoModal({
         </div>
 
         {/* Favorite Workout Toggle */}
-        {!isCheckingFavorites && isSavedInFavorites !== null && (
+        {!readOnly && !isCheckingFavorites && isSavedInFavorites !== null && (
           <div className="mx-6 mt-4 p-4 rounded-lg border-2 bg-gradient-to-br from-yellow-50 to-orange-50 border-yellow-300">
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1">
@@ -566,6 +569,8 @@ export default function WorkoutInfoModal({
 
         {/* Body */}
         <div className="p-6 space-y-6">
+          {!readOnly && (
+          <>
           {/* Basic Information */}
           <div className="bg-gradient-to-br from-gray-50 to-blue-50 p-4 rounded-lg border border-gray-200">
             <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
@@ -739,6 +744,23 @@ export default function WorkoutInfoModal({
               </p>
             </div>
           </div>
+          </>
+          )}
+
+          {readOnly && mainSport && (
+            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-lg border border-indigo-200">
+              <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                <span>🏆</span>
+                <span>Main Sport (Note)</span>
+              </h3>
+              <div className="w-full px-3 py-2.5 border border-indigo-300 rounded-lg text-sm bg-white text-gray-900">
+                {SPORT_OPTIONS.find((s) => s.value === mainSport)?.label || mainSport}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                This is a note field that can be freely edited and does not affect workout structure.
+              </p>
+            </div>
+          )}
 
           {/* Sports from Moveframes (Read-only) */}
           <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-lg border border-purple-200">
@@ -747,7 +769,7 @@ export default function WorkoutInfoModal({
               <span>Sports from Moveframes ({sports.length}/4)</span>
             </h3>
             <p className="text-xs text-gray-500 mb-3">
-              These sports are automatically loaded from moveframes (read-only). To change sports, add/edit moveframes.
+              These sports are automatically loaded from moveframes{readOnly ? ' and cannot be edited directly.' : ' (read-only). To change sports, add/edit moveframes.'}
               {workout.includeStretching === false && ' (Stretching excluded)'}
             </p>
             {sports.length > 0 ? (
@@ -775,8 +797,36 @@ export default function WorkoutInfoModal({
                             <span className="text-gray-500">Moveframes:</span>
                             <span className="font-semibold text-purple-600">{sport.moveframeCount}</span>
                           </div>
-                          
-                          {sport.isSeriesBased ? (
+                          {readOnly ? (
+                            <>
+                              <div className="flex items-center gap-1">
+                                <span className="text-gray-500">Distance:</span>
+                                <span className="font-semibold text-blue-600">
+                                  {shouldShowDistance(sport.sport) && sport.distance > 0
+                                    ? `${sport.distance}${getDistanceUnit(sport.sport)}`
+                                    : sport.distance > 0
+                                      ? `${sport.distance}m`
+                                      : '—'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-gray-500">Series/Reps:</span>
+                                <span className="font-semibold text-purple-600">
+                                  {sport.isSeriesBased
+                                    ? (sport.repetitions > 0 ? sport.repetitions : sport.series)
+                                    : sport.series}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-gray-500">Duration:</span>
+                                <span className="font-semibold text-green-600">
+                                  {sport.durationMinutes > 0
+                                    ? formatDuration(sport.durationMinutes * 60)
+                                    : '—'}
+                                </span>
+                              </div>
+                            </>
+                          ) : sport.isSeriesBased ? (
                             // Series-based sports (Gymnastic, Stretching, etc.)
                             <>
                               <div className="flex items-center gap-1">
@@ -919,6 +969,7 @@ export default function WorkoutInfoModal({
 
         {/* Footer */}
         <div className="flex gap-3 p-6 border-t bg-gradient-to-r from-gray-50 to-blue-50">
+          {!readOnly && (
           <button
             onClick={handleSaveWorkoutSettings}
             disabled={isSavingMainGoal || isSavingIntensity || isSavingTags}
@@ -936,12 +987,14 @@ export default function WorkoutInfoModal({
               </>
             )}
           </button>
+          )}
           <button
             onClick={onClose}
             className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-white hover:border-gray-400 transition-all font-medium shadow-sm"
           >
             Close
           </button>
+          {!readOnly && (
           <button
             onClick={onEdit}
             className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
@@ -949,6 +1002,7 @@ export default function WorkoutInfoModal({
             <span>✏️</span>
             <span>Edit Workout</span>
           </button>
+          )}
         </div>
       </div>
     </div>

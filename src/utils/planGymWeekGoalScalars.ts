@@ -1,5 +1,9 @@
 import type { GoalId, TrainingLevel } from '@/components/workouts/modals/PlanGymWeekModal';
 import { interpolatePeriodIntRounded } from '@/utils/planPeriodInterpolation';
+import {
+  fillAnchoredLevelPair,
+  roundPauseSeconds,
+} from '@/utils/trainingLevelInterpolation';
 
 /** Per-level (Beginner…Professional) first/last period endpoints — same shape as volume serie. */
 export type GoalParamsFromSettings = {
@@ -97,28 +101,37 @@ function loadLS<T>(key: string, fallback: T): T {
 }
 
 function buildDefaultGoalParams(): GoalParamsFromSettings {
-  const repsFrom = [12, 12, 12, 12, 12, 12];
-  const repsTo = [20, 20, 20, 20, 20, 20];
-  const pauseSeriesFrom = [60, 60, 60, 60, 60, 60];
-  const pauseSeriesTo = [55, 55, 55, 55, 55, 55];
-  const pauseExercisesFrom = [90, 90, 90, 90, 90, 90];
-  const pauseExercisesTo = [120, 120, 120, 120, 120, 120];
-  const pauseAreasFrom = [120, 120, 120, 120, 120, 120];
-  const pauseAreasTo = [180, 180, 180, 180, 180, 180];
+  /** Anchor values at Beginner (0) and Professional (4); middle levels filled on normalize. */
+  const repsPair = fillAnchoredLevelPair([12, 0, 0, 0, 15, 15], [20, 0, 0, 0, 30, 30]);
+  const pauseSeriesPair = fillAnchoredLevelPair(
+    [60, 0, 0, 0, 30, 30],
+    [30, 0, 0, 0, 15, 15],
+    roundPauseSeconds,
+  );
+  const pauseExercisesPair = fillAnchoredLevelPair(
+    [120, 0, 0, 0, 60, 60],
+    [180, 0, 0, 0, 120, 120],
+    roundPauseSeconds,
+  );
+  const pauseAreasPair = fillAnchoredLevelPair(
+    [180, 0, 0, 0, 60, 60],
+    [240, 0, 0, 0, 120, 120],
+    roundPauseSeconds,
+  );
   return {
     volumeFrom: [10, 4, 5, 6, 10, 10],
     volumeTo: [50, 5, 6, 8, 50, 50],
-    repsFrom,
-    repsTo,
+    repsFrom: repsPair.from,
+    repsTo: repsPair.to,
     displayInPercent: false,
-    pctFrom: repsFrom.map((r) => 100 - r * 2.5),
-    pctTo: repsTo.map((r) => 100 - r * 2.5),
-    pauseSeriesFrom,
-    pauseSeriesTo,
-    pauseExercisesFrom,
-    pauseExercisesTo,
-    pauseAreasFrom,
-    pauseAreasTo,
+    pctFrom: repsPair.from.map((r) => 100 - r * 2.5),
+    pctTo: repsPair.to.map((r) => 100 - r * 2.5),
+    pauseSeriesFrom: pauseSeriesPair.from,
+    pauseSeriesTo: pauseSeriesPair.to,
+    pauseExercisesFrom: pauseExercisesPair.from,
+    pauseExercisesTo: pauseExercisesPair.to,
+    pauseAreasFrom: pauseAreasPair.from,
+    pauseAreasTo: pauseAreasPair.to,
   };
 }
 
@@ -251,20 +264,38 @@ function normalizeGoalParams(raw: StoredGoalLoadParams | undefined): GoalParamsF
     d.pauseAreasTo
   );
 
+  const repsAnchored = fillAnchoredLevelPair(reps.from, reps.to);
+  const pctAnchored = fillAnchoredLevelPair(pct.from, pct.to);
+  const pauseSeriesAnchored = fillAnchoredLevelPair(
+    pauseSeries.from,
+    pauseSeries.to,
+    roundPauseSeconds,
+  );
+  const pauseExercisesAnchored = fillAnchoredLevelPair(
+    pauseExercises.from,
+    pauseExercises.to,
+    roundPauseSeconds,
+  );
+  const pauseAreasAnchored = fillAnchoredLevelPair(
+    pauseAreas.from,
+    pauseAreas.to,
+    roundPauseSeconds,
+  );
+
   return {
     volumeFrom: volFrom,
     volumeTo: volTo,
-    repsFrom: reps.from,
-    repsTo: reps.to,
+    repsFrom: repsAnchored.from,
+    repsTo: repsAnchored.to,
     displayInPercent: Boolean(raw?.displayInPercent ?? d.displayInPercent),
-    pctFrom: pct.from,
-    pctTo: pct.to,
-    pauseSeriesFrom: pauseSeries.from,
-    pauseSeriesTo: pauseSeries.to,
-    pauseExercisesFrom: pauseExercises.from,
-    pauseExercisesTo: pauseExercises.to,
-    pauseAreasFrom: pauseAreas.from,
-    pauseAreasTo: pauseAreas.to,
+    pctFrom: pctAnchored.from,
+    pctTo: pctAnchored.to,
+    pauseSeriesFrom: pauseSeriesAnchored.from,
+    pauseSeriesTo: pauseSeriesAnchored.to,
+    pauseExercisesFrom: pauseExercisesAnchored.from,
+    pauseExercisesTo: pauseExercisesAnchored.to,
+    pauseAreasFrom: pauseAreasAnchored.from,
+    pauseAreasTo: pauseAreasAnchored.to,
   };
 }
 

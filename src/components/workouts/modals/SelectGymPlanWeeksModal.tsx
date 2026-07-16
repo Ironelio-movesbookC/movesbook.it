@@ -10,7 +10,7 @@ export type GymPlanWeekOption = {
   weekNumber: number;
   periodName?: string;
   startDateLabel?: string;
-  days?: { id: string; dayOfWeek?: number; date?: string; workouts?: unknown[] }[];
+  days?: PlanDayRecord[];
 };
 
 export type GymPlanWeekSelectResult = {
@@ -47,6 +47,123 @@ const FULL_DAY_NAMES = [
   'Sunday',
 ] as const;
 
+type PlanDayWorkout = {
+  sessionNumber?: number;
+  moveframes?: unknown[];
+  name?: string;
+};
+
+type PlanDayRecord = {
+  id: string;
+  dayOfWeek?: number;
+  date?: string;
+  workouts?: PlanDayWorkout[];
+};
+
+function workoutForSession(
+  day: PlanDayRecord | undefined,
+  sessionNumber: number,
+): PlanDayWorkout | undefined {
+  if (!day?.workouts?.length) return undefined;
+  const bySession = day.workouts.find((w) => w.sessionNumber === sessionNumber);
+  if (bySession) return bySession;
+  return day.workouts[sessionNumber - 1];
+}
+
+/** True when a workout record already exists in this day / WO slot. */
+function workoutSlotOccupied(day: PlanDayRecord | undefined, sessionNumber: number): boolean {
+  return workoutForSession(day, sessionNumber) != null;
+}
+
+function WorkoutSlotIndicator({
+  occupied,
+  sessionNumber,
+}: {
+  occupied: boolean;
+  sessionNumber: number;
+}) {
+  return (
+    <span
+      className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-gray-500/40"
+      style={{ backgroundColor: occupied ? '#22c55e' : '#ef4444' }}
+      title={
+        occupied
+          ? `WO ${sessionNumber}: workout already planned on this day`
+          : `WO ${sessionNumber}: empty — no workout on this day`
+      }
+      aria-label={
+        occupied
+          ? `Workout ${sessionNumber} already exists`
+          : `Workout ${sessionNumber} slot is empty`
+      }
+    />
+  );
+}
+
+function TemplateWeekDayTable({
+  week,
+  selectedDayNumbers,
+  atDayLimit,
+  onToggleDay,
+}: {
+  week: GymPlanWeekOption;
+  selectedDayNumbers: Set<number>;
+  atDayLimit: boolean;
+  onToggleDay: (dayNum: number) => void;
+}) {
+  return (
+    <table className="w-full border-collapse text-xs">
+      <thead>
+        <tr className="bg-gray-50 font-semibold text-gray-600">
+          <th className="border border-gray-200 px-2 py-1">Day</th>
+          <th className="border border-gray-200 px-2 py-1">Day of week</th>
+          <th className="border border-gray-200 px-2 py-1 text-center">WO 1</th>
+          <th className="border border-gray-200 px-2 py-1 text-center">WO 2</th>
+          <th className="border border-gray-200 px-2 py-1 text-center">WO 3</th>
+        </tr>
+      </thead>
+      <tbody>
+        {DAY_LABELS.map((label, idx) => {
+          const dayNum = idx + 1;
+          const active = selectedDayNumbers.has(dayNum);
+          const canSelect = active || !atDayLimit;
+          const dayRec = dayRecordForWeek(week, dayNum);
+          return (
+            <tr
+              key={`${week.id}-${dayNum}`}
+              className={
+                !canSelect && !active
+                  ? 'cursor-not-allowed bg-gray-50/20 opacity-50'
+                  : active
+                    ? 'cursor-pointer bg-blue-50/60 hover:bg-blue-100/60'
+                    : 'cursor-pointer bg-white opacity-70 hover:bg-gray-50'
+              }
+              onClick={() => {
+                if (canSelect || active) onToggleDay(dayNum);
+              }}
+            >
+              <td className="border border-gray-200 px-2 py-1 text-center">{dayNum}</td>
+              <td className="border border-gray-200 px-2 py-1 font-medium">{FULL_DAY_NAMES[idx]}</td>
+              {[1, 2, 3].map((wo) => (
+                <td key={wo} className="border border-gray-200 px-2 py-1 text-center">
+                  {active ? (
+                    <WorkoutSlotIndicator
+                      occupied={workoutSlotOccupied(dayRec, wo)}
+                      sessionNumber={wo}
+                    />
+                  ) : (
+                    '—'
+                  )}
+                </td>
+              ))}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 function formatDayDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString(undefined, {
     month: 'long',
@@ -55,7 +172,7 @@ function formatDayDate(dateStr: string): string {
   });
 }
 
-function dayRecordForWeek(week: GymPlanWeekOption, dayNum: number) {
+function dayRecordForWeek(week: GymPlanWeekOption, dayNum: number): PlanDayRecord | undefined {
   const byDow = week.days?.find((d) => d.dayOfWeek === dayNum);
   if (byDow) return byDow;
   return week.days?.[dayNum - 1];
@@ -70,7 +187,7 @@ function weekToOption(w: {
   id: string;
   weekNumber: number;
   period?: { name?: string };
-  days?: { date?: string; dayOfWeek?: number; workouts?: unknown[] }[];
+  days?: { date?: string; dayOfWeek?: number; workouts?: PlanDayWorkout[]; id?: string }[];
 }): GymPlanWeekOption {
   const firstDay = w.days?.[0];
   return {
@@ -81,7 +198,7 @@ function weekToOption(w: {
       ? new Date(firstDay.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
       : undefined,
     days: w.days?.map((d) => ({
-      id: (d as { id?: string }).id ?? '',
+      id: d.id ?? '',
       dayOfWeek: d.dayOfWeek,
       date: d.date,
       workouts: d.workouts,
@@ -114,11 +231,13 @@ export default function SelectGymPlanWeeksModal({
   const [previewWeekId, setPreviewWeekId] = useState<string | null>(null);
   const [selectedDayNumbers, setSelectedDayNumbers] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingLockedWeeks, setLoadingLockedWeeks] = useState(false);
+
+  const maxSelectableDays = Math.min(7, Math.max(1, planDaysCount));
 
   const defaultDays = useMemo(() => {
-    const n = Math.min(7, Math.max(1, planDaysCount));
-    return new Set(Array.from({ length: n }, (_, i) => i + 1));
-  }, [planDaysCount]);
+    return new Set(Array.from({ length: maxSelectableDays }, (_, i) => i + 1));
+  }, [maxSelectableDays]);
 
   const loadWeeks = useCallback(async () => {
     setLoadingWeeks(true);
@@ -175,6 +294,7 @@ export default function SelectGymPlanWeeksModal({
       setSelectedWeekIds(new Set(lockedWeekMetas.map((w) => w.id)));
       setPreviewWeekId(lockedWeekMetas[0]?.id ?? null);
     };
+    setLoadingLockedWeeks(true);
     if (sourceSection === 'B') {
       void (async () => {
         try {
@@ -187,12 +307,31 @@ export default function SelectGymPlanWeeksModal({
           applyLocked(raw.map(weekToOption));
         } catch {
           applyLocked([]);
+        } finally {
+          setLoadingLockedWeeks(false);
+        }
+      })();
+    } else if (sourceSection === 'A') {
+      void (async () => {
+        try {
+          const token = localStorage.getItem('token');
+          if (!token) {
+            applyLocked([]);
+            return;
+          }
+          const raw = await fetchPlanWeeks(token, 'TEMPLATE_WEEKS', templateKey);
+          applyLocked(raw.map(weekToOption));
+        } catch {
+          applyLocked([]);
+        } finally {
+          setLoadingLockedWeeks(false);
         }
       })();
     } else {
       applyLocked([]);
+      setLoadingLockedWeeks(false);
     }
-  }, [isOpen, daysOnlyMode, lockedWeekMetas, sourceSection]);
+  }, [isOpen, daysOnlyMode, lockedWeekMetas, sourceSection, templateKey]);
 
   if (!isOpen || sourceSection === 'D') return null;
 
@@ -228,18 +367,38 @@ export default function SelectGymPlanWeeksModal({
       : getConsecutiveWeeks(consecutiveCount);
 
   const previewWeek = sortedWeeks.find((w) => w.id === (previewWeekId ?? sortedWeeks[0]?.id));
-  const singleWeekSelected = selectedWeekCount === 1;
-  const previewWeekForDates = singleWeekSelected ? selectedWeeksList[0] : previewWeek;
-  const showDayDates =
-    singleWeekSelected &&
-    sourceSection === 'B' &&
-    Boolean(previewWeekForDates && dayDateLabel(previewWeekForDates, 1));
+  const singleWeekSelected = selectedWeekCount === 1 || daysOnlyMode;
+  const previewWeekForDates = daysOnlyMode
+    ? (selectedWeeksList[0] ?? sortedWeeks[0] ?? previewWeek)
+    : singleWeekSelected
+      ? selectedWeeksList[0]
+      : previewWeek;
+  /** Calendar dates known for the target week (Yearly Plan week row, or locked single week). */
+  const showDayDates = Boolean(
+    previewWeekForDates && dayDateLabel(previewWeekForDates, 1),
+  );
+  const weekDataLoading = daysOnlyMode ? loadingLockedWeeks : loadingWeeks;
+
+  const sectionTitle =
+    sourceSection === 'A'
+      ? `Weekly Plan ${templateKey}`
+      : 'Yearly Plan';
+
+  const previewHeaderLabel =
+    singleWeekSelected && previewWeekForDates
+      ? `Week ${previewWeekForDates.weekNumber} — ${sectionTitle}`
+      : `${selectedWeekCount} weeks selected — ${sectionTitle}`;
+
+  const atDayLimit = selectedDayNumbers.size >= maxSelectableDays;
 
   const toggleDay = (dayNum: number) => {
     setSelectedDayNumbers((prev) => {
       const next = new Set(prev);
-      if (next.has(dayNum)) next.delete(dayNum);
-      else next.add(dayNum);
+      if (next.has(dayNum)) {
+        next.delete(dayNum);
+      } else if (next.size < maxSelectableDays) {
+        next.add(dayNum);
+      }
       return next;
     });
   };
@@ -256,8 +415,10 @@ export default function SelectGymPlanWeeksModal({
     }
     const dayNums = Array.from(selectedDayNumbers).sort((a, b) => a - b);
     if (dayNums.length === 0) return;
-    if (dayNums.length < planDaysCount) {
-      alert(`Select at least ${planDaysCount} day(s) of the week for your ${planDaysCount} routine(s).`);
+    if (dayNums.length !== maxSelectableDays) {
+      alert(
+        `Select exactly ${maxSelectableDays} day(s) of the week — one for each of your ${maxSelectableDays} routine(s).`,
+      );
       return;
     }
 
@@ -283,11 +444,6 @@ export default function SelectGymPlanWeeksModal({
       setIsLoading(false);
     }
   };
-
-  const sectionTitle =
-    sourceSection === 'A'
-      ? `Weekly Plan ${templateKey}`
-      : 'Yearly Plan';
 
   return (
     <div
@@ -320,13 +476,15 @@ export default function SelectGymPlanWeeksModal({
             {daysOnlyMode ? (
               <>
                 Saving to <strong>Week {lockedWeekMetas?.[0]?.weekNumber}</strong> in {sectionTitle}.
-                Pick which days of the week will receive your routines, then drag each routine onto a
-                day and workout slot.
+                Pick which days will receive your routines (calendar dates shown below).
+                Green / red dots in WO 1–3 show whether a workout already exists on that day.
+                On the next screen you will drag each routine onto a day and workout slot.
               </>
             ) : (
               <>
                 Choose where to save this gym weekly plan in <strong>{sectionTitle}</strong>.
                 Select one or more weeks, then pick which days of the week will receive your routines.
+                Green / red dots in WO 1–3 show whether a workout already exists on that day.
                 On the next screen you will drag each routine onto a day and workout slot.
               </>
             )}
@@ -368,8 +526,13 @@ export default function SelectGymPlanWeeksModal({
             <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{loadError}</p>
           ) : null}
 
-          {!daysOnlyMode && loadingWeeks ? (
-            <p className="text-sm text-gray-500">Loading weeks…</p>
+          {weekDataLoading ? (
+            <p className="text-sm text-gray-500">Loading week dates…</p>
+          ) : !daysOnlyMode && sortedWeeks.length === 0 && sourceSection === 'A' ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-semibold">No weeks found in Weekly Plan {templateKey}</p>
+              <p className="mt-1 text-xs">Add weeks to this template plan first, then save your gym week again.</p>
+            </div>
           ) : !daysOnlyMode && sortedWeeks.length === 0 && sourceSection === 'B' ? (
             <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <p className="font-semibold">No Yearly Plan weeks found</p>
@@ -494,11 +657,11 @@ export default function SelectGymPlanWeeksModal({
                   </label>
                   <span
                     className="inline-flex items-center gap-1 text-[11px] text-gray-500"
-                    title="Pick which weekdays can receive routines"
+                    title="Pick exactly one weekday per routine — no more than the number of routines planned"
                   >
                     <Info className="h-3.5 w-3.5" aria-hidden />
-                    Need at least {planDaysCount} for your routines
-                    {singleWeekSelected && showDayDates
+                    Select exactly {maxSelectableDays} day{maxSelectableDays === 1 ? '' : 's'} (one per routine)
+                    {showDayDates
                       ? ' · dates shown for the selected week'
                       : selectedWeekCount > 1
                         ? ' · same days apply to every selected week'
@@ -509,6 +672,7 @@ export default function SelectGymPlanWeeksModal({
                   {DAY_LABELS.map((label, idx) => {
                     const dayNum = idx + 1;
                     const on = selectedDayNumbers.has(dayNum);
+                    const canSelect = on || !atDayLimit;
                     const dateLabel =
                       showDayDates && previewWeekForDates
                         ? dayDateLabel(previewWeekForDates, dayNum)
@@ -517,11 +681,21 @@ export default function SelectGymPlanWeeksModal({
                       <button
                         key={dayNum}
                         type="button"
-                        onClick={() => toggleDay(dayNum)}
+                        onClick={() => {
+                          if (canSelect) toggleDay(dayNum);
+                        }}
+                        disabled={!canSelect}
+                        title={
+                          !canSelect
+                            ? `You already selected ${maxSelectableDays} day(s) — deselect one to choose another`
+                            : undefined
+                        }
                         className={`min-w-[4.5rem] rounded-lg border-2 px-3 py-2 text-sm font-semibold transition-colors ${
                           on
                             ? 'border-blue-500 bg-blue-50 text-blue-800'
-                            : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
+                            : canSelect
+                              ? 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
+                              : 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 opacity-60'
                         }`}
                       >
                         {showDayDates ? FULL_DAY_NAMES[idx] : label}
@@ -536,14 +710,22 @@ export default function SelectGymPlanWeeksModal({
                 </div>
               </div>
 
-              {selectedWeekCount > 0 && (
+              {(daysOnlyMode || selectedWeekCount > 0) && previewWeekForDates ? (
                 <div className="overflow-hidden rounded-lg border border-gray-300">
-                  <div className="bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700">
-                    {singleWeekSelected && previewWeekForDates
-                      ? `Week ${previewWeekForDates.weekNumber} — ${sectionTitle}`
-                      : `${selectedWeekCount} weeks selected — ${sectionTitle}`}
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-100 px-3 py-2">
+                    <div className="text-xs font-semibold text-gray-700">{previewHeaderLabel}</div>
+                    <div className="flex flex-wrap items-center gap-3 text-[10px] text-gray-600">
+                      <span className="inline-flex items-center gap-1">
+                        <WorkoutSlotIndicator occupied sessionNumber={1} />
+                        Workout already exists
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <WorkoutSlotIndicator occupied={false} sessionNumber={1} />
+                        Empty slot
+                      </span>
+                    </div>
                   </div>
-                  {singleWeekSelected && previewWeekForDates ? (
+                  {showDayDates && previewWeekForDates ? (
                     <table className="w-full border-collapse text-xs">
                       <thead>
                         <tr className="bg-blue-600 text-left font-semibold text-white">
@@ -559,23 +741,29 @@ export default function SelectGymPlanWeeksModal({
                         {DAY_LABELS.map((label, idx) => {
                           const dayNum = idx + 1;
                           const active = selectedDayNumbers.has(dayNum);
+                          const canSelect = active || !atDayLimit;
                           const dateLabel = dayDateLabel(previewWeekForDates, dayNum);
+                          const dayRec = dayRecordForWeek(previewWeekForDates, dayNum);
                           return (
                             <tr
                               key={dayNum}
                               className={
-                                active
-                                  ? 'cursor-pointer bg-blue-50/60 hover:bg-blue-100/60'
-                                  : 'cursor-pointer bg-gray-50/30 opacity-70 hover:bg-gray-100/50'
+                                !canSelect && !active
+                                  ? 'cursor-not-allowed bg-gray-50/20 opacity-50'
+                                  : active
+                                    ? 'cursor-pointer bg-blue-50/60 hover:bg-blue-100/60'
+                                    : 'cursor-pointer bg-gray-50/30 opacity-70 hover:bg-gray-100/50'
                               }
-                              onClick={() => toggleDay(dayNum)}
+                              onClick={() => {
+                                if (canSelect || active) toggleDay(dayNum);
+                              }}
                             >
                               <td className="border border-gray-200 px-2 py-1.5 text-center font-semibold">
                                 {previewWeekForDates.weekNumber}
                               </td>
                               <td className="border border-gray-200 px-2 py-1.5 text-center">{dayNum}</td>
                               <td className="border border-gray-200 px-2 py-1.5 font-medium text-blue-800">
-                                {showDayDates && dateLabel
+                                {dateLabel
                                   ? `${FULL_DAY_NAMES[idx]} ${dateLabel}`
                                   : `${FULL_DAY_NAMES[idx]} (Day ${dayNum})`}
                               </td>
@@ -583,10 +771,17 @@ export default function SelectGymPlanWeeksModal({
                                 <td
                                   key={wo}
                                   className={`border border-gray-200 px-2 py-1.5 text-center ${
-                                    active ? 'text-gray-600' : 'text-gray-300'
+                                    active ? '' : 'text-gray-300'
                                   }`}
                                 >
-                                  {active ? String(wo) : '—'}
+                                  {active ? (
+                                    <WorkoutSlotIndicator
+                                      occupied={workoutSlotOccupied(dayRec, wo)}
+                                      sessionNumber={wo}
+                                    />
+                                  ) : (
+                                    '—'
+                                  )}
                                 </td>
                               ))}
                             </tr>
@@ -594,6 +789,13 @@ export default function SelectGymPlanWeeksModal({
                         })}
                       </tbody>
                     </table>
+                  ) : singleWeekSelected && previewWeekForDates ? (
+                    <TemplateWeekDayTable
+                      week={previewWeekForDates}
+                      selectedDayNumbers={selectedDayNumbers}
+                      atDayLimit={atDayLimit}
+                      onToggleDay={toggleDay}
+                    />
                   ) : (
                     <div className="max-h-64 space-y-3 overflow-y-auto p-2">
                       {selectedWeeksList.map((week) => (
@@ -601,57 +803,29 @@ export default function SelectGymPlanWeeksModal({
                           <div className="bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-700">
                             Week {week.weekNumber}
                           </div>
-                          <table className="w-full border-collapse text-xs">
-                            <thead>
-                              <tr className="bg-gray-50 font-semibold text-gray-600">
-                                <th className="border border-gray-200 px-2 py-1">Day</th>
-                                <th className="border border-gray-200 px-2 py-1">Day of week</th>
-                                <th className="border border-gray-200 px-2 py-1 text-center">WO 1</th>
-                                <th className="border border-gray-200 px-2 py-1 text-center">WO 2</th>
-                                <th className="border border-gray-200 px-2 py-1 text-center">WO 3</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {DAY_LABELS.map((label, idx) => {
-                                const dayNum = idx + 1;
-                                const active = selectedDayNumbers.has(dayNum);
-                                return (
-                                  <tr
-                                    key={`${week.id}-${dayNum}`}
-                                    className={active ? 'bg-blue-50/40' : 'bg-white opacity-60'}
-                                  >
-                                    <td className="border border-gray-200 px-2 py-1 text-center">{dayNum}</td>
-                                    <td className="border border-gray-200 px-2 py-1 font-medium">
-                                      {FULL_DAY_NAMES[idx]}
-                                    </td>
-                                    {[1, 2, 3].map((wo) => (
-                                      <td
-                                        key={wo}
-                                        className="border border-gray-200 px-2 py-1 text-center text-gray-400"
-                                      >
-                                        {active ? String(wo) : '—'}
-                                      </td>
-                                    ))}
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                          <TemplateWeekDayTable
+                            week={week}
+                            selectedDayNumbers={selectedDayNumbers}
+                            atDayLimit={atDayLimit}
+                            onToggleDay={toggleDay}
+                          />
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-              )}
+              ) : null}
             </>
           )}
         </div>
 
         <div className="flex flex-shrink-0 items-center justify-between border-t border-gray-200 bg-gray-50 px-4 py-3 sm:px-6">
           <p className="text-sm text-gray-600">
-            {selectedWeekCount === 0
-              ? 'No weeks selected'
-              : `${selectedWeekCount} week(s), ${selectedDayNumbers.size} day(s)`}
+            {daysOnlyMode
+              ? `${lockedWeekMetas?.length ?? 1} week(s), ${selectedDayNumbers.size} / ${maxSelectableDays} day(s)`
+              : selectedWeekCount === 0
+                ? 'No weeks selected'
+                : `${selectedWeekCount} week(s), ${selectedDayNumbers.size} / ${maxSelectableDays} day(s)`}
           </p>
           <div className="flex gap-3">
             <button
@@ -664,17 +838,16 @@ export default function SelectGymPlanWeeksModal({
             <button
               type="button"
               disabled={
-                selectedWeekCount === 0 ||
-                selectedDayNumbers.size === 0 ||
-                selectedDayNumbers.size < planDaysCount ||
+                (daysOnlyMode ? !previewWeekForDates : selectedWeekCount === 0) ||
+                selectedDayNumbers.size !== maxSelectableDays ||
                 isLoading ||
-                loadingWeeks ||
-                sortedWeeks.length === 0
+                weekDataLoading ||
+                (!daysOnlyMode && sortedWeeks.length === 0)
               }
               onClick={() => void handleConfirm()}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isLoading ? 'Please wait…' : `Continue with ${selectedWeekCount} week(s)`}
+              {isLoading ? 'Please wait…' : daysOnlyMode ? 'Continue' : `Continue with ${selectedWeekCount} week(s)`}
             </button>
           </div>
         </div>

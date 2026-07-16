@@ -21,7 +21,7 @@ export default function ExerciseGalleryModal({
 
   return ReactDOM.createPortal(
     <div
-      className="fixed inset-0 z-[200000] flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-[10000001] flex items-center justify-center bg-black/70 p-4"
       onClick={onClose}
       role="presentation"
     >
