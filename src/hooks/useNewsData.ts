@@ -36,6 +36,8 @@ export interface UseNewsDataResult {
   typedArticles: ArticleTyped[];
   /** Set when loading OGP with viewAsUsername (super admin “see as user”). */
   viewAsUserId: string | null;
+  /** Country of the view-as user (users_new.country), when viewAsUsername is set. */
+  viewAsUserCountry: string | null;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -64,6 +66,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   const viewAsUsername = options?.viewAsUsername ?? null;
   const [adminUserId, setAdminUserId] = useState<string | null>(null);
   const [viewAsUserId, setViewAsUserId] = useState<string | null>(null);
+  const [viewAsUserCountry, setViewAsUserCountry] = useState<string | null>(null);
   const [topics, setTopics] = useState<string[]>(() => [...NEWS_TOPICS]);
   const [customTopics, setCustomTopics] = useState<CustomTopic[]>([]);
   const [topicNamesCreatedBySuperAdmin, setTopicNamesCreatedBySuperAdmin] = useState<string[]>([]);
@@ -136,8 +139,12 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           : [];
       if (viewAsUsername != null && viewAsUsername.trim() !== '' && ogpJson && typeof ogpJson === 'object' && !Array.isArray(ogpJson)) {
         setViewAsUserId(typeof ogpJson.viewAsUserId === 'string' ? ogpJson.viewAsUserId : null);
+        setViewAsUserCountry(
+          typeof ogpJson.viewAsUserCountry === 'string' ? ogpJson.viewAsUserCountry : null
+        );
       } else {
         setViewAsUserId(null);
+        setViewAsUserCountry(null);
       }
 
       const custom = topicsData.customTopics ?? [];
@@ -462,6 +469,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     pastedArticles,
     typedArticles,
     viewAsUserId,
+    viewAsUserCountry,
     loading,
     error,
     refresh: fetchAll,

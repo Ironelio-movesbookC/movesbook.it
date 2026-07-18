@@ -39,6 +39,7 @@ export default function AdminSuperAdminOGPNewsContent({
     pastedArticles,
     typedArticles,
     viewAsUserId,
+    viewAsUserCountry,
     loading,
     error,
     refresh,
@@ -399,6 +400,7 @@ export default function AdminSuperAdminOGPNewsContent({
             onRemoveTyped={handleRemoveTyped}
             canDeleteOgp={true}
             currentUserId={viewAsUsername && viewAsUserId ? viewAsUserId : adminUser.id}
+            currentUserCountry={viewAsUsername ? viewAsUserCountry : null}
             onUpdatePastedSettings={handleUpdatePastedSettings}
             onUpdatePastedTopic={handleUpdatePastedTopic}
             onAddClick={viewAsUsername ? undefined : () => setShowOgpForm((prev) => !prev)}

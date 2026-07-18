@@ -17,6 +17,8 @@ export type ArticlePasted = OGPData & {
   userId?: string;
   /** Username of the creator (for inline "by <username>" display on cards). */
   creatorUsername?: string | null;
+  /** Creator's country from users_new.country (for "Show posted by my country" filter). */
+  creatorCountry?: string | null;
   savedAt?: string;
   topic?: NewsTopic;
   languageCode?: string | null;
@@ -43,6 +45,10 @@ const FALLBACK_NEWS_TOPICS_LIST = [
   'Equipments',
   'Lounge music',
 ] as const;
+
+/** Stable empty defaults — inline `= []` in props recreates a new array every render and can loop effects. */
+const EMPTY_TOPICS: string[] = [];
+const EMPTY_TOPIC_NAMES: string[] = [];
 
 function hasAnyVisibilitySettings(a: ArticlePasted): boolean {
   const v = a.visibility;
@@ -131,6 +137,8 @@ interface NewsArticlesListProps {
   canDeleteOgp?: boolean;
   /** Current user id – used to allow creator to delete their own OGP. */
   currentUserId?: string | null;
+  /** Current user's country (users_new.country) – used by "Show posted by my country". */
+  currentUserCountry?: string | null;
   /** Called when the "+" button is clicked to show the OGP input form. Rendered below pagination when provided. */
   onAddClick?: () => void;
   /** When true, the "+" button is disabled (e.g. when "All" is selected) */
@@ -157,7 +165,7 @@ interface NewsArticlesListProps {
   hideCreatorUsernameInHeading?: boolean;
   /** When true, OGP card actions (edit, share, link, …) and the add (+) button are disabled. */
   superAdminReadOnlyOgpActions?: boolean;
-  /** When set, checkbox reads “Show only OG News posted by {name}” instead of “posted by me”. */
+  /** When set, checkbox reads “Show only posted by {name}” instead of “posted by me”. */
   showOnlyMyOgNewsLabelUsername?: string | null;
   /** When true, `pasted` is already limited to what a viewer may see (e.g. super admin view-as-user API); do not apply extra client visibility filtering. */
   viewerScopedOgpList?: boolean;
@@ -169,14 +177,15 @@ export default function NewsArticlesList({
   onRemovePasted,
   canDeleteOgp = false,
   currentUserId = null,
+  currentUserCountry = null,
   onAddClick,
   addButtonDisabled = false,
   onUpdatePastedSettings,
-  topics: topicsProp = [],
+  topics: topicsProp = EMPTY_TOPICS,
   onUpdatePastedTopic,
   adminContext = false,
   isSuperAdmin = false,
-  topicNamesCreatedByNormalUsers = [],
+  topicNamesCreatedByNormalUsers = EMPTY_TOPIC_NAMES,
   userInsertedTopics,
   allTopicLabel,
   onSuperAdminViewAsUser,
@@ -271,6 +280,8 @@ export default function NewsArticlesList({
   const [showOnlyMyOgNews, setShowOnlyMyOgNews] = useState(false);
   const [showExpired, setShowExpired] = useState(false);
   const [showDeletedTemporarily, setShowDeletedTemporarily] = useState(false);
+  const [showPostedByMovesbook, setShowPostedByMovesbook] = useState(false);
+  const [showPostedByMyCountry, setShowPostedByMyCountry] = useState(false);
   const [showOnlyLiked, setShowOnlyLiked] = useState(false);
   const [selectedSport, setSelectedSport] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('');
@@ -477,6 +488,18 @@ export default function NewsArticlesList({
     if (showOnlyMyOgNews && canFilterByMyOgNews) {
       list = list.filter(canEditAsCreator);
     }
+    // "Show posted by Movesbook" → only OGPs created by a Super Admin account.
+    if (showPostedByMovesbook) {
+      list = list.filter((a) => a.createdBySuperAdmin === true);
+    }
+    // "Show posted by my country" → only OGPs whose creator country matches the current user.
+    if (showPostedByMyCountry) {
+      const myCountry = (currentUserCountry ?? '').trim().toLowerCase();
+      list = list.filter((a) => {
+        const creatorCountry = (a.creatorCountry ?? '').trim().toLowerCase();
+        return !!myCountry && !!creatorCountry && creatorCountry === myCountry;
+      });
+    }
     // Expired and deleted visibility.
     if (isSuperAdmin) {
       // Super admin: old logic — when checkboxes are OFF, show all; when ON, filter TO that subset.
@@ -493,7 +516,7 @@ export default function NewsArticlesList({
       // Normal user:
       // - Always include active OGPs (non-expired, non-deleted, with settings and explicit expiry).
       // - When "Show also expired" is ON, additionally include expired / no-expiry OGPs (excluding deleted).
-      // - When "Show also deleted temporarily" is ON, additionally include deleted OGPs.
+      // - When "Show also deleted" is ON, additionally include deleted OGPs.
       list = list.filter((a) => {
         const isActive = isActiveForNormalUser(a);
         const includeExpired = showExpired && isExpiredOrNoExpiry(a) && !a.deletedAt;
@@ -525,6 +548,9 @@ export default function NewsArticlesList({
     selectedSport,
     selectedLanguage,
     showOnlyMyOgNews,
+    showPostedByMovesbook,
+    showPostedByMyCountry,
+    currentUserCountry,
     showExpired,
     showDeletedTemporarily,
     canFilterByMyOgNews,
@@ -611,10 +637,10 @@ export default function NewsArticlesList({
     return Array.from({ length: to - from + 1 }, (_, i) => from + i);
   }, [currentPage, totalPages]);
 
-  const allArticleIds = useMemo(() => byTopic.map((a) => a.id), [byTopic]);
+  const allArticleIdsKey = useMemo(() => byTopic.map((a) => a.id).join(','), [byTopic]);
 
   useEffect(() => {
-    if (allArticleIds.length === 0) {
+    if (!allArticleIdsKey) {
       setLikesMap({});
       return;
     }
@@ -622,11 +648,16 @@ export default function NewsArticlesList({
       ? (adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token'))
       : null;
     const headers: HeadersInit = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-    fetch(`/api/news/ogp/likes?ids=${allArticleIds.join(',')}`, { headers })
+    const controller = new AbortController();
+    fetch(`/api/news/ogp/likes?ids=${allArticleIdsKey}`, { headers, signal: controller.signal })
       .then((r) => r.json())
       .then((data) => setLikesMap(data ?? {}))
-      .catch(() => setLikesMap({}));
-  }, [allArticleIds, adminContext]);
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setLikesMap({});
+      });
+    return () => controller.abort();
+  }, [allArticleIdsKey, adminContext]);
 
   const handleLikeClick = useCallback(async (articleId: string) => {
     const token = typeof window !== 'undefined'
@@ -826,6 +857,36 @@ export default function NewsArticlesList({
             {renderActiveTopicHeading('dark')}
           </div>
           <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showPostedByMovesbook}
+                onChange={(e) => {
+                  setShowPostedByMovesbook(e.target.checked);
+                  setCurrentPage(1);
+                }}
+                className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                aria-label="Show posted by Movesbook"
+              />
+              <span className="text-white text-sm whitespace-nowrap">
+                Show posted by Movesbook
+              </span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showPostedByMyCountry}
+                onChange={(e) => {
+                  setShowPostedByMyCountry(e.target.checked);
+                  setCurrentPage(1);
+                }}
+                className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                aria-label="Show posted by my country"
+              />
+              <span className="text-white text-sm whitespace-nowrap">
+                Show posted by my country
+              </span>
+            </label>
             {canFilterByMyOgNews && (
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
@@ -838,13 +899,13 @@ export default function NewsArticlesList({
                   className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                   aria-label={
                     showOnlyMyOgNewsLabelUsername
-                      ? `Show only OG News posted by ${showOnlyMyOgNewsLabelUsername}`
+                      ? `Show only posted by ${showOnlyMyOgNewsLabelUsername}`
                       : t('news_show_only_my_ogp')
                   }
                 />
                 <span className="text-yellow-300 text-sm whitespace-nowrap">
                   {showOnlyMyOgNewsLabelUsername
-                    ? `Show only OG News posted by ${showOnlyMyOgNewsLabelUsername}`
+                    ? `Show only posted by ${showOnlyMyOgNewsLabelUsername}`
                     : t('news_show_only_my_ogp')}
                 </span>
               </label>
@@ -873,10 +934,10 @@ export default function NewsArticlesList({
                   setCurrentPage(1);
                 }}
                 className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                aria-label={isSuperAdmin ? 'Show deleted temporarily' : 'Show also deleted temporarily'}
+                aria-label={isSuperAdmin ? 'Show deleted' : 'Show also deleted'}
               />
               <span className="text-yellow-300 text-sm whitespace-nowrap">
-                {isSuperAdmin ? 'Show deleted temporarily' : 'Show also deleted temporarily'}
+                {isSuperAdmin ? 'Show deleted' : 'Show also deleted'}
               </span>
             </label>
             <div className="flex items-center gap-1">

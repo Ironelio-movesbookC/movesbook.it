@@ -309,6 +309,7 @@ export default function NewsPage() {
             onRemoveTyped={handleRemoveTyped}
             canDeleteOgp={user?.userType === 'ADMIN'}
             currentUserId={user?.id ?? null}
+            currentUserCountry={user?.country ?? null}
             onUpdatePastedSettings={handleUpdatePastedSettings}
             onUpdatePastedTopic={handleUpdatePastedTopic}
             onAddClick={() => setShowOgpForm((prev) => !prev)}

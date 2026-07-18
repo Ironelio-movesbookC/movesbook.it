@@ -144,7 +144,11 @@ export async function GET(request: NextRequest) {
           deletedByName: a.deletedBy ? (a.deletedBy.name || a.deletedBy.username) : undefined,
         }),
       }));
-      return NextResponse.json({ articles, viewAsUserId: targetUser.id });
+      return NextResponse.json({
+        articles,
+        viewAsUserId: targetUser.id,
+        viewAsUserCountry: targetUser.country ?? null,
+      });
     }
 
     const where = isAdmin

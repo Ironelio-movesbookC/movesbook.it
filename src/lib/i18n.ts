@@ -215,7 +215,7 @@ export interface LanguageStrings {
         'news_select': 'Select',
         'news_language_ogp': 'Language',
         'news_show': 'Show',
-        'news_show_only_my_ogp': 'Show only OG News posted by me',
+        'news_show_only_my_ogp': 'Show only posted by me',
         'news_show_only_official_movesbook_ogp': 'Show only official OG News posted by Movesbook',
         'news_show_only_my_country_ogp': 'Show only OG News posted by my country',
         'news_rows': 'rows',
