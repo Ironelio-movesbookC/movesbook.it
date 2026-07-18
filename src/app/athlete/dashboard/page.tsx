@@ -77,6 +77,7 @@ import MyBestSettings from '@/components/settings/MyBestSettings';
 import GridDisplaySettings from '@/components/settings/GridDisplaySettings';
 import NewsOGPPanel from '@/components/news/NewsOGPPanel';
 import PostsPanel from '@/components/posts/PostsPanel';
+import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
 import AthleteLegacyBanner, {
   type AthleteLegacyBannerProfile,
 } from '@/components/athlete/AthleteLegacyBanner';
@@ -107,7 +108,7 @@ function AthleteDashboardContent() {
   const { t } = useLanguage();
   
   // All hooks must be called before any conditional returns
-  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'nutrition' | 'progress' | 'settings' | 'personal-settings' | 'chat' | 'news' | 'posts'>('overview');
+  const [activeSection, setActiveSection] = useState<'overview' | 'workouts' | 'nutrition' | 'progress' | 'settings' | 'personal-settings' | 'chat' | 'news' | 'posts' | 'staff-feedbacks'>('overview');
   const [showAdBanner, setShowAdBanner] = useState(true);
   const [showPersonalBanner, setShowPersonalBanner] = useState(true);
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -770,6 +771,10 @@ function AthleteDashboardContent() {
                   setActiveTab('my-page');
                   setActiveSection('posts');
                 }}
+                onMyFeedbacksStaffClick={() => {
+                  setActiveTab('my-page');
+                  setActiveSection('staff-feedbacks');
+                }}
                 onMyClubClick={() => setActiveTab('my-entity')}
                 onClubAddSongsPlaylistsClick={() => {
                   setActiveTab('my-entity');
@@ -822,6 +827,11 @@ function AthleteDashboardContent() {
                       onClose={() => setActiveSection('overview')}
                       embedded
                     />
+                  </div>
+                )}
+                {activeSection === 'staff-feedbacks' && (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <MyStaffFeedbacksPanel onClose={() => setActiveSection('overview')} />
                   </div>
                 )}
               </div>

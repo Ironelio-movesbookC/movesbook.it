@@ -336,7 +336,8 @@ const VersionHistoryPanel = forwardRef<VersionHistoryPanelHandle, Props>(functio
   };
 
   const filterOptions = useMemo(() => {
-    if (languages.length) return languages;
+    if (languages.length >= ALL_LANGUAGES.length) return languages;
+    // Prefer full catalog with display names when API returns a partial/legacy list
     return ALL_LANGUAGES.map((l) => ({ id: l.id, name: l.name, code: l.code }));
   }, [languages]);
 

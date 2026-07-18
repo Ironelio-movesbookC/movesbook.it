@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Users, Shield, Activity, TrendingUp } from 'lucide-react';
 import AdminSuperAdminOGPNewsContent from '@/components/admin/AdminSuperAdminOGPNewsContent';
+import MyStaffFeedbacksPanel from '@/components/messages/MyStaffFeedbacksPanel';
 
 interface AdminUser {
   id: string;
@@ -37,6 +38,14 @@ function AdminDashboardInner() {
 
   if (panel === 'music-tracked') {
     return <AdminSuperAdminOGPNewsContent closeHref="/admin/dashboard" />;
+  }
+
+  if (panel === 'my-feedbacks') {
+    return (
+      <div className="p-4 min-h-[70vh]">
+        <MyStaffFeedbacksPanel onClose={() => router.push('/admin/dashboard')} />
+      </div>
+    );
   }
 
   const stats = [

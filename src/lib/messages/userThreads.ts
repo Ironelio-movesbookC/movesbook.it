@@ -75,9 +75,14 @@ export type SupportFeedFilters = {
   languageCode?: string;
   mineOnly?: boolean;
   recentOnly?: boolean;
+  currentPageOnly?: boolean;
+  currentPath?: string;
   bugsOnly?: boolean;
   excludeBugs?: boolean;
   searchQuery?: string;
+  status?: string;
+  fromDate?: string;
+  toDate?: string;
   page?: number;
   pageSize?: number;
 };
@@ -92,7 +97,12 @@ export type PaginatedFeedResult = {
     supportCategory: string | null;
     languageCode: string | null;
     author: string;
+    authorImage: string | null;
     isMine: boolean;
+    likeCount: number;
+    dislikeCount: number;
+    myReaction: 'L' | 'D' | null;
+    status: string | null;
   }>;
   total: number;
   page: number;
@@ -128,9 +138,13 @@ function mapSupportThreads(
     supportCategory: string | null;
     languageCode: string | null;
     userId: string;
-    user: AuthorFields & { superAdminId: string | null };
+    likeCount?: number;
+    dislikeCount?: number;
+    status?: string | null;
+    user: AuthorFields & { superAdminId: string | null; image?: string | null };
     _count: { messages: number };
     messages: Array<{ body: string }>;
+    likes?: Array<{ reaction: string }>;
   }>,
   viewerId: string,
   superAdminNames: Map<string, { name: string | null; username: string }>,
@@ -144,7 +158,14 @@ function mapSupportThreads(
     supportCategory: th.supportCategory,
     languageCode: th.languageCode,
     author: formatAuthor(th.user, superAdminNames),
+    authorImage: th.user.image ?? null,
     isMine: th.userId === viewerId,
+    likeCount: th.likeCount ?? 0,
+    dislikeCount: th.dislikeCount ?? 0,
+    myReaction: (th.likes?.[0]?.reaction === 'L' || th.likes?.[0]?.reaction === 'D'
+      ? th.likes[0].reaction
+      : null) as 'L' | 'D' | null,
+    status: th.status ?? null,
   }));
 }
 
@@ -152,8 +173,38 @@ export async function listSupportFeed(
   viewerId: string,
   filters: SupportFeedFilters,
 ): Promise<PaginatedFeedResult> {
+  await ensureSupportThreadExtras();
+
   const page = Math.max(1, filters.page ?? 1);
   const pageSize = Math.min(50, Math.max(5, filters.pageSize ?? 5));
+
+  const from = filters.fromDate?.trim() ? new Date(filters.fromDate) : null;
+  const to = filters.toDate?.trim() ? new Date(filters.toDate) : null;
+  if (to && !Number.isNaN(to.getTime())) {
+    to.setHours(23, 59, 59, 999);
+  }
+
+  const createdAt: Prisma.DateTimeFilter = {};
+  if (filters.recentOnly) {
+    createdAt.gte = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  }
+  if (from && !Number.isNaN(from.getTime())) {
+    createdAt.gte = from;
+  }
+  if (to && !Number.isNaN(to.getTime())) {
+    createdAt.lte = to;
+  }
+
+  const searchWhere = buildSearchWhere(filters.searchQuery || '');
+  const pathWhere: Prisma.UserMessageThreadWhereInput | null =
+    filters.currentPageOnly && filters.currentPath
+      ? {
+          OR: [
+            { realPath: { contains: filters.currentPath } },
+            { pathStaff: { contains: filters.currentPath } },
+          ],
+        }
+      : null;
 
   const where: Prisma.UserMessageThreadWhereInput = {
     kind: 'SUPPORT',
@@ -174,10 +225,16 @@ export async function listSupportFeed(
           }
         : {}),
     ...(filters.languageCode ? { languageCode: filters.languageCode } : {}),
-    ...(filters.recentOnly
-      ? { createdAt: { gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) } }
+    ...(Object.keys(createdAt).length ? { createdAt } : {}),
+    ...(filters.status ? ({ status: filters.status } as Prisma.UserMessageThreadWhereInput) : {}),
+    ...(searchWhere.OR || pathWhere
+      ? {
+          AND: [
+            ...(searchWhere.OR ? [searchWhere] : []),
+            ...(pathWhere ? [pathWhere] : []),
+          ],
+        }
       : {}),
-    ...buildSearchWhere(filters.searchQuery || ''),
   };
 
   const [total, threads] = await Promise.all([
@@ -209,10 +266,63 @@ export async function listSupportFeed(
     }),
   ]);
 
+  const threadIds = threads.map((th) => th.id);
+  const extrasById = new Map<
+    string,
+    { likeCount: number; dislikeCount: number; status: string | null; myReaction: 'L' | 'D' | null }
+  >();
+
+  if (threadIds.length) {
+    const placeholders = threadIds.map(() => '?').join(',');
+    try {
+      const extras = await prisma.$queryRawUnsafe<
+        Array<{ id: string; likeCount: number | null; dislikeCount: number | null; status: string | null }>
+      >(
+        `SELECT id, likeCount, dislikeCount, status FROM user_message_threads WHERE id IN (${placeholders})`,
+        ...threadIds,
+      );
+      for (const row of extras) {
+        extrasById.set(String(row.id), {
+          likeCount: Number(row.likeCount ?? 0),
+          dislikeCount: Number(row.dislikeCount ?? 0),
+          status: row.status ?? null,
+          myReaction: null,
+        });
+      }
+      const myLikes = await prisma.$queryRawUnsafe<Array<{ threadId: string; reaction: string }>>(
+        `SELECT threadId, reaction FROM user_message_thread_likes
+         WHERE userId = ? AND threadId IN (${placeholders})`,
+        viewerId,
+        ...threadIds,
+      );
+      for (const row of myLikes) {
+        const cur = extrasById.get(String(row.threadId));
+        if (cur && (row.reaction === 'L' || row.reaction === 'D')) {
+          cur.myReaction = row.reaction;
+        }
+      }
+    } catch {
+      /* columns/table may still be creating */
+    }
+  }
+
   const superAdminNames = await loadSuperAdminNames(threads.map((th) => th.user.superAdminId));
 
   return {
-    items: mapSupportThreads(threads, viewerId, superAdminNames),
+    items: mapSupportThreads(
+      threads.map((th) => {
+        const extra = extrasById.get(th.id);
+        return {
+          ...th,
+          likeCount: extra?.likeCount ?? 0,
+          dislikeCount: extra?.dislikeCount ?? 0,
+          status: extra?.status ?? null,
+          likes: extra?.myReaction ? [{ reaction: extra.myReaction }] : [],
+        };
+      }),
+      viewerId,
+      superAdminNames,
+    ),
     total,
     page,
     pageSize,
@@ -280,7 +390,12 @@ export async function listBugFixedMemos(filters: {
       supportCategory: th.supportCategory,
       languageCode: th.languageCode,
       author: formatAuthor(th.user, superAdminNames),
+      authorImage: null,
       isMine: true,
+      likeCount: 0,
+      dislikeCount: 0,
+      myReaction: null as 'L' | 'D' | null,
+      status: null,
     })),
     total,
     page,
@@ -336,7 +451,12 @@ export async function listAllReviews(filters?: {
       supportCategory: th.supportCategory,
       languageCode: th.languageCode,
       author: formatAuthor(th.user, superAdminNames),
+      authorImage: null,
       isMine: false,
+      likeCount: 0,
+      dislikeCount: 0,
+      myReaction: null as 'L' | 'D' | null,
+      status: null,
     })),
     total,
     page,
@@ -386,6 +506,7 @@ export async function createThreadWithFirstMessage(params: {
   errorMessage?: string;
   supportCategory?: string;
 }) {
+  await ensureSupportThreadExtras();
   const isSupport = params.kind === 'SUPPORT';
   return prisma.userMessageThread.create({
     data: {
@@ -407,6 +528,18 @@ export async function createThreadWithFirstMessage(params: {
       },
     },
     include: { messages: true },
+  }).then(async (created) => {
+    if (isSupport) {
+      try {
+        await prisma.$executeRawUnsafe(
+          `UPDATE user_message_threads SET status = 'S' WHERE id = ?`,
+          created.id,
+        );
+      } catch {
+        /* optional until column exists */
+      }
+    }
+    return created;
   });
 }
 
@@ -517,4 +650,144 @@ export function canReplyToThread(
   if (thread.userId === viewerId) return true;
   if (thread.kind === 'SUPPORT' && thread.isPublic) return true;
   return false;
+}
+
+let supportExtrasEnsured = false;
+
+/** Ensure like/status columns + likes table exist (safe for live DBs that skip migrate). */
+export async function ensureSupportThreadExtras(): Promise<void> {
+  if (supportExtrasEnsured) return;
+  if (!(process.env.DATABASE_URL || '').startsWith('mysql')) {
+    supportExtrasEnsured = true;
+    return;
+  }
+  try {
+    const cols = await prisma.$queryRawUnsafe<{ COLUMN_NAME: string }[]>(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_message_threads'`,
+    );
+    const names = new Set(cols.map((c) => c.COLUMN_NAME));
+    if (!names.has('status')) {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE user_message_threads ADD COLUMN status VARCHAR(8) NULL`,
+      );
+    }
+    if (!names.has('likeCount')) {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE user_message_threads ADD COLUMN likeCount INT NOT NULL DEFAULT 0`,
+      );
+    }
+    if (!names.has('dislikeCount')) {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE user_message_threads ADD COLUMN dislikeCount INT NOT NULL DEFAULT 0`,
+      );
+    }
+
+    const tables = await prisma.$queryRawUnsafe<{ TABLE_NAME: string }[]>(
+      `SELECT TABLE_NAME FROM information_schema.TABLES
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_message_thread_likes' LIMIT 1`,
+    );
+    if (!tables.length) {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE user_message_thread_likes (
+          id VARCHAR(191) NOT NULL,
+          threadId VARCHAR(191) NOT NULL,
+          userId VARCHAR(191) NOT NULL,
+          reaction VARCHAR(1) NOT NULL,
+          createdAt DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+          updatedAt DATETIME(3) NOT NULL,
+          PRIMARY KEY (id),
+          UNIQUE INDEX user_message_thread_likes_threadId_userId_key (threadId, userId),
+          INDEX user_message_thread_likes_userId_idx (userId),
+          CONSTRAINT user_message_thread_likes_threadId_fkey
+            FOREIGN KEY (threadId) REFERENCES user_message_threads(id) ON DELETE CASCADE ON UPDATE CASCADE,
+          CONSTRAINT user_message_thread_likes_userId_fkey
+            FOREIGN KEY (userId) REFERENCES users_new(id) ON DELETE CASCADE ON UPDATE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+    }
+    supportExtrasEnsured = true;
+  } catch (err) {
+    console.error('ensureSupportThreadExtras failed:', err);
+  }
+}
+
+export type ThreadReactionResult = {
+  likeCount: number;
+  dislikeCount: number;
+  myReaction: 'L' | 'D' | null;
+};
+
+/** Toggle like/dislike. Same reaction again removes it (−1). Opposite switches. */
+export async function toggleThreadReaction(
+  threadId: string,
+  userId: string,
+  reaction: 'L' | 'D',
+): Promise<ThreadReactionResult | null> {
+  await ensureSupportThreadExtras();
+
+  const threads = await prisma.$queryRawUnsafe<
+    Array<{ id: string; likeCount: number | null; dislikeCount: number | null }>
+  >(`SELECT id, likeCount, dislikeCount FROM user_message_threads WHERE id = ? LIMIT 1`, threadId);
+  const thread = threads[0];
+  if (!thread) return null;
+
+  const existingRows = await prisma.$queryRawUnsafe<Array<{ id: string; reaction: string }>>(
+    `SELECT id, reaction FROM user_message_thread_likes WHERE threadId = ? AND userId = ? LIMIT 1`,
+    threadId,
+    userId,
+  );
+  const existing = existingRows[0];
+
+  let likeCount = Number(thread.likeCount ?? 0);
+  let dislikeCount = Number(thread.dislikeCount ?? 0);
+  let myReaction: 'L' | 'D' | null = null;
+
+  if (existing) {
+    if (existing.reaction === reaction) {
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM user_message_thread_likes WHERE id = ?`,
+        existing.id,
+      );
+      if (reaction === 'L') likeCount = Math.max(0, likeCount - 1);
+      else dislikeCount = Math.max(0, dislikeCount - 1);
+      myReaction = null;
+    } else {
+      await prisma.$executeRawUnsafe(
+        `UPDATE user_message_thread_likes SET reaction = ?, updatedAt = NOW(3) WHERE id = ?`,
+        reaction,
+        existing.id,
+      );
+      if (reaction === 'L') {
+        likeCount += 1;
+        dislikeCount = Math.max(0, dislikeCount - 1);
+      } else {
+        dislikeCount += 1;
+        likeCount = Math.max(0, likeCount - 1);
+      }
+      myReaction = reaction;
+    }
+  } else {
+    const id = `uml_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO user_message_thread_likes (id, threadId, userId, reaction, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, NOW(3), NOW(3))`,
+      id,
+      threadId,
+      userId,
+      reaction,
+    );
+    if (reaction === 'L') likeCount += 1;
+    else dislikeCount += 1;
+    myReaction = reaction;
+  }
+
+  await prisma.$executeRawUnsafe(
+    `UPDATE user_message_threads SET likeCount = ?, dislikeCount = ? WHERE id = ?`,
+    likeCount,
+    dislikeCount,
+    threadId,
+  );
+
+  return { likeCount, dislikeCount, myReaction };
 }

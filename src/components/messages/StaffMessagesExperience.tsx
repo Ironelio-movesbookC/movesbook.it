@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import {
   ArrowLeft,
   Clock,
@@ -9,6 +9,9 @@ import {
   X,
   Lightbulb,
   Bug,
+  ThumbsUp,
+  ThumbsDown,
+  ChevronDown,
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getAuthToken } from '@/utils/auth.utils';
@@ -17,8 +20,6 @@ import VersionHistoryPanel, {
 } from '@/components/messages/VersionHistoryPanel';
 import ListPageSelector from '@/components/ui/ListPageSelector';
 import type { FeedbackScope } from '@/lib/messages/feedbackRoutes';
-import { legacyUserBugProblemUrl } from '@/lib/messages/feedbackRoutes';
-import { useRouter } from 'next/navigation';
 
 export type MainTab = 'version' | 'review' | 'support';
 
@@ -31,7 +32,12 @@ type FeedItem = {
   updatedAt: string;
   messageCount?: number;
   author?: string;
+  authorImage?: string | null;
   isMine?: boolean;
+  likeCount?: number;
+  dislikeCount?: number;
+  myReaction?: 'L' | 'D' | null;
+  status?: string | null;
 };
 
 type ThreadDetail = {
@@ -95,7 +101,6 @@ export default function StaffMessagesExperience({
   onClose,
 }: Props) {
   const { t, currentLanguage } = useLanguage();
-  const router = useRouter();
   const [mainTab, setMainTab] = useState<MainTab>(initialMainTab);
   const versionPanelRef = useRef<VersionHistoryPanelHandle>(null);
   const [loading, setLoading] = useState(false);
@@ -122,6 +127,15 @@ export default function StaffMessagesExperience({
   const [page, setPage] = useState(initialPage);
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [feedTotal, setFeedTotal] = useState(0);
+  const [currentPageOnly, setCurrentPageOnly] = useState(false);
+  const [sectionFilterOpen, setSectionFilterOpen] = useState(false);
+  const [filterFromDate, setFilterFromDate] = useState('');
+  const [filterToDate, setFilterToDate] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [appliedFromDate, setAppliedFromDate] = useState('');
+  const [appliedToDate, setAppliedToDate] = useState('');
+  const [appliedStatus, setAppliedStatus] = useState('');
+  const [reactingId, setReactingId] = useState<string | null>(null);
 
   const [supportItems, setSupportItems] = useState<FeedItem[]>([]);
   const [reviewItems, setReviewItems] = useState<FeedItem[]>([]);
@@ -140,6 +154,8 @@ export default function StaffMessagesExperience({
   const [composerBody, setComposerBody] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  /** Your Supports (legacy): composer hidden until "Leave a new feedback"; hide again after successful post. */
+  const [composerVisible, setComposerVisible] = useState(!legacyMode);
 
   const [replyBody, setReplyBody] = useState('');
   const [replySending, setReplySending] = useState(false);
@@ -209,7 +225,14 @@ export default function StaffMessagesExperience({
       if (filterLang) qs.set('lang', filterLang);
       if (postByMe) qs.set('mine', '1');
       if (recentOnly) qs.set('recent', '1');
+      if (currentPageOnly && typeof window !== 'undefined') {
+        qs.set('currentPage', '1');
+        qs.set('path', window.location.pathname);
+      }
       if (searchQuery) qs.set('q', searchQuery);
+      if (appliedFromDate) qs.set('from', appliedFromDate);
+      if (appliedToDate) qs.set('to', appliedToDate);
+      if (appliedStatus) qs.set('status', appliedStatus);
       const data = await authFetch(`/api/messages/support?${qs}`);
       setSupportItems(data.items || []);
       setFeedTotal(data.total ?? 0);
@@ -219,7 +242,20 @@ export default function StaffMessagesExperience({
     } finally {
       setLoading(false);
     }
-  }, [authFetch, filterLang, page, pageSize, postByMe, recentOnly, searchQuery, subPage]);
+  }, [
+    appliedFromDate,
+    appliedStatus,
+    appliedToDate,
+    authFetch,
+    currentPageOnly,
+    filterLang,
+    page,
+    pageSize,
+    postByMe,
+    recentOnly,
+    searchQuery,
+    subPage,
+  ]);
 
   const loadReviewsMine = useCallback(async () => {
     setLoading(true);
@@ -281,12 +317,10 @@ export default function StaffMessagesExperience({
   };
 
   const navigateLegacyCategory = (categoryId: string) => {
-    if (!legacyMode || !legacyUserId) {
-      setSubPage(categoryId);
-      setPage(1);
-      return;
-    }
-    router.push(legacyUserBugProblemUrl(legacyUserId, categoryId as (typeof SUPPORT_CATS)[number]['id']));
+    setSubPage(categoryId);
+    setPage(1);
+    // When embedded in a dashboard, keep the current page shell (no full navigation).
+    // Deep-link URL updates are optional and skipped here on purpose.
   };
 
   const backToList = () => {
@@ -311,8 +345,9 @@ export default function StaffMessagesExperience({
 
   const handlePostNew = useCallback(() => {
     resetComposer();
-    composerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    setComposerVisible(true);
     window.requestAnimationFrame(() => {
+      composerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       composerBodyRef.current?.focus();
     });
   }, [resetComposer]);
@@ -337,6 +372,10 @@ export default function StaffMessagesExperience({
       setComposerObject('');
       setComposerPath('');
       setComposerErrorMsg('');
+      if (legacyMode) {
+        setComposerVisible(false);
+        resetComposer();
+      }
       if (mainTab === 'support') await loadSupportFeed();
       else await loadReviewsMine();
     } catch {
@@ -353,9 +392,11 @@ export default function StaffMessagesExperience({
     composerObject,
     composerPath,
     composerRealPath,
+    legacyMode,
     mainTab,
     loadReviewsMine,
     loadSupportFeed,
+    resetComposer,
     t,
   ]);
 
@@ -377,14 +418,53 @@ export default function StaffMessagesExperience({
     }
   }, [authFetch, openThread, replyBody, selectedThreadId, t]);
 
+  const toggleReaction = useCallback(
+    async (threadId: string, reaction: 'L' | 'D', e: MouseEvent) => {
+      e.stopPropagation();
+      if (reactingId) return;
+      setReactingId(threadId);
+      try {
+        const data = await authFetch(`/api/messages/threads/${threadId}/like`, {
+          method: 'POST',
+          body: JSON.stringify({ reaction }),
+        });
+        setSupportItems((prev) =>
+          prev.map((item) =>
+            item.id === threadId
+              ? {
+                  ...item,
+                  likeCount: data.likeCount ?? item.likeCount,
+                  dislikeCount: data.dislikeCount ?? item.dislikeCount,
+                  myReaction: data.myReaction ?? null,
+                }
+              : item,
+          ),
+        );
+      } catch {
+        /* ignore */
+      } finally {
+        setReactingId(null);
+      }
+    },
+    [authFetch, reactingId],
+  );
+
+  const applySectionFilter = () => {
+    setAppliedFromDate(filterFromDate);
+    setAppliedToDate(filterToDate);
+    setAppliedStatus(filterStatus);
+    setPage(1);
+    setSectionFilterOpen(false);
+  };
+
   const shellClass =
     variant === 'page'
-      ? 'min-h-screen bg-slate-200 py-6 px-3 flex flex-col items-center'
+      ? 'min-h-screen bg-transparent py-0 px-0 flex flex-col items-stretch'
       : 'flex flex-col h-full min-h-0';
 
   const cardClass =
     variant === 'page'
-      ? 'staff-messages-panel w-full max-w-5xl bg-white !text-black [color-scheme:light] rounded-lg shadow-xl border border-slate-300 overflow-hidden flex flex-col min-h-[85vh]'
+      ? 'staff-messages-panel w-full bg-white !text-black [color-scheme:light] rounded-lg shadow-xl border border-slate-300 overflow-hidden flex flex-col min-h-[85vh]'
       : 'staff-messages-panel flex flex-col h-full min-h-0 bg-white !text-black [color-scheme:light]';
 
   const newTabHref =
@@ -489,17 +569,32 @@ export default function StaffMessagesExperience({
         )}
 
         {(mainTab === 'review' || mainTab === 'support') && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 flex-1 min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
+          <div
+            className={`grid grid-cols-1 flex-1 min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 ${
+              composerVisible ? 'lg:grid-cols-2' : ''
+            }`}
+          >
             <div className="flex flex-col min-h-[320px] max-h-[70vh] lg:max-h-none overflow-hidden bg-white">
               <div className="px-3 py-2 border-b border-slate-200 bg-slate-50">
-                <div className="font-semibold text-slate-800 text-base">
-                  {mainTab === 'support'
-                    ? postByMe
-                      ? t('staff_my_contributions_list')
-                      : t('staff_posted_by_users')
-                    : reviewScope === 'community'
-                      ? t('staff_community_reviews_list')
-                      : t('staff_my_reviews_list')}
+                <div className="font-semibold text-slate-800 text-base flex items-center justify-between gap-2">
+                  <span>
+                    {mainTab === 'support'
+                      ? postByMe
+                        ? t('staff_my_contributions_list')
+                        : t('staff_posted_by_users')
+                      : reviewScope === 'community'
+                        ? t('staff_community_reviews_list')
+                        : t('staff_my_reviews_list')}
+                  </span>
+                  {mainTab === 'support' && legacyMode && (
+                    <button
+                      type="button"
+                      onClick={handlePostNew}
+                      className="shrink-0 text-[11px] font-semibold text-[#c43c54] border border-[#c43c54] rounded px-2 py-1 bg-white hover:bg-rose-50"
+                    >
+                      {t('staff_leave_new_feedback')}
+                    </button>
+                  )}
                 </div>
                 {mainTab === 'support' && (
                   <>
@@ -534,21 +629,44 @@ export default function StaffMessagesExperience({
                       </select>
                       <button
                         type="button"
-                        onClick={() => setRecentOnly(false)}
+                        onClick={() => {
+                          setRecentOnly(false);
+                          setCurrentPageOnly(false);
+                        }}
                         className={`px-2 py-1 rounded font-medium ${
-                          !recentOnly ? 'bg-[#c43c54] text-white' : 'bg-white border border-slate-300 text-black'
+                          !recentOnly && !currentPageOnly
+                            ? 'bg-[#c43c54] text-white'
+                            : 'bg-white border border-slate-300 text-black'
                         }`}
                       >
                         {t('staff_all')}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setRecentOnly(true)}
+                        onClick={() => {
+                          setRecentOnly(true);
+                          setCurrentPageOnly(false);
+                        }}
                         className={`px-2 py-1 rounded font-medium ${
                           recentOnly ? 'bg-[#c43c54] text-white' : 'bg-white border border-slate-300 text-black'
                         }`}
                       >
                         {t('staff_recent')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCurrentPageOnly((v) => !v);
+                          setRecentOnly(false);
+                          setPage(1);
+                        }}
+                        className={`px-2 py-1 rounded font-medium ${
+                          currentPageOnly
+                            ? 'bg-[#c43c54] text-white'
+                            : 'bg-white border border-slate-300 text-black'
+                        }`}
+                      >
+                        {t('staff_current_page')}
                       </button>
                       <button
                         type="button"
@@ -563,7 +681,7 @@ export default function StaffMessagesExperience({
                         {t('staff_post_by_me')}
                       </button>
                     </div>
-                    <div className="flex flex-wrap gap-2 items-center mt-3 text-xs">
+                    <div className="flex flex-wrap gap-2 items-center mt-3 text-xs relative">
                       <span className="text-red-700 font-medium">{t('staff_search_label')}</span>
                       <input
                         type="search"
@@ -582,6 +700,70 @@ export default function StaffMessagesExperience({
                       >
                         {t('staff_search_proceed')}
                       </button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setSectionFilterOpen((v) => !v)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded font-medium bg-[#292929] text-white"
+                        >
+                          {t('staff_section_filter')}
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+                        {sectionFilterOpen && (
+                          <div className="absolute right-0 top-full mt-1 z-30 w-72 rounded border border-slate-300 bg-white shadow-xl p-3 text-xs text-black">
+                            <div className="font-semibold text-sm mb-2 border-b border-slate-200 pb-1">
+                              {t('staff_section_filter')}
+                            </div>
+                            <label className="block mb-2">
+                              <span className="text-slate-600">{t('staff_filter_from')}</span>
+                              <input
+                                type="date"
+                                value={filterFromDate}
+                                onChange={(e) => setFilterFromDate(e.target.value)}
+                                className="mt-0.5 w-full border border-slate-300 rounded px-2 py-1"
+                              />
+                            </label>
+                            <label className="block mb-2">
+                              <span className="text-slate-600">{t('staff_filter_to')}</span>
+                              <input
+                                type="date"
+                                value={filterToDate}
+                                onChange={(e) => setFilterToDate(e.target.value)}
+                                className="mt-0.5 w-full border border-slate-300 rounded px-2 py-1"
+                              />
+                            </label>
+                            <label className="block mb-3">
+                              <span className="text-slate-600">{t('staff_filter_status')}</span>
+                              <select
+                                value={filterStatus}
+                                onChange={(e) => setFilterStatus(e.target.value)}
+                                className="mt-0.5 w-full border border-slate-300 rounded px-2 py-1 bg-white"
+                              >
+                                <option value="">{t('staff_filter_status_all')}</option>
+                                <option value="S">{t('staff_filter_status_started')}</option>
+                                <option value="C">{t('staff_filter_status_completed')}</option>
+                                <option value="D">{t('staff_filter_status_decline')}</option>
+                              </select>
+                            </label>
+                            <div className="flex gap-2 justify-end">
+                              <button
+                                type="button"
+                                onClick={applySectionFilter}
+                                className="px-3 py-1 rounded bg-slate-600 text-white"
+                              >
+                                {t('staff_filter_apply')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSectionFilterOpen(false)}
+                                className="px-3 py-1 rounded bg-slate-300 text-slate-800"
+                              >
+                                {t('staff_filter_exit')}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <ListPageSelector
                       page={page}
@@ -642,27 +824,72 @@ export default function StaffMessagesExperience({
                     ) : null}
                     {(mainTab === 'support' ? supportItems : reviewItems).map((item) => (
                       <li key={item.id}>
-                        <button
-                          type="button"
-                          onClick={() => void openThread(item.id)}
-                          className="w-full text-left flex gap-2 p-2 rounded border border-slate-200 hover:bg-amber-50/50"
-                        >
-                          <div className="w-10 h-10 rounded bg-slate-200 shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <div className="font-semibold text-slate-900 text-[13px] leading-snug">{item.title}</div>
-                            {item.excerpt ? (
-                              <p className="text-slate-600 text-xs mt-1 line-clamp-2">{item.excerpt}</p>
-                            ) : null}
-                            <div className="text-[11px] text-slate-500 mt-1">
-                              {t('staff_posted_by_label')}{' '}
-                              <span className="font-medium text-slate-700">{item.author || '—'}</span> —{' '}
-                              {new Date(item.updatedAt).toLocaleString()}
+                        <div className="w-full flex gap-2 p-2 rounded border border-slate-200 hover:bg-amber-50/50">
+                          <button
+                            type="button"
+                            onClick={() => void openThread(item.id)}
+                            className="flex flex-1 min-w-0 gap-2 text-left"
+                          >
+                            {item.authorImage ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={item.authorImage}
+                                alt=""
+                                className="w-10 h-10 rounded object-cover shrink-0 bg-slate-200"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded bg-slate-200 shrink-0" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="font-semibold text-slate-900 text-[13px] leading-snug bg-sky-50 border border-sky-100 px-1.5 py-0.5 inline-block max-w-full">
+                                {item.title}
+                              </div>
+                              {item.excerpt ? (
+                                <p className="text-slate-600 text-xs mt-1 line-clamp-2">{item.excerpt}</p>
+                              ) : null}
+                              <div className="text-[11px] text-slate-500 mt-1">
+                                {t('staff_posted_by_label')}{' '}
+                                <span className="font-medium text-slate-700">{item.author || '—'}</span> —{' '}
+                                {new Date(item.updatedAt).toLocaleString()}
+                              </div>
+                              <div className="mt-1 text-[11px] text-[#c43c54] font-medium">
+                                {t('staff_reply')} · {t('staff_mark_spam')}
+                              </div>
                             </div>
-                            <div className="mt-1 text-[11px] text-[#c43c54] font-medium">
-                              {t('staff_reply')} · {t('staff_mark_spam')}
+                          </button>
+                          {mainTab === 'support' && (
+                            <div className="flex flex-col gap-1.5 shrink-0 items-end justify-start pt-0.5">
+                              <button
+                                type="button"
+                                title={t('staff_i_like')}
+                                disabled={reactingId === item.id}
+                                onClick={(e) => void toggleReaction(item.id, 'L', e)}
+                                className={`inline-flex items-center gap-1 text-[11px] ${
+                                  item.myReaction === 'L' ? 'text-[#c43c54]' : 'text-slate-600'
+                                }`}
+                              >
+                                <ThumbsUp className="w-3.5 h-3.5" />
+                                <span className="min-w-[1.25rem] text-center border border-slate-300 bg-white px-1 py-0.5 rounded-sm">
+                                  {item.likeCount ?? 0}
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                title={t('staff_dislike')}
+                                disabled={reactingId === item.id}
+                                onClick={(e) => void toggleReaction(item.id, 'D', e)}
+                                className={`inline-flex items-center gap-1 text-[11px] ${
+                                  item.myReaction === 'D' ? 'text-[#c43c54]' : 'text-slate-600'
+                                }`}
+                              >
+                                <ThumbsDown className="w-3.5 h-3.5" />
+                                <span className="min-w-[1.25rem] text-center border border-slate-300 bg-white px-1 py-0.5 rounded-sm">
+                                  {item.dislikeCount ?? 0}
+                                </span>
+                              </button>
                             </div>
-                          </div>
-                        </button>
+                          )}
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -733,6 +960,7 @@ export default function StaffMessagesExperience({
               </div>
             </div>
 
+            {composerVisible ? (
             <div
               ref={composerRef}
               className="staff-messages-composer flex flex-col min-h-[320px] overflow-y-auto bg-slate-50 p-4 !text-black"
@@ -831,6 +1059,7 @@ export default function StaffMessagesExperience({
                 {t('staff_post_button')}
               </button>
             </div>
+            ) : null}
           </div>
         )}
       </div>

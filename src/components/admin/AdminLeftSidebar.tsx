@@ -59,7 +59,6 @@ import {
 import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
-import { legacyUserBugProblemUrl } from '@/lib/messages/feedbackRoutes';
 import {
   DndContext, 
   closestCenter,
@@ -534,7 +533,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
               <div className="bg-[#2b2b2b] mt-1 space-y-1">
                 {adminUserId ? (
                   <Link
-                    href={legacyUserBugProblemUrl(adminUserId, 'feedback')}
+                    href="/admin/dashboard?panel=my-feedbacks"
                     className="flex items-center gap-3 px-3 py-2.5 bg-[#4f4f4f] border border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white"
                   >
                     <Users2 className="w-4 h-4 shrink-0 opacity-95" />
