@@ -31,18 +31,39 @@ export function useClubWebsiteTopics(clubId: string | undefined) {
   );
 
   const addTopic = useCallback(
-    (name: string): ClubWebsiteTopic | null => {
+    (name: string, parentId: string | null = null): ClubWebsiteTopic | null => {
       const trimmed = name.trim();
       if (!trimmed) return null;
-      const topic = createClubWebsiteTopic(trimmed);
+      if (parentId) {
+        const parent = topics.find((t) => t.id === parentId);
+        if (!parent || parent.parentId) return null;
+      }
+      const topic = createClubWebsiteTopic(trimmed, parentId);
       setTopics((prev) => {
+        if (parentId) {
+          const parentIdx = prev.findIndex((t) => t.id === parentId);
+          if (parentIdx < 0) return prev;
+          let insertAt = parentIdx + 1;
+          while (insertAt < prev.length && prev[insertAt]?.parentId === parentId) {
+            insertAt += 1;
+          }
+          const next = [...prev];
+          next.splice(insertAt, 0, topic);
+          if (clubId) saveClubWebsiteTopics(clubId, next);
+          return next;
+        }
         const next = [...prev, topic];
         if (clubId) saveClubWebsiteTopics(clubId, next);
         return next;
       });
       return topic;
     },
-    [clubId]
+    [clubId, topics]
+  );
+
+  const addSubtopicUnder = useCallback(
+    (parentId: string, name: string) => addTopic(name, parentId),
+    [addTopic]
   );
 
   const updateTopic = useCallback(
@@ -72,7 +93,7 @@ export function useClubWebsiteTopics(clubId: string | undefined) {
   const removeTopic = useCallback(
     (id: string) => {
       setTopics((prev) => {
-        const next = prev.filter((t) => t.id !== id);
+        const next = prev.filter((t) => t.id !== id && t.parentId !== id);
         if (clubId) saveClubWebsiteTopics(clubId, next);
         return next;
       });
@@ -108,6 +129,7 @@ export function useClubWebsiteTopics(clubId: string | undefined) {
     topics,
     hydrated,
     addTopic,
+    addSubtopicUnder,
     updateTopic,
     toggleActivated,
     removeTopic,

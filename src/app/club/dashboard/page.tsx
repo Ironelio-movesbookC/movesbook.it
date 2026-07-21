@@ -11,6 +11,7 @@ import ClubIdentificationDevicesPanel from './components/ClubIdentificationDevic
 import ClubAccessOutcomeSettingsPanel from './components/ClubAccessOutcomeSettingsPanel';
 import ClubBachecaMemberPanel from '@/components/club/websiteSettings/ClubBachecaMemberPanel';
 import ClubTopicMemberPanel from '@/components/club/websiteSettings/ClubTopicMemberPanel';
+import ClubDashboardTopicsHorizontalPanel from '@/components/club/ClubDashboardTopicsHorizontalPanel';
 import NotificationByPromocodeDashboardView from '@/components/promocodes/NotificationByPromocodeDashboard';
 import {
   getClubMyPageDisplayName,
@@ -37,7 +38,13 @@ function ClubDashboardContent() {
   const [clubAddSongsOgpOpen, setClubAddSongsOgpOpen] = useState(false);
   const [clubAddSongsOgpExpanded, setClubAddSongsOgpExpanded] = useState(false);
   const [clubMainPanel, setClubMainPanel] = useState<
-    'default' | 'identification-devices' | 'outcome-settings' | 'suggest-movesbook' | 'bacheca' | 'topic'
+    | 'default'
+    | 'identification-devices'
+    | 'outcome-settings'
+    | 'suggest-movesbook'
+    | 'bacheca'
+    | 'topic'
+    | 'topics-horizontal'
   >('default');
   const [clubTopicId, setClubTopicId] = useState<string | null>(null);
 
@@ -153,6 +160,19 @@ function ClubDashboardContent() {
       setClubAddSongsOgpExpanded(false);
       setClubMainPanel('topic');
     }
+    if (panel === 'topics-horizontal') {
+      const queryClubId = searchParams?.get('clubId');
+      if (queryClubId) {
+        setSelectedClubId(queryClubId);
+        localStorage.setItem('selectedClub', queryClubId);
+      }
+      writeClubWorkspaceTab('my-entity');
+      setShowWorkoutSection(false);
+      setClubAddSongsOgpOpen(false);
+      setClubAddSongsOgpExpanded(false);
+      setClubMainPanel('topics-horizontal');
+      setClubTopicId(null);
+    }
   }, [searchParams, router]);
 
   useEffect(() => {
@@ -202,6 +222,21 @@ function ClubDashboardContent() {
           ) : (
             <p className="py-12 text-center text-sm text-gray-600">
               Select a club in the sidebar to view its bacheca.
+            </p>
+          )}
+        </div>
+      ) : !clubAddSongsOgpOpen && !showWorkoutSection && clubMainPanel === 'topics-horizontal' ? (
+        <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-white p-4 shadow-sm">
+          {selectedClubId ?? activeClub?.id ? (
+            <ClubDashboardTopicsHorizontalPanel
+              clubId={(selectedClubId ?? activeClub?.id)!}
+              clubDisplayName={
+                activeClub ? getClubMyPageDisplayName(activeClub) : ''
+              }
+            />
+          ) : (
+            <p className="py-12 text-center text-sm text-gray-600">
+              Select a club in the sidebar to view club topics.
             </p>
           )}
         </div>

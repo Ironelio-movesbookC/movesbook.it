@@ -118,6 +118,7 @@ import {
   isGroupAccountUserType,
   isManagedEntityAdminUserType,
   isTeamAccountUserType,
+  userOwnsMovesbookWebsite,
 } from '@/utils/dashboardRouting';
 import {
   formatMyClubsSidebarLabel,
@@ -441,6 +442,10 @@ export default function DarkSidebar({
     () => getFormCreatedClubsSortedByCreatedAt(entities),
     [entities]
   );
+  const formCreatedEntities = useMemo(
+    () => getFormCreatedEntitiesSortedByCreatedAt(entities),
+    [entities]
+  );
   const clubsForTopicsPicker = useMemo(() => {
     if (isClubAccountUserType(userType)) {
       return formCreatedClubs as { id: string; name: string; description?: string | null }[];
@@ -448,12 +453,15 @@ export default function DarkSidebar({
     if (userType === 'ATHLETE') {
       return entities as { id: string; name: string; description?: string | null }[];
     }
+    if (
+      isTeamAccountUserType(userType) ||
+      isGroupAccountUserType(userType) ||
+      userType === 'COACH'
+    ) {
+      return formCreatedEntities as { id: string; name: string; description?: string | null }[];
+    }
     return [];
-  }, [userType, formCreatedClubs, entities]);
-  const formCreatedEntities = useMemo(
-    () => getFormCreatedEntitiesSortedByCreatedAt(entities),
-    [entities]
-  );
+  }, [userType, formCreatedClubs, formCreatedEntities, entities]);
   const clubUserHasProfile =
     !isClubAccountUserType(userType) || userHasClubProfile(entities);
   const isAthleteUser = userType === 'ATHLETE';
@@ -935,13 +943,42 @@ export default function DarkSidebar({
     [onEntitySelect, setCurrentTab, userType, isAthleteUser, onMyClubClick]
   );
 
+  /**
+   * "Topics of my clubs" — after picking an entity, open website DISPLAY
+   * (topics/subtopics), never the settings editor.
+   */
   const handleClubSelectedForTopics = useCallback(
-    (clubId: string) => {
+    (entityId: string) => {
       setClubTopicsPickerOpen(false);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('selectedClub', entityId);
+      }
+      writeClubWorkspaceTab('my-entity');
+      onEntitySelect?.(entityId);
+      setCurrentTab('my-entity');
       requestOpenClubTopicsSection();
-      handleMyPageClubSelect(clubId);
+
+      const isClubOrAthlete =
+        isClubAccountUserType(userType) || userType === 'ATHLETE';
+      if (isClubOrAthlete) {
+        router.push(clubWebsiteDisplayUrl(entityId));
+        return;
+      }
+
+      // Team / group / coach: open that entity workspace (never website settings).
+      if (isTeamAccountUserType(userType)) {
+        router.push(`/my-team?teamId=${encodeURIComponent(entityId)}`);
+        return;
+      }
+      if (isGroupAccountUserType(userType)) {
+        router.push(`/my-group?groupId=${encodeURIComponent(entityId)}`);
+        return;
+      }
+      if (userType === 'COACH') {
+        router.push(`/my-coaching-group?groupId=${encodeURIComponent(entityId)}`);
+      }
     },
-    [handleMyPageClubSelect]
+    [onEntitySelect, setCurrentTab, router, userType]
   );
 
   const openMyTopicsClubPicker = useCallback(() => {
@@ -1601,6 +1638,9 @@ export default function DarkSidebar({
                       </ul>
                     </>
                   )}
+                  <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15 pt-3">
+                    <MyPageTopicsEntryRow onOpenClubPicker={openMyTopicsClubPicker} />
+                  </div>
                 </div>
               )}
               {myClubsOpen && isTeamManagerUser && (
@@ -1645,6 +1685,9 @@ export default function DarkSidebar({
                       </ul>
                     </>
                   ) : null}
+                  <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15 pt-3">
+                    <MyPageTopicsEntryRow onOpenClubPicker={openMyTopicsClubPicker} />
+                  </div>
                 </div>
               )}
               {myClubsOpen && isGroupAdminUser && (
@@ -1689,6 +1732,9 @@ export default function DarkSidebar({
                       </ul>
                     </>
                   )}
+                  <div className="mx-auto mt-4 max-w-[220px] border-t border-white/15 pt-3">
+                    <MyPageTopicsEntryRow onOpenClubPicker={openMyTopicsClubPicker} />
+                  </div>
                 </div>
               )}
             </div>
@@ -1840,7 +1886,7 @@ export default function DarkSidebar({
                       <Settings className="w-4 h-4" />
                     </button>
                   </div>
-                  {isManagedEntityAdminUserType(userType) ? (
+                  {userOwnsMovesbookWebsite(userType) ? (
                     <PersonalMyTopicsSidebarBlock userId={user?.id} canManage />
                   ) : null}
                   <div className="flex w-full items-stretch min-h-[44px]">
@@ -2634,11 +2680,8 @@ export default function DarkSidebar({
                       <button
                         type="button"
                         onClick={() => {
-                          window.open(
-                            CLUB_WEBSITE_SETTINGS_INDEX_PATH,
-                            '_blank',
-                            'noopener,noreferrer'
-                          );
+                          writeClubWorkspaceTab('my-entity');
+                          router.push(CLUB_WEBSITE_SETTINGS_INDEX_PATH);
                         }}
                         className="flex shrink-0 items-center border-l border-teal-700/40 px-3 text-gray-300 transition-colors hover:bg-teal-700 hover:text-white"
                         aria-label={t('sidebar_club_website_editor_aria')}

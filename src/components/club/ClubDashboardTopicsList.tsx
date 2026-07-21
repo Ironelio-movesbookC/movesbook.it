@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronDown, FileText, Mail } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import type { ClubDashboardFriendTopicEntry } from '@/lib/clubWebsiteFriendList';
 import type { ClubWebsiteFriendItem } from '@/lib/clubWebsiteFriendList';
 import type { ClubWebsiteTopic } from '@/lib/clubWebsiteTopics';
+import { buildClubDashboardTopicNodes } from '@/lib/club/clubDashboardTopicNodes';
 import { clubWebsiteDisplayTopicUrl } from '@/lib/clubWebsiteSettingsPaths';
 import { topicHasEmbedUrl, topicHasHtmlContent } from '@/lib/clubWebsiteDisplayContent';
 import { FriendListStatusSquare } from '@/components/club/websiteSettings/ClubWebsiteFriendListToolbar';
@@ -173,7 +174,7 @@ function TopicRow({
   );
 
   const titleLabel = (
-    <span className={`min-w-0 flex-1 truncate ${nested ? '' : 'font-medium'}`}>{name}</span>
+    <span className={`min-w-0 flex-1 break-words whitespace-normal ${nested ? '' : 'font-medium'}`}>{name}</span>
   );
 
   const titleIsClickable = hasDirectLink || hasHtmlContent;
@@ -235,73 +236,65 @@ export default function ClubDashboardTopicsList({
   onViewTopicContent?: (topicId: string, label: string) => void;
 }) {
   const { t } = useLanguage();
+  const topicNodes = useMemo(
+    () => buildClubDashboardTopicNodes(friendTopics, customTopics),
+    [friendTopics, customTopics],
+  );
   const [segmentOpen, setSegmentOpen] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(friendTopics.map((topic) => [topic.id, true])),
+    Object.fromEntries(topicNodes.map((topic) => [topic.id, true])),
   );
 
-  if (friendTopics.length === 0 && customTopics.length === 0) return null;
+  if (topicNodes.length === 0) return null;
 
   const toggleSegment = (topicId: string) => {
     setSegmentOpen((prev) => ({ ...prev, [topicId]: !(prev[topicId] ?? true) }));
   };
 
-  const renderFriendTopicRow = (
-    entry: ClubDashboardFriendTopicEntry,
-    variant: 'root' | 'sub',
-    expandControl?: { open: boolean; onToggle: () => void },
-  ) => (
-    <TopicRow
-      key={entry.id}
-      name={entry.name}
-      nested={variant === 'sub' && entry.id !== 'friends-root'}
-      activated={entry.item.activated}
-      item={entry.item}
-      clubId={clubId}
-      topicHrefBuilder={topicHrefBuilder}
-      onViewTopicContent={onViewTopicContent}
-      expandControl={
-        expandControl
-          ? {
-              open: expandControl.open,
-              onToggle: expandControl.onToggle,
-              ariaLabel: expandControl.open ? t('collapse') : t('expand'),
-            }
-          : undefined
-      }
-    />
-  );
-
   return (
     <div className="border-t border-black/25 bg-[#252525]">
-      {friendTopics.map((topic) => {
-        const hasNested = topic.subtopics.length > 0;
-        const open = segmentOpen[topic.id] ?? true;
-        const isRoot = topic.id === 'friends-root';
+      {/* ~10 topic/subtopic rows visible; scroll for the rest */}
+      <div className="max-h-[25rem] overflow-y-auto overscroll-contain [scrollbar-width:thin]">
+        {topicNodes.map((topic) => {
+          const hasNested = topic.subtopics.length > 0;
+          const open = segmentOpen[topic.id] ?? true;
 
-        return (
-          <div key={topic.id}>
-            {renderFriendTopicRow(
-              topic,
-              isRoot ? 'root' : 'sub',
-              hasNested ? { open, onToggle: () => toggleSegment(topic.id) } : undefined,
-            )}
-            {hasNested && open
-              ? topic.subtopics.map((sub) => renderFriendTopicRow(sub, 'sub'))
-              : null}
-          </div>
-        );
-      })}
-      {customTopics.map((topic) => (
-        <TopicRow
-          key={topic.id}
-          name={topic.name}
-          activated={topic.activated}
-          item={topic}
-          clubId={clubId}
-          topicHrefBuilder={topicHrefBuilder}
-          onViewTopicContent={onViewTopicContent}
-        />
-      ))}
+          return (
+            <div key={topic.id}>
+              <TopicRow
+                name={topic.name}
+                activated={topic.activated}
+                item={topic.item}
+                clubId={clubId}
+                topicHrefBuilder={topicHrefBuilder}
+                onViewTopicContent={onViewTopicContent}
+                expandControl={
+                  hasNested
+                    ? {
+                        open,
+                        onToggle: () => toggleSegment(topic.id),
+                        ariaLabel: open ? t('collapse') : t('expand'),
+                      }
+                    : undefined
+                }
+              />
+              {hasNested && open
+                ? topic.subtopics.map((sub) => (
+                    <TopicRow
+                      key={sub.id}
+                      name={sub.name}
+                      nested
+                      activated={sub.activated}
+                      item={sub.item}
+                      clubId={clubId}
+                      topicHrefBuilder={topicHrefBuilder}
+                      onViewTopicContent={onViewTopicContent}
+                    />
+                  ))
+                : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
