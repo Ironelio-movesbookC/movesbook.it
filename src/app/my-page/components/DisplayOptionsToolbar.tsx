@@ -62,7 +62,7 @@ export default function DisplayOptionsToolbar({
   }, []);
 
   return (
-    <div className="relative z-30 shrink-0 border-b bg-white px-4 py-3 md:px-12">
+    <div className="relative z-30 shrink-0 border-b bg-white px-4 py-2 md:px-12">
       <div className="flex items-center justify-between gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-4 overflow-x-hidden flex-wrap">
           <ToggleOption
@@ -99,15 +99,10 @@ export default function DisplayOptionsToolbar({
             onClick={() => setDropdownOpen((current) => !current)}
             aria-haspopup="menu"
             aria-expanded={dropdownOpen}
-            whileHover={{ 
-              scale: 1.06,
-              transition: { type: "spring", stiffness: 350, damping: 12, mass: 0.6 }
-            }}
-            whileTap={{ scale: 0.94 }}
             className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium ${
               dropdownOpen
                 ? "border-[#7092BE] bg-[#7092BE]/10 text-[#7092BE]  lg:mr-[115px] ring-2 ring-[#7092BE]/20"
-                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50  lg:mr-[115px]"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-[#8b8e9b3b]  lg:mr-[115px]"
             }`}
           >
             <Settings className="h-4 w-4" />
