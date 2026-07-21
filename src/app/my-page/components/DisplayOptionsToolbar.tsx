@@ -1,4 +1,14 @@
-import { Eye, EyeOff } from 'lucide-react';
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Settings,
+} from "lucide-react";
+import ProfileDropdownMenu from "./ProfileDropdownMenu";
 
 interface DisplayOptionsToolbarProps {
   showAdBanner: boolean;
@@ -9,9 +19,9 @@ interface DisplayOptionsToolbarProps {
   onTogglePersonalBanner: (value: boolean) => void;
   onToggleLeftSidebar: (value: boolean) => void;
   onToggleRightSidebar: (value: boolean) => void;
+  onLogout?: () => void;
 }
 
-/** Display toggles — toolbar bar is always visible so options never disappear from the page. */
 export default function DisplayOptionsToolbar({
   showAdBanner,
   showPersonalBanner,
@@ -21,59 +31,160 @@ export default function DisplayOptionsToolbar({
   onTogglePersonalBanner,
   onToggleLeftSidebar,
   onToggleRightSidebar,
+  onLogout,
 }: DisplayOptionsToolbarProps) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setDropdownOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
   return (
-    <div className="bg-white border-b px-4 py-1 shrink-0">
-      <div className="flex items-center gap-4 overflow-x-auto">
-        <label className="flex items-center gap-2 text-sm cursor-pointer whitespace-nowrap">
-          <input
-            type="checkbox"
+    <div className="relative z-30 shrink-0 border-b bg-white px-4 py-3 md:px-12">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-4 overflow-x-hidden flex-wrap">
+          <ToggleOption
             checked={showAdBanner}
-            onChange={(e) => onToggleAdBanner(e.target.checked)}
-            className="w-4 h-4"
+            label="Advertising Banner"
+            onChange={onToggleAdBanner}
           />
-          <span className="flex items-center gap-1">
-            {showAdBanner ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-            Advertising Banner
-          </span>
-        </label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer whitespace-nowrap">
-          <input
-            type="checkbox"
+
+          <ToggleOption
             checked={showPersonalBanner}
-            onChange={(e) => onTogglePersonalBanner(e.target.checked)}
-            className="w-4 h-4"
+            label="Personal Banner & Picture"
+            onChange={onTogglePersonalBanner}
           />
-          <span className="flex items-center gap-1">
-            {showPersonalBanner ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-            Personal Banner & Picture
-          </span>
-        </label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer whitespace-nowrap">
-          <input
-            type="checkbox"
+
+          <ToggleOption
             checked={showLeftSidebar}
-            onChange={(e) => onToggleLeftSidebar(e.target.checked)}
-            className="w-4 h-4"
+            label="Left Sidebar"
+            onChange={onToggleLeftSidebar}
           />
-          <span className="flex items-center gap-1">
-            {showLeftSidebar ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-            Left Sidebar
-          </span>
-        </label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer whitespace-nowrap">
-          <input
-            type="checkbox"
+
+          <ToggleOption
             checked={showRightSidebar}
-            onChange={(e) => onToggleRightSidebar(e.target.checked)}
-            className="w-4 h-4"
+            label="Right Sidebar"
+            onChange={onToggleRightSidebar}
           />
-          <span className="flex items-center gap-1">
-            {showRightSidebar ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-            Right Sidebar
-          </span>
-        </label>
+        </div>
+
+        <div
+          ref={dropdownRef}
+          className="relative shrink-0"
+        >
+          <motion.button
+            type="button"
+            onClick={() => setDropdownOpen((current) => !current)}
+            aria-haspopup="menu"
+            aria-expanded={dropdownOpen}
+            whileHover={{ 
+              scale: 1.06,
+              transition: { type: "spring", stiffness: 350, damping: 12, mass: 0.6 }
+            }}
+            whileTap={{ scale: 0.94 }}
+            className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium ${
+              dropdownOpen
+                ? "border-[#7092BE] bg-[#7092BE]/10 text-[#7092BE]  lg:mr-[115px] ring-2 ring-[#7092BE]/20"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50  lg:mr-[115px]"
+            }`}
+          >
+            <Settings className="h-4 w-4" />
+
+            <span className="hidden sm:inline">
+              Profile Menu
+            </span>
+
+            <motion.div
+              animate={{ rotate: dropdownOpen ? 180 : 0 }}
+              transition={{ 
+                type: "spring",
+                stiffness: 350,
+                damping: 18,
+                mass: 0.6,
+              }}
+            >
+              <ChevronDown className="h-4 w-4" />
+            </motion.div>
+          </motion.button>
+
+          <AnimatePresence>
+            {dropdownOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ 
+                  type: "spring",
+                  stiffness: 250,
+                  damping: 20,
+                  mass: 0.8,
+                }}
+                className="absolute right-0 top-full z-50 mt-2 w-[320px] max-w-[calc(100vw-2rem)]"
+              >
+                <ProfileDropdownMenu
+                  onClose={() => setDropdownOpen(false)}
+                  onLogout={onLogout}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </div>
+  );
+}
+
+interface ToggleOptionProps {
+  checked: boolean;
+  label: string;
+  onChange: (value: boolean) => void;
+}
+
+function ToggleOption({
+  checked,
+  label,
+  onChange,
+}: ToggleOptionProps) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-gray-700">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-4 rounded border-gray-300 text-[#7092BE] focus:ring-[#7092BE]"
+      />
+
+      <span className="flex items-center gap-1.5">
+        {checked ? (
+          <Eye className="h-4 w-4 text-[#7092BE]" />
+        ) : (
+          <EyeOff className="h-4 w-4 text-gray-400" />
+        )}
+
+        {label}
+      </span>
+    </label>
   );
 }
