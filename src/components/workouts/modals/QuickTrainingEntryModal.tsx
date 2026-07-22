@@ -638,15 +638,18 @@ export default function QuickTrainingEntryModal({
                     className="w-full border rounded-lg px-2 py-1.5 text-sm"
                   />
                 </div>
-                <div>
-                  <label className="text-xs text-gray-600 block mb-1">Feeling status</label>
-                  <input
-                    type="text"
-                    value={form.advanced.feelingStatus ?? ''}
-                    onChange={(e) => patchAdvanced({ feelingStatus: e.target.value })}
-                    className="w-full border rounded-lg px-2 py-1.5 text-sm"
-                  />
-                </div>
+                {/* Feeling Status — WORKOUTS DONE (Section C) only */}
+                {context === 'C' && (
+                  <div>
+                    <label className="text-xs text-gray-600 block mb-1">Feeling status</label>
+                    <input
+                      type="text"
+                      value={form.advanced.feelingStatus ?? ''}
+                      onChange={(e) => patchAdvanced({ feelingStatus: e.target.value })}
+                      className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="text-xs text-gray-600 block mb-1">Surface</label>
                   <select

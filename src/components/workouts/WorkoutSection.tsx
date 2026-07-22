@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { FileText, ChevronLeft, ChevronRight } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 
 // Drag and Drop
 import {
@@ -37,12 +37,26 @@ import type {
 
 // API Utilities
 import { movelapApi } from '@/utils/api.utils';
+import {
+  patchWorkoutSessionStatus,
+  syncWorkoutStatusAfterMoveframes,
+  type YearlyWorkoutStatus,
+} from '@/utils/workoutSessionStatus';
+import { patchMoveframeMarkedDone, postExportToDone } from '@/utils/exportToDoneClient';
+import SaveToWorkoutsDoneModal from '@/components/workouts/modals/SaveToWorkoutsDoneModal';
 
 // Helper Functions
 import { sectionHelpers } from '@/utils/workout.helpers';
 import { restTypeDisplayToDb } from '@/utils/restTypeDb';
 import { isSportSectionB, AEROBIC_SPORTS } from '@/constants/moveframe.constants';
 import { getWorkoutDisplayNumber } from '@/lib/workoutDisplayOrder';
+import {
+  resolveYearlyPlanPageStart,
+  yearlyPlanPageStartForWeek,
+  findCurrentWeekNumberInPlan,
+  resolveYearlyPlanStartDate,
+  formatYearlyPlanStartDateLabel,
+} from '@/utils/yearlyPlanNavigation';
 
 // Custom Hooks
 import { useWorkoutData } from '@/hooks/useWorkoutData';
@@ -60,6 +74,7 @@ import { saveWeekToFavorites } from '@/lib/saveFavoriteWeek';
 import StyledTableWrapper from '@/components/workouts/tables/StyledTableWrapper';
 import AddWorkoutModal from '@/components/workouts/AddWorkoutModal';
 import WorkoutInfoModal from '@/components/workouts/WorkoutInfoModal';
+import DayInfoModal from '@/components/workouts/DayInfoModal';
 import AddMoveframeModal from '@/components/workouts/AddMoveframeModal';
 import AddEditMoveframeModal from '@/components/workouts/AddEditMoveframeModal';
 import ImportWorkoutsModal from '@/components/workouts/ImportWorkoutsModal';
@@ -133,6 +148,7 @@ import {
   weekHasGymPlan,
 } from '@/utils/gymWeekAssignmentStorage';
 import { saveGymWeekPlanToArchive } from '@/utils/gymWeekArchivePlan';
+import { removeGymWeekPlanFromWeek } from '@/utils/gymWeekPlanApply';
 import DayOverviewModal from '@/components/workouts/DayOverviewModal';
 import WorkoutOverviewModal from '@/components/workouts/WorkoutOverviewModal';
 import ExportSharePrint from '@/components/workouts/ExportSharePrint';
@@ -202,7 +218,7 @@ interface WorkoutSectionProps {
 
 export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   // ==================== SECTION & VIEW STATE ====================
-  const [activeSection, setActiveSection] = useState<SectionId>('A');
+  const [activeSection, setActiveSection] = useState<SectionId>('B');
   const [activeSubSection, setActiveSubSection] = useState<'A' | 'B' | 'C'>('A'); // For Section A subsections
   const [viewMode, setViewMode] = useState<ViewMode>('table'); // Default to table view
   const [selectedWeekForTable, setSelectedWeekForTable] = useState<number | null>(null);
@@ -248,6 +264,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   // Week grouping for Section B pagination
   const [weeksPerPage, setWeeksPerPage] = useState<number>(3); // 1, 2, 3, 4, 6, 8, 13
   const [currentPageStart, setCurrentPageStart] = useState<number>(1); // Starting week number for current page
+  const yearlyPlanPageSyncKeyRef = useRef<string | null>(null);
   
   // Week index for Section A (Weekly Plans)
   const [currentWeekIndex, setCurrentWeekIndex] = useState<number>(0);
@@ -262,8 +279,10 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
     // Section A, B, C: All support Tree, Table, and Calendar views
     // Clear week filter when changing sections
     setSelectedWeekForTable(null);
-    // Reset pagination when changing sections
-    setCurrentPageStart(1);
+    if (activeSection !== 'B') {
+      setCurrentPageStart(1);
+      yearlyPlanPageSyncKeyRef.current = null;
+    }
     // Reset tree expand state and week expansion when changing sections or view modes
     setTreeExpandState(0);
     setTreeExpandedWeeks(new Set());
@@ -284,6 +303,24 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
     feedbackMessage,
     showMessage
   } = useWorkoutData({ initialSection: activeSection });
+
+  // Yearly Plan (Section B): open on the page that contains today's week
+  useEffect(() => {
+    if (activeSection !== 'B' || !workoutPlan?.weeks?.length) return;
+
+    const syncKey = `${workoutPlan.id ?? 'plan'}-B`;
+    if (yearlyPlanPageSyncKeyRef.current === syncKey) return;
+    yearlyPlanPageSyncKeyRef.current = syncKey;
+
+    setCurrentPageStart(
+      resolveYearlyPlanPageStart(workoutPlan.weeks, weeksPerPage)
+    );
+  }, [activeSection, workoutPlan, weeksPerPage]);
+
+  const yearlyPlanStartDateLabel = useMemo(
+    () => formatYearlyPlanStartDateLabel(resolveYearlyPlanStartDate(workoutPlan)),
+    [workoutPlan]
+  );
 
   /** Modals / print flows only know legacy sections A–D (weekly-structure tab W maps to A for typing). */
   const activeSectionForModals = (activeSection === 'W' ? 'A' : activeSection) as 'A' | 'B' | 'C' | 'D';
@@ -498,8 +535,19 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
         ) {
           return;
         }
-        deleteGymWeekAssignment(weekId);
-        showMessage('success', 'Gym week plan removed from this week.');
+        void (async () => {
+          try {
+            await removeGymWeekPlanFromWeek(weekId);
+            deleteGymWeekAssignment(weekId);
+            await loadWorkoutData(activeSection);
+            showMessage('success', 'Gym week plan removed from this week.');
+          } catch (err) {
+            showMessage(
+              'error',
+              err instanceof Error ? err.message : 'Failed to remove gym week plan',
+            );
+          }
+        })();
         return;
       }
 
@@ -539,7 +587,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
         setShowPlanGymWeekManualForm(true);
       }
     },
-    [gymWeekMenuWeekId, workoutPlan?.weeks, beginGymWeekWizard, planGymWeekGoals, showMessage]
+    [gymWeekMenuWeekId, workoutPlan?.weeks, beginGymWeekWizard, planGymWeekGoals, showMessage, loadWorkoutData, activeSection]
   );
 
   const afterGymPlanBuilt = useCallback(
@@ -732,6 +780,117 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
     cycleWorkoutExpansion(workout.id, day.id);
   };
 
+  const handleWorkoutStatusChange = useCallback(
+    async (workoutId: string, status: YearlyWorkoutStatus, day: any) => {
+      // Yearly Plan (B) and Workouts Done (C) share the same symbol-color rules
+      if (activeSection !== 'B' && activeSection !== 'C') return;
+      try {
+        await patchWorkoutSessionStatus(workoutId, status);
+        await loadWorkoutData(activeSection);
+      } catch (err) {
+        showMessage(
+          'error',
+          err instanceof Error ? err.message : 'Failed to update workout status',
+        );
+      }
+    },
+    [activeSection, loadWorkoutData, showMessage],
+  );
+
+  const handleMatchDoneStatusChange = useCallback(
+    async (day: any, status: YearlyWorkoutStatus) => {
+      // Match Done colors are selected ONLY in Workouts Done; they sync to Yearly Plan
+      if (activeSection !== 'C' || !day?.id) return;
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('Not signed in');
+        const response = await fetch(`/api/workouts/days/${day.id}/match-done`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status }),
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || 'Failed to set Match Done color');
+        }
+        await loadWorkoutData(activeSection);
+        showMessage('success', 'Match Done color saved (Yearly Plan updated too)');
+      } catch (err) {
+        showMessage(
+          'error',
+          err instanceof Error ? err.message : 'Failed to set Match Done color',
+        );
+      }
+    },
+    [activeSection, loadWorkoutData, showMessage],
+  );
+
+  const [saveToDoneModal, setSaveToDoneModal] = useState<{
+    mode: 'workout' | 'day';
+    day: any;
+    workouts: any[];
+  } | null>(null);
+
+  const openSaveToWorkoutsDone = useCallback(
+    (mode: 'workout' | 'day', day: any, workouts: any[]) => {
+      if (activeSection !== 'B') return;
+      const exportable = workouts.filter((w) => w?.moveframes?.length > 0);
+      if (!exportable.length) {
+        showMessage('error', 'No planned workouts with moveframes to export');
+        return;
+      }
+      setSaveToDoneModal({ mode, day, workouts: exportable });
+    },
+    [activeSection, showMessage],
+  );
+
+  const handleExportDayToDone = useCallback(
+    (day: any) => {
+      openSaveToWorkoutsDone('day', day, day.workouts ?? []);
+    },
+    [openSaveToWorkoutsDone],
+  );
+
+  const handleShowWorkoutsDone = useCallback(
+    (day: any) => {
+      if (!day?.id) {
+        showMessage('warning', 'This day has no id');
+        return;
+      }
+      // Panel toggle is handled in DayTableView; ensure the day is expanded
+      if (!expandedDays.has(day.id)) {
+        toggleDayExpansion(day.id);
+      }
+    },
+    [expandedDays, toggleDayExpansion, showMessage],
+  );
+
+  const handleMarkWorkoutDone = useCallback(
+    (workout: any, day: any) => {
+      openSaveToWorkoutsDone('workout', day, [workout]);
+    },
+    [openSaveToWorkoutsDone],
+  );
+
+  const handleMarkMoveframeDone = useCallback(
+    async (moveframe: any) => {
+      if (activeSection !== 'B' || !moveframe?.id || moveframe.markedDoneAt) return;
+      try {
+        await patchMoveframeMarkedDone(moveframe.id, true);
+        await loadWorkoutData(activeSection);
+      } catch (err) {
+        showMessage(
+          'error',
+          err instanceof Error ? err.message : 'Failed to update moveframe',
+        );
+      }
+    },
+    [activeSection, loadWorkoutData, showMessage],
+  );
+
   const handleSaveFavoriteWeek = async (week: any) => {
     if (!week?.id) {
       showMessage('error', 'No week selected');
@@ -754,6 +913,9 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   // ==================== MODAL MODE STATE ====================
   const [workoutModalMode, setWorkoutModalMode] = useState<'add' | 'edit'>('add');
   const [showWorkoutInfoModal, setShowWorkoutInfoModal] = useState(false);
+  const [workoutInfoReadOnly, setWorkoutInfoReadOnly] = useState(false);
+  const [dayInfoModalOpen, setDayInfoModalOpen] = useState(false);
+  const [selectedDayForInfo, setSelectedDayForInfo] = useState<any>(null);
   const [showCreateYearlyPlanModal, setShowCreateYearlyPlanModal] = useState(false);
   const [showWeekNotesModal, setShowWeekNotesModal] = useState(false);
   const [selectedWeekNotes, setSelectedWeekNotes] = useState<string>('');
@@ -1043,7 +1205,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
   
   /**
    * EDIT DAY - Requires active day selection
-   * Edits day metadata (date, period, weather, feeling, notes)
+   * Edits day metadata (date, period, notes; weather/feeling only in Workouts Done)
    * Does NOT modify workouts, moveframes, or movelaps
    */
   const handleEditDay = () => {
@@ -1248,6 +1410,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
 
       if (response.ok && data.success) {
         showMessage('success', data.message || 'Workouts imported successfully!');
+        await loadWorkoutData(activeSection);
       } else {
         showMessage('error', data.error || 'Failed to import workouts');
       }
@@ -1465,14 +1628,15 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           console.log('   First week days:', data.plan.weeks[0]?.days?.length);
           
           updateWorkoutPlan(data.plan);
-          setCurrentPageStart(1);
+          yearlyPlanPageSyncKeyRef.current = null;
+          setCurrentPageStart(resolveYearlyPlanPageStart(data.plan.weeks, weeksPerPage));
           setViewMode('table');
           
           console.log('✅ Data set successfully! WorkoutPlan now has', data.plan.weeks.length, 'weeks');
         } else {
           console.warn('⚠️ Plan created but no weeks in response, reloading...');
           // Fallback: reload from API
-          setCurrentPageStart(1);
+          yearlyPlanPageSyncKeyRef.current = null;
           setViewMode('table');
           await new Promise(resolve => setTimeout(resolve, 500));
           await loadWorkoutData('B');
@@ -2045,7 +2209,12 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             onClose={onClose}
         onWeeksPerPageChange={(weeks: number) => {
           setWeeksPerPage(weeks);
-          setCurrentPageStart(1); // Reset to first page when changing grouping
+          const currentWeek = findCurrentWeekNumberInPlan(workoutPlan?.weeks);
+          setCurrentPageStart(
+            currentWeek != null
+              ? yearlyPlanPageStartForWeek(currentWeek, weeks)
+              : 1
+          );
         }}
         onPrevPage={() => {
           setCurrentPageStart(Math.max(1, currentPageStart - weeksPerPage));
@@ -2097,6 +2266,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           isOpen={showCreateYearlyPlanModal}
           onClose={() => setShowCreateYearlyPlanModal(false)}
           onConfirm={handleCreateYearlyPlan}
+          currentStartDateLabel={yearlyPlanStartDateLabel}
         />
       )}
 
@@ -2555,13 +2725,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 periods={periods}
                 excludeStretchingFromTotals={excludeStretchingFromTotals}
                 setExcludeStretchingFromTotals={setExcludeStretchingFromTotals}
-                onDayClick={(day) => {
-                  setSelectedDay(day.id);
-                  setAddWorkoutDay(day);
-                  setSelectedWeekForTable(day.weekNumber);
-                  setViewMode('table'); // Switch to table view
-                 }}
-               />
+              />
             ) : (
               <>
                 <StyledTableWrapper>
@@ -2627,6 +2791,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 onExpandOnlyThisWorkout={handleExpandOnlyThisWorkout}
                 onExpandDayWithAllWorkouts={expandDayWithAllWorkouts}
                 onCycleWorkoutExpansion={handleWorkoutNumberClick}
+                onWorkoutStatusChange={handleWorkoutStatusChange}
+                onMatchDoneStatusChange={handleMatchDoneStatusChange}
                  onEditDay={(day) => {
                    setEditingDay(day);
                    modalActions.setShowEditDayModal(true);
@@ -2707,6 +2873,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                    setDayForExportToTemplate(day);
                    setShowExportDayToTemplateModal(true);
                  }}
+                 onExportDayToDone={handleExportDayToDone}
+                 onShowWorkoutsDone={handleShowWorkoutsDone}
                  onExportPdfDay={(day) => {
                    setDayToPrint(day);
                    setAutoPrintDay(true);
@@ -2724,7 +2892,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 onEditWorkout={(workout, day) => {
                   setEditingWorkout(workout);
                   setAddWorkoutDay(day);
-                  setShowWorkoutInfoModal(true); // Open info modal
+                  setWorkoutInfoReadOnly(false);
+                  setShowWorkoutInfoModal(true);
                 }}
                 hasWorkoutClipboard={Boolean(workoutClipboard)}
                 onCopyWorkoutToClipboard={(workout) => {
@@ -3047,6 +3216,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                   setWorkoutForExportToDone(workout);
                   setShowExportWorkoutToDoneModal(true);
                 }}
+                onMarkWorkoutDone={handleMarkWorkoutDone}
+                onMarkMoveframeDone={handleMarkMoveframeDone}
                 onExportWorkoutToYearly={(workout) => {
                   setWorkoutForExportToYearly(workout);
                   setShowExportWorkoutToYearlyModal(true);
@@ -3196,6 +3367,22 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                        
                        if (response.ok) {
                          showMessage('success', 'Moveframe deleted successfully');
+
+                         if ((activeSection === 'B' || activeSection === 'C') && workout?.id) {
+                           const remaining = Math.max(
+                             0,
+                             (workout.moveframes?.length ?? 1) - 1,
+                           );
+                           try {
+                             await syncWorkoutStatusAfterMoveframes(
+                               workout,
+                               day.date,
+                               remaining,
+                             );
+                           } catch {
+                             /* non-blocking */
+                           }
+                         }
                          
                          // Clear any references to this moveframe
                          if (activeMoveframe?.id === moveframe.id) {
@@ -3333,16 +3520,29 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
           isOpen={showWorkoutInfoModal}
           workout={editingWorkout}
           day={addWorkoutDay}
+          readOnly={workoutInfoReadOnly}
           onClose={() => {
             setShowWorkoutInfoModal(false);
+            setWorkoutInfoReadOnly(false);
             setEditingWorkout(null);
             setAddWorkoutDay(null);
           }}
           onEdit={() => {
-            // Switch to edit mode
+            setWorkoutInfoReadOnly(false);
             setShowWorkoutInfoModal(false);
             setWorkoutModalMode('edit');
             modalActions.setShowAddWorkoutModal(true);
+          }}
+        />
+      )}
+
+      {dayInfoModalOpen && selectedDayForInfo && (
+        <DayInfoModal
+          isOpen={dayInfoModalOpen}
+          day={selectedDayForInfo}
+          onClose={() => {
+            setDayInfoModalOpen(false);
+            setSelectedDayForInfo(null);
           }}
         />
       )}
@@ -3863,6 +4063,23 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                  
                 const result = await moveframeHandlers.createMoveframe(requestBody, deps);
                  console.log('✅ Moveframe created successfully:', result);
+
+                 if (
+                   (activeSection === 'B' || activeSection === 'C') &&
+                   activeWorkout?.id &&
+                   activeDay?.date
+                 ) {
+                   const prevCount = activeWorkout.moveframes?.length ?? 0;
+                   try {
+                     await syncWorkoutStatusAfterMoveframes(
+                       activeWorkout,
+                       activeDay.date,
+                       prevCount + 1,
+                     );
+                   } catch {
+                     /* non-blocking */
+                   }
+                 }
                  
                  // If we have an insert index, reorder the moveframes BEFORE reloading
                  if (moveframeInsertIndex !== null) {
@@ -4045,10 +4262,26 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setShowPlanGymWeekManualForm(false);
             setPlanGymWeekInitialPlan(null);
             setPlanGymWeekRescanParams(null);
+            setPlanGymWeekManualDaysCount(result.daysCount);
             if (result.trainingLevel != null) {
               setPlanGymWeekTrainingLevel(result.trainingLevel);
             }
-            setPlanGymWeekCreatedPlan(result);
+
+            const totalSeries = result.days.reduce(
+              (sum, d) => sum + d.sectors.reduce((s, sec) => s + (sec.series ?? 0), 0),
+              0,
+            );
+            const destLabel =
+              gymWeekLaunch.sourceSection === 'A'
+                ? `Weekly Plan ${gymWeekLaunch.templateKey ?? activeSubSection}`
+                : gymWeekLaunch.sourceSection === 'B'
+                  ? 'Yearly Plan'
+                  : 'Archive';
+            showMessage(
+              'success',
+              `Gym weekly plan ready (${destLabel}): ${result.daysCount} day(s), ${totalSeries} total series.`,
+            );
+            void afterGymPlanBuilt(result);
           }}
         />
       )}
@@ -4160,7 +4393,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             setAssignTargetDays([1, 2, 3, 4, 5, 6, 7]);
             setAssignTargetWeekOptions([]);
           }}
-          onDone={() => {
+          onDone={async () => {
             setPlanPendingAssign(null);
             setAssignTargetWeeks([]);
             setAssignTargetDays([1, 2, 3, 4, 5, 6, 7]);
@@ -4172,7 +4405,11 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
                 ? `Weekly Plan ${gymWeekLaunch.templateKey ?? 'A'}`
                 : 'Yearly Plan';
             setViewMode('table');
-            showMessage('success', `Gym week routines assigned to your ${sectionLabel} week(s).`);
+            await loadWorkoutData(activeSection);
+            showMessage(
+              'success',
+              `Gym week routines saved to your ${sectionLabel} week(s) as body-building moveframes.`,
+            );
           }}
         />
       )}
@@ -4225,6 +4462,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
       {modals.showAddDayModal && workoutPlan && (
         <AddDayModal
           workoutPlanId={workoutPlan.id}
+          activeSection={activeSection}
           onClose={() => modalActions.setShowAddDayModal(false)}
           onSave={() => {
             modalActions.setShowAddDayModal(false);
@@ -4381,7 +4619,8 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
             </div>
             
             <p className="text-sm text-gray-600 mb-4">
-              Select a day from the grid below to edit its notes, weather, feeling, and annotations.
+              Select a day from the grid below to edit its notes
+              {activeSection === 'C' ? ', weather, feeling,' : ''} and annotations.
             </p>
             
             {/* Display days in a grid format by week */}
@@ -4434,7 +4673,7 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
         </div>
       )}
       
-      {/* Edit Day Modal - Edit day notes, weather, feeling, annotations */}
+      {/* Edit Day Modal - notes (+ weather/feeling only in Workouts Done) */}
       {/* ==================== EDIT DAY MODAL (Extracted Component) ==================== */}
       {modals.showEditDayModal && editingDay && (
         <EditDayModal
@@ -5411,6 +5650,52 @@ export default function WorkoutSection({ onClose }: WorkoutSectionProps) {
               setWorkoutForExportToArchive(null);
             } catch (error: any) {
               showMessage('error', error.message || 'Failed to export workout to archive');
+            }
+          }}
+        />
+      )}
+
+      {saveToDoneModal && (
+        <SaveToWorkoutsDoneModal
+          isOpen={Boolean(saveToDoneModal)}
+          mode={saveToDoneModal.mode}
+          sourceDay={saveToDoneModal.day}
+          lockToSameDate
+          sourceWorkouts={saveToDoneModal.workouts}
+          title={
+            saveToDoneModal.mode === 'day'
+              ? 'Save day to Workouts Done'
+              : 'Save workout to Workouts Done'
+          }
+          onClose={() => setSaveToDoneModal(null)}
+          onConfirm={async ({ targetDayIds, statusByWorkoutId }) => {
+            try {
+              const result = await postExportToDone({
+                mode: saveToDoneModal.mode,
+                sourceDayId:
+                  saveToDoneModal.mode === 'day' ? saveToDoneModal.day.id : undefined,
+                sourceWorkoutId:
+                  saveToDoneModal.mode === 'workout'
+                    ? saveToDoneModal.workouts[0]?.id
+                    : undefined,
+                targetDayIds,
+                statusByWorkoutId,
+              });
+              showMessage(
+                'success',
+                `Exported ${result.exportedCount} workout(s) to Workouts Done` +
+                  (result.weekCount && result.weekCount > 1
+                    ? ` (${result.weekCount} weeks).`
+                    : '.'),
+              );
+              setSaveToDoneModal(null);
+              await loadWorkoutData(activeSection);
+            } catch (err) {
+              showMessage(
+                'error',
+                err instanceof Error ? err.message : 'Failed to export to Workouts Done',
+              );
+              throw err;
             }
           }}
         />

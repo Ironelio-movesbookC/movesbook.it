@@ -60,11 +60,14 @@ export async function PATCH(
     }
 
     // Determine status based on completion
-    let newStatus = 'DONE_MORE_75';
+    let newStatus: string;
     if (asDifferent) {
+      // Nutrition meal enum has no shifted blues — map to mid green band
       newStatus = 'DONE_DIFFERENTLY';
-    } else if (completionPercentage < 75) {
+    } else if (completionPercentage < 60) {
       newStatus = 'DONE_LESS_75';
+    } else if (completionPercentage <= 80) {
+      newStatus = 'DONE_DIFFERENTLY';
     } else {
       newStatus = 'DONE_MORE_75';
     }

@@ -66,21 +66,28 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized - not your workout session' }, { status: 403 });
     }
 
-    // Update workout session
+    const parseOptionalInt = (value: unknown) => {
+      if (value === undefined) return undefined;
+      if (value === null || value === '') return null;
+      const n = parseInt(String(value), 10);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    // Update workout session (explicit undefined = leave unchanged; null/'' = clear)
     const session = await prisma.workoutSession.update({
       where: { id: params.id },
       data: {
-        name: name || undefined,
-        code: code || undefined,
-        time: time || undefined,
-        location: location || undefined,
-        surface: surface || undefined,
-        notes: notes || undefined,
-        weather: weather || undefined,
-        heartRateMax: heartRateMax ? parseInt(heartRateMax) : undefined,
-        heartRateAvg: heartRateAvg ? parseInt(heartRateAvg) : undefined,
-        calories: calories ? parseInt(calories) : undefined,
-        feelingStatus: feelingStatus || undefined,
+        name: name !== undefined ? (name || existingSession.name) : undefined,
+        code: code !== undefined ? (code ?? '') : undefined,
+        time: time !== undefined ? (time ?? '') : undefined,
+        location: location !== undefined ? (location ?? '') : undefined,
+        surface: surface !== undefined ? (surface || null) : undefined,
+        notes: notes !== undefined ? (notes ?? '') : undefined,
+        weather: weather !== undefined ? (weather || null) : undefined,
+        heartRateMax: parseOptionalInt(heartRateMax),
+        heartRateAvg: parseOptionalInt(heartRateAvg),
+        calories: parseOptionalInt(calories),
+        feelingStatus: feelingStatus !== undefined ? (feelingStatus || null) : undefined,
         status: status as any || undefined,
         mainSport: mainSport !== undefined ? (mainSport || null) : undefined,
         mainGoal: mainGoal !== undefined ? (mainGoal || null) : undefined,

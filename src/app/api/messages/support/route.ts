@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireMessageAuth } from '@/lib/messages/messageAuth';
 import {
   createThreadWithFirstMessage,
+  countUserSupportThreads,
   listSupportFeed,
   listThreadsForUser,
   type SupportCategory,
@@ -24,14 +25,27 @@ export async function GET(request: NextRequest) {
   const feed = searchParams.get('feed') === '1';
 
   try {
+    if (searchParams.get('countOnly') === '1' && searchParams.get('mine') === '1') {
+      const count = await countUserSupportThreads(auth.userId);
+      return NextResponse.json({ count });
+    }
+
     if (feed) {
-      const items = await listSupportFeed(auth.userId, {
+      const result = await listSupportFeed(auth.userId, {
         category: parseCategory(searchParams.get('category')),
         languageCode: searchParams.get('lang') || '',
         mineOnly: searchParams.get('mine') === '1',
         recentOnly: searchParams.get('recent') === '1',
+        bugsOnly: searchParams.get('bugs') === '1',
+        excludeBugs: searchParams.get('excludeBugs') === '1',
+        searchQuery: searchParams.get('q') || '',
+        page: Number(searchParams.get('page') || '1'),
+        pageSize: Number(searchParams.get('pageSize') || '5'),
       });
-      return NextResponse.json({ items });
+      if (searchParams.get('countOnly') === '1') {
+        return NextResponse.json({ count: result.total });
+      }
+      return NextResponse.json(result);
     }
 
     const items = await listThreadsForUser(auth.userId, 'SUPPORT');

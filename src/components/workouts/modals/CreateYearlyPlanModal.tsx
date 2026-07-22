@@ -7,12 +7,15 @@ interface CreateYearlyPlanModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: (startDate: Date) => void;
+  /** Formatted label e.g. "01 March 2026" when a yearly plan already exists. */
+  currentStartDateLabel?: string | null;
 }
 
 export default function CreateYearlyPlanModal({
   isOpen,
   onClose,
-  onConfirm
+  onConfirm,
+  currentStartDateLabel = null,
 }: CreateYearlyPlanModalProps) {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [step, setStep] = useState<1 | 2>(1);
@@ -98,9 +101,17 @@ export default function CreateYearlyPlanModal({
                 </div>
 
                 <div>
-                  <label htmlFor="start-date" className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Start Date <span className="text-red-500">*</span>
-                  </label>
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-2">
+                    <label htmlFor="start-date" className="text-sm font-medium text-gray-700">
+                      Select Start Date <span className="text-red-500">*</span>
+                    </label>
+                    {currentStartDateLabel && (
+                      <span className="text-sm text-gray-900 whitespace-nowrap">
+                        Current start date :{' '}
+                        <span className="font-semibold text-red-600">{currentStartDateLabel}</span>
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="date"
                     id="start-date"

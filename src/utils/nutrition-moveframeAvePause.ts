@@ -25,9 +25,43 @@ export function parseFastPlannerPauseToSeconds(value: unknown): number {
   return 0;
 }
 
+function parseRepToken(part: string): number {
+  const n = parseInt(part.replace(/[^\d]/g, ''), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Individual rep counts — "20 / 17 / 17" → [20, 17, 17]; uniform "20" → [20]. */
+export function parseFastPlannerRepTokens(rip: unknown): number[] {
+  const str = String(rip ?? '').trim();
+  if (!str) return [];
+  if (str.includes('/')) {
+    return str.split('/').map(parseRepToken).filter((n) => n > 0);
+  }
+  const n = parseRepToken(str);
+  return n > 0 ? [n] : [];
+}
+
+/** Total reps for one exercise (sum of all sets in Rip/time). */
+export function sumFastPlannerRepVolume(
+  rip: unknown,
+  ripTimeMode: string,
+  seriesFallback = 1
+): number {
+  if (ripTimeMode === 'reps') {
+    const tokens = parseFastPlannerRepTokens(rip);
+    if (tokens.length > 0) return tokens.reduce((a, b) => a + b, 0);
+    return 0;
+  }
+  const perSet = parseFastPlannerRipVolume(rip, ripTimeMode);
+  return perSet * Math.max(1, seriesFallback);
+}
+
 export function parseFastPlannerRipVolume(rip: unknown, ripTimeMode: string): number {
   if (ripTimeMode === 'reps') {
-    return parseInt(String(rip ?? '0').replace(/[^\d]/g, '') || '0', 10) || 0;
+    const tokens = parseFastPlannerRepTokens(rip);
+    if (tokens.length === 0) return 0;
+    if (tokens.length === 1) return tokens[0]!;
+    return tokens.reduce((a, b) => a + b, 0) / tokens.length;
   }
   const str = String(rip ?? '').trim();
   if (!str) return 0;
@@ -197,10 +231,12 @@ function resolveAnaerobicRowBreakSeconds(row: any, laps: any[]): number {
   return 0;
 }
 
-function seriesCountForExerciseLaps(exerciseLaps: any[]): number {
+function seriesCountForExerciseLaps(exerciseLaps: any[], plannerRow?: any): number {
   if (exerciseLaps.length === 0) return 0;
   const fromMeta = parseInt(String(exerciseLaps[0]?._fastPlannerSeries ?? ''), 10);
   if (Number.isFinite(fromMeta) && fromMeta > 0) return fromMeta;
+  const fromPlannerRow = parseInt(String(plannerRow?.series ?? ''), 10);
+  if (Number.isFinite(fromPlannerRow) && fromPlannerRow > 0) return fromPlannerRow;
   return exerciseLaps.length;
 }
 
@@ -209,12 +245,13 @@ function accumulateAnaerobicExerciseGroup(
   ripTimeMode: string,
   sectorSeries: Map<string, number>,
   breakSecondsPerRow: number[],
-  totals: { totalSeries: number; totalRepVolume: number; totalPauseSec: number }
+  totals: { totalSeries: number; totalRepVolume: number; totalPauseSec: number },
+  plannerRow?: any
 ) {
   if (exerciseLaps.length === 0) return;
   const lap = exerciseLaps[0];
   const sector = (lap?.muscularSector || lap?.sector || '').trim() || 'Other';
-  const series = seriesCountForExerciseLaps(exerciseLaps);
+  const series = seriesCountForExerciseLaps(exerciseLaps, plannerRow);
   totals.totalSeries += series;
   sectorSeries.set(sector, (sectorSeries.get(sector) || 0) + series);
 
@@ -222,7 +259,10 @@ function accumulateAnaerobicExerciseGroup(
     typeof lap?.reps === 'number' && !Number.isNaN(lap.reps)
       ? lap.reps
       : parseFastPlannerRipVolume(lap?._fastPlannerRipTime ?? lap?.reps, ripTimeMode);
-  totals.totalRepVolume += series * reps;
+  totals.totalRepVolume +=
+    ripTimeMode === 'reps'
+      ? sumFastPlannerRepVolume(lap?._fastPlannerRipTime ?? lap?.reps, ripTimeMode, series)
+      : series * reps;
 
   const breakRaw =
     (typeof lap?._fastPlannerBreak === 'string' && lap._fastPlannerBreak.trim()) ||
@@ -243,6 +283,7 @@ export function computeAnaerobicFastPlannerRowStats(payload: any, nutrition_comp
   const ripTimeMode = payload?.ripTimeMode === 'time' ? 'time' : 'reps';
 
   const effectiveRows = rows.filter((r) => (r.exercise || '').trim() !== '');
+  const lapsWithExercise = laps.filter((lap) => (lap?.exercise || '').trim() !== '');
 
   let totalSeries = 0;
   let totalRepVolume = 0;
@@ -260,50 +301,55 @@ export function computeAnaerobicFastPlannerRowStats(payload: any, nutrition_comp
     lastMacroSec = parseFastPlannerPauseToSeconds(raw);
   };
 
-  effectiveRows.forEach((r) => {
-    const exerciseLaps = lapsForExercise(laps, r?.exercise);
-    const sector =
-      (String(r?.sector ?? '').trim() ||
-        (exerciseLaps[0]?.muscularSector || '').trim() ||
-        (exerciseLaps[0]?.sector || '').trim() ||
-        'Other');
-    const series = parseInt(String(r.series || '0'), 10) || 0;
-    totalSeries += series;
-    sectorSeries.set(sector, (sectorSeries.get(sector) || 0) + series);
-    const repsPerSet = parseFastPlannerRipVolume(r.ripTime, ripTimeMode);
-    totalRepVolume += series * repsPerSet;
-    const sec = resolveAnaerobicRowBreakSeconds(r, laps);
-    totalPauseSec += series * sec;
-    if (sec > 0) breakSecondsPerRow.push(sec);
-  });
-
-  if (effectiveRows.length > 0) {
-    const r = effectiveRows[effectiveRows.length - 1];
-    const exerciseLaps = lapsForExercise(laps, r?.exercise);
-    const lastLap = exerciseLaps[exerciseLaps.length - 1] ?? laps[laps.length - 1];
-    setEndMacroFromRaw(lastLap?.macroFinal ?? lastLap?.pause ?? lastLap?._fastPlannerBreak);
-  }
-
-  if (effectiveRows.length === 0 && laps.length > 0) {
-    const seenExercises = new Set<string>();
+  if (lapsWithExercise.length > 0) {
+    const fpByExercise = new Map<string, any>();
+    for (const r of effectiveRows) {
+      const k = normalizeFastPlannerExerciseKey(r?.exercise);
+      if (k && !fpByExercise.has(k)) fpByExercise.set(k, r);
+    }
     const grouped = { totalSeries: 0, totalRepVolume: 0, totalPauseSec: 0 };
-    for (const lap of laps) {
+    const seenExercises = new Set<string>();
+    for (const lap of lapsWithExercise) {
       const exKey = normalizeFastPlannerExerciseKey(lap?.exercise);
       if (!exKey || seenExercises.has(exKey)) continue;
       seenExercises.add(exKey);
       accumulateAnaerobicExerciseGroup(
-        lapsForExercise(laps, lap?.exercise),
+        lapsForExercise(lapsWithExercise, lap?.exercise),
         ripTimeMode,
         sectorSeries,
         breakSecondsPerRow,
-        grouped
+        grouped,
+        fpByExercise.get(exKey)
       );
     }
     totalSeries = grouped.totalSeries;
     totalRepVolume = grouped.totalRepVolume;
     totalPauseSec = grouped.totalPauseSec;
-    const lastLap = laps[laps.length - 1];
+    const lastLap = lapsWithExercise[lapsWithExercise.length - 1];
     setEndMacroFromRaw(lastLap?.macroFinal ?? lastLap?.pause ?? lastLap?._fastPlannerBreak);
+  } else {
+    effectiveRows.forEach((r) => {
+      const exerciseLaps = lapsForExercise(laps, r?.exercise);
+      const sector =
+        (String(r?.sector ?? '').trim() ||
+          (exerciseLaps[0]?.muscularSector || '').trim() ||
+          (exerciseLaps[0]?.sector || '').trim() ||
+          'Other');
+      const series = parseInt(String(r.series || '0'), 10) || 0;
+      totalSeries += series;
+      sectorSeries.set(sector, (sectorSeries.get(sector) || 0) + series);
+      totalRepVolume += sumFastPlannerRepVolume(r.ripTime, ripTimeMode, series);
+      const sec = resolveAnaerobicRowBreakSeconds(r, laps);
+      totalPauseSec += series * sec;
+      if (sec > 0) breakSecondsPerRow.push(sec);
+    });
+
+    if (effectiveRows.length > 0) {
+      const r = effectiveRows[effectiveRows.length - 1];
+      const exerciseLaps = lapsForExercise(laps, r?.exercise);
+      const lastLap = exerciseLaps[exerciseLaps.length - 1] ?? laps[laps.length - 1];
+      setEndMacroFromRaw(lastLap?.macroFinal ?? lastLap?.pause ?? lastLap?._fastPlannerBreak);
+    }
   }
 
   const sectorPairs = Array.from(sectorSeries.entries())

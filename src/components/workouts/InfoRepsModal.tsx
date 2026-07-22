@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import {
   fetchInfoRepsDisplay,
@@ -8,6 +8,7 @@ import {
   getInfoRepsModalTitle,
   resolveLongTextLanguage,
 } from '@/constants/infoRepsLongText';
+import { longTextDisplayHtml } from '@/utils/richTextTranslation';
 
 type InfoRepsModalProps = {
   open: boolean;
@@ -22,6 +23,7 @@ export function InfoRepsModal({ open, onClose, uiLanguage }: InfoRepsModalProps)
   const resolvedLang = resolveLongTextLanguage(uiLanguage);
   const title = getInfoRepsModalTitle(resolvedLang);
   const closeLabel = getInfoRepsCloseLabel(resolvedLang);
+  const bodyHtml = useMemo(() => longTextDisplayHtml(body), [body]);
 
   useEffect(() => {
     if (!open) return;
@@ -67,7 +69,10 @@ export function InfoRepsModal({ open, onClose, uiLanguage }: InfoRepsModalProps)
           {loading ? (
             <p className="text-gray-500">{resolvedLang === 'it' ? 'Caricamento…' : 'Loading…'}</p>
           ) : (
-            <div className="whitespace-pre-wrap">{body}</div>
+            <div
+              className="long-text-display space-y-3 leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+              dangerouslySetInnerHTML={{ __html: bodyHtml }}
+            />
           )}
         </div>
       </div>

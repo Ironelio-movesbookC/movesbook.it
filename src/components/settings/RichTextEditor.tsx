@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { 
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   List, ListOrdered, Link, Image as ImageIcon, Code, Quote, Undo, Redo, Type
@@ -12,6 +12,13 @@ interface RichTextEditorProps {
   placeholder?: string;
   minHeight?: string;
   language?: string;
+  /** Bump to force re-sync from `value` (e.g. after auto-translate). */
+  revision?: number;
+}
+
+function parseMinHeightPx(minHeight: string): number {
+  const n = parseInt(minHeight, 10);
+  return Number.isFinite(n) ? n : 150;
 }
 
 export default function RichTextEditor({ 
@@ -19,29 +26,51 @@ export default function RichTextEditor({
   onChange, 
   placeholder = 'Type your text here...',
   minHeight = '150px',
-  language = 'English'
+  language = 'English',
+  revision = 0,
 }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const [isFocused, setIsFocused] = useState(false);
+  const lastAppliedValueRef = useRef<string>('');
+  const lastAppliedRevisionRef = useRef(0);
+  const minHeightPx = parseMinHeightPx(minHeight);
 
-  // Initialize editor content (skip while user is typing — avoids wiping the caret)
+  const adjustHeight = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(minHeightPx, el.scrollHeight)}px`;
+  }, [minHeightPx]);
+
   useEffect(() => {
-    if (!editorRef.current || isFocused) return;
+    if (!editorRef.current) return;
     const next = value || '';
-    if (editorRef.current.innerHTML !== next) {
-      editorRef.current.innerHTML = next;
+    const revisionChanged = revision !== lastAppliedRevisionRef.current;
+    if (next === lastAppliedValueRef.current && !revisionChanged) return;
+    const currentHtml = editorRef.current.innerHTML;
+    if (isFocused && next === currentHtml && !revisionChanged) {
+      lastAppliedValueRef.current = next;
+      return;
     }
-  }, [value, isFocused]);
+    editorRef.current.innerHTML = next;
+    lastAppliedValueRef.current = next;
+    lastAppliedRevisionRef.current = revision;
+    requestAnimationFrame(() => adjustHeight());
+  }, [value, isFocused, revision, adjustHeight]);
 
   const handleInput = () => {
     if (editorRef.current) {
-      onChange(editorRef.current.innerHTML);
+      const html = editorRef.current.innerHTML;
+      lastAppliedValueRef.current = html;
+      onChange(html);
+      adjustHeight();
     }
   };
 
   const execCommand = (command: string, value?: string) => {
     document.execCommand(command, false, value);
     editorRef.current?.focus();
+    handleInput();
   };
 
   const addLink = () => {
@@ -78,7 +107,6 @@ export default function RichTextEditor({
     <div className="border-2 border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">
       {/* Toolbar */}
       <div className="bg-gray-50 border-b border-gray-300 p-2 flex flex-wrap items-center gap-1">
-        {/* Font Family */}
         <select
           onChange={changeFontFamily}
           className="px-2 py-1 border border-gray-300 rounded text-sm bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -92,21 +120,20 @@ export default function RichTextEditor({
           <option value="Tahoma">Tahoma</option>
         </select>
 
-        {/* Font Size */}
         <select
           onChange={changeFontSize}
           className="px-2 py-1 border border-gray-300 rounded text-sm bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
           title="Font Size"
+          defaultValue="3"
         >
           <option value="1">Small</option>
-          <option value="3" selected>Normal</option>
+          <option value="3">Normal</option>
           <option value="5">Large</option>
           <option value="7">Huge</option>
         </select>
 
         <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-        {/* Text Formatting */}
         <button
           onClick={() => execCommand('bold')}
           className="p-2 hover:bg-gray-200 rounded transition"
@@ -142,190 +169,101 @@ export default function RichTextEditor({
 
         <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-        {/* Text Color */}
-        <div className="relative group">
-          <input
-            type="color"
-            onChange={changeTextColor}
-            className="w-8 h-8 border border-gray-300 rounded cursor-pointer hover:border-gray-400"
-            title="Text Color"
-          />
-        </div>
+        <input
+          type="color"
+          onChange={changeTextColor}
+          className="w-8 h-8 border border-gray-300 rounded cursor-pointer hover:border-gray-400"
+          title="Text Color"
+        />
 
-        {/* Background Color */}
-        <div className="relative group">
-          <input
-            type="color"
-            onChange={changeBackgroundColor}
-            className="w-8 h-8 border border-gray-300 rounded cursor-pointer hover:border-gray-400"
-            title="Background Color"
-          />
-        </div>
+        <input
+          type="color"
+          onChange={changeBackgroundColor}
+          className="w-8 h-8 border border-gray-300 rounded cursor-pointer hover:border-gray-400"
+          title="Background Color"
+        />
 
         <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-        {/* Alignment */}
-        <button
-          onClick={() => execCommand('justifyLeft')}
-          className="p-2 hover:bg-gray-200 rounded transition"
-          title="Align Left"
-          type="button"
-        >
+        <button onClick={() => execCommand('justifyLeft')} className="p-2 hover:bg-gray-200 rounded transition" title="Align Left" type="button">
           <AlignLeft className="w-4 h-4" />
         </button>
-        <button
-          onClick={() => execCommand('justifyCenter')}
-          className="p-2 hover:bg-gray-200 rounded transition"
-          title="Align Center"
-          type="button"
-        >
+        <button onClick={() => execCommand('justifyCenter')} className="p-2 hover:bg-gray-200 rounded transition" title="Align Center" type="button">
           <AlignCenter className="w-4 h-4" />
         </button>
-        <button
-          onClick={() => execCommand('justifyRight')}
-          className="p-2 hover:bg-gray-200 rounded transition"
-          title="Align Right"
-          type="button"
-        >
+        <button onClick={() => execCommand('justifyRight')} className="p-2 hover:bg-gray-200 rounded transition" title="Align Right" type="button">
           <AlignRight className="w-4 h-4" />
         </button>
-        <button
-          onClick={() => execCommand('justifyFull')}
-          className="p-2 hover:bg-gray-200 rounded transition"
-          title="Justify"
-          type="button"
-        >
+        <button onClick={() => execCommand('justifyFull')} className="p-2 hover:bg-gray-200 rounded transition" title="Justify" type="button">
           <AlignJustify className="w-4 h-4" />
         </button>
 
         <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-        {/* Lists */}
-        <button
-          onClick={() => execCommand('insertUnorderedList')}
-          className="p-2 hover:bg-gray-200 rounded transition"
-          title="Bullet List"
-          type="button"
-        >
+        <button onClick={() => execCommand('insertUnorderedList')} className="p-2 hover:bg-gray-200 rounded transition" title="Bullet List" type="button">
           <List className="w-4 h-4" />
         </button>
-        <button
-          onClick={() => execCommand('insertOrderedList')}
-          className="p-2 hover:bg-gray-200 rounded transition"
-          title="Numbered List"
-          type="button"
-        >
+        <button onClick={() => execCommand('insertOrderedList')} className="p-2 hover:bg-gray-200 rounded transition" title="Numbered List" type="button">
           <ListOrdered className="w-4 h-4" />
         </button>
 
         <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-        {/* Indentation */}
-        <button
-          onClick={() => execCommand('indent')}
-          className="p-2 hover:bg-gray-200 rounded transition text-sm font-bold"
-          title="Increase Indent"
-          type="button"
-        >
+        <button onClick={() => execCommand('indent')} className="p-2 hover:bg-gray-200 rounded transition text-sm font-bold" title="Increase Indent" type="button">
           →
         </button>
-        <button
-          onClick={() => execCommand('outdent')}
-          className="p-2 hover:bg-gray-200 rounded transition text-sm font-bold"
-          title="Decrease Indent"
-          type="button"
-        >
+        <button onClick={() => execCommand('outdent')} className="p-2 hover:bg-gray-200 rounded transition text-sm font-bold" title="Decrease Indent" type="button">
           ←
         </button>
 
         <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-        {/* Insert Link */}
-        <button
-          onClick={addLink}
-          className="p-2 hover:bg-gray-200 rounded transition"
-          title="Insert Link"
-          type="button"
-        >
+        <button onClick={addLink} className="p-2 hover:bg-gray-200 rounded transition" title="Insert Link" type="button">
           <Link className="w-4 h-4" />
         </button>
-
-        {/* Insert Image */}
-        <button
-          onClick={addImage}
-          className="p-2 hover:bg-gray-200 rounded transition"
-          title="Insert Image"
-          type="button"
-        >
+        <button onClick={addImage} className="p-2 hover:bg-gray-200 rounded transition" title="Insert Image" type="button">
           <ImageIcon className="w-4 h-4" />
         </button>
 
         <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-        {/* Quote */}
-        <button
-          onClick={() => execCommand('formatBlock', 'blockquote')}
-          className="p-2 hover:bg-gray-200 rounded transition"
-          title="Quote"
-          type="button"
-        >
+        <button onClick={() => execCommand('formatBlock', 'blockquote')} className="p-2 hover:bg-gray-200 rounded transition" title="Quote" type="button">
           <Quote className="w-4 h-4" />
         </button>
-
-        {/* Code */}
-        <button
-          onClick={() => execCommand('formatBlock', 'pre')}
-          className="p-2 hover:bg-gray-200 rounded transition"
-          title="Code Block"
-          type="button"
-        >
+        <button onClick={() => execCommand('formatBlock', 'pre')} className="p-2 hover:bg-gray-200 rounded transition" title="Code Block" type="button">
           <Code className="w-4 h-4" />
         </button>
 
         <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-        {/* Undo/Redo */}
-        <button
-          onClick={() => execCommand('undo')}
-          className="p-2 hover:bg-gray-200 rounded transition"
-          title="Undo (Ctrl+Z)"
-          type="button"
-        >
+        <button onClick={() => execCommand('undo')} className="p-2 hover:bg-gray-200 rounded transition" title="Undo (Ctrl+Z)" type="button">
           <Undo className="w-4 h-4" />
         </button>
-        <button
-          onClick={() => execCommand('redo')}
-          className="p-2 hover:bg-gray-200 rounded transition"
-          title="Redo (Ctrl+Y)"
-          type="button"
-        >
+        <button onClick={() => execCommand('redo')} className="p-2 hover:bg-gray-200 rounded transition" title="Redo (Ctrl+Y)" type="button">
           <Redo className="w-4 h-4" />
         </button>
 
         <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-        {/* Remove Formatting */}
-        <button
-          onClick={() => execCommand('removeFormat')}
-          className="p-2 hover:bg-gray-200 rounded transition text-xs font-bold"
-          title="Remove Formatting"
-          type="button"
-        >
+        <button onClick={() => execCommand('removeFormat')} className="p-2 hover:bg-gray-200 rounded transition text-xs font-bold" title="Remove Formatting" type="button">
           Clear
         </button>
       </div>
 
-      {/* Editor Area */}
       <div
         ref={editorRef}
         contentEditable
         onInput={handleInput}
         onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
-        className={`p-4 outline-none overflow-auto ${isFocused ? 'ring-2 ring-blue-500' : ''}`}
+        onBlur={() => {
+          setIsFocused(false);
+          handleInput();
+        }}
+        className={`p-4 outline-none overflow-visible ${isFocused ? 'ring-2 ring-blue-500' : ''}`}
         style={{ minHeight }}
         data-placeholder={placeholder}
         suppressContentEditableWarning
+        aria-label={language}
       />
 
       <style jsx>{`
@@ -338,4 +276,3 @@ export default function RichTextEditor({
     </div>
   );
 }
-

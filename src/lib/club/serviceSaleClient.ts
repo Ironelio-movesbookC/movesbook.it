@@ -61,7 +61,7 @@ export type ServiceSaleReceipt = {
 
 export type ServiceSaleFormOptions = {
   sectors: { id: string; name: string }[];
-  services: { id: string; name: string; sectorId: string; cost: number }[];
+  services: { id: string; name: string; sectorId: string; cost: number; imageUrl: string | null }[];
   members: { id: string; name: string }[];
   operators: { id: string; name: string }[];
   currentOperatorId: string | null;

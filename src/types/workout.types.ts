@@ -74,7 +74,9 @@ export interface WorkoutDay extends BaseEntity {
   periodId?: string | null;
   periodName?: string | null;
   periodColor?: string | null;
+  /** Workouts Done (Section C) only — do not show/save when planning. */
   weather?: string | null;
+  /** Workouts Done (Section C) only — do not show/save when planning. */
   feelingStatus?: string | null;
   notes?: string | null;
   storageZone?: string | null;
@@ -90,10 +92,12 @@ export interface Workout extends BaseEntity {
   durationMinutes?: number | null;
   location?: string | null;
   surface?: string | null;
+  /** Workouts Done (Section C) only — do not show/save when planning. */
   weather?: string | null;
   heartRateMax?: number | null;
   heartRateAvg?: number | null;
   calories?: number | null;
+  /** Workouts Done (Section C) only — do not show/save when planning. */
   feelingStatus?: string | null;
   notes?: string | null;
   moveframes: Moveframe[];

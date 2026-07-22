@@ -67,6 +67,40 @@ export const WORKOUT_SECTIONS = {
 
 export type SectionId = keyof typeof WORKOUT_SECTIONS;
 
+/**
+ * PRODUCT RULE (remember): Weather + Feeling Status are displayed and used ONLY
+ * under the WORKOUTS DONE section label (Section C / plan type WORKOUTS_DONE).
+ * Never show or require them in Yearly Plan, Templates, Structures, or Archive UIs.
+ */
+export const WORKOUTS_DONE_ONLY_FIELDS = ['weather', 'feelingStatus'] as const;
+export type WorkoutsDoneOnlyField = (typeof WORKOUTS_DONE_ONLY_FIELDS)[number];
+
+/**
+ * Full "Workout info" / Elements to save for Section C (Workouts Done).
+ * Fields with kind `doneOnly` = WORKOUTS_DONE_ONLY_FIELDS (Weather, Feeling Status).
+ */
+export const WORKOUTS_DONE_WORKOUT_INFO_FIELDS = [
+  { key: 'weekNumber', label: 'Number of week', kind: 'context' },
+  { key: 'dayOfWeek', label: 'Day of the week', kind: 'context' },
+  { key: 'sessionNumber', label: 'Number of the workout', kind: 'context' },
+  { key: 'name', label: 'Name assigned', kind: 'core', maxLength: 40 },
+  { key: 'code', label: 'Code assigned', kind: 'core', maxLength: 5 },
+  { key: 'sports', label: 'Sport selected', kind: 'core' },
+  { key: 'time', label: 'Time', kind: 'done' },
+  { key: 'weather', label: 'Weather', kind: 'doneOnly' }, // WORKOUTS DONE only
+  { key: 'location', label: 'Location', kind: 'done' },
+  { key: 'surface', label: 'Surface', kind: 'done' },
+  { key: 'heartRateMax', label: 'Heart rate', kind: 'done' },
+  { key: 'heartRateAvg', label: 'Average HR', kind: 'done' },
+  { key: 'calories', label: 'Calories', kind: 'done' },
+  { key: 'feelingStatus', label: 'Feeling Status', kind: 'doneOnly' }, // WORKOUTS DONE only
+  { key: 'notes', label: 'Note', kind: 'done' },
+] as const;
+
+export function isWorkoutsDoneSection(section: string | undefined | null): boolean {
+  return section === 'C';
+}
+
 // ==================== API ENDPOINTS ====================
 export const API_ENDPOINTS = {
   WORKOUTS: {
