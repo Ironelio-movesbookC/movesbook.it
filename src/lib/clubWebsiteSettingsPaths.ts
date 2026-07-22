@@ -26,6 +26,11 @@ export function clubBachecaDashboardUrl(clubId: string): string {
   return `/club/dashboard?panel=bacheca&clubId=${encodeURIComponent(clubId)}`;
 }
 
+/** My Club dashboard — horizontal Club Topics browser in the main panel. */
+export function clubTopicsHorizontalDashboardUrl(clubId: string): string {
+  return `/club/dashboard?panel=topics-horizontal&clubId=${encodeURIComponent(clubId)}`;
+}
+
 /** My Club dashboard — show read-only topic HTML in the main panel. */
 export function clubTopicDashboardUrl(clubId: string, topicId: string): string {
   return `/club/dashboard?panel=topic&clubId=${encodeURIComponent(clubId)}&topicId=${encodeURIComponent(topicId)}`;

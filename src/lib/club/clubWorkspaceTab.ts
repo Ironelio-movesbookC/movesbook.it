@@ -11,6 +11,9 @@ const CLUB_WORKSPACE_PATH_PREFIXES = [
   '/clubSettings/',
   '/ArchiveSeles/',
   '/my-club',
+  '/WebsiteSettings/',
+  '/users/club_desk',
+  '/users/club_desk_list',
 ] as const;
 
 export function isClubWorkspacePath(pathname: string | null | undefined): boolean {

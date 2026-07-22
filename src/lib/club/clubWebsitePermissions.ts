@@ -1,7 +1,4 @@
-import {
-  isClubAccountUserType,
-  isManagedEntityAdminUserType,
-} from '@/utils/dashboardRouting';
+import { isClubAccountUserType } from '@/utils/dashboardRouting';
 
 type ClubWithAdmin = {
   id?: string;
@@ -24,11 +21,12 @@ export function isUserClubAdmin(
 }
 
 /**
- * Club website (bacheca / topics / subtopics) may be edited when:
+ * Club website / desk may be managed when:
  * - CLUB account (may bootstrap a club before one exists), or
- * - the signed-in user is adminId of the selected club and has an entity-admin role.
+ * - the signed-in user is `adminId` of the selected club (any Movesbook role:
+ *   ID5 athlete, ID6 coach, ID7 team, ID8 club, ID9 group).
  *
- * Members and non-admin athletes always get read-only.
+ * Ordinary members who are not the club admin always get read-only.
  */
 export function canManageClubWebsite(
   userId: string | null | undefined,
@@ -36,6 +34,5 @@ export function canManageClubWebsite(
   club: ClubWithAdmin | null | undefined,
 ): boolean {
   if (isClubAccountUserType(userType)) return true;
-  if (!isManagedEntityAdminUserType(userType)) return false;
   return isUserClubAdmin(userId, club);
 }

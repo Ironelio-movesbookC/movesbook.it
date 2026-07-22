@@ -124,6 +124,30 @@ model MyDeskItem {
   @@map("my_desk_items")
 }
 
+/** Club Desk tree — same shape as My Desk, scoped to a club (admin-managed). */
+model ClubDeskItem {
+  id          String    @id @default(cuid())
+  clubId      String
+  parentId    String?
+  title       String
+  path        String?
+  faIconClass String?
+  bgColor     String?
+  titleColor  String?
+  displayMode String? // "new_label" | "central_page"
+  visible     Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  parent   ClubDeskItem?  @relation("ClubDeskParentChild", fields: [parentId], references: [id], onDelete: Cascade)
+  children ClubDeskItem[] @relation("ClubDeskParentChild")
+
+  @@index([clubId, parentId, sortOrder])
+  @@index([parentId])
+  @@map("club_desk_items")
+}
+
 model UserNewsTopic {
   id          String   @id @default(cuid())
   userId      String

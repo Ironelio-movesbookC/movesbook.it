@@ -10,6 +10,7 @@ import {
 } from '@/lib/clubBachecaLabels';
 import { useClubBachecaLabels } from '@/hooks/useClubBachecaLabels';
 import ClubWebsiteSettingsSidebar from '@/components/club/websiteSettings/ClubWebsiteSettingsSidebar';
+import ClubWebsiteLastUpdatePicker from '@/components/club/websiteSettings/ClubWebsiteLastUpdatePicker';
 
 const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), { ssr: false });
 
@@ -43,6 +44,7 @@ export default function ClubBachecaEditor({
   const [selectedId, setSelectedId] = useState('bacheca-label-1');
   const [renameDraft, setRenameDraft] = useState('Tracking Workout');
   const [activateDraft, setActivateDraft] = useState(true);
+  const [updatedOnDraft, setUpdatedOnDraft] = useState('');
   const [contentDraft, setContentDraft] = useState('');
   const [pendingSwitchId, setPendingSwitchId] = useState<string | null>(null);
 
@@ -54,8 +56,9 @@ export default function ClubBachecaEditor({
       name: renameDraft,
       activated: activateDraft,
       content: contentDraft,
+      updatedOn: updatedOnDraft,
     }),
-    [renameDraft, activateDraft, contentDraft],
+    [renameDraft, activateDraft, contentDraft, updatedOnDraft],
   );
 
   const isCurrentLabelDirty = isBachecaLabelDraftDirty(savedSelected, currentDraft);
@@ -70,7 +73,8 @@ export default function ClubBachecaEditor({
         saved &&
         (saved.name !== label.name ||
           saved.activated !== label.activated ||
-          saved.content !== label.content)
+          saved.content !== label.content ||
+          (saved.updatedOn ?? '') !== (label.updatedOn ?? ''))
       ) {
         ids.add(label.id);
       }
@@ -88,6 +92,7 @@ export default function ClubBachecaEditor({
     if (!initial) return;
     setRenameDraft(initial.name);
     setActivateDraft(initial.activated);
+    setUpdatedOnDraft(initial.updatedOn ?? '');
     setContentDraft(initial.content);
   }, [clubId, hydrated]);
 
@@ -100,6 +105,7 @@ export default function ClubBachecaEditor({
             name: renameDraft.trim() || l.name,
             activated: activateDraft,
             content: contentDraft,
+            updatedOn: updatedOnDraft.trim(),
           }
         : l,
     );
@@ -108,6 +114,7 @@ export default function ClubBachecaEditor({
     if (next) {
       setRenameDraft(next.name);
       setActivateDraft(next.activated);
+      setUpdatedOnDraft(next.updatedOn ?? '');
       setContentDraft(next.content);
     }
     setSelectedId(id);
@@ -129,6 +136,7 @@ export default function ClubBachecaEditor({
     );
     setRenameDraft(savedSelected.name);
     setActivateDraft(savedSelected.activated);
+    setUpdatedOnDraft(savedSelected.updatedOn ?? '');
     setContentDraft(savedSelected.content);
   };
 
@@ -157,6 +165,7 @@ export default function ClubBachecaEditor({
       name: trimmed,
       activated: activateDraft,
       content: contentDraft,
+      updatedOn: updatedOnDraft.trim(),
     };
 
     setLabels((prev) =>
@@ -284,6 +293,11 @@ export default function ClubBachecaEditor({
               value={renameDraft}
               onChange={(e) => setRenameDraft(e.target.value)}
               className="min-w-[12rem] flex-1 border border-zinc-400 bg-[#ffffd9] px-2 py-1 text-sm text-zinc-900"
+            />
+            <ClubWebsiteLastUpdatePicker
+              label={t('club_bacheca_updated_on')}
+              value={updatedOnDraft}
+              onChange={setUpdatedOnDraft}
             />
             <button
               type="button"

@@ -40,6 +40,8 @@ export default function ClubWebsiteTopicSettingsFormModal({
 
   const [activated, setActivated] = useState(item.activated);
   const [name, setName] = useState(item.name);
+  const [bannerColor, setBannerColor] = useState(item.bannerColor);
+  const [titleColor, setTitleColor] = useState(item.titleColor);
   const [showInClubDashboardTopics, setShowInClubDashboardTopics] = useState(
     normalized.showInClubDashboardTopics
   );
@@ -55,6 +57,8 @@ export default function ClubWebsiteTopicSettingsFormModal({
     const n = normalizeTopicSettingsFields(item);
     setActivated(item.activated);
     setName(item.name);
+    setBannerColor(item.bannerColor);
+    setTitleColor(item.titleColor);
     setShowInClubDashboardTopics(n.showInClubDashboardTopics);
     setContentDisplayMode(n.contentDisplayMode);
     setExternalUrl(n.externalUrl);
@@ -74,6 +78,8 @@ export default function ClubWebsiteTopicSettingsFormModal({
       activated,
       name: name.trim() || item.name,
       title: name.trim() || item.name,
+      bannerColor,
+      titleColor,
       showInClubDashboardTopics,
       contentDisplayMode,
       externalUrl: externalUrl.trim(),
@@ -144,6 +150,38 @@ export default function ClubWebsiteTopicSettingsFormModal({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full border border-zinc-400 bg-white px-2 py-1.5 text-zinc-900"
+              />
+            </label>
+          </div>
+
+          <div className="space-y-2 border-b border-zinc-300 bg-white px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-600">
+              {t('club_topic_header_colors')}
+            </p>
+            <div
+              className="rounded border border-zinc-300 px-2 py-1.5 text-xs font-semibold"
+              style={{ backgroundColor: bannerColor, color: titleColor }}
+            >
+              {name.trim() || t('club_website_title_placeholder')}
+            </div>
+            <label className="flex items-center justify-between gap-3 text-sm text-zinc-900">
+              <span>{t('club_topic_color_banner')}</span>
+              <input
+                type="color"
+                value={bannerColor}
+                onChange={(e) => setBannerColor(e.target.value)}
+                className="h-8 w-12 cursor-pointer border border-zinc-400 bg-white"
+                aria-label={t('club_topic_color_banner')}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 text-sm text-zinc-900">
+              <span>{t('club_topic_color_title')}</span>
+              <input
+                type="color"
+                value={titleColor}
+                onChange={(e) => setTitleColor(e.target.value)}
+                className="h-8 w-12 cursor-pointer border border-zinc-400 bg-white"
+                aria-label={t('club_topic_color_title')}
               />
             </label>
           </div>

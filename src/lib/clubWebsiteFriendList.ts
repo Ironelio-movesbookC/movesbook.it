@@ -41,6 +41,35 @@ function storageKey(scope: WebsiteFriendListScope, ownerId: string): string {
   return `${prefix}:${ownerId}`;
 }
 
+/** Minimal tree for a new personal Movesbook website (coach / team / group / club owner). */
+export function defaultPersonalWebsiteFriendItems(): ClubWebsiteFriendItem[] {
+  return [
+    normalizeClubWebsiteFriendItem({
+      id: 'friends-root',
+      name: 'List of friends',
+      indent: false,
+      parentId: null,
+      activated: true,
+      title: 'List of friends',
+      sectionName: 'List of friends',
+      bannerColor: DEFAULT_TOPIC_BANNER_COLOR,
+      titleColor: DEFAULT_TOPIC_TITLE_COLOR,
+      lastUpdate: '',
+      contentsByLang: emptyClubWebsiteLangRecord(),
+      keywordsByLang: emptyClubWebsiteLangRecord(),
+      ...DEFAULT_TOPIC_SETTINGS_FIELDS,
+    }),
+  ];
+}
+
+export function defaultWebsiteFriendItems(
+  scope: WebsiteFriendListScope = 'club'
+): ClubWebsiteFriendItem[] {
+  return scope === 'personal'
+    ? defaultPersonalWebsiteFriendItems()
+    : defaultClubWebsiteFriendItems();
+}
+
 function inferParentIdsFromLayout(items: ClubWebsiteFriendItem[]): Map<string, string | null> {
   const rows = friendItemsToRows(items);
   const layout = buildFriendListLayout(rows);
@@ -108,6 +137,45 @@ export function defaultClubWebsiteFriendItems(): ClubWebsiteFriendItem[] {
   return items;
 }
 
+/** Demo topic ids from the shared club seed (excluding friends-root). */
+export const CLUB_DEMO_FRIEND_TOPIC_IDS = new Set(
+  FRIEND_LIST_ROWS.map((r) => r.id).filter((id) => id !== 'friends-root')
+);
+
+/** True when personal storage still holds the shared club demo seed (not owner-created content). */
+export function isUntouchedClubDemoFriendList(items: ClubWebsiteFriendItem[]): boolean {
+  if (items.length !== FRIEND_LIST_ROWS.length) return false;
+  const byId = Object.fromEntries(items.map((i) => [i.id, i]));
+  return FRIEND_LIST_ROWS.every((row) => {
+    const item = byId[row.id];
+    if (!item) return false;
+    const expectedName = row.id === 'friends-root' ? 'List of friends' : row.label;
+    return item.name === expectedName && item.activated === (row.status === 'on');
+  });
+}
+
+/**
+ * Personal websites must never show the shared club demo tree.
+ * If the only topics are demo seed ids, treat the site as empty for this owner.
+ */
+export function sanitizePersonalWebsiteFriendItems(
+  items: ClubWebsiteFriendItem[]
+): ClubWebsiteFriendItem[] {
+  const hasOwnerCreatedTopic = items.some(
+    (i) => i.id !== 'friends-root' && !CLUB_DEMO_FRIEND_TOPIC_IDS.has(i.id)
+  );
+  if (hasOwnerCreatedTopic) {
+    // Keep owner-created topics; drop leftover demo seed peers.
+    return items.filter(
+      (i) => i.id === 'friends-root' || !CLUB_DEMO_FRIEND_TOPIC_IDS.has(i.id)
+    );
+  }
+  if (isUntouchedClubDemoFriendList(items) || items.some((i) => CLUB_DEMO_FRIEND_TOPIC_IDS.has(i.id))) {
+    return defaultPersonalWebsiteFriendItems();
+  }
+  return items.length > 0 ? items : defaultPersonalWebsiteFriendItems();
+}
+
 export function friendItemToListRow(item: ClubWebsiteFriendItem): FriendListRow {
   return {
     id: item.id,
@@ -119,7 +187,8 @@ export function friendItemToListRow(item: ClubWebsiteFriendItem): FriendListRow 
 
 export function friendItemsToRows(items: ClubWebsiteFriendItem[]): FriendListRow[] {
   const root = items.find((i) => i.id === 'friends-root');
-  if (!root) return FRIEND_LIST_ROWS;
+  // Never fall back to the shared club demo seed — that leaked across accounts.
+  if (!root) return [];
   const rest = items.filter((i) => i.id !== 'friends-root');
   const byId = Object.fromEntries(items.map((i) => [i.id, i]));
   const orderedRest = rest
@@ -356,22 +425,41 @@ export function loadWebsiteFriendItems(
   scope: WebsiteFriendListScope,
   ownerId: string
 ): ClubWebsiteFriendItem[] {
-  if (typeof window === 'undefined' || !ownerId) return defaultClubWebsiteFriendItems();
+  const fallback = defaultWebsiteFriendItems(scope);
+  if (typeof window === 'undefined' || !ownerId) return fallback;
   try {
     const raw = localStorage.getItem(storageKey(scope, ownerId));
-    if (!raw) return defaultClubWebsiteFriendItems();
+    if (!raw) return fallback;
     const parsed = JSON.parse(raw) as Partial<ClubWebsiteFriendItem>[];
     if (!Array.isArray(parsed) || !parsed.some((i) => i.id === 'friends-root')) {
-      return defaultClubWebsiteFriendItems();
+      return fallback;
     }
     const normalized = parsed.map((i) => normalizeClubWebsiteFriendItem(i as ClubWebsiteFriendItem));
     const parentMap = inferParentIdsFromLayout(normalized);
-    return normalized.map((i) => ({
+    const items = normalized.map((i) => ({
       ...i,
       parentId: i.parentId ?? parentMap.get(i.id) ?? null,
     }));
+
+    // Personal sites must never inherit the shared club demo seed from another account.
+    if (scope === 'personal') {
+      const sanitized = sanitizePersonalWebsiteFriendItems(items);
+      const changed =
+        sanitized.length !== items.length ||
+        sanitized.some((item, index) => item.id !== items[index]?.id);
+      if (changed) {
+        try {
+          localStorage.setItem(storageKey(scope, ownerId), JSON.stringify(sanitized));
+        } catch {
+          /* ignore */
+        }
+      }
+      return sanitized;
+    }
+
+    return items;
   } catch {
-    return defaultClubWebsiteFriendItems();
+    return fallback;
   }
 }
 
@@ -425,9 +513,9 @@ export function createClubWebsiteFriendItem(
 export function insertFriendItem(
   items: ClubWebsiteFriendItem[],
   item: ClubWebsiteFriendItem,
-  afterId?: string
+  parentId?: string
 ): ClubWebsiteFriendItem[] {
-  if (!afterId) {
+  if (!parentId) {
     const layout = buildFriendListLayout(friendItemsToRows(items));
     const lastRootNestedId = layout.rootNested.at(-1)?.id;
     if (lastRootNestedId) {
@@ -441,10 +529,22 @@ export function insertFriendItem(
     next.splice(rootIdx + 1, 0, item);
     return next;
   }
-  const idx = items.findIndex((i) => i.id === afterId);
-  if (idx < 0) return [...items, item];
+
+  const parentIdx = items.findIndex((i) => i.id === parentId);
+  if (parentIdx < 0) return [...items, item];
+
+  // Insert after the parent's existing children (not at the end of the whole list).
+  let insertAt = parentIdx + 1;
+  while (insertAt < items.length) {
+    const candidate = items[insertAt];
+    if (candidate.parentId !== parentId) break;
+    // Under List of friends, peers (non-indent) come after nested subtopics.
+    if (parentId === 'friends-root' && item.indent && !candidate.indent) break;
+    insertAt += 1;
+  }
+
   const next = [...items];
-  next.splice(idx + 1, 0, item);
+  next.splice(insertAt, 0, item);
   return next;
 }
 
@@ -573,6 +673,8 @@ export function friendItemToSettingsFormItem(item: ClubWebsiteFriendItem) {
     id: item.id,
     name: item.name,
     activated: item.activated,
+    bannerColor: item.bannerColor,
+    titleColor: item.titleColor,
     showInClubDashboardTopics: item.showInClubDashboardTopics,
     contentDisplayMode: item.contentDisplayMode,
     externalUrl: item.externalUrl,
