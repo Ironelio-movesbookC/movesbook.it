@@ -52,6 +52,20 @@
   cursor: pointer;
 }
 
+.notification-promocode-page .button-preview-promocode {
+  background: transparent;
+  border: none;
+  color: #7b0a26;
+  font-weight: bold;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.notification-promocode-page .button-preview-promocode:hover {
+  color: #5a071c;
+}
+
 .notification-promocode-page .stats-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

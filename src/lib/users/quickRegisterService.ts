@@ -5,6 +5,7 @@ import { sendIonosEmail } from '@/lib/ionosEmail';
 import { getSiteOrigin, coercePublicOrigin } from '@/lib/siteUrl';
 import { findExistingTable, getTableColumns } from '@/lib/outcomeSettingsDb';
 import { COUNTRY_SELECT_OPTIONS } from '@/constants/countries.constants';
+import { countryCodeFromName } from '@/lib/admin/countryFlag';
 import { ensurePromocodeMetaTables } from '@/lib/promocodes/ensureMetaTables';
 import {
   buildPromocodeSettingsSelectSql,
@@ -21,15 +22,9 @@ import {
   getPromocodeSettingsTable,
   getSubscriptionSettingsTable,
 } from '@/lib/promocodes/legacyDb';
+import { QUICK_REGISTER_SUCCESS_MESSAGE, type RegistrationStatus } from '@/lib/users/quickRegisterShared';
 
-export type RegistrationStatus = {
-  type: 'new' | 'renewal';
-  detail: 'new' | 'renewal_expired' | 'renewal_active';
-  label: string;
-  has_active_subscription: boolean;
-  subscription_end_date?: string;
-  existing_username?: string;
-};
+export { QUICK_REGISTER_SUCCESS_MESSAGE, type RegistrationStatus };
 
 export type QuickRegisterInit = {
   movesbookOfficialEmail: string;
@@ -85,6 +80,16 @@ function rowNumber(row: Record<string, unknown>, ...keys: string[]): number | nu
     }
   }
   return null;
+}
+
+/** Normalize Dashboard-Version credit/credit1/credit2 values for apply rows. */
+function parseSubscriptionCredit(row: Record<string, unknown>, key: string): string {
+  const raw = row[key];
+  if (raw === undefined || raw === null || raw === '') return '';
+  const n = Number(raw);
+  if (Number.isFinite(n)) return String(n);
+  const asText = String(raw).trim();
+  return asText;
 }
 
 function rowCreatorId(row: Record<string, unknown>): string | number | null {
@@ -589,7 +594,7 @@ async function resolveCountryId(countryValue: string): Promise<number> {
   const values: unknown[] = [trimmed];
   if (columns.has('code')) {
     fields.push('code');
-    values.push('');
+    values.push(countryCodeFromName(trimmed));
   }
   if (columns.has('flag_id')) {
     fields.push('flag_id');
@@ -682,9 +687,17 @@ async function syncQuickRegisterUserNew(params: {
     return;
   }
 
+  // `legacy_<id>` may already be taken by an older row whose legacy id no longer
+  // matches (stale sync data). Fall back to the default generated id in that case.
+  const desiredId = `legacy_${params.legacyUserId}`;
+  const idTaken = await prisma.user.findUnique({
+    where: { id: desiredId },
+    select: { id: true },
+  });
+
   await prisma.user.create({
     data: {
-      id: `legacy_${params.legacyUserId}`,
+      ...(idTaken ? {} : { id: desiredId }),
       ...data,
       createdAt: params.createdAt ?? new Date(),
     },
@@ -713,12 +726,19 @@ export type QuickRegisterPayload = {
 
 function buildQuickRegisterConfirmationHtml(params: {
   username: string;
+  password: string;
+  siteUrl: string;
   confirmationUrl: string;
 }): string {
+  const siteLink = escapeHtml(params.siteUrl.replace(/\/$/, ''));
   return `
-<p>Welcome to Movesbook ${escapeHtml(params.username)}.</p>
+<p>Welcome to Movesbook ${escapeHtml(params.username)}!</p>
+<p>Your account has been created successfully.</p>
+<p><strong>Username:</strong> ${escapeHtml(params.username)}</p>
+<p><strong>Password:</strong> ${escapeHtml(params.password)}</p>
+<p>Visit Movesbook at <a href="${siteLink}">${siteLink}</a></p>
 <p>Please click on the link below within 7 days to confirm your email address and Movesbook account.</p>
-<a href="${escapeHtml(params.confirmationUrl)}">CONFIRM MY ACCOUNT</a>`;
+<p><a href="${escapeHtml(params.confirmationUrl)}">CONFIRM MY ACCOUNT</a></p>`;
 }
 
 function escapeHtml(value: string): string {
@@ -734,18 +754,22 @@ async function sendQuickRegisterConfirmationEmail(params: {
   roleId: string;
   username: string;
   email: string;
+  password: string;
   origin?: string;
 }): Promise<void> {
   const origin = coercePublicOrigin(params.origin);
+  const siteUrl = origin.replace(/\/$/, '') || getSiteOrigin();
   const userToken = Buffer.from(String(params.userId), 'utf8').toString('base64');
   const roleToken = Buffer.from(String(params.roleId), 'utf8').toString('base64');
-  const confirmationUrl = `${origin.replace(/\/$/, '')}/confirm_register_link/${encodeURIComponent(userToken)}/${encodeURIComponent(roleToken)}`;
+  const confirmationUrl = `${siteUrl}/confirm_register_link/${encodeURIComponent(userToken)}/${encodeURIComponent(roleToken)}`;
 
   await sendIonosEmail({
     to: params.email,
-    subject: 'Confirmation Register',
+    subject: 'Welcome to Movesbook',
     html: buildQuickRegisterConfirmationHtml({
       username: params.username,
+      password: params.password,
+      siteUrl,
       confirmationUrl,
     }),
   });
@@ -818,17 +842,19 @@ async function completeAlreadyRegisteredPromocodeRetry(params: {
       roleId: params.payload.usertype,
       username: params.payload.username.trim(),
       email: params.payload.email.trim(),
+      password: params.payload.password,
       origin: params.payload.origin,
     });
   } catch (err) {
     console.error('quickRegister confirmation email:', err);
     return {
       success: true,
-      message: 'The user has been saved, but the confirmation email could not be sent.',
+      message:
+        'You have successfully registered, but the welcome email could not be sent. Please contact support if you do not receive your credentials.',
     };
   }
 
-  return { success: true, message: 'The user has been saved.' };
+  return { success: true, message: QUICK_REGISTER_SUCCESS_MESSAGE };
 }
 
 export async function quickRegisterUser(
@@ -1019,7 +1045,7 @@ export async function quickRegisterUser(
     subscription_end_date: endDate,
     subscription_status: 'S',
     subscription_mail_status: 'SM',
-    credits: rowString(subSettings, 'credit2') || rowNumber(subSettings, 'credit2') || 0,
+    credits: parseSubscriptionCredit(subSettings, 'credit2') || 0,
     delete_status: 'N',
     modified: new Date(),
   };
@@ -1123,9 +1149,10 @@ export async function quickRegisterUser(
     const receiverApply = receiverApplyRows[0];
     if (receiverApply?.id) {
       const applyColumns = await getTableColumns(appliesTable);
-      const credit = rowString(subSettings, 'credit2') || rowNumber(subSettings, 'credit2') || '';
-      const creditSender = rowString(subSettings, 'credit') || rowNumber(subSettings, 'credit') || '';
-      const creditSecondarySender = rowString(subSettings, 'credit1') || rowNumber(subSettings, 'credit1') || '';
+      // Dashboard-Version settings: credit=direct sender, credit1=friend-of-friend (secondary), credit2=new user
+      const credit = parseSubscriptionCredit(subSettings, 'credit2');
+      const creditSender = parseSubscriptionCredit(subSettings, 'credit');
+      const creditSecondarySender = parseSubscriptionCredit(subSettings, 'credit1');
       const registrationDate = new Date();
       const updates: Record<string, unknown> = {
         sender_credit: creditSender,
@@ -1170,34 +1197,43 @@ export async function quickRegisterUser(
       }
 
       const senderId = rowNumber(updates, 'sender_id') || rowNumber(receiverApply, 'sender_id');
-      const senderCredit = Number(creditSender);
+      const senderCredit = Number(creditSender) || 0;
       let senderEmail = rowString(receiverApply, 'sender_email');
       let senderUsername = '';
-      if (senderId && senderCredit > 0 && userColumns.has('credits')) {
+      if (senderId) {
+        const userSelectCols = userColumns.has('credits')
+          ? 'id, email, username, credits'
+          : 'id, email, username';
         const senderRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-          `SELECT id, email, username, credits FROM \`${usersTable}\` WHERE id = ? LIMIT 1`,
+          `SELECT ${userSelectCols} FROM \`${usersTable}\` WHERE id = ? LIMIT 1`,
           senderId
         );
         senderEmail = senderEmail || rowString(senderRows[0] ?? {}, 'email');
         senderUsername = rowString(senderRows[0] ?? {}, 'username');
-        const currentCredits = Number(senderRows[0]?.credits ?? 0);
-        await prisma.$executeRawUnsafe(
-          `UPDATE \`${usersTable}\` SET credits = ? WHERE id = ?`,
-          currentCredits + senderCredit,
-          senderId
-        );
-      } else if (senderId) {
+        if (senderCredit > 0 && userColumns.has('credits')) {
+          const currentCredits = Number(senderRows[0]?.credits ?? 0);
+          await prisma.$executeRawUnsafe(
+            `UPDATE \`${usersTable}\` SET credits = ? WHERE id = ?`,
+            currentCredits + senderCredit,
+            senderId
+          );
+        }
+      } else if (senderEmail) {
         const senderRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-          `SELECT id, email, username FROM \`${usersTable}\` WHERE id = ? LIMIT 1`,
-          senderId
+          `SELECT id, email, username FROM \`${usersTable}\`
+           WHERE LOWER(email) = ? AND delete_status = 'N' LIMIT 1`,
+          senderEmail.toLowerCase()
         );
-        senderEmail = senderEmail || rowString(senderRows[0] ?? {}, 'email');
         senderUsername = rowString(senderRows[0] ?? {}, 'username');
       }
 
-      const secondaryCredit = Number(creditSecondarySender);
-      if (applyColumns.has('secondary_sender_credit') && (senderId || senderEmail || senderUsername)) {
-        const secondaryConditions = ['delete_status = 2', 'receiver_id > 0'];
+      // Friend-of-a-friend: assign secondary_sender_* from the person who invited the direct sender
+      const secondaryCredit = Number(creditSecondarySender) || 0;
+      const canWriteSecondary =
+        applyColumns.has('secondary_sender_id') ||
+        applyColumns.has('secondary_sender_credit') ||
+        applyColumns.has('secondary_sender_username');
+      if (canWriteSecondary && (senderId || senderEmail || senderUsername)) {
         const secondaryOr: string[] = [];
         const secondaryParams: unknown[] = [];
         if (senderId) {
@@ -1216,7 +1252,8 @@ export async function quickRegisterUser(
         if (secondaryOr.length > 0) {
           const secondaryRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
             `SELECT id, sender_id, sender_email FROM \`${appliesTable}\`
-             WHERE ${secondaryConditions.join(' AND ')} AND (${secondaryOr.join(' OR ')})
+             WHERE delete_status = 2 AND receiver_id > 0
+               AND (${secondaryOr.join(' OR ')})
              ORDER BY id DESC LIMIT 1`,
             ...secondaryParams
           );
@@ -1227,9 +1264,12 @@ export async function quickRegisterUser(
           let secondarySenderCredits = 0;
 
           if (secondaryApply) {
+            const userSelectCols = userColumns.has('credits')
+              ? 'id, email, username, credits'
+              : 'id, email, username';
             if (secondarySenderId && secondarySenderId > 0) {
               const secondaryUserRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-                `SELECT id, email, username, credits FROM \`${usersTable}\` WHERE id = ? LIMIT 1`,
+                `SELECT ${userSelectCols} FROM \`${usersTable}\` WHERE id = ? LIMIT 1`,
                 secondarySenderId
               );
               const secondaryUser = secondaryUserRows[0] ?? {};
@@ -1240,8 +1280,8 @@ export async function quickRegisterUser(
               const secondaryApplySenderEmail = rowString(secondaryApply, 'sender_email');
               if (secondaryApplySenderEmail) {
                 const secondaryUserRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-                  `SELECT id, email, username, credits FROM \`${usersTable}\`
-                   WHERE LOWER(email) = ? LIMIT 1`,
+                  `SELECT ${userSelectCols} FROM \`${usersTable}\`
+                   WHERE LOWER(email) = ? AND delete_status = 'N' LIMIT 1`,
                   secondaryApplySenderEmail.toLowerCase()
                 );
                 const secondaryUser = secondaryUserRows[0] ?? {};
@@ -1255,10 +1295,11 @@ export async function quickRegisterUser(
 
           if (secondarySenderId || secondarySenderEmail || secondarySenderUsername) {
             const secondaryUpdates: Record<string, unknown> = {
-              secondary_sender_id: secondarySenderId,
+              secondary_sender_id: secondarySenderId || null,
               secondary_sender_email: secondarySenderEmail,
               secondary_sender_username: secondarySenderUsername,
-              secondary_sender_credit: creditSecondarySender,
+              // Always write credit1 (friend-of-a-friend) from Dashboard-Version settings
+              secondary_sender_credit: creditSecondarySender === '' ? 0 : creditSecondarySender,
             };
             const secondarySetParts = Object.keys(secondaryUpdates)
               .filter((k) => applyColumns.has(k))
@@ -1342,17 +1383,19 @@ export async function quickRegisterUser(
       roleId: payload.usertype,
       username: payload.username.trim(),
       email: payload.email.trim(),
+      password: payload.password,
       origin: payload.origin,
     });
   } catch (err) {
     console.error('quickRegister confirmation email:', err);
     return {
       success: true,
-      message: 'The user has been saved, but the confirmation email could not be sent.',
+      message:
+        'You have successfully registered, but the welcome email could not be sent. Please contact support if you do not receive your credentials.',
     };
   }
 
-  return { success: true, message: 'The user has been saved.' };
+  return { success: true, message: QUICK_REGISTER_SUCCESS_MESSAGE };
 }
 
 function movesbookFallbackEmail(): string {

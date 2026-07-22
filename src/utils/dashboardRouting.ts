@@ -46,6 +46,25 @@ export function isManagedEntityAdminUserType(userType: string): boolean {
   );
 }
 
+/** Suggest Movesbook on MY PAGE — legacy role 5 (Athlete) only. */
+export function showSuggestMovesbookOnMyPage(userType: string): boolean {
+  return userType === 'ATHLETE';
+}
+
+/** Suggest Movesbook in entity workspace (My Club, My Teams, …) — legacy roles 6–9. */
+export function showSuggestMovesbookOnEntityWorkspace(userType: string): boolean {
+  return isManagedEntityAdminUserType(userType);
+}
+
+/** Whether Suggest Movesbook should appear for the active workspace tab. */
+export function showSuggestMovesbookForTab(
+  userType: string,
+  tab: 'my-page' | 'my-entity'
+): boolean {
+  if (tab === 'my-page') return showSuggestMovesbookOnMyPage(userType);
+  return showSuggestMovesbookOnEntityWorkspace(userType);
+}
+
 /** True when this user type has a dedicated dashboard (not legacy `/my-page`). */
 export function hasDedicatedDashboard(userType: string): boolean {
   return getDashboardPathForUserType(userType) !== '/my-page';

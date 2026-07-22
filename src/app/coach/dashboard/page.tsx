@@ -401,6 +401,7 @@ export default function CoachDashboard() {
                   setActiveTab('my-entity');
                 }}
                 onCreateGroupTrainedClick={entityCreation.openCreateFlow}
+                onSuggestMovesbookClick={() => router.push('/users/notification_by_promocode')}
               />
             </div>
           )}

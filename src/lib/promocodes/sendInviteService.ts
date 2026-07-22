@@ -434,6 +434,61 @@ async function resolveApplySender(params: {
   return { senderId, senderEmail, senderName };
 }
 
+async function validateNonStaffInvite(params: {
+  senderLegacyUserId: number;
+  promocodeId: number;
+  receiverEmail: string;
+}): Promise<{ ok: true } | { ok: false; message: string }> {
+  const usersTable = await getLegacyUsersTable();
+  if (usersTable) {
+    const existing = await runQuery<{ id: number | bigint }[]>(
+      `SELECT id FROM \`${usersTable}\`
+       WHERE LOWER(email) = ? AND delete_status = 'N' LIMIT 1`,
+      [params.receiverEmail.toLowerCase()]
+    );
+    if (existing.length > 0) {
+      return {
+        ok: false,
+        message: 'This email address is already registered. You can only invite new users.',
+      };
+    }
+  }
+
+  const appliesTable = await getPromocodeAppliesTable();
+  if (!appliesTable) {
+    return { ok: false, message: 'Promocode applies table not found.' };
+  }
+
+  const userPromoCheck = await runQuery<{ id: number | bigint }[]>(
+    `SELECT id FROM \`${appliesTable}\`
+     WHERE receiver_id = ? AND promocode_id = ? AND delete_status = 2 LIMIT 1`,
+    [params.senderLegacyUserId, params.promocodeId]
+  );
+  if (userPromoCheck.length === 0) {
+    return {
+      ok: false,
+      message: 'You can only use a promocode you received. Please select a valid promocode.',
+    };
+  }
+
+  const existingInvite = await runQuery<{ receiver_id: number | null }[]>(
+    `SELECT receiver_id FROM \`${appliesTable}\`
+     WHERE LOWER(receiver_email) = ? AND promocode_id = ? AND delete_status = 2
+     ORDER BY id DESC LIMIT 1`,
+    [params.receiverEmail.toLowerCase(), params.promocodeId]
+  );
+  if (existingInvite.length > 0) {
+    const receiverId =
+      existingInvite[0]?.receiver_id != null ? Number(existingInvite[0].receiver_id) : 0;
+    if (receiverId > 0) {
+      return { ok: false, message: 'This user already accepted the membership requesting.' };
+    }
+    return { ok: false, message: 'Requesting member is already pending state.' };
+  }
+
+  return { ok: true };
+}
+
 export async function sendPromocodeInvite(params: {
   emailAddress: string;
   promocode: string;
@@ -508,6 +563,17 @@ export async function sendPromocodeInvite(params: {
   const errors: string[] = [];
 
   for (const email of emails) {
+    if (!params.isStaff && params.senderLegacyUserId) {
+      const inviteCheck = await validateNonStaffInvite({
+        senderLegacyUserId: params.senderLegacyUserId,
+        promocodeId: promocodeCheck.id,
+        receiverEmail: email,
+      });
+      if (!inviteCheck.ok) {
+        return { status: 'error', message: inviteCheck.message };
+      }
+    }
+
     try {
       const registrationUrl = buildRegisterUrl(
         params.origin,

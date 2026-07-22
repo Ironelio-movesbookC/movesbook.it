@@ -14,9 +14,12 @@ const TABS: { key: TabKey; href: string; label: string }[] = [
 export default function PromocodesTabs({
   active,
   showCreditsLink = false,
+  onAddPromocode,
 }: {
   active: TabKey;
   showCreditsLink?: boolean;
+  /** Opens add promocode in a popup and lets the parent refresh when it closes. */
+  onAddPromocode?: () => void;
 }) {
   return (
     <div className="re-tab-bar mt-10">
@@ -39,11 +42,19 @@ export default function PromocodesTabs({
           </li>
         )}
         <li className="tab-add-btn">
-          <Link href="/promocodes/add" target="_blank" className="btn-black">
-            <Plus size={14} aria-hidden style={{ display: 'inline', verticalAlign: 'middle' }} />
-            {' '}
-            Add new promo code
-          </Link>
+          {onAddPromocode ? (
+            <button type="button" className="btn-black" onClick={onAddPromocode}>
+              <Plus size={14} aria-hidden style={{ display: 'inline', verticalAlign: 'middle' }} />
+              {' '}
+              Add new promo code
+            </button>
+          ) : (
+            <Link href="/promocodes/add" target="_blank" className="btn-black">
+              <Plus size={14} aria-hidden style={{ display: 'inline', verticalAlign: 'middle' }} />
+              {' '}
+              Add new promo code
+            </Link>
+          )}
         </li>
       </ul>
     </div>

@@ -70,3 +70,15 @@ export function promocodeRecipientLabel(row: PromocodeApplyRow): {
   }
   return { text, className: 'text-black text-xs' };
 }
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Best email address for sending a message to this promocode apply row. */
+export function promocodeApplyRecipientEmail(row: PromocodeApplyRow): string | null {
+  const candidates = [row.receiverEmail, row.receiver?.email];
+  for (const raw of candidates) {
+    const email = raw?.trim() ?? '';
+    if (email && EMAIL_PATTERN.test(email)) return email;
+  }
+  return null;
+}
