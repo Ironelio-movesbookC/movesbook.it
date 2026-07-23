@@ -36,6 +36,7 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getDashboardPathForUserType, isClubAccountUserType } from '@/utils/dashboardRouting';
+import { clearClubWorkspaceSessionOnLogout } from '@/lib/club/clearClubWorkspaceSession';
 
 // Map language codes to flag file names
 const getFlagFileName = (code: string): string => {
@@ -539,6 +540,7 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
     localStorage.removeItem('user');
     localStorage.removeItem('adminUser');
     localStorage.removeItem('adminToken');
+    clearClubWorkspaceSessionOnLogout();
 
     setIsLoggingIn(true);
     setLoginError('');

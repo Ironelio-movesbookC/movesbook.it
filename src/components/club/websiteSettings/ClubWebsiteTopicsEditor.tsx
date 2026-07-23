@@ -152,7 +152,13 @@ export default function ClubWebsiteTopicsEditor({
               <input
                 type="text"
                 value={selected.title}
-                onChange={(e) => patchSelected({ title: e.target.value })}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  patchSelected({
+                    title: next,
+                    name: next.trim() || selected.name,
+                  });
+                }}
                 placeholder={t('club_website_title_placeholder')}
                 className="min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm font-semibold outline-none"
                 style={{ color: selected.titleColor }}

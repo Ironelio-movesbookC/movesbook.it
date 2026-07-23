@@ -18,6 +18,8 @@ import RightSidebar from '@/app/my-page/components/RightSidebar';
 import AddMemberModal from '@/components/AddMemberModal';
 import { useDisplayLayoutOptions } from '@/hooks/useDisplayLayoutOptions';
 import { writeClubWorkspaceTab } from '@/lib/club/clubWorkspaceTab';
+import { clubDeskListUrl } from '@/lib/club/clubDeskPaths';
+import { getAuthToken } from '@/utils/auth.utils';
 
 function ClubDeskSettingsInner() {
   const {
@@ -32,6 +34,7 @@ function ClubDeskSettingsInner() {
   } = useDisplayLayoutOptions();
   const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-entity');
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [adminGateChecked, setAdminGateChecked] = useState(false);
 
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -65,7 +68,46 @@ function ClubDeskSettingsInner() {
     }
   }, [user, loading, router]);
 
-  if (loading || !user) {
+  /** Settings gear is admin-only; members who hit this URL go to the list. */
+  useEffect(() => {
+    if (loading || !user) return;
+    if (!clubId) {
+      setAdminGateChecked(true);
+      return;
+    }
+
+    let cancelled = false;
+    const token = getAuthToken();
+    if (!token) {
+      router.replace('/');
+      return;
+    }
+
+    fetch('/api/clubs/my-clubs', { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          router.replace(clubDeskListUrl(clubId));
+          return;
+        }
+        const data = (await res.json()) as { clubs?: { id: string }[] };
+        const isAdmin = (data.clubs ?? []).some((c) => c.id === clubId);
+        if (!isAdmin) {
+          router.replace(clubDeskListUrl(clubId));
+          return;
+        }
+        setAdminGateChecked(true);
+      })
+      .catch(() => {
+        if (!cancelled) router.replace(clubDeskListUrl(clubId));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, user, clubId, router]);
+
+  if (loading || !user || !adminGateChecked) {
     return null;
   }
 

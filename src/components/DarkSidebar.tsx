@@ -142,11 +142,15 @@ import PersonalMyTopicsSidebarBlock from '@/components/club/PersonalMyTopicsSide
 import ChangeProfilePhotoModal from '@/components/athlete/ChangeProfilePhotoModal';
 import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH, clubWebsiteDisplayUrl } from '@/lib/clubWebsiteSettingsPaths';
+import { PERSONAL_WEBSITE_TOPICS_PATH } from '@/lib/personalWebsiteSettingsPaths';
 import {
   readSelectedClubHint,
   writeClubWorkspaceTab,
 } from '@/lib/club/clubWorkspaceTab';
-import { requestOpenClubTopicsSection } from '@/lib/club/clubTopicsNavigation';
+import {
+  requestOpenClubTopicsSection,
+  requestOpenPersonalTopicsSection,
+} from '@/lib/club/clubTopicsNavigation';
 import { legacyUserBugProblemUrl } from '@/lib/messages/feedbackRoutes';
 import { getAuthToken } from '@/utils/auth.utils';
 
@@ -446,6 +450,55 @@ export default function DarkSidebar({
     () => getFormCreatedEntitiesSortedByCreatedAt(entities),
     [entities]
   );
+  /** Clubs this user administers (any role) — used so coach/team/group can open club website display. */
+  const [administeredClubs, setAdministeredClubs] = useState<
+    { id: string; name: string; description?: string | null }[]
+  >([]);
+  const administeredClubIds = useMemo(
+    () => new Set(administeredClubs.map((c) => c.id)),
+    [administeredClubs],
+  );
+
+  useEffect(() => {
+    if (
+      isClubAccountUserType(userType) ||
+      userType === 'ATHLETE' ||
+      !(
+        isTeamAccountUserType(userType) ||
+        isGroupAccountUserType(userType) ||
+        userType === 'COACH'
+      )
+    ) {
+      setAdministeredClubs([]);
+      return;
+    }
+    let cancelled = false;
+    const token = getAuthToken();
+    if (!token) return;
+    fetch('/api/clubs/my-clubs', { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          clubs?: { id: string; name: string; description?: string | null }[];
+        };
+        if (!cancelled && Array.isArray(data.clubs)) {
+          setAdministeredClubs(
+            data.clubs.map((c) => ({
+              id: c.id,
+              name: c.name,
+              description: c.description ?? null,
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        /* picker can still use trained team/group entities */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userType]);
+
   const clubsForTopicsPicker = useMemo(() => {
     if (isClubAccountUserType(userType)) {
       return formCreatedClubs as { id: string; name: string; description?: string | null }[];
@@ -458,10 +511,19 @@ export default function DarkSidebar({
       isGroupAccountUserType(userType) ||
       userType === 'COACH'
     ) {
-      return formCreatedEntities as { id: string; name: string; description?: string | null }[];
+      const byId = new Map<string, { id: string; name: string; description?: string | null }>();
+      for (const club of administeredClubs) byId.set(club.id, club);
+      for (const entity of formCreatedEntities as {
+        id: string;
+        name: string;
+        description?: string | null;
+      }[]) {
+        if (!byId.has(entity.id)) byId.set(entity.id, entity);
+      }
+      return Array.from(byId.values());
     }
     return [];
-  }, [userType, formCreatedClubs, formCreatedEntities, entities]);
+  }, [userType, formCreatedClubs, formCreatedEntities, entities, administeredClubs]);
   const clubUserHasProfile =
     !isClubAccountUserType(userType) || userHasClubProfile(entities);
   const isAthleteUser = userType === 'ATHLETE';
@@ -944,41 +1006,39 @@ export default function DarkSidebar({
   );
 
   /**
-   * "Topics of my clubs" — after picking an entity, open website DISPLAY
-   * (topics/subtopics), never the settings editor.
+   * "My Topics" picker — after picking an entity, open topics DISPLAY
+   * (never the settings editor). Real clubs → club website display;
+   * team/group/trained entities → personal My Topics display.
    */
   const handleClubSelectedForTopics = useCallback(
     (entityId: string) => {
       setClubTopicsPickerOpen(false);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('selectedClub', entityId);
-      }
-      writeClubWorkspaceTab('my-entity');
-      onEntitySelect?.(entityId);
-      setCurrentTab('my-entity');
-      requestOpenClubTopicsSection();
 
       const isClubOrAthlete =
         isClubAccountUserType(userType) || userType === 'ATHLETE';
-      if (isClubOrAthlete) {
+      const isAdministeredClub = administeredClubIds.has(entityId);
+
+      if (isClubOrAthlete || isAdministeredClub) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('selectedClub', entityId);
+        }
+        writeClubWorkspaceTab('my-entity');
+        onEntitySelect?.(entityId);
+        setCurrentTab('my-entity');
+        requestOpenClubTopicsSection();
         router.push(clubWebsiteDisplayUrl(entityId));
         return;
       }
 
-      // Team / group / coach: open that entity workspace (never website settings).
-      if (isTeamAccountUserType(userType)) {
-        router.push(`/my-team?teamId=${encodeURIComponent(entityId)}`);
-        return;
-      }
-      if (isGroupAccountUserType(userType)) {
-        router.push(`/my-group?groupId=${encodeURIComponent(entityId)}`);
-        return;
-      }
-      if (userType === 'COACH') {
-        router.push(`/my-coaching-group?groupId=${encodeURIComponent(entityId)}`);
-      }
+      // Team / group / coach trained entity — personal topics display (not settings).
+      // Never store a non-club id in selectedClub (avoids wrong page after switch).
+      writeClubWorkspaceTab('my-page');
+      onEntitySelect?.(entityId);
+      setCurrentTab('my-page');
+      requestOpenPersonalTopicsSection();
+      router.push(`${PERSONAL_WEBSITE_TOPICS_PATH}/display`);
     },
-    [onEntitySelect, setCurrentTab, router, userType]
+    [onEntitySelect, setCurrentTab, router, userType, administeredClubIds]
   );
 
   const openMyTopicsClubPicker = useCallback(() => {
