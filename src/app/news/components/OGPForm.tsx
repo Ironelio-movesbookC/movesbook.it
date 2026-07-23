@@ -7,6 +7,10 @@ import NewsSettingModal, {
   defaultSettings,
 } from './NewsSettingModal';
 import { ALL_LANGUAGES } from '@/constants/language.constants';
+import {
+  MUSICAL_GENRES,
+  MUSIC_REGISTRATION_TYPES,
+} from '@/constants/musicGenres.constants';
 
 export interface OGPData {
   title: string | null;
@@ -20,19 +24,34 @@ export interface OGPData {
 export type OgpVisibilitySettingsExport = OgpVisibilitySettings;
 
 interface OGPFormProps {
-  onPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettings; languageCode?: string | null }) => void;
-  onSaveTyped?: (description: string) => void;
+  onPastedArticle: (
+    data: OGPData & {
+      customDescription?: string;
+      visibility?: OgpVisibilitySettings;
+      languageCode?: string | null;
+      musicalGenre?: string | null;
+    }
+  ) => void;
+  onSaveTyped?: (description: string, musicalGenre?: string | null) => void;
   onCancel?: () => void;
+  /** Music modal: Artist / Title / Genre / Registration fields and “Who will see the music”. */
+  variant?: 'news' | 'music';
 }
 
 export default function OGPForm({
   onPastedArticle,
   onSaveTyped,
   onCancel,
+  variant = 'news',
 }: OGPFormProps) {
+  const isMusic = variant === 'music';
   const [url, setUrl] = useState('');
   const [description, setDescription] = useState('');
   const [languageCode, setLanguageCode] = useState<string>('');
+  const [artist, setArtist] = useState('');
+  const [musicTitle, setMusicTitle] = useState('');
+  const [musicalGenre, setMusicalGenre] = useState('');
+  const [registrationType, setRegistrationType] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetchedOg, setFetchedOg] = useState<OGPData | null>(null);
@@ -85,13 +104,22 @@ export default function OGPForm({
     if (url.trim()) fetchOGP(url);
   };
 
+  const resetMusicFields = () => {
+    setArtist('');
+    setMusicTitle('');
+    setMusicalGenre('');
+    setRegistrationType('');
+  };
+
   const handleSave = () => {
+    const genreToSave = isMusic && musicalGenre.trim() ? musicalGenre.trim() : null;
     if (fetchedOg) {
       onPastedArticle({
         ...fetchedOg,
         customDescription: description.trim() || undefined,
         visibility,
         languageCode: languageCode || undefined,
+        musicalGenre: genreToSave,
       });
       setUrl('');
       setDescription('');
@@ -99,9 +127,11 @@ export default function OGPForm({
       setFetchedOg(null);
       setError(null);
       setVisibility(defaultSettings);
+      if (isMusic) resetMusicFields();
     } else if (description.trim() && onSaveTyped) {
-      onSaveTyped(description.trim());
+      onSaveTyped(description.trim(), genreToSave);
       setDescription('');
+      if (isMusic) resetMusicFields();
     }
   };
 
@@ -110,11 +140,23 @@ export default function OGPForm({
     setDescription('');
     setFetchedOg(null);
     setError(null);
+    if (isMusic) resetMusicFields();
     onCancel?.();
   };
 
+  const visibilityLabel = isMusic ? 'Who will see the music' : 'Who will see the article';
+
+  const fieldSelectClass =
+    'w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500';
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+    <div
+      className={
+        isMusic
+          ? 'bg-white'
+          : 'bg-white rounded-xl border border-gray-200 shadow-sm p-6'
+      }
+    >
       <p className="text-xs text-gray-500 mb-4">
         Once pasted, the Open Graph protocol will show the URL with title, image, and short
         description in the list of articles (column &quot;Pasted&quot;). All other entries will
@@ -164,6 +206,94 @@ export default function OGPForm({
         )}
       </div>
 
+      {isMusic && (
+        <>
+          {/* Artist / Title — behaviour wired later */}
+          <div className="mb-4 rounded-xl bg-gray-100 border border-gray-200 p-4">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <label htmlFor="music-artist" className="w-16 shrink-0 text-sm font-medium text-gray-700">
+                  Artist
+                </label>
+                <select
+                  id="music-artist"
+                  value={artist}
+                  onChange={(e) => setArtist(e.target.value)}
+                  className={fieldSelectClass}
+                  aria-label="Artist"
+                >
+                  <option value=""></option>
+                </select>
+              </div>
+              <div className="flex items-center gap-3">
+                <label htmlFor="music-title" className="w-16 shrink-0 text-sm font-medium text-gray-700">
+                  Title
+                </label>
+                <select
+                  id="music-title"
+                  value={musicTitle}
+                  onChange={(e) => setMusicTitle(e.target.value)}
+                  className={fieldSelectClass}
+                  aria-label="Title"
+                >
+                  <option value=""></option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Musical genre / Type of registration — behaviour wired later */}
+          <div className="mb-4 rounded-xl bg-gray-100 border border-gray-200 p-4">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <label
+                  htmlFor="music-genre"
+                  className="w-[7.5rem] shrink-0 text-sm font-medium text-gray-700"
+                >
+                  Musical genre
+                </label>
+                <select
+                  id="music-genre"
+                  value={musicalGenre}
+                  onChange={(e) => setMusicalGenre(e.target.value)}
+                  className={fieldSelectClass}
+                  aria-label="Musical genre"
+                >
+                  <option value=""></option>
+                  {MUSICAL_GENRES.map((genre) => (
+                    <option key={genre} value={genre}>
+                      {genre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-3">
+                <label
+                  htmlFor="music-registration-type"
+                  className="w-[7.5rem] shrink-0 text-sm font-medium text-gray-700"
+                >
+                  Type of registration
+                </label>
+                <select
+                  id="music-registration-type"
+                  value={registrationType}
+                  onChange={(e) => setRegistrationType(e.target.value)}
+                  className={fieldSelectClass}
+                  aria-label="Type of registration"
+                >
+                  <option value="">Song - Album - Playlist</option>
+                  {MUSIC_REGISTRATION_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Description */}
       <div className="mb-4">
         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -178,7 +308,7 @@ export default function OGPForm({
         />
       </div>
 
-      {/* Article options: Language + Visibility */}
+      {/* Language + Visibility */}
       <div className="mb-6 rounded-xl bg-gray-50 border border-gray-100 p-4">
         <div className="flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-6">
           <div className="flex-1 min-w-0">
@@ -203,11 +333,11 @@ export default function OGPForm({
               type="button"
               onClick={() => setShowSettingsModal(true)}
               className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-colors font-medium text-sm"
-              title="Who will see the article"
-              aria-label="Who will see the article"
+              title={visibilityLabel}
+              aria-label={visibilityLabel}
             >
               <Settings className="w-5 h-5 text-gray-500" />
-              <span>Who will see the article</span>
+              <span>{visibilityLabel}</span>
             </button>
           </div>
         </div>

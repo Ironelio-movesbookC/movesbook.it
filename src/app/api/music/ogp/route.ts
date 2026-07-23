@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
         languageCode,
       };
 
-      const list = (await prisma.ogpArticle.findMany({
+      const list = (await prisma.musicOgpArticle.findMany({
         where: {} as any,
         orderBy: { savedAt: 'desc' },
         include: {
@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
           user: { select: { username: true, country: true } },
         } as never,
       })) as Array<
-        Awaited<ReturnType<typeof prisma.ogpArticle.findMany>>[number] & {
+        Awaited<ReturnType<typeof prisma.musicOgpArticle.findMany>>[number] & {
           deletedByUserId: string | null;
           deletedBy: { name: string | null; username: string } | null;
           user: { username: string; country: string | null } | null;
@@ -131,6 +131,7 @@ export async function GET(request: NextRequest) {
         type: a.type,
         customDescription: a.customDescription,
         topic: a.topic,
+        genre: (a as { genre?: string | null }).genre ?? null,
         languageCode: a.languageCode ?? null,
         savedAt: a.savedAt.toISOString(),
         visibilityUserTypes: parseJsonArray(a.visibilityUserTypes),
@@ -161,7 +162,7 @@ export async function GET(request: NextRequest) {
         } as any);
     if (topic != null && topic !== '') (where as any).topic = topic;
 
-    const list = (await prisma.ogpArticle.findMany({
+    const list = (await prisma.musicOgpArticle.findMany({
       where,
       orderBy: { savedAt: 'desc' },
       include: {
@@ -169,7 +170,7 @@ export async function GET(request: NextRequest) {
         user: { select: { username: true, country: true } },
       } as never,
     })) as Array<
-      Awaited<ReturnType<typeof prisma.ogpArticle.findMany>>[number] & {
+      Awaited<ReturnType<typeof prisma.musicOgpArticle.findMany>>[number] & {
         deletedByUserId: string | null;
         deletedBy: { name: string | null; username: string } | null;
         user: { username: string; country: string | null } | null;
@@ -239,6 +240,7 @@ export async function GET(request: NextRequest) {
       type: a.type,
       customDescription: a.customDescription,
       topic: a.topic,
+      genre: (a as { genre?: string | null }).genre ?? null,
       languageCode: a.languageCode ?? null,
       savedAt: a.savedAt.toISOString(),
       visibilityUserTypes: parseJsonArray(a.visibilityUserTypes),
@@ -254,7 +256,7 @@ export async function GET(request: NextRequest) {
     }));
     return NextResponse.json(articles);
   } catch (e) {
-    console.error('GET /api/news/ogp', e);
+    console.error('GET /api/music/ogp', e);
     return NextResponse.json({ error: 'Failed to load articles' }, { status: 500 });
   }
 }
@@ -275,6 +277,7 @@ export async function POST(request: NextRequest) {
       type,
       customDescription,
       topic,
+      genre,
       languageCode,
       expiresAt,
       visibilityUserTypes,
@@ -285,8 +288,10 @@ export async function POST(request: NextRequest) {
     if (!url || typeof url !== 'string' || !url.trim()) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
-    const topicName = typeof topic === 'string' && topic.trim() ? topic.trim() : 'News';
-    const created = await prisma.ogpArticle.create({
+    const topicName = typeof topic === 'string' && topic.trim() ? topic.trim() : 'Songs';
+    const genreName =
+      typeof genre === 'string' && genre.trim() ? genre.trim() : null;
+    const created = await prisma.musicOgpArticle.create({
       data: {
         userId,
         title: title ?? null,
@@ -305,6 +310,11 @@ export async function POST(request: NextRequest) {
         visibilitySports: Array.isArray(visibilitySports) ? JSON.stringify(visibilitySports) : null,
       },
     });
+    if (genreName) {
+      await prisma.$executeRaw`
+        UPDATE music_ogp_articles SET genre = ${genreName} WHERE id = ${created.id}
+      `;
+    }
     return NextResponse.json({
       id: created.id,
       title: created.title,
@@ -315,11 +325,12 @@ export async function POST(request: NextRequest) {
       type: created.type,
       customDescription: created.customDescription,
       topic: created.topic,
+      genre: genreName,
       languageCode: created.languageCode ?? null,
       savedAt: created.savedAt.toISOString(),
     });
   } catch (e) {
-    console.error('POST /api/news/ogp', e);
+    console.error('POST /api/music/ogp', e);
     return NextResponse.json({ error: 'Failed to create article' }, { status: 500 });
   }
 }

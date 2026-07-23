@@ -715,7 +715,7 @@ export default function AdminLeftSidebar({ isOpen, onToggle }: AdminSidebarProps
                   <span>Music Tracked</span>
                 </Link>
                 <Link
-                  href="/admin/news/links"
+                  href="/admin/dashboard?panel=og-music"
                   className="flex items-center gap-3 px-3 py-2.5 bg-[#4f4f4f] border-b border-[#aeaeae] hover:bg-[#3d3d3d] transition text-sm text-white"
                 >
                   <Music className="w-4 h-4 shrink-0 text-white" />

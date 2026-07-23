@@ -31,7 +31,9 @@ import {
   ShoppingCart,
   Megaphone,
   ShoppingBag,
-  Search
+  Search,
+  Music,
+  ListMusic
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -196,6 +198,24 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
   const isOpenNewsNavHref = (href: string) =>
     href === '/athlete/dashboard?open=news' || href === '/club/dashboard?open=news';
 
+  /** Open My Music in the athlete dashboard middle area (same pattern as News). */
+  const navMusicHref =
+    user && isClubAccountUserType(user.userType)
+      ? '/music-panel'
+      : '/athlete/dashboard?open=music';
+
+  const isOpenMusicNavHref = (href: string) =>
+    href === '/athlete/dashboard?open=music' || href === '/music-panel';
+
+  /** Open Music OGP editor (same as "Add/edit my music" on My Music panel). */
+  const navAddSongsHref =
+    user && isClubAccountUserType(user.userType)
+      ? '/add-songs'
+      : '/athlete/dashboard?open=add-songs';
+
+  const isOpenAddSongsNavHref = (href: string) =>
+    href === '/athlete/dashboard?open=add-songs' || href === '/add-songs';
+
   const menuItems = useMemo(
     () => [
       { href: '/', label: t('nav_home'), icon: Home },
@@ -208,8 +228,10 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
       { href: '/job-offers', label: 'Jobs', icon: Briefcase },
       { href: '/promote-yourself', label: 'Promote', icon: Megaphone },
       { href: '/our-shop', label: 'Shop', icon: ShoppingBag },
+      { href: navAddSongsHref, label: 'Add Songs', icon: ListMusic },
+      { href: navMusicHref, label: 'Music Panel', icon: Music },
     ],
-    [navNewsHref, t]
+    [navNewsHref, navAddSongsHref, navMusicHref, t]
   );
 
   const socialLinks = [
@@ -837,7 +859,9 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                     item.href === '/job-offers' ||
                     item.href === '/promote-yourself' ||
                     item.href === '/our-shop' ||
-                    item.href === '/news-by-movesbook';
+                    item.href === '/news-by-movesbook' ||
+                    isOpenAddSongsNavHref(item.href) ||
+                    isOpenMusicNavHref(item.href);
                   const canAccess = isPublicRoute || isAuthenticated;
                   
                   return (
@@ -1092,7 +1116,9 @@ export default function ModernNavbar({ onLoginClick, onAdminClick }: ModernNavba
                     item.href === '/job-offers' ||
                     item.href === '/promote-yourself' ||
                     item.href === '/our-shop' ||
-                    item.href === '/news-by-movesbook';
+                    item.href === '/news-by-movesbook' ||
+                    isOpenAddSongsNavHref(item.href) ||
+                    isOpenMusicNavHref(item.href);
                   const canAccess = isPublicRoute || isAuthenticated;
                   
                   return (
