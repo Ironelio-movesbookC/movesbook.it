@@ -114,11 +114,28 @@ type MusicOgpItem = {
 
 type LikesMap = Record<string, { count: number; likedByMe: boolean }>;
 
-function getAuthHeaders(): HeadersInit {
-  if (typeof window === 'undefined') return {};
-  const token = localStorage.getItem('token');
+function getAuthToken(adminContext?: boolean): string | null {
+  if (typeof window === 'undefined') return null;
+  return adminContext ? localStorage.getItem('adminToken') : localStorage.getItem('token');
+}
+
+function getAuthHeaders(adminContext?: boolean): HeadersInit {
+  const token = getAuthToken(adminContext);
   if (!token) return {};
   return { Authorization: `Bearer ${token}` };
+}
+
+function getAdminUserFromStorage(): { id: string; name?: string; userType?: string } | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('adminUser');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { id?: string; name?: string; userType?: string };
+    if (!parsed?.id) return null;
+    return { id: parsed.id, name: parsed.name, userType: parsed.userType };
+  } catch {
+    return null;
+  }
 }
 
 function formatDate(iso?: string) {
@@ -150,6 +167,7 @@ function MusicOgpSuggestedTile({
   onShare,
   onOpenPlayer,
   likeLoading,
+  canLike,
   currentUserId,
   canDeleteOgp,
   expanded,
@@ -167,6 +185,7 @@ function MusicOgpSuggestedTile({
   onShare: (article: MusicOgpItem) => void;
   onOpenPlayer: (article: MusicOgpItem) => void;
   likeLoading: boolean;
+  canLike: boolean;
   currentUserId: string | null;
   canDeleteOgp: boolean;
   expanded: boolean;
@@ -269,7 +288,7 @@ function MusicOgpSuggestedTile({
                 e.stopPropagation();
                 onLike(article.id);
               }}
-              disabled={likeLoading || (typeof window !== 'undefined' && !localStorage.getItem('token'))}
+              disabled={likeLoading || !canLike}
               className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
                 like.likedByMe
                   ? 'border-cyan-500 bg-cyan-50 text-cyan-700 hover:bg-cyan-100'
@@ -416,8 +435,15 @@ function MusicOgpSuggestedTile({
   );
 }
 
-function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
+function MusicSuggestedSection({
+  tileCount,
+  adminContext = false,
+}: {
+  tileCount: number;
+  adminContext?: boolean;
+}) {
   const { user } = useAuth();
+  const adminUser = adminContext ? getAdminUserFromStorage() : null;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [articles, setArticles] = useState<MusicOgpItem[]>([]);
   const [likesMap, setLikesMap] = useState<LikesMap>({});
@@ -453,14 +479,15 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
   const [editTopicValue, setEditTopicValue] = useState('');
   const [editTopicDescription, setEditTopicDescription] = useState('');
 
-  const currentUserId = user?.id ?? null;
-  const canDeleteOgp = user?.userType === 'ADMIN';
+  const currentUserId = adminContext ? (adminUser?.id ?? null) : (user?.id ?? null);
+  const canDeleteOgp = adminContext || user?.userType === 'ADMIN';
+  const canLike = Boolean(getAuthToken(adminContext));
 
   const load = useCallback(async () => {
     setLoading(true);
     setLikesReady(false);
     try {
-      const headers = getAuthHeaders();
+      const headers = getAuthHeaders(adminContext);
       const res = await fetch(`${MUSIC_API_BASE}/ogp`, { headers });
       if (!res.ok) throw new Error('Failed to load music OGPs');
       const data = await res.json();
@@ -495,14 +522,14 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [adminContext]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   useEffect(() => {
-    const headers = getAuthHeaders();
+    const headers = getAuthHeaders(adminContext);
     fetch(`${MUSIC_API_BASE}/topics`, { headers })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -523,7 +550,7 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
         setTopics(Array.from(new Set(names)));
       })
       .catch(() => setTopics([]));
-  }, []);
+  }, [adminContext]);
 
   const articleIdsKey = useMemo(() => articles.map((a) => a.id).join(','), [articles]);
 
@@ -534,7 +561,7 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
       return;
     }
     setLikesReady(false);
-    const headers = getAuthHeaders();
+    const headers = getAuthHeaders(adminContext);
     const controller = new AbortController();
     fetch(`${MUSIC_API_BASE}/ogp/likes?ids=${articleIdsKey}`, {
       headers,
@@ -551,7 +578,7 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
         setLikesReady(true);
       });
     return () => controller.abort();
-  }, [articleIdsKey, loading]);
+  }, [articleIdsKey, loading, adminContext]);
 
   useEffect(() => {
     if (copiedArticleId == null) return;
@@ -586,7 +613,7 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
     setCreatorLoading(true);
     setCreatorError(null);
     setCreatorInfo(null);
-    const headers = getAuthHeaders();
+    const headers = getAuthHeaders(adminContext);
     fetch(`${MUSIC_API_BASE}/ogp/${creatorModalArticleId}/creator`, { headers })
       .then(async (res) => {
         const data = await res.json();
@@ -611,7 +638,7 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
     return () => {
       cancelled = true;
     };
-  }, [creatorModalArticleId]);
+  }, [creatorModalArticleId, adminContext]);
 
   /** Sort by "I liked": most likes first (same order as Music OGP thumbs-up sort). */
   const suggested = useMemo(() => {
@@ -621,7 +648,7 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
   }, [articles, likesMap]);
 
   const handleLike = useCallback(async (articleId: string) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const token = getAuthToken(adminContext);
     if (!token) return;
     setLikeLoadingId(articleId);
     try {
@@ -640,7 +667,7 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
     } finally {
       setLikeLoadingId(null);
     }
-  }, []);
+  }, [adminContext]);
 
   const toggleExpanded = useCallback((id: string) => {
     setExpandedArticleIds((prev) => {
@@ -658,7 +685,7 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
 
   const handleUpdateSettings = useCallback(
     async (id: string, settings: OgpVisibilitySettings) => {
-      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const headers = { ...getAuthHeaders(adminContext), 'Content-Type': 'application/json' };
       const res = await fetch(`${MUSIC_API_BASE}/ogp/${id}`, {
         method: 'PATCH',
         headers,
@@ -675,13 +702,13 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
         prev.map((a) => (a.id === id ? { ...a, visibility: settings, expiresAt: settings.expiresAt } : a))
       );
     },
-    []
+    [adminContext]
   );
 
   const handleUpdateTopic = useCallback(async (id: string, topic: string, customDescription?: string) => {
     const trimmed = topic.trim();
     if (!trimmed) return;
-    const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+    const headers = { ...getAuthHeaders(adminContext), 'Content-Type': 'application/json' };
     const payload: { topic: string; customDescription?: string | null } = { topic: trimmed };
     if (customDescription !== undefined) {
       payload.customDescription = customDescription.trim() || null;
@@ -705,14 +732,14 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
           : a
       )
     );
-  }, []);
+  }, [adminContext]);
 
   const handleRemove = useCallback(async (id: string) => {
-    const headers = getAuthHeaders();
+    const headers = getAuthHeaders(adminContext);
     const res = await fetch(`${MUSIC_API_BASE}/ogp/${id}`, { method: 'DELETE', headers });
     if (!res.ok) throw new Error('Failed to remove article');
     setArticles((prev) => prev.filter((a) => a.id !== id));
-  }, []);
+  }, [adminContext]);
 
   const scrollBy = (dir: -1 | 1) => {
     scrollerRef.current?.scrollBy({ left: dir * (SUGGESTED_TILE_WIDTH + 12) * 2, behavior: 'smooth' });
@@ -772,6 +799,7 @@ function MusicSuggestedSection({ tileCount }: { tileCount: number }) {
                 onShare={setShareArticle}
                 onOpenPlayer={(a) => setPlayerTrackId(a.id)}
                 likeLoading={likeLoadingId === article.id}
+                canLike={canLike}
                 currentUserId={currentUserId}
                 canDeleteOgp={canDeleteOgp}
                 expanded={expandedArticleIds.has(article.id)}
@@ -1123,12 +1151,16 @@ function MusicHomeSection({
   );
 }
 
-function MusicHomeContent() {
+function MusicHomeContent({ adminContext = false }: { adminContext?: boolean }) {
   return (
     <div className="flex flex-col gap-3 p-3 bg-[#152038]">
       {HOME_SECTIONS.map((section) =>
         section.key === 'suggested' ? (
-          <MusicSuggestedSection key={section.key} tileCount={section.tileCount} />
+          <MusicSuggestedSection
+            key={section.key}
+            tileCount={section.tileCount}
+            adminContext={adminContext}
+          />
         ) : (
           <MusicHomeSection
             key={section.key}
@@ -1148,10 +1180,17 @@ interface MyMusicPanelProps {
   embedded?: boolean;
   isExpanded?: boolean;
   onExpandReduce?: () => void;
+  /** When true, use adminToken / adminUser (superadmin admin panel). */
+  adminContext?: boolean;
 }
 
-function getMyMusicShareUrl(): string {
-  if (typeof window === 'undefined') return '/athlete/dashboard?open=music';
+function getMyMusicShareUrl(adminContext?: boolean): string {
+  if (typeof window === 'undefined') {
+    return adminContext ? '/admin/dashboard?panel=og-music' : '/athlete/dashboard?open=music';
+  }
+  if (adminContext) {
+    return `${window.location.origin}/admin/dashboard?panel=og-music`;
+  }
   return `${window.location.origin}/athlete/dashboard?open=music`;
 }
 
@@ -1159,6 +1198,7 @@ export default function MyMusicPanel({
   embedded = true,
   isExpanded = false,
   onExpandReduce,
+  adminContext = false,
 }: MyMusicPanelProps) {
   // No tab selected until the user clicks one — Home sections show only after Home is clicked
   const [activeNav, setActiveNav] = useState<MusicNavKey | null>(null);
@@ -1167,13 +1207,13 @@ export default function MyMusicPanel({
   const [linkCopied, setLinkCopied] = useState(false);
 
   const handleGetLink = useCallback(() => {
-    const url = getMyMusicShareUrl();
+    const url = getMyMusicShareUrl(adminContext);
     if (typeof navigator?.clipboard?.writeText !== 'function') return;
     void navigator.clipboard.writeText(url).then(() => {
       setLinkCopied(true);
       window.setTimeout(() => setLinkCopied(false), 2000);
     });
-  }, []);
+  }, [adminContext]);
 
   if (showMusicEditor) {
     return (
@@ -1185,6 +1225,7 @@ export default function MyMusicPanel({
         embedded={embedded}
         isExpanded={isExpanded}
         onExpandReduce={onExpandReduce}
+        adminContext={adminContext}
       />
     );
   }
@@ -1269,7 +1310,7 @@ export default function MyMusicPanel({
       {/* Tab content — Home sections only when Home is selected */}
       <div className="flex-1 min-h-0 overflow-y-auto bg-[#152038]">
         {activeNav === 'home' ? (
-          <MusicHomeContent />
+          <MusicHomeContent adminContext={adminContext} />
         ) : activeNav ? (
           <div className="flex items-center justify-center min-h-[280px] px-4">
             <p className="text-sm text-white/50 text-center">

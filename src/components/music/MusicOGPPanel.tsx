@@ -69,6 +69,8 @@ interface MusicOGPPanelProps {
   embedded?: boolean;
   isExpanded?: boolean;
   onExpandReduce?: () => void;
+  /** When true, use adminToken / adminUser (superadmin admin panel). */
+  adminContext?: boolean;
 }
 
 export default function MusicOGPPanel({
@@ -76,6 +78,7 @@ export default function MusicOGPPanel({
   embedded = true,
   isExpanded = false,
   onExpandReduce,
+  adminContext = false,
 }: MusicOGPPanelProps) {
   const {
     topics,
@@ -101,8 +104,24 @@ export default function MusicOGPPanel({
   } = useNewsData({
     apiBase: MUSIC_API_BASE,
     defaultTopics: MUSIC_TOPICS,
+    adminContext,
   });
   const { user } = useAuth();
+  const adminUser = adminContext
+    ? (() => {
+        if (typeof window === 'undefined') return null;
+        try {
+          const raw = localStorage.getItem('adminUser');
+          if (!raw) return null;
+          return JSON.parse(raw) as { id: string; name?: string; userType?: string };
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+
+  const effectiveUserId = adminContext ? (adminUser?.id ?? null) : (user?.id ?? null);
+  const canDeleteOgp = adminContext || user?.userType === 'ADMIN';
 
   const [activeTopic, setActiveTopic] = useState<NewsTopic | null>(ALL_TOPICS);
   const prevLoading = useRef(true);
@@ -117,13 +136,15 @@ export default function MusicOGPPanel({
 
   const getAuthHeaders = useCallback((): HeadersInit => {
     if (typeof window === 'undefined') return {};
-    const token = localStorage.getItem('token');
+    const token = adminContext
+      ? localStorage.getItem('adminToken')
+      : localStorage.getItem('token');
     if (!token) return {};
     return { Authorization: `Bearer ${token}` };
-  }, []);
+  }, [adminContext]);
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!effectiveUserId) {
       setMusicalGenres([]);
       return;
     }
@@ -139,7 +160,7 @@ export default function MusicOGPPanel({
     return () => {
       cancelled = true;
     };
-  }, [user?.id, getAuthHeaders]);
+  }, [effectiveUserId, getAuthHeaders]);
 
   const rememberMusicalGenre = useCallback(
     async (genre: string | null | undefined) => {
@@ -486,8 +507,8 @@ export default function MusicOGPPanel({
           topics={topics}
           onRemovePasted={handleRemovePasted}
           onRemoveTyped={handleRemoveTyped}
-          canDeleteOgp={user?.userType === 'ADMIN'}
-          currentUserId={user?.id ?? null}
+          canDeleteOgp={canDeleteOgp}
+          currentUserId={effectiveUserId}
           currentUserCountry={user?.country ?? null}
           onUpdatePastedSettings={handleUpdatePastedSettings}
           onUpdatePastedTopic={handleUpdatePastedTopic}
