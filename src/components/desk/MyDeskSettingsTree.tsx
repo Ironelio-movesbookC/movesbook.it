@@ -335,8 +335,22 @@ type DeskFormModal =
   | { mode: 'add'; parentId: string }
   | { mode: 'edit'; itemId: string };
 
-export default function MyDeskSettingsTree() {
+export default function MyDeskSettingsTree({
+  clubId,
+  headingKey = 'dashboard_my_desk',
+}: {
+  /** When set, manages Club Desk for this club via `/api/club-desk`. */
+  clubId?: string | null;
+  headingKey?: string;
+}) {
   const { t } = useLanguage();
+  const isClubDesk = Boolean(clubId);
+  const listUrl = isClubDesk
+    ? `/api/club-desk?clubId=${encodeURIComponent(clubId!)}`
+    : '/api/my-desk';
+  const itemUrl = (id: string) =>
+    isClubDesk ? `/api/club-desk/${id}` : `/api/my-desk/${id}`;
+  const reorderUrl = isClubDesk ? '/api/club-desk/reorder' : '/api/my-desk/reorder';
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [items, setItems] = useState<MyDeskNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -360,13 +374,17 @@ export default function MyDeskSettingsTree() {
   const fetchItems = useCallback(async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return;
+    if (clubId === null) {
+      setItems([]);
+      return;
+    }
 
-    const response = await fetch('/api/my-desk', {
+    const response = await fetch(listUrl, {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store'
     });
     if (!response.ok) {
-      throw new Error('Failed to load My Desk data');
+      throw new Error('Failed to load desk data');
     }
     const data = (await response.json()) as {
       items: Array<{
@@ -382,7 +400,7 @@ export default function MyDeskSettingsTree() {
       }>;
     };
     setItems((data.items ?? []).map(mapApiNodeToTree));
-  }, []);
+  }, [listUrl, clubId]);
 
   useEffect(() => {
     const run = async () => {
@@ -449,7 +467,7 @@ export default function MyDeskSettingsTree() {
       };
 
       if (formModal.mode === 'add') {
-        const response = await fetch('/api/my-desk', {
+        const response = await fetch(isClubDesk ? '/api/club-desk' : '/api/my-desk', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -457,16 +475,19 @@ export default function MyDeskSettingsTree() {
           },
           body: JSON.stringify({
             ...payload,
-            parentId: formModal.parentId,
+            ...(isClubDesk ? { clubId } : {}),
+            parentId: formModal.parentId || null,
             visible: true
           })
         });
         if (!response.ok) {
           throw new Error('Failed to add child item');
         }
-        setExpanded((prev) => ({ ...prev, [formModal.parentId]: true }));
+        setExpanded((prev) =>
+          formModal.parentId ? { ...prev, [formModal.parentId]: true } : prev
+        );
       } else {
-        const response = await fetch(`/api/my-desk/${formModal.itemId}`, {
+        const response = await fetch(itemUrl(formModal.itemId), {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
@@ -484,8 +505,11 @@ export default function MyDeskSettingsTree() {
     },
     [
       closeFormModal,
+      clubId,
       fetchItems,
       formModal,
+      isClubDesk,
+      itemUrl,
       newBgColor,
       newDisplayMode,
       newIcon,
@@ -512,7 +536,7 @@ export default function MyDeskSettingsTree() {
     }
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return;
-    const response = await fetch(`/api/my-desk/${id}`, {
+    const response = await fetch(itemUrl(id), {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -520,7 +544,7 @@ export default function MyDeskSettingsTree() {
       throw new Error('Failed to delete item');
     }
     await fetchItems();
-  }, [fetchItems, t]);
+  }, [fetchItems, itemUrl, t]);
 
   const onToggleVisible = useCallback(async (id: string) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -528,7 +552,7 @@ export default function MyDeskSettingsTree() {
     const current = findNodeById(items, id);
     if (!current) return;
 
-    const response = await fetch(`/api/my-desk/${id}`, {
+    const response = await fetch(itemUrl(id), {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -540,7 +564,7 @@ export default function MyDeskSettingsTree() {
       throw new Error('Failed to toggle visibility');
     }
     await fetchItems();
-  }, [fetchItems, items]);
+  }, [fetchItems, itemUrl, items]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -572,13 +596,14 @@ export default function MyDeskSettingsTree() {
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return;
-    const response = await fetch('/api/my-desk/reorder', {
+    const response = await fetch(reorderUrl, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({
+        ...(isClubDesk ? { clubId } : {}),
         parentId: activeCtx.parentId,
         orderedIds: nextSiblingIds
       })
@@ -586,16 +611,23 @@ export default function MyDeskSettingsTree() {
     if (!response.ok) {
       await fetchItems();
     }
-  }, [fetchItems, items]);
+  }, [clubId, fetchItems, isClubDesk, items, reorderUrl]);
 
   return (
     <>
       <div className="w-full overflow-hidden rounded border border-zinc-300 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-3 bg-[#2563eb] px-3 py-2.5 text-white">
-          <h1 className="text-sm font-semibold uppercase tracking-wide">{t('dashboard_my_desk')}</h1>
+          <h1 className="text-sm font-semibold uppercase tracking-wide">{t(headingKey)}</h1>
           <button
             type="button"
-            onClick={() => router.push('/users/add_new_mydesk')}
+            onClick={() => {
+              if (isClubDesk) {
+                resetFormDefaults();
+                setFormModal({ mode: 'add', parentId: '' });
+                return;
+              }
+              router.push('/users/add_new_mydesk');
+            }}
             className="rounded bg-white/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide hover:bg-white/25"
           >
             {t('desk_add_new')}

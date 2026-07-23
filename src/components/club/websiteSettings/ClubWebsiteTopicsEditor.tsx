@@ -21,7 +21,14 @@ import ClubWebsiteLastUpdatePicker, {
   LEGACY_FIELD_CLASS,
 } from '@/components/club/websiteSettings/ClubWebsiteLastUpdatePicker';
 import ClubWebsiteTopicSettingsFormModal from '@/components/club/websiteSettings/ClubWebsiteTopicSettingsFormModal';
-import { topicToSettingsFormItem } from '@/lib/clubWebsiteTopics';
+import ClubWebsiteTopicLinkActivated, {
+  topicDirectLinkActivated,
+} from '@/components/club/websiteSettings/ClubWebsiteTopicLinkActivated';
+import {
+  canClubWebsiteTopicHaveSubtopics,
+  isClubWebsiteTopicSubtopic,
+  topicToSettingsFormItem,
+} from '@/lib/clubWebsiteTopics';
 
 const CKEditorComponent = dynamic(() => import('@/components/news/CKEditor'), { ssr: false });
 
@@ -46,7 +53,7 @@ export default function ClubWebsiteTopicsEditor({
 }) {
   const { t } = useLanguage();
   const { topics: topicsApi } = useClubWebsiteSettingsSidebar();
-  const { topics, hydrated, addTopic, updateTopic, removeTopic } = topicsApi;
+  const { topics, hydrated, addTopic, addSubtopicUnder, updateTopic, removeTopic } = topicsApi;
 
   const [selectedId, setSelectedId] = useState<string | null>(initialTopicId ?? null);
   const [activeLang, setActiveLang] = useState<ClubWebsiteLanguageCode>('en');
@@ -151,11 +158,37 @@ export default function ClubWebsiteTopicsEditor({
                 style={{ color: selected.titleColor }}
               />
               <div className="flex shrink-0 items-center border-l border-white/25">
+                <label
+                  className="flex cursor-pointer items-center gap-1 px-2 py-1.5 opacity-90 hover:opacity-100"
+                  title={t('club_topic_color_banner')}
+                >
+                  <span className="sr-only">{t('club_topic_color_banner')}</span>
+                  <input
+                    type="color"
+                    value={selected.bannerColor}
+                    onChange={(e) => patchSelected({ bannerColor: e.target.value })}
+                    className="h-6 w-7 cursor-pointer border border-white/40 bg-transparent p-0"
+                    aria-label={t('club_topic_color_banner')}
+                  />
+                </label>
+                <label
+                  className="flex cursor-pointer items-center gap-1 border-l border-white/25 px-2 py-1.5 opacity-90 hover:opacity-100"
+                  title={t('club_topic_color_title')}
+                >
+                  <span className="sr-only">{t('club_topic_color_title')}</span>
+                  <input
+                    type="color"
+                    value={selected.titleColor}
+                    onChange={(e) => patchSelected({ titleColor: e.target.value })}
+                    className="h-6 w-7 cursor-pointer border border-white/40 bg-transparent p-0"
+                    aria-label={t('club_topic_color_title')}
+                  />
+                </label>
                 <a
                   href={clubWebsiteTopicDisplayUrl(selected.id, activeLang)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-2 opacity-90 hover:opacity-100"
+                  className="border-l border-white/25 px-3 py-2 opacity-90 hover:opacity-100"
                   style={{ color: selected.titleColor }}
                   aria-label={t('club_topic_preview_members_aria')}
                   title={t('club_topic_preview_members_aria')}
@@ -202,6 +235,13 @@ export default function ClubWebsiteTopicsEditor({
                   className={`${LEGACY_FIELD_CLASS} w-48`}
                 />
               </div>
+              <ClubWebsiteTopicLinkActivated
+                activated={topicDirectLinkActivated(
+                  selected.contentDisplayMode,
+                  selected.externalUrl
+                )}
+                url={selected.externalUrl}
+              />
               <ClubWebsiteLastUpdatePicker
                 value={selected.lastUpdate}
                 onChange={(v) => patchSelected({ lastUpdate: v })}
@@ -259,8 +299,19 @@ export default function ClubWebsiteTopicsEditor({
             <ClubWebsiteTopicSettingsFormModal
               item={topicToSettingsFormItem(selected)}
               open={settingsOpen}
+              variant={isClubWebsiteTopicSubtopic(selected) ? 'subtopic' : 'topic'}
               onClose={() => setSettingsOpen(false)}
               onSave={(patch) => patchSelected(patch)}
+              showAddSubtopic={canClubWebsiteTopicHaveSubtopics(selected)}
+              onAddSubtopic={() => {
+                const subName = window.prompt(t('club_topic_subtopic_prompt'));
+                if (!subName?.trim()) return;
+                const created = addSubtopicUnder(selected.id, subName.trim());
+                if (created) {
+                  setSelectedId(created.id);
+                  setSettingsOpen(false);
+                }
+              }}
             />
           </>
         )}

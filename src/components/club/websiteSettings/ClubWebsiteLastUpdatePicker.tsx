@@ -37,11 +37,15 @@ function parseInputValue(value: string): Date | null {
 export default function ClubWebsiteLastUpdatePicker({
   value,
   onChange,
+  label,
 }: {
   value: string;
   onChange: (value: string) => void;
+  /** Override default "Last Update" label (e.g. "Updated on"). */
+  label?: string;
 }) {
   const { t } = useLanguage();
+  const labelText = label ?? t('club_website_last_update_label');
   const [open, setOpen] = useState(false);
   const parsed = parseInputValue(value);
   const [viewDate, setViewDate] = useState(() => parsed ?? new Date());
@@ -75,12 +79,12 @@ export default function ClubWebsiteLastUpdatePicker({
 
   return (
     <div className="relative flex items-center gap-1.5">
-      <span className="text-sm text-zinc-800">{t('club_website_last_update_label')}</span>
+      <span className="text-sm text-zinc-800">{labelText}</span>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex h-8 w-8 items-center justify-center border border-zinc-400 bg-[#f0f0f0] text-zinc-700 hover:bg-zinc-200"
-        aria-label={t('club_website_last_update_label')}
+        aria-label={labelText}
         aria-expanded={open}
       >
         <Calendar className="h-4 w-4" />
@@ -89,14 +93,14 @@ export default function ClubWebsiteLastUpdatePicker({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={t('club_website_last_update_label')}
+        placeholder={labelText}
         className={LEGACY_FIELD_CLASS}
       />
       {open ? (
         <div
           className="absolute right-0 top-full z-30 mt-1 w-[17rem] border border-zinc-400 bg-white shadow-lg"
           role="dialog"
-          aria-label={t('club_website_last_update_label')}
+          aria-label={labelText}
         >
           <div className="flex items-center justify-between border-b border-zinc-300 bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-800">
             <button

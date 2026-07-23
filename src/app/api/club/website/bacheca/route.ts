@@ -12,7 +12,9 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-function parseLabelBody(body: unknown): Pick<BachecaLabel, 'id' | 'name' | 'activated' | 'content'> | null {
+function parseLabelBody(
+  body: unknown,
+): Pick<BachecaLabel, 'id' | 'name' | 'activated' | 'content' | 'updatedOn'> | null {
   if (!body || typeof body !== 'object') return null;
   const data = body as Record<string, unknown>;
   if (typeof data.id !== 'string' || !data.id.trim()) return null;
@@ -24,6 +26,7 @@ function parseLabelBody(body: unknown): Pick<BachecaLabel, 'id' | 'name' | 'acti
     name: data.name,
     activated: data.activated,
     content: data.content,
+    updatedOn: typeof data.updatedOn === 'string' ? data.updatedOn : '',
   };
 }
 

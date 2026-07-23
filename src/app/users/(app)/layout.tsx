@@ -11,17 +11,23 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useMyPageData } from '../../my-page/hooks/useMyPageData';
 import { useMyPageHandlers } from '../../my-page/hooks/useMyPageHandlers';
 import { isClubAccountUserType } from '@/utils/dashboardRouting';
+import { writeClubWorkspaceTab } from '@/lib/club/clubWorkspaceTab';
 
 export default function UsersAppLayout({ children }: { children: React.ReactNode }) {
-  const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>('my-entity');
   const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const isNetworkSearchList = pathname?.includes('/users/searchList') ?? false;
+  const isMyPageTopicsRoute = pathname?.startsWith('/users/my_topics') ?? false;
   const isSelfContainedDeskRoute =
     pathname === '/users/my_desk' ||
     pathname === '/users/my_desk_list' ||
-    pathname === '/users/add_new_mydesk';
+    pathname === '/users/add_new_mydesk' ||
+    pathname === '/users/club_desk' ||
+    pathname === '/users/club_desk_list';
+  const [activeTab, setActiveTab] = useState<'my-page' | 'my-entity'>(
+    isMyPageTopicsRoute ? 'my-page' : 'my-entity',
+  );
 
   const { clubs, groups, teams, coachingGroups } = useMyPageData(user);
   const {
@@ -37,6 +43,13 @@ export default function UsersAppLayout({ children }: { children: React.ReactNode
       router.push('/');
     }
   }, [user, loading, router]);
+
+  /** My Topics settings/display opened from My Page must keep the My Page section active. */
+  useEffect(() => {
+    if (!isMyPageTopicsRoute) return;
+    setActiveTab('my-page');
+    writeClubWorkspaceTab('my-page');
+  }, [isMyPageTopicsRoute]);
 
   if (isSelfContainedDeskRoute) {
     return <>{children}</>;
@@ -124,7 +137,11 @@ export default function UsersAppLayout({ children }: { children: React.ReactNode
               variant={isClubAccountUserType(user?.userType || '') ? 'club' : 'user'}
             />
           ) : (
-            <RightSidebar context="my-club" onAddMember={() => true} />
+            <RightSidebar
+              context={isMyPageTopicsRoute || activeTab === 'my-page' ? 'my-page' : 'my-club'}
+              activeTab={activeTab}
+              onAddMember={() => true}
+            />
           )}
         </div>
         <SimpleFooter />
