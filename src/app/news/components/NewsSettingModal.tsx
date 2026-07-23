@@ -54,6 +54,8 @@ interface NewsSettingModalProps {
     languages: Option[];
     sports: Option[];
   } | null;
+  /** Modal heading; defaults to "News Setting". Music section passes "Music Setting". */
+  title?: string;
 }
 
 export default function NewsSettingModal({
@@ -63,6 +65,7 @@ export default function NewsSettingModal({
   onSave,
   onDeleteSettings,
   options,
+  title = 'News Setting',
 }: NewsSettingModalProps) {
   const [userTypes, setUserTypes] = useState<string[]>([]);
   const [countries, setCountries] = useState<string[]>([]);
@@ -154,7 +157,7 @@ export default function NewsSettingModal({
       >
         <div className="flex justify-between items-center p-4 border-b border-gray-200">
           <h2 id="news-setting-title" className="text-lg font-semibold text-gray-900">
-            News Setting
+            {title}
           </h2>
           <div className="flex items-center gap-2">
             {onDeleteSettings && (

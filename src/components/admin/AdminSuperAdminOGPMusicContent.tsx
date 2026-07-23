@@ -4,24 +4,78 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
 import { useNewsData } from '@/hooks/useNewsData';
-import NewsTopicBar, { type NewsTopic, ALL_TOPICS, ALL_USER_SECTORS, ALL_SUPER_ADMIN } from '@/app/news/components/NewsTopicBar';
+import NewsTopicBar, { type NewsTopic, ALL_TOPICS, ALL_SUPER_ADMIN } from '@/app/news/components/NewsTopicBar';
 import NewTopicModal from '@/app/news/components/NewTopicModal';
 import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
 import OGPForm from '@/app/news/components/OGPForm';
 import NewsArticlesList from '@/app/news/components/NewsArticlesList';
 
-export interface AdminSuperAdminOGPNewsContentProps {
+/** Music has no built-in default topics; users add their own via "Add topic". */
+const MUSIC_TOPICS = [] as const;
+
+const MUSIC_API_BASE = '/api/music';
+
+function buildTopicGenresFromArticles(
+  articles: { topic?: string; genre?: string | null }[],
+  topics: string[]
+): Record<string, string[]> {
+  const map: Record<string, Set<string>> = {};
+  for (const topic of topics) map[topic] = new Set();
+  for (const a of articles) {
+    const g = typeof a.genre === 'string' ? a.genre.trim() : '';
+    if (!g || !a.topic) continue;
+    if (!map[a.topic]) map[a.topic] = new Set();
+    map[a.topic].add(g);
+  }
+  const result: Record<string, string[]> = {};
+  for (const [topic, set] of Object.entries(map)) {
+    if (set.size > 0) result[topic] = Array.from(set);
+  }
+  return result;
+}
+
+function applySavedGenreOrderForTopics(
+  topics: string[],
+  topicGenres: Record<string, string[]>,
+  savedOrder: Record<string, string[]>,
+  hiddenTopics: string[] = [],
+  hiddenGenres: Record<string, string[]> = {}
+): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const topic of topics) {
+    if (hiddenTopics.includes(topic)) continue;
+    const genres = topicGenres[topic] ?? [];
+    if (genres.length === 0) continue;
+    const saved = savedOrder[topic] ?? [];
+    const ordered = saved.filter((g) => genres.includes(g));
+    for (const g of genres) {
+      if (!ordered.includes(g)) ordered.push(g);
+    }
+    const topicHiddenGenres = new Set(hiddenGenres[topic] ?? []);
+    for (const g of ordered) {
+      if (topicHiddenGenres.has(g)) continue;
+      if (!seen.has(g)) {
+        seen.add(g);
+        result.push(g);
+      }
+    }
+  }
+  return result;
+}
+
+export interface AdminSuperAdminOGPMusicContentProps {
   /** Target for the header close (X) link — default returns to admin home without query params */
   closeHref?: string;
 }
 
 /**
- * Superadmin OGP / News admin UI (same as /admin/news/links).
- * Used on /admin/news/links.
+ * Superadmin OGP / Music admin UI.
+ * Embedded on /admin/dashboard when opened from Music → Music Tracked.
  */
-export default function AdminSuperAdminOGPNewsContent({
+export default function AdminSuperAdminOGPMusicContent({
   closeHref = '/admin/dashboard',
-}: AdminSuperAdminOGPNewsContentProps) {
+}: AdminSuperAdminOGPMusicContentProps) {
   const router = useRouter();
   const [adminUser, setAdminUser] = useState<{ id: string; name?: string } | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -30,6 +84,7 @@ export default function AdminSuperAdminOGPNewsContent({
   const [viewAsUsername, setViewAsUsername] = useState<string | null>(null);
   const topicBeforeViewAsRef = useRef<NewsTopic | null>(null);
   const [activeTopic, setActiveTopic] = useState<NewsTopic | null>(null);
+  const [activeMusicalGenre, setActiveMusicalGenre] = useState<string | null>(null);
 
   const {
     topics,
@@ -37,7 +92,6 @@ export default function AdminSuperAdminOGPNewsContent({
     topicNamesCreatedByNormalUsers,
     userInsertedTopics,
     pastedArticles,
-    ogpNewsGroups,
     typedArticles,
     viewAsUserId,
     viewAsUserCountry,
@@ -45,7 +99,9 @@ export default function AdminSuperAdminOGPNewsContent({
     error,
     refresh,
     saveTopicOrder,
+    topicGenreOrder,
     hiddenTopics,
+    hiddenGenres,
     addTopic,
     updateTopic,
     deleteTopic,
@@ -53,15 +109,69 @@ export default function AdminSuperAdminOGPNewsContent({
     removePastedArticle,
     updatePastedArticleSettings,
     updatePastedArticleTopic,
-    saveOgpNewsGroup,
-    removeOgpNewsGroup,
-    updateOgpNewsGroup,
-    updateOgpNewsGroupSettings,
     addTypedArticle,
     removeTypedArticle,
-  } = useNewsData({ adminContext: true, viewAsUsername });
+  } = useNewsData({
+    adminContext: true,
+    viewAsUsername,
+    apiBase: MUSIC_API_BASE,
+    defaultTopics: MUSIC_TOPICS,
+  });
 
   const prevLoading = useRef(true);
+
+  const getAuthHeaders = useCallback((): HeadersInit => {
+    if (typeof window === 'undefined') return {};
+    const token = localStorage.getItem('adminToken');
+    if (!token) return {};
+    return { Authorization: `Bearer ${token}` };
+  }, []);
+
+  const [musicalGenres, setMusicalGenres] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!adminUser?.id) {
+      setMusicalGenres([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${MUSIC_API_BASE}/genres`, { headers: getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : { genres: [] }))
+      .then((data) => {
+        if (!cancelled) setMusicalGenres(Array.isArray(data.genres) ? data.genres : []);
+      })
+      .catch(() => {
+        if (!cancelled) setMusicalGenres([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [adminUser?.id, getAuthHeaders]);
+
+  const rememberMusicalGenre = useCallback(
+    async (genre: string | null | undefined) => {
+      const name = typeof genre === 'string' ? genre.trim() : '';
+      if (!name) return;
+      try {
+        const res = await fetch(`${MUSIC_API_BASE}/genres`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ genre: name }),
+        });
+        if (!res.ok) {
+          setMusicalGenres((prev) => (prev.includes(name) ? prev : [...prev, name]));
+          return;
+        }
+        const data = await res.json();
+        if (Array.isArray(data.genres)) setMusicalGenres(data.genres);
+        else setMusicalGenres((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      } catch (e) {
+        console.error(e);
+        setMusicalGenres((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      }
+    },
+    [getAuthHeaders]
+  );
 
   /** In “see as user” mode, topic bar lists defaults + this user’s custom topics (no dropdown). */
   const topicsForTopicBar = useMemo(() => {
@@ -74,7 +184,30 @@ export default function AdminSuperAdminOGPNewsContent({
     return visible.filter((t) => !insertedByOthers.has(t));
   }, [topics, hiddenTopics, userInsertedTopics, viewAsUsername]);
 
-  // On reload (and whenever data finishes loading): select the first topic so the OGP area shows its OGPs.
+  const topicGenresFromArticles = buildTopicGenresFromArticles(pastedArticles, topics);
+
+  const genresForActiveTopic = useMemo(() => {
+    if (activeTopic && activeTopic !== ALL_TOPICS && activeTopic !== ALL_SUPER_ADMIN) {
+      if (hiddenTopics.includes(activeTopic)) return [];
+      const fromArticles = new Set(topicGenresFromArticles[activeTopic] ?? []);
+      const saved = topicGenreOrder[activeTopic] ?? [];
+      const ordered = saved.filter((g) => fromArticles.has(g));
+      for (const g of fromArticles) {
+        if (!ordered.includes(g)) ordered.push(g);
+      }
+      const topicHiddenGenres = new Set(hiddenGenres[activeTopic] ?? []);
+      return ordered.filter((g) => !topicHiddenGenres.has(g));
+    }
+
+    return applySavedGenreOrderForTopics(
+      topics,
+      topicGenresFromArticles,
+      topicGenreOrder,
+      hiddenTopics,
+      hiddenGenres
+    );
+  }, [activeTopic, hiddenTopics, topicGenresFromArticles, topicGenreOrder, hiddenGenres, topics]);
+
   useEffect(() => {
     if (prevLoading.current && !loading && topics.length > 0 && !viewAsUsername) {
       setActiveTopic(topics[0]);
@@ -82,11 +215,19 @@ export default function AdminSuperAdminOGPNewsContent({
     prevLoading.current = loading;
   }, [loading, topics, viewAsUsername]);
 
+  useEffect(() => {
+    if (!activeMusicalGenre) return;
+    if (!genresForActiveTopic.includes(activeMusicalGenre)) {
+      setActiveMusicalGenre(null);
+    }
+  }, [activeMusicalGenre, genresForActiveTopic]);
+
   const handleSuperAdminViewAsUser = useCallback(
     (username: string) => {
       topicBeforeViewAsRef.current = activeTopic;
       setViewAsUsername(username.trim());
       setActiveTopic(ALL_TOPICS);
+      setActiveMusicalGenre(null);
     },
     [activeTopic]
   );
@@ -96,6 +237,7 @@ export default function AdminSuperAdminOGPNewsContent({
     const prev = topicBeforeViewAsRef.current;
     topicBeforeViewAsRef.current = null;
     setActiveTopic(prev ?? ALL_SUPER_ADMIN);
+    setActiveMusicalGenre(null);
   }, []);
 
   useEffect(() => {
@@ -149,6 +291,20 @@ export default function AdminSuperAdminOGPNewsContent({
   const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
   const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [putInFavourites, setPutInFavourites] = useState(false);
+
+  const handleTopicSelect = useCallback((topic: NewsTopic) => {
+    setActiveTopic(topic);
+    setActiveMusicalGenre(null);
+  }, []);
+
+  const handleMusicalGenreSelect = useCallback((genre: string | null) => {
+    setActiveMusicalGenre(genre);
+  }, []);
+
+  const handleMusicalGenreChipSelect = useCallback((genre: string) => {
+    setActiveMusicalGenre((prev) => (prev === genre ? null : genre));
+  }, []);
 
   const handleOpenTopicModal = useCallback(() => {
     setTopicModalEditing(activeTopic ?? null);
@@ -254,29 +410,36 @@ export default function AdminSuperAdminOGPNewsContent({
   const handlePastedArticle = useCallback(
     async (data: Parameters<Parameters<typeof OGPForm>[0]['onPastedArticle']>[0]) => {
       try {
-        const targetTopic =
-          activeTopic === ALL_TOPICS || activeTopic === ALL_USER_SECTORS || activeTopic === ALL_SUPER_ADMIN
-            ? 'News'
-            : (activeTopic ?? 'News');
-        await addPastedArticle(data, targetTopic);
+        if (
+          !activeTopic ||
+          activeTopic === ALL_TOPICS ||
+          activeTopic === ALL_SUPER_ADMIN
+        ) {
+          throw new Error('Select a topic before adding music');
+        }
+        await addPastedArticle(data, activeTopic);
+        await rememberMusicalGenre(data.musicalGenre);
         setShowOgpForm(false);
+        setPutInFavourites(false);
       } catch (e) {
         console.error(e);
       }
     },
-    [activeTopic, addPastedArticle]
+    [activeTopic, addPastedArticle, rememberMusicalGenre]
   );
 
   const handleSaveTyped = useCallback(
-    async (description: string) => {
+    async (description: string, musicalGenre?: string | null) => {
       try {
         await addTypedArticle(description);
+        await rememberMusicalGenre(musicalGenre);
         setShowOgpForm(false);
+        setPutInFavourites(false);
       } catch (e) {
         console.error(e);
       }
     },
-    [addTypedArticle]
+    [addTypedArticle, rememberMusicalGenre]
   );
 
   if (!authChecked || !adminUser) {
@@ -290,7 +453,7 @@ export default function AdminSuperAdminOGPNewsContent({
           {viewAsUsername ? (
             <>
               <h1 className="text-lg font-semibold text-gray-900 flex-1 min-w-0">
-                News visible by user <span className="text-pink-600">{viewAsUsername}</span>
+                Music visible by user <span className="text-pink-600">{viewAsUsername}</span>
               </h1>
               <button
                 type="button"
@@ -301,7 +464,7 @@ export default function AdminSuperAdminOGPNewsContent({
               </button>
             </>
           ) : (
-            <h1 className="text-lg font-semibold text-gray-900">News</h1>
+            <h1 className="text-lg font-semibold text-gray-900">Music</h1>
           )}
           <a
             href={closeHref}
@@ -313,13 +476,13 @@ export default function AdminSuperAdminOGPNewsContent({
         </div>
 
         <div className="p-4">
-          {loading && <p className="text-sm text-gray-500 mb-2">Loading news...</p>}
+          {loading && <p className="text-sm text-gray-500 mb-2">Loading music...</p>}
           {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
 
           <NewsTopicBar
             topics={topicsForTopicBar}
             activeTopic={activeTopic}
-            onTopicSelect={setActiveTopic}
+            onTopicSelect={handleTopicSelect}
             onAddNewTopic={handleOpenTopicModal}
             onAddTopic={handleOpenAddTopicModal}
             isExpanded={isExpanded}
@@ -331,6 +494,10 @@ export default function AdminSuperAdminOGPNewsContent({
             showSuperAdminAllButton={isSuperAdmin && !viewAsUsername}
             hideUserInsertedDropdown={!!viewAsUsername}
             disableTopicManagement={!!viewAsUsername}
+            defaultTopicNames={MUSIC_TOPICS}
+            musicalGenres={genresForActiveTopic}
+            activeMusicalGenre={activeMusicalGenre}
+            onMusicalGenreSelect={handleMusicalGenreChipSelect}
           />
 
           <NewTopicModal
@@ -354,34 +521,54 @@ export default function AdminSuperAdminOGPNewsContent({
                 ? topics.filter((t) => !topicNamesCreatedByNormalUsers.includes(t))
                 : topics
             }
+            topicGenres={topicGenresFromArticles}
+            savedGenreOrder={topicGenreOrder}
             savedHiddenTopics={hiddenTopics}
-            onSave={async (ordered, _genreOrder, hidden) => {
-              await saveTopicOrder(ordered, undefined, hidden);
+            savedHiddenGenres={hiddenGenres}
+            onSave={async (ordered, genreOrder, hidden) => {
+              await saveTopicOrder(ordered, genreOrder, hidden);
             }}
             isSuperAdmin={isSuperAdmin}
             onAfterDeleteOgNews={refresh}
+            apiBase={MUSIC_API_BASE}
           />
 
           {showOgpForm && (
             <div
               className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-              onClick={() => setShowOgpForm(false)}
+              onClick={() => {
+                setShowOgpForm(false);
+                setPutInFavourites(false);
+              }}
               role="dialog"
               aria-modal="true"
-              aria-labelledby="ogp-modal-title"
+              aria-labelledby="music-ogp-modal-title"
             >
               <div
                 className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => e.key === 'Escape' && setShowOgpForm(false)}
               >
-                <div className="flex justify-between items-center p-4 border-b border-gray-200 sticky top-0 bg-white rounded-t-xl">
-                  <h2 id="ogp-modal-title" className="text-lg font-semibold text-gray-900">
-                    Add article
+                <div className="flex justify-between items-center p-4 border-b border-gray-200 sticky top-0 bg-white rounded-t-xl gap-3">
+                  <h2 id="music-ogp-modal-title" className="text-lg font-semibold text-gray-900">
+                    Add Music
                   </h2>
+                  <label className="ml-auto inline-flex items-center gap-2 text-sm text-gray-800 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={putInFavourites}
+                      onChange={(e) => setPutInFavourites(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      aria-label="Put in my favourites"
+                    />
+                    <span>Put in my favourites</span>
+                  </label>
                   <button
                     type="button"
-                    onClick={() => setShowOgpForm(false)}
+                    onClick={() => {
+                      setShowOgpForm(false);
+                      setPutInFavourites(false);
+                    }}
                     className="p-1 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
                     aria-label="Close"
                   >
@@ -390,9 +577,13 @@ export default function AdminSuperAdminOGPNewsContent({
                 </div>
                 <div className="p-6">
                   <OGPForm
+                    variant="music"
                     onPastedArticle={handlePastedArticle}
                     onSaveTyped={handleSaveTyped}
-                    onCancel={() => setShowOgpForm(false)}
+                    onCancel={() => {
+                      setShowOgpForm(false);
+                      setPutInFavourites(false);
+                    }}
                   />
                 </div>
               </div>
@@ -413,7 +604,9 @@ export default function AdminSuperAdminOGPNewsContent({
             onUpdatePastedTopic={handleUpdatePastedTopic}
             onAddClick={viewAsUsername ? undefined : () => setShowOgpForm((prev) => !prev)}
             addButtonDisabled={
-              activeTopic === ALL_TOPICS || activeTopic === ALL_USER_SECTORS || activeTopic === ALL_SUPER_ADMIN
+              !activeTopic ||
+              activeTopic === ALL_TOPICS ||
+              activeTopic === ALL_SUPER_ADMIN
             }
             adminContext={true}
             isSuperAdmin={isSuperAdmin}
@@ -423,12 +616,10 @@ export default function AdminSuperAdminOGPNewsContent({
             hideCreatorUsernameInHeading={!!viewAsUsername}
             showOnlyMyOgNewsLabelUsername={viewAsUsername}
             viewerScopedOgpList={!!viewAsUsername}
-            ogpNewsGroups={ogpNewsGroups}
-            onSaveOgpNewsGroup={viewAsUsername ? undefined : saveOgpNewsGroup}
-            onRemoveOgpNewsGroup={viewAsUsername ? undefined : removeOgpNewsGroup}
-            onUpdateOgpNewsGroup={viewAsUsername ? undefined : updateOgpNewsGroup}
-            onUpdateOgpNewsGroupSettings={viewAsUsername ? undefined : updateOgpNewsGroupSettings}
-            superAdminReadOnlyOgpActions={!!viewAsUsername}
+            apiBase={MUSIC_API_BASE}
+            musicalGenresForFilter={genresForActiveTopic}
+            activeMusicalGenre={activeMusicalGenre}
+            onMusicalGenreSelect={handleMusicalGenreSelect}
           />
         </div>
       </div>
