@@ -165,7 +165,7 @@ function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
 }
 
 type ClubAdminInsertItem =
-  | { kind: 'icon'; Icon: LucideIcon; label: string }
+  | { kind: 'icon'; Icon: LucideIcon; label: string; path?: string }
   | { kind: 'affiliate'; label: string }
   | { kind: 'assignAlert'; label: string }
   | { kind: 'recordAlert'; label: string };
@@ -178,18 +178,18 @@ const CLUB_ADMIN_INSERT_NEW_ITEM_GROUPS: ClubAdminInsertItem[][] = [
   [
     { kind: 'icon', Icon: Contact2, label: 'New subscription to the Club' },
     { kind: 'icon', Icon: Timer, label: 'Quick renew subscription' },
-    { kind: 'icon', Icon: CheckCircle, label: 'Payment of deadlines' },
+    { kind: 'icon', Icon: CheckCircle, label: 'Payment of deadlines', path: '/clubs/dead_line' },
   ],
   [
-    { kind: 'icon', Icon: ShoppingCart, label: 'Sell products' },
-    { kind: 'icon', Icon: Hourglass, label: 'Payment other deadlines' },
+    { kind: 'icon', Icon: ShoppingCart, label: 'Sell products', path: '/ArchiveSeles/new_product_sale' },
+    { kind: 'icon', Icon: Hourglass, label: 'Payment other deadlines', path: '/clubs/member_debt_dead_line' },
   ],
   [
     { kind: 'icon', Icon: Award, label: 'Add a new credit' },
-    { kind: 'icon', Icon: Hourglass, label: 'Insert a new debit' },
+    { kind: 'icon', Icon: Hourglass, label: 'Insert a new debit', path: '/clubMembers/debt_member' },
   ],
   [
-    { kind: 'icon', Icon: ArrowUpRight, label: 'Payment expenses' },
+    { kind: 'icon', Icon: ArrowUpRight, label: 'Payment expenses', path: '/clubs/expense_dead_line' },
     { kind: 'icon', Icon: ArrowUpRight, label: 'Pay a member' },
   ],
   [
@@ -273,13 +273,15 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: FileText, label: 'Archive of Services', path: '/clubs/archive_service_list' },
     { kind: 'icon', Icon: Receipt, label: 'Member expenses', path: '/clubs/new_expense' },
     { kind: 'icon', Icon: FileStack, label: 'Archive of Expenses', path: '/clubs/archive_expense_list' },
+    { kind: 'icon', Icon: Hourglass, label: 'Insert a new debit', path: '/clubMembers/debt_member' },
+    { kind: 'icon', Icon: FileStack, label: 'Archive of Member Debts', path: '/clubMembers/debt_member_list' },
   ],
   [
     { kind: 'icon', Icon: CornerDownLeft, label: 'Cash In', path: '/clubs/movement_cash_details/IN' },
     { kind: 'icon', Icon: CornerDownRight, label: 'Cash Out', path: '/clubs/movement_cash_details/OUT' },
     { kind: 'icon', Icon: Repeat2, label: 'Cash (all movements)', path: '/clubs/movement_cash_details' },
   ],
-  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubs/service_receipts' }],
+  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubMembers/movement_cash' }],
   [
     { kind: 'icon', Icon: FileStack, label: 'Cards assignments', path: '/clubs/cards_assignments' },
     { kind: 'icon', Icon: FileWarning, label: 'Alert assigned', path: '/clubs/alerts_assigned' },
@@ -3612,6 +3614,15 @@ export default function DarkSidebar({
                                       <button
                                         key={item.label}
                                         type="button"
+                                        onClick={() => {
+                                          if (item.kind === 'icon' && item.path) {
+                                            if (isClubAccountUserType(userType)) {
+                                              writeClubWorkspaceTab('my-entity');
+                                              setCurrentTab('my-entity');
+                                            }
+                                            router.push(item.path);
+                                          }
+                                        }}
                                         className={`flex w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[11px] font-medium text-white transition-colors hover:bg-[#333] ${
                                           ii < group.length - 1
                                             ? 'border-b border-gray-600/50'

@@ -72,13 +72,28 @@ function receiptMemberName(
 }
 
 async function loadUserNames(ids: string[]): Promise<Map<string, string>> {
+  const profiles = await loadUserProfiles(ids);
+  return new Map(Array.from(profiles.entries()).map(([id, p]) => [id, p.name]));
+}
+
+async function loadUserProfiles(
+  ids: string[]
+): Promise<Map<string, { name: string; image: string | null }>> {
   const unique = Array.from(new Set(ids.filter(Boolean) as string[]));
   if (unique.length === 0) return new Map();
   const users = await prisma.user.findMany({
     where: { id: { in: unique } },
-    select: { id: true, firstName: true, surname: true, name: true, username: true },
+    select: { id: true, firstName: true, surname: true, name: true, username: true, image: true },
   });
-  return new Map(users.map((u) => [u.id, formatUserName(u)]));
+  return new Map(
+    users.map((u) => [
+      u.id,
+      {
+        name: formatUserName(u),
+        image: u.image?.trim() || null,
+      },
+    ])
+  );
 }
 
 async function getLegacyUserId(userId: string): Promise<string | null> {
@@ -575,7 +590,7 @@ export class ProcedureService {
       }),
     ]);
 
-    const nameById = await loadUserNames(
+    const profileById = await loadUserProfiles(
       rows.flatMap((r) => [r.memberId, r.operatorId].filter(Boolean) as string[])
     );
 
@@ -584,9 +599,10 @@ export class ProcedureService {
       procedureTypeCode,
       clubId: row.clubId,
       memberId: row.memberId,
-      memberName: nameById.get(row.memberId) ?? row.memberId,
+      memberName: profileById.get(row.memberId)?.name ?? row.memberId,
+      memberImage: profileById.get(row.memberId)?.image ?? null,
       operatorId: row.operatorId,
-      operatorName: row.operatorId ? nameById.get(row.operatorId) ?? '-' : '-',
+      operatorName: row.operatorId ? profileById.get(row.operatorId)?.name ?? '-' : '-',
       totalAmount: decimalToNumber(row.totalAmount),
       paidAmount: decimalToNumber(row.paidAmount),
       balanceAmount: decimalToNumber(row.balanceAmount),

@@ -93,6 +93,6 @@
         "ts-node": "^10.9.2"
     },
     "optionalDependencies": {
-        "@next/swc-win32-x64-msvc": "npm:null@*"
+        "@next/swc-win32-x64-msvc": "^14.2.33"
     }
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import ClubArchivePage from '@/components/club/archives/ClubArchivePage';
+import CashMovementsArchive from '@/components/club/archives/CashMovementsArchive';
 import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
 import EditCashMovementModal from '@/components/club/archives/EditCashMovementModal';
 import { deleteCashMovement } from '@/lib/club/cashMovementClient';
@@ -13,7 +13,6 @@ const columns: Column[] = [
   { key: 'service', header: 'Service / Expense' },
   { key: 'insertDate', header: 'Date' },
   { key: 'paid', header: 'Amount' },
-  { key: 'direction', header: 'IN\\OUT' },
   { key: 'payMod', header: 'Pay mode' },
   { key: 'operator', header: 'Operator' },
   { key: 'casual', header: 'Notes' },
@@ -27,7 +26,9 @@ export default function MovementCashOutPage() {
   const [deleteTarget, setDeleteTarget] = useState<Member | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  function reload() { setRefreshKey((k) => k + 1); }
+  function reload() {
+    setRefreshKey((k) => k + 1);
+  }
 
   async function performDelete() {
     if (!deleteTarget?.id) return;
@@ -37,17 +38,17 @@ export default function MovementCashOutPage() {
   }
 
   return (
-    <div className="p-4">
-      <ClubArchivePage
-        key={refreshKey}
+    <div className="p-4" key={refreshKey}>
+      <CashMovementsArchive
         title="Cash Out"
-        archiveType="cash-movements"
         direction="OUT"
         columns={columns}
-        footerHint="Outgoing payments from member expense procedures."
-        emptyMessage="No cash out movements yet."
+        footerHint="Select a payment row, then use Details deadline or Totals about payments."
         onEditItem={setEditTarget}
-        onDeleteItem={(item) => { setDeleteTarget(item); setShowDeleteModal(true); }}
+        onDeleteItem={(item) => {
+          setDeleteTarget(item);
+          setShowDeleteModal(true);
+        }}
       />
 
       <EditCashMovementModal
@@ -64,8 +65,14 @@ export default function MovementCashOutPage() {
 
       <AdminPasswordConfirmModal
         isOpen={showDeleteModal}
-        onClose={() => { setShowDeleteModal(false); setDeleteTarget(null); }}
-        onVerified={() => { setShowDeleteModal(false); void performDelete(); }}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setDeleteTarget(null);
+        }}
+        onVerified={() => {
+          setShowDeleteModal(false);
+          void performDelete();
+        }}
       />
     </div>
   );
