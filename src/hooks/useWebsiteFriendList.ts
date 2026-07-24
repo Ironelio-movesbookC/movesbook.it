@@ -5,7 +5,7 @@ import {
   applyFriendItemActivation,
   canFriendItemHaveSubtopics,
   createClubWebsiteFriendItem,
-  defaultClubWebsiteFriendItems,
+  defaultWebsiteFriendItems,
   insertFriendItem,
   loadWebsiteFriendItems,
   reorderFriendItems,
@@ -19,12 +19,14 @@ export function useWebsiteFriendList(
   scope: WebsiteFriendListScope,
   ownerId: string | undefined
 ) {
-  const [items, setItems] = useState<ClubWebsiteFriendItem[]>(() => defaultClubWebsiteFriendItems());
+  const [items, setItems] = useState<ClubWebsiteFriendItem[]>(() =>
+    defaultWebsiteFriendItems(scope)
+  );
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     if (!ownerId) {
-      setItems(defaultClubWebsiteFriendItems());
+      setItems(defaultWebsiteFriendItems(scope));
       setHydrated(true);
       return;
     }
@@ -133,7 +135,7 @@ export function useWebsiteFriendList(
 
   const reload = useCallback(() => {
     if (!ownerId) {
-      setItems(defaultClubWebsiteFriendItems());
+      setItems(defaultWebsiteFriendItems(scope));
       return;
     }
     setItems(loadWebsiteFriendItems(scope, ownerId));

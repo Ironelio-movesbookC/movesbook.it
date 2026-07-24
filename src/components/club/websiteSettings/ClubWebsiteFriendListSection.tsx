@@ -16,7 +16,9 @@ import {
   getFriendItemSettingsVariant,
 } from '@/lib/clubWebsiteFriendList';
 import {
+  canClubWebsiteTopicHaveSubtopics,
   clearClubWebsiteTopicContent,
+  isClubWebsiteTopicSubtopic,
   topicToSettingsFormItem,
   type ClubWebsiteTopic,
 } from '@/lib/clubWebsiteTopics';
@@ -189,6 +191,7 @@ export default function ClubWebsiteFriendListSection({
   onUpdateItem,
   onEditContent,
   onAddSubtopic,
+  onAddCustomSubtopic,
 }: {
   selectedTopicId: string;
   onSelectTopic: (id: string, label: string) => void;
@@ -214,6 +217,7 @@ export default function ClubWebsiteFriendListSection({
   onUpdateItem: (id: string, patch: Partial<ClubWebsiteFriendItem>) => void;
   onEditContent: (id: string, label: string) => void;
   onAddSubtopic?: (parentId: string, name: string) => void;
+  onAddCustomSubtopic?: (parentId: string, name: string) => void;
 }) {
   const { t } = useLanguage();
   const allRows = useMemo(() => friendItemsToRows(items), [items]);
@@ -225,6 +229,9 @@ export default function ClubWebsiteFriendListSection({
   const [childrenOpen, setChildrenOpen] = useState(true);
   const [segmentOpen, setSegmentOpen] = useState<Record<string, boolean>>(() =>
     initialSegmentOpen(rows)
+  );
+  const [customTopicChildrenOpen, setCustomTopicChildrenOpen] = useState<Record<string, boolean>>(
+    {}
   );
   const [activeToolbarRowId, setActiveToolbarRowId] = useState<string | null>(null);
   const [settingsItemId, setSettingsItemId] = useState<string | null>(null);
@@ -240,6 +247,13 @@ export default function ClubWebsiteFriendListSection({
 
   const toggleSegmentOpen = (peerId: string) => {
     setSegmentOpen((prev) => ({ ...prev, [peerId]: !(prev[peerId] ?? true) }));
+  };
+
+  const toggleCustomTopicChildrenOpen = (topicId: string) => {
+    setCustomTopicChildrenOpen((prev) => ({
+      ...prev,
+      [topicId]: !(prev[topicId] ?? true),
+    }));
   };
 
   const rowsWithStatus = useMemo(
@@ -465,7 +479,7 @@ export default function ClubWebsiteFriendListSection({
         onClick={() => row.label.trim() && onSelectTopic(row.id, row.label)}
         label={
           <span
-            className={`block min-w-0 truncate ${nested ? 'leading-tight' : 'leading-snug'} ${
+            className={`block min-w-0 break-words whitespace-normal ${nested ? 'leading-tight' : 'leading-snug'} ${
               selectedTopicId === row.id && row.label ? 'font-semibold underline' : ''
             }`}
           >
@@ -502,21 +516,35 @@ export default function ClubWebsiteFriendListSection({
       if (entry.kind === 'custom') {
         const topic = customTopicById[entry.id];
         if (!topic) return null;
+        const isSubtopic = isClubWebsiteTopicSubtopic(topic);
+        if (isSubtopic && topic.parentId) {
+          if (!(customTopicChildrenOpen[topic.parentId] ?? true)) return null;
+        }
+        const childTopics = customTopics.filter((child) => child.parentId === topic.id);
+        const hasNested = childTopics.length > 0;
+        const peerOpen = customTopicChildrenOpen[topic.id] ?? true;
         return (
           <FriendListRowShell
             key={`custom-${topic.id}`}
+            size={isSubtopic ? 'nested' : 'default'}
             className="font-medium"
             active={activeToolbarRowId === topic.id}
             onClick={() => onSelectCustomTopic?.(topic.id)}
             label={
               <span
-                className={`block min-w-0 truncate ${selectedTopicId === topic.id ? 'font-bold underline' : ''}`}
+                className={`block min-w-0 break-words whitespace-normal ${selectedTopicId === topic.id ? 'font-bold underline' : ''}`}
               >
                 {topic.name}
               </span>
             }
             trailing={
               <FriendRowStatusZone rowId={topic.id} onActivate={activateToolbar} className="w-[10.5rem] py-0.5">
+                {hasNested && activeToolbarRowId === topic.id ? (
+                  <FriendListExpandChevron
+                    open={peerOpen}
+                    onToggle={() => toggleCustomTopicChildrenOpen(topic.id)}
+                  />
+                ) : null}
                 {!adminMode && topicItemHasDisplayContent(topic) ? (
                   <DisplayDocumentButton onOpen={() => onSelectCustomTopic?.(topic.id)} />
                 ) : null}
@@ -564,7 +592,7 @@ export default function ClubWebsiteFriendListSection({
           }}
           label={
             <span
-              className={`block min-w-0 truncate ${selectedTopicId === row.id ? 'font-semibold underline' : ''}`}
+              className={`block min-w-0 break-words whitespace-normal ${selectedTopicId === row.id ? 'font-semibold underline' : ''}`}
             >
               {rowLabel || '\u00A0'}
             </span>
@@ -614,29 +642,71 @@ export default function ClubWebsiteFriendListSection({
         renderOrderedSectionBody()
       ) : (
         <>
-      {customTopics.map((topic, topicIndex) => (
-        <FriendListRowShell
-          key={topic.id}
-          className="font-medium"
-          active={activeToolbarRowId === topic.id}
-          onClick={() => onSelectCustomTopic?.(topic.id)}
-          label={
-            <span
-              className={`block min-w-0 truncate ${selectedTopicId === topic.id ? 'font-bold underline' : ''}`}
-            >
-              {topic.name}
-            </span>
-          }
-          trailing={
-            <FriendRowStatusZone rowId={topic.id} onActivate={activateToolbar} className="w-[10.5rem] py-0.5">
-              {!adminMode && topicItemHasDisplayContent(topic) ? (
-                <DisplayDocumentButton onOpen={() => onSelectCustomTopic?.(topic.id)} />
+      {customTopics
+        .filter((topic) => !topic.parentId)
+        .map((topic, topicIndex) => {
+          const childTopics = customTopics.filter((child) => child.parentId === topic.id);
+          const hasNested = childTopics.length > 0;
+          const peerOpen = customTopicChildrenOpen[topic.id] ?? true;
+          return (
+            <div key={topic.id} className="w-full">
+              <FriendListRowShell
+                className="font-medium"
+                active={activeToolbarRowId === topic.id}
+                onClick={() => onSelectCustomTopic?.(topic.id)}
+                label={
+                  <span
+                    className={`block min-w-0 break-words whitespace-normal ${selectedTopicId === topic.id ? 'font-bold underline' : ''}`}
+                  >
+                    {topic.name}
+                  </span>
+                }
+                trailing={
+                  <FriendRowStatusZone rowId={topic.id} onActivate={activateToolbar} className="w-[10.5rem] py-0.5">
+                    {hasNested && activeToolbarRowId === topic.id ? (
+                      <FriendListExpandChevron
+                        open={peerOpen}
+                        onToggle={() => toggleCustomTopicChildrenOpen(topic.id)}
+                      />
+                    ) : null}
+                    {!adminMode && topicItemHasDisplayContent(topic) ? (
+                      <DisplayDocumentButton onOpen={() => onSelectCustomTopic?.(topic.id)} />
+                    ) : null}
+                    {renderCustomTopicStatusOrToolbar(topic, topicIndex)}
+                  </FriendRowStatusZone>
+                }
+              />
+              {hasNested && peerOpen ? (
+                <FriendListNestedGroup>
+                  {childTopics.map((child, childIndex) => (
+                    <FriendListRowShell
+                      key={child.id}
+                      size="nested"
+                      className="font-medium"
+                      active={activeToolbarRowId === child.id}
+                      onClick={() => onSelectCustomTopic?.(child.id)}
+                      label={
+                        <span
+                          className={`block min-w-0 break-words whitespace-normal ${selectedTopicId === child.id ? 'font-bold underline' : ''}`}
+                        >
+                          {child.name}
+                        </span>
+                      }
+                      trailing={
+                        <FriendRowStatusZone rowId={child.id} onActivate={activateToolbar} className="w-[10.5rem] py-0.5">
+                          {!adminMode && topicItemHasDisplayContent(child) ? (
+                            <DisplayDocumentButton onOpen={() => onSelectCustomTopic?.(child.id)} />
+                          ) : null}
+                          {renderCustomTopicStatusOrToolbar(child, topicIndex + childIndex + 1)}
+                        </FriendRowStatusZone>
+                      }
+                    />
+                  ))}
+                </FriendListNestedGroup>
               ) : null}
-              {renderCustomTopicStatusOrToolbar(topic, topicIndex)}
-            </FriendRowStatusZone>
-          }
-        />
-      ))}
+            </div>
+          );
+        })}
 
       {hasFriendListRoot && layout ? (
         <>
@@ -650,7 +720,7 @@ export default function ClubWebsiteFriendListSection({
           }
         }}
         label={
-          <span className={`block min-w-0 truncate ${selectedTopicId === 'friends-root' ? 'underline' : ''}`}>
+          <span className={`block min-w-0 break-words whitespace-normal ${selectedTopicId === 'friends-root' ? 'underline' : ''}`}>
             {t('club_website_list_of_friends')}
           </span>
         }
@@ -734,11 +804,23 @@ export default function ClubWebsiteFriendListSection({
         <ClubWebsiteTopicSettingsFormModal
           item={topicToSettingsFormItem(settingsCustomTopic)}
           open
-          variant="topic"
+          variant={isClubWebsiteTopicSubtopic(settingsCustomTopic) ? 'subtopic' : 'topic'}
           onClose={() => setSettingsCustomTopicId(null)}
           onSave={(patch) => onUpdateCustomTopic?.(settingsCustomTopic.id, patch)}
+          showAddSubtopic={
+            Boolean(onAddCustomSubtopic) && canClubWebsiteTopicHaveSubtopics(settingsCustomTopic)
+          }
+          onAddSubtopic={() => {
+            const subName = window.prompt(t('club_topic_subtopic_prompt'));
+            if (!subName?.trim()) return;
+            onAddCustomSubtopic?.(settingsCustomTopic.id, subName.trim());
+            setCustomTopicChildrenOpen((prev) => ({ ...prev, [settingsCustomTopic.id]: true }));
+          }}
           onDeleteContent={() => {
-            if (!window.confirm(t('club_topic_delete_content_confirm'))) return;
+            const confirmKey = isClubWebsiteTopicSubtopic(settingsCustomTopic)
+              ? 'club_subtopic_delete_content_confirm'
+              : 'club_topic_delete_content_confirm';
+            if (!window.confirm(t(confirmKey))) return;
             onUpdateCustomTopic?.(settingsCustomTopic.id, clearClubWebsiteTopicContent());
             setSettingsCustomTopicId(null);
           }}

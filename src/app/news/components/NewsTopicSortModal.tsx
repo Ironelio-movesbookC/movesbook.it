@@ -31,10 +31,138 @@ interface NewsTopicSortModalProps {
   isOpen: boolean;
   onClose: () => void;
   topics: string[];
-  onSave: (orderedTopics: string[]) => void | Promise<void>;
+  onSave: (
+    orderedTopics: string[],
+    genreOrder?: Record<string, string[]>,
+    hidden?: { topics: string[]; genres?: Record<string, string[]> }
+  ) => void | Promise<void>;
   isSuperAdmin?: boolean;
   /** Called after OGPs are deleted so parent can refresh the list. */
   onAfterDeleteOgNews?: () => void | Promise<void>;
+  /** API prefix for delete-by-topics. Defaults to `/api/news`; Music uses `/api/music`. */
+  apiBase?: string;
+  /** Music: genres grouped by topic (from articles). Enables nested genre sorting. */
+  topicGenres?: Record<string, string[]>;
+  /** Music: saved genre order per topic from user settings. */
+  savedGenreOrder?: Record<string, string[]>;
+  /** Saved hidden topic names from user settings. */
+  savedHiddenTopics?: string[];
+  /** Music: saved hidden genre names per topic from user settings. */
+  savedHiddenGenres?: Record<string, string[]>;
+}
+
+const TOPIC_ID_PREFIX = 'topic:';
+const GENRE_ID_PREFIX = 'genre:';
+
+function topicSortId(name: string) {
+  return `${TOPIC_ID_PREFIX}${encodeURIComponent(name)}`;
+}
+
+function genreSortId(topic: string, genre: string) {
+  return `${GENRE_ID_PREFIX}${encodeURIComponent(topic)}:${encodeURIComponent(genre)}`;
+}
+
+function parseTopicSortId(id: string): string | null {
+  if (!id.startsWith(TOPIC_ID_PREFIX)) return null;
+  return decodeURIComponent(id.slice(TOPIC_ID_PREFIX.length));
+}
+
+function parseGenreSortId(id: string): { topic: string; genre: string } | null {
+  if (!id.startsWith(GENRE_ID_PREFIX)) return null;
+  const rest = id.slice(GENRE_ID_PREFIX.length);
+  const sep = rest.indexOf(':');
+  if (sep === -1) return null;
+  return {
+    topic: decodeURIComponent(rest.slice(0, sep)),
+    genre: decodeURIComponent(rest.slice(sep + 1)),
+  };
+}
+
+function mergeGenreOrder(
+  topicGenres: Record<string, string[]>,
+  saved: Record<string, string[]> | undefined
+): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const [topic, genres] of Object.entries(topicGenres)) {
+    const savedList = saved?.[topic] ?? [];
+    const ordered = savedList.filter((g) => genres.includes(g));
+    for (const g of genres) {
+      if (!ordered.includes(g)) ordered.push(g);
+    }
+    result[topic] = ordered;
+  }
+  return result;
+}
+
+function HideCheckbox({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+}) {
+  return (
+    <label className="ml-auto flex items-center gap-1.5 shrink-0 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+        aria-label={`Hide ${label}`}
+      />
+      <span className="text-sm font-medium text-red-600">hide</span>
+    </label>
+  );
+}
+
+function SortableGenreItem({
+  topic,
+  genre,
+  hidden,
+  onToggleHide,
+}: {
+  topic: string;
+  genre: string;
+  hidden: boolean;
+  onToggleHide: () => void;
+}) {
+  const id = genreSortId(topic, genre);
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 py-1.5 px-3 ml-8 rounded-lg bg-gray-50 border border-gray-200 hover:bg-gray-100"
+    >
+      <button
+        type="button"
+        className="flex items-center justify-center text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+        {...attributes}
+        {...listeners}
+        aria-label={`Drag to reorder genre ${genre}`}
+      >
+        <GripVertical className="w-4 h-4" />
+      </button>
+      <span className="text-sm text-gray-700 flex-1 min-w-0">{genre}</span>
+      <HideCheckbox checked={hidden} onChange={onToggleHide} label={genre} />
+    </div>
+  );
 }
 
 function SortableTopicItem({
@@ -43,12 +171,99 @@ function SortableTopicItem({
   showCheckbox,
   checked,
   onToggle,
+  genres,
+  hidden,
+  onToggleHide,
+  hiddenGenres,
+  onToggleGenreHide,
 }: {
   id: string;
   name: string;
   showCheckbox?: boolean;
   checked?: boolean;
   onToggle?: () => void;
+  genres?: string[];
+  hidden: boolean;
+  onToggleHide: () => void;
+  hiddenGenres: string[];
+  onToggleGenreHide: (genre: string) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  };
+
+  const genreIds = (genres ?? []).map((g) => genreSortId(name, g));
+
+  return (
+    <div ref={setNodeRef} style={style} className="space-y-1">
+      <div className="flex items-center gap-3 py-2 px-3 rounded-lg bg-gray-100 border border-gray-200 hover:bg-gray-200">
+        {showCheckbox && (
+          <input
+            type="checkbox"
+            checked={!!checked}
+            onChange={onToggle}
+            className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+            aria-label={`Select topic ${name}`}
+          />
+        )}
+        <button
+          type="button"
+          className="flex items-center justify-center text-gray-500 hover:text-gray-700 cursor-grab active:cursor-grabbing touch-none"
+          {...attributes}
+          {...listeners}
+          aria-label="Drag to reorder"
+        >
+          <GripVertical className="w-5 h-5" />
+        </button>
+        <span className="font-medium text-gray-800 flex-1 min-w-0">{name}</span>
+        <HideCheckbox checked={hidden} onChange={onToggleHide} label={name} />
+      </div>
+      {genreIds.length > 0 && (
+        <SortableContext items={genreIds} strategy={verticalListSortingStrategy}>
+          <div className="space-y-1">
+            {(genres ?? []).map((genre) => (
+              <SortableGenreItem
+                key={genreSortId(name, genre)}
+                topic={name}
+                genre={genre}
+                hidden={hiddenGenres.includes(genre)}
+                onToggleHide={() => onToggleGenreHide(genre)}
+              />
+            ))}
+          </div>
+        </SortableContext>
+      )}
+    </div>
+  );
+}
+
+function SortableTopicItemLegacy({
+  id,
+  name,
+  showCheckbox,
+  checked,
+  onToggle,
+  hidden,
+  onToggleHide,
+}: {
+  id: string;
+  name: string;
+  showCheckbox?: boolean;
+  checked?: boolean;
+  onToggle?: () => void;
+  hidden: boolean;
+  onToggleHide: () => void;
 }) {
   const {
     attributes,
@@ -89,7 +304,8 @@ function SortableTopicItem({
       >
         <GripVertical className="w-5 h-5" />
       </button>
-      <span className="font-medium text-gray-800">{name}</span>
+      <span className="font-medium text-gray-800 flex-1 min-w-0">{name}</span>
+      <HideCheckbox checked={hidden} onChange={onToggleHide} label={name} />
     </div>
   );
 }
@@ -101,8 +317,17 @@ export default function NewsTopicSortModal({
   onSave,
   isSuperAdmin = false,
   onAfterDeleteOgNews,
+  apiBase = '/api/news',
+  topicGenres,
+  savedGenreOrder,
+  savedHiddenTopics = [],
+  savedHiddenGenres = {},
 }: NewsTopicSortModalProps) {
+  const musicMode = topicGenres != null;
   const [ordered, setOrdered] = useState<string[]>([]);
+  const [genreOrder, setGenreOrder] = useState<Record<string, string[]>>({});
+  const [hiddenTopics, setHiddenTopics] = useState<string[]>([]);
+  const [hiddenGenres, setHiddenGenres] = useState<Record<string, string[]>>({});
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -118,10 +343,43 @@ export default function NewsTopicSortModal({
   useEffect(() => {
     if (isOpen && topics.length > 0) {
       setOrdered([...topics]);
+      if (musicMode && topicGenres) {
+        setGenreOrder(mergeGenreOrder(topicGenres, savedGenreOrder));
+      } else {
+        setGenreOrder({});
+      }
+      setHiddenTopics([...savedHiddenTopics]);
+      setHiddenGenres(
+        Object.fromEntries(
+          Object.entries(savedHiddenGenres).map(([topic, genres]) => [
+            topic,
+            [...genres],
+          ])
+        )
+      );
       setSelectedTopics([]);
       setDeleteWarning('');
     }
-  }, [isOpen, topics]);
+  }, [isOpen, topics, musicMode, topicGenres, savedGenreOrder, savedHiddenTopics, savedHiddenGenres]);
+
+  const toggleTopicHidden = (topic: string) => {
+    setHiddenTopics((prev) =>
+      prev.includes(topic) ? prev.filter((t) => t !== topic) : [...prev, topic]
+    );
+  };
+
+  const toggleGenreHidden = (topic: string, genre: string) => {
+    setHiddenGenres((prev) => {
+      const current = prev[topic] ?? [];
+      const next = current.includes(genre)
+        ? current.filter((g) => g !== genre)
+        : [...current, genre];
+      const updated = { ...prev };
+      if (next.length > 0) updated[topic] = next;
+      else delete updated[topic];
+      return updated;
+    });
+  };
 
   const toggleSelected = (topic: string) => {
     setDeleteWarning('');
@@ -137,14 +395,35 @@ export default function NewsTopicSortModal({
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    if (over && active.id !== over.id) {
-      setOrdered((prev) => {
-        const oldIndex = prev.indexOf(active.id as string);
-        const newIndex = prev.indexOf(over.id as string);
+    if (!over || active.id === over.id) return;
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    if (musicMode && activeId.startsWith(GENRE_ID_PREFIX) && overId.startsWith(GENRE_ID_PREFIX)) {
+      const from = parseGenreSortId(activeId);
+      const to = parseGenreSortId(overId);
+      if (!from || !to || from.topic !== to.topic) return;
+      setGenreOrder((prev) => {
+        const list = [...(prev[from.topic] ?? [])];
+        const oldIndex = list.indexOf(from.genre);
+        const newIndex = list.indexOf(to.genre);
         if (oldIndex === -1 || newIndex === -1) return prev;
-        return arrayMove(prev, oldIndex, newIndex);
+        return { ...prev, [from.topic]: arrayMove(list, oldIndex, newIndex) };
       });
+      return;
     }
+
+    const activeTopic = musicMode ? parseTopicSortId(activeId) : (activeId as string);
+    const overTopic = musicMode ? parseTopicSortId(overId) : (overId as string);
+    if (!activeTopic || !overTopic) return;
+
+    setOrdered((prev) => {
+      const oldIndex = prev.indexOf(activeTopic);
+      const newIndex = prev.indexOf(overTopic);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
   };
 
   const parseYmd = (value: string): Date | null => {
@@ -199,7 +478,7 @@ export default function NewsTopicSortModal({
         toDate,
       };
 
-      const res = await fetch('/api/news/ogp/delete-by-topics', {
+      const res = await fetch(`${apiBase}/ogp/delete-by-topics`, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -226,7 +505,10 @@ export default function NewsTopicSortModal({
     setDeleteWarning('');
     setIsSaving(true);
     try {
-      await onSave(ordered);
+      await onSave(ordered, musicMode ? genreOrder : undefined, {
+        topics: hiddenTopics,
+        genres: musicMode ? hiddenGenres : undefined,
+      });
       let autoOk = true;
       if (isSuperAdmin && autoDeleteConfig) {
         autoOk = await runAutomaticOgpDeletion(autoDeleteConfig);
@@ -255,7 +537,7 @@ export default function NewsTopicSortModal({
       const body: { topics: string[]; fromDate?: string; toDate?: string } = { topics: selectedTopics };
       if (fromDate.trim()) body.fromDate = fromDate.trim();
       if (toDate.trim()) body.toDate = toDate.trim();
-      const res = await fetch('/api/news/ogp/delete-by-topics', {
+      const res = await fetch(`${apiBase}/ogp/delete-by-topics`, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -293,6 +575,10 @@ export default function NewsTopicSortModal({
     setShowAutoDeleteModal(false);
   };
 
+  const sortableTopicIds = musicMode
+    ? ordered.map((name) => topicSortId(name))
+    : ordered;
+
   if (!isOpen) return null;
 
   return (
@@ -320,20 +606,38 @@ export default function NewsTopicSortModal({
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={ordered}
+              items={sortableTopicIds}
               strategy={verticalListSortingStrategy}
             >
               <div className="space-y-2">
-                {ordered.map((name) => (
-                  <SortableTopicItem
-                    key={name}
-                    id={name}
-                    name={name}
-                    showCheckbox={isSuperAdmin}
-                    checked={isSuperAdmin ? selectedTopics.includes(name) : undefined}
-                    onToggle={isSuperAdmin ? () => toggleSelected(name) : undefined}
-                  />
-                ))}
+                {ordered.map((name) =>
+                  musicMode ? (
+                    <SortableTopicItem
+                      key={name}
+                      id={topicSortId(name)}
+                      name={name}
+                      showCheckbox={isSuperAdmin}
+                      checked={isSuperAdmin ? selectedTopics.includes(name) : undefined}
+                      onToggle={isSuperAdmin ? () => toggleSelected(name) : undefined}
+                      genres={genreOrder[name] ?? []}
+                      hidden={hiddenTopics.includes(name)}
+                      onToggleHide={() => toggleTopicHidden(name)}
+                      hiddenGenres={hiddenGenres[name] ?? []}
+                      onToggleGenreHide={(genre) => toggleGenreHidden(name, genre)}
+                    />
+                  ) : (
+                    <SortableTopicItemLegacy
+                      key={name}
+                      id={name}
+                      name={name}
+                      showCheckbox={isSuperAdmin}
+                      checked={isSuperAdmin ? selectedTopics.includes(name) : undefined}
+                      onToggle={isSuperAdmin ? () => toggleSelected(name) : undefined}
+                      hidden={hiddenTopics.includes(name)}
+                      onToggleHide={() => toggleTopicHidden(name)}
+                    />
+                  )
+                )}
               </div>
             </SortableContext>
           </DndContext>

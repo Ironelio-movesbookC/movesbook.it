@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Home, Settings } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { CLUB_WEBSITE_SETTINGS_INDEX_PATH } from '@/lib/clubWebsiteSettingsPaths';
+import { writeClubWorkspaceTab } from '@/lib/club/clubWorkspaceTab';
 
 function BannerBarbellIcon({ className }: { className?: string }) {
   return (
@@ -49,6 +50,7 @@ export default function ClubWebsiteDisplayToolbar({ clubId }: { clubId?: string 
           </div>
           <Link
             href={settingsHref}
+            onClick={() => writeClubWorkspaceTab('my-entity')}
             className="flex w-10 items-center justify-center border-l border-white/20 bg-gradient-to-r from-[#a31919] to-[#8b0000] text-white/95 transition-colors hover:bg-black/20"
             aria-label={t('sidebar_club_website_editor_aria')}
           >

@@ -17,7 +17,7 @@ export interface AdminSuperAdminOGPNewsContentProps {
 
 /**
  * Superadmin OGP / News admin UI (same as /admin/news/links).
- * Used on that route and embedded on /admin/dashboard when opened from Music → Music Tracked.
+ * Used on /admin/news/links.
  */
 export default function AdminSuperAdminOGPNewsContent({
   closeHref = '/admin/dashboard',
@@ -37,12 +37,15 @@ export default function AdminSuperAdminOGPNewsContent({
     topicNamesCreatedByNormalUsers,
     userInsertedTopics,
     pastedArticles,
+    ogpNewsGroups,
     typedArticles,
     viewAsUserId,
+    viewAsUserCountry,
     loading,
     error,
     refresh,
     saveTopicOrder,
+    hiddenTopics,
     addTopic,
     updateTopic,
     deleteTopic,
@@ -50,6 +53,10 @@ export default function AdminSuperAdminOGPNewsContent({
     removePastedArticle,
     updatePastedArticleSettings,
     updatePastedArticleTopic,
+    saveOgpNewsGroup,
+    removeOgpNewsGroup,
+    updateOgpNewsGroup,
+    updateOgpNewsGroupSettings,
     addTypedArticle,
     removeTypedArticle,
   } = useNewsData({ adminContext: true, viewAsUsername });
@@ -58,13 +65,14 @@ export default function AdminSuperAdminOGPNewsContent({
 
   /** In “see as user” mode, topic bar lists defaults + this user’s custom topics (no dropdown). */
   const topicsForTopicBar = useMemo(() => {
-    if (!viewAsUsername?.trim()) return topics;
+    const visible = topics.filter((t) => !hiddenTopics.includes(t));
+    if (!viewAsUsername?.trim()) return visible;
     const v = viewAsUsername.trim().toLowerCase();
     const insertedByOthers = new Set(
       userInsertedTopics.filter((x) => (x.creatorUsername ?? '').toLowerCase() !== v).map((x) => x.name)
     );
-    return topics.filter((t) => !insertedByOthers.has(t));
-  }, [topics, userInsertedTopics, viewAsUsername]);
+    return visible.filter((t) => !insertedByOthers.has(t));
+  }, [topics, hiddenTopics, userInsertedTopics, viewAsUsername]);
 
   // On reload (and whenever data finishes loading): select the first topic so the OGP area shows its OGPs.
   useEffect(() => {
@@ -346,8 +354,9 @@ export default function AdminSuperAdminOGPNewsContent({
                 ? topics.filter((t) => !topicNamesCreatedByNormalUsers.includes(t))
                 : topics
             }
-            onSave={async (ordered) => {
-              await saveTopicOrder(ordered);
+            savedHiddenTopics={hiddenTopics}
+            onSave={async (ordered, _genreOrder, hidden) => {
+              await saveTopicOrder(ordered, undefined, hidden);
             }}
             isSuperAdmin={isSuperAdmin}
             onAfterDeleteOgNews={refresh}
@@ -399,6 +408,7 @@ export default function AdminSuperAdminOGPNewsContent({
             onRemoveTyped={handleRemoveTyped}
             canDeleteOgp={true}
             currentUserId={viewAsUsername && viewAsUserId ? viewAsUserId : adminUser.id}
+            currentUserCountry={viewAsUsername ? viewAsUserCountry : null}
             onUpdatePastedSettings={handleUpdatePastedSettings}
             onUpdatePastedTopic={handleUpdatePastedTopic}
             onAddClick={viewAsUsername ? undefined : () => setShowOgpForm((prev) => !prev)}
@@ -413,6 +423,12 @@ export default function AdminSuperAdminOGPNewsContent({
             hideCreatorUsernameInHeading={!!viewAsUsername}
             showOnlyMyOgNewsLabelUsername={viewAsUsername}
             viewerScopedOgpList={!!viewAsUsername}
+            ogpNewsGroups={ogpNewsGroups}
+            onSaveOgpNewsGroup={viewAsUsername ? undefined : saveOgpNewsGroup}
+            onRemoveOgpNewsGroup={viewAsUsername ? undefined : removeOgpNewsGroup}
+            onUpdateOgpNewsGroup={viewAsUsername ? undefined : updateOgpNewsGroup}
+            onUpdateOgpNewsGroupSettings={viewAsUsername ? undefined : updateOgpNewsGroupSettings}
+            superAdminReadOnlyOgpActions={!!viewAsUsername}
           />
         </div>
       </div>
