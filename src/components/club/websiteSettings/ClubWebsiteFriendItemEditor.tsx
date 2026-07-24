@@ -108,7 +108,13 @@ export default function ClubWebsiteFriendItemEditor({
         <input
           type="text"
           value={item.title}
-          onChange={(e) => patch({ title: e.target.value })}
+          onChange={(e) => {
+            const next = e.target.value;
+            patch({
+              title: next,
+              name: next.trim() || item.name,
+            });
+          }}
           placeholder={t('club_website_title_placeholder')}
           className="min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm font-semibold outline-none"
           style={{ color: item.titleColor }}

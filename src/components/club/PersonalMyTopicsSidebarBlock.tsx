@@ -22,6 +22,7 @@ import {
 } from '@/lib/personalWebsiteSettingsPaths';
 import { topicHasEmbedUrl, topicHasHtmlContent } from '@/lib/clubWebsiteDisplayContent';
 import { writeClubWorkspaceTab } from '@/lib/club/clubWorkspaceTab';
+import { consumeOpenPersonalTopicsSection } from '@/lib/club/clubTopicsNavigation';
 import { useClubWebsiteFriendList } from '@/hooks/useClubWebsiteFriendList';
 import { useClubWebsiteTopics } from '@/hooks/useClubWebsiteTopics';
 import { usePersonalWebsiteFriendList } from '@/hooks/usePersonalWebsiteFriendList';
@@ -55,6 +56,13 @@ export default function PersonalMyTopicsSidebarBlock({
   const [displayOpen, setDisplayOpen] = useState(true);
   const isClubMode = Boolean(clubId);
   const personalOwnerId = canManage && !isClubMode ? userId : undefined;
+
+  useEffect(() => {
+    if (isClubMode) return;
+    if (consumeOpenPersonalTopicsSection()) {
+      setDisplayOpen(true);
+    }
+  }, [isClubMode, userId]);
 
   const {
     items: clubFriendItems,

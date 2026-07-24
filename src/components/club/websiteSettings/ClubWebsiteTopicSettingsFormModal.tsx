@@ -29,7 +29,7 @@ export default function ClubWebsiteTopicSettingsFormModal({
   item: ClubWebsiteTopicSettingsFormItem;
   open: boolean;
   onClose: () => void;
-  onSave: (patch: Partial<ClubWebsiteTopicSettingsFormItem & { title?: string }>) => void;
+  onSave: (patch: Partial<ClubWebsiteTopicSettingsFormItem & { title?: string; sectionName?: string }>) => void;
   onAddSubtopic?: () => void;
   onDeleteContent?: () => void;
   showAddSubtopic?: boolean;
@@ -74,10 +74,13 @@ export default function ClubWebsiteTopicSettingsFormModal({
   const editNameKey = isSubtopic ? 'club_subtopic_edit_name' : 'club_topic_edit_name';
 
   const handleSave = () => {
-    const patch: Partial<ClubWebsiteTopicSettingsFormItem & { title?: string }> = {
+    const nextName = name.trim() || item.name;
+    const patch: Partial<ClubWebsiteTopicSettingsFormItem & { title?: string; sectionName?: string }> = {
       activated,
-      name: name.trim() || item.name,
-      title: name.trim() || item.name,
+      name: nextName,
+      title: nextName,
+      // Keep Section in sync when renaming from Topic settings (it is a separate field on the editor bar).
+      sectionName: nextName,
       bannerColor,
       titleColor,
       showInClubDashboardTopics,

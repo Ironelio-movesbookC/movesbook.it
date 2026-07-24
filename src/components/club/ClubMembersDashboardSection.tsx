@@ -353,7 +353,7 @@ export default function ClubMembersDashboardSection({
               )}
             </div>
 
-            {canManageClub ? (
+            {effectiveClubId ? (
               <div className="flex min-h-[44px] w-full items-stretch border-b border-black/25">
                 <button
                   type="button"
@@ -371,24 +371,26 @@ export default function ClubMembersDashboardSection({
                   <ClipboardList className="h-4 w-4 shrink-0 opacity-90" />
                   <span className="truncate">{t('sidebar_club_desk')}</span>
                 </button>
-                <button
-                  type="button"
-                  disabled={!deskSettingsHref}
-                  title={t('sidebar_club_desk_admin_aria')}
-                  aria-label={t('sidebar_club_desk_admin_aria')}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!deskSettingsHref || !effectiveClubId) return;
-                    writeClubWorkspaceTab('my-entity');
-                    if (typeof window !== 'undefined') {
-                      localStorage.setItem('selectedClub', effectiveClubId);
-                    }
-                    router.push(deskSettingsHref);
-                  }}
-                  className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Settings className="h-4 w-4" />
-                </button>
+                {canManageClub ? (
+                  <button
+                    type="button"
+                    disabled={!deskSettingsHref}
+                    title={t('sidebar_club_desk_admin_aria')}
+                    aria-label={t('sidebar_club_desk_admin_aria')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!deskSettingsHref || !effectiveClubId) return;
+                      writeClubWorkspaceTab('my-entity');
+                      if (typeof window !== 'undefined') {
+                        localStorage.setItem('selectedClub', effectiveClubId);
+                      }
+                      router.push(deskSettingsHref);
+                    }}
+                    className="flex shrink-0 items-center border-l border-black/25 px-3 text-gray-300 transition-colors hover:bg-zinc-700/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
