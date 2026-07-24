@@ -35,6 +35,7 @@ export default function NewsPage() {
     customTopics,
     topicNamesCreatedBySuperAdmin,
     pastedArticles,
+    ogpNewsGroups,
     typedArticles,
     loading,
     error,
@@ -42,10 +43,15 @@ export default function NewsPage() {
     updateTopic,
     deleteTopic,
     saveTopicOrder,
+    hiddenTopics,
     addPastedArticle,
     removePastedArticle,
     updatePastedArticleSettings,
     updatePastedArticleTopic,
+    saveOgpNewsGroup,
+    removeOgpNewsGroup,
+    updateOgpNewsGroup,
+    updateOgpNewsGroupSettings,
     addTypedArticle,
     removeTypedArticle,
   } = useNewsData();
@@ -230,7 +236,7 @@ export default function NewsPage() {
           {loading && <p className="text-sm text-gray-500 mb-2">Loading news...</p>}
           {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
           <NewsTopicBar
-            topics={topics}
+            topics={topics.filter((t) => !hiddenTopics.includes(t))}
             activeTopic={activeTopic}
             onTopicSelect={setActiveTopic}
             onAddNewTopic={handleOpenTopicModal}
@@ -258,8 +264,9 @@ export default function NewsPage() {
             isOpen={showTopicSortModal}
             onClose={() => setShowTopicSortModal(false)}
             topics={topics}
-            onSave={async (ordered) => {
-              await saveTopicOrder(ordered);
+            savedHiddenTopics={hiddenTopics}
+            onSave={async (ordered, _genreOrder, hidden) => {
+              await saveTopicOrder(ordered, undefined, hidden);
             }}
           />
 
@@ -309,10 +316,16 @@ export default function NewsPage() {
             onRemoveTyped={handleRemoveTyped}
             canDeleteOgp={user?.userType === 'ADMIN'}
             currentUserId={user?.id ?? null}
+            currentUserCountry={user?.country ?? null}
             onUpdatePastedSettings={handleUpdatePastedSettings}
             onUpdatePastedTopic={handleUpdatePastedTopic}
             onAddClick={() => setShowOgpForm((prev) => !prev)}
             addButtonDisabled={activeTopic === ALL_TOPICS}
+            ogpNewsGroups={ogpNewsGroups}
+            onSaveOgpNewsGroup={saveOgpNewsGroup}
+            onRemoveOgpNewsGroup={removeOgpNewsGroup}
+            onUpdateOgpNewsGroup={updateOgpNewsGroup}
+            onUpdateOgpNewsGroupSettings={updateOgpNewsGroupSettings}
           />
         </div>
 

@@ -141,6 +141,13 @@ function ClubWorkspaceShellInner({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    /** Website settings / display opened from My Club must keep My Club tab active. */
+    if (pathname?.startsWith('/WebsiteSettings')) {
+      setActiveTab('my-entity');
+      writeClubWorkspaceTab('my-entity');
+      return;
+    }
+
     const savedTab = readClubWorkspaceTab();
     const hasClubContext = Boolean(selectedClubId) || readSelectedClubHint();
 

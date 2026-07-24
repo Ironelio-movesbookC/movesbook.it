@@ -46,6 +46,15 @@ export function isManagedEntityAdminUserType(userType: string): boolean {
   );
 }
 
+/**
+ * Legacy role ID5 = Single User (ATHLETE).
+ * Only these accounts do NOT own a Movesbook website / bacheca / personal topics.
+ * Coach, team, group, and club accounts each have their own website data.
+ */
+export function userOwnsMovesbookWebsite(userType: string): boolean {
+  return isManagedEntityAdminUserType(userType);
+}
+
 /** True when this user type has a dedicated dashboard (not legacy `/my-page`). */
 export function hasDedicatedDashboard(userType: string): boolean {
   return getDashboardPathForUserType(userType) !== '/my-page';

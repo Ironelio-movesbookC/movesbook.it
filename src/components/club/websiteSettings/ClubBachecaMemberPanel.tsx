@@ -3,8 +3,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import {
+  sortBachecaLabelsForDisplay,
+  type BachecaSortMode,
+} from '@/lib/clubBachecaLabels';
 import { useClubBachecaMemberLabels } from '@/hooks/useClubBachecaMemberLabels';
 import { prepareRichHtmlForDisplay } from '@/lib/richHtmlDisplay';
+
+const SORT_OPTIONS: { mode: BachecaSortMode; labelKey: string }[] = [
+  { mode: 'name', labelKey: 'club_bacheca_sort_by_name' },
+  { mode: 'date', labelKey: 'club_bacheca_sort_by_date' },
+  { mode: 'labels', labelKey: 'club_bacheca_sort_by_labels' },
+];
 
 export default function ClubBachecaMemberPanel({
   clubId,
@@ -15,11 +25,18 @@ export default function ClubBachecaMemberPanel({
   compact?: boolean;
 }) {
   const { t } = useLanguage();
-  const { labels, loading, error, hydrated } = useClubBachecaMemberLabels(clubId);
+  const { labels: rawLabels, loading, error, hydrated } = useClubBachecaMemberLabels(clubId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState<BachecaSortMode>('date');
+
+  const labels = useMemo(
+    () => sortBachecaLabelsForDisplay(rawLabels, sortMode),
+    [rawLabels, sortMode],
+  );
 
   useEffect(() => {
     setSelectedId(null);
+    setSortMode('date');
   }, [clubId]);
 
   useEffect(() => {
@@ -75,9 +92,37 @@ export default function ClubBachecaMemberPanel({
         }
       `}</style>
       <div className={`border-b border-zinc-300 bg-white ${compact ? 'px-1 py-2' : 'px-4 py-3'}`}>
-        <h2 className={`font-bold text-zinc-900 ${compact ? 'text-xl' : 'text-lg'}`}>
-          {t('club_bacheca_title')}
-        </h2>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h2 className={`font-bold text-zinc-900 ${compact ? 'text-xl' : 'text-lg'}`}>
+            {t('club_bacheca_title')}
+          </h2>
+          {labels.length > 0 ? (
+            <div
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium"
+              role="group"
+              aria-label={t('club_bacheca_sort_aria')}
+            >
+              {SORT_OPTIONS.map(({ mode, labelKey }) => {
+                const active = sortMode === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setSortMode(mode)}
+                    className={`whitespace-nowrap ${
+                      active
+                        ? 'font-semibold text-sky-800 underline'
+                        : 'text-zinc-600 hover:text-sky-700 hover:underline'
+                    }`}
+                    aria-pressed={active}
+                  >
+                    {t(labelKey)}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
         {!compact ? (
           <p className="mt-1 text-xs leading-snug text-zinc-600">{t('club_bacheca_intro')}</p>
         ) : null}
@@ -110,6 +155,7 @@ export default function ClubBachecaMemberPanel({
                         ? 'border-sky-600 bg-gradient-to-b from-white to-[#c5d4e8] ring-2 ring-sky-500'
                         : 'border-zinc-500 bg-gradient-to-b from-[#f8f8f8] to-[#d4d4d4] hover:from-white hover:to-[#e0e0e0]'
                     }`}
+                    title={label.updatedOn ? `${t('club_bacheca_updated_on')}: ${label.updatedOn}` : undefined}
                   >
                     <span className="line-clamp-3">{label.name}</span>
                   </button>
@@ -123,6 +169,11 @@ export default function ClubBachecaMemberPanel({
               <>
                 <p className="mb-3 text-xs font-medium text-zinc-600">
                   {t('club_bacheca_editing_label')}: <strong>{selected.name}</strong>
+                  {selected.updatedOn ? (
+                    <span className="ml-2 text-zinc-500">
+                      · {t('club_bacheca_updated_on')} {selected.updatedOn}
+                    </span>
+                  ) : null}
                 </p>
                 {hasTextContent ? (
                   <div

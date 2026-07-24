@@ -275,11 +275,16 @@ function DeskDisplayRow({
 
 export default function DeskUtilityList({
   variant = 'live',
-  nodes
+  nodes,
+  clubId,
+  titleKey = 'desk_utility_list_title',
 }: {
-  /** `live`: load from `/api/my-desk`. `demo`: static `nodes` or built-in demo. */
+  /** `live`: load from API. `demo`: static `nodes` or built-in demo. */
   variant?: 'live' | 'demo';
   nodes?: DeskUtilityNode[];
+  /** When set, loads Club Desk for this club via `/api/club-desk`. */
+  clubId?: string | null;
+  titleKey?: string;
 }) {
   const { t } = useLanguage();
   const router = useRouter();
@@ -292,7 +297,10 @@ export default function DeskUtilityList({
   const fetchItems = useCallback(async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return;
-    const response = await fetch('/api/my-desk', {
+    const url = clubId
+      ? `/api/club-desk?clubId=${encodeURIComponent(clubId)}`
+      : '/api/my-desk';
+    const response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store'
     });
@@ -301,7 +309,7 @@ export default function DeskUtilityList({
     }
     const data = (await response.json()) as { items?: ApiMyDeskNode[] };
     setItems((data.items ?? []).map(mapApiToDeskUtility));
-  }, []);
+  }, [clubId]);
 
   useEffect(() => {
     if (variant !== 'demo') {
@@ -315,6 +323,11 @@ export default function DeskUtilityList({
     if (variant !== 'live') {
       return;
     }
+    if (clubId === null) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
     const run = async () => {
       try {
         setLoading(true);
@@ -326,7 +339,7 @@ export default function DeskUtilityList({
       }
     };
     void run();
-  }, [variant, fetchItems]);
+  }, [variant, fetchItems, clubId]);
 
   const toggle = useCallback((id: string) => {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -345,7 +358,7 @@ export default function DeskUtilityList({
   return (
     <div className="w-full overflow-hidden rounded border border-zinc-300 bg-white shadow-sm">
       <div className="bg-[#2563eb] px-3 py-2.5 text-sm font-semibold uppercase tracking-wide text-white">
-        {t('desk_utility_list_title')}
+        {t(titleKey)}
       </div>
       {loading ? (
         <div className="px-4 py-6 text-sm text-zinc-500">{t('desk_utility_list_loading')}</div>
