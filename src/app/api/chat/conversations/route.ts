@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { resolveMessageDatabaseUserId } from '@/lib/messages/resolveMessageUserId';
 
 /** GET - List my conversations (with last message preview). */
 export async function GET(request: NextRequest) {
@@ -13,7 +14,10 @@ export async function GET(request: NextRequest) {
     if (!decoded?.userId) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
-    const myId = decoded.userId;
+    const myId = await resolveMessageDatabaseUserId(decoded.userId, decoded.userType);
+    if (!myId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
 
     const conversations = await prisma.chatConversation.findMany({
       where: { OR: [{ user1Id: myId }, { user2Id: myId }] },
@@ -84,7 +88,10 @@ export async function POST(request: NextRequest) {
     if (!decoded?.userId) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
-    const myId = decoded.userId;
+    const myId = await resolveMessageDatabaseUserId(decoded.userId, decoded.userType);
+    if (!myId) {
+      return NextResponse.json({ error: 'User not found' }, { status: 401 });
+    }
     const body = await request.json();
     const participantId = body?.participantId;
     if (!participantId || participantId === myId) {
