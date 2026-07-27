@@ -2,6 +2,8 @@ import React from "react";
 
 export type Member = {
   id?: string;
+  /** Member/user id for same-member multi-deadline pay validation */
+  userId?: string;
 
   // selection
   checked?: boolean;

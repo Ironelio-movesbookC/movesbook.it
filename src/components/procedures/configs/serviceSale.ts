@@ -19,7 +19,7 @@ export function getServiceSaleTabs(
 
   return [
     { id: 'historical', label: 'Historical', href: '/clubs/archive_service_list' },
-    { id: 'deadline', label: 'Deadline', href: deadlineHref },
+    { id: 'deadline', label: 'Archive of Deadlines', href: deadlineHref },
     { id: 'payments', label: 'Payments', href: paymentsHref },
     { id: 'receipts', label: 'Receipts', href: '/clubs/service_receipts' },
   ];

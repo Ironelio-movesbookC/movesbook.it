@@ -202,6 +202,16 @@ export function createProcedureClient(code: ProcedureTypeCode) {
       return { record: mapRecord(def, res.record) };
     },
 
+    async updateRecord(
+      id: string,
+      input: { recordDate?: string; notes?: string; operatorId?: string; totalAmount?: number }
+    ): Promise<void> {
+      await clubApiFetch(`${base}/records/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      });
+    },
+
     async createRecord(body: Record<string, unknown>): Promise<{ recordId: string }> {
       const result = await clubApiFetch<{ recordId: string }>(`${base}/records`, {
         method: 'POST',

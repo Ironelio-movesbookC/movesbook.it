@@ -12,6 +12,9 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     if ('error' in auth) return auth.error;
 
     const view = request.nextUrl.searchParams.get('view');
+    const includePaid =
+      request.nextUrl.searchParams.get('includePaid') === '1' ||
+      request.nextUrl.searchParams.get('includePaid') === 'true';
     const page = Number(request.nextUrl.searchParams.get('page') ?? 1);
     const pageSize = Number(request.nextUrl.searchParams.get('pageSize') ?? 10);
     const memberId = request.nextUrl.searchParams.get('memberId') ?? undefined;
@@ -21,7 +24,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       auth.ctx,
       params.type,
       { page, pageSize, memberId, recordId },
-      { onlyWithBalance: view === 'deadlines' }
+      { onlyWithBalance: view === 'deadlines' && !includePaid }
     );
 
     return NextResponse.json({ ...result, clubId: auth.ctx.club.id });
