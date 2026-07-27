@@ -70,6 +70,74 @@ function formatDisplayDate(iso: string | null | undefined): string {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+/** Local calendar YYYY-MM-DD (avoid UTC shift from toISOString). */
+function todayYmd(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function toYmd(iso: string | null | undefined): string {
+  return iso ? iso.slice(0, 10) : '';
+}
+
+/** Effective expiration used in list / Debt / Modify (expireDate, else paymentDate). */
+function effectiveExpireDate(
+  expireDate: string | null | undefined,
+  paymentDate: string | null | undefined
+): string {
+  return toYmd(expireDate) || toYmd(paymentDate);
+}
+
+type DeadlineListRow = {
+  id: string;
+  balance: number;
+  paymentDate: string | null;
+  expireDate: string | null;
+  paid: number;
+  disabled: boolean;
+  label?: string;
+};
+
+/**
+ * Debt frame:
+ * - Total = sum of REST for unpaid deadlines with expiration <= today
+ * - Expired date = last expired deadline's date, else next upcoming expiration
+ */
+function computeDebtFrame(
+  rows: DeadlineListRow[],
+  fallbackDate: string | null | undefined
+): { total: number; expireDate: string } {
+  const today = todayYmd();
+  const unpaid = rows
+    .filter((r) => r.balance > 0)
+    .map((r) => ({
+      balance: r.balance,
+      expire: effectiveExpireDate(r.expireDate, r.paymentDate),
+    }))
+    .filter((r) => Boolean(r.expire));
+
+  const expired = unpaid.filter((r) => r.expire <= today);
+  const upcoming = unpaid
+    .filter((r) => r.expire > today)
+    .sort((a, b) => a.expire.localeCompare(b.expire));
+
+  const total = expired.reduce((sum, r) => sum + r.balance, 0);
+
+  let expireDate: string;
+  if (expired.length > 0) {
+    expireDate = expired.map((r) => r.expire).sort()[expired.length - 1]!;
+  } else if (upcoming.length > 0) {
+    expireDate = upcoming[0]!.expire;
+  } else {
+    expireDate = toYmd(fallbackDate) || today;
+  }
+
+  return { total, expireDate };
+}
+
 export default function ServicePaymentForm({
   purchase,
   extraPurchases = [],
@@ -99,13 +167,13 @@ export default function ServicePaymentForm({
   const [selectedInstallmentIds, setSelectedInstallmentIds] = useState<Set<string>>(new Set());
   const [installmentError, setInstallmentError] = useState('');
   const [paymentType, setPaymentType] = useState<'D' | 'B'>('D');
-  const [debtTotal, setDebtTotal] = useState(String(totalRest || purchase.rest));
-  const [debtExpire, setDebtExpire] = useState(purchase.paydate ?? new Date().toISOString().slice(0, 10));
+  const [debtTotal, setDebtTotal] = useState('0');
+  const [debtExpire, setDebtExpire] = useState(() => toYmd(purchase.paydate) || todayYmd());
   const [description, setDescription] = useState(purchase.notes);
   const [amountPaid, setAmountPaid] = useState('0');
   const [payMode, setPayMode] = useState('cash');
   const [taxDoc, setTaxDoc] = useState(true);
-  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(() => todayYmd());
   const [operatorId, setOperatorId] = useState(options.currentOperatorId ?? options.operators[0]?.id ?? '');
   const [operatorPassword, setOperatorPassword] = useState('');
   const isPasswordEnabled = (() => {
@@ -151,10 +219,6 @@ export default function ServicePaymentForm({
   }, [procedureType, purchase.id, multiDeadlineMode]);
 
   useEffect(() => {
-    setDebtTotal(String(totalRest || purchase.rest));
-  }, [totalRest, purchase.rest]);
-
-  useEffect(() => {
     if (!multiDeadlineMode) return;
     setSelectedInstallmentIds(
       new Set(allPurchases.filter((p) => p.rest > 0).map((p) => p.id))
@@ -166,7 +230,7 @@ export default function ServicePaymentForm({
   const restGive = Math.max(0, payWithAmount - paidAmount);
   const overallNewRest = Math.max(0, totalRest - paidAmount);
 
-  const installmentRows = useMemo(() => {
+  const installmentRows = useMemo((): DeadlineListRow[] => {
     if (multiDeadlineMode) {
       return allPurchases
         .filter((p) => p.rest > 0)
@@ -174,6 +238,7 @@ export default function ServicePaymentForm({
           id: p.id,
           balance: p.rest,
           paymentDate: p.paydate,
+          expireDate: p.paydate,
           paid: p.pay,
           disabled: false,
           label: `${p.typology}-${p.serviceName || p.notes || 'Debt'}`,
@@ -184,31 +249,44 @@ export default function ServicePaymentForm({
         id: row.id,
         balance: row.balance,
         paymentDate: row.paymentDate,
+        expireDate: row.expireDate,
         paid: row.paid,
         disabled: row.balance <= 0,
-        label: undefined as string | undefined,
+        label: undefined,
       }));
     }
-    const rows = payments.map((p) => ({
+    const rows: DeadlineListRow[] = payments.map((p) => ({
       id: p.id,
       balance: p.balance,
       paymentDate: p.paymentDate,
+      expireDate: p.paymentDate,
       paid: p.paid,
       disabled: true,
-      label: undefined as string | undefined,
+      label: undefined,
     }));
     if (purchase.rest > 0) {
       rows.unshift({
         id: 'current',
         balance: purchase.rest,
         paymentDate: purchase.paydate,
-        paid: purchase.rest,
+        expireDate: purchase.paydate,
+        paid: purchase.pay,
         disabled: false,
         label: undefined,
       });
     }
     return rows;
   }, [multiDeadlineMode, allPurchases, installments, payments, purchase]);
+
+  const debtFrame = useMemo(
+    () => computeDebtFrame(installmentRows, purchase.paydate),
+    [installmentRows, purchase.paydate]
+  );
+
+  useEffect(() => {
+    setDebtTotal(String(debtFrame.total));
+    setDebtExpire(debtFrame.expireDate);
+  }, [debtFrame]);
 
   const selectedTotalRest = useMemo(() => {
     return installmentRows
@@ -223,12 +301,17 @@ export default function ServicePaymentForm({
   const nextRests = useMemo(() => {
     const sorted = [...installmentRows]
       .filter((r) => selectedInstallmentIds.has(r.id))
-      .sort((a, b) => (a.paymentDate || '').localeCompare(b.paymentDate || ''));
+      .sort((a, b) =>
+        effectiveExpireDate(a.expireDate, a.paymentDate).localeCompare(
+          effectiveExpireDate(b.expireDate, b.paymentDate)
+        )
+      );
     let remaining = paidAmount;
     return sorted.map((r) => {
       const paidHere = Math.min(remaining, r.balance);
       remaining = Math.max(0, remaining - paidHere);
-      return { id: r.id, label: formatDisplayDate(r.paymentDate), newRest: Math.max(0, r.balance - paidHere) };
+      const expire = effectiveExpireDate(r.expireDate, r.paymentDate);
+      return { id: r.id, label: formatDisplayDate(expire), newRest: Math.max(0, r.balance - paidHere) };
     });
   }, [installmentRows, selectedInstallmentIds, paidAmount]);
 
@@ -265,7 +348,7 @@ export default function ServicePaymentForm({
       await createInstallment(procedureType, purchase.id, {
         balance: deadlineValue,
         paid: 0,
-        paymentDate: new Date().toISOString().slice(0, 10),
+        paymentDate: todayYmd(),
         expireDate: newForm.expireDate || null,
         description: newForm.description || null,
       });
@@ -311,11 +394,12 @@ export default function ServicePaymentForm({
     const row = installments.find((r) => r.id === id);
     if (!row) return;
     setInstallmentError('');
+    const expire = effectiveExpireDate(row.expireDate, row.paymentDate);
     setModifyForm({
       balance: String(row.balance + row.paid),
       paid: String(row.paid),
-      paymentDate: row.paymentDate.slice(0, 10),
-      expireDate: row.expireDate?.slice(0, 10) ?? '',
+      paymentDate: toYmd(row.paymentDate),
+      expireDate: expire,
       description: row.description ?? '',
     });
     setModifyOpen(true);
@@ -325,6 +409,7 @@ export default function ServicePaymentForm({
     e.preventDefault();
     const id = firstSelectedId();
     if (!id || id === 'current') return;
+    setModifySaving(true);
     const deadlineTotal = Number(modifyForm.balance) || 0;
     const currentPaid = Number(modifyForm.paid) || 0;
     if (deadlineTotal < currentPaid) {
@@ -345,11 +430,12 @@ export default function ServicePaymentForm({
     }
     setInstallmentError('');
     try {
+      const expireToSave = toYmd(modifyForm.expireDate) || null;
       await updateInstallment(procedureType, purchase.id, id, {
         balance: newRest,
         paid: currentPaid,
         paymentDate: modifyForm.paymentDate,
-        expireDate: modifyForm.expireDate || null,
+        expireDate: expireToSave,
         description: modifyForm.description || null,
       });
       setModifyOpen(false);
@@ -390,7 +476,7 @@ export default function ServicePaymentForm({
       taxDoc,
       operatorId,
       operatorPassword,
-      debtTotal: Number(debtTotal) || purchase.value,
+      debtTotal: Number(debtTotal) || 0,
       debtExpire,
       payWith: payWithAmount,
       restGive,
@@ -429,6 +515,7 @@ export default function ServicePaymentForm({
               <ul className="space-y-2 text-[13px]">
                 {installmentRows.map((row) => {
                   const full = row.balance + row.paid;
+                  const expire = effectiveExpireDate(row.expireDate, row.paymentDate);
                   return (
                     <li key={row.id}>
                       <label className="flex cursor-pointer items-start gap-2">
@@ -453,7 +540,7 @@ export default function ServicePaymentForm({
                               </span>
                               <div className="mt-0.5 text-gray-800">
                                 Expire date of{' '}
-                                <span className="text-blue-600">{formatDisplayDate(row.paymentDate)}</span>
+                                <span className="text-blue-600">{formatDisplayDate(expire)}</span>
                                 {' '}of € {formatEuro(full)} Rest{' '}
                                 <span className="font-semibold text-red-600">€ {formatEuro(row.balance)}</span>
                               </div>
@@ -464,7 +551,7 @@ export default function ServicePaymentForm({
                               <strong className="text-red-600">{sectionLabel}</strong>
                               <div className="mt-0.5 text-gray-700">
                                 Expire date of{' '}
-                                <span className="text-blue-600">{formatDisplayDate(row.paymentDate)}</span>
+                                <span className="text-blue-600">{formatDisplayDate(expire)}</span>
                                 {' '}of € {formatEuro(full)} Rest{' '}
                                 <span className="font-semibold text-red-600">€ {formatEuro(row.balance)}</span>
                               </div>
@@ -547,7 +634,7 @@ export default function ServicePaymentForm({
           </fieldset>
 
           <fieldset className="rounded-sm border border-gray-400 p-3">
-            <legend className="px-1 text-[13px] font-semibold text-gray-800">Rest</legend>
+            <legend className="px-1 text-[13px] font-semibold text-gray-800">Debt</legend>
             <div className="grid grid-cols-2 gap-3 text-[13px]">
               <label className="block">
                 <span className="text-gray-700">Total</span>
@@ -558,6 +645,7 @@ export default function ServicePaymentForm({
                   style={{ backgroundColor: '#d3f07b' }}
                   value={debtTotal}
                   onChange={(e) => setDebtTotal(e.target.value)}
+                  title="Sum of unpaid REST for deadlines with expiration date ≤ today"
                 />
               </label>
               <label className="block">
@@ -568,6 +656,7 @@ export default function ServicePaymentForm({
                   style={{ backgroundColor: '#d3f07b' }}
                   value={debtExpire}
                   onChange={(e) => setDebtExpire(e.target.value)}
+                  title="Date of last expired deadline, or next upcoming expiration if none expired"
                 />
               </label>
             </div>

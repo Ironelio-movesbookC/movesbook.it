@@ -107,7 +107,8 @@ export function mapRecord(record: ProcedureRecordDto): ServiceSalePurchase {
     typology: 'SERVICES',
     sectorName: metaString(meta, 'sectorName') || '-',
     serviceName: metaString(meta, 'serviceName') || '-',
-    paydate: record.recordDate,
+    // Deadline/expire display uses dueDate (PHP ServicePurchase.paydate / installment expire).
+    paydate: record.dueDate ?? record.recordDate,
     value: record.totalAmount,
     pay: record.paidAmount,
     rest: record.balanceAmount,

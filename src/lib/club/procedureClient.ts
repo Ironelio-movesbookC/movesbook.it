@@ -98,7 +98,8 @@ function mapRecord(def: ProcedureDefinition, record: ProcedureRecordDto): Proced
     secondaryLabel: def.metadataKeys.secondary
       ? metaString(metadata, def.metadataKeys.secondary) || '-'
       : '',
-    paydate: record.recordDate,
+    // Deadline/expire display uses dueDate (PHP ServicePurchase.paydate / installment expire).
+    paydate: record.dueDate ?? record.recordDate,
     value: record.totalAmount,
     pay: record.paidAmount,
     rest: record.balanceAmount,
