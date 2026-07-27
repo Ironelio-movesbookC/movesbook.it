@@ -1,6 +1,29 @@
+import React from 'react';
 import type { Column } from '@/types/clubTable';
 import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
 import type { ProcedureDefinition } from '@/lib/procedures/registry';
+import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
+
+function MemberImageCell({ src, name }: { src?: string; name?: string }) {
+  const url = resolvePublicImageUrl(src);
+  if (!url) {
+    return (
+      <span className="inline-flex h-8 w-8 items-center justify-center border border-gray-300 bg-gray-100 text-[8px] font-bold leading-tight text-gray-500">
+        NO
+        <br />
+        IMG
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={name || 'Member'}
+      className="h-8 w-8 rounded-full border border-gray-300 object-cover"
+    />
+  );
+}
 
 /** Build archive table columns from a procedure registry entry. */
 export function buildProcedureColumns(def: ProcedureDefinition) {
@@ -31,15 +54,21 @@ export function buildProcedureColumns(def: ProcedureDefinition) {
   ];
 
   const deadlineColumns: Column[] = [
+    {
+      key: 'image',
+      header: 'Image',
+      render: (_v, row) => <MemberImageCell src={row.image} name={row.name} />,
+    },
     { key: 'name', header: 'Full Name' },
     { key: 'typology', header: 'Typology' },
     primaryCol,
+    ...(secondaryCol ? [secondaryCol] : []),
     { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
-    { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
+    { key: 'value', header: 'Debt', render: (v) => formatEuro(v) },
     { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
     { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
     { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
-    { key: 'casual', header: 'Notes' },
+    { key: 'casual', header: 'Description' },
     { key: 'operator', header: 'Operator' },
   ];
 

@@ -173,6 +173,55 @@ form select {
   color: #111827;
 }
 
+/* Procedure forms (debt / expense / service sale) — beat color: inherit from dark parents */
+.procedure-form {
+  color: #111827;
+}
+
+.procedure-form input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='file']),
+.procedure-form select,
+.procedure-form textarea {
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+  caret-color: #111827;
+  background-color: #ffffff !important;
+  margin-bottom: 0 !important;
+}
+
+.procedure-form select {
+  /* Avoid global menulist/appearance quirks that clip or stack option text */
+  appearance: auto !important;
+  -webkit-appearance: menulist !important;
+  -moz-appearance: menulist !important;
+  line-height: 1.25 !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+  position: relative;
+  z-index: 2;
+}
+
+.procedure-form input::placeholder,
+.procedure-form textarea::placeholder {
+  color: #9ca3af !important;
+  -webkit-text-fill-color: #9ca3af !important;
+}
+
+.procedure-form option {
+  color: #111827;
+  background-color: #ffffff;
+}
+
+.procedure-form input[type='date']::-webkit-datetime-edit,
+.procedure-form input[type='date']::-webkit-datetime-edit-fields-wrapper,
+.procedure-form input[type='date']::-webkit-datetime-edit-text,
+.procedure-form input[type='date']::-webkit-datetime-edit-month-field,
+.procedure-form input[type='date']::-webkit-datetime-edit-day-field,
+.procedure-form input[type='date']::-webkit-datetime-edit-year-field {
+  color: #111827;
+}
+
 /* Admin food database — keep list table headers below modals */
 .admin-food-db-panel table thead th {
   z-index: 1;

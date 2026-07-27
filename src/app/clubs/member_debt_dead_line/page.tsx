@@ -3,10 +3,10 @@
 import ProcedureDeadlinesArchive from '@/components/procedures/archives/ProcedureDeadlinesArchive';
 import { PROCEDURE_TYPE_CODES } from '@/lib/procedures/types';
 
-export default function DeadLinePage() {
+export default function MemberDebtDeadLinePage() {
   return (
     <ProcedureDeadlinesArchive
-      procedureCode={PROCEDURE_TYPE_CODES.SERVICE_SALE}
+      procedureCode={PROCEDURE_TYPE_CODES.MEMBER_DEBT}
       activeTab="deadlines"
     />
   );

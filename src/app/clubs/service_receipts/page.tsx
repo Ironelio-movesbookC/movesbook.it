@@ -105,14 +105,17 @@ export default function ServiceReceiptsPage() {
     }
   }, [page]);
 
-  const performDelete = useCallback(async (id: string) => {
-    try {
-      await deleteReceipt(id);
-      load();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Delete failed');
-    }
-  }, [load]);
+  const performDelete = useCallback(
+    async (id: string) => {
+      try {
+        await deleteReceipt(id);
+        load();
+      } catch (e) {
+        alert(e instanceof Error ? e.message : 'Delete failed');
+      }
+    },
+    [load]
+  );
 
   useEffect(() => {
     load();
@@ -137,7 +140,10 @@ export default function ServiceReceiptsPage() {
 
       <AdminPasswordConfirmModal
         isOpen={showPasswordModal}
-        onClose={() => { setShowPasswordModal(false); setEditTarget(null); }}
+        onClose={() => {
+          setShowPasswordModal(false);
+          setEditTarget(null);
+        }}
         onVerified={() => {
           setShowPasswordModal(false);
           setShowEditModal(true);
@@ -147,7 +153,10 @@ export default function ServiceReceiptsPage() {
       {editTarget && (
         <EditServiceReceiptModal
           isOpen={showEditModal}
-          onClose={() => { setShowEditModal(false); setEditTarget(null); }}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditTarget(null);
+          }}
           onSaved={() => load()}
           receipt={{
             id: editTarget.id,
@@ -160,7 +169,10 @@ export default function ServiceReceiptsPage() {
 
       <AdminPasswordConfirmModal
         isOpen={showDeletePasswordModal}
-        onClose={() => { setShowDeletePasswordModal(false); setDeleteTargetId(null); }}
+        onClose={() => {
+          setShowDeletePasswordModal(false);
+          setDeleteTargetId(null);
+        }}
         onVerified={() => {
           setShowDeletePasswordModal(false);
           if (deleteTargetId) performDelete(deleteTargetId);

@@ -8,6 +8,7 @@ export default function ProcedureArchiveShell({
   activeTab,
   tabs,
   headerAction,
+  tabActions,
   error,
   footerHint,
   children,
@@ -20,7 +21,9 @@ export default function ProcedureArchiveShell({
         {headerAction}
       </div>
       <div className="bg-white border border-gray-200 rounded-b-lg p-4">
-        {tabs.length > 0 && <ProcedureArchiveTabs tabs={tabs} activeTab={activeTab} />}
+        {(tabs.length > 0 || tabActions) && (
+          <ProcedureArchiveTabs tabs={tabs} activeTab={activeTab} actions={tabActions} />
+        )}
         {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
         {children}
         {pagination}

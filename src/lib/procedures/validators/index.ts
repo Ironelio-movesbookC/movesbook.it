@@ -6,6 +6,10 @@ import {
   mapExpenseCreateToInput,
 } from './expense';
 import {
+  createMemberDebtRecordSchema,
+  mapMemberDebtCreateToInput,
+} from './memberDebt';
+import {
   createProductSaleRecordSchema,
   mapProductSaleCreateToInput,
 } from './productSale';
@@ -69,6 +73,18 @@ export function parseCreateRecord(type: string, body: unknown): ParseCreateRecor
         };
       }
       return { ok: true, data: mapProductSaleCreateToInput(parsed.data) };
+    }
+    case PROCEDURE_TYPE_CODES.MEMBER_DEBT: {
+      const parsed = createMemberDebtRecordSchema.safeParse(body);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          status: 400,
+          error: 'Validation failed',
+          details: parsed.error.flatten(),
+        };
+      }
+      return { ok: true, data: mapMemberDebtCreateToInput(parsed.data) };
     }
     default: {
       const _exhaustive: never = type;

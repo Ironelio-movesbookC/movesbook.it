@@ -4,6 +4,7 @@ export const PROCEDURE_TYPE_CODES = {
   SERVICE_SALE: 'service_sale',
   EXPENSE: 'expense',
   PRODUCT_SALE: 'product_sale',
+  MEMBER_DEBT: 'member_debt',
 } as const;
 
 export type ProcedureTypeCode =
@@ -27,6 +28,8 @@ export type ProcedureRecordDto = {
   clubId: string;
   memberId: string;
   memberName: string;
+  /** Profile image path from users_new.image (may be relative). */
+  memberImage: string | null;
   operatorId: string | null;
   operatorName: string;
   totalAmount: number;

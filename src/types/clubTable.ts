@@ -5,6 +5,8 @@ export type Member = {
 
   // selection
   checked?: boolean;
+  /** Club member user id (for same-member multi-pay validation). */
+  memberId?: string;
 
   // member list
   surname?: string;
@@ -42,6 +44,9 @@ export type Member = {
   payed?: number;
   description?: string;
   operator?: string;
+  /** Parent procedure record id (cash movement drill-down). */
+  procedureRecordId?: string;
+  procedureType?: string;
 
   // credit
   cost?: number;

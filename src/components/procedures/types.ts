@@ -14,6 +14,8 @@ export type ProcedureArchiveShellProps = {
   activeTab: string;
   tabs: ProcedureTab[];
   headerAction?: React.ReactNode;
+  /** Extra controls rendered beside archive tabs (e.g. Pay deadlines selected). */
+  tabActions?: React.ReactNode;
   error?: string;
   footerHint?: string;
   children: React.ReactNode;
