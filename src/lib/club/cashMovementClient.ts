@@ -2,16 +2,17 @@
 
 import { clubApiFetch } from '@/lib/club/servicePurchasesClient';
 
-const PREFIX_MAP: Record<string, string> = {
-  'in-': 'service_sale',
-  'pin-': 'product_sale',
-  'out-': 'expense',
-};
+const PREFIX_MAP: Array<{ prefix: string; procedureType: string }> = [
+  { prefix: 'mdin-', procedureType: 'member_debt' },
+  { prefix: 'pin-', procedureType: 'product_sale' },
+  { prefix: 'out-', procedureType: 'expense' },
+  { prefix: 'in-', procedureType: 'service_sale' },
+];
 
 export function parseCashMovementId(prefixedId: string): { procedureType: string; paymentId: string } | null {
-  const entry = Object.entries(PREFIX_MAP).find(([prefix]) => prefixedId.startsWith(prefix));
+  const entry = PREFIX_MAP.find(({ prefix }) => prefixedId.startsWith(prefix));
   if (!entry) return null;
-  return { procedureType: entry[1], paymentId: prefixedId.slice(entry[0].length) };
+  return { procedureType: entry.procedureType, paymentId: prefixedId.slice(entry.prefix.length) };
 }
 
 export async function updateCashMovement(

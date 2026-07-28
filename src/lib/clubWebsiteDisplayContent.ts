@@ -6,6 +6,10 @@ import {
   filterClubWebsiteTopicsForMembers,
   type ClubWebsiteTopic,
 } from '@/lib/clubWebsiteTopics';
+import {
+  CLUB_WEBSITE_LANGUAGE_TABS,
+  type ClubWebsiteLanguageCode,
+} from '@/lib/clubWebsiteLanguages';
 
 /** Legacy display preview — World Triathlon athlete profile (member-facing example). */
 export const CLUB_WEBSITE_DISPLAY_EXAMPLE_SITE_URL =
@@ -17,6 +21,23 @@ export function topicHasHtmlContent(
 ): boolean {
   const html = item.contentsByLang[lang] || item.contentsByLang.en || '';
   return html.trim().length > 0;
+}
+
+/** True when this specific language has its own non-empty HTML (no fallback to en). */
+export function topicHasHtmlContentInLang(
+  item: { contentsByLang: Record<string, string> },
+  lang: string
+): boolean {
+  return (item.contentsByLang[lang] ?? '').trim().length > 0;
+}
+
+/** Language codes that have real content for this topic — for the display dropdown. */
+export function languagesWithTopicHtmlContent(
+  item: { contentsByLang: Record<string, string> }
+): ClubWebsiteLanguageCode[] {
+  return CLUB_WEBSITE_LANGUAGE_TABS.filter((tab) =>
+    topicHasHtmlContentInLang(item, tab.code)
+  ).map((tab) => tab.code);
 }
 
 export function topicHasEmbedUrl(item: {

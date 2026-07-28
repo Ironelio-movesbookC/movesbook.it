@@ -141,10 +141,40 @@ const PRODUCT_SALE: ProcedureDefinition = {
   },
 };
 
+const MEMBER_DEBT: ProcedureDefinition = {
+  code: PROCEDURE_TYPE_CODES.MEMBER_DEBT,
+  name: 'Member Debt',
+  typologyLabel: 'MEMBER DEBTS',
+  pageSize: 25,
+  metadataKeys: { primary: 'debtLabel', secondary: 'typologyName' },
+  columnHeaders: { primary: 'Debt', secondary: 'Typology' },
+  routes: {
+    form: '/clubMembers/debt_member',
+    records: '/clubMembers/debt_member_list',
+    deadlines: '/clubs/member_debt_dead_line',
+    payments: '/clubs/member_debt_payments',
+    receipts: '/clubs/member_debt_receipts',
+    paymentDetail: (id) => `/clubs/member_debt_payment_detail/${id}`,
+  },
+  archiveTitles: {
+    records: 'Archive of Member Debts',
+    deadlines: 'Archive of Deadlines',
+    payments: 'Archive of Payments',
+    receipts: 'Archive of Receipts',
+    paymentForm: 'Payment — Member Debt',
+    newRecordButton: '+ New debit',
+  },
+  form: {
+    title: 'Add a credit',
+    subtitle: "How you can add a debt beside the 'classic' debts of subscription and purchasest",
+  },
+};
+
 export const PROCEDURE_DEFINITIONS: Record<ProcedureTypeCode, ProcedureDefinition> = {
   [PROCEDURE_TYPE_CODES.SERVICE_SALE]: SERVICE_SALE,
   [PROCEDURE_TYPE_CODES.EXPENSE]: EXPENSE,
   [PROCEDURE_TYPE_CODES.PRODUCT_SALE]: PRODUCT_SALE,
+  [PROCEDURE_TYPE_CODES.MEMBER_DEBT]: MEMBER_DEBT,
 };
 
 export const ALL_PROCEDURE_CODES = Object.values(PROCEDURE_TYPE_CODES);

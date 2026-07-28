@@ -38,15 +38,17 @@ export function ProcedureFormCell({
 }) {
   return (
     <label className={`block ${className}`}>
-      <span className="text-sm text-gray-600 block mb-1 text-right md:text-right">{label}</span>
+      <span className="mb-1 block text-right text-sm font-medium text-gray-800 md:text-right">
+        {label}
+      </span>
       {children}
     </label>
   );
 }
 
 export const procedureInputClass =
-  'w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white';
+  'w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-900';
 export const procedureHighlightInputClass =
-  'w-full border border-gray-300 rounded px-3 py-2 text-sm bg-yellow-50';
+  'w-full border border-gray-300 rounded px-3 py-2 text-sm bg-yellow-50 text-gray-900';
 export const procedureReadonlyInputClass =
-  'w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50';
+  'w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50 text-gray-900';

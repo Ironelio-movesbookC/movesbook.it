@@ -33,6 +33,15 @@ import {
   type SidebarTopicStatus,
 } from '@/components/club/websiteSettings/clubWebsiteSettingsSidebarData';
 import { useClubWebsiteSettingsSidebar } from '@/components/club/websiteSettings/ClubWebsiteSettingsSidebarContext';
+import { useAuth } from '@/hooks/useAuth';
+import {
+  canToggleClubWebsiteSidebarFeatures,
+  loadClubWebsiteSidebarFeatureFlags,
+  saveClubWebsiteSidebarFeatureFlags,
+  type ClubWebsiteSidebarFeatureFlags,
+} from '@/lib/clubWebsiteSidebarFeatureFlags';
+import { CLUB_WEBSITE_SETTINGS_CHANGED_EVENT } from '@/lib/clubWebsiteSettingsEvents';
+import { resolveMovebookTopicLaunchUrl } from '@/lib/club/movebookTopicLaunchUrls';
 
 /** Legacy visibility toggle — equal sides (regular quadrilateral / square). */
 function StatusSquare({ status }: { status: SidebarTopicStatus }) {
@@ -144,6 +153,7 @@ type ClubWebsiteSettingsSidebarPanelProps = Omit<
   'onAddTopic' | 'onSelectCustomTopic' | 'displayMode' | 'clubId'
 > & {
   displayMode?: boolean;
+  featureOwnerId?: string | null;
   customTopics: ClubWebsiteTopic[];
   friendListItems: ClubWebsiteFriendItem[];
   friendListAdminMode: boolean;
@@ -160,6 +170,7 @@ type ClubWebsiteSettingsSidebarPanelProps = Omit<
   onFriendMove: (id: string, direction: 'up' | 'down') => void;
   onFriendUpdateItem: (id: string, patch: Partial<ClubWebsiteFriendItem>) => void;
   onFriendAddSubtopic: (parentId: string, name: string) => void;
+  onAddCustomSubtopic: (parentId: string, name: string) => void;
 };
 
 function ClubWebsiteSettingsSidebarPanel({
@@ -174,6 +185,7 @@ function ClubWebsiteSettingsSidebarPanel({
   highlightBacheca = false,
   highlightTopicsSection = false,
   displayMode = false,
+  featureOwnerId = null,
   customTopics,
   onAddTopic,
   onSelectCustomTopic,
@@ -191,24 +203,125 @@ function ClubWebsiteSettingsSidebarPanel({
   onFriendUpdateItem,
   onFriendEditContent,
   onFriendAddSubtopic,
+  onAddCustomSubtopic,
 }: ClubWebsiteSettingsSidebarPanelProps) {
   const { t } = useLanguage();
+  const { user } = useAuth();
+  const canToggleFeatures =
+    !displayMode && canToggleClubWebsiteSidebarFeatures(user?.userType || '');
   const [socialSitesOpen, setSocialSitesOpen] = useState(false);
-  const [topicStatuses, setTopicStatuses] = useState<Record<string, SidebarTopicStatus>>(() =>
-    Object.fromEntries(
-      MOVEBOOK_TOPIC_ROWS.filter((r) => r.showStatus).map((r) => [
-        r.id,
-        r.defaultStatus ?? 'on',
-      ])
-    )
+  const [socialLaunchUrls, setSocialLaunchUrls] = useState<Record<string, string>>({});
+  const [featureFlags, setFeatureFlags] = useState<ClubWebsiteSidebarFeatureFlags>(() =>
+    loadClubWebsiteSidebarFeatureFlags(featureOwnerId)
   );
 
-  const toggleTopicStatus = (id: string) => {
-    setTopicStatuses((prev) => ({
-      ...prev,
-      [id]: prev[id] === 'on' ? 'off' : 'on',
-    }));
+  useEffect(() => {
+    setFeatureFlags(loadClubWebsiteSidebarFeatureFlags(featureOwnerId));
+  }, [featureOwnerId]);
+
+  useEffect(() => {
+    if (!featureOwnerId) {
+      setSocialLaunchUrls({});
+      return;
+    }
+    let cancelled = false;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return;
+
+    fetch(`/api/clubs/${featureOwnerId}/social-launch-urls`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as { urls?: Record<string, string> };
+        if (!cancelled && data.urls && typeof data.urls === 'object') {
+          setSocialLaunchUrls(data.urls);
+        }
+      })
+      .catch(() => {
+        /* URLs may be empty until Contact Info is filled */
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [featureOwnerId]);
+
+  useEffect(() => {
+    const onChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ clubId?: string }>).detail;
+      if (detail?.clubId && featureOwnerId && detail.clubId !== featureOwnerId) return;
+      setFeatureFlags(loadClubWebsiteSidebarFeatureFlags(featureOwnerId));
+    };
+    window.addEventListener(CLUB_WEBSITE_SETTINGS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(CLUB_WEBSITE_SETTINGS_CHANGED_EVENT, onChanged);
+  }, [featureOwnerId]);
+
+  const persistFlags = (next: ClubWebsiteSidebarFeatureFlags) => {
+    setFeatureFlags(next);
+    saveClubWebsiteSidebarFeatureFlags(featureOwnerId, next);
   };
+
+  const toggleMovebookStatus = (id: string) => {
+    if (!canToggleFeatures) return;
+    const next: ClubWebsiteSidebarFeatureFlags = {
+      ...featureFlags,
+      movebook: {
+        ...featureFlags.movebook,
+        [id]: featureFlags.movebook[id] === 'off' ? 'on' : 'off',
+      },
+    };
+    persistFlags(next);
+  };
+
+  const toggleSocialStatus = (id: string) => {
+    if (!canToggleFeatures) return;
+    const next: ClubWebsiteSidebarFeatureFlags = {
+      ...featureFlags,
+      social: {
+        ...featureFlags.social,
+        [id]: featureFlags.social[id] === 'off' ? 'on' : 'off',
+      },
+    };
+    persistFlags(next);
+  };
+
+  const launchSocialSite = (rowId: string, label: string) => {
+    const status = featureFlags.social[rowId] ?? 'on';
+    if (status === 'off') {
+      onSelectTopic(rowId, label);
+      return;
+    }
+    const href = socialLaunchUrls[rowId]?.trim();
+    if (href) {
+      window.open(href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    onSelectTopic(rowId, label);
+    window.alert(t('club_website_social_url_missing'));
+  };
+
+  const launchMovebookTopic = (rowId: string, label: string) => {
+    const status = featureFlags.movebook[rowId] ?? 'on';
+    if (status === 'off') {
+      onSelectTopic(rowId, label);
+      return;
+    }
+    const href = resolveMovebookTopicLaunchUrl(rowId);
+    if (href) {
+      window.open(href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    onSelectTopic(rowId, label);
+  };
+
+  const visibleSocialRows = displayMode
+    ? SOCIAL_SITE_ROWS.filter((row) => (featureFlags.social[row.id] ?? 'on') === 'on')
+    : SOCIAL_SITE_ROWS;
+
+  const visibleMovebookRows = displayMode
+    ? MOVEBOOK_TOPIC_ROWS.filter((row) => (featureFlags.movebook[row.id] ?? 'on') === 'on')
+    : MOVEBOOK_TOPIC_ROWS;
 
   return (
     <aside
@@ -360,6 +473,7 @@ function ClubWebsiteSettingsSidebarPanel({
           onUpdateItem={(id, patch) => onFriendUpdateItem(id, patch)}
           onEditContent={(id, label) => onFriendEditContent?.(id, label)}
           onAddSubtopic={(parentId, name) => onFriendAddSubtopic(parentId, name)}
+          onAddCustomSubtopic={onAddCustomSubtopic}
         />
 
         <MenuRow
@@ -374,16 +488,34 @@ function ClubWebsiteSettingsSidebarPanel({
         </MenuRow>
         {socialSitesOpen ? (
           <div className="ml-auto mr-0 w-[90%] min-w-0 space-y-0">
-            {SOCIAL_SITE_ROWS.map((row) => (
-              <MenuRow
-                key={row.id}
-                className="gap-2 font-semibold"
-                onClick={() => onSelectTopic(row.id, row.label)}
-              >
-                <Globe className="h-3.5 w-3.5 shrink-0 stroke-[1.5] opacity-95" aria-hidden />
-                <span className={selectedTopicId === row.id ? 'underline' : ''}>{row.label}</span>
-              </MenuRow>
-            ))}
+            {visibleSocialRows.map((row) => {
+              const status = featureFlags.social[row.id] ?? row.defaultStatus ?? 'on';
+              return (
+                <MenuRow
+                  key={row.id}
+                  className="justify-between gap-2 font-semibold"
+                  onClick={() => launchSocialSite(row.id, row.label)}
+                >
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <Globe className="h-3.5 w-3.5 shrink-0 stroke-[1.5] opacity-95" aria-hidden />
+                    <span className={selectedTopicId === row.id ? 'underline' : ''}>{row.label}</span>
+                  </span>
+                  {canToggleFeatures ? (
+                    <StatusToggleButton
+                      status={status}
+                      onToggle={() => toggleSocialStatus(row.id)}
+                      ariaLabel={t('club_website_toggle_visibility')}
+                    />
+                  ) : displayMode ? (
+                    <MenuRowStatusCell>
+                      <StatusSquare status={status} />
+                    </MenuRowStatusCell>
+                  ) : (
+                    <MenuRowStatusCell />
+                  )}
+                </MenuRow>
+              );
+            })}
           </div>
         ) : null}
 
@@ -394,32 +526,33 @@ function ClubWebsiteSettingsSidebarPanel({
           {t('club_website_movebook_topics')}
         </MenuRow>
 
-        {MOVEBOOK_TOPIC_ROWS.map((row) => (
-          <MenuRow
-            key={row.id}
-            className="justify-between"
-            onClick={() => onSelectTopic(row.id, row.label)}
-          >
-            <span className={selectedTopicId === row.id ? 'font-semibold underline' : ''}>
-              {row.label}
-            </span>
-            {row.showStatus ? (
-              displayMode ? (
-                <MenuRowStatusCell>
-                  <StatusSquare status={topicStatuses[row.id] ?? 'on'} />
-                </MenuRowStatusCell>
-              ) : (
+        {visibleMovebookRows.map((row) => {
+          const status = featureFlags.movebook[row.id] ?? row.defaultStatus ?? 'on';
+          return (
+            <MenuRow
+              key={row.id}
+              className="justify-between"
+              onClick={() => launchMovebookTopic(row.id, row.label)}
+            >
+              <span className={selectedTopicId === row.id ? 'font-semibold underline' : ''}>
+                {row.label}
+              </span>
+              {canToggleFeatures ? (
                 <StatusToggleButton
-                  status={topicStatuses[row.id] ?? 'on'}
-                  onToggle={() => toggleTopicStatus(row.id)}
+                  status={status}
+                  onToggle={() => toggleMovebookStatus(row.id)}
                   ariaLabel={t('club_website_toggle_visibility')}
                 />
-              )
-            ) : (
-              <MenuRowStatusCell />
-            )}
-          </MenuRow>
-        ))}
+              ) : displayMode ? (
+                <MenuRowStatusCell>
+                  <StatusSquare status={status} />
+                </MenuRowStatusCell>
+              ) : (
+                <MenuRowStatusCell />
+              )}
+            </MenuRow>
+          );
+        })}
       </div>
     </aside>
   );
@@ -452,6 +585,7 @@ function ClubWebsiteSettingsSidebarDisplay(props: ClubWebsiteSettingsSidebarProp
     <ClubWebsiteSettingsSidebarPanel
       {...props}
       displayMode
+      featureOwnerId={clubId}
       customTopics={memberTopics}
       friendListItems={friendItems}
       friendListAdminMode={false}
@@ -468,6 +602,7 @@ function ClubWebsiteSettingsSidebarDisplay(props: ClubWebsiteSettingsSidebarProp
       onFriendUpdateItem={noop}
       onFriendEditContent={onSelectTopic}
       onFriendAddSubtopic={noop}
+      onAddCustomSubtopic={noop}
     />
   );
 }
@@ -495,6 +630,7 @@ function ClubWebsiteSettingsSidebarAdmin(props: ClubWebsiteSettingsSidebarProps)
   return (
     <ClubWebsiteSettingsSidebarPanel
       {...props}
+      featureOwnerId={ctx.clubId}
       customTopics={ctx.topics.topics}
       friendListItems={ctx.friends.items}
       friendListAdminMode
@@ -512,6 +648,7 @@ function ClubWebsiteSettingsSidebarAdmin(props: ClubWebsiteSettingsSidebarProps)
       onFriendUpdateItem={ctx.friends.updateItem}
       onFriendEditContent={props.onFriendEditContent ?? defaultFriendEdit}
       onFriendAddSubtopic={ctx.friends.addSubtopicUnder}
+      onAddCustomSubtopic={ctx.topics.addSubtopicUnder}
     />
   );
 }

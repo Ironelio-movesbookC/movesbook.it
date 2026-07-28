@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
-import ProcedureFormSection, {
+import {
   procedureHighlightInputClass,
   procedureInputClass,
   procedureReadonlyInputClass,
@@ -49,6 +49,8 @@ export type ServicePaymentSubmitValues = {
 
 type Props = {
   purchase: ServiceSalePurchase;
+  /** Extra open deadlines (same member) opened via multi-select from the archive. */
+  extraPurchases?: ServiceSalePurchase[];
   payments: ServiceSalePayment[];
   options: ServiceSaleFormOptions;
   procedureType?: string;
@@ -70,6 +72,7 @@ function formatDisplayDate(iso: string | null | undefined): string {
 
 export default function ServicePaymentForm({
   purchase,
+  extraPurchases = [],
   payments,
   options,
   procedureType = 'service_sale',
@@ -83,11 +86,20 @@ export default function ServicePaymentForm({
   notEnterCustData = false,
 }: Props) {
   const sectionLabel = `${purchase.sectorName}-${purchase.serviceName}`;
+  const multiDeadlineMode = extraPurchases.length > 0;
+  const allPurchases = useMemo(
+    () => [purchase, ...extraPurchases.filter((p) => p.id !== purchase.id)],
+    [purchase, extraPurchases]
+  );
+  const totalRest = useMemo(
+    () => allPurchases.reduce((sum, p) => sum + Math.max(0, p.rest), 0),
+    [allPurchases]
+  );
   const [installments, setInstallments] = useState<InstallmentRow[]>([]);
   const [selectedInstallmentIds, setSelectedInstallmentIds] = useState<Set<string>>(new Set());
   const [installmentError, setInstallmentError] = useState('');
   const [paymentType, setPaymentType] = useState<'D' | 'B'>('D');
-  const [debtTotal, setDebtTotal] = useState(String(purchase.rest));
+  const [debtTotal, setDebtTotal] = useState(String(totalRest || purchase.rest));
   const [debtExpire, setDebtExpire] = useState(purchase.paydate ?? new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState(purchase.notes);
   const [amountPaid, setAmountPaid] = useState('0');
@@ -129,17 +141,44 @@ export default function ServicePaymentForm({
   const [pendingAction, setPendingAction] = useState<'new' | 'delete' | null>(null);
 
   useEffect(() => {
+    if (multiDeadlineMode) {
+      setInstallments([]);
+      return;
+    }
     fetchInstallments(procedureType, purchase.id)
       .then(setInstallments)
       .catch(() => setInstallments([]));
-  }, [procedureType, purchase.id]);
+  }, [procedureType, purchase.id, multiDeadlineMode]);
+
+  useEffect(() => {
+    setDebtTotal(String(totalRest || purchase.rest));
+  }, [totalRest, purchase.rest]);
+
+  useEffect(() => {
+    if (!multiDeadlineMode) return;
+    setSelectedInstallmentIds(
+      new Set(allPurchases.filter((p) => p.rest > 0).map((p) => p.id))
+    );
+  }, [multiDeadlineMode, allPurchases]);
 
   const paidAmount = Number(amountPaid) || 0;
   const payWithAmount = Number(payWith) || 0;
   const restGive = Math.max(0, payWithAmount - paidAmount);
-  const overallNewRest = Math.max(0, purchase.rest - paidAmount);
+  const overallNewRest = Math.max(0, totalRest - paidAmount);
 
   const installmentRows = useMemo(() => {
+    if (multiDeadlineMode) {
+      return allPurchases
+        .filter((p) => p.rest > 0)
+        .map((p) => ({
+          id: p.id,
+          balance: p.rest,
+          paymentDate: p.paydate,
+          paid: p.pay,
+          disabled: false,
+          label: `${p.typology}-${p.serviceName || p.notes || 'Debt'}`,
+        }));
+    }
     if (installments.length > 0) {
       return installments.map((row) => ({
         id: row.id,
@@ -147,6 +186,7 @@ export default function ServicePaymentForm({
         paymentDate: row.paymentDate,
         paid: row.paid,
         disabled: row.balance <= 0,
+        label: undefined as string | undefined,
       }));
     }
     const rows = payments.map((p) => ({
@@ -155,6 +195,7 @@ export default function ServicePaymentForm({
       paymentDate: p.paymentDate,
       paid: p.paid,
       disabled: true,
+      label: undefined as string | undefined,
     }));
     if (purchase.rest > 0) {
       rows.unshift({
@@ -163,10 +204,11 @@ export default function ServicePaymentForm({
         paymentDate: purchase.paydate,
         paid: purchase.rest,
         disabled: false,
+        label: undefined,
       });
     }
     return rows;
-  }, [installments, payments, purchase]);
+  }, [multiDeadlineMode, allPurchases, installments, payments, purchase]);
 
   const selectedTotalRest = useMemo(() => {
     return installmentRows
@@ -360,9 +402,17 @@ export default function ServicePaymentForm({
     });
   }
 
-  if (purchase.rest <= 0) {
+  const isMemberDebt = procedureType === 'member_debt';
+  const selectedInstallmentId = firstSelectedId();
+  const canModifyDelete =
+    !multiDeadlineMode &&
+    Boolean(selectedInstallmentId) &&
+    selectedInstallmentId !== 'current' &&
+    selectedInstallmentIds.size === 1;
+
+  if (totalRest <= 0) {
     return (
-      <div className="text-green-700 bg-green-50 border border-green-200 rounded p-4">
+      <div className="rounded border border-green-200 bg-green-50 p-4 text-green-700">
         This record is fully paid.
       </div>
     );
@@ -370,68 +420,109 @@ export default function ServicePaymentForm({
 
   return (
     <>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <ProcedureFormSection title="Deadlines">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 border border-gray-200 rounded p-3 bg-gray-50 max-h-56 overflow-y-auto">
-              <p className="text-sm font-medium text-red-700 mb-2">Deadlines total</p>
-              <ul className="space-y-3 text-sm">
-                {installmentRows.map((row) => (
-                  <li key={row.id} className="border-b border-gray-200 pb-2 last:border-0">
-                    <label className="flex items-start gap-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedInstallmentIds.has(row.id)}
-                        disabled={row.disabled && row.id !== 'current'}
-                        onChange={() => {
-                          const next = new Set(selectedInstallmentIds);
-                          if (next.has(row.id)) next.delete(row.id);
-                          else next.add(row.id);
-                          setSelectedInstallmentIds(next);
-                        }}
-                        className="mt-1"
-                      />
-                      <span>
-                        Purchase service in section{' '}
-                        <strong className="text-red-600">{sectionLabel}</strong>
-                        <ul className="mt-1 ml-2 text-gray-600">
-                          <li>
-                            Expire date of{' '}
-                            <span className="text-blue-500">{formatDisplayDate(row.paymentDate)}</span>
-                            {' '}of € {formatEuro(row.balance + row.paid)} Rest{' '}
-                            <span className="text-red-600">€ {formatEuro(row.balance)}</span>
-                          </li>
-                        </ul>
-                      </span>
-                    </label>
-                  </li>
-                ))}
+      <form onSubmit={handleSubmit} className="procedure-form space-y-3 text-gray-900">
+        {/* Deadlines list + New/Modify/Delete */}
+        <div>
+          <h2 className="mb-1 text-[14px] font-semibold text-red-700">deadline</h2>
+          <div className="flex gap-2">
+            <div className="min-h-[140px] flex-1 overflow-y-auto border border-gray-400 bg-[#f4f7d8] p-2">
+              <ul className="space-y-2 text-[13px]">
+                {installmentRows.map((row) => {
+                  const full = row.balance + row.paid;
+                  return (
+                    <li key={row.id}>
+                      <label className="flex cursor-pointer items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedInstallmentIds.has(row.id)}
+                          disabled={row.disabled && row.id !== 'current'}
+                          onChange={() => {
+                            const next = new Set(selectedInstallmentIds);
+                            if (next.has(row.id)) next.delete(row.id);
+                            else next.add(row.id);
+                            setSelectedInstallmentIds(next);
+                          }}
+                          className="mt-1"
+                        />
+                        <span>
+                          {isMemberDebt || multiDeadlineMode ? (
+                            <>
+                              <span className="font-semibold text-red-600">
+                                {row.label ||
+                                  `${purchase.typology}-${purchase.serviceName || purchase.notes || 'Member debt'}`}
+                              </span>
+                              <div className="mt-0.5 text-gray-800">
+                                Expire date of{' '}
+                                <span className="text-blue-600">{formatDisplayDate(row.paymentDate)}</span>
+                                {' '}of € {formatEuro(full)} Rest{' '}
+                                <span className="font-semibold text-red-600">€ {formatEuro(row.balance)}</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              Purchase service in section{' '}
+                              <strong className="text-red-600">{sectionLabel}</strong>
+                              <div className="mt-0.5 text-gray-700">
+                                Expire date of{' '}
+                                <span className="text-blue-600">{formatDisplayDate(row.paymentDate)}</span>
+                                {' '}of € {formatEuro(full)} Rest{' '}
+                                <span className="font-semibold text-red-600">€ {formatEuro(row.balance)}</span>
+                              </div>
+                            </>
+                          )}
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+                {installmentRows.length === 0 && (
+                  <li className="text-gray-500">No deadlines found.</li>
+                )}
               </ul>
+              <p className="mt-2 border-t border-gray-300 pt-1 text-[12px] text-gray-700">
+                Selected total:{' '}
+                <strong className={selectedTotalRest > 0 ? 'text-red-700' : ''}>
+                  {formatEuro(selectedTotalRest)}
+                </strong>
+              </p>
             </div>
-            <div className="flex flex-col gap-2 md:w-28">
-              <button type="button" onClick={handleNewInstallment} disabled={!firstSelectedId()} className="px-3 py-1.5 text-sm bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-40">
+
+            {!multiDeadlineMode && (
+            <div className="flex w-[78px] shrink-0 flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={handleNewInstallment}
+                className="rounded-sm border border-emerald-700 bg-emerald-600 px-2 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:bg-emerald-700"
+              >
                 New
               </button>
-              <button type="button" onClick={handleModifyInstallment} className="px-3 py-1.5 text-sm bg-gray-200 rounded hover:bg-gray-300">
+              <button
+                type="button"
+                onClick={handleModifyInstallment}
+                disabled={!canModifyDelete}
+                className="rounded-sm border border-sky-700 bg-sky-600 px-2 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 disabled:shadow-none"
+              >
                 Modify
               </button>
-              <button type="button" onClick={handleDeleteInstallment} className="px-3 py-1.5 text-sm bg-gray-200 rounded hover:bg-gray-300">
+              <button
+                type="button"
+                onClick={handleDeleteInstallment}
+                disabled={!canModifyDelete}
+                className="rounded-sm border border-red-800 bg-red-600 px-2 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 disabled:shadow-none"
+              >
                 Delete
               </button>
             </div>
+            )}
           </div>
-          <p className="text-xs text-gray-500 mt-1">
-            Selected total:{' '}
-            <strong className={selectedTotalRest > 0 ? 'text-red-700' : ''}>
-              {formatEuro(selectedTotalRest)}
-            </strong>
-          </p>
-          {installmentError && <p className="text-red-600 text-xs mt-2">{installmentError}</p>}
-        </ProcedureFormSection>
+          {installmentError && <p className="mt-1 text-[12px] text-red-600">{installmentError}</p>}
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ProcedureFormSection title="Type of payment">
-            <div className="flex gap-6 text-sm">
+        {/* Type of payment + Rest */}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <fieldset className="rounded-sm border border-gray-400 p-3">
+            <legend className="px-1 text-[13px] font-semibold text-gray-800">Type of payment</legend>
+            <div className="flex flex-wrap gap-6 text-[13px]">
               <label className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -453,12 +544,13 @@ export default function ServicePaymentForm({
                 Balance
               </label>
             </div>
-          </ProcedureFormSection>
+          </fieldset>
 
-          <ProcedureFormSection title="Debt">
-            <div className="grid grid-cols-2 gap-3 text-sm">
+          <fieldset className="rounded-sm border border-gray-400 p-3">
+            <legend className="px-1 text-[13px] font-semibold text-gray-800">Rest</legend>
+            <div className="grid grid-cols-2 gap-3 text-[13px]">
               <label className="block">
-                <span className="text-gray-600">Total</span>
+                <span className="text-gray-700">Total</span>
                 <input
                   type="number"
                   step="0.01"
@@ -469,7 +561,7 @@ export default function ServicePaymentForm({
                 />
               </label>
               <label className="block">
-                <span className="text-gray-600">Expired</span>
+                <span className="text-gray-700">Expired</span>
                 <input
                   type="date"
                   className={`mt-1 ${procedureHighlightInputClass}`}
@@ -479,11 +571,11 @@ export default function ServicePaymentForm({
                 />
               </label>
             </div>
-          </ProcedureFormSection>
+          </fieldset>
         </div>
 
-        <label className="block text-sm">
-          <span className="text-gray-600">Description</span>
+        <label className="block text-[13px]">
+          <span className="text-gray-700">Description</span>
           <textarea
             className={`mt-1 ${procedureInputClass}`}
             rows={2}
@@ -493,130 +585,142 @@ export default function ServicePaymentForm({
           />
         </label>
 
-        <div className="border border-gray-300 rounded p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end text-sm">
-            <label className="block">
-              <span className="text-gray-600">Amount paid</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                max={selectedTotalRest || purchase.rest}
-                className={`mt-1 ${procedureHighlightInputClass}`}
-                value={amountPaid}
-                onChange={(e) => setAmountPaid(e.target.value)}
-              />
-            </label>
-            <label className="block">
-              <span className="text-gray-600">Pay mode</span>
-              <select
-                className={`mt-1 ${procedureInputClass}`}
-                value={payMode}
-                onChange={(e) => setPayMode(e.target.value)}
-              >
-                <option value="">select</option>
-                {PAY_MODE_OPTIONS.filter((m) => m.value !== 'voucher').map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
-            </label>
-            <div className="flex items-center gap-2 pb-2">
-              <input
-                type="checkbox"
-                checked={taxDoc}
-                onChange={(e) => setTaxDoc(e.target.checked)}
-              />
-              <span>Tax doc</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setTaxModalOpen(true)}
-              disabled={!taxDoc}
-              className="px-3 py-2 text-sm bg-gray-200 rounded hover:bg-gray-300 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Open form
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end text-sm">
-            <label className="block">
-              <span className="text-gray-600">Date</span>
-              <input
-                type="date"
-                className={`mt-1 ${procedureHighlightInputClass}`}
-                value={paymentDate}
-                onChange={(e) => setPaymentDate(e.target.value)}
-              />
-            </label>
-            <label className="block">
-              <span className="text-gray-600">Operator</span>
-              <select
-                className={`mt-1 ${procedureInputClass}`}
-                value={operatorId}
-                onChange={(e) => setOperatorId(e.target.value)}
-              >
-                <option value="">select</option>
-                {options.operators.map((o) => (
-                  <option key={o.id} value={o.id}>{o.name}</option>
-                ))}
-              </select>
-            </label>
-            <div className="flex items-center gap-2 pb-2">
-              <input
-                type="checkbox"
-                checked={passwordRequired}
-                disabled={isPasswordEnabled}
-                onChange={(e) => setPasswordRequired(e.target.checked)}
-              />
-              <span>Password</span>
-            </div>
-            {passwordRequired && (
-              <div className="relative">
+        {/* Payment panel — PHP 2-column layout */}
+        <div className="rounded-[12px] border border-[#9ec5c7] bg-[#c4e2e3] px-4 py-5 sm:px-6">
+          <div className="mx-auto grid max-w-3xl grid-cols-1 gap-x-10 gap-y-3 sm:grid-cols-2">
+            {/* Left column */}
+            <div className="space-y-4 text-[13px]">
+              <label className="flex items-center gap-3">
+                <span className="w-[100px] shrink-0 text-right text-gray-800">Amount paid</span>
                 <input
-                  type={showPassword ? 'text' : 'password'}
-                  className={procedureInputClass}
-                  value={operatorPassword}
-                  onChange={(e) => setOperatorPassword(e.target.value)}
-                  placeholder="Password"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  max={selectedTotalRest || totalRest}
+                  className={`h-[30px] flex-1 ${procedureHighlightInputClass}`}
+                  value={amountPaid}
+                  onChange={(e) => setAmountPaid(e.target.value)}
                 />
+              </label>
+              <label className="flex items-center gap-3">
+                <span className="w-[100px] shrink-0 text-right text-gray-800">Date</span>
+                <input
+                  type="date"
+                  className={`h-[30px] flex-1 ${procedureHighlightInputClass}`}
+                  value={paymentDate}
+                  onChange={(e) => setPaymentDate(e.target.value)}
+                />
+              </label>
+              <label className="flex items-center gap-3">
+                <span className="w-[100px] shrink-0 text-right text-gray-800">Pay with €</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className={`h-[30px] flex-1 ${procedureHighlightInputClass}`}
+                  value={payWith}
+                  onChange={(e) => setPayWith(e.target.value)}
+                />
+              </label>
+              <div className="flex items-center gap-3">
+                <span className="w-[100px] shrink-0" />
+                <label className="flex items-center gap-2 text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={taxDoc}
+                    onChange={(e) => setTaxDoc(e.target.checked)}
+                  />
+                  Tax doc
+                </label>
                 <button
                   type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
-                  onClick={() => setShowPassword((v) => !v)}
-                  tabIndex={-1}
+                  onClick={() => setTaxModalOpen(true)}
+                  disabled={!taxDoc}
+                  className="rounded-sm border border-gray-500 bg-[#d9d9d9] px-3 py-1 text-[12px] text-gray-800 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  Open form
                 </button>
               </div>
-            )}
-          </div>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-            <label className="block">
-              <span className="text-gray-600">Pay with €</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                className={`mt-1 ${procedureHighlightInputClass}`}
-                value={payWith}
-                onChange={(e) => setPayWith(e.target.value)}
-              />
-            </label>
-            <label className="block">
-              <span className="text-gray-600">Resto to give</span>
-              <input
-                type="text"
-                readOnly
-                className={`mt-1 ${procedureInputClass}`}
-                style={{ backgroundColor: '#d3f07b' }}
-                value={restGive.toFixed(2)}
-              />
-            </label>
+            {/* Right column */}
+            <div className="space-y-4 text-[13px]">
+              <label className="flex items-center gap-3">
+                <span className="w-[100px] shrink-0 text-right text-gray-800">Pay mode</span>
+                <select
+                  className="h-[30px] min-w-0 flex-1 border border-gray-400 bg-white px-2 text-[13px] leading-normal text-gray-900"
+                  value={payMode}
+                  onChange={(e) => setPayMode(e.target.value)}
+                >
+                  <option value="">select</option>
+                  {PAY_MODE_OPTIONS.filter((m) => m.value !== 'voucher').map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-3">
+                <span className="w-[100px] shrink-0 text-right text-gray-800">Operator</span>
+                <select
+                  className="h-[30px] min-w-0 flex-1 border border-gray-400 bg-white px-2 text-[13px] leading-normal text-gray-900"
+                  value={operatorId}
+                  onChange={(e) => setOperatorId(e.target.value)}
+                >
+                  <option value="">select</option>
+                  {options.operators.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-3">
+                <span className="w-[100px] shrink-0 text-right text-gray-800">Resto to give</span>
+                <input
+                  type="text"
+                  readOnly
+                  className={`h-[30px] flex-1 ${procedureInputClass}`}
+                  style={{ backgroundColor: '#d3f07b' }}
+                  value={restGive.toFixed(2)}
+                />
+              </label>
+              <div className="flex items-center gap-3">
+                <span className="w-[100px] shrink-0" />
+                <label className="flex items-center gap-2 text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={passwordRequired}
+                    disabled={isPasswordEnabled}
+                    onChange={(e) => setPasswordRequired(e.target.checked)}
+                  />
+                  Password
+                </label>
+                {passwordRequired && (
+                  <div className="relative min-w-0 flex-1">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      className={`h-[30px] w-full ${procedureInputClass}`}
+                      value={operatorPassword}
+                      onChange={(e) => setOperatorPassword(e.target.value)}
+                      placeholder="Password"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+                      onClick={() => setShowPassword((v) => !v)}
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {nextRests.length > 0 && (
-            <div className="text-sm text-gray-600 space-y-1">
+            <div className="mx-auto mt-4 max-w-3xl space-y-1 text-[12px] text-gray-700">
               {nextRests.map((r) => (
                 <p key={r.id}>
                   <span className="font-medium">{r.label}</span> — Rest:{' '}
@@ -627,14 +731,14 @@ export default function ServicePaymentForm({
           )}
         </div>
 
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        {success && <p className="text-green-700 text-sm">{success}</p>}
+        {error && <p className="text-center text-[13px] text-red-600">{error}</p>}
+        {success && <p className="text-center text-[13px] text-green-700">{success}</p>}
 
-        <div className="flex justify-center gap-3">
+        <div className="flex justify-center gap-3 pt-1">
           <button
             type="submit"
             disabled={saving}
-            className="px-6 py-2 bg-red-700 text-white rounded hover:bg-red-800 disabled:opacity-50"
+            className="min-w-[96px] rounded-sm bg-[#c62828] px-5 py-1.5 text-[13px] font-semibold text-white hover:bg-[#b71c1c] disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Confirm'}
           </button>
@@ -642,7 +746,7 @@ export default function ServicePaymentForm({
             <button
               type="button"
               onClick={onCancel}
-              className="px-6 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+              className="min-w-[96px] rounded-sm bg-[#424242] px-5 py-1.5 text-[13px] font-semibold text-white hover:bg-[#303030]"
             >
               Exit
             </button>

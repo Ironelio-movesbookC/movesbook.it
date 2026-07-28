@@ -542,39 +542,28 @@ export async function listCashMovements(
   const pageSize = params.pageSize ?? 25;
   const items: Record<string, unknown>[] = [];
 
-  if (direction === 'all' || direction === 'IN') {
-    const servicePayments = await procedureService.listPayments(ctx, PROCEDURE_TYPE_CODES.SERVICE_SALE, {
-      page: 1,
-      pageSize: 500,
-    });
-    for (const p of servicePayments.items) {
+  async function pushPayments(
+    procedureType: string,
+    idPrefix: string,
+    cashDirection: 'IN' | 'OUT'
+  ) {
+    const payments = await procedureService
+      .listPayments(ctx, procedureType, { page: 1, pageSize: 500 })
+      .catch(() => ({ items: [] as Awaited<ReturnType<typeof procedureService.listPayments>>['items'] }));
+    for (const p of payments.items) {
       items.push({
-        id: `in-${p.id}`,
+        id: `${idPrefix}${p.id}`,
+        paymentId: p.id,
+        procedureRecordId: p.procedureRecordId,
+        procedureType,
         name: p.memberName,
         typology: p.typology,
         service: p.serviceName,
         insertDate: p.paymentDate,
         paid: p.amount,
-        direction: 'IN',
-        payMod: p.payMode,
-        casual: p.notes,
-        operator: p.operatorName,
-      });
-    }
-
-    const productPayments = await procedureService.listPayments(ctx, PROCEDURE_TYPE_CODES.PRODUCT_SALE, {
-      page: 1,
-      pageSize: 500,
-    }).catch(() => ({ items: [] as typeof servicePayments.items }));
-    for (const p of productPayments.items) {
-      items.push({
-        id: `pin-${p.id}`,
-        name: p.memberName,
-        typology: p.typology,
-        service: p.serviceName,
-        insertDate: p.paymentDate,
-        paid: p.amount,
-        direction: 'IN',
+        rest: p.residualDebt,
+        value: p.originalDebt,
+        direction: cashDirection,
         payMod: p.payMode,
         casual: p.notes,
         operator: p.operatorName,
@@ -582,25 +571,14 @@ export async function listCashMovements(
     }
   }
 
+  if (direction === 'all' || direction === 'IN') {
+    await pushPayments(PROCEDURE_TYPE_CODES.SERVICE_SALE, 'in-', 'IN');
+    await pushPayments(PROCEDURE_TYPE_CODES.PRODUCT_SALE, 'pin-', 'IN');
+    await pushPayments(PROCEDURE_TYPE_CODES.MEMBER_DEBT, 'mdin-', 'IN');
+  }
+
   if (direction === 'all' || direction === 'OUT') {
-    const expensePayments = await procedureService.listPayments(ctx, PROCEDURE_TYPE_CODES.EXPENSE, {
-      page: 1,
-      pageSize: 500,
-    });
-    for (const p of expensePayments.items) {
-      items.push({
-        id: `out-${p.id}`,
-        name: p.memberName,
-        typology: p.typology,
-        service: p.serviceName,
-        insertDate: p.paymentDate,
-        paid: p.amount,
-        direction: 'OUT',
-        payMod: p.payMode,
-        casual: p.notes,
-        operator: p.operatorName,
-      });
-    }
+    await pushPayments(PROCEDURE_TYPE_CODES.EXPENSE, 'out-', 'OUT');
   }
 
   items.sort((a, b) => String(b.insertDate).localeCompare(String(a.insertDate)));

@@ -17,6 +17,7 @@ export type ProcedureRecordView = {
   id: string;
   userId: string;
   memberName: string;
+  memberImage: string | null;
   typology: string;
   primaryLabel: string;
   secondaryLabel: string;
@@ -44,6 +45,7 @@ export type ProcedurePaymentView = {
   description: string;
   operatorId: string | null;
   operatorName: string;
+  payMode: string | null;
 };
 
 export type ProcedureReceiptView = {
@@ -90,6 +92,7 @@ function mapRecord(def: ProcedureDefinition, record: ProcedureRecordDto): Proced
     id: record.id,
     userId: record.memberId,
     memberName: record.memberName,
+    memberImage: record.memberImage ?? null,
     typology: getProcedureTypology(def.code),
     primaryLabel: metaString(metadata, def.metadataKeys.primary) || '-',
     secondaryLabel: def.metadataKeys.secondary
@@ -121,6 +124,7 @@ function mapPayment(def: ProcedureDefinition, payment: ProcedurePaymentDto): Pro
     operatorName: payment.operatorName,
     originalDebt: payment.originalDebt,
     residualDebt: payment.residualDebt,
+    payMode: payment.payMode,
   };
 }
 

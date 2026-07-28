@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   createInitialBachecaLabels,
+  normalizeBachecaLabel,
   type BachecaLabel,
 } from '@/lib/clubBachecaLabels';
 
@@ -46,7 +47,9 @@ export function useClubBachecaLabels(clubId: string | undefined) {
         throw new Error(data?.error || 'Unable to load bacheca labels');
       }
       if (Array.isArray(data.labels)) {
-        const loaded = data.labels as BachecaLabel[];
+        const loaded = (data.labels as BachecaLabel[]).map((label) =>
+          normalizeBachecaLabel(label),
+        );
         setLabels(loaded);
         setSavedLabels(loaded);
       }
@@ -64,7 +67,7 @@ export function useClubBachecaLabels(clubId: string | undefined) {
   }, [loadLabels]);
 
   const applyLabel = useCallback(
-    async (label: Pick<BachecaLabel, 'id' | 'name' | 'activated' | 'content'>) => {
+    async (label: Pick<BachecaLabel, 'id' | 'name' | 'activated' | 'content' | 'updatedOn'>) => {
       if (!clubId) {
         setError('No club selected');
         return false;
@@ -91,6 +94,7 @@ export function useClubBachecaLabels(clubId: string | undefined) {
           const normalized = {
             ...label,
             name: label.name.trim(),
+            updatedOn: (label.updatedOn ?? '').trim(),
           };
           setLabels((prev) =>
             prev.map((item) => (item.id === label.id ? { ...item, ...normalized } : item)),

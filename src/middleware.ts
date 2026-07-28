@@ -55,6 +55,14 @@ function isPublicSharedWorkoutApi(pathname: string): boolean {
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // PHP legacy casing (/users/deadLine). next.config redirects are case-insensitive
+  // and loop on Windows; rewrite only when casing differs from the App Router folder.
+  if (/^\/users\/deadline$/i.test(pathname) && pathname !== '/users/deadline') {
+    const url = request.nextUrl.clone();
+    url.pathname = '/users/deadline';
+    return NextResponse.rewrite(url);
+  }
+
   if (request.method === 'POST' && NOOP_POST_PATHS.has(pathname)) {
     return new NextResponse(null, { status: 204 });
   }
@@ -85,9 +93,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // For page routes, we'll handle authentication client-side
-  // The middleware just allows the request to pass through
-  // Client-side components will check auth and redirect if needed
+  // Page auth is handled client-side
   return NextResponse.next();
 }
 

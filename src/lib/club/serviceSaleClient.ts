@@ -26,6 +26,8 @@ export type ServiceSalePurchase = {
   operatorId: string | null;
   operatorName: string;
   lastPaymentDate: string | null;
+  /** Tax doc label from metadata when present (Simple Receipt / Tax Receipt / Invoice). */
+  docType?: string;
 };
 
 export type ServiceSalePayment = {
@@ -73,22 +75,47 @@ function metaString(metadata: Record<string, unknown> | null | undefined, key: s
 }
 
 export function mapRecord(record: ProcedureRecordDto): ServiceSalePurchase {
+  const meta = record.metadata;
+  const taxDocRaw = meta?.taxDoc ?? meta?.tax_doc;
+  const taxDocument =
+    meta?.taxDocument && typeof meta.taxDocument === 'object'
+      ? (meta.taxDocument as Record<string, unknown>)
+      : null;
+  const docFromTaxDocument = taxDocument ? metaString(taxDocument, 'documentType') : '';
+  const docTypeMap: Record<string, string> = {
+    '1': 'Simple Receipt',
+    '2': 'Tax Receipt',
+    '3': 'Invoice',
+  };
+  const docType =
+    docFromTaxDocument ||
+    (taxDocRaw != null && taxDocRaw !== false
+      ? docTypeMap[String(taxDocRaw)] || (taxDocRaw === true ? 'Invoice' : String(taxDocRaw))
+      : '');
+
+  const notes =
+    (record.notes && record.notes.trim()) ||
+    metaString(meta, 'causal') ||
+    metaString(meta, 'annotation') ||
+    '';
+
   return {
     id: record.id,
     userId: record.memberId,
     memberName: record.memberName,
-    memberImage: null,
+    memberImage: record.memberImage ?? null,
     typology: 'SERVICES',
-    sectorName: metaString(record.metadata, 'sectorName') || '-',
-    serviceName: metaString(record.metadata, 'serviceName') || '-',
+    sectorName: metaString(meta, 'sectorName') || '-',
+    serviceName: metaString(meta, 'serviceName') || '-',
     paydate: record.recordDate,
     value: record.totalAmount,
     pay: record.paidAmount,
     rest: record.balanceAmount,
-    notes: record.notes ?? '',
+    notes,
     operatorId: record.operatorId,
     operatorName: record.operatorName,
     lastPaymentDate: record.lastPaymentDate,
+    docType: docType || undefined,
   };
 }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { getDashboardPathForUserType } from '@/utils/dashboardRouting';
+import { clearClubWorkspaceSessionOnLogout } from '@/lib/club/clearClubWorkspaceSession';
 
 export interface AuthUser {
   id: string;
@@ -30,6 +31,7 @@ export function useAuth() {
       }
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      clearClubWorkspaceSessionOnLogout();
     }
     setUser(null);
     router.push('/');
@@ -59,6 +61,8 @@ export function useAuth() {
 
   const login = (token: string, userData: AuthUser, redirectPath?: string | null) => {
     if (typeof window !== 'undefined') {
+      // Drop previous account's workspace hints before binding a new session.
+      clearClubWorkspaceSessionOnLogout();
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userData));
     }
