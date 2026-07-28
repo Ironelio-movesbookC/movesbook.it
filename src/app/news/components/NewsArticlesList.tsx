@@ -48,6 +48,12 @@ export type ArticlePasted = OGPData & {
   createdBySuperAdmin?: boolean;
   /** Musical genre (Music OGP only). */
   genre?: string | null;
+  /** Artist name entered in Add Music (Music OGP only). */
+  artist?: string | null;
+  /** Song / Album / Playlist selected in Add Music (Music OGP only). */
+  registrationType?: string | null;
+  /** True when the creator saved this entry with "Put in my favourites" checked. */
+  isFavourite?: boolean;
   /** When true, this card represents an OGP News group (preview = first member). */
   isOgpGroup?: boolean;
   groupName?: string;
@@ -84,7 +90,14 @@ export type OgpNewsGroupCard = {
   previewCreatorUsername?: string | null;
 };
 
-export type ArticleTyped = { id: string; description: string };
+export type ArticleTyped = {
+  id: string;
+  description: string;
+  artist?: string | null;
+  title?: string | null;
+  registrationType?: string | null;
+  isFavourite?: boolean;
+};
 
 const FALLBACK_NEWS_TOPICS_LIST = [
   'News',
@@ -692,6 +705,24 @@ export default function NewsArticlesList({
    */
   const canFilterByMyOgNews = !!currentUserId;
 
+  /** Super-admin default: "my country". Viewing a user's topic / view-as-user: "user country". */
+  const postedByCountryLabel = useMemo(() => {
+    const viewingAsUser = !!showOnlyMyOgNewsLabelUsername?.trim();
+    const viewingUserInsertedTopic =
+      activeTopic === ALL_USER_SECTORS ||
+      (!!activeTopic &&
+        (topicNamesCreatedByNormalUsers.includes(activeTopic) ||
+          !!userInsertedTopics?.some((t) => t.name === activeTopic)));
+    return viewingAsUser || viewingUserInsertedTopic
+      ? 'Show posted by user country'
+      : 'Show posted by my country';
+  }, [
+    showOnlyMyOgNewsLabelUsername,
+    activeTopic,
+    topicNamesCreatedByNormalUsers,
+    userInsertedTopics,
+  ]);
+
   const filtered = useMemo(() => {
     const applyArticleFilters = (source: ArticlePasted[]) => {
       let list = source;
@@ -720,9 +751,12 @@ export default function NewsArticlesList({
         }
       } else {
         list = list.filter((a) => {
-          // Creators always see their own OGPs (except deleted unless that filter is on).
           if (canEditAsCreator(a)) {
             if (a.deletedAt) return showDeletedTemporarily;
+            // Creator's own OGPs: hide expired unless "Show also expired" is checked.
+            if (!showExpired && hasExpirationDateSet(a) && !isNotExpired(a)) {
+              return false;
+            }
             return true;
           }
           const isActive = isActiveForNormalUser(a);
@@ -761,9 +795,33 @@ export default function NewsArticlesList({
       return list;
     };
 
-    // Music (and any non-news base): keep prior single-article behavior (no group filters).
+    // Music: apply library-nav filters (registrationType / favourites / recent).
     if (apiBase === '/api/music') {
-      return applyArticleFilters(byTopic);
+      const registrationTypeByNav: Partial<Record<MusicLibraryNavKey, string>> = {
+        playlist: 'Playlist',
+        songs: 'Song',
+        albums: 'Album',
+      };
+      let base = byTopic;
+      if (musicLibraryNav === 'favourites') {
+        // Only the current account's favourites (superadmin → theirs; view-as-user → that user's).
+        base = byTopic.filter(
+          (a) => a.isFavourite === true && canEditAsCreator(a)
+        );
+      } else if (musicLibraryNav === 'recent') {
+        const oneMonthAgo = new Date();
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+        const cutoff = oneMonthAgo.getTime();
+        base = byTopic.filter((a) => {
+          if (!a.savedAt) return false;
+          const t = new Date(a.savedAt).getTime();
+          return !Number.isNaN(t) && t >= cutoff;
+        });
+      } else if (musicLibraryNav && registrationTypeByNav[musicLibraryNav]) {
+        const wanted = registrationTypeByNav[musicLibraryNav];
+        base = byTopic.filter((a) => (a.registrationType ?? '').trim() === wanted);
+      }
+      return applyArticleFilters(base);
     }
 
     // Group session: show only OGP News that belong to the selected group.
@@ -859,6 +917,7 @@ export default function NewsArticlesList({
     canEditAsCreator,
     apiBase,
     activeMusicalGenre,
+    musicLibraryNav,
     showSingleNews,
     showGroupsOfNews,
     isAddingToGroup,
@@ -1352,7 +1411,10 @@ export default function NewsArticlesList({
                     <button
                       key={key}
                       type="button"
-                      onClick={() => setMusicLibraryNav(key)}
+                      onClick={() => {
+                        setMusicLibraryNav((prev) => (prev === key ? null : key));
+                        setCurrentPage(1);
+                      }}
                       className={`inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-1 rounded text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
                         isActive
                           ? 'bg-white/20 text-white'
@@ -1469,10 +1531,10 @@ export default function NewsArticlesList({
                   setCurrentPage(1);
                 }}
                 className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                aria-label="Show posted by my country"
+                aria-label={postedByCountryLabel}
               />
               <span className="text-white text-sm whitespace-nowrap">
-                Show posted by my country
+                {postedByCountryLabel}
               </span>
             </label>
             {canFilterByMyOgNews && (
@@ -1715,6 +1777,11 @@ export default function NewsArticlesList({
                           ? highlightText(a.title || a.url, search)
                           : a.title || a.url}
                       </h4>
+                      {a.artist ? (
+                        <p className="text-xs text-gray-500 mt-0.5 truncate" title={a.artist}>
+                          {a.artist}
+                        </p>
+                      ) : null}
                       <p
                         className={`text-xs text-gray-600 mt-1 flex-1 min-h-0 ${
                           expandedArticleIds.has(a.id)
@@ -1901,7 +1968,21 @@ export default function NewsArticlesList({
                         title={a.isOgpGroup ? 'View creator of this group' : 'View creator of this article'}
                         aria-label="View creator"
                       >
-                        <User className="w-3.5 h-3.5" />
+                        {apiBase === '/api/music' && isSuperAdmin && a.createdBySuperAdmin ? (
+                          <span
+                            className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded bg-red-600 text-white border border-yellow-300 shrink-0 select-none"
+                            style={{
+                              fontFamily: "'Comic Sans MS', 'Comic Sans', cursive",
+                              fontSize: 11,
+                              fontWeight: 700,
+                              lineHeight: 1,
+                            }}
+                          >
+                            MB
+                          </span>
+                        ) : (
+                          <User className="w-3.5 h-3.5" />
+                        )}
                       </button>
                       <button
                         type="button"

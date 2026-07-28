@@ -275,6 +275,8 @@ model MusicOgpArticle {
   id                    String    @id @default(cuid())
   userId                String
   title                 String?   @db.Text
+  /// Artist name entered in Add Music (free text).
+  artist                String?
   image                 String?   @db.Text
   description           String?   @db.Text
   url                   String    @db.Text
@@ -284,6 +286,10 @@ model MusicOgpArticle {
   topic                 String
   /// Musical genre selected when adding music (shown as grey chip in topic bar).
   genre                 String?
+  /// Song / Album / Playlist selected in Add Music.
+  registrationType      String?
+  /// True when the creator checked "Put in my favourites" at save time.
+  isFavourite           Boolean   @default(false)
   languageCode          String?
   savedAt               DateTime  @default(now())
   expiresAt             DateTime?
@@ -321,6 +327,14 @@ model MusicTypedArticle {
   id          String   @id @default(cuid())
   userId      String
   description String   @db.Text
+  /// Artist name entered in Add Music (free text).
+  artist      String?
+  /// Track title entered in Add Music (free text).
+  title       String?
+  /// Song / Album / Playlist selected in Add Music.
+  registrationType String?
+  /// True when the creator checked "Put in my favourites" at save time.
+  isFavourite Boolean  @default(false)
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 

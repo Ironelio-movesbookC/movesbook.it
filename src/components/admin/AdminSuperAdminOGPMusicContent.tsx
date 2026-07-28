@@ -9,6 +9,7 @@ import NewTopicModal from '@/app/news/components/NewTopicModal';
 import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
 import OGPForm from '@/app/news/components/OGPForm';
 import NewsArticlesList from '@/app/news/components/NewsArticlesList';
+import MusicOGPStatisticsModal from '@/components/music/MusicOGPStatisticsModal';
 
 /** Music has no built-in default topics; users add their own via "Add topic". */
 const MUSIC_TOPICS = [] as const;
@@ -288,6 +289,7 @@ export default function AdminSuperAdminOGPMusicContent({
   const [showOgpForm, setShowOgpForm] = useState(false);
   const [showNewTopicModal, setShowNewTopicModal] = useState(false);
   const [showTopicSortModal, setShowTopicSortModal] = useState(false);
+  const [showStatistics, setShowStatistics] = useState(false);
   const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
   const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -417,7 +419,7 @@ export default function AdminSuperAdminOGPMusicContent({
         ) {
           throw new Error('Select a topic before adding music');
         }
-        await addPastedArticle(data, activeTopic);
+        await addPastedArticle({ ...data, isFavourite: putInFavourites }, activeTopic);
         await rememberMusicalGenre(data.musicalGenre);
         setShowOgpForm(false);
         setPutInFavourites(false);
@@ -425,13 +427,17 @@ export default function AdminSuperAdminOGPMusicContent({
         console.error(e);
       }
     },
-    [activeTopic, addPastedArticle, rememberMusicalGenre]
+    [activeTopic, addPastedArticle, rememberMusicalGenre, putInFavourites]
   );
 
   const handleSaveTyped = useCallback(
-    async (description: string, musicalGenre?: string | null) => {
+    async (
+      description: string,
+      musicalGenre?: string | null,
+      meta?: { artist?: string | null; musicTitle?: string | null; registrationType?: string | null; isFavourite?: boolean }
+    ) => {
       try {
-        await addTypedArticle(description);
+        await addTypedArticle(description, { ...meta, isFavourite: putInFavourites });
         await rememberMusicalGenre(musicalGenre);
         setShowOgpForm(false);
         setPutInFavourites(false);
@@ -439,7 +445,7 @@ export default function AdminSuperAdminOGPMusicContent({
         console.error(e);
       }
     },
-    [addTypedArticle, rememberMusicalGenre]
+    [addTypedArticle, rememberMusicalGenre, putInFavourites]
   );
 
   if (!authChecked || !adminUser) {
@@ -449,7 +455,11 @@ export default function AdminSuperAdminOGPMusicContent({
   return (
     <div className="p-4 md:p-6 max-w-[1920px] mx-auto">
       <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 gap-2 flex-wrap">
+        <div
+          className={`flex items-center justify-between px-4 py-3 border-b border-gray-200 gap-2 flex-wrap ${
+            viewAsUsername ? 'bg-[#EFE4B0]' : 'bg-gray-50'
+          }`}
+        >
           {viewAsUsername ? (
             <>
               <h1 className="text-lg font-semibold text-gray-900 flex-1 min-w-0">
@@ -466,13 +476,24 @@ export default function AdminSuperAdminOGPMusicContent({
           ) : (
             <h1 className="text-lg font-semibold text-gray-900">Music</h1>
           )}
-          <a
-            href={closeHref}
-            className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-200 hover:text-gray-700 transition-colors shrink-0 ml-auto"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </a>
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
+            {isSuperAdmin && !viewAsUsername ? (
+              <button
+                type="button"
+                onClick={() => setShowStatistics(true)}
+                className="px-3 py-1.5 rounded-lg text-sm font-medium text-[#1a2744] border border-[#1a2744]/40 hover:bg-[#1a2744] hover:text-white transition-colors"
+              >
+                Statistic
+              </button>
+            ) : null}
+            <a
+              href={closeHref}
+              className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-200 hover:text-gray-700 transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </a>
+          </div>
         </div>
 
         <div className="p-4">
@@ -578,6 +599,7 @@ export default function AdminSuperAdminOGPMusicContent({
                 <div className="p-6">
                   <OGPForm
                     variant="music"
+                    isFavourite={putInFavourites}
                     onPastedArticle={handlePastedArticle}
                     onSaveTyped={handleSaveTyped}
                     onCancel={() => {
@@ -623,6 +645,12 @@ export default function AdminSuperAdminOGPMusicContent({
           />
         </div>
       </div>
+
+      <MusicOGPStatisticsModal
+        open={showStatistics}
+        onClose={() => setShowStatistics(false)}
+        getAuthHeaders={getAuthHeaders}
+      />
     </div>
   );
 }

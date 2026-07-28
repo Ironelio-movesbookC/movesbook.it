@@ -7,6 +7,7 @@ import NewTopicModal from '@/app/news/components/NewTopicModal';
 import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
 import OGPForm from '@/app/news/components/OGPForm';
 import NewsArticlesList from '@/app/news/components/NewsArticlesList';
+import MusicOGPStatisticsModal from '@/components/music/MusicOGPStatisticsModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useNewsData } from '@/hooks/useNewsData';
 
@@ -127,6 +128,7 @@ export default function MusicOGPPanel({
   const prevLoading = useRef(true);
   const [showNewTopicModal, setShowNewTopicModal] = useState(false);
   const [showTopicSortModal, setShowTopicSortModal] = useState(false);
+  const [showStatistics, setShowStatistics] = useState(false);
   const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
   const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
   const [showOgpForm, setShowOgpForm] = useState(false);
@@ -306,7 +308,7 @@ export default function MusicOGPPanel({
         if (!activeTopic || activeTopic === ALL_TOPICS) {
           throw new Error('Select a topic before adding music');
         }
-        await addPastedArticle(data, activeTopic);
+        await addPastedArticle({ ...data, isFavourite: putInFavourites }, activeTopic);
         await rememberMusicalGenre(data.musicalGenre);
         setShowOgpForm(false);
         setPutInFavourites(false);
@@ -315,7 +317,7 @@ export default function MusicOGPPanel({
         throw e;
       }
     },
-    [activeTopic, addPastedArticle, rememberMusicalGenre]
+    [activeTopic, addPastedArticle, rememberMusicalGenre, putInFavourites]
   );
 
   const handleUpdatePastedSettings = useCallback(
@@ -341,9 +343,13 @@ export default function MusicOGPPanel({
   );
 
   const handleSaveTyped = useCallback(
-    async (description: string, musicalGenre?: string | null) => {
+    async (
+      description: string,
+      musicalGenre?: string | null,
+      meta?: { artist?: string | null; musicTitle?: string | null; registrationType?: string | null; isFavourite?: boolean }
+    ) => {
       try {
-        await addTypedArticle(description);
+        await addTypedArticle(description, { ...meta, isFavourite: putInFavourites });
         await rememberMusicalGenre(musicalGenre);
         setShowOgpForm(false);
         setPutInFavourites(false);
@@ -352,7 +358,7 @@ export default function MusicOGPPanel({
         throw e;
       }
     },
-    [addTypedArticle, rememberMusicalGenre]
+    [addTypedArticle, rememberMusicalGenre, putInFavourites]
   );
 
   const handleRemovePasted = useCallback(
@@ -385,14 +391,25 @@ export default function MusicOGPPanel({
     >
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50">
         <h2 className="text-lg font-semibold text-gray-900">Music</h2>
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-200 hover:text-gray-700 transition-colors"
-          aria-label="Close"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          {adminContext ? (
+            <button
+              type="button"
+              onClick={() => setShowStatistics(true)}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium text-[#1a2744] border border-[#1a2744]/40 hover:bg-[#1a2744] hover:text-white transition-colors"
+            >
+              Statistic
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-200 hover:text-gray-700 transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto">
@@ -489,6 +506,7 @@ export default function MusicOGPPanel({
               </div>
               <OGPForm
                 variant="music"
+                isFavourite={putInFavourites}
                 onPastedArticle={handlePastedArticle}
                 onSaveTyped={handleSaveTyped}
                 onCancel={() => {
@@ -520,6 +538,14 @@ export default function MusicOGPPanel({
           onMusicalGenreSelect={handleMusicalGenreSelect}
         />
       </div>
+
+      {adminContext ? (
+        <MusicOGPStatisticsModal
+          open={showStatistics}
+          onClose={() => setShowStatistics(false)}
+          getAuthHeaders={getAuthHeaders}
+        />
+      ) : null}
     </div>
   );
 }

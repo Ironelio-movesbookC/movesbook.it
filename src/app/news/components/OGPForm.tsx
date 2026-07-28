@@ -23,6 +23,14 @@ export interface OGPData {
 
 export type OgpVisibilitySettingsExport = OgpVisibilitySettings;
 
+export type MusicOgpFormMeta = {
+  artist?: string | null;
+  musicTitle?: string | null;
+  musicalGenre?: string | null;
+  registrationType?: string | null;
+  isFavourite?: boolean;
+};
+
 interface OGPFormProps {
   onPastedArticle: (
     data: OGPData & {
@@ -30,12 +38,22 @@ interface OGPFormProps {
       visibility?: OgpVisibilitySettings;
       languageCode?: string | null;
       musicalGenre?: string | null;
+      artist?: string | null;
+      musicTitle?: string | null;
+      registrationType?: string | null;
+      isFavourite?: boolean;
     }
   ) => void;
-  onSaveTyped?: (description: string, musicalGenre?: string | null) => void;
+  onSaveTyped?: (
+    description: string,
+    musicalGenre?: string | null,
+    meta?: MusicOgpFormMeta
+  ) => void;
   onCancel?: () => void;
   /** Music modal: Artist / Title / Genre / Registration fields and “Who will see the music”. */
   variant?: 'news' | 'music';
+  /** Controlled value: whether "Put in my favourites" is checked (managed by parent). */
+  isFavourite?: boolean;
 }
 
 export default function OGPForm({
@@ -43,6 +61,7 @@ export default function OGPForm({
   onSaveTyped,
   onCancel,
   variant = 'news',
+  isFavourite = false,
 }: OGPFormProps) {
   const isMusic = variant === 'music';
   const [url, setUrl] = useState('');
@@ -113,6 +132,10 @@ export default function OGPForm({
 
   const handleSave = () => {
     const genreToSave = isMusic && musicalGenre.trim() ? musicalGenre.trim() : null;
+    const artistToSave = isMusic && artist.trim() ? artist.trim() : null;
+    const musicTitleToSave = isMusic && musicTitle.trim() ? musicTitle.trim() : null;
+    const registrationTypeToSave =
+      isMusic && registrationType.trim() ? registrationType.trim() : null;
     if (fetchedOg) {
       onPastedArticle({
         ...fetchedOg,
@@ -120,6 +143,10 @@ export default function OGPForm({
         visibility,
         languageCode: languageCode || undefined,
         musicalGenre: genreToSave,
+        artist: artistToSave,
+        musicTitle: musicTitleToSave,
+        registrationType: registrationTypeToSave,
+        isFavourite: isMusic ? isFavourite : undefined,
       });
       setUrl('');
       setDescription('');
@@ -129,7 +156,13 @@ export default function OGPForm({
       setVisibility(defaultSettings);
       if (isMusic) resetMusicFields();
     } else if (description.trim() && onSaveTyped) {
-      onSaveTyped(description.trim(), genreToSave);
+      onSaveTyped(description.trim(), genreToSave, {
+        artist: artistToSave,
+        musicTitle: musicTitleToSave,
+        musicalGenre: genreToSave,
+        registrationType: registrationTypeToSave,
+        isFavourite: isMusic ? isFavourite : undefined,
+      });
       setDescription('');
       if (isMusic) resetMusicFields();
     }
@@ -148,6 +181,8 @@ export default function OGPForm({
 
   const fieldSelectClass =
     'w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500';
+  const fieldInputClass =
+    'w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500';
 
   return (
     <div
@@ -208,41 +243,43 @@ export default function OGPForm({
 
       {isMusic && (
         <>
-          {/* Artist / Title — behaviour wired later */}
+          {/* Artist / Title — free-text fields saved with the music entry */}
           <div className="mb-4 rounded-xl bg-gray-100 border border-gray-200 p-4">
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-3">
                 <label htmlFor="music-artist" className="w-16 shrink-0 text-sm font-medium text-gray-700">
                   Artist
                 </label>
-                <select
+                <input
                   id="music-artist"
+                  type="text"
                   value={artist}
                   onChange={(e) => setArtist(e.target.value)}
-                  className={fieldSelectClass}
+                  className={fieldInputClass}
+                  placeholder="Artist name"
                   aria-label="Artist"
-                >
-                  <option value=""></option>
-                </select>
+                  autoComplete="off"
+                />
               </div>
               <div className="flex items-center gap-3">
                 <label htmlFor="music-title" className="w-16 shrink-0 text-sm font-medium text-gray-700">
                   Title
                 </label>
-                <select
+                <input
                   id="music-title"
+                  type="text"
                   value={musicTitle}
                   onChange={(e) => setMusicTitle(e.target.value)}
-                  className={fieldSelectClass}
+                  className={fieldInputClass}
+                  placeholder="Song / track title"
                   aria-label="Title"
-                >
-                  <option value=""></option>
-                </select>
+                  autoComplete="off"
+                />
               </div>
             </div>
           </div>
 
-          {/* Musical genre / Type of registration — behaviour wired later */}
+          {/* Musical genre / Type of registration */}
           <div className="mb-4 rounded-xl bg-gray-100 border border-gray-200 p-4">
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-3">
@@ -281,7 +318,7 @@ export default function OGPForm({
                   className={fieldSelectClass}
                   aria-label="Type of registration"
                 >
-                  <option value="">Song - Album - Playlist</option>
+                  <option value=""></option>
                   {MUSIC_REGISTRATION_TYPES.map((type) => (
                     <option key={type} value={type}>
                       {type}
