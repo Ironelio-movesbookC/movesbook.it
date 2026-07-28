@@ -31,6 +31,20 @@ export type MusicOgpFormMeta = {
   isFavourite?: boolean;
 };
 
+/** Prefill values when editing an existing OGP (Music pencil → Add Music modal). */
+export type OGPFormInitialValues = {
+  url?: string;
+  description?: string;
+  languageCode?: string | null;
+  artist?: string | null;
+  musicTitle?: string | null;
+  musicalGenre?: string | null;
+  registrationType?: string | null;
+  visibility?: OgpVisibilitySettings;
+  /** Existing OGP preview (title/image/description/url) so Save works without re-fetch. */
+  og?: OGPData | null;
+};
+
 interface OGPFormProps {
   onPastedArticle: (
     data: OGPData & {
@@ -54,6 +68,8 @@ interface OGPFormProps {
   variant?: 'news' | 'music';
   /** Controlled value: whether "Put in my favourites" is checked (managed by parent). */
   isFavourite?: boolean;
+  /** When set, form opens prefilled for editing an existing entry. */
+  initialValues?: OGPFormInitialValues | null;
 }
 
 export default function OGPForm({
@@ -62,20 +78,36 @@ export default function OGPForm({
   onCancel,
   variant = 'news',
   isFavourite = false,
+  initialValues = null,
 }: OGPFormProps) {
   const isMusic = variant === 'music';
-  const [url, setUrl] = useState('');
-  const [description, setDescription] = useState('');
-  const [languageCode, setLanguageCode] = useState<string>('');
-  const [artist, setArtist] = useState('');
-  const [musicTitle, setMusicTitle] = useState('');
-  const [musicalGenre, setMusicalGenre] = useState('');
-  const [registrationType, setRegistrationType] = useState('');
+  const [url, setUrl] = useState(() => initialValues?.url ?? '');
+  const [description, setDescription] = useState(() => initialValues?.description ?? '');
+  const [languageCode, setLanguageCode] = useState<string>(() => initialValues?.languageCode ?? '');
+  const [artist, setArtist] = useState(() => initialValues?.artist ?? '');
+  const [musicTitle, setMusicTitle] = useState(() => initialValues?.musicTitle ?? '');
+  const [musicalGenre, setMusicalGenre] = useState(() => initialValues?.musicalGenre ?? '');
+  const [registrationType, setRegistrationType] = useState(
+    () => initialValues?.registrationType ?? ''
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fetchedOg, setFetchedOg] = useState<OGPData | null>(null);
+  const [fetchedOg, setFetchedOg] = useState<OGPData | null>(() => {
+    if (initialValues?.og) return initialValues.og;
+    if (initialValues?.url) {
+      return {
+        title: initialValues.musicTitle ?? null,
+        image: null,
+        description: null,
+        url: initialValues.url,
+      };
+    }
+    return null;
+  });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [visibility, setVisibility] = useState<OgpVisibilitySettings>(defaultSettings);
+  const [visibility, setVisibility] = useState<OgpVisibilitySettings>(
+    () => initialValues?.visibility ?? defaultSettings
+  );
   const [settingsOptions, setSettingsOptions] = useState<{
     userTypes: { value: string; label: string }[];
     countries: string[];

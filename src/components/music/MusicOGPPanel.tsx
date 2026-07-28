@@ -6,10 +6,11 @@ import NewsTopicBar, { type NewsTopic, ALL_TOPICS } from '@/app/news/components/
 import NewTopicModal from '@/app/news/components/NewTopicModal';
 import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
 import OGPForm from '@/app/news/components/OGPForm';
-import NewsArticlesList from '@/app/news/components/NewsArticlesList';
+import NewsArticlesList, { type ArticlePasted } from '@/app/news/components/NewsArticlesList';
 import MusicOGPStatisticsModal from '@/components/music/MusicOGPStatisticsModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useNewsData } from '@/hooks/useNewsData';
+import { defaultSettings } from '@/app/news/components/NewsSettingModal';
 
 /** Music has no built-in default topics; users add their own via "Add topic". */
 export const MUSIC_TOPICS = [] as const;
@@ -100,6 +101,7 @@ export default function MusicOGPPanel({
     removePastedArticle,
     updatePastedArticleSettings,
     updatePastedArticleTopic,
+    updatePastedArticle,
     addTypedArticle,
     removeTypedArticle,
   } = useNewsData({
@@ -132,6 +134,7 @@ export default function MusicOGPPanel({
   const [topicModalEditing, setTopicModalEditing] = useState<string | null>(null);
   const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
   const [showOgpForm, setShowOgpForm] = useState(false);
+  const [editingArticle, setEditingArticle] = useState<ArticlePasted | null>(null);
   const [putInFavourites, setPutInFavourites] = useState(false);
   const [musicalGenres, setMusicalGenres] = useState<string[]>([]);
   const [activeMusicalGenre, setActiveMusicalGenre] = useState<string | null>(null);
@@ -302,22 +305,46 @@ export default function MusicOGPPanel({
     }
   }, [topicModalEditingId, topicModalEditing, activeTopic, topics, deleteTopic]);
 
+  const closeOgpForm = useCallback(() => {
+    setShowOgpForm(false);
+    setEditingArticle(null);
+    setPutInFavourites(false);
+  }, []);
+
+  const handleEditPasted = useCallback((article: ArticlePasted) => {
+    setEditingArticle(article);
+    setPutInFavourites(article.isFavourite === true);
+    setShowOgpForm(true);
+  }, []);
+
   const handlePastedArticle = useCallback(
     async (data: Parameters<Parameters<typeof OGPForm>[0]['onPastedArticle']>[0]) => {
       try {
-        if (!activeTopic || activeTopic === ALL_TOPICS) {
-          throw new Error('Select a topic before adding music');
+        const payload = { ...data, isFavourite: putInFavourites };
+        if (editingArticle) {
+          await updatePastedArticle(editingArticle.id, payload);
+        } else {
+          if (!activeTopic || activeTopic === ALL_TOPICS) {
+            throw new Error('Select a topic before adding music');
+          }
+          await addPastedArticle(payload, activeTopic);
         }
-        await addPastedArticle({ ...data, isFavourite: putInFavourites }, activeTopic);
         await rememberMusicalGenre(data.musicalGenre);
-        setShowOgpForm(false);
-        setPutInFavourites(false);
+        closeOgpForm();
       } catch (e) {
         console.error(e);
         throw e;
       }
     },
-    [activeTopic, addPastedArticle, rememberMusicalGenre, putInFavourites]
+    [
+      activeTopic,
+      addPastedArticle,
+      updatePastedArticle,
+      editingArticle,
+      rememberMusicalGenre,
+      putInFavourites,
+      closeOgpForm,
+    ]
   );
 
   const handleUpdatePastedSettings = useCallback(
@@ -351,14 +378,13 @@ export default function MusicOGPPanel({
       try {
         await addTypedArticle(description, { ...meta, isFavourite: putInFavourites });
         await rememberMusicalGenre(musicalGenre);
-        setShowOgpForm(false);
-        setPutInFavourites(false);
+        closeOgpForm();
       } catch (e) {
         console.error(e);
         throw e;
       }
     },
-    [addTypedArticle, rememberMusicalGenre, putInFavourites]
+    [addTypedArticle, rememberMusicalGenre, putInFavourites, closeOgpForm]
   );
 
   const handleRemovePasted = useCallback(
@@ -465,10 +491,7 @@ export default function MusicOGPPanel({
         {showOgpForm && (
           <div
             className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={() => {
-              setShowOgpForm(false);
-              setPutInFavourites(false);
-            }}
+            onClick={closeOgpForm}
             role="dialog"
             aria-modal="true"
             aria-labelledby="music-ogp-modal-title"
@@ -476,7 +499,7 @@ export default function MusicOGPPanel({
             <div
               className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6"
               onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => e.key === 'Escape' && setShowOgpForm(false)}
+              onKeyDown={(e) => e.key === 'Escape' && closeOgpForm()}
             >
               <div className="flex items-center gap-3 mb-4">
                 <h2 id="music-ogp-modal-title" className="text-lg font-semibold text-gray-900">
@@ -494,10 +517,7 @@ export default function MusicOGPPanel({
                 </label>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowOgpForm(false);
-                    setPutInFavourites(false);
-                  }}
+                  onClick={closeOgpForm}
                   className="p-1 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
                   aria-label="Close"
                 >
@@ -505,14 +525,34 @@ export default function MusicOGPPanel({
                 </button>
               </div>
               <OGPForm
+                key={editingArticle?.id ?? 'new-music'}
                 variant="music"
                 isFavourite={putInFavourites}
+                initialValues={
+                  editingArticle
+                    ? {
+                        url: editingArticle.url,
+                        description: editingArticle.customDescription ?? '',
+                        languageCode: editingArticle.languageCode ?? '',
+                        artist: editingArticle.artist ?? '',
+                        musicTitle: editingArticle.title ?? '',
+                        musicalGenre: editingArticle.genre ?? '',
+                        registrationType: editingArticle.registrationType ?? '',
+                        visibility: editingArticle.visibility ?? defaultSettings,
+                        og: {
+                          title: editingArticle.title,
+                          image: editingArticle.image,
+                          description: editingArticle.description,
+                          url: editingArticle.url,
+                          siteName: editingArticle.siteName,
+                          type: editingArticle.type,
+                        },
+                      }
+                    : null
+                }
                 onPastedArticle={handlePastedArticle}
-                onSaveTyped={handleSaveTyped}
-                onCancel={() => {
-                  setShowOgpForm(false);
-                  setPutInFavourites(false);
-                }}
+                onSaveTyped={editingArticle ? undefined : handleSaveTyped}
+                onCancel={closeOgpForm}
               />
             </div>
           </div>
@@ -530,7 +570,12 @@ export default function MusicOGPPanel({
           currentUserCountry={user?.country ?? null}
           onUpdatePastedSettings={handleUpdatePastedSettings}
           onUpdatePastedTopic={handleUpdatePastedTopic}
-          onAddClick={() => setShowOgpForm((prev) => !prev)}
+          onEditPasted={handleEditPasted}
+          onAddClick={() => {
+            setEditingArticle(null);
+            setPutInFavourites(false);
+            setShowOgpForm((prev) => !prev);
+          }}
           addButtonDisabled={!activeTopic || activeTopic === ALL_TOPICS}
           apiBase={MUSIC_API_BASE}
           musicalGenresForFilter={genresForActiveTopic}

@@ -60,6 +60,20 @@ export interface UseNewsDataResult {
   removePastedArticle: (id: string) => Promise<void>;
   updatePastedArticleSettings: (id: string, settings: OgpVisibilitySettingsExport) => Promise<void>;
   updatePastedArticleTopic: (id: string, topic: string, customDescription?: string) => Promise<void>;
+  /** Full update of a pasted OGP (e.g. Music pencil → Add Music edit). */
+  updatePastedArticle: (
+    id: string,
+    data: OGPData & {
+      customDescription?: string;
+      visibility?: OgpVisibilitySettingsExport;
+      languageCode?: string | null;
+      musicalGenre?: string | null;
+      artist?: string | null;
+      musicTitle?: string | null;
+      registrationType?: string | null;
+      isFavourite?: boolean;
+    }
+  ) => Promise<void>;
   /** Save or merge an OGP News group. Throws with `exists` on 409 when confirmExisting is false. */
   saveOgpNewsGroup: (payload: {
     name: string;
@@ -576,6 +590,87 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     [effectiveUserId, getHeaders, apiBase]
   );
 
+  const updatePastedArticle = useCallback(
+    async (
+      id: string,
+      data: OGPData & {
+        customDescription?: string;
+        visibility?: OgpVisibilitySettingsExport;
+        languageCode?: string | null;
+        musicalGenre?: string | null;
+        artist?: string | null;
+        musicTitle?: string | null;
+        registrationType?: string | null;
+        isFavourite?: boolean;
+      }
+    ) => {
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
+      const vis = data.visibility;
+      const resolvedTitle =
+        typeof data.musicTitle === 'string' && data.musicTitle.trim()
+          ? data.musicTitle.trim()
+          : data.title ?? null;
+      const res = await fetch(`${apiBase}/ogp/${id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          title: resolvedTitle,
+          musicTitle: data.musicTitle ?? null,
+          artist: data.artist ?? null,
+          image: data.image,
+          description: data.description,
+          url: data.url,
+          siteName: data.siteName,
+          type: data.type,
+          customDescription: data.customDescription ?? null,
+          genre: data.musicalGenre ?? null,
+          registrationType: data.registrationType ?? null,
+          isFavourite: data.isFavourite ?? false,
+          languageCode: data.languageCode ?? null,
+          expiresAt: vis?.expiresAt ?? null,
+          visibilityUserTypes: vis?.userTypes ?? [],
+          visibilityCountries: vis?.countries ?? [],
+          visibilityLanguages: vis?.languages ?? [],
+          visibilitySports: vis?.sports ?? [],
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to update article');
+      }
+      setPastedArticles((prev) =>
+        prev.map((a) =>
+          a.id !== id
+            ? a
+            : {
+                ...a,
+                title: resolvedTitle,
+                artist: data.artist ?? null,
+                image: data.image,
+                description: data.description,
+                url: data.url,
+                siteName: data.siteName,
+                type: data.type,
+                customDescription: data.customDescription,
+                genre: data.musicalGenre ?? null,
+                registrationType: data.registrationType ?? null,
+                isFavourite: data.isFavourite ?? false,
+                languageCode: data.languageCode ?? undefined,
+                visibility: {
+                  userTypes: vis?.userTypes ?? [],
+                  countries: vis?.countries ?? [],
+                  languages: vis?.languages ?? [],
+                  sports: vis?.sports ?? [],
+                  expiresAt: vis?.expiresAt ?? null,
+                },
+              }
+        )
+      );
+    },
+    [effectiveUserId, getHeaders, apiBase]
+  );
+
   const mapGroupFromApi = (g: any): OgpNewsGroupCard => ({
     id: g.id,
     name: g.name,
@@ -810,6 +905,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     removePastedArticle,
     updatePastedArticleSettings,
     updatePastedArticleTopic,
+    updatePastedArticle,
     saveOgpNewsGroup,
     removeOgpNewsGroup,
     updateOgpNewsGroup,

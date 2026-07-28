@@ -89,6 +89,13 @@ export async function PATCH(
     const data: {
       topic?: string;
       customDescription?: string | null;
+      title?: string | null;
+      image?: string | null;
+      description?: string | null;
+      url?: string;
+      siteName?: string | null;
+      type?: string | null;
+      languageCode?: string | null;
       visibilityUserTypes?: string;
       visibilityCountries?: string;
       visibilityLanguages?: string;
@@ -103,6 +110,37 @@ export async function PATCH(
       data.customDescription = typeof body.customDescription === 'string'
         ? (body.customDescription.trim() || null)
         : null;
+    }
+    if (body.url !== undefined) {
+      if (typeof body.url !== 'string' || !body.url.trim()) {
+        return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+      }
+      data.url = body.url.trim();
+    }
+    if (body.title !== undefined || body.musicTitle !== undefined) {
+      const musicTitle =
+        typeof body.musicTitle === 'string' && body.musicTitle.trim()
+          ? body.musicTitle.trim()
+          : null;
+      data.title = musicTitle ?? (body.title != null ? String(body.title) : null);
+    }
+    if (body.image !== undefined) {
+      data.image = typeof body.image === 'string' ? body.image : null;
+    }
+    if (body.description !== undefined) {
+      data.description = typeof body.description === 'string' ? body.description : null;
+    }
+    if (body.siteName !== undefined) {
+      data.siteName = typeof body.siteName === 'string' ? body.siteName : null;
+    }
+    if (body.type !== undefined) {
+      data.type = typeof body.type === 'string' ? body.type : null;
+    }
+    if (body.languageCode !== undefined) {
+      data.languageCode =
+        typeof body.languageCode === 'string' && body.languageCode.trim()
+          ? body.languageCode.trim()
+          : null;
     }
     if (body.visibilityUserTypes !== undefined) {
       data.visibilityUserTypes = JSON.stringify(parseJsonArray(body.visibilityUserTypes));
@@ -122,14 +160,79 @@ export async function PATCH(
         : null;
     }
 
-    if (Object.keys(data).length === 0) {
+    const genreName =
+      body.genre !== undefined
+        ? typeof body.genre === 'string' && body.genre.trim()
+          ? body.genre.trim()
+          : null
+        : undefined;
+    const artistName =
+      body.artist !== undefined
+        ? typeof body.artist === 'string' && body.artist.trim()
+          ? body.artist.trim()
+          : null
+        : undefined;
+    const registrationTypeName =
+      body.registrationType !== undefined
+        ? typeof body.registrationType === 'string' && body.registrationType.trim()
+          ? body.registrationType.trim()
+          : null
+        : undefined;
+    const isFavouriteValue =
+      body.isFavourite !== undefined ? body.isFavourite === true : undefined;
+
+    const hasExtras =
+      genreName !== undefined ||
+      artistName !== undefined ||
+      registrationTypeName !== undefined ||
+      isFavouriteValue !== undefined;
+
+    if (Object.keys(data).length === 0 && !hasExtras) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
     }
 
-    await prisma.musicOgpArticle.update({
-      where: { id },
-      data,
-    });
+    if (Object.keys(data).length > 0) {
+      await prisma.musicOgpArticle.update({
+        where: { id },
+        data,
+      });
+    }
+
+    if (hasExtras) {
+      const currentRows = await prisma.$queryRaw<
+        {
+          genre: string | null;
+          artist: string | null;
+          registrationType: string | null;
+          isFavourite: number | boolean;
+        }[]
+      >`
+        SELECT genre, artist, registrationType, isFavourite
+        FROM music_ogp_articles
+        WHERE id = ${id}
+        LIMIT 1
+      `;
+      const current = currentRows[0];
+      const nextGenre = genreName !== undefined ? genreName : (current?.genre ?? null);
+      const nextArtist = artistName !== undefined ? artistName : (current?.artist ?? null);
+      const nextRegistrationType =
+        registrationTypeName !== undefined
+          ? registrationTypeName
+          : (current?.registrationType ?? null);
+      const nextIsFavourite =
+        isFavouriteValue !== undefined
+          ? isFavouriteValue
+          : current?.isFavourite === true || current?.isFavourite === 1;
+      await prisma.$executeRaw`
+        UPDATE music_ogp_articles
+        SET genre = ${nextGenre},
+            artist = ${nextArtist},
+            registrationType = ${nextRegistrationType},
+            isFavourite = ${nextIsFavourite}
+        WHERE id = ${id}
+      `;
+    }
+
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error('PATCH /api/music/ogp/[id]', e);

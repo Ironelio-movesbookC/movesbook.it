@@ -8,8 +8,10 @@ import NewsTopicBar, { type NewsTopic, ALL_TOPICS, ALL_SUPER_ADMIN } from '@/app
 import NewTopicModal from '@/app/news/components/NewTopicModal';
 import NewsTopicSortModal from '@/app/news/components/NewsTopicSortModal';
 import OGPForm from '@/app/news/components/OGPForm';
-import NewsArticlesList from '@/app/news/components/NewsArticlesList';
+import NewsArticlesList, { type ArticlePasted } from '@/app/news/components/NewsArticlesList';
 import MusicOGPStatisticsModal from '@/components/music/MusicOGPStatisticsModal';
+import { ADMIN_OGP_EXPAND_EVENT } from '@/lib/adminOgpExpand';
+import { defaultSettings } from '@/app/news/components/NewsSettingModal';
 
 /** Music has no built-in default topics; users add their own via "Add topic". */
 const MUSIC_TOPICS = [] as const;
@@ -110,6 +112,7 @@ export default function AdminSuperAdminOGPMusicContent({
     removePastedArticle,
     updatePastedArticleSettings,
     updatePastedArticleTopic,
+    updatePastedArticle,
     addTypedArticle,
     removeTypedArticle,
   } = useNewsData({
@@ -287,6 +290,7 @@ export default function AdminSuperAdminOGPMusicContent({
   }, [router]);
 
   const [showOgpForm, setShowOgpForm] = useState(false);
+  const [editingArticle, setEditingArticle] = useState<ArticlePasted | null>(null);
   const [showNewTopicModal, setShowNewTopicModal] = useState(false);
   const [showTopicSortModal, setShowTopicSortModal] = useState(false);
   const [showStatistics, setShowStatistics] = useState(false);
@@ -294,6 +298,18 @@ export default function AdminSuperAdminOGPMusicContent({
   const [topicModalEditingId, setTopicModalEditingId] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [putInFavourites, setPutInFavourites] = useState(false);
+
+  const closeOgpForm = useCallback(() => {
+    setShowOgpForm(false);
+    setEditingArticle(null);
+    setPutInFavourites(false);
+  }, []);
+
+  const handleEditPasted = useCallback((article: ArticlePasted) => {
+    setEditingArticle(article);
+    setPutInFavourites(article.isFavourite === true);
+    setShowOgpForm(true);
+  }, []);
 
   const handleTopicSelect = useCallback((topic: NewsTopic) => {
     setActiveTopic(topic);
@@ -412,22 +428,34 @@ export default function AdminSuperAdminOGPMusicContent({
   const handlePastedArticle = useCallback(
     async (data: Parameters<Parameters<typeof OGPForm>[0]['onPastedArticle']>[0]) => {
       try {
-        if (
-          !activeTopic ||
-          activeTopic === ALL_TOPICS ||
-          activeTopic === ALL_SUPER_ADMIN
-        ) {
-          throw new Error('Select a topic before adding music');
+        const payload = { ...data, isFavourite: putInFavourites };
+        if (editingArticle) {
+          await updatePastedArticle(editingArticle.id, payload);
+        } else {
+          if (
+            !activeTopic ||
+            activeTopic === ALL_TOPICS ||
+            activeTopic === ALL_SUPER_ADMIN
+          ) {
+            throw new Error('Select a topic before adding music');
+          }
+          await addPastedArticle(payload, activeTopic);
         }
-        await addPastedArticle({ ...data, isFavourite: putInFavourites }, activeTopic);
         await rememberMusicalGenre(data.musicalGenre);
-        setShowOgpForm(false);
-        setPutInFavourites(false);
+        closeOgpForm();
       } catch (e) {
         console.error(e);
       }
     },
-    [activeTopic, addPastedArticle, rememberMusicalGenre, putInFavourites]
+    [
+      activeTopic,
+      addPastedArticle,
+      updatePastedArticle,
+      editingArticle,
+      rememberMusicalGenre,
+      putInFavourites,
+      closeOgpForm,
+    ]
   );
 
   const handleSaveTyped = useCallback(
@@ -439,13 +467,12 @@ export default function AdminSuperAdminOGPMusicContent({
       try {
         await addTypedArticle(description, { ...meta, isFavourite: putInFavourites });
         await rememberMusicalGenre(musicalGenre);
-        setShowOgpForm(false);
-        setPutInFavourites(false);
+        closeOgpForm();
       } catch (e) {
         console.error(e);
       }
     },
-    [addTypedArticle, rememberMusicalGenre, putInFavourites]
+    [addTypedArticle, rememberMusicalGenre, putInFavourites, closeOgpForm]
   );
 
   if (!authChecked || !adminUser) {
@@ -453,8 +480,8 @@ export default function AdminSuperAdminOGPMusicContent({
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-[1920px] mx-auto">
-      <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+    <div className="p-4 md:p-6 w-full min-w-0 max-w-full box-border">
+      <div className="bg-white rounded-xl shadow-md border border-gray-200 w-full min-w-0 overflow-x-auto">
         <div
           className={`flex items-center justify-between px-4 py-3 border-b border-gray-200 gap-2 flex-wrap ${
             viewAsUsername ? 'bg-[#EFE4B0]' : 'bg-gray-50'
@@ -507,7 +534,17 @@ export default function AdminSuperAdminOGPMusicContent({
             onAddNewTopic={handleOpenTopicModal}
             onAddTopic={handleOpenAddTopicModal}
             isExpanded={isExpanded}
-            onExpandReduce={() => setIsExpanded((e) => !e)}
+            onExpandReduce={() => {
+              setIsExpanded((e) => {
+                const next = !e;
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(
+                    new CustomEvent(ADMIN_OGP_EXPAND_EVENT, { detail: { expanded: next } })
+                  );
+                }
+                return next;
+              });
+            }}
             onOpenTopicSort={() => setShowTopicSortModal(true)}
             topicNamesCreatedByNormalUsers={topicNamesCreatedByNormalUsers}
             userInsertedTopics={userInsertedTopics}
@@ -557,10 +594,7 @@ export default function AdminSuperAdminOGPMusicContent({
           {showOgpForm && (
             <div
               className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-              onClick={() => {
-                setShowOgpForm(false);
-                setPutInFavourites(false);
-              }}
+              onClick={closeOgpForm}
               role="dialog"
               aria-modal="true"
               aria-labelledby="music-ogp-modal-title"
@@ -568,7 +602,7 @@ export default function AdminSuperAdminOGPMusicContent({
               <div
                 className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.key === 'Escape' && setShowOgpForm(false)}
+                onKeyDown={(e) => e.key === 'Escape' && closeOgpForm()}
               >
                 <div className="flex justify-between items-center p-4 border-b border-gray-200 sticky top-0 bg-white rounded-t-xl gap-3">
                   <h2 id="music-ogp-modal-title" className="text-lg font-semibold text-gray-900">
@@ -586,10 +620,7 @@ export default function AdminSuperAdminOGPMusicContent({
                   </label>
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowOgpForm(false);
-                      setPutInFavourites(false);
-                    }}
+                    onClick={closeOgpForm}
                     className="p-1 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
                     aria-label="Close"
                   >
@@ -598,14 +629,34 @@ export default function AdminSuperAdminOGPMusicContent({
                 </div>
                 <div className="p-6">
                   <OGPForm
+                    key={editingArticle?.id ?? 'new-music'}
                     variant="music"
                     isFavourite={putInFavourites}
+                    initialValues={
+                      editingArticle
+                        ? {
+                            url: editingArticle.url,
+                            description: editingArticle.customDescription ?? '',
+                            languageCode: editingArticle.languageCode ?? '',
+                            artist: editingArticle.artist ?? '',
+                            musicTitle: editingArticle.title ?? '',
+                            musicalGenre: editingArticle.genre ?? '',
+                            registrationType: editingArticle.registrationType ?? '',
+                            visibility: editingArticle.visibility ?? defaultSettings,
+                            og: {
+                              title: editingArticle.title,
+                              image: editingArticle.image,
+                              description: editingArticle.description,
+                              url: editingArticle.url,
+                              siteName: editingArticle.siteName,
+                              type: editingArticle.type,
+                            },
+                          }
+                        : null
+                    }
                     onPastedArticle={handlePastedArticle}
-                    onSaveTyped={handleSaveTyped}
-                    onCancel={() => {
-                      setShowOgpForm(false);
-                      setPutInFavourites(false);
-                    }}
+                    onSaveTyped={editingArticle ? undefined : handleSaveTyped}
+                    onCancel={closeOgpForm}
                   />
                 </div>
               </div>
@@ -624,7 +675,16 @@ export default function AdminSuperAdminOGPMusicContent({
             currentUserCountry={viewAsUsername ? viewAsUserCountry : null}
             onUpdatePastedSettings={handleUpdatePastedSettings}
             onUpdatePastedTopic={handleUpdatePastedTopic}
-            onAddClick={viewAsUsername ? undefined : () => setShowOgpForm((prev) => !prev)}
+            onEditPasted={viewAsUsername ? undefined : handleEditPasted}
+            onAddClick={
+              viewAsUsername
+                ? undefined
+                : () => {
+                    setEditingArticle(null);
+                    setPutInFavourites(false);
+                    setShowOgpForm((prev) => !prev);
+                  }
+            }
             addButtonDisabled={
               !activeTopic ||
               activeTopic === ALL_TOPICS ||
