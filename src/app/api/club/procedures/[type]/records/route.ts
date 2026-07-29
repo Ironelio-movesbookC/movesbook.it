@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getClubAuthContext, procedureService } from '@/lib/procedures';
 import { isKnownProcedureType, parseCreateRecord } from '@/lib/procedures/validators';
 

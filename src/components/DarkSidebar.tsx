@@ -183,7 +183,7 @@ const CLUB_ADMIN_INSERT_NEW_ITEM_GROUPS: ClubAdminInsertItem[][] = [
   [
     { kind: 'icon', Icon: Contact2, label: 'New subscription to the Club' },
     { kind: 'icon', Icon: Timer, label: 'Quick renew subscription' },
-    { kind: 'icon', Icon: CheckCircle, label: 'Payment of deadlines', path: '/clubs/dead_line' },
+    { kind: 'icon', Icon: CheckCircle, label: 'Payment of deadlines', path: '/clubs/archive_deadlines' },
   ],
   [
     { kind: 'icon', Icon: ShoppingCart, label: 'Sell products', path: '/ArchiveSeles/product_sale_list' },
@@ -274,7 +274,7 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: CreditCard, label: 'Accesses', path: '/clubs/access_list' },
   ],
   [
-    { kind: 'icon', Icon: Hourglass, label: 'Archive of Deadlines', path: '/clubs/dead_line' },
+    { kind: 'icon', Icon: Hourglass, label: 'Archive of Deadlines', path: '/clubs/archive_deadlines' },
     { kind: 'icon', Icon: Award, label: 'Credit voucher', path: '/clubSettings/creditCustomer' },
     { kind: 'icon', Icon: Hourglass, label: 'Other debts', path: '/clubs/other_debts' },
     { kind: 'icon', Icon: Hourglass, label: 'Planned expenses', path: '/clubs/arc_expenses' },
@@ -291,7 +291,10 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: CornerDownRight, label: 'Cash Out', path: '/clubs/movement_cash_details/OUT' },
     { kind: 'icon', Icon: Repeat2, label: 'Cash (all movements)', path: '/clubs/movement_cash_details' },
   ],
-  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubs/service_receipts' }],
+  [
+    { kind: 'icon', Icon: CreditCard, label: 'Archive of Payments', path: '/clubs/archive_payments' },
+    { kind: 'icon', Icon: ClipboardCheck, label: 'Archive of Receipts', path: '/clubs/archive_receipts' },
+  ],
   [
     { kind: 'icon', Icon: FileStack, label: 'Cards assignments', path: '/clubs/cards_assignments' },
     { kind: 'icon', Icon: FileWarning, label: 'Alert assigned', path: '/clubs/alerts_assigned' },

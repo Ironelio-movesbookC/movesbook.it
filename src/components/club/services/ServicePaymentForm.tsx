@@ -77,22 +77,53 @@ function formatDisplayDate(iso: string | null | undefined): string {
 }
 
 function toYmd(iso: string | null | undefined): string {
-  return iso ? iso.slice(0, 10) : '';
+  if (!iso) return '';
+  const trimmed = iso.trim();
+  // Prefer ISO YYYY-MM-DD
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  // DD/MM/YYYY
+  const dmy = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  }
+  const parsed = Date.parse(trimmed);
+  if (!Number.isNaN(parsed)) {
+    const d = new Date(parsed);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  return '';
 }
 
-/** Sort key: expire/due day, then createdAt time, then id. Oldest first. */
-function deadlineSortKey(
+/**
+ * Numeric sort value: expire/due calendar day + time-of-day from createdAt.
+ * Oldest deadlines sort first.
+ */
+function deadlineSortTimestamp(
   expireDate: string | null | undefined,
   paymentDate: string | null | undefined,
-  createdAt: string | null | undefined,
-  id: string
-): string {
-  const day = toYmd(expireDate) || toYmd(paymentDate) || '9999-99-99';
-  const time =
-    createdAt && !Number.isNaN(Date.parse(createdAt))
-      ? new Date(createdAt).toISOString()
-      : '9999-12-31T23:59:59.999Z';
-  return `${day}|${time}|${id}`;
+  createdAt: string | null | undefined
+): number {
+  const day = toYmd(expireDate) || toYmd(paymentDate);
+  let dayMs = Number.MAX_SAFE_INTEGER;
+  if (day) {
+    const parsed = Date.parse(`${day}T00:00:00`);
+    if (!Number.isNaN(parsed)) dayMs = parsed;
+  }
+
+  let timeMs = 0;
+  if (createdAt && !Number.isNaN(Date.parse(createdAt))) {
+    const t = new Date(createdAt);
+    timeMs =
+      t.getHours() * 3_600_000 +
+      t.getMinutes() * 60_000 +
+      t.getSeconds() * 1_000 +
+      t.getMilliseconds();
+  }
+  return dayMs + timeMs;
 }
 
 function compareDeadlinesOldestFirst(
@@ -109,9 +140,11 @@ function compareDeadlinesOldestFirst(
     id: string;
   }
 ): number {
-  return deadlineSortKey(a.expireDate, a.paymentDate, a.createdAt, a.id).localeCompare(
-    deadlineSortKey(b.expireDate, b.paymentDate, b.createdAt, b.id)
-  );
+  const diff =
+    deadlineSortTimestamp(a.expireDate, a.paymentDate, a.createdAt) -
+    deadlineSortTimestamp(b.expireDate, b.paymentDate, b.createdAt);
+  if (diff !== 0) return diff;
+  return a.id.localeCompare(b.id);
 }
 
 /** Expire date for ordering/display (expireDate, else paymentDate). */
@@ -197,6 +230,7 @@ export default function ServicePaymentForm({
   const [taxDocument, setTaxDocument] = useState<TaxDocumentFormValues | null>(null);
   const [modifyOpen, setModifyOpen] = useState(false);
   const [modifySaving, setModifySaving] = useState(false);
+  const [modifyError, setModifyError] = useState('');
   const [modifyForm, setModifyForm] = useState({
     balance: '',
     paid: '',
@@ -270,7 +304,7 @@ export default function ServicePaymentForm({
         balance: row.balance,
         paymentDate: row.paymentDate,
         expireDate: row.expireDate,
-        createdAt: row.expireDate ?? row.paymentDate ?? null,
+        createdAt: row.createdAt ?? null,
         paid: row.paid,
         disabled: false,
         recordId: purchase.id,
@@ -473,6 +507,7 @@ export default function ServicePaymentForm({
     const row = installments.find((r) => r.id === id);
     if (!row) return;
     setInstallmentError('');
+    setModifyError('');
     setModifyForm({
       balance: String(row.balance + row.paid),
       paid: String(row.paid),
@@ -487,26 +522,37 @@ export default function ServicePaymentForm({
     e.preventDefault();
     const id = firstSelectedId();
     if (!id || id === 'current') return;
+
     const deadlineTotal = Number(modifyForm.balance) || 0;
     const currentPaid = Number(modifyForm.paid) || 0;
     if (deadlineTotal < currentPaid) {
-      setInstallmentError('Deadline total cannot be less than the amount already paid.');
-      setModifySaving(false);
+      setModifyError('Deadline total cannot be less than the amount already paid.');
       return;
     }
-    const newRest = deadlineTotal - currentPaid;
+
+    const row = installments.find((r) => r.id === id);
+    const oldDeadlineTotal = row ? row.balance + row.paid : deadlineTotal;
+    const increase = Math.round((deadlineTotal - oldDeadlineTotal) * 100) / 100;
     const otherTotal = installments
       .filter((r) => r.id !== id)
       .reduce((sum, r) => sum + r.balance + r.paid, 0);
-    if (otherTotal + deadlineTotal > purchase.value) {
-      setInstallmentError(
-        `Total of all deadlines (${(otherTotal + deadlineTotal).toFixed(2)}) would exceed original cost (${purchase.value.toFixed(2)}).`
-      );
-      setModifySaving(false);
-      return;
-    }
+    const newGrandTotal = otherTotal + deadlineTotal;
+
+    setModifySaving(true);
+    setModifyError('');
     setInstallmentError('');
     try {
+      // Like New deadline: allow raising Deadline above current cost by bumping record total.
+      if (increase > 0 && onAddToRecordTotal) {
+        await onAddToRecordTotal(increase);
+      } else if (newGrandTotal > purchase.value + 0.001 && !onAddToRecordTotal) {
+        setModifyError(
+          `Total of all deadlines (€${newGrandTotal.toFixed(2)}) would exceed original cost (€${purchase.value.toFixed(2)}).`
+        );
+        return;
+      }
+
+      const newRest = deadlineTotal - currentPaid;
       await updateInstallment(procedureType, purchase.id, id, {
         balance: newRest,
         paid: currentPaid,
@@ -514,10 +560,16 @@ export default function ServicePaymentForm({
         expireDate: modifyForm.expireDate || null,
         description: modifyForm.description || null,
       });
+      // Close immediately after successful save (even if reload fails).
       setModifyOpen(false);
-      await reloadInstallments();
+      setModifyError('');
+      try {
+        await reloadInstallments();
+      } catch {
+        /* list refresh is secondary to closing the form */
+      }
     } catch (err) {
-      setInstallmentError(err instanceof Error ? err.message : 'Failed to update installment');
+      setModifyError(err instanceof Error ? err.message : 'Failed to update installment');
     } finally {
       setModifySaving(false);
     }
@@ -1047,6 +1099,7 @@ export default function ServicePaymentForm({
             className="bg-white rounded-lg shadow-lg w-full max-w-md p-5 space-y-3 text-sm"
           >
             <h3 className="text-lg font-medium text-gray-900">Modify deadline</h3>
+            {modifyError ? <p className="text-red-600 text-xs">{modifyError}</p> : null}
             <label className="block">
               <span className="text-gray-600">Deadline</span>
               <input
@@ -1099,7 +1152,10 @@ export default function ServicePaymentForm({
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setModifyOpen(false)}
+                onClick={() => {
+                  setModifyOpen(false);
+                  setModifyError('');
+                }}
                 className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
               >
                 Cancel

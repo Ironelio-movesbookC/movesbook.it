@@ -5,7 +5,7 @@ import { getProcedureDefinition, getProcedureTypology } from './registry';
 import { paginated, parsePagination } from './pagination';
 import { verifyOperatorPassword } from './operatorAuth';
 import { applyCardCreditPayment } from './insertCreditService';
-import { ensureDefaultInstallment } from './installmentService';
+import { ensureDefaultInstallment, applyPaymentToInstallments } from './installmentService';
 import { PROCEDURE_TYPE_CODES } from './types';
 import { updateTaxDocumentCounter } from '@/lib/club/otherSettingsReader';
 import type {
@@ -393,6 +393,9 @@ export class ProcedureService {
           metadata: metadata as Prisma.InputJsonValue,
         },
       });
+
+      // Keep deadline rows in sync with the record (oldest open installment first).
+      await applyPaymentToInstallments(record.id, amount, tx);
 
       if (input.payMode === 'card') {
         await applyCardCreditPayment(ctx.club.id, record.memberId, amount, operatorId);

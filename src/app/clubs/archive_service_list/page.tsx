@@ -140,7 +140,7 @@ export default function ArchiveServiceListPage() {
         </button>
       }
       error={error}
-      footerHint="Click to select · Double-click to open payment form for partial payments"
+      footerHint="Click to select · Double-click a row with Rest > 0 to open the payment form"
       pagination={
         <ProcedurePagination
           page={page}
@@ -155,8 +155,22 @@ export default function ArchiveServiceListPage() {
         rows={data}
         selectedId={selectedId}
         loading={loading}
-        onRowClick={(row) => row.id && setSelectedId(row.id)}
-        onRowDoubleClick={(row) => row.id && router.push(`/clubs/payment_detail/${row.id}`)}
+        onRowClick={(row) => {
+          setError('');
+          if (row.id) setSelectedId(row.id);
+        }}
+        onRowDoubleClick={(row) => {
+          if (!row.id) return;
+          if ((row.rest ?? 0) <= 0) {
+            setError(
+              'Payment is not possible because this service is already fully paid (Rest = €0.00).'
+            );
+            setSelectedId(row.id);
+            return;
+          }
+          setError('');
+          router.push(`/clubs/payment_detail/${row.id}`);
+        }}
       />
 
       <AdminPasswordConfirmModal
