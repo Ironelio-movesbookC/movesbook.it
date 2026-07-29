@@ -1,4 +1,4 @@
-﻿import { Prisma, ProcedureRecordStatus } from '@prisma/client';
+import { Prisma, ProcedureRecordStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { findExistingTable } from '@/lib/club/legacyTableLookup';
 import { getProcedureDefinition, getProcedureTypology } from './registry';
