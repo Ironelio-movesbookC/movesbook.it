@@ -198,7 +198,7 @@ export type ProcedureTab = {
 
 const TAB_LABELS: Record<ProcedureArchiveTabId, string> = {
   records: 'Historical',
-  deadlines: 'Deadline',
+  deadlines: 'Archive of Deadlines',
   payments: 'Payments',
   receipts: 'Receipts',
 };

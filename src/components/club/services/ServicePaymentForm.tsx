@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
-import {
+import ProcedureFormSection, {
   procedureHighlightInputClass,
   procedureInputClass,
   procedureReadonlyInputClass,
@@ -22,6 +22,8 @@ import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmMod
 
 export type PaymentDistribution = {
   installmentId: string;
+  /** When paying multiple archive records, the procedure record id to charge. */
+  recordId?: string;
   amount: number;
   newPaid: number;
   newBalance: number;
@@ -45,11 +47,13 @@ export type ServicePaymentSubmitValues = {
   receiptNumber?: string;
   receiptAnnotations?: string;
   distributions: PaymentDistribution[];
+  /** True when paying multiple archive deadline records at once. */
+  multiRecord?: boolean;
 };
 
 type Props = {
   purchase: ServiceSalePurchase;
-  /** Extra open deadlines (same member) opened via multi-select from the archive. */
+  /** Extra open deadlines (same member) from archive multi-select. */
   extraPurchases?: ServiceSalePurchase[];
   payments: ServiceSalePayment[];
   options: ServiceSaleFormOptions;
@@ -68,6 +72,18 @@ function formatDisplayDate(iso: string | null | undefined): string {
   if (!iso) return '-';
   const d = new Date(`${iso.slice(0, 10)}T00:00:00`);
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function toYmd(iso: string | null | undefined): string {
+  return iso ? iso.slice(0, 10) : '';
+}
+
+/** Expire date for ordering/display (expireDate, else paymentDate). */
+function effectiveExpireDate(
+  expireDate: string | null | undefined,
+  paymentDate: string | null | undefined
+): string {
+  return toYmd(expireDate) || toYmd(paymentDate);
 }
 
 export default function ServicePaymentForm({
@@ -166,7 +182,18 @@ export default function ServicePaymentForm({
   const restGive = Math.max(0, payWithAmount - paidAmount);
   const overallNewRest = Math.max(0, totalRest - paidAmount);
 
-  const installmentRows = useMemo(() => {
+  type DeadlineListRow = {
+    id: string;
+    balance: number;
+    paymentDate: string | null;
+    expireDate: string | null;
+    paid: number;
+    disabled: boolean;
+    label?: string;
+    recordId: string;
+  };
+
+  const installmentRows = useMemo((): DeadlineListRow[] => {
     if (multiDeadlineMode) {
       return allPurchases
         .filter((p) => p.rest > 0)
@@ -174,9 +201,11 @@ export default function ServicePaymentForm({
           id: p.id,
           balance: p.rest,
           paymentDate: p.paydate,
+          expireDate: p.paydate,
           paid: p.pay,
           disabled: false,
-          label: `${p.typology}-${p.serviceName || p.notes || 'Debt'}`,
+          label: `${p.sectorName}-${p.serviceName}`,
+          recordId: p.id,
         }));
     }
     if (installments.length > 0) {
@@ -184,27 +213,30 @@ export default function ServicePaymentForm({
         id: row.id,
         balance: row.balance,
         paymentDate: row.paymentDate,
+        expireDate: row.expireDate,
         paid: row.paid,
-        disabled: row.balance <= 0,
-        label: undefined as string | undefined,
+        disabled: false,
+        recordId: purchase.id,
       }));
     }
-    const rows = payments.map((p) => ({
+    const rows: DeadlineListRow[] = payments.map((p) => ({
       id: p.id,
       balance: p.balance,
       paymentDate: p.paymentDate,
+      expireDate: p.paymentDate,
       paid: p.paid,
       disabled: true,
-      label: undefined as string | undefined,
+      recordId: purchase.id,
     }));
     if (purchase.rest > 0) {
       rows.unshift({
         id: 'current',
         balance: purchase.rest,
         paymentDate: purchase.paydate,
-        paid: purchase.rest,
+        expireDate: purchase.paydate,
+        paid: purchase.pay,
         disabled: false,
-        label: undefined,
+        recordId: purchase.id,
       });
     }
     return rows;
@@ -216,21 +248,48 @@ export default function ServicePaymentForm({
       .reduce((sum, r) => sum + r.balance, 0);
   }, [installmentRows, selectedInstallmentIds]);
 
+  // Default Amount paid = sum of selected Rests (operator may lower it, never raise above max).
   useEffect(() => {
-    setAmountPaid(String(selectedTotalRest));
+    setAmountPaid(selectedTotalRest > 0 ? String(Number(selectedTotalRest.toFixed(2))) : '0');
   }, [selectedTotalRest]);
 
   const nextRests = useMemo(() => {
+    // Oldest expire date first (client waterfall).
     const sorted = [...installmentRows]
       .filter((r) => selectedInstallmentIds.has(r.id))
-      .sort((a, b) => (a.paymentDate || '').localeCompare(b.paymentDate || ''));
+      .sort((a, b) => {
+        const ea = effectiveExpireDate(a.expireDate, a.paymentDate);
+        const eb = effectiveExpireDate(b.expireDate, b.paymentDate);
+        const byExpire = ea.localeCompare(eb);
+        if (byExpire !== 0) return byExpire;
+        return a.id.localeCompare(b.id);
+      });
     let remaining = paidAmount;
     return sorted.map((r) => {
       const paidHere = Math.min(remaining, r.balance);
       remaining = Math.max(0, remaining - paidHere);
-      return { id: r.id, label: formatDisplayDate(r.paymentDate), newRest: Math.max(0, r.balance - paidHere) };
+      const expire = effectiveExpireDate(r.expireDate, r.paymentDate);
+      return {
+        id: r.id,
+        recordId: r.recordId,
+        label: r.label
+          ? `${r.label} · ${formatDisplayDate(expire)}`
+          : formatDisplayDate(expire),
+        newRest: Math.max(0, r.balance - paidHere),
+        paidHere,
+        paid: r.paid,
+        balance: r.balance,
+      };
     });
   }, [installmentRows, selectedInstallmentIds, paidAmount]);
+
+  function clampAmountPaid(raw: string): string {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return '0';
+    const max = selectedTotalRest;
+    if (n > max) return String(Number(max.toFixed(2)));
+    return String(n);
+  }
 
   async function reloadInstallments() {
     const rows = await fetchInstallments(procedureType, purchase.id);
@@ -238,13 +297,21 @@ export default function ServicePaymentForm({
   }
 
   function handleNewInstallment() {
-    const totalBalances = installments.reduce((s, r) => s + r.balance, 0);
-    const available = purchase.rest - totalBalances;
-    if (available <= 0) {
-      setInstallmentError('No available balance for a new deadline.');
-      return;
+    // Client: always allow New with exactly one selected deadline (any rest), then admin password.
+    // If there are no deadline rows yet, still allow New after admin password.
+    if (installmentRows.length > 0) {
+      if (selectedInstallmentIds.size !== 1) {
+        setInstallmentError('Select exactly one deadline to add a new one.');
+        return;
+      }
     }
-    setNewForm({ balance: String(available), expireDate: '', description: description || sectionLabel });
+    setInstallmentError('');
+    setPendingAction('new');
+    setShowAdminPasswordModal(true);
+  }
+
+  function openNewFormAfterAdminAuth() {
+    setNewForm({ balance: '', expireDate: '', description: description || sectionLabel });
     setNewFormOpen(true);
   }
 
@@ -255,13 +322,12 @@ export default function ServicePaymentForm({
       setInstallmentError('Deadline amount must be greater than 0.');
       return;
     }
-    const totalBalances = installments.reduce((s, r) => s + r.balance, 0);
-    if (totalBalances + deadlineValue > purchase.rest) {
-      setInstallmentError(`Deadline amount (${deadlineValue.toFixed(2)}) would exceed available rest (${(purchase.rest - totalBalances).toFixed(2)}).`);
-      return;
-    }
     setNewFormSaving(true);
     try {
+      // No value limit: bump record total/rest by the new deadline amount.
+      if (onAddToRecordTotal) {
+        await onAddToRecordTotal(deadlineValue);
+      }
       await createInstallment(procedureType, purchase.id, {
         balance: deadlineValue,
         paid: 0,
@@ -270,6 +336,7 @@ export default function ServicePaymentForm({
         description: newForm.description || null,
       });
       setNewFormOpen(false);
+      setSelectedInstallmentIds(new Set());
       await reloadInstallments();
     } catch (e) {
       setInstallmentError(e instanceof Error ? e.message : 'Failed to create installment');
@@ -365,21 +432,31 @@ export default function ServicePaymentForm({
     e.preventDefault();
     if (selectedInstallmentIds.size === 0) return;
     if (paidAmount <= 0) return;
-    if (paidAmount > selectedTotalRest) return;
+    if (paidAmount > selectedTotalRest) {
+      setInstallmentError(
+        `Amount paid cannot exceed selected Rest total (${selectedTotalRest.toFixed(2)}).`
+      );
+      return;
+    }
     if (!operatorId) return;
     if (passwordRequired && !operatorPassword.trim()) return;
 
-    const distributions: PaymentDistribution[] = nextRests.map((r) => {
+    // One saved payment per deadline that receives money (oldest expire first).
+    const distributions: PaymentDistribution[] = [];
+    for (const r of nextRests) {
+      if (r.paidHere <= 0) continue;
       const row = installmentRows.find((ir) => ir.id === r.id);
-      if (!row) return { installmentId: r.id, amount: 0, newPaid: 0, newBalance: 0 };
-      const paidHere = row.balance - r.newRest;
-      return {
+      if (!row) continue;
+      distributions.push({
         installmentId: r.id,
-        amount: paidHere,
-        newPaid: row.paid + paidHere,
+        recordId: row.recordId,
+        amount: r.paidHere,
+        newPaid: row.paid + r.paidHere,
         newBalance: r.newRest,
-      };
-    });
+      });
+    }
+
+    if (distributions.length === 0) return;
 
     await onSubmit({
       amountPaid: paidAmount,
@@ -390,7 +467,7 @@ export default function ServicePaymentForm({
       taxDoc,
       operatorId,
       operatorPassword,
-      debtTotal: Number(debtTotal) || purchase.value,
+      debtTotal: Number(debtTotal) || totalRest || purchase.value,
       debtExpire,
       payWith: payWithAmount,
       restGive,
@@ -399,100 +476,104 @@ export default function ServicePaymentForm({
       receiptNumber: taxDocument?.documentNumber || undefined,
       receiptAnnotations: taxDocument?.causal || undefined,
       distributions,
+      multiRecord: multiDeadlineMode,
     });
   }
 
-  const isMemberDebt = procedureType === 'member_debt';
   const selectedInstallmentId = firstSelectedId();
+  /** New: exactly one selected when rows exist; always free when no rows yet. */
+  const canNewDeadline =
+    !multiDeadlineMode &&
+    (installmentRows.length === 0 || selectedInstallmentIds.size === 1);
   const canModifyDelete =
     !multiDeadlineMode &&
     Boolean(selectedInstallmentId) &&
     selectedInstallmentId !== 'current' &&
     selectedInstallmentIds.size === 1;
-
-  if (totalRest <= 0) {
-    return (
-      <div className="rounded border border-green-200 bg-green-50 p-4 text-green-700">
-        This record is fully paid.
-      </div>
-    );
-  }
+  const hasPayableRest = totalRest > 0;
 
   return (
     <>
-      <form onSubmit={handleSubmit} className="procedure-form space-y-3 text-gray-900">
-        {/* Deadlines list + New/Modify/Delete */}
-        <div>
-          <h2 className="mb-1 text-[14px] font-semibold text-red-700">deadline</h2>
-          <div className="flex gap-2">
-            <div className="min-h-[140px] flex-1 overflow-y-auto border border-gray-400 bg-[#f4f7d8] p-2">
-              <ul className="space-y-2 text-[13px]">
-                {installmentRows.map((row) => {
-                  const full = row.balance + row.paid;
-                  return (
-                    <li key={row.id}>
-                      <label className="flex cursor-pointer items-start gap-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedInstallmentIds.has(row.id)}
-                          disabled={row.disabled && row.id !== 'current'}
-                          onChange={() => {
-                            const next = new Set(selectedInstallmentIds);
-                            if (next.has(row.id)) next.delete(row.id);
-                            else next.add(row.id);
-                            setSelectedInstallmentIds(next);
-                          }}
-                          className="mt-1"
-                        />
-                        <span>
-                          {isMemberDebt || multiDeadlineMode ? (
-                            <>
-                              <span className="font-semibold text-red-600">
-                                {row.label ||
-                                  `${purchase.typology}-${purchase.serviceName || purchase.notes || 'Member debt'}`}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {multiDeadlineMode && (
+          <div className="rounded border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-900">
+            Paying <strong>{allPurchases.filter((p) => p.rest > 0).length}</strong> open deadlines for{' '}
+            <strong>{purchase.memberName}</strong> (combined rest {formatEuro(totalRest)}).
+          </div>
+        )}
+        {!hasPayableRest && !multiDeadlineMode && (
+          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            No open rest to pay. You can still select one deadline and use <strong>New</strong> (admin
+            password) to add more debt with any amount.
+          </div>
+        )}
+        <ProcedureFormSection title="Deadlines">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1 border border-gray-200 rounded p-3 bg-gray-50 max-h-56 overflow-y-auto">
+              <p className="text-sm font-medium text-red-700 mb-2">Deadlines total</p>
+              <ul className="space-y-3 text-sm">
+                {installmentRows.map((row) => (
+                  <li key={row.id} className="border-b border-gray-200 pb-2 last:border-0">
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedInstallmentIds.has(row.id)}
+                        disabled={row.disabled && row.id !== 'current'}
+                        onChange={() => {
+                          const next = new Set(selectedInstallmentIds);
+                          if (next.has(row.id)) next.delete(row.id);
+                          else next.add(row.id);
+                          setSelectedInstallmentIds(next);
+                        }}
+                        className="mt-1"
+                      />
+                      <span className={row.balance <= 0 ? 'opacity-60' : undefined}>
+                        {multiDeadlineMode || row.label ? (
+                          <>
+                            <span className="font-semibold text-red-600">
+                              {row.label || sectionLabel}
+                            </span>
+                            <div className="mt-0.5 text-gray-700">
+                              Expire date of{' '}
+                              <span className="text-blue-500">
+                                {formatDisplayDate(effectiveExpireDate(row.expireDate, row.paymentDate))}
                               </span>
-                              <div className="mt-0.5 text-gray-800">
+                              {' '}of € {formatEuro(row.balance + row.paid)} Rest{' '}
+                              <span className="text-red-600">€ {formatEuro(row.balance)}</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            Purchase service in section{' '}
+                            <strong className="text-red-600">{sectionLabel}</strong>
+                            <ul className="mt-1 ml-2 text-gray-600">
+                              <li>
                                 Expire date of{' '}
-                                <span className="text-blue-600">{formatDisplayDate(row.paymentDate)}</span>
-                                {' '}of € {formatEuro(full)} Rest{' '}
-                                <span className="font-semibold text-red-600">€ {formatEuro(row.balance)}</span>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              Purchase service in section{' '}
-                              <strong className="text-red-600">{sectionLabel}</strong>
-                              <div className="mt-0.5 text-gray-700">
-                                Expire date of{' '}
-                                <span className="text-blue-600">{formatDisplayDate(row.paymentDate)}</span>
-                                {' '}of € {formatEuro(full)} Rest{' '}
-                                <span className="font-semibold text-red-600">€ {formatEuro(row.balance)}</span>
-                              </div>
-                            </>
-                          )}
-                        </span>
-                      </label>
-                    </li>
-                  );
-                })}
+                                <span className="text-blue-500">
+                                  {formatDisplayDate(effectiveExpireDate(row.expireDate, row.paymentDate))}
+                                </span>
+                                {' '}of € {formatEuro(row.balance + row.paid)} Rest{' '}
+                                <span className="text-red-600">€ {formatEuro(row.balance)}</span>
+                              </li>
+                            </ul>
+                          </>
+                        )}
+                      </span>
+                    </label>
+                  </li>
+                ))}
                 {installmentRows.length === 0 && (
-                  <li className="text-gray-500">No deadlines found.</li>
+                  <li className="text-gray-500">No deadlines yet. Use New to add one.</li>
                 )}
               </ul>
-              <p className="mt-2 border-t border-gray-300 pt-1 text-[12px] text-gray-700">
-                Selected total:{' '}
-                <strong className={selectedTotalRest > 0 ? 'text-red-700' : ''}>
-                  {formatEuro(selectedTotalRest)}
-                </strong>
-              </p>
             </div>
-
             {!multiDeadlineMode && (
-            <div className="flex w-[78px] shrink-0 flex-col gap-1.5">
+            <div className="flex flex-col gap-2 md:w-28">
               <button
                 type="button"
                 onClick={handleNewInstallment}
-                className="rounded-sm border border-emerald-700 bg-emerald-600 px-2 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:bg-emerald-700"
+                disabled={!canNewDeadline}
+                className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
               >
                 New
               </button>
@@ -500,7 +581,7 @@ export default function ServicePaymentForm({
                 type="button"
                 onClick={handleModifyInstallment}
                 disabled={!canModifyDelete}
-                className="rounded-sm border border-sky-700 bg-sky-600 px-2 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 disabled:shadow-none"
+                className="rounded bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
               >
                 Modify
               </button>
@@ -508,21 +589,25 @@ export default function ServicePaymentForm({
                 type="button"
                 onClick={handleDeleteInstallment}
                 disabled={!canModifyDelete}
-                className="rounded-sm border border-red-800 bg-red-600 px-2 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 disabled:shadow-none"
+                className="rounded bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
               >
                 Delete
               </button>
             </div>
             )}
           </div>
-          {installmentError && <p className="mt-1 text-[12px] text-red-600">{installmentError}</p>}
-        </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Selected total:{' '}
+            <strong className={selectedTotalRest > 0 ? 'text-red-700' : ''}>
+              {formatEuro(selectedTotalRest)}
+            </strong>
+          </p>
+          {installmentError && <p className="text-red-600 text-xs mt-2">{installmentError}</p>}
+        </ProcedureFormSection>
 
-        {/* Type of payment + Rest */}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <fieldset className="rounded-sm border border-gray-400 p-3">
-            <legend className="px-1 text-[13px] font-semibold text-gray-800">Type of payment</legend>
-            <div className="flex flex-wrap gap-6 text-[13px]">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <ProcedureFormSection title="Type of payment">
+            <div className="flex gap-6 text-sm">
               <label className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -544,13 +629,12 @@ export default function ServicePaymentForm({
                 Balance
               </label>
             </div>
-          </fieldset>
+          </ProcedureFormSection>
 
-          <fieldset className="rounded-sm border border-gray-400 p-3">
-            <legend className="px-1 text-[13px] font-semibold text-gray-800">Rest</legend>
-            <div className="grid grid-cols-2 gap-3 text-[13px]">
+          <ProcedureFormSection title="Debt">
+            <div className="grid grid-cols-2 gap-3 text-sm">
               <label className="block">
-                <span className="text-gray-700">Total</span>
+                <span className="text-gray-600">Total</span>
                 <input
                   type="number"
                   step="0.01"
@@ -561,7 +645,7 @@ export default function ServicePaymentForm({
                 />
               </label>
               <label className="block">
-                <span className="text-gray-700">Expired</span>
+                <span className="text-gray-600">Expired</span>
                 <input
                   type="date"
                   className={`mt-1 ${procedureHighlightInputClass}`}
@@ -571,11 +655,11 @@ export default function ServicePaymentForm({
                 />
               </label>
             </div>
-          </fieldset>
+          </ProcedureFormSection>
         </div>
 
-        <label className="block text-[13px]">
-          <span className="text-gray-700">Description</span>
+        <label className="block text-sm">
+          <span className="text-gray-600">Description</span>
           <textarea
             className={`mt-1 ${procedureInputClass}`}
             rows={2}
@@ -585,160 +669,190 @@ export default function ServicePaymentForm({
           />
         </label>
 
-        {/* Payment panel — PHP 2-column layout */}
-        <div className="rounded-[12px] border border-[#9ec5c7] bg-[#c4e2e3] px-4 py-5 sm:px-6">
-          <div className="mx-auto grid max-w-3xl grid-cols-1 gap-x-10 gap-y-3 sm:grid-cols-2">
-            {/* Left column */}
-            <div className="space-y-4 text-[13px]">
-              <label className="flex items-center gap-3">
-                <span className="w-[100px] shrink-0 text-right text-gray-800">Amount paid</span>
+        <div className="rounded border border-gray-300 p-4 space-y-4">
+          {/*
+            Same structure in every column: label line + control line.
+            Empty label spacers keep Tax doc / Open form / Password on the input baseline.
+          */}
+          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <label className="flex min-w-0 flex-col">
+              <span className="mb-1 block min-h-[1.25rem] text-gray-600">
+                Amount paid
+                {selectedTotalRest > 0 && (
+                  <span className="ml-1 font-normal text-gray-400">
+                    (max {formatEuro(selectedTotalRest)})
+                  </span>
+                )}
+              </span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                max={selectedTotalRest}
+                className={`h-10 ${procedureHighlightInputClass}`}
+                value={amountPaid}
+                onChange={(e) => setAmountPaid(clampAmountPaid(e.target.value))}
+                onBlur={(e) => setAmountPaid(clampAmountPaid(e.target.value))}
+              />
+            </label>
+            <label className="flex min-w-0 flex-col">
+              <span className="mb-1 block min-h-[1.25rem] text-gray-600">Pay mode</span>
+              <select
+                className={`h-10 ${procedureInputClass}`}
+                value={payMode}
+                onChange={(e) => setPayMode(e.target.value)}
+              >
+                <option value="">select</option>
+                {PAY_MODE_OPTIONS.filter((m) => m.value !== 'voucher').map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex min-w-0 flex-col">
+              <span className="mb-1 block min-h-[1.25rem]" aria-hidden>
+                &nbsp;
+              </span>
+              <div className="flex h-10 items-center gap-2">
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  max={selectedTotalRest || totalRest}
-                  className={`h-[30px] flex-1 ${procedureHighlightInputClass}`}
-                  value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
+                  type="checkbox"
+                  checked={taxDoc}
+                  onChange={(e) => setTaxDoc(e.target.checked)}
                 />
-              </label>
-              <label className="flex items-center gap-3">
-                <span className="w-[100px] shrink-0 text-right text-gray-800">Date</span>
-                <input
-                  type="date"
-                  className={`h-[30px] flex-1 ${procedureHighlightInputClass}`}
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                />
-              </label>
-              <label className="flex items-center gap-3">
-                <span className="w-[100px] shrink-0 text-right text-gray-800">Pay with €</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className={`h-[30px] flex-1 ${procedureHighlightInputClass}`}
-                  value={payWith}
-                  onChange={(e) => setPayWith(e.target.value)}
-                />
-              </label>
-              <div className="flex items-center gap-3">
-                <span className="w-[100px] shrink-0" />
-                <label className="flex items-center gap-2 text-gray-800">
-                  <input
-                    type="checkbox"
-                    checked={taxDoc}
-                    onChange={(e) => setTaxDoc(e.target.checked)}
-                  />
-                  Tax doc
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setTaxModalOpen(true)}
-                  disabled={!taxDoc}
-                  className="rounded-sm border border-gray-500 bg-[#d9d9d9] px-3 py-1 text-[12px] text-gray-800 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Open form
-                </button>
+                <span>Tax doc</span>
               </div>
             </div>
-
-            {/* Right column */}
-            <div className="space-y-4 text-[13px]">
-              <label className="flex items-center gap-3">
-                <span className="w-[100px] shrink-0 text-right text-gray-800">Pay mode</span>
-                <select
-                  className="h-[30px] min-w-0 flex-1 border border-gray-400 bg-white px-2 text-[13px] leading-normal text-gray-900"
-                  value={payMode}
-                  onChange={(e) => setPayMode(e.target.value)}
-                >
-                  <option value="">select</option>
-                  {PAY_MODE_OPTIONS.filter((m) => m.value !== 'voucher').map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-3">
-                <span className="w-[100px] shrink-0 text-right text-gray-800">Operator</span>
-                <select
-                  className="h-[30px] min-w-0 flex-1 border border-gray-400 bg-white px-2 text-[13px] leading-normal text-gray-900"
-                  value={operatorId}
-                  onChange={(e) => setOperatorId(e.target.value)}
-                >
-                  <option value="">select</option>
-                  {options.operators.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-3">
-                <span className="w-[100px] shrink-0 text-right text-gray-800">Resto to give</span>
-                <input
-                  type="text"
-                  readOnly
-                  className={`h-[30px] flex-1 ${procedureInputClass}`}
-                  style={{ backgroundColor: '#d3f07b' }}
-                  value={restGive.toFixed(2)}
-                />
-              </label>
-              <div className="flex items-center gap-3">
-                <span className="w-[100px] shrink-0" />
-                <label className="flex items-center gap-2 text-gray-800">
-                  <input
-                    type="checkbox"
-                    checked={passwordRequired}
-                    disabled={isPasswordEnabled}
-                    onChange={(e) => setPasswordRequired(e.target.checked)}
-                  />
-                  Password
-                </label>
-                {passwordRequired && (
-                  <div className="relative min-w-0 flex-1">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      className={`h-[30px] w-full ${procedureInputClass}`}
-                      value={operatorPassword}
-                      onChange={(e) => setOperatorPassword(e.target.value)}
-                      placeholder="Password"
-                    />
-                    <button
-                      type="button"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
-                      onClick={() => setShowPassword((v) => !v)}
-                      tabIndex={-1}
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                )}
-              </div>
+            <div className="flex min-w-0 flex-col">
+              <span className="mb-1 block min-h-[1.25rem]" aria-hidden>
+                &nbsp;
+              </span>
+              <button
+                type="button"
+                onClick={() => setTaxModalOpen(true)}
+                disabled={!taxDoc}
+                className="h-10 rounded bg-gray-200 px-3 text-sm hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Open form
+              </button>
             </div>
           </div>
 
-          {nextRests.length > 0 && (
-            <div className="mx-auto mt-4 max-w-3xl space-y-1 text-[12px] text-gray-700">
-              {nextRests.map((r) => (
-                <p key={r.id}>
-                  <span className="font-medium">{r.label}</span> — Rest:{' '}
-                  <strong className="text-red-600">{formatEuro(r.newRest)}</strong>
-                </p>
-              ))}
+          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <label className="flex min-w-0 flex-col">
+              <span className="mb-1 block min-h-[1.25rem] text-gray-600">Date</span>
+              <input
+                type="date"
+                className={`h-10 ${procedureHighlightInputClass}`}
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+              />
+            </label>
+            <label className="flex min-w-0 flex-col">
+              <span className="mb-1 block min-h-[1.25rem] text-gray-600">Operator</span>
+              <select
+                className={`h-10 ${procedureInputClass}`}
+                value={operatorId}
+                onChange={(e) => setOperatorId(e.target.value)}
+              >
+                <option value="">select</option>
+                {options.operators.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex min-w-0 flex-col">
+              <span className="mb-1 block min-h-[1.25rem]" aria-hidden>
+                &nbsp;
+              </span>
+              <div className="flex h-10 items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={passwordRequired}
+                  disabled={isPasswordEnabled}
+                  onChange={(e) => setPasswordRequired(e.target.checked)}
+                />
+                <span>Password</span>
+              </div>
+            </div>
+            <div className="relative flex min-w-0 flex-col">
+              <span className="mb-1 block min-h-[1.25rem]" aria-hidden>
+                &nbsp;
+              </span>
+              {passwordRequired ? (
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className={`h-10 ${procedureInputClass}`}
+                    value={operatorPassword}
+                    onChange={(e) => setOperatorPassword(e.target.value)}
+                    placeholder="Password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+                    onClick={() => setShowPassword((v) => !v)}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              ) : (
+                <div className="h-10" aria-hidden />
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+            <label className="flex min-w-0 flex-col">
+              <span className="mb-1 block min-h-[1.25rem] text-gray-600">Pay with €</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className={`h-10 ${procedureHighlightInputClass}`}
+                value={payWith}
+                onChange={(e) => setPayWith(e.target.value)}
+              />
+            </label>
+            <label className="flex min-w-0 flex-col">
+              <span className="mb-1 block min-h-[1.25rem] text-gray-600">Resto to give</span>
+              <input
+                type="text"
+                readOnly
+                className={`h-10 ${procedureInputClass}`}
+                style={{ backgroundColor: '#d3f07b' }}
+                value={restGive.toFixed(2)}
+              />
+            </label>
+          </div>
+
+          {nextRests.some((r) => r.paidHere > 0) && (
+            <div className="text-sm text-gray-600 space-y-1">
+              {nextRests
+                .filter((r) => r.paidHere > 0)
+                .map((r) => (
+                  <p key={r.id}>
+                    <span className="font-medium">{r.label}</span> — Pay{' '}
+                    <strong className="text-teal-700">{formatEuro(r.paidHere)}</strong>
+                    {' · '}Rest after:{' '}
+                    <strong className="text-red-600">{formatEuro(r.newRest)}</strong>
+                  </p>
+                ))}
             </div>
           )}
         </div>
 
-        {error && <p className="text-center text-[13px] text-red-600">{error}</p>}
-        {success && <p className="text-center text-[13px] text-green-700">{success}</p>}
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {success && <p className="text-green-700 text-sm">{success}</p>}
 
-        <div className="flex justify-center gap-3 pt-1">
+        <div className="flex justify-center gap-3">
           <button
             type="submit"
-            disabled={saving}
-            className="min-w-[96px] rounded-sm bg-[#c62828] px-5 py-1.5 text-[13px] font-semibold text-white hover:bg-[#b71c1c] disabled:opacity-50"
+            disabled={saving || !hasPayableRest || selectedInstallmentIds.size === 0 || paidAmount <= 0}
+            className="px-6 py-2 bg-red-700 text-white rounded hover:bg-red-800 disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Confirm'}
           </button>
@@ -746,7 +860,7 @@ export default function ServicePaymentForm({
             <button
               type="button"
               onClick={onCancel}
-              className="min-w-[96px] rounded-sm bg-[#424242] px-5 py-1.5 text-[13px] font-semibold text-white hover:bg-[#303030]"
+              className="px-6 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
             >
               Exit
             </button>
@@ -852,6 +966,9 @@ export default function ServicePaymentForm({
             className="bg-white rounded-lg shadow-lg w-full max-w-md p-5 space-y-3 text-sm"
           >
             <h3 className="text-lg font-medium text-gray-900">New deadline</h3>
+            <p className="text-xs text-gray-500">
+              Amount may exceed current rest — record total will increase by this value.
+            </p>
             <label className="block">
               <span className="text-gray-600">Deadline</span>
               <input
@@ -908,6 +1025,7 @@ export default function ServicePaymentForm({
         onVerified={() => {
           setShowAdminPasswordModal(false);
           if (pendingAction === 'delete') void performDeleteInstallment();
+          if (pendingAction === 'new') openNewFormAfterAdminAuth();
           setPendingAction(null);
         }}
       />

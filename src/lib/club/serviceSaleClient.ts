@@ -107,7 +107,8 @@ export function mapRecord(record: ProcedureRecordDto): ServiceSalePurchase {
     typology: 'SERVICES',
     sectorName: metaString(meta, 'sectorName') || '-',
     serviceName: metaString(meta, 'serviceName') || '-',
-    paydate: record.recordDate,
+    // Deadline/expire display uses dueDate (PHP ServicePurchase.paydate / installment expire).
+    paydate: record.dueDate ?? record.recordDate,
     value: record.totalAmount,
     pay: record.paidAmount,
     rest: record.balanceAmount,
@@ -158,6 +159,8 @@ export type ListParams = {
   page?: number;
   pageSize?: number;
   recordId?: string;
+  /** When fetching deadlines, also include Rest = 0 rows. */
+  includePaid?: boolean;
 };
 
 export type PaginatedResult<T> = {
@@ -181,6 +184,7 @@ function buildQuery(params?: ListParams & { view?: string }): string {
   });
   if (params?.view) qs.set('view', params.view);
   if (params?.recordId) qs.set('recordId', params.recordId);
+  if (params?.includePaid) qs.set('includePaid', '1');
   return qs.toString();
 }
 

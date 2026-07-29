@@ -171,14 +171,14 @@ function SidebarStackedGlobeIcon({ badge }: { badge: 'M' | 'F' | 'star' }) {
 
 type ClubAdminInsertItem =
   | { kind: 'icon'; Icon: LucideIcon; label: string; path?: string }
-  | { kind: 'affiliate'; label: string }
-  | { kind: 'assignAlert'; label: string }
-  | { kind: 'recordAlert'; label: string };
+  | { kind: 'affiliate'; label: string; path?: string }
+  | { kind: 'assignAlert'; label: string; path?: string }
+  | { kind: 'recordAlert'; label: string; path?: string };
 
 const CLUB_ADMIN_INSERT_NEW_ITEM_GROUPS: ClubAdminInsertItem[][] = [
   [
     { kind: 'icon', Icon: FileText, label: 'New user' },
-    { kind: 'affiliate', label: 'New affiliate to the club' },
+    { kind: 'affiliate', label: 'New affiliate to the club', path: '/clubMembers/memberList' },
   ],
   [
     { kind: 'icon', Icon: Contact2, label: 'New subscription to the Club' },
@@ -186,15 +186,22 @@ const CLUB_ADMIN_INSERT_NEW_ITEM_GROUPS: ClubAdminInsertItem[][] = [
     { kind: 'icon', Icon: CheckCircle, label: 'Payment of deadlines', path: '/clubs/dead_line' },
   ],
   [
-    { kind: 'icon', Icon: ShoppingCart, label: 'Sell products', path: '/ArchiveSeles/new_product_sale' },
-    { kind: 'icon', Icon: Hourglass, label: 'Payment other deadlines', path: '/clubs/member_debt_dead_line' },
+    { kind: 'icon', Icon: ShoppingCart, label: 'Sell products', path: '/ArchiveSeles/product_sale_list' },
+    // PHP: clubs/new_moment_cash — sell a service / cash movement
+    {
+      kind: 'icon',
+      Icon: ShoppingBasket,
+      label: 'Insert a movement of selling service',
+      path: '/clubs/new_moment_cash',
+    },
+    { kind: 'icon', Icon: Hourglass, label: 'Payment other deadlines', path: '/clubs/archive_service_list' },
   ],
   [
     { kind: 'icon', Icon: Award, label: 'Add a new credit' },
-    { kind: 'icon', Icon: Hourglass, label: 'Insert a new debit', path: '/clubMembers/debt_member' },
+    { kind: 'icon', Icon: Hourglass, label: 'Insert a new debit' },
   ],
   [
-    { kind: 'icon', Icon: ArrowUpRight, label: 'Payment expenses', path: '/clubs/expense_dead_line' },
+    { kind: 'icon', Icon: ArrowUpRight, label: 'Payment expenses', path: '/clubs/new_expense' },
     { kind: 'icon', Icon: ArrowUpRight, label: 'Pay a member' },
   ],
   [
@@ -267,7 +274,7 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: CreditCard, label: 'Accesses', path: '/clubs/access_list' },
   ],
   [
-    { kind: 'icon', Icon: Hourglass, label: 'Deadlines of payment', path: '/clubs/dead_line' },
+    { kind: 'icon', Icon: Hourglass, label: 'Archive of Deadlines', path: '/clubs/dead_line' },
     { kind: 'icon', Icon: Award, label: 'Credit voucher', path: '/clubSettings/creditCustomer' },
     { kind: 'icon', Icon: Hourglass, label: 'Other debts', path: '/clubs/other_debts' },
     { kind: 'icon', Icon: Hourglass, label: 'Planned expenses', path: '/clubs/arc_expenses' },
@@ -278,15 +285,13 @@ const CLUB_ADMIN_ARCHIVE_GROUPS: ClubAdminArchiveItem[][] = [
     { kind: 'icon', Icon: FileText, label: 'Archive of Services', path: '/clubs/archive_service_list' },
     { kind: 'icon', Icon: Receipt, label: 'Member expenses', path: '/clubs/new_expense' },
     { kind: 'icon', Icon: FileStack, label: 'Archive of Expenses', path: '/clubs/archive_expense_list' },
-    { kind: 'icon', Icon: Hourglass, label: 'Insert a new debit', path: '/clubMembers/debt_member' },
-    { kind: 'icon', Icon: FileStack, label: 'Archive of Member Debts', path: '/clubMembers/debt_member_list' },
   ],
   [
     { kind: 'icon', Icon: CornerDownLeft, label: 'Cash In', path: '/clubs/movement_cash_details/IN' },
     { kind: 'icon', Icon: CornerDownRight, label: 'Cash Out', path: '/clubs/movement_cash_details/OUT' },
     { kind: 'icon', Icon: Repeat2, label: 'Cash (all movements)', path: '/clubs/movement_cash_details' },
   ],
-  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubMembers/movement_cash' }],
+  [{ kind: 'icon', Icon: ClipboardCheck, label: 'Payment receipts', path: '/clubs/service_receipts' }],
   [
     { kind: 'icon', Icon: FileStack, label: 'Cards assignments', path: '/clubs/cards_assignments' },
     { kind: 'icon', Icon: FileWarning, label: 'Alert assigned', path: '/clubs/alerts_assigned' },
@@ -3718,11 +3723,7 @@ export default function DarkSidebar({
                                         key={item.label}
                                         type="button"
                                         onClick={() => {
-                                          if (item.kind === 'icon' && item.path) {
-                                            if (isClubAccountUserType(userType)) {
-                                              writeClubWorkspaceTab('my-entity');
-                                              setCurrentTab('my-entity');
-                                            }
+                                          if ('path' in item && item.path) {
                                             router.push(item.path);
                                           }
                                         }}
@@ -3730,7 +3731,7 @@ export default function DarkSidebar({
                                           ii < group.length - 1
                                             ? 'border-b border-gray-600/50'
                                             : ''
-                                        }`}
+                                        } ${'path' in item && item.path ? 'cursor-pointer' : 'cursor-default opacity-90'}`}
                                       >
                                         {renderClubAdminInsertItemLeading(item)}
                                         <span className="min-w-0 leading-snug">{item.label}</span>
