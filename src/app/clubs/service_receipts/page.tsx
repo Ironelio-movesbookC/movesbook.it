@@ -123,7 +123,7 @@ export default function ServiceReceiptsPage() {
 
   return (
     <ProcedureArchiveShell
-      title="Archive of Receipts"
+      title="Archive of Receipts (Services)"
       activeTab="receipts"
       tabs={getServiceSaleTabs('receipts')}
       error={error}

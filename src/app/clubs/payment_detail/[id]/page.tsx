@@ -134,13 +134,19 @@ function PaymentDetailPageInner() {
         setError('No amount to distribute.');
         return;
       }
+      if (Math.abs(totalDistributed - values.amountPaid) > 0.02) {
+        setError(
+          `Refusing to save: Amount paid (€${values.amountPaid.toFixed(2)}) does not match allocated (€${totalDistributed.toFixed(2)}).`
+        );
+        return;
+      }
 
       if (values.multiRecord) {
         let receiptCreated = false;
         for (const dist of values.distributions) {
           if (dist.amount <= 0) continue;
           const recordId = dist.recordId ?? dist.installmentId;
-          const makeReceipt = Boolean(values.createReceipt || values.taxDoc) && !receiptCreated;
+          const makeReceipt = Boolean(values.createReceipt) && !receiptCreated;
           await addPayment(recordId, {
             amountPaid: dist.amount,
             paymentDate: values.paymentDate,
@@ -157,6 +163,7 @@ function PaymentDetailPageInner() {
             createReceipt: makeReceipt,
             receiptNumber: makeReceipt ? values.receiptNumber : undefined,
             receiptAnnotations: makeReceipt ? values.description : undefined,
+            receiptDocumentType: makeReceipt ? values.receiptDocumentType : undefined,
           });
           if (makeReceipt) receiptCreated = true;
         }
@@ -164,7 +171,7 @@ function PaymentDetailPageInner() {
         let receiptCreated = false;
         for (const dist of values.distributions) {
           if (dist.amount <= 0) continue;
-          const makeReceipt = Boolean(values.createReceipt || values.taxDoc) && !receiptCreated;
+          const makeReceipt = Boolean(values.createReceipt) && !receiptCreated;
           await addPayment(id, {
             amountPaid: dist.amount,
             paymentDate: values.paymentDate,
@@ -181,6 +188,7 @@ function PaymentDetailPageInner() {
             createReceipt: makeReceipt,
             receiptNumber: makeReceipt ? values.receiptNumber : undefined,
             receiptAnnotations: makeReceipt ? values.description : undefined,
+            receiptDocumentType: makeReceipt ? values.receiptDocumentType : undefined,
           });
           if (makeReceipt) receiptCreated = true;
           if (dist.installmentId !== 'current') {
@@ -237,39 +245,6 @@ function PaymentDetailPageInner() {
               operatorPassStatus={otherSettings?.operatorPassStatus ?? 'Yes'}
               notEnterCustData={otherSettings?.notEnterCustData ?? false}
             />
-
-            {success && (
-              <div className="mt-4 flex flex-wrap gap-3 text-sm">
-                <button
-                  type="button"
-                  className="text-teal-700 underline"
-                  onClick={() => router.push('/clubs/archive_service_list')}
-                >
-                  Services archive
-                </button>
-                <button
-                  type="button"
-                  className="text-teal-700 underline"
-                  onClick={() => router.push('/clubs/dead_line')}
-                >
-                  Deadlines
-                </button>
-                <button
-                  type="button"
-                  className="text-teal-700 underline"
-                  onClick={() => router.push('/clubs/service_payments')}
-                >
-                  Payments
-                </button>
-                <button
-                  type="button"
-                  className="text-teal-700 underline"
-                  onClick={() => router.push('/clubs/service_receipts')}
-                >
-                  Receipts
-                </button>
-              </div>
-            )}
           </>
         )}
       </ProcedureArchiveShell>

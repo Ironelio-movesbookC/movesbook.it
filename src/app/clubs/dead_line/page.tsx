@@ -124,7 +124,7 @@ export default function DeadLinePage() {
     {
       id: 'deadline',
       label: 'Archive of Deadlines',
-      href: selectedId ? `/clubs/payment_detail/${selectedId}` : '/clubs/dead_line',
+      href: '/clubs/dead_line',
     },
     {
       id: 'pay-selected',
@@ -142,7 +142,7 @@ export default function DeadLinePage() {
 
   return (
     <ProcedureArchiveShell
-      title="Archive of Deadlines"
+      title="Archive of Deadlines (Services)"
       activeTab="deadline"
       tabs={tabs}
       tabsTrailing={
@@ -164,8 +164,8 @@ export default function DeadLinePage() {
       error={error || selectionError}
       footerHint={
         displayAlsoPaid
-          ? 'Showing open and fully paid deadlines. Double-click a row with Rest > 0 to record a payment.'
-          : 'Shows services with remaining balance. Check “Display also paid” to include Rest = 0. Double-click to record a payment.'
+          ? 'SERVICES only — showing open and fully paid deadlines. Double-click a row with Rest > 0 to record a payment.'
+          : 'SERVICES only — shows service purchases with remaining balance. Check “Display also paid” to include Rest = 0. Double-click to record a payment.'
       }
       pagination={
         <ProcedurePagination

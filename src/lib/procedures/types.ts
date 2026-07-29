@@ -37,6 +37,8 @@ export type ProcedureRecordDto = {
   balanceAmount: number;
   recordDate: string;
   dueDate: string | null;
+  /** ISO timestamp — used to order same-day deadlines (oldest first). */
+  createdAt: string;
   notes: string | null;
   metadata: Record<string, unknown> | null;
   lastPaymentDate: string | null;

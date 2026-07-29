@@ -10,16 +10,15 @@ export function getServiceSaleTabs(
   active: ServiceSaleTabId,
   selectedRecordId?: string | null
 ): ProcedureTab[] {
-  const deadlineHref = selectedRecordId
-    ? `/clubs/payment_detail/${selectedRecordId}`
-    : '/clubs/dead_line';
+  // Deadlines tab always opens the SERVICES deadline archive (never other typologies).
+  // Payment form is opened via double-click / Pay more deadlines — not via this tab.
   const paymentsHref = selectedRecordId
     ? `/clubs/user_payment_list/${selectedRecordId}`
     : '/clubs/service_payments';
 
   return [
     { id: 'historical', label: 'Historical', href: '/clubs/archive_service_list' },
-    { id: 'deadline', label: 'Archive of Deadlines', href: deadlineHref },
+    { id: 'deadline', label: 'Archive of Deadlines', href: '/clubs/dead_line' },
     { id: 'payments', label: 'Payments', href: paymentsHref },
     { id: 'receipts', label: 'Receipts', href: '/clubs/service_receipts' },
   ];

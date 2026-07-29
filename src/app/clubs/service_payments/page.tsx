@@ -120,7 +120,7 @@ export default function ServicePaymentsPage() {
 
   return (
     <ProcedureArchiveShell
-      title="Archive of Payments"
+      title="Archive of Payments (Services)"
       activeTab="payments"
       tabs={getServiceSaleTabs('payments')}
       error={error}
