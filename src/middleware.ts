@@ -43,6 +43,8 @@ const publicApiRoutes = [
   '/api/auth/reset-username',
   /** Outcome audio for <audio src> — no Authorization header on GET */
   '/api/outcome-messages',
+  /** Public read APIs (editorial news, shared OGP groups, etc.) */
+  '/api/public/',
 ];
 
 /** Public share links (read-only workout day / session). */
@@ -69,7 +71,8 @@ export function middleware(request: NextRequest) {
   if (
     publicRoutes.includes(pathname) ||
     pathname.startsWith('/api/auth/') ||
-    pathname.startsWith('/shared/')
+    pathname.startsWith('/shared/') ||
+    pathname.startsWith('/news/group/')
   ) {
     return NextResponse.next();
   }

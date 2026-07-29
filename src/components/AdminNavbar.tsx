@@ -17,7 +17,8 @@ import {
   X,
   Building2,
   LayoutDashboard,
-  History
+  History,
+  MessageSquare,
 } from 'lucide-react';
 import Image from 'next/image';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -316,6 +317,18 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
                 <span className="font-medium">Home</span>
               </Link>
 
+              <Link
+                href="/admin/chat"
+                className={`flex items-center gap-2 px-3 lg:px-4 py-2.5 lg:py-3 transition border-r border-gray-600 text-sm ${
+                  pathname?.startsWith('/admin/chat')
+                    ? 'bg-yellow-500 hover:bg-yellow-600 border-yellow-600 text-white font-semibold'
+                    : 'hover:bg-gray-600'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span className="font-medium">Chat</span>
+              </Link>
+
               <Link 
                 href="/admin/all"
                 className="flex items-center gap-2 px-3 lg:px-4 py-2.5 lg:py-3 hover:bg-gray-600 transition border-r border-gray-600 text-sm"
@@ -491,6 +504,19 @@ export default function AdminNavbar({ onToggleLeft, onToggleRight }: AdminNavbar
             >
               <Home className="w-5 h-5" />
               <span className="font-medium">Home</span>
+            </Link>
+
+            <Link
+              href="/admin/chat"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`flex items-center gap-3 px-5 py-3 transition border-b border-gray-600 ${
+                pathname?.startsWith('/admin/chat')
+                  ? 'bg-yellow-500 hover:bg-yellow-600 text-white font-semibold'
+                  : 'hover:bg-gray-600'
+              }`}
+            >
+              <MessageSquare className="w-5 h-5" />
+              <span className="font-medium">Chat</span>
             </Link>
 
             <Link 

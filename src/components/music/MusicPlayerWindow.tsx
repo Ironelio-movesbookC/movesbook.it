@@ -16,6 +16,7 @@ import { extractYouTubeVideoId } from '@/constants/tools.constants';
 export type MusicPlayerTrack = {
   id: string;
   title: string | null;
+  artist?: string | null;
   image: string | null;
   url: string;
   siteName: string | null;
@@ -146,7 +147,7 @@ export default function MusicPlayerWindow({
 
   const displayTitle = current?.title || current?.url || 'Unknown track';
   const displaySubtitle =
-    current?.siteName || current?.creatorUsername || current?.description || '';
+    current?.artist || current?.siteName || current?.creatorUsername || current?.description || '';
 
   const ytId = current ? extractYouTubeVideoId(current.url) : null;
   const tiktokId = current ? extractTikTokVideoId(current.url) : null;

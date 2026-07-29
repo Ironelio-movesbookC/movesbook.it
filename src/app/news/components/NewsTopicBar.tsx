@@ -164,7 +164,21 @@ export default function NewsTopicBar({
   const isDefaultTopicSelected = activeTopic != null && activeTopic !== ALL_TOPICS && topicIsDefault(activeTopic);
   const isAllSelected = activeTopic === ALL_TOPICS || activeTopic === ALL_SUPER_ADMIN;
   const isSuperAdminTopicSelected = activeTopic != null && topicNamesCreatedBySuperAdmin.includes(activeTopic);
-  const isPencilDisabled = disableTopicManagement || isAllSelected || isDefaultTopicSelected || isSuperAdminTopicSelected;
+  const isMusicalGenreSelected =
+    activeMusicalGenre != null && String(activeMusicalGenre).trim() !== '';
+  const isPencilDisabled =
+    disableTopicManagement ||
+    isAllSelected ||
+    isDefaultTopicSelected ||
+    isSuperAdminTopicSelected ||
+    isMusicalGenreSelected;
+  const pencilDisabledReason = isMusicalGenreSelected
+    ? 'Deselect musical genre to edit topic'
+    : isAllSelected
+      ? 'Select a topic to edit'
+      : isSuperAdminTopicSelected
+        ? 'Cannot edit topic created by admin'
+        : 'Cannot edit default topic';
 
   return (
     <div className="flex items-end gap-2 mb-4 flex-nowrap overflow-hidden">
@@ -196,8 +210,8 @@ export default function NewsTopicBar({
             ? 'border-amber-200 bg-amber-50/50 text-amber-400 cursor-not-allowed'
             : 'border-amber-400 bg-amber-50 text-amber-600 hover:bg-amber-100'
         }`}
-        title={isPencilDisabled ? (isAllSelected ? 'Select a topic to edit' : isSuperAdminTopicSelected ? 'Cannot edit topic created by admin' : 'Cannot edit default topic') : 'Edit topic'}
-        aria-label={isPencilDisabled ? (isAllSelected ? 'Select a topic to edit' : isSuperAdminTopicSelected ? 'Cannot edit topic created by admin' : 'Cannot edit default topic') : 'Edit topic'}
+        title={isPencilDisabled ? pencilDisabledReason : 'Edit topic'}
+        aria-label={isPencilDisabled ? pencilDisabledReason : 'Edit topic'}
       >
         <Pencil className="w-5 h-5" />
       </button>

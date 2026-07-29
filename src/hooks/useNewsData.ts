@@ -56,10 +56,24 @@ export interface UseNewsDataResult {
   addTopic: (name: string) => Promise<void>;
   updateTopic: (id: string, name: string) => Promise<void>;
   deleteTopic: (id: string) => Promise<void>;
-  addPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport; languageCode?: string | null }, topic: string) => Promise<void>;
+  addPastedArticle: (data: OGPData & { customDescription?: string; visibility?: OgpVisibilitySettingsExport; languageCode?: string | null; musicalGenre?: string | null; artist?: string | null; musicTitle?: string | null; registrationType?: string | null; isFavourite?: boolean }, topic: string) => Promise<void>;
   removePastedArticle: (id: string) => Promise<void>;
   updatePastedArticleSettings: (id: string, settings: OgpVisibilitySettingsExport) => Promise<void>;
   updatePastedArticleTopic: (id: string, topic: string, customDescription?: string) => Promise<void>;
+  /** Full update of a pasted OGP (e.g. Music pencil → Add Music edit). */
+  updatePastedArticle: (
+    id: string,
+    data: OGPData & {
+      customDescription?: string;
+      visibility?: OgpVisibilitySettingsExport;
+      languageCode?: string | null;
+      musicalGenre?: string | null;
+      artist?: string | null;
+      musicTitle?: string | null;
+      registrationType?: string | null;
+      isFavourite?: boolean;
+    }
+  ) => Promise<void>;
   /** Save or merge an OGP News group. Throws with `exists` on 409 when confirmExisting is false. */
   saveOgpNewsGroup: (payload: {
     name: string;
@@ -70,7 +84,16 @@ export interface UseNewsDataResult {
   removeOgpNewsGroup: (id: string) => Promise<void>;
   updateOgpNewsGroup: (id: string, topic: string, customDescription?: string) => Promise<void>;
   updateOgpNewsGroupSettings: (id: string, settings: OgpVisibilitySettingsExport) => Promise<void>;
-  addTypedArticle: (description: string) => Promise<void>;
+  addTypedArticle: (
+    description: string,
+    meta?: {
+      artist?: string | null;
+      musicTitle?: string | null;
+      title?: string | null;
+      registrationType?: string | null;
+      isFavourite?: boolean;
+    }
+  ) => Promise<void>;
   removeTypedArticle: (id: string) => Promise<void>;
 }
 
@@ -228,6 +251,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           createdByCurrentUser: a.createdByCurrentUser === true,
           createdBySuperAdmin: a.createdBySuperAdmin === true,
           title: a.title,
+          artist: a.artist ?? null,
           image: a.image,
           description: a.description,
           url: a.url,
@@ -236,6 +260,8 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           customDescription: a.customDescription,
           topic: a.topic,
           genre: a.genre ?? null,
+          registrationType: a.registrationType ?? null,
+          isFavourite: a.isFavourite === true,
           languageCode: a.languageCode ?? undefined,
           savedAt: a.savedAt,
           deletedAt: a.deletedAt,
@@ -290,6 +316,10 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         (typedData ?? []).map((a: any) => ({
           id: a.id,
           description: a.description,
+          artist: a.artist ?? null,
+          title: a.title ?? null,
+          registrationType: a.registrationType ?? null,
+          isFavourite: a.isFavourite === true,
         }))
       );
     } catch (e) {
@@ -408,6 +438,10 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         visibility?: OgpVisibilitySettingsExport;
         languageCode?: string | null;
         musicalGenre?: string | null;
+        artist?: string | null;
+        musicTitle?: string | null;
+        registrationType?: string | null;
+        isFavourite?: boolean;
       },
       topic: string
     ) => {
@@ -419,6 +453,8 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
         headers,
         body: JSON.stringify({
           title: data.title,
+          artist: data.artist ?? null,
+          musicTitle: data.musicTitle ?? null,
           image: data.image,
           description: data.description,
           url: data.url,
@@ -427,6 +463,8 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           customDescription: data.customDescription,
           topic: topic || (defaultTopics[0] ?? 'News'),
           genre: data.musicalGenre ?? null,
+          registrationType: data.registrationType ?? null,
+          isFavourite: data.isFavourite ?? false,
           languageCode: data.languageCode ?? null,
           expiresAt: vis?.expiresAt ?? null,
           visibilityUserTypes: vis?.userTypes ?? [],
@@ -448,6 +486,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           creatorCountry: user?.country ?? null,
           createdByCurrentUser: true,
           title: created.title,
+          artist: created.artist ?? data.artist ?? null,
           image: created.image,
           description: created.description,
           url: created.url,
@@ -456,6 +495,8 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
           customDescription: created.customDescription,
           topic: created.topic,
           genre: created.genre ?? data.musicalGenre ?? null,
+          registrationType: created.registrationType ?? data.registrationType ?? null,
+          isFavourite: created.isFavourite ?? data.isFavourite ?? false,
           languageCode: created.languageCode ?? undefined,
           savedAt: created.savedAt,
           visibility: {
@@ -542,6 +583,87 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
                 ...a,
                 topic: trimmed,
                 ...(customDescription !== undefined && { customDescription: customDescription.trim() || undefined }),
+              }
+        )
+      );
+    },
+    [effectiveUserId, getHeaders, apiBase]
+  );
+
+  const updatePastedArticle = useCallback(
+    async (
+      id: string,
+      data: OGPData & {
+        customDescription?: string;
+        visibility?: OgpVisibilitySettingsExport;
+        languageCode?: string | null;
+        musicalGenre?: string | null;
+        artist?: string | null;
+        musicTitle?: string | null;
+        registrationType?: string | null;
+        isFavourite?: boolean;
+      }
+    ) => {
+      if (!effectiveUserId) return;
+      const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
+      const vis = data.visibility;
+      const resolvedTitle =
+        typeof data.musicTitle === 'string' && data.musicTitle.trim()
+          ? data.musicTitle.trim()
+          : data.title ?? null;
+      const res = await fetch(`${apiBase}/ogp/${id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          title: resolvedTitle,
+          musicTitle: data.musicTitle ?? null,
+          artist: data.artist ?? null,
+          image: data.image,
+          description: data.description,
+          url: data.url,
+          siteName: data.siteName,
+          type: data.type,
+          customDescription: data.customDescription ?? null,
+          genre: data.musicalGenre ?? null,
+          registrationType: data.registrationType ?? null,
+          isFavourite: data.isFavourite ?? false,
+          languageCode: data.languageCode ?? null,
+          expiresAt: vis?.expiresAt ?? null,
+          visibilityUserTypes: vis?.userTypes ?? [],
+          visibilityCountries: vis?.countries ?? [],
+          visibilityLanguages: vis?.languages ?? [],
+          visibilitySports: vis?.sports ?? [],
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to update article');
+      }
+      setPastedArticles((prev) =>
+        prev.map((a) =>
+          a.id !== id
+            ? a
+            : {
+                ...a,
+                title: resolvedTitle,
+                artist: data.artist ?? null,
+                image: data.image,
+                description: data.description,
+                url: data.url,
+                siteName: data.siteName,
+                type: data.type,
+                customDescription: data.customDescription,
+                genre: data.musicalGenre ?? null,
+                registrationType: data.registrationType ?? null,
+                isFavourite: data.isFavourite ?? false,
+                languageCode: data.languageCode ?? undefined,
+                visibility: {
+                  userTypes: vis?.userTypes ?? [],
+                  countries: vis?.countries ?? [],
+                  languages: vis?.languages ?? [],
+                  sports: vis?.sports ?? [],
+                  expiresAt: vis?.expiresAt ?? null,
+                },
               }
         )
       );
@@ -707,17 +829,42 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
   );
 
   const addTypedArticle = useCallback(
-    async (description: string) => {
+    async (
+      description: string,
+      meta?: {
+        artist?: string | null;
+        musicTitle?: string | null;
+        title?: string | null;
+        registrationType?: string | null;
+        isFavourite?: boolean;
+      }
+    ) => {
       if (!effectiveUserId) return;
       const headers = { ...getHeaders(), 'Content-Type': 'application/json' };
       const res = await fetch(`${apiBase}/typed`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ description: description.trim() }),
+        body: JSON.stringify({
+          description: description.trim(),
+          artist: meta?.artist ?? null,
+          title: meta?.musicTitle ?? meta?.title ?? null,
+          registrationType: meta?.registrationType ?? null,
+          isFavourite: meta?.isFavourite ?? false,
+        }),
       });
       if (!res.ok) throw new Error('Failed to save');
       const created = await res.json();
-      setTypedArticles((prev) => [...prev, { id: created.id, description: created.description }]);
+      setTypedArticles((prev) => [
+        ...prev,
+        {
+          id: created.id,
+          description: created.description,
+          artist: created.artist ?? meta?.artist ?? null,
+          title: created.title ?? meta?.musicTitle ?? meta?.title ?? null,
+          registrationType: created.registrationType ?? meta?.registrationType ?? null,
+          isFavourite: created.isFavourite ?? meta?.isFavourite ?? false,
+        },
+      ]);
     },
     [effectiveUserId, getHeaders, apiBase]
   );
@@ -758,6 +905,7 @@ export function useNewsData(options?: UseNewsDataOptions): UseNewsDataResult {
     removePastedArticle,
     updatePastedArticleSettings,
     updatePastedArticleTopic,
+    updatePastedArticle,
     saveOgpNewsGroup,
     removeOgpNewsGroup,
     updateOgpNewsGroup,

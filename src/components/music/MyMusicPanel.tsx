@@ -97,6 +97,7 @@ type MusicOgpItem = {
   id: string;
   userId?: string;
   title: string | null;
+  artist: string | null;
   image: string | null;
   url: string;
   siteName: string | null;
@@ -200,7 +201,7 @@ function MusicOgpSuggestedTile({
   const [menuOpen, setMenuOpen] = useState(false);
   const tileRef = useRef<HTMLDivElement>(null);
   const title = article.title || article.url;
-  const subtitle = article.siteName || article.creatorUsername || '';
+  const subtitle = article.artist || article.siteName || article.creatorUsername || '';
   const canEditAsCreator =
     article.userId === currentUserId || article.createdByCurrentUser === true;
   const canManage = canDeleteOgp || canEditAsCreator;
@@ -495,6 +496,7 @@ function MusicSuggestedSection({
         id: String(a.id),
         userId: typeof a.userId === 'string' ? a.userId : undefined,
         title: (a.title as string | null) ?? null,
+        artist: (a.artist as string | null) ?? null,
         image: (a.image as string | null) ?? null,
         url: String(a.url ?? ''),
         siteName: (a.siteName as string | null) ?? null,

@@ -14,6 +14,7 @@ import NewsSettingModal, { type OgpVisibilitySettings, defaultSettings } from '.
 import OgpShareModal from './OgpShareModal';
 import CreateOgpNewsGroupModal from './CreateOgpNewsGroupModal';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { getOgpGroupShareUrl } from '@/lib/ogpGroupShareUrl';
 
 type MusicLibraryNavKey = 'recent' | 'playlist' | 'songs' | 'albums' | 'favourites';
 
@@ -48,6 +49,12 @@ export type ArticlePasted = OGPData & {
   createdBySuperAdmin?: boolean;
   /** Musical genre (Music OGP only). */
   genre?: string | null;
+  /** Artist name entered in Add Music (Music OGP only). */
+  artist?: string | null;
+  /** Song / Album / Playlist selected in Add Music (Music OGP only). */
+  registrationType?: string | null;
+  /** True when the creator saved this entry with "Put in my favourites" checked. */
+  isFavourite?: boolean;
   /** When true, this card represents an OGP News group (preview = first member). */
   isOgpGroup?: boolean;
   groupName?: string;
@@ -84,7 +91,14 @@ export type OgpNewsGroupCard = {
   previewCreatorUsername?: string | null;
 };
 
-export type ArticleTyped = { id: string; description: string };
+export type ArticleTyped = {
+  id: string;
+  description: string;
+  artist?: string | null;
+  title?: string | null;
+  registrationType?: string | null;
+  isFavourite?: boolean;
+};
 
 const FALLBACK_NEWS_TOPICS_LIST = [
   'News',
@@ -187,6 +201,12 @@ function formatDate(iso?: string) {
   }
 }
 
+/** Share/copy URL: group → public Movesbook group page; single → external OGP URL. */
+function getArticleShareUrl(a: ArticlePasted): string {
+  if (a.isOgpGroup) return getOgpGroupShareUrl(a.id);
+  return a.url || '';
+}
+
 /** Wraps case-insensitive matches of `query` in `text` with <mark>. */
 function highlightText(text: string, query: string): React.ReactNode {
   if (!text) return '';
@@ -227,6 +247,8 @@ interface NewsArticlesListProps {
   topics?: string[];
   /** Called when creator changes an OGP's topic and/or description (Pencil button). */
   onUpdatePastedTopic?: (id: string, topic: string, customDescription?: string) => void | Promise<void>;
+  /** Music: pencil opens Add Music for full edit instead of Change topic. */
+  onEditPasted?: (article: ArticlePasted) => void;
   /** When true, use adminToken for API calls (e.g. creator fetch) so super admin can use User button. */
   adminContext?: boolean;
   /** When true (super admin), show all OGPs for the selected topic including expired, no News Setting, and deleted. */
@@ -288,6 +310,7 @@ export default function NewsArticlesList({
   onUpdatePastedSettings,
   topics: topicsProp = EMPTY_TOPICS,
   onUpdatePastedTopic,
+  onEditPasted,
   adminContext = false,
   isSuperAdmin = false,
   topicNamesCreatedByNormalUsers = EMPTY_TOPIC_NAMES,
@@ -422,7 +445,7 @@ export default function NewsArticlesList({
   // The visual height of the list is still limited to 3 rows using `ogpListMaxHeight`,
   // so when rowsPerPage > 3 the extra rows are reachable via scrolling.
   const itemsPerPage = rowsPerPage * OGPS_PER_ROW;
-  const [sortOrder, setSortOrder] = useState<SortOrder>('date-desc');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('alpha-asc');
   const [settingsArticleId, setSettingsArticleId] = useState<string | null>(null);
   const [settingsOptions, setSettingsOptions] = useState<{
     userTypes: { value: string; label: string }[];
@@ -692,6 +715,24 @@ export default function NewsArticlesList({
    */
   const canFilterByMyOgNews = !!currentUserId;
 
+  /** Super-admin default: "my country". Viewing a user's topic / view-as-user: "user country". */
+  const postedByCountryLabel = useMemo(() => {
+    const viewingAsUser = !!showOnlyMyOgNewsLabelUsername?.trim();
+    const viewingUserInsertedTopic =
+      activeTopic === ALL_USER_SECTORS ||
+      (!!activeTopic &&
+        (topicNamesCreatedByNormalUsers.includes(activeTopic) ||
+          !!userInsertedTopics?.some((t) => t.name === activeTopic)));
+    return viewingAsUser || viewingUserInsertedTopic
+      ? 'posted by user country'
+      : 'posted by my country';
+  }, [
+    showOnlyMyOgNewsLabelUsername,
+    activeTopic,
+    topicNamesCreatedByNormalUsers,
+    userInsertedTopics,
+  ]);
+
   const filtered = useMemo(() => {
     const applyArticleFilters = (source: ArticlePasted[]) => {
       let list = source;
@@ -720,9 +761,12 @@ export default function NewsArticlesList({
         }
       } else {
         list = list.filter((a) => {
-          // Creators always see their own OGPs (except deleted unless that filter is on).
           if (canEditAsCreator(a)) {
             if (a.deletedAt) return showDeletedTemporarily;
+            // Creator's own OGPs: hide expired unless "Show also expired" is checked.
+            if (!showExpired && hasExpirationDateSet(a) && !isNotExpired(a)) {
+              return false;
+            }
             return true;
           }
           const isActive = isActiveForNormalUser(a);
@@ -761,9 +805,33 @@ export default function NewsArticlesList({
       return list;
     };
 
-    // Music (and any non-news base): keep prior single-article behavior (no group filters).
+    // Music: apply library-nav filters (registrationType / favourites / recent).
     if (apiBase === '/api/music') {
-      return applyArticleFilters(byTopic);
+      const registrationTypeByNav: Partial<Record<MusicLibraryNavKey, string>> = {
+        playlist: 'Playlist',
+        songs: 'Song',
+        albums: 'Album',
+      };
+      let base = byTopic;
+      if (musicLibraryNav === 'favourites') {
+        // Only the current account's favourites (superadmin → theirs; view-as-user → that user's).
+        base = byTopic.filter(
+          (a) => a.isFavourite === true && canEditAsCreator(a)
+        );
+      } else if (musicLibraryNav === 'recent') {
+        const oneMonthAgo = new Date();
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+        const cutoff = oneMonthAgo.getTime();
+        base = byTopic.filter((a) => {
+          if (!a.savedAt) return false;
+          const t = new Date(a.savedAt).getTime();
+          return !Number.isNaN(t) && t >= cutoff;
+        });
+      } else if (musicLibraryNav && registrationTypeByNav[musicLibraryNav]) {
+        const wanted = registrationTypeByNav[musicLibraryNav];
+        base = byTopic.filter((a) => (a.registrationType ?? '').trim() === wanted);
+      }
+      return applyArticleFilters(base);
     }
 
     // Group session: show only OGP News that belong to the selected group.
@@ -859,6 +927,7 @@ export default function NewsArticlesList({
     canEditAsCreator,
     apiBase,
     activeMusicalGenre,
+    musicLibraryNav,
     showSingleNews,
     showGroupsOfNews,
     isAddingToGroup,
@@ -871,18 +940,33 @@ export default function NewsArticlesList({
 
   const sorted = useMemo(() => {
     const list = [...filtered];
-    if (showOnlyLiked) {
-      // "I like" mode: sort by like count descending (most liked first)
-      list.sort((a, b) => (likesMap[b.id]?.count ?? 0) - (likesMap[a.id]?.count ?? 0));
-    } else if (sortOrder === 'date-desc') {
-      list.sort((a, b) => new Date(b.savedAt ?? 0).getTime() - new Date(a.savedAt ?? 0).getTime());
-    } else if (sortOrder === 'date-asc') {
-      list.sort((a, b) => new Date(a.savedAt ?? 0).getTime() - new Date(b.savedAt ?? 0).getTime());
-    } else if (sortOrder === 'alpha-asc') {
-      list.sort((a, b) => (a.title || a.url || '').localeCompare(b.title || b.url || '', undefined, { sensitivity: 'base' }));
-    } else {
-      list.sort((a, b) => (b.title || b.url || '').localeCompare(a.title || a.url || '', undefined, { sensitivity: 'base' }));
-    }
+    const label = (a: ArticlePasted) =>
+      a.isOgpGroup
+        ? a.groupName || a.title || a.url || ''
+        : a.title || a.url || '';
+
+    list.sort((a, b) => {
+      // Groups of News always before single NEWS.
+      const aGroup = a.isOgpGroup ? 0 : 1;
+      const bGroup = b.isOgpGroup ? 0 : 1;
+      if (aGroup !== bGroup) return aGroup - bGroup;
+
+      if (showOnlyLiked) {
+        return (likesMap[b.id]?.count ?? 0) - (likesMap[a.id]?.count ?? 0);
+      }
+
+      // Alphabetical within each type (group name / article title).
+      const alpha = label(a).localeCompare(label(b), undefined, { sensitivity: 'base' });
+      if (sortOrder === 'alpha-desc') return -alpha;
+      if (sortOrder === 'date-desc') {
+        return new Date(b.savedAt ?? 0).getTime() - new Date(a.savedAt ?? 0).getTime();
+      }
+      if (sortOrder === 'date-asc') {
+        return new Date(a.savedAt ?? 0).getTime() - new Date(b.savedAt ?? 0).getTime();
+      }
+      // Default and alpha-asc: A–Z
+      return alpha;
+    });
     return list;
   }, [filtered, sortOrder, showOnlyLiked, likesMap]);
 
@@ -1019,9 +1103,9 @@ export default function NewsArticlesList({
   }, [adminContext, apiBase]);
 
   return (
-    <div className="mt-6">
+    <div className="mt-6 min-w-0 w-full">
       {/* Toolbar - Search, Filter, Pagination (red area from second picture) */}
-      <div className="rounded-xl border border-gray-200 overflow-hidden mb-4">
+      <div className="rounded-xl border border-gray-200 overflow-hidden mb-4 min-w-0">
         {/* Row 1: Search, Highlight, next, prev, Select Sport, Language, Show */}
         <div className="bg-red-800 flex flex-wrap items-center gap-2 p-3">
           <div className="flex items-center bg-gray-700 rounded border border-gray-600 flex-1 min-w-[140px] max-w-[200px]">
@@ -1164,15 +1248,21 @@ export default function NewsArticlesList({
           {/* Single News / Groups of News — after pagination, before topic title */}
           {apiBase !== '/api/music' && !viewingOgpGroup && (
             <div className="flex items-center gap-3 flex-shrink-0 ml-1">
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <label
+                className={`flex items-center gap-1.5 select-none ${
+                  isAddingToGroup ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
+                }`}
+              >
                 <input
                   type="checkbox"
-                  checked={showSingleNews}
+                  checked={isAddingToGroup ? true : showSingleNews}
+                  disabled={isAddingToGroup}
                   onChange={(e) => {
+                    if (isAddingToGroup) return;
                     setShowSingleNews(e.target.checked);
                     setCurrentPage(1);
                   }}
-                  className="w-4 h-4 rounded border-gray-400 accent-green-600"
+                  className="w-4 h-4 rounded border-gray-400 accent-green-600 disabled:cursor-not-allowed"
                   aria-label="Single News"
                 />
                 <span className="text-sm text-gray-900 whitespace-nowrap">Single News</span>
@@ -1278,23 +1368,42 @@ export default function NewsArticlesList({
                     {isAddingToGroup ? 'Add to a group' : 'Add to a group'}
                   </span>
                   {isAddingToGroup ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (selectedForGroupIds.length === 0) {
-                          window.alert('Select at least one OGP News to save a group.');
-                          return;
-                        }
-                        setGroupSaveError(null);
-                        setGroupNameConflict(false);
-                        setShowCreateGroupModal(true);
-                      }}
-                      className="flex items-center justify-center min-w-[3.25rem] h-10 px-3 rounded-lg border border-gray-300 bg-white text-red-600 text-sm font-semibold hover:bg-gray-50"
-                      title="Save selected OGP News as a group"
-                      aria-label="Save group"
-                    >
-                      Save
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedForGroupIds.length === 0) {
+                            window.alert('Select at least one OGP News to save a group.');
+                            return;
+                          }
+                          setGroupSaveError(null);
+                          setGroupNameConflict(false);
+                          setShowCreateGroupModal(true);
+                        }}
+                        className="flex items-center justify-center min-w-[3.25rem] h-10 px-3 rounded-lg border border-gray-300 bg-white text-red-600 text-sm font-semibold hover:bg-gray-50"
+                        title="Save selected OGP News as a group"
+                        aria-label="Save group"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingToGroup(false);
+                          setViewSelectedOnly(false);
+                          setSelectedForGroupIds([]);
+                          setShowCreateGroupModal(false);
+                          setGroupSaveError(null);
+                          setGroupNameConflict(false);
+                          setCurrentPage(1);
+                        }}
+                        className="flex items-center justify-center min-w-[3.25rem] h-10 px-3 rounded-lg border border-gray-400 bg-gradient-to-b from-gray-100 to-gray-300 text-sm font-semibold text-gray-900 hover:from-gray-200 hover:to-gray-400 shadow-sm"
+                        title="Exit and abort group creation"
+                        aria-label="Exit group creation"
+                      >
+                        Exit
+                      </button>
+                    </div>
                   ) : (
                     <button
                       type="button"
@@ -1329,7 +1438,7 @@ export default function NewsArticlesList({
       </div>
 
       {/* Pasted - OGP cards in a grid (multiple per row); max 3 rows visible, scroll when more */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden min-w-0 w-full">
         <div
           className={`bg-gray-800 text-white px-3 sm:px-4 py-2 ${
             apiBase === '/api/music'
@@ -1352,7 +1461,10 @@ export default function NewsArticlesList({
                     <button
                       key={key}
                       type="button"
-                      onClick={() => setMusicLibraryNav(key)}
+                      onClick={() => {
+                        setMusicLibraryNav((prev) => (prev === key ? null : key));
+                        setCurrentPage(1);
+                      }}
                       className={`inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-1 rounded text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
                         isActive
                           ? 'bg-white/20 text-white'
@@ -1440,7 +1552,7 @@ export default function NewsArticlesList({
                   className="w-4 h-4 rounded border-gray-300 accent-green-600"
                   aria-label="View selected"
                 />
-                <span className="text-yellow-300 text-sm whitespace-nowrap font-medium">
+                <span className="text-green-300 text-sm whitespace-nowrap font-medium">
                   View selected
                 </span>
               </label>
@@ -1454,10 +1566,10 @@ export default function NewsArticlesList({
                   setCurrentPage(1);
                 }}
                 className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                aria-label="Show posted by Movesbook"
+                aria-label="posted by Movesbook"
               />
               <span className="text-white text-sm whitespace-nowrap">
-                Show posted by Movesbook
+                posted by Movesbook
               </span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -1469,10 +1581,10 @@ export default function NewsArticlesList({
                   setCurrentPage(1);
                 }}
                 className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                aria-label="Show posted by my country"
+                aria-label={postedByCountryLabel}
               />
               <span className="text-white text-sm whitespace-nowrap">
-                Show posted by my country
+                {postedByCountryLabel}
               </span>
             </label>
             {canFilterByMyOgNews && (
@@ -1487,13 +1599,13 @@ export default function NewsArticlesList({
                   className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                   aria-label={
                     showOnlyMyOgNewsLabelUsername
-                      ? `Show only posted by ${showOnlyMyOgNewsLabelUsername}`
+                      ? `only posted by ${showOnlyMyOgNewsLabelUsername}`
                       : t('news_show_only_my_ogp')
                   }
                 />
-                <span className="text-yellow-300 text-sm whitespace-nowrap">
+                <span className="text-white text-sm whitespace-nowrap">
                   {showOnlyMyOgNewsLabelUsername
-                    ? `Show only posted by ${showOnlyMyOgNewsLabelUsername}`
+                    ? `only posted by ${showOnlyMyOgNewsLabelUsername}`
                     : t('news_show_only_my_ogp')}
                 </span>
               </label>
@@ -1601,16 +1713,16 @@ export default function NewsArticlesList({
             >
               <div
                 ref={ogpGridRef}
-                className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 w-full min-h-min"
+                className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-4 w-full min-w-0 min-h-min"
               >
                 {paginated.map((a) => (
                 <article
                   key={a.isOgpGroup ? `group-${a.id}` : a.id}
                   className={`border rounded-lg p-3 group flex flex-col min-w-0 relative h-full min-h-0 ${
                     a.isOgpGroup
-                      ? 'border-sky-200 bg-sky-100 hover:bg-sky-100/90'
+                      ? 'border-2 border-blue-500 bg-sky-100 hover:bg-sky-100/90'
                       : a.deletedAt
-                      ? 'border-amber-200 bg-amber-50/50 hover:bg-amber-50/70'
+                      ? 'border-amber-400 bg-amber-200 hover:bg-amber-300'
                       : isExpiredOrNoExpiry(a)
                         ? 'border-[rgb(255,38,0)] bg-[rgb(255,38,0)]/10 hover:bg-[rgb(255,38,0)]/15'
                       : 'border-gray-200 hover:bg-gray-50'
@@ -1662,41 +1774,37 @@ export default function NewsArticlesList({
                         </a>
                       )
                     )}
-                    {/* OGP topic name + creator username; for groups: group name + group creator */}
+                    {/* OGP topic name + creator; for groups: topic on top, group name below */}
                     <div className="flex items-center gap-1 mb-1.5 flex-shrink-0">
-                      {a.isOgpGroup ? (
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 max-w-[70%] min-w-0 hover:bg-gray-200 cursor-pointer"
-                          title="Open OGP News group"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            openOgpGroupView(a);
-                          }}
-                        >
-                          <Tag className="w-3 h-3 shrink-0" aria-hidden />
-                          <span className="truncate">
-                            {a.groupName || a.title || 'Group'}
-                          </span>
-                        </button>
-                      ) : (
-                        <span
-                          className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 max-w-[70%] min-w-0"
-                          title="Topic"
-                        >
-                          <Tag className="w-3 h-3 shrink-0" aria-hidden />
-                          <span className="truncate">
-                            {translateTopic(a.topic ?? 'News')}
-                          </span>
+                      <span
+                        className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 max-w-[70%] min-w-0"
+                        title="Topic"
+                      >
+                        <Tag className="w-3 h-3 shrink-0" aria-hidden />
+                        <span className="truncate">
+                          {translateTopic(a.topic ?? 'News')}
                         </span>
-                      )}
+                      </span>
                       {(a.isOgpGroup ? a.creatorUsername || a.creatorName : a.creatorUsername) && (
                         <span className="ml-auto text-[11px] text-blue-600 whitespace-nowrap truncate max-w-[45%]" title={a.isOgpGroup ? (a.creatorUsername || a.creatorName || undefined) : (a.creatorUsername || undefined)}>
                           by {a.isOgpGroup ? a.creatorUsername || a.creatorName : a.creatorUsername}
                         </span>
                       )}
                     </div>
+                    {a.isOgpGroup && (
+                      <button
+                        type="button"
+                        className="block w-full text-left text-xs font-semibold text-sky-800 truncate mb-1 flex-shrink-0 hover:underline cursor-pointer"
+                        title={`Open OGP News group. Here you can see all the most recent articles related to '${a.groupName || a.title || 'Group'}'`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openOgpGroupView(a);
+                        }}
+                      >
+                        {a.groupName || a.title || 'Group'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="relative z-10 text-left pointer-events-auto flex-1 min-h-0 flex flex-col group/text"
@@ -1715,6 +1823,11 @@ export default function NewsArticlesList({
                           ? highlightText(a.title || a.url, search)
                           : a.title || a.url}
                       </h4>
+                      {a.artist ? (
+                        <p className="text-xs text-gray-500 mt-0.5 truncate" title={a.artist}>
+                          {a.artist}
+                        </p>
+                      ) : null}
                       <p
                         className={`text-xs text-gray-600 mt-1 flex-1 min-h-0 ${
                           expandedArticleIds.has(a.id)
@@ -1832,22 +1945,37 @@ export default function NewsArticlesList({
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (canEditAsCreator(a)) setEditTopicArticleId(a.id);
+                          if (!canEditAsCreator(a)) return;
+                          if (apiBase === '/api/music' && onEditPasted && !a.isOgpGroup) {
+                            onEditPasted(a);
+                            return;
+                          }
+                          setEditTopicArticleId(a.id);
                         }}
                         disabled={
                           superAdminReadOnlyOgpActions ||
-                          (a.isOgpGroup ? !onUpdateOgpNewsGroup : !onUpdatePastedTopic) ||
-                          !canEditAsCreator(a)
+                          !canEditAsCreator(a) ||
+                          (apiBase === '/api/music' && onEditPasted && !a.isOgpGroup
+                            ? false
+                            : a.isOgpGroup
+                              ? !onUpdateOgpNewsGroup
+                              : !onUpdatePastedTopic)
                         }
                         className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
                         title={
                           canEditAsCreator(a)
-                            ? a.isOgpGroup
-                              ? 'Change group topic (creator only)'
-                              : 'Change topic (creator only)'
+                            ? apiBase === '/api/music' && onEditPasted && !a.isOgpGroup
+                              ? 'Edit music (creator only)'
+                              : a.isOgpGroup
+                                ? 'Change group topic (creator only)'
+                                : 'Change topic (creator only)'
                             : "Only the creator can change this"
                         }
-                        aria-label="Change topic"
+                        aria-label={
+                          apiBase === '/api/music' && onEditPasted && !a.isOgpGroup
+                            ? 'Edit music'
+                            : 'Change topic'
+                        }
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
@@ -1874,13 +2002,20 @@ export default function NewsArticlesList({
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (a.url) {
-                            navigator.clipboard?.writeText(a.url).then(() => setCopiedArticleId(a.id));
+                          const shareUrl = getArticleShareUrl(a);
+                          if (shareUrl) {
+                            navigator.clipboard?.writeText(shareUrl).then(() => setCopiedArticleId(a.id));
                           }
                         }}
                         disabled={superAdminReadOnlyOgpActions}
                         className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={copiedArticleId === a.id ? 'Copied!' : 'Copy OGP URL to clipboard'}
+                        title={
+                          copiedArticleId === a.id
+                            ? 'Copied!'
+                            : a.isOgpGroup
+                              ? 'Copy group link to clipboard'
+                              : 'Copy OGP URL to clipboard'
+                        }
                         aria-label={copiedArticleId === a.id ? 'Copied!' : 'Copy link'}
                       >
                         <Link className="w-3.5 h-3.5" />
@@ -1901,7 +2036,21 @@ export default function NewsArticlesList({
                         title={a.isOgpGroup ? 'View creator of this group' : 'View creator of this article'}
                         aria-label="View creator"
                       >
-                        <User className="w-3.5 h-3.5" />
+                        {apiBase === '/api/music' && isSuperAdmin && a.createdBySuperAdmin ? (
+                          <span
+                            className="flex items-center justify-center w-6 h-6 min-w-[24px] rounded bg-red-600 text-white border border-yellow-300 shrink-0 select-none"
+                            style={{
+                              fontFamily: "'Comic Sans MS', 'Comic Sans', cursive",
+                              fontSize: 11,
+                              fontWeight: 700,
+                              lineHeight: 1,
+                            }}
+                          >
+                            MB
+                          </span>
+                        ) : (
+                          <User className="w-3.5 h-3.5" />
+                        )}
                       </button>
                       <button
                         type="button"
@@ -2005,7 +2154,16 @@ export default function NewsArticlesList({
       <OgpShareModal
         isOpen={shareModalArticle != null}
         onClose={() => setShareModalArticle(null)}
-        article={shareModalArticle ? { url: shareModalArticle.url, title: shareModalArticle.title } : null}
+        article={
+          shareModalArticle
+            ? {
+                url: getArticleShareUrl(shareModalArticle),
+                title: shareModalArticle.isOgpGroup
+                  ? shareModalArticle.groupName || shareModalArticle.title
+                  : shareModalArticle.title,
+              }
+            : null
+        }
         onCopyLink={() => shareModalArticle && setCopiedArticleId(shareModalArticle.id)}
       />
 
