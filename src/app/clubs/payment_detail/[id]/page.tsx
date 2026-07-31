@@ -47,6 +47,7 @@ function PaymentDetailPageInner() {
     notEnterCustData: boolean;
   } | null>(null);
   const autoPaid = useRef(false);
+  const [scopedRecordIds, setScopedRecordIds] = useState<string[]>([id].filter(Boolean));
 
   const load = useCallback(async () => {
     try {
@@ -223,7 +224,7 @@ function PaymentDetailPageInner() {
           extraPurchases.length > 0 ? 'Payment — More deadlines' : 'Payment — Deadline'
         }
         activeTab="deadline"
-        tabs={getServiceSaleTabs('deadline', id)}
+        tabs={getServiceSaleTabs('deadline', id, scopedRecordIds)}
         error={!purchase ? error : undefined}
       >
         {purchase && options && (
@@ -244,6 +245,17 @@ function PaymentDetailPageInner() {
               }
               operatorPassStatus={otherSettings?.operatorPassStatus ?? 'Yes'}
               notEnterCustData={otherSettings?.notEnterCustData ?? false}
+              onSelectedRecordIdsChange={(ids) => {
+                setScopedRecordIds((prev) => {
+                  if (
+                    prev.length === ids.length &&
+                    prev.every((id, i) => id === ids[i])
+                  ) {
+                    return prev;
+                  }
+                  return ids;
+                });
+              }}
             />
           </>
         )}

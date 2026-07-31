@@ -61,6 +61,7 @@ export type ServiceSaleReceipt = {
   documentNumber: string;
   cost: number;
   paymentIn: number;
+  residualDebt: number;
   annotations: string;
   operatorName: string;
 };
@@ -157,6 +158,7 @@ export function mapReceipt(receipt: ProcedureReceiptDto): ServiceSaleReceipt {
     documentNumber: receipt.documentNumber ?? '',
     cost: receipt.amount,
     paymentIn: receipt.paymentAmount,
+    residualDebt: receipt.residualDebt ?? Math.max(0, receipt.amount - receipt.paymentAmount),
     annotations: receipt.annotations ?? '',
     operatorName: receipt.operatorName,
   };
@@ -171,6 +173,8 @@ export type ListParams = {
   page?: number;
   pageSize?: number;
   recordId?: string;
+  /** Scope list to these procedure record ids (from payment form selection). */
+  recordIds?: string[];
   /** When fetching deadlines, also include Rest = 0 rows. */
   includePaid?: boolean;
 };
@@ -196,6 +200,9 @@ function buildQuery(params?: ListParams & { view?: string }): string {
   });
   if (params?.view) qs.set('view', params.view);
   if (params?.recordId) qs.set('recordId', params.recordId);
+  if (params?.recordIds && params.recordIds.length > 0) {
+    qs.set('ids', params.recordIds.join(','));
+  }
   if (params?.includePaid) qs.set('includePaid', '1');
   return qs.toString();
 }

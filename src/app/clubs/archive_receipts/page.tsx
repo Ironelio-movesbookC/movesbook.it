@@ -4,9 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
+import TaxDocumentModal, {
+  type TaxDocumentFormValues,
+} from '@/components/procedures/TaxDocumentModal';
 import type { ProcedureTab } from '@/components/procedures/types';
 import { fetchClubArchive } from '@/lib/club/archives/clubArchiveClient';
-import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
+import { clubApiFetch, formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
 import type { Column, Member } from '@/types/clubTable';
 
 const PAGE_SIZE = 25;
@@ -36,6 +39,7 @@ export default function ArchiveReceiptsPage() {
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [taxTarget, setTaxTarget] = useState<Member | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,18 +59,75 @@ export default function ArchiveReceiptsPage() {
     load();
   }, [load]);
 
+  const handleSaveTaxDocument = useCallback(
+    async (values: TaxDocumentFormValues) => {
+      if (!taxTarget?.id || !taxTarget.procedureType) {
+        throw new Error('Receipt type is missing');
+      }
+      await clubApiFetch(
+        `/api/club/procedures/${encodeURIComponent(taxTarget.procedureType)}/receipts/${encodeURIComponent(taxTarget.id)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            documentType: values.documentType || undefined,
+            documentNumber: values.documentNumber || undefined,
+            annotations: values.causal || undefined,
+          }),
+        }
+      );
+      await load();
+    },
+    [taxTarget, load]
+  );
+
   return (
     <ProcedureArchiveShell
       title="Archive of Receipts"
       activeTab="receipts"
       tabs={tabs}
       error={error}
-      footerHint="All typologies (Services, Products, Expenses, Member debts, …)."
+      footerHint="All typologies (Services, Products, Expenses, Member debts, …). Double-click a row to open the receipt."
       pagination={
         <ProcedurePagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
       }
     >
-      <ProcedureArchiveTable columns={columns} rows={data} loading={loading} />
+      <ProcedureArchiveTable
+        columns={columns}
+        rows={data}
+        loading={loading}
+        onRowDoubleClick={(row) => {
+          if (row.id) setTaxTarget(row);
+        }}
+      />
+
+      {taxTarget && (
+        <TaxDocumentModal
+          open
+          memberName={String(taxTarget.name ?? '')}
+          defaultCausal={String(taxTarget.casual ?? '')}
+          defaultTotal={Number(taxTarget.paid ?? 0)}
+          defaultResidual={Number(taxTarget.residualDebt ?? 0)}
+          saveLabel="Save document"
+          initial={{
+            documentType: String(taxTarget.category ?? 'Tax receipt'),
+            documentNumber: String(taxTarget.contract ?? ''),
+            documentDate:
+              typeof taxTarget.insertDate === 'string'
+                ? taxTarget.insertDate
+                : taxTarget.insertDate
+                  ? new Date(taxTarget.insertDate).toISOString().slice(0, 10)
+                  : undefined,
+            causal: String(taxTarget.casual ?? ''),
+            total: Number(taxTarget.paid ?? 0),
+            residualTotal: Number(taxTarget.residualDebt ?? 0),
+            memberDisplayName: String(taxTarget.name ?? ''),
+            originalMemberName: String(taxTarget.name ?? ''),
+            memberAlias: String(taxTarget.name ?? ''),
+          }}
+          onClose={() => setTaxTarget(null)}
+          onSave={handleSaveTaxDocument}
+        />
+      )}
     </ProcedureArchiveShell>
   );
 }

@@ -759,6 +759,7 @@ export async function listUnifiedReceipts(
         contract: r.documentNumber,
         value: r.amount,
         paid: r.paymentAmount,
+        residualDebt: r.residualDebt ?? Math.max(0, r.amount - r.paymentAmount),
         casual: r.annotations ?? '',
         operator: r.operatorName,
       });

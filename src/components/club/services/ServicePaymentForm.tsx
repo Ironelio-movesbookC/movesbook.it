@@ -68,6 +68,8 @@ type Props = {
   onAddToRecordTotal?: (amount: number) => Promise<void>;
   operatorPassStatus?: string;
   notEnterCustData?: boolean;
+  /** Selected procedure record ids (for scoping Historical / Payments / Receipts tabs). */
+  onSelectedRecordIdsChange?: (recordIds: string[]) => void;
 };
 
 function formatDisplayDate(iso: string | null | undefined): string {
@@ -186,6 +188,7 @@ export default function ServicePaymentForm({
   onAddToRecordTotal,
   operatorPassStatus = 'Yes',
   notEnterCustData = false,
+  onSelectedRecordIdsChange,
 }: Props) {
   const sectionLabel = `${purchase.sectorName}-${purchase.serviceName}`;
   const multiDeadlineMode = extraPurchases.length > 0;
@@ -336,6 +339,26 @@ export default function ServicePaymentForm({
     // Client: list chronologically — oldest deadline at the top (date, then time).
     return [...rows].sort(compareDeadlinesOldestFirst);
   }, [multiDeadlineMode, allPurchases, installments, payments, purchase]);
+
+  useEffect(() => {
+    if (!onSelectedRecordIdsChange) return;
+    const fromSelection = Array.from(selectedInstallmentIds)
+      .map((id) => installmentRows.find((r) => r.id === id)?.recordId)
+      .filter((id): id is string => Boolean(id));
+    const uniqueSelected = Array.from(new Set(fromSelection));
+    if (uniqueSelected.length > 0) {
+      onSelectedRecordIdsChange(uniqueSelected);
+      return;
+    }
+    // Nothing checked → all deadlines currently listed on this form.
+    const listed = Array.from(new Set(installmentRows.map((r) => r.recordId).filter(Boolean)));
+    onSelectedRecordIdsChange(listed.length > 0 ? listed : [purchase.id]);
+  }, [
+    selectedInstallmentIds,
+    installmentRows,
+    purchase.id,
+    onSelectedRecordIdsChange,
+  ]);
 
   const selectedTotalRest = useMemo(() => {
     return installmentRows

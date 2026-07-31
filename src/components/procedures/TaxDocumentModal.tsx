@@ -46,8 +46,10 @@ type Props = {
   defaultTotal?: number;
   defaultResidual?: number;
   hideMemberName?: boolean;
+  /** Override primary save button label (default: SAVE RECEIPT AT THE END). */
+  saveLabel?: string;
   onClose: () => void;
-  onSave: (values: TaxDocumentFormValues) => void;
+  onSave: (values: TaxDocumentFormValues) => void | Promise<void>;
 };
 
 function todayDate(): string {
@@ -116,6 +118,7 @@ export default function TaxDocumentModal({
   defaultTotal = 0,
   defaultResidual = 0,
   hideMemberName = false,
+  saveLabel = 'SAVE RECEIPT AT THE END',
   onClose,
   onSave,
 }: Props) {
@@ -232,13 +235,13 @@ export default function TaxDocumentModal({
           ? buildMemberDisplayName(form.originalMemberName, form.memberAlias)
           : form.originalMemberName;
 
-      // Do NOT write to DB here — only remember receipt data until payment Confirm.
+      // Payment flow: parent remembers until Confirm. Archive edit: parent persists via updateReceipt.
       const payload: TaxDocumentFormValues = {
         ...form,
         memberDisplayName,
         formCausal: defaultCausal,
       };
-      onSave(payload);
+      await onSave(payload);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to prepare receipt');
@@ -444,7 +447,7 @@ export default function TaxDocumentModal({
                 disabled={saving}
                 className="px-5 py-2 bg-red-700 text-white rounded hover:bg-red-800 text-sm disabled:opacity-50"
               >
-                {saving ? 'Remembering...' : 'SAVE RECEIPT AT THE END'}
+                {saving ? 'Saving...' : saveLabel}
               </button>
               <button
                 type="button"

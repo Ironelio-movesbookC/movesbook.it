@@ -615,7 +615,11 @@ export class ProcedureService {
       procedureType: { code: procedureTypeCode },
       status: ProcedureRecordStatus.ACTIVE,
       ...(query.memberId ? { memberId: query.memberId } : {}),
-      ...(query.recordId ? { id: query.recordId } : {}),
+      ...(query.recordIds && query.recordIds.length > 0
+        ? { id: { in: query.recordIds } }
+        : query.recordId
+          ? { id: query.recordId }
+          : {}),
       ...(options.onlyWithBalance ? { balanceAmount: { gt: 0 } } : {}),
     };
 
@@ -670,7 +674,11 @@ export class ProcedureService {
         procedureTypeId: procedureType.id,
         procedureType: { code: procedureTypeCode },
         status: ProcedureRecordStatus.ACTIVE,
-        ...(query.recordId ? { id: query.recordId } : {}),
+        ...(query.recordIds && query.recordIds.length > 0
+          ? { id: { in: query.recordIds } }
+          : query.recordId
+            ? { id: query.recordId }
+            : {}),
       },
     };
 
@@ -725,7 +733,11 @@ export class ProcedureService {
         procedureTypeId: procedureType.id,
         procedureType: { code: procedureTypeCode },
         status: ProcedureRecordStatus.ACTIVE,
-        ...(query.recordId ? { id: query.recordId } : {}),
+        ...(query.recordIds && query.recordIds.length > 0
+          ? { id: { in: query.recordIds } }
+          : query.recordId
+            ? { id: query.recordId }
+            : {}),
       },
     };
 
@@ -737,7 +749,7 @@ export class ProcedureService {
         skip,
         take: pageSize,
         include: {
-          procedureRecord: { select: { metadata: true } },
+          procedureRecord: { select: { metadata: true, balanceAmount: true } },
         },
       }),
     ]);
@@ -746,25 +758,28 @@ export class ProcedureService {
       rows.flatMap((r) => [r.memberId, r.operatorId].filter(Boolean) as string[])
     );
 
-    const items: ProcedureReceiptDto[] = rows.map((row) => ({
-      id: row.id,
-      procedureRecordId: row.procedureRecordId,
-      procedurePaymentId: row.procedurePaymentId,
-      memberName: receiptMemberName(
-        row.memberId,
-        (row.procedureRecord.metadata as Record<string, unknown> | null) ?? null,
-        nameById
-      ),
-      documentType: row.documentType,
-      documentNumber: row.documentNumber,
-      amount: decimalToNumber(row.amount),
-      paymentAmount: decimalToNumber(row.paymentAmount),
-      serviceName: row.serviceName,
-      receiptDate: row.receiptDate.toISOString().slice(0, 10),
-      annotations: row.annotations,
-      typology: getProcedureTypology(procedureTypeCode),
-      operatorName: row.operatorId ? nameById.get(row.operatorId) ?? '-' : '-',
-    }));
+    const def = getProcedureDefinition(procedureTypeCode);
+    const primaryKey = def?.metadataKeys.primary ?? 'serviceName';
+
+    const items: ProcedureReceiptDto[] = rows.map((row) => {
+      const metadata = (row.procedureRecord.metadata as Record<string, unknown> | null) ?? null;
+      return {
+        id: row.id,
+        procedureRecordId: row.procedureRecordId,
+        procedurePaymentId: row.procedurePaymentId,
+        memberName: receiptMemberName(row.memberId, metadata, nameById),
+        documentType: row.documentType,
+        documentNumber: row.documentNumber,
+        amount: decimalToNumber(row.amount),
+        paymentAmount: decimalToNumber(row.paymentAmount),
+        residualDebt: decimalToNumber(row.procedureRecord.balanceAmount),
+        serviceName: row.serviceName || metaString(metadata, primaryKey) || null,
+        receiptDate: row.receiptDate.toISOString().slice(0, 10),
+        annotations: row.annotations,
+        typology: getProcedureTypology(procedureTypeCode),
+        operatorName: row.operatorId ? nameById.get(row.operatorId) ?? '-' : '-',
+      };
+    });
 
     return paginated(items, total, page, pageSize);
   }

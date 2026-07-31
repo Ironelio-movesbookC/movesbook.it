@@ -15,10 +15,16 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: `Unknown procedure type: ${params.type}` }, { status: 400 });
     }
 
+    const idsRaw = request.nextUrl.searchParams.get('ids');
+    const recordIds = idsRaw
+      ? idsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+
     const result = await procedureService.listReceipts(auth.ctx, params.type, {
       page: Number(request.nextUrl.searchParams.get('page') ?? 1),
       pageSize: Number(request.nextUrl.searchParams.get('pageSize') ?? 10),
       recordId: request.nextUrl.searchParams.get('recordId') ?? undefined,
+      recordIds,
     });
 
     return NextResponse.json(result);
