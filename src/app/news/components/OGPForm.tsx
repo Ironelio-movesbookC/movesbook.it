@@ -130,7 +130,13 @@ export default function OGPForm({
     setError(null);
     setFetchedOg(null);
     try {
-      const res = await fetch(`/api/ogp?url=${encodeURIComponent(urlToFetch.trim())}`);
+      const token =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('token') || localStorage.getItem('adminToken')
+          : null;
+      const res = await fetch(`/api/ogp?url=${encodeURIComponent(urlToFetch.trim())}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || 'Failed to fetch link preview');
