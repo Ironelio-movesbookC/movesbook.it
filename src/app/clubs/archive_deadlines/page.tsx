@@ -5,22 +5,51 @@ import { useRouter } from 'next/navigation';
 import ProcedureArchiveShell from '@/components/procedures/ProcedureArchiveShell';
 import ProcedureArchiveTable from '@/components/procedures/ProcedureArchiveTable';
 import ProcedurePagination from '@/components/procedures/ProcedurePagination';
-import {
-  SERVICE_SALE_PAGE_SIZE,
-  serviceSaleDeadlineColumns,
-} from '@/components/procedures/configs/serviceSale';
 import type { ProcedureTab } from '@/components/procedures/types';
-import { Member } from '@/types/clubTable';
-import { fetchDeadlines } from '@/lib/club/serviceSaleClient';
+import { fetchClubArchive } from '@/lib/club/archives/clubArchiveClient';
+import { getProcedureDefinition } from '@/lib/procedures/registry';
+import type { ProcedureTypeCode } from '@/lib/procedures/types';
+import { formatDate, formatEuro } from '@/lib/club/servicePurchasesClient';
+import type { Column, Member } from '@/types/clubTable';
+
+const PAGE_SIZE = 25;
+
+const columns: Column[] = [
+  { key: 'name', header: 'Full Name' },
+  { key: 'typology', header: 'Typology' },
+  { key: 'service', header: 'Detail' },
+  { key: 'insertDate', header: 'Date', render: (v) => formatDate(v) },
+  { key: 'value', header: 'Cost', render: (v) => formatEuro(v) },
+  { key: 'paid', header: 'Paid', render: (v) => formatEuro(v) },
+  { key: 'rest', header: 'Rest', render: (v) => formatEuro(v) },
+  { key: 'dateEnd', header: 'Last payment', render: (v) => formatDate(v) },
+  { key: 'casual', header: 'Notes' },
+  { key: 'operator', header: 'Operator' },
+];
 
 function sameMemberAndOpenRest(rows: Member[]): boolean {
   if (rows.length === 0) return false;
   const firstUserId = rows[0]?.userId;
-  if (!firstUserId) return false;
-  return rows.every((r) => r.userId === firstUserId && (r.rest ?? 0) > 0);
+  const firstType = rows[0]?.procedureType;
+  if (!firstUserId || !firstType) return false;
+  return rows.every(
+    (r) => r.userId === firstUserId && r.procedureType === firstType && (r.rest ?? 0) > 0
+  );
 }
 
-export default function DeadLinePage() {
+function paymentHref(row: Member, ids?: string[]): string | null {
+  const code = row.procedureType as ProcedureTypeCode | undefined;
+  if (!code || !row.id) return null;
+  const def = getProcedureDefinition(code);
+  if (!def) return null;
+  const base = def.routes.paymentDetail(row.id);
+  if (ids && ids.length > 1) {
+    return `${base}?ids=${encodeURIComponent(ids.join(','))}`;
+  }
+  return base;
+}
+
+export default function ArchiveDeadlinesPage() {
   const router = useRouter();
   const [data, setData] = useState<Member[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -36,29 +65,13 @@ export default function DeadLinePage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetchDeadlines({
+      const res = await fetchClubArchive('deadlines', {
         page,
-        pageSize: SERVICE_SALE_PAGE_SIZE,
+        pageSize: PAGE_SIZE,
         includePaid: displayAlsoPaid,
       });
       setTotal(res.total);
-      setData(
-        res.items.map((p) => ({
-          id: p.id,
-          userId: p.userId,
-          name: p.memberName,
-          typology: p.typology,
-          service: p.serviceName,
-          course: p.sectorName,
-          insertDate: p.paydate ?? undefined,
-          value: p.value,
-          paid: p.pay,
-          rest: p.rest,
-          casual: p.notes,
-          operator: p.operatorName,
-          dateEnd: p.lastPaymentDate ?? undefined,
-        }))
-      );
+      setData(res.items);
       setCheckedIds(new Set());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
@@ -76,8 +89,7 @@ export default function DeadLinePage() {
     [data, checkedIds]
   );
 
-  const canPaySelected =
-    checkedRows.length > 1 && sameMemberAndOpenRest(checkedRows);
+  const canPaySelected = checkedRows.length > 1 && sameMemberAndOpenRest(checkedRows);
 
   function toggleSelect(row: Member) {
     if (!row.id || (row.rest ?? 0) <= 0) return;
@@ -97,9 +109,7 @@ export default function DeadLinePage() {
       setCheckedIds(new Set());
       return;
     }
-    setCheckedIds(
-      new Set(data.filter((r) => r.id && (r.rest ?? 0) > 0).map((r) => r.id!))
-    );
+    setCheckedIds(new Set(data.filter((r) => r.id && (r.rest ?? 0) > 0).map((r) => r.id!)));
   }
 
   function handlePaySelected() {
@@ -110,40 +120,31 @@ export default function DeadLinePage() {
     }
     if (!sameMemberAndOpenRest(checkedRows)) {
       setSelectionError(
-        'Checked deadlines must belong to the same member and all have Rest > 0.'
+        'Checked deadlines must belong to the same member, same typology, and all have Rest > 0.'
       );
       return;
     }
     const ids = checkedRows.map((r) => r.id!).filter(Boolean);
-    const primary = ids[0]!;
-    router.push(`/clubs/payment_detail/${primary}?ids=${ids.join(',')}`);
+    const href = paymentHref(checkedRows[0]!, ids);
+    if (href) router.push(href);
   }
 
   const tabs: ProcedureTab[] = [
-    { id: 'historical', label: 'Historical', href: '/clubs/archive_service_list' },
-    {
-      id: 'deadline',
-      label: 'Archive of Deadlines',
-      href: '/clubs/dead_line',
-    },
+    { id: 'deadlines', label: 'Archive of Deadlines', href: '/clubs/archive_deadlines' },
+    { id: 'payments', label: 'Archive of Payments', href: '/clubs/archive_payments' },
+    { id: 'receipts', label: 'Archive of Receipts', href: '/clubs/archive_receipts' },
     {
       id: 'pay-selected',
       label: 'Pay more deadlines',
       onClick: handlePaySelected,
       disabled: !canPaySelected,
     },
-    {
-      id: 'payments',
-      label: 'Payments',
-      href: selectedId ? `/clubs/user_payment_list/${selectedId}` : '/clubs/service_payments',
-    },
-    { id: 'receipts', label: 'Receipts', href: '/clubs/service_receipts' },
   ];
 
   return (
     <ProcedureArchiveShell
-      title="Archive of Deadlines (Services)"
-      activeTab="deadline"
+      title="Archive of Deadlines"
+      activeTab="deadlines"
       tabs={tabs}
       tabsTrailing={
         <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
@@ -162,22 +163,13 @@ export default function DeadLinePage() {
         </label>
       }
       error={error || selectionError}
-      footerHint={
-        displayAlsoPaid
-          ? 'SERVICES only — showing open and fully paid deadlines. Double-click a row with Rest > 0 to record a payment.'
-          : 'SERVICES only — shows service purchases with remaining balance. Check “Display also paid” to include Rest = 0. Double-click to record a payment.'
-      }
+      footerHint="All typologies. Double-click a row with Rest > 0 to pay, or check several (same member + typology) and use Pay more deadlines."
       pagination={
-        <ProcedurePagination
-          page={page}
-          pageSize={SERVICE_SALE_PAGE_SIZE}
-          total={total}
-          onPageChange={setPage}
-        />
+        <ProcedurePagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
       }
     >
       <ProcedureArchiveTable
-        columns={serviceSaleDeadlineColumns}
+        columns={columns}
         rows={data}
         selectedId={selectedId}
         loading={loading}
@@ -187,12 +179,12 @@ export default function DeadLinePage() {
         onToggleSelectAll={toggleSelectAll}
         onRowClick={(row) => row.id && setSelectedId(row.id)}
         onRowDoubleClick={(row) => {
-          if (!row.id) return;
-          if ((row.rest ?? 0) <= 0) {
+          if (!row.id || (row.rest ?? 0) <= 0) {
             setSelectionError('Payment is not possible because this deadline is already paid.');
             return;
           }
-          router.push(`/clubs/payment_detail/${row.id}`);
+          const href = paymentHref(row);
+          if (href) router.push(href);
         }}
       />
     </ProcedureArchiveShell>

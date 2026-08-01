@@ -18,6 +18,9 @@ export type ArchiveType =
   | 'product-sales'
   | 'credits'
   | 'cash-movements'
+  | 'deadlines'
+  | 'payments'
+  | 'receipts'
   | 'accesses'
   | 'reservations'
   | 'cards-assignments'
@@ -36,6 +39,7 @@ export type ArchiveFetchParams = {
   fromDate?: string;
   toDate?: string;
   orderBy?: 'recent' | 'old';
+  includePaid?: boolean;
 };
 
 export async function fetchClubArchive(
@@ -50,6 +54,7 @@ export async function fetchClubArchive(
   if (params?.fromDate) qs.set('fromDate', params.fromDate);
   if (params?.toDate) qs.set('toDate', params.toDate);
   if (params?.orderBy) qs.set('orderBy', params.orderBy);
+  if (params?.includePaid) qs.set('includePaid', '1');
   const query = qs.toString();
   const url = `/api/club/archives/${type}${query ? `?${query}` : ''}`;
   return clubApiFetch<ArchiveListResult>(url);
@@ -67,6 +72,7 @@ export type InstallmentRow = {
   balance: number;
   paymentDate: string;
   expireDate: string | null;
+  createdAt?: string | null;
   description: string | null;
 };
 

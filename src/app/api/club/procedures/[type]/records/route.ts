@@ -1,6 +1,6 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getClubAuthContext, procedureService } from '@/lib/procedures';
-import { parseCreateRecord } from '@/lib/procedures/validators';
+import { isKnownProcedureType, parseCreateRecord } from '@/lib/procedures/validators';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +11,10 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     const auth = await getClubAuthContext(request);
     if ('error' in auth) return auth.error;
 
+    if (!isKnownProcedureType(params.type)) {
+      return NextResponse.json({ error: `Unknown procedure type: ${params.type}` }, { status: 400 });
+    }
+
     const view = request.nextUrl.searchParams.get('view');
     const includePaid =
       request.nextUrl.searchParams.get('includePaid') === '1' ||
@@ -18,12 +22,19 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     const page = Number(request.nextUrl.searchParams.get('page') ?? 1);
     const pageSize = Number(request.nextUrl.searchParams.get('pageSize') ?? 10);
     const memberId = request.nextUrl.searchParams.get('memberId') ?? undefined;
-    const recordId = request.nextUrl.searchParams.get('id') ?? undefined;
+    const recordId =
+      request.nextUrl.searchParams.get('recordId') ??
+      request.nextUrl.searchParams.get('id') ??
+      undefined;
+    const idsRaw = request.nextUrl.searchParams.get('ids');
+    const recordIds = idsRaw
+      ? idsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
 
     const result = await procedureService.listRecords(
       auth.ctx,
       params.type,
-      { page, pageSize, memberId, recordId },
+      { page, pageSize, memberId, recordId, recordIds },
       { onlyWithBalance: view === 'deadlines' && !includePaid }
     );
 

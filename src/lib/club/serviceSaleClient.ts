@@ -8,6 +8,8 @@ import type {
 } from '@/lib/procedures/types';
 
 export const SERVICE_SALE_TYPE = 'service_sale';
+/** Typology label shown in Archive of Services tabs (Historical / Deadlines / Payments / Receipts). */
+export const SERVICES_TYPOLOGY = 'SERVICES';
 export const BASE = `/api/club/procedures/${SERVICE_SALE_TYPE}`;
 
 export type ServiceSalePurchase = {
@@ -19,6 +21,8 @@ export type ServiceSalePurchase = {
   sectorName: string;
   serviceName: string;
   paydate: string | null;
+  /** ISO timestamp for same-day chronological ordering (oldest first). */
+  createdAt: string | null;
   value: number;
   pay: number;
   rest: number;
@@ -57,6 +61,7 @@ export type ServiceSaleReceipt = {
   documentNumber: string;
   cost: number;
   paymentIn: number;
+  residualDebt: number;
   annotations: string;
   operatorName: string;
 };
@@ -104,11 +109,12 @@ export function mapRecord(record: ProcedureRecordDto): ServiceSalePurchase {
     userId: record.memberId,
     memberName: record.memberName,
     memberImage: record.memberImage ?? null,
-    typology: 'SERVICES',
+    typology: SERVICES_TYPOLOGY,
     sectorName: metaString(meta, 'sectorName') || '-',
     serviceName: metaString(meta, 'serviceName') || '-',
     // Deadline/expire display uses dueDate (PHP ServicePurchase.paydate / installment expire).
     paydate: record.dueDate ?? record.recordDate,
+    createdAt: record.createdAt ?? null,
     value: record.totalAmount,
     pay: record.paidAmount,
     rest: record.balanceAmount,
@@ -125,7 +131,8 @@ export function mapPayment(payment: ProcedurePaymentDto): ServiceSalePayment {
     id: payment.id,
     spId: payment.procedureRecordId,
     memberName: payment.memberName,
-    typology: payment.typology,
+    // Archive of Services → Payments must never surface other procedure typologies.
+    typology: SERVICES_TYPOLOGY,
     serviceName: payment.serviceName ?? '-',
     paymentDate: payment.paymentDate,
     paid: payment.amount,
@@ -143,22 +150,31 @@ export function mapReceipt(receipt: ProcedureReceiptDto): ServiceSaleReceipt {
     id: receipt.id,
     spId: receipt.procedureRecordId,
     memberName: receipt.memberName,
-    typology: receipt.typology,
+    // Archive of Services → Receipts must never surface other procedure typologies.
+    typology: SERVICES_TYPOLOGY,
     serviceName: receipt.serviceName ?? '-',
     receiptDate: receipt.receiptDate,
     documentType: receipt.documentType ?? 'Invoice',
     documentNumber: receipt.documentNumber ?? '',
     cost: receipt.amount,
     paymentIn: receipt.paymentAmount,
+    residualDebt: receipt.residualDebt ?? Math.max(0, receipt.amount - receipt.paymentAmount),
     annotations: receipt.annotations ?? '',
     operatorName: receipt.operatorName,
   };
+}
+
+/** Drop anything that is not explicitly SERVICES (defense in depth). */
+function onlyServicesTypology<T extends { typology: string }>(items: T[]): T[] {
+  return items.filter((item) => item.typology === SERVICES_TYPOLOGY);
 }
 
 export type ListParams = {
   page?: number;
   pageSize?: number;
   recordId?: string;
+  /** Scope list to these procedure record ids (from payment form selection). */
+  recordIds?: string[];
   /** When fetching deadlines, also include Rest = 0 rows. */
   includePaid?: boolean;
 };
@@ -184,6 +200,9 @@ function buildQuery(params?: ListParams & { view?: string }): string {
   });
   if (params?.view) qs.set('view', params.view);
   if (params?.recordId) qs.set('recordId', params.recordId);
+  if (params?.recordIds && params.recordIds.length > 0) {
+    qs.set('ids', params.recordIds.join(','));
+  }
   if (params?.includePaid) qs.set('includePaid', '1');
   return qs.toString();
 }
@@ -204,8 +223,9 @@ export async function fetchPurchases(
   const res = await clubApiFetch<Paginated<ProcedureRecordDto>>(
     `${BASE}/records?${buildQuery(params)}`
   );
+  const items = onlyServicesTypology(res.items.map(mapRecord));
   return {
-    items: res.items.map(mapRecord),
+    items,
     total: res.total,
     page: res.page,
     pageSize: res.pageSize,
@@ -219,8 +239,9 @@ export async function fetchDeadlines(
   const res = await clubApiFetch<Paginated<ProcedureRecordDto>>(
     `${BASE}/records?${buildQuery({ ...params, view: 'deadlines' })}`
   );
+  const items = onlyServicesTypology(res.items.map(mapRecord));
   return {
-    items: res.items.map(mapRecord),
+    items,
     total: res.total,
     page: res.page,
     pageSize: res.pageSize,
@@ -369,8 +390,9 @@ export async function fetchPayments(
   const res = await clubApiFetch<Paginated<ProcedurePaymentDto>>(
     `${BASE}/payments?${buildQuery(params)}`
   );
+  const items = onlyServicesTypology(res.items.map(mapPayment));
   return {
-    items: res.items.map(mapPayment),
+    items,
     total: res.total,
     page: res.page,
     pageSize: res.pageSize,
@@ -404,8 +426,9 @@ export async function fetchReceipts(
   const res = await clubApiFetch<Paginated<ProcedureReceiptDto>>(
     `${BASE}/receipts?${buildQuery(params)}`
   );
+  const items = onlyServicesTypology(res.items.map(mapReceipt));
   return {
-    items: res.items.map(mapReceipt),
+    items,
     total: res.total,
     page: res.page,
     pageSize: res.pageSize,

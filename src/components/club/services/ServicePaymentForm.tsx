@@ -19,6 +19,7 @@ import { PAY_MODE_OPTIONS } from '@/lib/procedures/payModes';
 import { formatEuro } from '@/lib/club/servicePurchasesClient';
 import type { ServiceSaleFormOptions, ServiceSalePayment, ServiceSalePurchase } from '@/lib/club/serviceSaleClient';
 import AdminPasswordConfirmModal from '@/components/club/AdminPasswordConfirmModal';
+import { resolvePublicImageUrl } from '@/lib/profileImageUrl';
 
 export type PaymentDistribution = {
   installmentId: string;
@@ -46,6 +47,7 @@ export type ServicePaymentSubmitValues = {
   createReceipt: boolean;
   receiptNumber?: string;
   receiptAnnotations?: string;
+  receiptDocumentType?: string;
   distributions: PaymentDistribution[];
   /** True when paying multiple archive deadline records at once. */
   multiRecord?: boolean;
@@ -66,6 +68,8 @@ type Props = {
   onAddToRecordTotal?: (amount: number) => Promise<void>;
   operatorPassStatus?: string;
   notEnterCustData?: boolean;
+  /** Selected procedure record ids (for scoping Historical / Payments / Receipts tabs). */
+  onSelectedRecordIdsChange?: (recordIds: string[]) => void;
 };
 
 function formatDisplayDate(iso: string | null | undefined): string {
@@ -75,7 +79,74 @@ function formatDisplayDate(iso: string | null | undefined): string {
 }
 
 function toYmd(iso: string | null | undefined): string {
-  return iso ? iso.slice(0, 10) : '';
+  if (!iso) return '';
+  const trimmed = iso.trim();
+  // Prefer ISO YYYY-MM-DD
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  // DD/MM/YYYY
+  const dmy = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  }
+  const parsed = Date.parse(trimmed);
+  if (!Number.isNaN(parsed)) {
+    const d = new Date(parsed);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  return '';
+}
+
+/**
+ * Numeric sort value: expire/due calendar day + time-of-day from createdAt.
+ * Oldest deadlines sort first.
+ */
+function deadlineSortTimestamp(
+  expireDate: string | null | undefined,
+  paymentDate: string | null | undefined,
+  createdAt: string | null | undefined
+): number {
+  const day = toYmd(expireDate) || toYmd(paymentDate);
+  let dayMs = Number.MAX_SAFE_INTEGER;
+  if (day) {
+    const parsed = Date.parse(`${day}T00:00:00`);
+    if (!Number.isNaN(parsed)) dayMs = parsed;
+  }
+
+  let timeMs = 0;
+  if (createdAt && !Number.isNaN(Date.parse(createdAt))) {
+    const t = new Date(createdAt);
+    timeMs =
+      t.getHours() * 3_600_000 +
+      t.getMinutes() * 60_000 +
+      t.getSeconds() * 1_000 +
+      t.getMilliseconds();
+  }
+  return dayMs + timeMs;
+}
+
+function compareDeadlinesOldestFirst(
+  a: {
+    expireDate: string | null | undefined;
+    paymentDate: string | null | undefined;
+    createdAt?: string | null;
+    id: string;
+  },
+  b: {
+    expireDate: string | null | undefined;
+    paymentDate: string | null | undefined;
+    createdAt?: string | null;
+    id: string;
+  }
+): number {
+  const diff =
+    deadlineSortTimestamp(a.expireDate, a.paymentDate, a.createdAt) -
+    deadlineSortTimestamp(b.expireDate, b.paymentDate, b.createdAt);
+  if (diff !== 0) return diff;
+  return a.id.localeCompare(b.id);
 }
 
 /** Expire date for ordering/display (expireDate, else paymentDate). */
@@ -84,6 +155,23 @@ function effectiveExpireDate(
   paymentDate: string | null | undefined
 ): string {
   return toYmd(expireDate) || toYmd(paymentDate);
+}
+
+function formatDeadlineWhen(
+  expireDate: string | null | undefined,
+  paymentDate: string | null | undefined,
+  createdAt: string | null | undefined
+): string {
+  const day = formatDisplayDate(effectiveExpireDate(expireDate, paymentDate) || null);
+  if (createdAt && !Number.isNaN(Date.parse(createdAt))) {
+    const t = new Date(createdAt).toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    return `${day} · ${t}`;
+  }
+  return day;
 }
 
 export default function ServicePaymentForm({
@@ -100,6 +188,7 @@ export default function ServicePaymentForm({
   onAddToRecordTotal,
   operatorPassStatus = 'Yes',
   notEnterCustData = false,
+  onSelectedRecordIdsChange,
 }: Props) {
   const sectionLabel = `${purchase.sectorName}-${purchase.serviceName}`;
   const multiDeadlineMode = extraPurchases.length > 0;
@@ -119,6 +208,7 @@ export default function ServicePaymentForm({
   const [debtExpire, setDebtExpire] = useState(purchase.paydate ?? new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState(purchase.notes);
   const [amountPaid, setAmountPaid] = useState('0');
+  const amountPaidTouchedRef = useRef(false);
   const [payMode, setPayMode] = useState('cash');
   const [taxDoc, setTaxDoc] = useState(true);
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -143,6 +233,7 @@ export default function ServicePaymentForm({
   const [taxDocument, setTaxDocument] = useState<TaxDocumentFormValues | null>(null);
   const [modifyOpen, setModifyOpen] = useState(false);
   const [modifySaving, setModifySaving] = useState(false);
+  const [modifyError, setModifyError] = useState('');
   const [modifyForm, setModifyForm] = useState({
     balance: '',
     paid: '',
@@ -187,6 +278,7 @@ export default function ServicePaymentForm({
     balance: number;
     paymentDate: string | null;
     expireDate: string | null;
+    createdAt: string | null;
     paid: number;
     disabled: boolean;
     label?: string;
@@ -194,53 +286,79 @@ export default function ServicePaymentForm({
   };
 
   const installmentRows = useMemo((): DeadlineListRow[] => {
+    let rows: DeadlineListRow[];
     if (multiDeadlineMode) {
-      return allPurchases
+      rows = allPurchases
         .filter((p) => p.rest > 0)
         .map((p) => ({
           id: p.id,
           balance: p.rest,
           paymentDate: p.paydate,
           expireDate: p.paydate,
+          createdAt: p.createdAt ?? null,
           paid: p.pay,
           disabled: false,
           label: `${p.sectorName}-${p.serviceName}`,
           recordId: p.id,
         }));
-    }
-    if (installments.length > 0) {
-      return installments.map((row) => ({
+    } else if (installments.length > 0) {
+      rows = installments.map((row) => ({
         id: row.id,
         balance: row.balance,
         paymentDate: row.paymentDate,
         expireDate: row.expireDate,
+        createdAt: row.createdAt ?? null,
         paid: row.paid,
         disabled: false,
         recordId: purchase.id,
       }));
-    }
-    const rows: DeadlineListRow[] = payments.map((p) => ({
-      id: p.id,
-      balance: p.balance,
-      paymentDate: p.paymentDate,
-      expireDate: p.paymentDate,
-      paid: p.paid,
-      disabled: true,
-      recordId: purchase.id,
-    }));
-    if (purchase.rest > 0) {
-      rows.unshift({
-        id: 'current',
-        balance: purchase.rest,
-        paymentDate: purchase.paydate,
-        expireDate: purchase.paydate,
-        paid: purchase.pay,
-        disabled: false,
+    } else {
+      rows = payments.map((p) => ({
+        id: p.id,
+        balance: p.balance,
+        paymentDate: p.paymentDate,
+        expireDate: p.paymentDate,
+        createdAt: p.paymentDate,
+        paid: p.paid,
+        disabled: true,
         recordId: purchase.id,
-      });
+      }));
+      if (purchase.rest > 0) {
+        rows.unshift({
+          id: 'current',
+          balance: purchase.rest,
+          paymentDate: purchase.paydate,
+          expireDate: purchase.paydate,
+          createdAt: purchase.createdAt ?? null,
+          paid: purchase.pay,
+          disabled: false,
+          recordId: purchase.id,
+        });
+      }
     }
-    return rows;
+    // Client: list chronologically — oldest deadline at the top (date, then time).
+    return [...rows].sort(compareDeadlinesOldestFirst);
   }, [multiDeadlineMode, allPurchases, installments, payments, purchase]);
+
+  useEffect(() => {
+    if (!onSelectedRecordIdsChange) return;
+    const fromSelection = Array.from(selectedInstallmentIds)
+      .map((id) => installmentRows.find((r) => r.id === id)?.recordId)
+      .filter((id): id is string => Boolean(id));
+    const uniqueSelected = Array.from(new Set(fromSelection));
+    if (uniqueSelected.length > 0) {
+      onSelectedRecordIdsChange(uniqueSelected);
+      return;
+    }
+    // Nothing checked → all deadlines currently listed on this form.
+    const listed = Array.from(new Set(installmentRows.map((r) => r.recordId).filter(Boolean)));
+    onSelectedRecordIdsChange(listed.length > 0 ? listed : [purchase.id]);
+  }, [
+    selectedInstallmentIds,
+    installmentRows,
+    purchase.id,
+    onSelectedRecordIdsChange,
+  ]);
 
   const selectedTotalRest = useMemo(() => {
     return installmentRows
@@ -248,34 +366,30 @@ export default function ServicePaymentForm({
       .reduce((sum, r) => sum + r.balance, 0);
   }, [installmentRows, selectedInstallmentIds]);
 
-  // Default Amount paid = sum of selected Rests (operator may lower it, never raise above max).
+  // Do NOT auto-fill Amount paid to the full selected rest — that caused accidental
+  // full settlement of every checked deadline. Operator must type the payment amount.
   useEffect(() => {
-    setAmountPaid(selectedTotalRest > 0 ? String(Number(selectedTotalRest.toFixed(2))) : '0');
+    amountPaidTouchedRef.current = false;
+    setAmountPaid('0');
+    setPayWith('0');
   }, [selectedTotalRest]);
 
   const nextRests = useMemo(() => {
-    // Oldest expire date first (client waterfall).
+    // Waterfall from Amount paid: oldest expire (then time) first.
     const sorted = [...installmentRows]
       .filter((r) => selectedInstallmentIds.has(r.id))
-      .sort((a, b) => {
-        const ea = effectiveExpireDate(a.expireDate, a.paymentDate);
-        const eb = effectiveExpireDate(b.expireDate, b.paymentDate);
-        const byExpire = ea.localeCompare(eb);
-        if (byExpire !== 0) return byExpire;
-        return a.id.localeCompare(b.id);
-      });
-    let remaining = paidAmount;
+      .sort(compareDeadlinesOldestFirst);
+    let remaining = Math.round(paidAmount * 100) / 100;
     return sorted.map((r) => {
-      const paidHere = Math.min(remaining, r.balance);
-      remaining = Math.max(0, remaining - paidHere);
-      const expire = effectiveExpireDate(r.expireDate, r.paymentDate);
+      const paidHere = Math.round(Math.min(remaining, r.balance) * 100) / 100;
+      remaining = Math.round(Math.max(0, remaining - paidHere) * 100) / 100;
       return {
         id: r.id,
         recordId: r.recordId,
         label: r.label
-          ? `${r.label} · ${formatDisplayDate(expire)}`
-          : formatDisplayDate(expire),
-        newRest: Math.max(0, r.balance - paidHere),
+          ? `${r.label} · ${formatDeadlineWhen(r.expireDate, r.paymentDate, r.createdAt)}`
+          : formatDeadlineWhen(r.expireDate, r.paymentDate, r.createdAt),
+        newRest: Math.round(Math.max(0, r.balance - paidHere) * 100) / 100,
         paidHere,
         paid: r.paid,
         balance: r.balance,
@@ -283,12 +397,50 @@ export default function ServicePaymentForm({
     });
   }, [installmentRows, selectedInstallmentIds, paidAmount]);
 
+  function buildWaterfallDistributions(amount: number): PaymentDistribution[] {
+    const sorted = [...installmentRows]
+      .filter((r) => selectedInstallmentIds.has(r.id))
+      .sort(compareDeadlinesOldestFirst);
+    let remaining = Math.round(amount * 100) / 100;
+    const distributions: PaymentDistribution[] = [];
+    for (const row of sorted) {
+      if (remaining <= 0) break;
+      const paidHere = Math.round(Math.min(remaining, row.balance) * 100) / 100;
+      if (paidHere <= 0) continue;
+      remaining = Math.round((remaining - paidHere) * 100) / 100;
+      distributions.push({
+        installmentId: row.id,
+        recordId: row.recordId,
+        amount: paidHere,
+        newPaid: Math.round((row.paid + paidHere) * 100) / 100,
+        newBalance: Math.round(Math.max(0, row.balance - paidHere) * 100) / 100,
+      });
+    }
+    return distributions;
+  }
+
   function clampAmountPaid(raw: string): string {
     const n = Number(raw);
     if (!Number.isFinite(n) || n < 0) return '0';
     const max = selectedTotalRest;
     if (n > max) return String(Number(max.toFixed(2)));
     return String(n);
+  }
+
+  function handleAmountPaidChange(raw: string) {
+    amountPaidTouchedRef.current = true;
+    setAmountPaid(clampAmountPaid(raw));
+  }
+
+  /** Pay with ≤ selected rest is treated as the payment amount (common operator habit). */
+  function handlePayWithChange(raw: string) {
+    setPayWith(raw);
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return;
+    if (n > 0 && n <= selectedTotalRest) {
+      amountPaidTouchedRef.current = true;
+      setAmountPaid(String(Number(n.toFixed(2))));
+    }
   }
 
   async function reloadInstallments() {
@@ -378,6 +530,7 @@ export default function ServicePaymentForm({
     const row = installments.find((r) => r.id === id);
     if (!row) return;
     setInstallmentError('');
+    setModifyError('');
     setModifyForm({
       balance: String(row.balance + row.paid),
       paid: String(row.paid),
@@ -392,26 +545,37 @@ export default function ServicePaymentForm({
     e.preventDefault();
     const id = firstSelectedId();
     if (!id || id === 'current') return;
+
     const deadlineTotal = Number(modifyForm.balance) || 0;
     const currentPaid = Number(modifyForm.paid) || 0;
     if (deadlineTotal < currentPaid) {
-      setInstallmentError('Deadline total cannot be less than the amount already paid.');
-      setModifySaving(false);
+      setModifyError('Deadline total cannot be less than the amount already paid.');
       return;
     }
-    const newRest = deadlineTotal - currentPaid;
+
+    const row = installments.find((r) => r.id === id);
+    const oldDeadlineTotal = row ? row.balance + row.paid : deadlineTotal;
+    const increase = Math.round((deadlineTotal - oldDeadlineTotal) * 100) / 100;
     const otherTotal = installments
       .filter((r) => r.id !== id)
       .reduce((sum, r) => sum + r.balance + r.paid, 0);
-    if (otherTotal + deadlineTotal > purchase.value) {
-      setInstallmentError(
-        `Total of all deadlines (${(otherTotal + deadlineTotal).toFixed(2)}) would exceed original cost (${purchase.value.toFixed(2)}).`
-      );
-      setModifySaving(false);
-      return;
-    }
+    const newGrandTotal = otherTotal + deadlineTotal;
+
+    setModifySaving(true);
+    setModifyError('');
     setInstallmentError('');
     try {
+      // Like New deadline: allow raising Deadline above current cost by bumping record total.
+      if (increase > 0 && onAddToRecordTotal) {
+        await onAddToRecordTotal(increase);
+      } else if (newGrandTotal > purchase.value + 0.001 && !onAddToRecordTotal) {
+        setModifyError(
+          `Total of all deadlines (€${newGrandTotal.toFixed(2)}) would exceed original cost (€${purchase.value.toFixed(2)}).`
+        );
+        return;
+      }
+
+      const newRest = deadlineTotal - currentPaid;
       await updateInstallment(procedureType, purchase.id, id, {
         balance: newRest,
         paid: currentPaid,
@@ -419,10 +583,16 @@ export default function ServicePaymentForm({
         expireDate: modifyForm.expireDate || null,
         description: modifyForm.description || null,
       });
+      // Close immediately after successful save (even if reload fails).
       setModifyOpen(false);
-      await reloadInstallments();
+      setModifyError('');
+      try {
+        await reloadInstallments();
+      } catch {
+        /* list refresh is secondary to closing the form */
+      }
     } catch (err) {
-      setInstallmentError(err instanceof Error ? err.message : 'Failed to update installment');
+      setModifyError(err instanceof Error ? err.message : 'Failed to update installment');
     } finally {
       setModifySaving(false);
     }
@@ -430,33 +600,51 @@ export default function ServicePaymentForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (selectedInstallmentIds.size === 0) return;
-    if (paidAmount <= 0) return;
+    setInstallmentError('');
+
+    if (selectedInstallmentIds.size === 0) {
+      setInstallmentError('Select at least one deadline to pay.');
+      return;
+    }
+    if (paidAmount <= 0) {
+      setInstallmentError('Enter Amount paid greater than 0 (this is the value written to Archive of Payments).');
+      return;
+    }
     if (paidAmount > selectedTotalRest) {
       setInstallmentError(
         `Amount paid cannot exceed selected Rest total (${selectedTotalRest.toFixed(2)}).`
       );
       return;
     }
-    if (!operatorId) return;
-    if (passwordRequired && !operatorPassword.trim()) return;
-
-    // One saved payment per deadline that receives money (oldest expire first).
-    const distributions: PaymentDistribution[] = [];
-    for (const r of nextRests) {
-      if (r.paidHere <= 0) continue;
-      const row = installmentRows.find((ir) => ir.id === r.id);
-      if (!row) continue;
-      distributions.push({
-        installmentId: r.id,
-        recordId: row.recordId,
-        amount: r.paidHere,
-        newPaid: row.paid + r.paidHere,
-        newBalance: r.newRest,
-      });
+    if (!payMode) {
+      setInstallmentError('Please select pay mode.');
+      return;
+    }
+    if (!operatorId) {
+      setInstallmentError('Please select an operator.');
+      return;
+    }
+    if (passwordRequired && !operatorPassword.trim()) {
+      setInstallmentError('Please enter the operator password.');
+      return;
     }
 
-    if (distributions.length === 0) return;
+    // Rebuild waterfall at submit time from the typed Amount paid (never from selected total).
+    const distributions = buildWaterfallDistributions(paidAmount);
+    const distributedSum = Math.round(
+      distributions.reduce((s, d) => s + d.amount, 0) * 100
+    ) / 100;
+
+    if (distributions.length === 0) {
+      setInstallmentError('No amount to distribute across the selected deadlines.');
+      return;
+    }
+    if (Math.abs(distributedSum - paidAmount) > 0.02) {
+      setInstallmentError(
+        `Distribution mismatch: Amount paid ${paidAmount.toFixed(2)} vs allocated ${distributedSum.toFixed(2)}.`
+      );
+      return;
+    }
 
     await onSubmit({
       amountPaid: paidAmount,
@@ -472,9 +660,11 @@ export default function ServicePaymentForm({
       payWith: payWithAmount,
       restGive,
       taxDocument: taxDocument ?? undefined,
-      createReceipt: taxDoc,
+      // Receipt is only tagged in the modal; real save happens on Confirm.
+      createReceipt: Boolean(taxDoc && taxDocument),
       receiptNumber: taxDocument?.documentNumber || undefined,
       receiptAnnotations: taxDocument?.causal || undefined,
+      receiptDocumentType: taxDocument?.documentType || undefined,
       distributions,
       multiRecord: multiDeadlineMode,
     });
@@ -491,14 +681,39 @@ export default function ServicePaymentForm({
     selectedInstallmentId !== 'current' &&
     selectedInstallmentIds.size === 1;
   const hasPayableRest = totalRest > 0;
+  const memberImageUrl = resolvePublicImageUrl(purchase.memberImage);
+  const [memberImageBroken, setMemberImageBroken] = useState(false);
+
+  useEffect(() => {
+    setMemberImageBroken(false);
+  }, [purchase.memberImage, purchase.id]);
 
   return (
     <>
       <form onSubmit={handleSubmit} className="space-y-4">
         {multiDeadlineMode && (
-          <div className="rounded border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-900">
-            Paying <strong>{allPurchases.filter((p) => p.rest > 0).length}</strong> open deadlines for{' '}
-            <strong>{purchase.memberName}</strong> (combined rest {formatEuro(totalRest)}).
+          <div className="flex items-center gap-3 rounded border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-900">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-teal-300 bg-teal-100">
+              {memberImageUrl && !memberImageBroken ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={memberImageUrl}
+                  alt={purchase.memberName}
+                  className="h-full w-full object-cover"
+                  onError={() => setMemberImageBroken(true)}
+                />
+              ) : (
+                <span className="text-[9px] font-semibold leading-tight text-teal-700">
+                  NO
+                  <br />
+                  IMG
+                </span>
+              )}
+            </div>
+            <p className="min-w-0">
+              Paying <strong>{allPurchases.filter((p) => p.rest > 0).length}</strong> open deadlines
+              for <strong>{purchase.memberName}</strong> (combined rest {formatEuro(totalRest)}).
+            </p>
           </div>
         )}
         {!hasPayableRest && !multiDeadlineMode && (
@@ -536,10 +751,10 @@ export default function ServicePaymentForm({
                             <div className="mt-0.5 text-gray-700">
                               Expire date of{' '}
                               <span className="text-blue-500">
-                                {formatDisplayDate(effectiveExpireDate(row.expireDate, row.paymentDate))}
+                                {formatDeadlineWhen(row.expireDate, row.paymentDate, row.createdAt)}
                               </span>
-                              {' '}of € {formatEuro(row.balance + row.paid)} Rest{' '}
-                              <span className="text-red-600">€ {formatEuro(row.balance)}</span>
+                              {' '}                              of {formatEuro(row.balance + row.paid)} Rest{' '}
+                              <span className="text-red-600">{formatEuro(row.balance)}</span>
                             </div>
                           </>
                         ) : (
@@ -550,10 +765,10 @@ export default function ServicePaymentForm({
                               <li>
                                 Expire date of{' '}
                                 <span className="text-blue-500">
-                                  {formatDisplayDate(effectiveExpireDate(row.expireDate, row.paymentDate))}
+                                  {formatDeadlineWhen(row.expireDate, row.paymentDate, row.createdAt)}
                                 </span>
-                                {' '}of € {formatEuro(row.balance + row.paid)} Rest{' '}
-                                <span className="text-red-600">€ {formatEuro(row.balance)}</span>
+                                {' '}of {formatEuro(row.balance + row.paid)} Rest{' '}
+                                <span className="text-red-600">{formatEuro(row.balance)}</span>
                               </li>
                             </ul>
                           </>
@@ -680,7 +895,7 @@ export default function ServicePaymentForm({
                 Amount paid
                 {selectedTotalRest > 0 && (
                   <span className="ml-1 font-normal text-gray-400">
-                    (max {formatEuro(selectedTotalRest)})
+                    (type e.g. 3 — max {formatEuro(selectedTotalRest)}; oldest first)
                   </span>
                 )}
               </span>
@@ -691,8 +906,8 @@ export default function ServicePaymentForm({
                 max={selectedTotalRest}
                 className={`h-10 ${procedureHighlightInputClass}`}
                 value={amountPaid}
-                onChange={(e) => setAmountPaid(clampAmountPaid(e.target.value))}
-                onBlur={(e) => setAmountPaid(clampAmountPaid(e.target.value))}
+                onChange={(e) => handleAmountPaidChange(e.target.value)}
+                onBlur={(e) => handleAmountPaidChange(e.target.value)}
               />
             </label>
             <label className="flex min-w-0 flex-col">
@@ -718,9 +933,16 @@ export default function ServicePaymentForm({
                 <input
                   type="checkbox"
                   checked={taxDoc}
-                  onChange={(e) => setTaxDoc(e.target.checked)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setTaxDoc(checked);
+                    if (!checked) setTaxDocument(null);
+                  }}
                 />
                 <span>Tax doc</span>
+                {taxDocument && (
+                  <span className="text-xs text-teal-700">· receipt ready at Confirm</span>
+                )}
               </div>
             </div>
             <div className="flex min-w-0 flex-col">
@@ -814,7 +1036,7 @@ export default function ServicePaymentForm({
                 step="0.01"
                 className={`h-10 ${procedureHighlightInputClass}`}
                 value={payWith}
-                onChange={(e) => setPayWith(e.target.value)}
+                onChange={(e) => handlePayWithChange(e.target.value)}
               />
             </label>
             <label className="flex min-w-0 flex-col">
@@ -846,6 +1068,7 @@ export default function ServicePaymentForm({
         </div>
 
         {error && <p className="text-red-600 text-sm">{error}</p>}
+        {installmentError && <p className="text-red-600 text-sm">{installmentError}</p>}
         {success && <p className="text-green-700 text-sm">{success}</p>}
 
         <div className="flex justify-center gap-3">
@@ -872,9 +1095,18 @@ export default function ServicePaymentForm({
         open={taxModalOpen}
         memberName={purchase.memberName}
         defaultCausal={description}
-        defaultTotal={purchase.value}
+        defaultTotal={paidAmount}
         defaultResidual={overallNewRest}
-        initial={taxDocument ?? undefined}
+        initial={
+          taxDocument
+            ? {
+                ...taxDocument,
+                // Always sync receipt Total to current Amount paid when opening.
+                total: paidAmount,
+                residualTotal: overallNewRest,
+              }
+            : undefined
+        }
         hideMemberName={notEnterCustData}
         onClose={() => setTaxModalOpen(false)}
         onSave={(values) => {
@@ -890,6 +1122,7 @@ export default function ServicePaymentForm({
             className="bg-white rounded-lg shadow-lg w-full max-w-md p-5 space-y-3 text-sm"
           >
             <h3 className="text-lg font-medium text-gray-900">Modify deadline</h3>
+            {modifyError ? <p className="text-red-600 text-xs">{modifyError}</p> : null}
             <label className="block">
               <span className="text-gray-600">Deadline</span>
               <input
@@ -942,7 +1175,10 @@ export default function ServicePaymentForm({
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setModifyOpen(false)}
+                onClick={() => {
+                  setModifyOpen(false);
+                  setModifyError('');
+                }}
                 className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
               >
                 Cancel

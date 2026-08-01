@@ -1,12 +1,13 @@
-﻿import { Prisma, ProcedureRecordStatus } from '@prisma/client';
+import { Prisma, ProcedureRecordStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { findExistingTable } from '@/lib/club/legacyTableLookup';
 import { getProcedureDefinition, getProcedureTypology } from './registry';
 import { paginated, parsePagination } from './pagination';
 import { verifyOperatorPassword } from './operatorAuth';
 import { applyCardCreditPayment } from './insertCreditService';
-import { ensureDefaultInstallment } from './installmentService';
+import { ensureDefaultInstallment, applyPaymentToInstallments } from './installmentService';
 import { PROCEDURE_TYPE_CODES } from './types';
+import { updateTaxDocumentCounter } from '@/lib/club/otherSettingsReader';
 import type {
   AddProcedurePaymentInput,
   ClubAuthContext,
@@ -276,7 +277,10 @@ export class ProcedureService {
       }
 
       let receiptId: string | null = null;
-      if ((input.createReceipt || input.taxDoc) && initialPayment > 0) {
+      if (input.createReceipt && initialPayment > 0) {
+        const documentType = input.receiptDocumentType ?? 'Invoice';
+        const documentNumber =
+          input.receiptNumber ?? `${recordDate.getUTCFullYear()}-${String(record.id).slice(-6)}`;
         const receipt = await tx.procedureReceipt.create({
           data: {
             procedureRecordId: record.id,
@@ -284,9 +288,8 @@ export class ProcedureService {
             clubId: ctx.club.id,
             memberId: input.memberId,
             operatorId,
-            documentType: input.receiptDocumentType ?? 'Invoice',
-            documentNumber:
-              input.receiptNumber ?? `${recordDate.getUTCFullYear()}-${String(record.id).slice(-6)}`,
+            documentType,
+            documentNumber,
             amount: totalAmount,
             paymentAmount: initialPayment,
             annotations: input.receiptAnnotations ?? input.notes ?? null,
@@ -295,6 +298,15 @@ export class ProcedureService {
           },
         });
         receiptId = receipt.id;
+        try {
+          await updateTaxDocumentCounter(
+            { userId: ctx.userId, clubId: ctx.club.id },
+            documentType,
+            documentNumber
+          );
+        } catch (counterError) {
+          console.error('createRecord: tax counter update failed:', counterError);
+        }
       }
 
       if (!skipDeadlines) {
@@ -356,7 +368,8 @@ export class ProcedureService {
       ...(input.taxDocument ? { taxDocument: input.taxDocument } : {}),
     });
 
-    return prisma.$transaction(async (tx) => {
+    // Commit payment first so a receipt failure cannot roll back the tracked payment.
+    const paymentResult = await prisma.$transaction(async (tx) => {
       const payment = await tx.procedurePayment.create({
         data: buildPaymentCreateData({
           procedureRecordId: record.id,
@@ -381,18 +394,38 @@ export class ProcedureService {
         },
       });
 
-      let receiptId: string | null = null;
-      if (input.createReceipt || input.taxDoc) {
-        const receipt = await tx.procedureReceipt.create({
+      // Keep deadline rows in sync with the record (oldest open installment first).
+      await applyPaymentToInstallments(record.id, amount, tx);
+
+      if (input.payMode === 'card') {
+        await applyCardCreditPayment(ctx.club.id, record.memberId, amount, operatorId);
+      }
+
+      return { paymentId: payment.id, balanceAmount: newBalance };
+    });
+
+    let receiptId: string | null = null;
+    // Only create receipt when explicitly requested at Confirm (tagged from tax modal).
+    if (input.createReceipt) {
+      try {
+        const documentType =
+          input.receiptDocumentType ??
+          (input.taxDocument && typeof input.taxDocument === 'object'
+            ? String((input.taxDocument as { documentType?: string }).documentType ?? 'Invoice')
+            : 'Invoice');
+        const documentNumber =
+          input.receiptNumber ??
+          `${paymentDate.getUTCFullYear()}-${String(paymentResult.paymentId).slice(-6)}`;
+
+        const receipt = await prisma.procedureReceipt.create({
           data: {
             procedureRecordId: record.id,
-            procedurePaymentId: payment.id,
+            procedurePaymentId: paymentResult.paymentId,
             clubId: ctx.club.id,
             memberId: record.memberId,
             operatorId,
-            documentType: input.receiptDocumentType ?? 'Invoice',
-            documentNumber:
-              input.receiptNumber ?? `${paymentDate.getUTCFullYear()}-${String(payment.id).slice(-6)}`,
+            documentType,
+            documentNumber,
             amount: decimalToNumber(record.totalAmount),
             paymentAmount: amount,
             annotations: input.receiptAnnotations ?? input.notes ?? null,
@@ -401,14 +434,22 @@ export class ProcedureService {
           },
         });
         receiptId = receipt.id;
-      }
 
-      if (input.payMode === 'card') {
-        await applyCardCreditPayment(ctx.club.id, record.memberId, amount, operatorId);
+        try {
+          await updateTaxDocumentCounter(
+            { userId: ctx.userId, clubId: ctx.club.id },
+            documentType,
+            documentNumber
+          );
+        } catch (counterError) {
+          console.error('addPayment: tax counter update failed (receipt was saved):', counterError);
+        }
+      } catch (receiptError) {
+        console.error('addPayment: receipt create failed (payment was saved):', receiptError);
       }
+    }
 
-      return { paymentId: payment.id, receiptId, balanceAmount: newBalance };
-    });
+    return { paymentId: paymentResult.paymentId, receiptId, balanceAmount: paymentResult.balanceAmount };
   }
 
   async softDeleteRecord(ctx: ClubAuthContext, procedureTypeCode: string, recordId: string) {
@@ -571,9 +612,14 @@ export class ProcedureService {
     const where: Prisma.ProcedureRecordWhereInput = {
       clubId: ctx.club.id,
       procedureTypeId: procedureType.id,
+      procedureType: { code: procedureTypeCode },
       status: ProcedureRecordStatus.ACTIVE,
       ...(query.memberId ? { memberId: query.memberId } : {}),
-      ...(query.recordId ? { id: query.recordId } : {}),
+      ...(query.recordIds && query.recordIds.length > 0
+        ? { id: { in: query.recordIds } }
+        : query.recordId
+          ? { id: query.recordId }
+          : {}),
       ...(options.onlyWithBalance ? { balanceAmount: { gt: 0 } } : {}),
     };
 
@@ -608,6 +654,7 @@ export class ProcedureService {
       balanceAmount: decimalToNumber(row.balanceAmount),
       recordDate: row.recordDate.toISOString().slice(0, 10),
       dueDate: row.dueDate ? row.dueDate.toISOString().slice(0, 10) : null,
+      createdAt: row.createdAt.toISOString(),
       notes: row.notes,
       metadata: (row.metadata as Record<string, unknown> | null) ?? null,
       lastPaymentDate: row.payments[0]?.paymentDate.toISOString().slice(0, 10) ?? null,
@@ -625,8 +672,13 @@ export class ProcedureService {
       procedureRecord: {
         clubId: ctx.club.id,
         procedureTypeId: procedureType.id,
+        procedureType: { code: procedureTypeCode },
         status: ProcedureRecordStatus.ACTIVE,
-        ...(query.recordId ? { id: query.recordId } : {}),
+        ...(query.recordIds && query.recordIds.length > 0
+          ? { id: { in: query.recordIds } }
+          : query.recordId
+            ? { id: query.recordId }
+            : {}),
       },
     };
 
@@ -634,7 +686,7 @@ export class ProcedureService {
       prisma.procedurePayment.count({ where }),
       prisma.procedurePayment.findMany({
         where,
-        orderBy: { paymentDate: 'desc' },
+        orderBy: [{ paymentDate: 'desc' }, { createdAt: 'desc' }],
         skip,
         take: pageSize,
         include: { procedureRecord: { select: { memberId: true, metadata: true, totalAmount: true, balanceAmount: true } } },
@@ -679,8 +731,13 @@ export class ProcedureService {
       clubId: ctx.club.id,
       procedureRecord: {
         procedureTypeId: procedureType.id,
+        procedureType: { code: procedureTypeCode },
         status: ProcedureRecordStatus.ACTIVE,
-        ...(query.recordId ? { id: query.recordId } : {}),
+        ...(query.recordIds && query.recordIds.length > 0
+          ? { id: { in: query.recordIds } }
+          : query.recordId
+            ? { id: query.recordId }
+            : {}),
       },
     };
 
@@ -692,7 +749,7 @@ export class ProcedureService {
         skip,
         take: pageSize,
         include: {
-          procedureRecord: { select: { metadata: true } },
+          procedureRecord: { select: { metadata: true, balanceAmount: true } },
         },
       }),
     ]);
@@ -701,25 +758,28 @@ export class ProcedureService {
       rows.flatMap((r) => [r.memberId, r.operatorId].filter(Boolean) as string[])
     );
 
-    const items: ProcedureReceiptDto[] = rows.map((row) => ({
-      id: row.id,
-      procedureRecordId: row.procedureRecordId,
-      procedurePaymentId: row.procedurePaymentId,
-      memberName: receiptMemberName(
-        row.memberId,
-        (row.procedureRecord.metadata as Record<string, unknown> | null) ?? null,
-        nameById
-      ),
-      documentType: row.documentType,
-      documentNumber: row.documentNumber,
-      amount: decimalToNumber(row.amount),
-      paymentAmount: decimalToNumber(row.paymentAmount),
-      serviceName: row.serviceName,
-      receiptDate: row.receiptDate.toISOString().slice(0, 10),
-      annotations: row.annotations,
-      typology: getProcedureTypology(procedureTypeCode),
-      operatorName: row.operatorId ? nameById.get(row.operatorId) ?? '-' : '-',
-    }));
+    const def = getProcedureDefinition(procedureTypeCode);
+    const primaryKey = def?.metadataKeys.primary ?? 'serviceName';
+
+    const items: ProcedureReceiptDto[] = rows.map((row) => {
+      const metadata = (row.procedureRecord.metadata as Record<string, unknown> | null) ?? null;
+      return {
+        id: row.id,
+        procedureRecordId: row.procedureRecordId,
+        procedurePaymentId: row.procedurePaymentId,
+        memberName: receiptMemberName(row.memberId, metadata, nameById),
+        documentType: row.documentType,
+        documentNumber: row.documentNumber,
+        amount: decimalToNumber(row.amount),
+        paymentAmount: decimalToNumber(row.paymentAmount),
+        residualDebt: decimalToNumber(row.procedureRecord.balanceAmount),
+        serviceName: row.serviceName || metaString(metadata, primaryKey) || null,
+        receiptDate: row.receiptDate.toISOString().slice(0, 10),
+        annotations: row.annotations,
+        typology: getProcedureTypology(procedureTypeCode),
+        operatorName: row.operatorId ? nameById.get(row.operatorId) ?? '-' : '-',
+      };
+    });
 
     return paginated(items, total, page, pageSize);
   }

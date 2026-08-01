@@ -231,7 +231,7 @@ export default function ServicePurchaseForm({ initialMemberId }: Props) {
         taxDocument: taxDocument ?? undefined,
         companyId: companyId || undefined,
         companyName: companies.find((c) => c.id === companyId)?.name,
-        createReceipt: taxDoc && paid > 0,
+        createReceipt: Boolean(taxDoc && taxDocument && paid > 0),
         receiptDocumentType: taxDocument?.documentType ?? 'Invoice',
         receiptNumber: taxDocument?.documentNumber || undefined,
         receiptAnnotations: taxDocument?.causal || undefined,

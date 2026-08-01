@@ -44,6 +44,7 @@ export default function ExpensePaymentDetailPage() {
       sectorName: r.secondaryLabel || '-',
       serviceName: r.primaryLabel,
       paydate: r.paydate,
+      createdAt: null,
       value: r.value,
       pay: r.pay,
       rest: r.rest,

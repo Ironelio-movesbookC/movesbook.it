@@ -71,9 +71,9 @@ const SERVICE_SALE: ProcedureDefinition = {
   },
   archiveTitles: {
     records: 'Archive of Services',
-    deadlines: 'Archive of Deadlines',
-    payments: 'Archive of Payments',
-    receipts: 'Archive of Receipts',
+    deadlines: 'Archive of Deadlines (Services)',
+    payments: 'Archive of Payments (Services)',
+    receipts: 'Archive of Receipts (Services)',
     paymentForm: 'Payment — Deadline',
     newRecordButton: '+ New service',
   },
@@ -210,9 +210,13 @@ export function getProcedureTabs(
   selectedRecordId?: string | null
 ): ProcedureTab[] {
   const def = PROCEDURE_DEFINITIONS[code];
-  const deadlineHref = selectedRecordId
-    ? def.routes.paymentDetail(selectedRecordId)
-    : def.routes.deadlines;
+  // For service sales, Deadlines always lists SERVICES deadlines (payment form is separate).
+  const deadlineHref =
+    code === PROCEDURE_TYPE_CODES.SERVICE_SALE
+      ? def.routes.deadlines
+      : selectedRecordId
+        ? def.routes.paymentDetail(selectedRecordId)
+        : def.routes.deadlines;
   const paymentsHref = selectedRecordId
     ? `${def.routes.payments}?recordId=${encodeURIComponent(selectedRecordId)}`
     : def.routes.payments;

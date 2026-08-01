@@ -82,6 +82,7 @@ function mapPurchase(r: {
     sectorName: r.secondaryLabel || '-',
     serviceName: r.primaryLabel,
     paydate: r.paydate,
+    createdAt: null,
     value: r.value,
     pay: r.pay,
     rest: r.rest,

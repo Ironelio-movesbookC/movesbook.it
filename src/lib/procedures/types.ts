@@ -1,4 +1,4 @@
-﻿import type { Decimal } from '@prisma/client/runtime/library';
+import type { Decimal } from '@prisma/client/runtime/library';
 
 export const PROCEDURE_TYPE_CODES = {
   SERVICE_SALE: 'service_sale',
@@ -37,6 +37,8 @@ export type ProcedureRecordDto = {
   balanceAmount: number;
   recordDate: string;
   dueDate: string | null;
+  /** ISO timestamp — used to order same-day deadlines (oldest first). */
+  createdAt: string;
   notes: string | null;
   metadata: Record<string, unknown> | null;
   lastPaymentDate: string | null;
@@ -68,6 +70,8 @@ export type ProcedureReceiptDto = {
   documentNumber: string | null;
   amount: number;
   paymentAmount: number;
+  /** Remaining balance on the parent purchase after this receipt's payment. */
+  residualDebt?: number;
   serviceName: string | null;
   receiptDate: string;
   annotations: string | null;
@@ -145,6 +149,8 @@ export type ListQuery = {
   pageSize?: number;
   memberId?: string;
   recordId?: string;
+  /** Filter to these procedure record ids (payment-form scoped archives). */
+  recordIds?: string[];
 };
 
 export function decimalToNumber(value: Decimal | number | string): number {
