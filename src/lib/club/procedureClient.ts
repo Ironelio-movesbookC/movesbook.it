@@ -98,7 +98,8 @@ function mapRecord(def: ProcedureDefinition, record: ProcedureRecordDto): Proced
     secondaryLabel: def.metadataKeys.secondary
       ? metaString(metadata, def.metadataKeys.secondary) || '-'
       : '',
-    paydate: record.recordDate,
+    // Deadline/expire display uses dueDate (PHP ServicePurchase.paydate / installment expire).
+    paydate: record.dueDate ?? record.recordDate,
     value: record.totalAmount,
     pay: record.paidAmount,
     rest: record.balanceAmount,
@@ -199,6 +200,16 @@ export function createProcedureClient(code: ProcedureTypeCode) {
     async fetchRecord(id: string): Promise<{ record: ProcedureRecordView }> {
       const res = await clubApiFetch<{ record: ProcedureRecordDto }>(`${base}/records/${id}`);
       return { record: mapRecord(def, res.record) };
+    },
+
+    async updateRecord(
+      id: string,
+      input: { recordDate?: string; notes?: string; operatorId?: string; totalAmount?: number }
+    ): Promise<void> {
+      await clubApiFetch(`${base}/records/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      });
     },
 
     async createRecord(body: Record<string, unknown>): Promise<{ recordId: string }> {

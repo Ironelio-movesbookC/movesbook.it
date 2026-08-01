@@ -1,3 +1,3 @@
 'use client';
 
-export { default } from '@/app/clubs/dead_line/page';
+export { default } from '@/app/clubs/archive_deadlines/page';

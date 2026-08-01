@@ -25,7 +25,7 @@ const taxDocumentSchema = z
 
 /** Shared payment payload — same for all procedure types. */
 export const addProcedurePaymentSchema = z.object({
-  amount: z.number().positive(),
+  amount: z.coerce.number().positive(),
   paymentDate: z.string().min(1),
   notes: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
